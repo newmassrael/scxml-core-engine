@@ -99,6 +99,33 @@ TEST(InternalChainIsBoundedAotTest, ARaiseChainThatEndsAtTheCeilingIsNotRefused)
     EXPECT_EQ(sm->getCurrentState(), SM::State::Bounded) << "the chain rests where it ended";
 }
 
+/// A dequeue that selected nothing is not a microstep, so it spends no budget.
+///
+/// §scxml-D takes a microstep for a transition that was SELECTED; a dequeue
+/// that matched none is the loop turn the clause does not count. The fixture's
+/// `unanswered` chain is `bounded` with one unmatched event added per link, so
+/// the two differ in exactly that and must cost the same.
+///
+/// Measured 2026-08-21: this claim had no witness in any channel. The mutation
+/// that spends the budget on every dequeue SURVIVED all five outcomes, because
+/// every other chain here answers every event it raises.
+TEST(InternalChainIsBoundedAotTest, ADequeueThatSelectedNothingSpendsNoBudget) {
+    auto sm = started();
+
+    sm->processEvent(SM::Event::Unanswered);
+
+    EXPECT_EQ(sm->getPolicy().ignores().value_or(-1), MAX_MICROSTEPS)
+        << "the chain is the same length as `bounded`; the unmatched events between its links are dequeues that "
+           "selected nothing, and those are not microsteps";
+    EXPECT_EQ(sm->truncatedMacrosteps(), 0u)
+        << "a thousand microsteps and a thousand discards is a thousand microsteps: an engine that counted the "
+           "discards refuses this document at link five hundred and reports a runaway that is not one";
+    EXPECT_FALSE(sm->lastTruncatedMacrostepState().has_value())
+        << "and nothing names a state, because nothing was stopped";
+    EXPECT_TRUE(sm->isRunning()) << "the document settled on its own";
+    EXPECT_EQ(sm->getCurrentState(), SM::State::Ignoring) << "the chain rests where it ended";
+}
+
 /// The case a per-branch budget lets through: a chain that alternates one
 /// `<raise>` with one eventless transition.
 ///

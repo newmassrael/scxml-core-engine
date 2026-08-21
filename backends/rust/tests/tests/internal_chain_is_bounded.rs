@@ -143,6 +143,47 @@ fn a_raise_chain_that_ends_at_the_ceiling_is_not_refused() {
     );
 }
 
+/// A dequeue that selected nothing is not a microstep, so it spends no budget.
+///
+/// Appendix D takes a microstep for a transition that was SELECTED; a dequeue
+/// that matched none is the loop turn the clause does not count. The fixture's
+/// `unanswered` chain is `bounded` with one unmatched event added per link, so
+/// the two differ in exactly that and must cost the same.
+///
+/// Measured 2026-08-21: this claim had no witness. The mutation that spends the
+/// budget on every dequeue SURVIVED all five outcomes, because every other
+/// chain in the fixture answers every event it raises — an engine that
+/// over-counted would report this settling document as a runaway at half its
+/// length, and nothing here could see it.
+#[test]
+fn a_dequeue_that_selected_nothing_spends_no_budget() {
+    let (mut engine, se) = started();
+
+    engine.raise_external(Event::Unanswered, "", "");
+    engine.step();
+
+    assert_eq!(
+        counter(&engine, &se, "ignores"),
+        MAX_MICROSTEPS,
+        "the chain is the same length as `bounded`; the unmatched events \
+         between its links are dequeues that selected nothing, and those are \
+         not microsteps"
+    );
+    assert_eq!(
+        engine.truncated_macrosteps(),
+        0,
+        "a thousand microsteps and a thousand discards is a thousand \
+         microsteps: an engine that counted the discards refuses this document \
+         at link five hundred and reports a runaway that is not one"
+    );
+    assert_eq!(
+        engine.last_truncated_macrostep_state(),
+        None,
+        "and nothing names a state, because nothing was stopped"
+    );
+    assert!(engine.is_running(), "the document settled on its own");
+}
+
 /// The case a per-branch budget lets through: a chain that alternates one
 /// `<raise>` with one eventless transition.
 ///

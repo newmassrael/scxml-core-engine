@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7cd9869d6fe2e1be89509dbe50d4cddbd9611592b51012e0d6e1e3825d914ed7
+// source-hash: 5eba0d45073fc837c42ae33f20795f0ee658705613f4c4e42a59b557f47ce142
 // template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
-// generated-at: 0
+// generated-at: 1787283457
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/internal_chain_is_bounded/internal_chain_is_bounded.scxml
@@ -19,6 +19,7 @@ sealed interface InternalChainIsBoundedState : State {
     data object Alt : InternalChainIsBoundedState
     data object Bounded : InternalChainIsBoundedState
     data object Idle : InternalChainIsBoundedState
+    data object Ignoring : InternalChainIsBoundedState
     data object Resuming : InternalChainIsBoundedState
     data object Spin : InternalChainIsBoundedState
 }
@@ -28,6 +29,7 @@ sealed interface InternalChainIsBoundedState : State {
 sealed interface InternalChainIsBoundedEvent : Event {
     data object Alternate : InternalChainIsBoundedEvent
     data object Beat : InternalChainIsBoundedEvent
+    data object Beatless : InternalChainIsBoundedEvent
     data object Bounded : InternalChainIsBoundedEvent
     sealed interface Error : InternalChainIsBoundedEvent {
         data object Execution : Error
@@ -37,6 +39,8 @@ sealed interface InternalChainIsBoundedEvent : Event {
     data object Resume : InternalChainIsBoundedEvent
     data object Spin : InternalChainIsBoundedEvent
     data object Tick : InternalChainIsBoundedEvent
+    data object Unanswered : InternalChainIsBoundedEvent
+    data object Unheard : InternalChainIsBoundedEvent
 }
 // --- State Machine (W3C SCXML) ---
 
@@ -107,6 +111,18 @@ class InternalChainIsBoundedStateMachine(
         com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "alts")
 
     /**
+     * §scxml-5.3: what the `ignores` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `ignores` was assigned a value of another type, or the engine refused.
+     */
+    fun ignores(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "ignores")
+
+    /**
      * §scxml-5.3: what the `pending` datamodel variable is holding now.
      *
      * The live value, not the authored one: `<assign>` writes into the
@@ -138,6 +154,7 @@ class InternalChainIsBoundedStateMachine(
         "alt" -> InternalChainIsBoundedState.Alt
         "bounded" -> InternalChainIsBoundedState.Bounded
         "idle" -> InternalChainIsBoundedState.Idle
+        "ignoring" -> InternalChainIsBoundedState.Ignoring
         "resuming" -> InternalChainIsBoundedState.Resuming
         "spin" -> InternalChainIsBoundedState.Spin
         else -> null
@@ -148,6 +165,7 @@ class InternalChainIsBoundedStateMachine(
         is InternalChainIsBoundedState.Alt -> "alt"
         is InternalChainIsBoundedState.Bounded -> "bounded"
         is InternalChainIsBoundedState.Idle -> "idle"
+        is InternalChainIsBoundedState.Ignoring -> "ignoring"
         is InternalChainIsBoundedState.Resuming -> "resuming"
         is InternalChainIsBoundedState.Spin -> "spin"
     }
@@ -163,6 +181,7 @@ class InternalChainIsBoundedStateMachine(
         is InternalChainIsBoundedState.Alt -> 4
         is InternalChainIsBoundedState.Bounded -> 1
         is InternalChainIsBoundedState.Idle -> 0
+        is InternalChainIsBoundedState.Ignoring -> 5
         is InternalChainIsBoundedState.Resuming -> 3
         is InternalChainIsBoundedState.Spin -> 2
     }
@@ -171,6 +190,7 @@ class InternalChainIsBoundedStateMachine(
     override fun resolveEventByName(name: String): InternalChainIsBoundedEvent? = when (name) {
         "alternate" -> InternalChainIsBoundedEvent.Alternate
         "beat" -> InternalChainIsBoundedEvent.Beat
+        "beatless" -> InternalChainIsBoundedEvent.Beatless
         "bounded" -> InternalChainIsBoundedEvent.Bounded
         "error.execution" -> InternalChainIsBoundedEvent.Error.Execution
         "link" -> InternalChainIsBoundedEvent.Link
@@ -178,6 +198,8 @@ class InternalChainIsBoundedStateMachine(
         "resume" -> InternalChainIsBoundedEvent.Resume
         "spin" -> InternalChainIsBoundedEvent.Spin
         "tick" -> InternalChainIsBoundedEvent.Tick
+        "unanswered" -> InternalChainIsBoundedEvent.Unanswered
+        "unheard" -> InternalChainIsBoundedEvent.Unheard
         else -> null
     }
 
@@ -185,6 +207,7 @@ class InternalChainIsBoundedStateMachine(
     override fun eventNameOf(event: InternalChainIsBoundedEvent): String? = when (event) {
         is InternalChainIsBoundedEvent.Alternate -> "alternate"
         is InternalChainIsBoundedEvent.Beat -> "beat"
+        is InternalChainIsBoundedEvent.Beatless -> "beatless"
         is InternalChainIsBoundedEvent.Bounded -> "bounded"
         is InternalChainIsBoundedEvent.Error.Execution -> "error.execution"
         is InternalChainIsBoundedEvent.Link -> "link"
@@ -192,6 +215,8 @@ class InternalChainIsBoundedStateMachine(
         is InternalChainIsBoundedEvent.Resume -> "resume"
         is InternalChainIsBoundedEvent.Spin -> "spin"
         is InternalChainIsBoundedEvent.Tick -> "tick"
+        is InternalChainIsBoundedEvent.Unanswered -> "unanswered"
+        is InternalChainIsBoundedEvent.Unheard -> "unheard"
     }
 
 
@@ -248,6 +273,13 @@ class InternalChainIsBoundedStateMachine(
             engine.setVariable(sid, "alts", initResult_alts)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='alts'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'ignores' with expr
+        try {
+            val initResult_ignores = engine.evaluateExpr(sid, "0")
+            engine.setVariable(sid, "ignores", initResult_ignores)
+        } catch (e: Exception) {
+            raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='ignores'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pending' with expr
         try {
@@ -391,6 +423,7 @@ class InternalChainIsBoundedStateMachine(
         is InternalChainIsBoundedState.Alt -> processAlt(event)
         is InternalChainIsBoundedState.Bounded -> processBounded(event)
         is InternalChainIsBoundedState.Idle -> processIdle(event)
+        is InternalChainIsBoundedState.Ignoring -> processIgnoring(event)
         is InternalChainIsBoundedState.Resuming -> processResuming(event)
         is InternalChainIsBoundedState.Spin -> processSpin(event)
     }
@@ -448,6 +481,19 @@ class InternalChainIsBoundedStateMachine(
 
         event is InternalChainIsBoundedEvent.Alternate -> TransitionResult.External(InternalChainIsBoundedState.Alt, InternalChainIsBoundedState.Idle)
 
+        event is InternalChainIsBoundedEvent.Unanswered -> TransitionResult.External(InternalChainIsBoundedState.Ignoring, InternalChainIsBoundedState.Idle)
+
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processIgnoring(
+        event: InternalChainIsBoundedEvent
+    ): TransitionResult<InternalChainIsBoundedState> = when {
+        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard("ignores < 999") -> TransitionResult.Internal
+        // W3C SCXML 3.13: Targetless transition (actions only)
+        event is InternalChainIsBoundedEvent.Beatless -> TransitionResult.Internal
+        // W3C SCXML 3.13: Targetless transition (actions only)
+        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal
         else -> TransitionResult.Ignored
     }
 
@@ -479,27 +525,32 @@ class InternalChainIsBoundedStateMachine(
     override fun onEntry(state: InternalChainIsBoundedState, pathChild: InternalChainIsBoundedState?) {
         when (state) {
             is InternalChainIsBoundedState.Alt -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:204 :: alt :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:211 :: alt :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("alt")) return
             }
             is InternalChainIsBoundedState.Bounded -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:146 :: bounded :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:153 :: bounded :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("bounded")) return
             }
             is InternalChainIsBoundedState.Idle -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:118 :: idle :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("idle")) return
             }
+            is InternalChainIsBoundedState.Ignoring -> {
+                // SCE-MAP: internal_chain_is_bounded.scxml:244 :: ignoring :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("ignoring")) return
+            }
             is InternalChainIsBoundedState.Resuming -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:185 :: resuming :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:192 :: resuming :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("resuming")) return
             }
             is InternalChainIsBoundedState.Spin -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:167 :: spin :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:174 :: spin :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("spin")) return
             }
@@ -511,23 +562,27 @@ class InternalChainIsBoundedStateMachine(
     override fun onExit(state: InternalChainIsBoundedState) {
         when (state) {
             is InternalChainIsBoundedState.Alt -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:204 :: alt :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:211 :: alt :: _state_body
                 activeStateIds.remove("alt")
             }
             is InternalChainIsBoundedState.Bounded -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:146 :: bounded :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:153 :: bounded :: _state_body
                 activeStateIds.remove("bounded")
             }
             is InternalChainIsBoundedState.Idle -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:118 :: idle :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _state_body
                 activeStateIds.remove("idle")
             }
+            is InternalChainIsBoundedState.Ignoring -> {
+                // SCE-MAP: internal_chain_is_bounded.scxml:244 :: ignoring :: _state_body
+                activeStateIds.remove("ignoring")
+            }
             is InternalChainIsBoundedState.Resuming -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:185 :: resuming :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:192 :: resuming :: _state_body
                 activeStateIds.remove("resuming")
             }
             is InternalChainIsBoundedState.Spin -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:167 :: spin :: _state_body
+                // SCE-MAP: internal_chain_is_bounded.scxml:174 :: spin :: _state_body
                 activeStateIds.remove("spin")
             }
         }
@@ -543,7 +598,7 @@ class InternalChainIsBoundedStateMachine(
         when (source) {
         is InternalChainIsBoundedState.Alt -> when {
             event is InternalChainIsBoundedEvent.Tick -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:205 :: alt :: _transition_0
+                // SCE-MAP: internal_chain_is_bounded.scxml:212 :: alt :: _transition_0
 
 
             executeAssign("alts", "alts + 1")
@@ -552,13 +607,13 @@ class InternalChainIsBoundedStateMachine(
             executeAssign("pending", "1")
             }
             event is InternalChainIsBoundedEvent.Poke -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:213 :: alt :: _transition_2
+                // SCE-MAP: internal_chain_is_bounded.scxml:220 :: alt :: _transition_2
 
 
             executeAssign("pokes", "pokes + 1")
             }
             event == null && safeEvaluateGuard("pending == 1") -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:209 :: alt :: _transition_1
+                // SCE-MAP: internal_chain_is_bounded.scxml:216 :: alt :: _transition_1
 
 
             executeAssign("pending", "0")
@@ -569,7 +624,7 @@ class InternalChainIsBoundedStateMachine(
         }
         is InternalChainIsBoundedState.Bounded -> when {
             event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard("laps < 999") -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:147 :: bounded :: _transition_0
+                // SCE-MAP: internal_chain_is_bounded.scxml:154 :: bounded :: _transition_0
 
 
             executeAssign("laps", "laps + 1")
@@ -577,13 +632,13 @@ class InternalChainIsBoundedStateMachine(
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
             event is InternalChainIsBoundedEvent.Link -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:151 :: bounded :: _transition_1
+                // SCE-MAP: internal_chain_is_bounded.scxml:158 :: bounded :: _transition_1
 
 
             executeAssign("laps", "laps + 1")
             }
             event is InternalChainIsBoundedEvent.Poke -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:156 :: bounded :: _transition_2
+                // SCE-MAP: internal_chain_is_bounded.scxml:163 :: bounded :: _transition_2
 
 
             executeAssign("pokes", "pokes + 1")
@@ -592,36 +647,66 @@ class InternalChainIsBoundedStateMachine(
         }
         is InternalChainIsBoundedState.Idle -> when {
             event is InternalChainIsBoundedEvent.Poke -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:119 :: idle :: _transition_0
+                // SCE-MAP: internal_chain_is_bounded.scxml:123 :: idle :: _transition_0
 
 
             executeAssign("pokes", "pokes + 1")
             }
             event is InternalChainIsBoundedEvent.Bounded -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _transition_1
+                // SCE-MAP: internal_chain_is_bounded.scxml:126 :: idle :: _transition_1
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
             event is InternalChainIsBoundedEvent.Spin -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:125 :: idle :: _transition_2
+                // SCE-MAP: internal_chain_is_bounded.scxml:129 :: idle :: _transition_2
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
             event is InternalChainIsBoundedEvent.Resume -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:128 :: idle :: _transition_3
+                // SCE-MAP: internal_chain_is_bounded.scxml:132 :: idle :: _transition_3
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
             }
             event is InternalChainIsBoundedEvent.Alternate -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:131 :: idle :: _transition_4
+                // SCE-MAP: internal_chain_is_bounded.scxml:135 :: idle :: _transition_4
 
             raiseInternal(InternalChainIsBoundedEvent.Tick)
+            }
+            event is InternalChainIsBoundedEvent.Unanswered -> {
+                // SCE-MAP: internal_chain_is_bounded.scxml:138 :: idle :: _transition_5
+
+            raiseInternal(InternalChainIsBoundedEvent.Beatless)
+            }
+            else -> {}
+        }
+        is InternalChainIsBoundedState.Ignoring -> when {
+            event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard("ignores < 999") -> {
+                // SCE-MAP: internal_chain_is_bounded.scxml:245 :: ignoring :: _transition_0
+
+
+            executeAssign("ignores", "ignores + 1")
+
+            raiseInternal(InternalChainIsBoundedEvent.Unheard)
+
+            raiseInternal(InternalChainIsBoundedEvent.Beatless)
+            }
+            event is InternalChainIsBoundedEvent.Beatless -> {
+                // SCE-MAP: internal_chain_is_bounded.scxml:250 :: ignoring :: _transition_1
+
+
+            executeAssign("ignores", "ignores + 1")
+            }
+            event is InternalChainIsBoundedEvent.Poke -> {
+                // SCE-MAP: internal_chain_is_bounded.scxml:253 :: ignoring :: _transition_2
+
+
+            executeAssign("pokes", "pokes + 1")
             }
             else -> {}
         }
         is InternalChainIsBoundedState.Resuming -> when {
             event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard("beats < 1499") -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:186 :: resuming :: _transition_0
+                // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_0
 
 
             executeAssign("beats", "beats + 1")
@@ -629,13 +714,13 @@ class InternalChainIsBoundedStateMachine(
             raiseInternal(InternalChainIsBoundedEvent.Beat)
             }
             event is InternalChainIsBoundedEvent.Beat -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:190 :: resuming :: _transition_1
+                // SCE-MAP: internal_chain_is_bounded.scxml:197 :: resuming :: _transition_1
 
 
             executeAssign("beats", "beats + 1")
             }
             event is InternalChainIsBoundedEvent.Poke -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_2
+                // SCE-MAP: internal_chain_is_bounded.scxml:200 :: resuming :: _transition_2
 
 
             executeAssign("pokes", "pokes + 1")
@@ -644,7 +729,7 @@ class InternalChainIsBoundedStateMachine(
         }
         is InternalChainIsBoundedState.Spin -> when {
             event is InternalChainIsBoundedEvent.Link -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:168 :: spin :: _transition_0
+                // SCE-MAP: internal_chain_is_bounded.scxml:175 :: spin :: _transition_0
 
 
             executeAssign("links", "links + 1")
@@ -652,7 +737,7 @@ class InternalChainIsBoundedStateMachine(
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
             event is InternalChainIsBoundedEvent.Poke -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:172 :: spin :: _transition_1
+                // SCE-MAP: internal_chain_is_bounded.scxml:179 :: spin :: _transition_1
 
 
             executeAssign("pokes", "pokes + 1")

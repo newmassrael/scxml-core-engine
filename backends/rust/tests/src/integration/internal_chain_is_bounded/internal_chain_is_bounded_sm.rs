@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7cd9869d6fe2e1be89509dbe50d4cddbd9611592b51012e0d6e1e3825d914ed7
+// source-hash: 5eba0d45073fc837c42ae33f20795f0ee658705613f4c4e42a59b557f47ce142
 // template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
-// generated-at: 0
+// generated-at: 1787283457
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -87,6 +87,7 @@ pub enum InternalChainIsBoundedState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
     Idle,
+    Ignoring,
     Resuming,
     Spin,
 }
@@ -99,6 +100,7 @@ pub enum InternalChainIsBoundedState {
 pub enum InternalChainIsBoundedEvent {
     Alternate,
     Beat,
+    Beatless,
     Bounded,
     ErrorExecution,
     Link,
@@ -106,6 +108,8 @@ pub enum InternalChainIsBoundedEvent {
     Resume,
     Spin,
     Tick,
+    Unanswered,
+    Unheard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -132,6 +136,7 @@ impl InternalChainIsBoundedEvent {
         InternalChainIsBoundedEvent::Poke,
         InternalChainIsBoundedEvent::Resume,
         InternalChainIsBoundedEvent::Spin,
+        InternalChainIsBoundedEvent::Unanswered,
     ];
 }
 
@@ -275,6 +280,21 @@ impl InternalChainIsBoundedPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `ignores` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `ignores` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn ignores(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "ignores",
+        )
+    }
+
     /// §scxml-5.3: what the `pending` datamodel variable is holding now.
     ///
     /// The live value, not the authored one: `<assign>` writes into the
@@ -391,6 +411,13 @@ impl InternalChainIsBoundedPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'ignores' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "ignores", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         // W3C SCXML 5.2/5.3: Initialize 'pending' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "pending", "0",
@@ -476,6 +503,17 @@ impl InternalChainIsBoundedPolicy {
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 InternalChainIsBoundedEvent::ErrorExecution,
                 "<data id='alts'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'ignores' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "ignores", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                InternalChainIsBoundedEvent::ErrorExecution,
+                "<data id='ignores'> expr failed to evaluate",
             ));
         }
 
@@ -671,6 +709,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
             InternalChainIsBoundedState::Alt => 4,
             InternalChainIsBoundedState::Bounded => 1,
             InternalChainIsBoundedState::Idle => 0,
+            InternalChainIsBoundedState::Ignoring => 5,
             InternalChainIsBoundedState::Resuming => 3,
             InternalChainIsBoundedState::Spin => 2,
         }
@@ -680,6 +719,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
         match event {
             InternalChainIsBoundedEvent::Alternate => "alternate",
             InternalChainIsBoundedEvent::Beat => "beat",
+            InternalChainIsBoundedEvent::Beatless => "beatless",
             InternalChainIsBoundedEvent::Bounded => "bounded",
             InternalChainIsBoundedEvent::ErrorExecution => "error.execution",
             InternalChainIsBoundedEvent::Link => "link",
@@ -687,6 +727,8 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
             InternalChainIsBoundedEvent::Resume => "resume",
             InternalChainIsBoundedEvent::Spin => "spin",
             InternalChainIsBoundedEvent::Tick => "tick",
+            InternalChainIsBoundedEvent::Unanswered => "unanswered",
+            InternalChainIsBoundedEvent::Unheard => "unheard",
             InternalChainIsBoundedEvent::Null => "",
         }
     }
@@ -695,6 +737,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
         match name {
             "alternate" => Some(InternalChainIsBoundedEvent::Alternate),
             "beat" => Some(InternalChainIsBoundedEvent::Beat),
+            "beatless" => Some(InternalChainIsBoundedEvent::Beatless),
             "bounded" => Some(InternalChainIsBoundedEvent::Bounded),
             "error.execution" => Some(InternalChainIsBoundedEvent::ErrorExecution),
             "link" => Some(InternalChainIsBoundedEvent::Link),
@@ -702,6 +745,8 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
             "resume" => Some(InternalChainIsBoundedEvent::Resume),
             "spin" => Some(InternalChainIsBoundedEvent::Spin),
             "tick" => Some(InternalChainIsBoundedEvent::Tick),
+            "unanswered" => Some(InternalChainIsBoundedEvent::Unanswered),
+            "unheard" => Some(InternalChainIsBoundedEvent::Unheard),
             _ => None,
         }
     }
@@ -711,6 +756,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
             InternalChainIsBoundedState::Alt => "alt",
             InternalChainIsBoundedState::Bounded => "bounded",
             InternalChainIsBoundedState::Idle => "idle",
+            InternalChainIsBoundedState::Ignoring => "ignoring",
             InternalChainIsBoundedState::Resuming => "resuming",
             InternalChainIsBoundedState::Spin => "spin",
         }
@@ -896,7 +942,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
             InternalChainIsBoundedState::Alt => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:205 :: alt :: _transition_0
+                        // SCE-MAP: internal_chain_is_bounded.scxml:212 :: alt :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -948,7 +994,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:209 :: alt :: _transition_1
+                        // SCE-MAP: internal_chain_is_bounded.scxml:216 :: alt :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -981,7 +1027,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         ));
                     }
                     2 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:213 :: alt :: _transition_2
+                        // SCE-MAP: internal_chain_is_bounded.scxml:220 :: alt :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -1014,7 +1060,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
             InternalChainIsBoundedState::Bounded => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:147 :: bounded :: _transition_0
+                        // SCE-MAP: internal_chain_is_bounded.scxml:154 :: bounded :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1047,7 +1093,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         ));
                     }
                     1 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:151 :: bounded :: _transition_1
+                        // SCE-MAP: internal_chain_is_bounded.scxml:158 :: bounded :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -1075,7 +1121,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:156 :: bounded :: _transition_2
+                        // SCE-MAP: internal_chain_is_bounded.scxml:163 :: bounded :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -1108,7 +1154,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
             InternalChainIsBoundedState::Idle => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:119 :: idle :: _transition_0
+                        // SCE-MAP: internal_chain_is_bounded.scxml:123 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1136,7 +1182,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _transition_1
+                        // SCE-MAP: internal_chain_is_bounded.scxml:126 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         // W3C SCXML 3.8.1: <raise event="link">
@@ -1145,7 +1191,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         ));
                     }
                     2 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:125 :: idle :: _transition_2
+                        // SCE-MAP: internal_chain_is_bounded.scxml:129 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         // W3C SCXML 3.8.1: <raise event="link">
@@ -1154,7 +1200,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         ));
                     }
                     3 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:128 :: idle :: _transition_3
+                        // SCE-MAP: internal_chain_is_bounded.scxml:132 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
 
                         // W3C SCXML 3.8.1: <raise event="beat">
@@ -1163,7 +1209,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         ));
                     }
                     4 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:131 :: idle :: _transition_4
+                        // SCE-MAP: internal_chain_is_bounded.scxml:135 :: idle :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
 
                         // W3C SCXML 3.8.1: <raise event="tick">
@@ -1171,13 +1217,121 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             InternalChainIsBoundedEvent::Tick,
                         ));
                     }
+                    5 => {
+                        // SCE-MAP: internal_chain_is_bounded.scxml:138 :: idle :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
+
+                        // W3C SCXML 3.8.1: <raise event="beatless">
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            InternalChainIsBoundedEvent::Beatless,
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            InternalChainIsBoundedState::Ignoring => {
+                match self.last_transition_index {
+                    0 => {
+                        // SCE-MAP: internal_chain_is_bounded.scxml:245 :: ignoring :: _transition_0
+                        // W3C SCXML 3.13: Transition 0 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="ignores">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(ignores, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "ignores", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'ignores': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    InternalChainIsBoundedEvent::ErrorExecution,
+                                    "<assign> to 'ignores' failed",
+                                ));
+                            }
+                        }
+
+                        // W3C SCXML 3.8.1: <raise event="unheard">
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            InternalChainIsBoundedEvent::Unheard,
+                        ));
+
+                        // W3C SCXML 3.8.1: <raise event="beatless">
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            InternalChainIsBoundedEvent::Beatless,
+                        ));
+                    }
+                    1 => {
+                        // SCE-MAP: internal_chain_is_bounded.scxml:250 :: ignoring :: _transition_1
+                        // W3C SCXML 3.13: Transition 1 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="ignores">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(ignores, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "ignores", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'ignores': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    InternalChainIsBoundedEvent::ErrorExecution,
+                                    "<assign> to 'ignores' failed",
+                                ));
+                            }
+                        }
+                    }
+                    2 => {
+                        // SCE-MAP: internal_chain_is_bounded.scxml:253 :: ignoring :: _transition_2
+                        // W3C SCXML 3.13: Transition 2 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="pokes">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(pokes, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "pokes", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'pokes': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    InternalChainIsBoundedEvent::ErrorExecution,
+                                    "<assign> to 'pokes' failed",
+                                ));
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
             InternalChainIsBoundedState::Resuming => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:186 :: resuming :: _transition_0
+                        // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1210,7 +1364,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         ));
                     }
                     1 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:190 :: resuming :: _transition_1
+                        // SCE-MAP: internal_chain_is_bounded.scxml:197 :: resuming :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -1238,7 +1392,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_2
+                        // SCE-MAP: internal_chain_is_bounded.scxml:200 :: resuming :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -1271,7 +1425,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
             InternalChainIsBoundedState::Spin => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:168 :: spin :: _transition_0
+                        // SCE-MAP: internal_chain_is_bounded.scxml:175 :: spin :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1304,7 +1458,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         ));
                     }
                     1 => {
-                        // SCE-MAP: internal_chain_is_bounded.scxml:172 :: spin :: _transition_1
+                        // SCE-MAP: internal_chain_is_bounded.scxml:179 :: spin :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -1515,6 +1669,65 @@ impl InternalChainIsBoundedPolicy {
                     self.last_transition_is_targetless = false;
 
                     *current_state = InternalChainIsBoundedState::Alt;
+                    *transition_taken = true;
+                    return true;
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == InternalChainIsBoundedEvent::Unanswered {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 5;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = InternalChainIsBoundedState::Ignoring;
+                    *transition_taken = true;
+                    return true;
+                }
+                false
+            }
+            InternalChainIsBoundedState::Ignoring => {
+                // W3C SCXML 3.12: Event-triggered transitions (document order)
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == InternalChainIsBoundedEvent::Beatless {
+                    // W3C SCXML 5.9: Script engine guard
+                    if self.safe_evaluate_guard("(ignores < 999)", engine) {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_index = 0;
+                        self.has_transition_actions = true;
+                        self.last_transition_is_internal = true;
+                        self.last_transition_is_targetless = true;
+
+                        // W3C SCXML 5.9.2: Targetless internal transition
+                        *transition_taken = true;
+                        return true;
+                    }
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == InternalChainIsBoundedEvent::Beatless {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = true;
+                    self.last_transition_is_targetless = true;
+
+                    // W3C SCXML 5.9.2: Targetless internal transition
+                    *transition_taken = true;
+                    return true;
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == InternalChainIsBoundedEvent::Poke {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 2;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = true;
+                    self.last_transition_is_targetless = true;
+
+                    // W3C SCXML 5.9.2: Targetless internal transition
                     *transition_taken = true;
                     return true;
                 }
