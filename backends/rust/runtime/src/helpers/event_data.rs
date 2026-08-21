@@ -33,12 +33,14 @@ use std::collections::BTreeMap;
 /// definition: the receiver may be a different session, a different process,
 /// or a different backend, and the only thing all of them can read is data.
 ///
-/// This is the counterpart of [`ScriptValue::to_lua_literal`], and the
-/// difference between them is the whole point. A Lua literal is *source*:
+/// This is the counterpart of [`IScriptEngine::to_script_literal`], and the
+/// difference between them is the whole point. An engine literal is *source*:
 /// reading it back requires an interpreter for the language the sender
 /// happened to be written in, which made `_event.data` mean one thing on a
 /// Lua backend and another on a JavaScript one, and made a payload from any
 /// sender executable by the receiver. JSON is read by a parser.
+///
+/// [`IScriptEngine::to_script_literal`]: crate::scripting::IScriptEngine::to_script_literal
 ///
 /// Object keys are sorted. `HashMap` iteration order is not stable between
 /// runs, and the wire form has to be byte-identical for equal content —
