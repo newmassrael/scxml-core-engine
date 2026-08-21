@@ -51,8 +51,7 @@ mutation_case "an empty finalize stands for no content at all" <<'PY'
 # mutation that will not compile is INCONCLUSIVE rather than a verdict.
 edit("sce-build/src/parser.rs",
      """            if finalize_content.trim().is_empty() {
-                finalize_content =
-                    synthesize_automatic_finalize(&namelist, &hybrid_params);
+                finalize_content = synthesize_automatic_finalize(&namelist, &hybrid_params);
             }""",
      """            if finalize_content.trim().is_empty() {
                 let _ = synthesize_automatic_finalize(&namelist, &hybrid_params);
