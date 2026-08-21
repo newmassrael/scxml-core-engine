@@ -169,6 +169,7 @@
 {% endif %}
 {% if inv.params %}
 {% for param in inv.params %}
+{% if inv.child_datamodel_vars is defined and param.name in inv.child_datamodel_vars %}
                 try:
                     _pre_init[{{ param.name | py_string_literal }}] = (
                         engine._script_engine.evaluate_expression(
@@ -178,6 +179,14 @@
                     )
                 except _ScriptError:
                     pass
+{% else %}
+                # §scxml-6.4.3: {{ param.name }} matches no top-level `<data>`
+                # of the child, so the Processor MUST NOT add it to the
+                # invoked session's data model. The namelist arm above
+                # already read the child's declarations for the same reason;
+                # this arm did not, and a param that named nothing there
+                # became a variable in the child anyway.
+{% endif %}
 {% endfor %}
 {% endif %}
                 _child_policy._pre_init_vars = _pre_init

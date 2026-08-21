@@ -96,6 +96,16 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				se := p.ScriptEngine
 {% for param in invoke_info.params %}
 				{# Raw string: no escaping. See entry_exit_actions.go.jinja2. #}
+				{# §scxml-6.4.3's "if the names do not match, the Processor MUST
+				   NOT add the value ... to the invoked session's data model" is
+				   NOT decided here. `SetParamInScriptEngine` defers to the
+				   child's `InitializeDataModel`, which applies each pending
+				   param only when `HasVariable` says the child declared it.
+				   Measured 2026-08-21: adding a second, codegen-time copy of
+				   that filter here changed no observable — the fixture
+				   `invoke_param_seeds_declared_child_data` is green either way
+				   — and one clause implemented twice is the defect that round
+				   was repaying. #}
 				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); err == nil {
 					childPolicy.SetParamInScriptEngine("{{ param.name | escape_go }}", se.ToScriptLiteral(val))
 				}
