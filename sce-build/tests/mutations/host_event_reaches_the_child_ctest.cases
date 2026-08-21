@@ -1,0 +1,107 @@
+# Mutation cases for W3C SCXML Appendix D's preliminary step at a host-facing
+# door — the two C++ engines that ctest drives.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/host_event_reaches_the_child_ctest.cases`.
+#
+# The contract: `mainEventLoop` runs `applyFinalize` and the autoforward `send`
+# against the external event it is about to select transitions for, whichever
+# way that event reached the machine. Both engines have more than one way in —
+# the AOT engine's `processEvent()` hands the event straight to
+# `executeTransition`, and the Interpreter's `processEvent()` is called by a
+# host that went through no event raiser — and both had the step bound to the
+# queue drain instead of to the event.
+#
+# There are no Go / Rust / Python / Kotlin cases here because those engines
+# have one door: their host-facing call raises onto the external queue and lets
+# the drain take it, so there is no second site a mutation could desynchronise.
+# The absence is the measurement, not an omission.
+#
+# ⚠ A case that edits `sce/include/static/StaticExecutionEngine.h` costs a full
+# C++ rebuild, because every generated machine includes it. Measured
+# 2026-08-20 on a sibling axis: six such cases took forty-five minutes.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/static/StaticExecutionEngine.h sce/src/runtime/StateMachine.cpp
+mutation_oracles tests/integration/HostEventReachesTheChildTest.cpp tests/integration/HostEventReachesTheChildAotTest.cpp tests/integration/AutoforwardInternalQueueTest.cpp
+
+# ── C++ AOT: the host door skips the step entirely ─────────────────
+#
+# This is the defect as it was found on 2026-08-21. The queue drain still
+# forwards, so all four `autoforward_*` fixtures stay green — they never use
+# this door. Only `HostEventReachesTheChildAotTest` can see it.
+
+mutation_case "the cpp aot host door skips the preliminary step" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        const Event event = eventWithMeta.event;
+        applyExternalEventPreamble(eventWithMeta);
+""",
+     """        const Event event = eventWithMeta.event;
+        // MUTANT: the host door hands the event straight to transition selection.
+""")
+PY
+
+# ── C++ AOT: the host door runs the step, but after selection ──────
+#
+# Presence is not the contract; position is. Appendix D forwards BEFORE
+# `selectTransitions`, so a parent whose transition body answers the same event
+# must not get there first. Forwarding afterwards hands the child the parent's
+# reply ahead of the event that caused it.
+
+mutation_case "the cpp aot host door forwards after it has already answered" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        const Event event = eventWithMeta.event;
+        applyExternalEventPreamble(eventWithMeta);
+
+        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(); });""",
+     """        const Event event = eventWithMeta.event;
+
+        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(); });
+        applyExternalEventPreamble(eventWithMeta);  // MUTANT: after selection, not before""")
+PY
+
+# ── C++ AOT: the queue drain loses the step ────────────────────────
+#
+# The other end of the shared helper. `autoforward_dequeue_point` and its three
+# siblings own this one — the case is here so that the file states both halves
+# of what one function now serves, and so a future edit that inlines it back
+# into one caller is reported.
+
+mutation_case "the cpp aot queue drain skips the preliminary step" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """            Event event = eventWithMeta.event;
+            applyExternalEventPreamble(eventWithMeta);
+            recordEventOutcome(event, executeTransition(event));""",
+     """            Event event = eventWithMeta.event;
+            recordEventOutcome(event, executeTransition(event));""")
+PY
+
+# ── Interpreter: the host door does not declare the event external ─
+#
+# The autoforward site keys on `isCurrentEventFromExternalQueue()`, a
+# thread-local the raiser establishes. A host goes through no raiser, so
+# without this the flag is whatever the last dispatch left — cleared, hence
+# false, and the child sees nothing the host delivers.
+
+mutation_case "the interpreter host door leaves the queue category unset" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    hostContext.isExternalQueue = true;""",
+     """    hostContext.isExternalQueue = false;  // MUTANT: a host event is not declared external""")
+PY
+
+# ── Interpreter: the raiser callback goes through the host door ────
+#
+# The other direction, and the reason the two doors are separate functions
+# rather than one with a flag defaulted. An internal event dispatched through
+# the host door would be relabelled external and forwarded to every
+# `autoforward` child — which is what `AutoforwardInternalQueueTest` forbids:
+# `error.*` stays out of the forwarded set because of the queue it was raised
+# onto, not because of how its name is spelled.
+
+mutation_case "the interpreter raiser callback uses the host door" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """                    auto result = processDispatchedEvent(eventName, eventData);""",
+     """                    auto result = processEvent(eventName, eventData);  // MUTANT: relabels internal as external""")
+PY

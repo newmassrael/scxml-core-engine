@@ -381,7 +381,12 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
         // W3C SCXML: Don't process events if child is in final state
         if (childSM->isRunning() && !childSM->isInFinalState()) {
-            auto result = childSM->processEvent(eventName, eventData);
+            // This callback IS the raiser dispatching one of the child's own
+            // queued events, so the queue category it established stands.
+            // `processEvent` is the host-facing door and would relabel an
+            // internal event external, which decides whether the child's own
+            // autoforward children see it — see StateMachine.h.
+            auto result = childSM->processDispatchedEvent(eventName, eventData);
             SCE_LOG_DEBUG("EventRaiser callback result - session: {}, event: '{}', success: {}", childSessionId,
                           eventName, result.success);
             return result.success;

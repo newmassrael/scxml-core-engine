@@ -635,9 +635,15 @@ private:
      *
      * §scxml-3.13: External event processing with full macrostep completion.
      *
-     * @param event Event to process
+     * Takes the carrier rather than the bare event because an external event
+     * is more than its name here: §scxml-D-mainEventLoop's preliminary step
+     * reads the metadata to decide which `<invoke>` a `<finalize>` belongs to
+     * and what an `autoforward` child is handed, so a door that only knew the
+     * name could not run it.
+     *
+     * @param eventWithMeta Event, plus whatever the host said about it
      */
-    void processEventImpl(Event event) {
+    void processEventImpl(const EventWithMetadata &eventWithMeta) {
         // §scxml-3.13: a host call is one turn as well as one macrostep
         // boundary, so the `<onentry>` this event's transition runs arms its
         // `<send delay>`s against a single instant — see `beginTurn()`.
@@ -652,6 +658,15 @@ private:
         // way.
         macrostepTruncated_ = false;
         macrostepMicrostepsTaken_ = 0;
+
+        // §scxml-D-mainEventLoop: the preliminary step is owed to the event,
+        // not to the queue. This door bypasses `processNextExternalEvent`, so
+        // it has to run the step itself or an `autoforward` child never sees
+        // what the host delivered and a `<finalize>` never runs for a child
+        // event a transport relayed in this way.
+        const Event event = eventWithMeta.event;
+        applyExternalEventPreamble(eventWithMeta);
+
         const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(); });
         // §scxml-3.1.2: this entry point takes an event straight from the host,
         // so it is the same fact `processNextExternalEvent` records — unlike
@@ -1763,6 +1778,85 @@ protected:
     }
 
     /**
+     * @brief Run the preliminary step every external event gets before
+     *        transition selection (§scxml-D-mainEventLoop)
+     *
+     * Appendix D binds this step to *an external event the machine is about to
+     * process*, not to the queue it happened to arrive on:
+     *
+     *     externalEvent = externalQueue.dequeue()
+     *     datamodel["_event"] = externalEvent
+     *     for state in configuration:
+     *         for inv in state.invoke:
+     *             if inv.invokeid == externalEvent.invokeid:
+     *                 applyFinalize(inv, externalEvent)
+     *             if inv.autoforward:
+     *                 send(inv.id, externalEvent)
+     *     enabledTransitions = selectTransitions(externalEvent)
+     *
+     * This engine has two doors an external event can come through — the
+     * queue drain and `processEvent()`, which hands the event straight to
+     * `executeTransition` — and the step belongs to both. It lives in one
+     * function for the reason ARCHITECTURE.md gives for every shared helper:
+     * two copies are two chances for one of them to stop running, and this
+     * seam has already produced that defect once. `processEvent(Event, const
+     * EventMetadata&)` used to be the door that skipped
+     * `populatePolicyFromMetadata`, so a host handed over a payload the
+     * document could never see. Measured 2026-08-21: the same door was still
+     * skipping `<finalize>` and autoforward, so an `autoforward` child saw
+     * nothing a host delivered this way while the identical machine driven
+     * through the queue forwarded it.
+     */
+    void applyExternalEventPreamble(const EventWithMetadata &eventWithMeta) {
+        currentEventInvokeId_ = eventWithMeta.invokeId;
+        SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, eventWithMeta);
+
+        // §scxml-6.5: Execute finalize BEFORE processing child events
+        if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata, StaticExecutionEngine<StatePolicy>>) {
+            policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
+        }
+
+        // §scxml-D-mainEventLoop: autoforward belongs to the same preliminary
+        // step as `<finalize>` above — both run against the external event
+        // this macrostep is about to select transitions for, and both run
+        // before that selection. §scxml-6.4.2 fixes the position in prose as
+        // well: the parent forwards "at the point at which it removes it from
+        // the external event queue".
+        //
+        // Forwarding where the event is *enqueued* instead is a different
+        // algorithm, not an earlier one. `raiseExternal` runs inside whatever
+        // executable content produced the event, so a transition body that
+        // queues two events hands the child both of them before the parent
+        // has processed either — the child runs a whole event ahead and the
+        // two sessions stop agreeing on what has happened. Run-to-completion
+        // is a property of the loop's shape, so the forward has to live where
+        // the event is taken up, which is what this function is.
+        //
+        // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
+        //
+        // SCE_MESH.md §mesh-9.6.5: this is the "parent runtime observes each
+        // external event" point the section names, and the copy handed to the
+        // policy is verbatim — §scxml-6.4 requires an exact copy, so the child
+        // must see the same `_event.data`, `_event.origin`, `_event.sendid`,
+        // `_event.origintype` and `_event.invokeid` the parent sees. Only
+        // `target` is withheld (a routing decision owned by the originating
+        // `<send>`; inheriting it would bounce the copy back onto the mesh
+        // instead of delivering it to the child) — see ForwardedEvent.h.
+        if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
+            ::SCE::Common::ForwardedEvent forwarded;
+            forwarded.name = policy_.getEventName(eventWithMeta.event);
+            forwarded.data = eventWithMeta.data;
+            forwarded.origin = eventWithMeta.origin;
+            forwarded.sendId = eventWithMeta.sendId;
+            forwarded.type = eventWithMeta.type;
+            forwarded.originType = eventWithMeta.originType;
+            forwarded.invokeId = eventWithMeta.invokeId;
+            SCE_LOG_DEBUG("AOT applyExternalEventPreamble: Autoforwarding external event '{}'", forwarded.name);
+            policy_.forwardToAutoforwardChildren(forwarded, *this);
+        }
+    }
+
+    /**
      * @brief Take exactly one event off the external queue (§scxml-D-mainEventLoop)
      *
      * Runs the preliminary `<finalize>` / autoforward step against it, then
@@ -1794,55 +1888,7 @@ protected:
         macrostepMicrostepsTaken_ = 0;
         {
             Event event = eventWithMeta.event;
-            currentEventInvokeId_ = eventWithMeta.invokeId;
-            SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, eventWithMeta);
-
-            // §scxml-6.5: Execute finalize BEFORE processing child events
-            if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata, StaticExecutionEngine<StatePolicy>>) {
-                policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
-            }
-
-            // §scxml-D-mainEventLoop: autoforward belongs to the same
-            // preliminary step as `<finalize>` above — both run against the
-            // event this drain has just removed from the external queue, and
-            // both run before transition selection. §scxml-6.4.2 fixes the
-            // position in prose as well: the parent forwards "at the point at
-            // which it removes it from the external event queue".
-            //
-            // Forwarding where the event is *enqueued* instead is a different
-            // algorithm, not an earlier one. `raiseExternal` runs inside
-            // whatever executable content produced the event, so a transition
-            // body that queues two events hands the child both of them before
-            // the parent has processed either — the child runs a whole event
-            // ahead and the two sessions stop agreeing on what has happened.
-            // Run-to-completion is a property of this loop's shape, so the
-            // forward has to live in the loop.
-            //
-            // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
-            //
-            // SCE_MESH.md §mesh-9.6.5: this is the "parent runtime observes
-            // each external event" point the section names, and the copy
-            // handed to the policy is verbatim — §scxml-6.4 requires an exact
-            // copy, so the child must see the same `_event.data`,
-            // `_event.origin`, `_event.sendid`, `_event.origintype` and
-            // `_event.invokeid` the parent sees. Only `target` is withheld (a
-            // routing decision owned by the originating `<send>`; inheriting
-            // it would bounce the copy back onto the mesh instead of
-            // delivering it to the child) — see ForwardedEvent.h.
-            if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
-                ::SCE::Common::ForwardedEvent forwarded;
-                forwarded.name = policy_.getEventName(eventWithMeta.event);
-                forwarded.data = eventWithMeta.data;
-                forwarded.origin = eventWithMeta.origin;
-                forwarded.sendId = eventWithMeta.sendId;
-                forwarded.type = eventWithMeta.type;
-                forwarded.originType = eventWithMeta.originType;
-                forwarded.invokeId = eventWithMeta.invokeId;
-                SCE_LOG_DEBUG("AOT processNextExternalEvent: Autoforwarding dequeued external event '{}'",
-                              forwarded.name);
-                policy_.forwardToAutoforwardChildren(forwarded, *this);
-            }
-
+            applyExternalEventPreamble(eventWithMeta);
             recordEventOutcome(event, executeTransition(event));
         }
         return true;
@@ -2155,7 +2201,14 @@ public:
         if (!isRunning_) {
             return;
         }
-        processEventImpl(event);
+        // §scxml-D-mainEventLoop: a host event with nothing said about it is
+        // still an external event, so it is carried the same way the queue
+        // carries one. The empty carrier is the point, not an omission — the
+        // fields it clears are the previous event's, and leaving them standing
+        // is what let a stale `_event.data` be read as this event's.
+        EventWithMetadata carried;
+        carried.event = event;
+        processEventImpl(carried);
     }
 
     /**
@@ -2176,14 +2229,17 @@ public:
         // merely be stored. `currentEventMetadata_` is read by the invoke
         // finalize path; what fills `_event.data` / `.origin` / `.sendid` is
         // the policy's pending fields, and those were populated only by the
-        // two QUEUE drains below — so a host that called this overload handed
-        // over a payload the document could never see. Measured 2026-08-16:
-        // five backends deliver a host payload on their equivalent call and
-        // this one silently dropped it, with `_event.data` left at whatever
-        // the previous dequeue had put there.
+        // QUEUE drain — so a host that called this overload handed over a
+        // payload the document could never see. Measured 2026-08-16: five
+        // backends deliver a host payload on their equivalent call and this
+        // one silently dropped it, with `_event.data` left at whatever the
+        // previous dequeue had put there.
         //
-        // The same helper the queue path uses, so the two cannot answer
-        // differently about what a metadata field means.
+        // Carried rather than applied here, so this door and the queue drain
+        // reach `applyExternalEventPreamble` with the same shape and cannot
+        // answer differently about what a metadata field means. A relayed
+        // child event arrives through here with its `invokeid` intact, which
+        // is what §scxml-6.5 matches a `<finalize>` on.
         EventWithMetadata carried;
         carried.event = event;
         carried.data = metadata.data;
@@ -2193,8 +2249,7 @@ public:
         carried.originType = metadata.originType;
         carried.invokeId = metadata.invokeId;
         carried.typedData = metadata.typedData;
-        SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, carried);
-        processEventImpl(event);
+        processEventImpl(carried);
     }
 
     /**

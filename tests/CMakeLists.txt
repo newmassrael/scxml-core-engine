@@ -771,6 +771,8 @@ add_executable(integration_tests
     integration/SendParamPayloadAotTest.cpp
     integration/InvokeParamSeedsDeclaredChildDataTest.cpp
     integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp
+    integration/HostEventReachesTheChildTest.cpp
+    integration/HostEventReachesTheChildAotTest.cpp
     integration/SCXMLEventTest.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
@@ -1299,6 +1301,16 @@ sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUT
 # "the child evaluated this text".
 sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist inv_infinite
+)
+
+# §scxml-D-mainEventLoop: the preliminary `<finalize>` / autoforward step is
+# owed to the external event, not to the queue it arrived on. This engine has
+# a second door — `processEvent()` hands an event straight to transition
+# selection — and the four sibling `autoforward_*` stems only ever drive it
+# through the drain, so none of them can see a step that runs at one door and
+# not the other.
+sce_generate_static_integration_test(host_event_reaches_the_child ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_probe
 )
 
 # Wire the integration headers + include path into the integration_tests
