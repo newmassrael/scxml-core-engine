@@ -1093,7 +1093,7 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
                 SCE_LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
 
                 // Create and start the generic W3C HTTP test server
-                W3CHttpTestServer httpServer(BASIC_HTTP_TEST_PORT, BASIC_HTTP_TEST_PATH);
+                W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
 
                 if (!httpServer.start()) {
                     SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
@@ -1533,7 +1533,7 @@ TestReport W3CTestRunner::runSpecificTest(int testId) {
                 SCE_LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
 
                 // Create and start the generic W3C HTTP test server
-                W3CHttpTestServer httpServer(BASIC_HTTP_TEST_PORT, BASIC_HTTP_TEST_PATH);
+                W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
 
                 if (!httpServer.start()) {
                     SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
@@ -1622,7 +1622,7 @@ TestReport W3CTestRunner::runTest(const std::string &testId) {
             if (requiresHttpServer(testDir)) {
                 SCE_LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
 
-                W3CHttpTestServer httpServer(BASIC_HTTP_TEST_PORT, BASIC_HTTP_TEST_PATH);
+                W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
 
                 if (!httpServer.start()) {
                     SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
@@ -1698,7 +1698,7 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
                     if (requiresHttpServer(testDir)) {
                         SCE_LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
 
-                        W3CHttpTestServer httpServer(BASIC_HTTP_TEST_PORT, BASIC_HTTP_TEST_PATH);
+                        W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
 
                         if (!httpServer.start()) {
                             SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
