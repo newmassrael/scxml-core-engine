@@ -36,6 +36,7 @@ pub mod event_data_arrives_as_sent;
 pub mod event_origin_is_a_location;
 pub mod event_schema_native;
 pub mod eventless_macrostep_is_bounded;
+pub mod host_event_reaches_the_child;
 pub mod host_processor;
 pub mod internal_chain_is_bounded;
 pub mod invoke_param_seeds_declared_child_data;

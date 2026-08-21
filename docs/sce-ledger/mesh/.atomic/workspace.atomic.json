@@ -3315,6 +3315,11 @@
         {
           "file": "tests/mesh/test_mesh_session_f_autoforward.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "applyExternalEventPreamble",
+          "kind": "implements"
         }
       ]
     },
@@ -3371,6 +3376,7 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
+  "mutation_reasons": [],
   "frames": {},
   "branches": {},
   "entities": {},
@@ -3385,5 +3391,5 @@
   "parameter_deltas": {},
   "parameter_gates": {},
   "fact_counts": {},
-  "schema_version": 44
+  "schema_version": 46
 }

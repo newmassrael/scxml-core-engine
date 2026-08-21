@@ -752,6 +752,37 @@ comparison where the seeded value lives, and a bare event name carries
 the answer with no payload path in between. The C11 ordering question is
 recorded as its own debt.
 
+`host_event_reaches_the_child` covers the half of §scxml-D-mainEventLoop's
+preliminary step that the four `autoforward_*` fixtures cannot reach. Those
+four pin *which* events are forwarded, which are not, which fields survive
+and *where in the loop* the forward sits — and all four let the machine
+forward events it queued for itself, so every one of them drives the engine
+through its external drain. Appendix D binds the step to the external event
+the machine is about to select transitions for, not to the queue it arrived
+on, so an engine with a second way in owes the step there too. This fixture
+hands the machine an event from outside, through whatever entry point the
+channel offers a host, and asks whether the `autoforward` child sees it.
+
+Measured 2026-08-21: the C++ AOT engine had the step written inline in its
+queue drain, so `processEvent()` skipped it — the identical machine
+forwarded a `hostPing` raised onto the queue and dropped one handed to
+`processEvent()`. Only the door differed. The remedy is the shared
+`applyExternalEventPreamble`, which both doors now call; the same seam had
+already lost `populatePolicyFromMetadata` once, for the same reason.
+
+The other six channels answer this by construction — Rust `process_event`,
+Go `ProcessEvent`, Python `send_event` and Kotlin `send` all raise onto the
+external queue and let the drain take it, and C11 offers only
+`_raise_external`. Their drivers are here to keep that true rather than to
+report a divergence: an entry point added later that hands the event
+straight to the transition selector goes red in the channel that adds it.
+
+The verdict is decided by a race the child cannot lose either way, so
+neither outcome depends on a timeout: the child answers `sawHostPing` if
+the forwarded event reaches it and `sawMarkerOnly` if all it ever sees is
+the `marker` the parent's own transition body sent. Both are top-level
+`<final>` states of the child, following `autoforward_internal_queue`.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

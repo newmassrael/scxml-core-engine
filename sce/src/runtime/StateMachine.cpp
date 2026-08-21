@@ -460,6 +460,35 @@ void StateMachine::stop() {
 }
 
 StateMachine::TransitionResult StateMachine::processEvent(const std::string &eventName, const std::string &eventData) {
+    // §scxml-3.12 classifies an event a host hands to a running machine as
+    // an external one, and W3C SCXML Appendix D's mainEventLoop owes every
+    // external event the preliminary step — `<finalize>` and the autoforward
+    // copy — before it selects transitions for it.
+    //
+    // That step keys on `isCurrentEventFromExternalQueue()`, which is a
+    // thread-local the EventRaiser establishes around each dispatch. A host
+    // calling this method goes through no raiser, so the flag it read was
+    // whatever the last dispatch left behind: cleared, hence false. Measured
+    // 2026-08-21 — an `autoforward` child saw nothing a host delivered this
+    // way, while the identical document forwarded the same event when the
+    // raiser carried it. The C++ AOT engine had the same defect at its own
+    // host-facing door, for the same reason: the step was bound to the path
+    // instead of to the event.
+    //
+    // Establishing the context here rather than forcing the flag deeper keeps
+    // the queue category one fact with one owner. The raiser's own callbacks
+    // reach the machine through `processDispatchedEvent` below, so an internal
+    // event still arrives with `isExternalQueue` false and stays out of the
+    // forwarded set — which is what `autoforward_internal_queue` pins.
+    EventRaiserImpl::EventContext hostContext;
+    hostContext.isExternalQueue = true;
+    EventRaiserImpl::EventContextGuard hostGuard(std::move(hostContext));
+
+    return processDispatchedEvent(eventName, eventData);
+}
+
+StateMachine::TransitionResult StateMachine::processDispatchedEvent(const std::string &eventName,
+                                                                    const std::string &eventData) {
     // §scxml-5.10: Check if there's an origin session ID from EventRaiser thread-local storage
     std::string originSessionId = EventRaiserImpl::getCurrentOriginSessionId();
 
@@ -4123,15 +4152,19 @@ void StateMachine::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
             SCE_LOG_DEBUG(
                 "StateMachine: EventRaiser callback setup - EventRaiser instance: {}, StateMachine instance: {}",
                 (void *)eventRaiserImpl.get(), (void *)this);
-            // Set StateMachine's processEvent method as EventRaiser callback
+            // Set StateMachine's dispatch entry point as EventRaiser callback.
+            // `processDispatchedEvent`, not `processEvent`: the raiser has
+            // already established which queue this event came off, and the
+            // host-facing overload would overwrite that with "external" and
+            // hand an internal event to every autoforward child.
             eventRaiserImpl->setEventCallback([this](const std::string &eventName,
                                                      const std::string &eventData) -> bool {
                 if (isRunning_) {
-                    SCE_LOG_DEBUG("EventRaiser callback: StateMachine::processEvent called - event: '{}', data: '{}', "
-                                  "StateMachine instance: {}",
+                    SCE_LOG_DEBUG("EventRaiser callback: StateMachine::processDispatchedEvent called - event: '{}', "
+                                  "data: '{}', StateMachine instance: {}",
                                   eventName, eventData, (void *)this);
                     // Use 2-parameter version (no originSessionId from old callback)
-                    auto result = processEvent(eventName, eventData);
+                    auto result = processDispatchedEvent(eventName, eventData);
                     SCE_LOG_DEBUG("EventRaiser callback: processEvent result - success: {}, state transition: {} -> {}",
                                   result.success, result.fromState, result.toState);
                     return result.success;
