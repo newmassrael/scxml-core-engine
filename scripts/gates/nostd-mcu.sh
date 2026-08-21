@@ -138,9 +138,14 @@ sce_footprint_weigh() {
         || sce_gate_fail "footprint probe produced no staticlib at $FOOTPRINT_LIB ($label)"
 
     local syms bytes lo hi
+    # `-t d` rather than converting hex in awk: `strtonum` is a GNU extension,
+    # and this machine's /usr/bin/awk is mawk. Measured the hard way — the gate
+    # was written and verified on a build host where awk is gawk, and the first
+    # push it guarded died with `function strtonum never defined` after every
+    # earlier gate had passed. Letting nm print decimal needs no awk dialect.
     read -r syms bytes < <(
-        nm --print-size --size-sort -C "$FOOTPRINT_LIB" 2>/dev/null |
-            awk '/sce_rust_runtime::engine::Engine</ { n++; s += strtonum("0x" $2) }
+        nm --print-size --size-sort -t d -C "$FOOTPRINT_LIB" 2>/dev/null |
+            awk '/sce_rust_runtime::engine::Engine</ { n++; s += $2 }
                  END { printf "%d %d\n", n, s }'
     )
 
@@ -173,4 +178,4 @@ sce_footprint_weigh() {
 # compiling and nobody finds out until a consumer sets it.
 sce_footprint_weigh "diagnostics on" "$TOTAL_BYTES"
 sce_footprint_weigh "diagnostics off" "$TOTAL_BYTES_NO_DIAGNOSTICS" \
-    --features no-macrostep-diagnostics
+    --features no_macrostep_diagnostics
