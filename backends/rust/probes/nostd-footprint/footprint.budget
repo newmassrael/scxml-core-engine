@@ -23,7 +23,7 @@
 # Sum of every Engine<..> symbol in the staticlib, as the engine ships.
 TOTAL_BYTES=1666
 
-# The same sum with `no-macrostep-diagnostics`, which compiles the macrostep
+# The same sum with `no_macrostep_diagnostics`, which compiles the macrostep
 # REPORT out and leaves the bound in place.
 #
 # The difference — 44 bytes per instantiation — is the number that feature is
