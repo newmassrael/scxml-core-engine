@@ -149,7 +149,9 @@ JNIEXPORT jstring JNICALL JNI_METHOD(eval)(JNIEnv *env, jclass, jlong handle, js
 //   "T"         — true
 //   "F"         — false
 //   "I" + int   — integer (decimal, fits in int64)
-//   "D" + float — double (%.17g format)
+//   "D" + float — double (%.17g format, or ECMAScript's `NaN` /
+//                 `Infinity` / `-Infinity`, which is what the Kotlin
+//                 decoder's `toDoubleOrNull()` accepts)
 //   "S" + str   — string (rest of string is the value)
 //   "R" + id    — reference (stored in JS __sce_refs[id])
 //   null        — error (call getLastError)
@@ -189,6 +191,19 @@ JNIEXPORT jstring JNICALL JNI_METHOD(evalExpression)(JNIEnv *env, jclass, jlong 
             if (!std::isnan(dval) && !std::isinf(dval) && dval == std::floor(dval) && dval >= -9007199254740992.0 &&
                 dval <= 9007199254740992.0) {
                 encoded = "I" + std::to_string(static_cast<int64_t>(dval));
+            } else if (std::isnan(dval)) {
+                // §scxml-B-2: the data model is ECMAScript, so a non-finite
+                // number is spelled the way ECMAScript spells it. `%.17g`
+                // answers `nan` / `inf`, and the Kotlin side parses this field
+                // with `String.toDoubleOrNull()`, which accepts `NaN` and
+                // `Infinity` and rejects the C spellings — so a value that
+                // crossed as `inf` decoded to null and reached the document as
+                // `undefined`. Found 2026-08-21 by an `<invoke>`
+                // `<param expr="1/0"/>`, which arrived collapsed on this
+                // engine while every other channel delivered it.
+                encoded = "DNaN";
+            } else if (std::isinf(dval)) {
+                encoded = dval > 0 ? "DInfinity" : "D-Infinity";
             } else {
                 char buf[64];
                 snprintf(buf, sizeof(buf), "%.17g", dval);
