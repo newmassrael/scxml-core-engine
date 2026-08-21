@@ -25,7 +25,25 @@ std::string resultToString(const ScriptResult &result, IScriptEngine *engine, co
         return result.getValue<std::string>();
     } else if (std::holds_alternative<double>(value)) {
         double val = result.getValue<double>();
-        if (val == std::floor(val)) {
+        // §scxml-B-1: the data model is ECMAScript, so a number's text is its
+        // `String(value)`. The three non-finite spellings are ECMAScript's, not
+        // iostream's — `oss << nan` writes "nan", which is a C++ fact about a
+        // value the document wrote as `NaN`.
+        //
+        // The magnitude guard is not decoration. `std::floor(inf) == inf`, so
+        // an infinity used to take the integer branch below and reach
+        // `static_cast<int64_t>(inf)`, which is undefined behaviour — measured
+        // as INT64_MIN, i.e. a `<param>` carrying `-9223372036854775808` where
+        // the document sent Infinity. Every finite double above 2^63 casts the
+        // same way. The four ported runtimes (Rust, Go, Python, Kotlin) already
+        // carry this bound; this is the original catching up with its ports.
+        if (std::isnan(val)) {
+            return "NaN";
+        }
+        if (std::isinf(val)) {
+            return val > 0 ? "Infinity" : "-Infinity";
+        }
+        if (val == std::floor(val) && std::fabs(val) < 1e15) {
             return std::to_string(static_cast<int64_t>(val));
         } else {
             // W3C SCXML: Use ECMAScript-compatible number formatting
