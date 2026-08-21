@@ -8071,6 +8071,16 @@
           "file": "sce/src/events/PlatformEventRaiserHelper.cpp",
           "symbol": "pollScheduler",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "symbol": "typed_params_to_wire_strings",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "WireParamsFromTypedParams",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

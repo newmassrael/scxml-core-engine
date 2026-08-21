@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 45fa83625e6b8ed5f1d3803a56ad41a23f2d14f770e66b07d9e986dd8b492ac0
+// template-hash: 425ba724b674422eeb8ae587e59be1ebd91946f100b21ea20ddcaaca3bba7133
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -673,7 +673,7 @@ impl StatePolicy for Test509Policy {
                                 if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
                                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test509Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL"));
                                 } else {
-                                    let mut http_params =
+                                    let http_params =
                                         std::collections::HashMap::<String, Vec<String>>::new();
                                     engine.perform_http_send(
                                         _rt.to_string(),

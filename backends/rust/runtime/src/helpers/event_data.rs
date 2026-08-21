@@ -185,6 +185,46 @@ pub fn build_json_from_typed_params(params: &BTreeMap<String, Vec<ScriptValue>>)
     format!("{{{}}}", parts.join(","))
 }
 
+/// The same once-evaluated params, as the form parameters a transport takes.
+///
+/// §scxml-6.2.3 requires a `<send>`'s arguments to be evaluated when the
+/// element is evaluated, once — so the map a BasicHTTP POST (§scxml-C-2) or a
+/// host-served processor sends is a RENDERING of that evaluation, never a
+/// second reading of the data model. Re-reading was what made the two
+/// disagree: the HTTP arm collected `<param>` only, so `namelist="Var1"` was
+/// evaluated into the payload and then posted with no parameters at all,
+/// against §scxml-C-2's "MUST map its variable names and values to HTTP POST
+/// parameters" — and a `<param>` whose expression failed reported
+/// `error.execution` twice, once per evaluation.
+///
+/// Order is the map's, and a repeated name keeps every value in document
+/// order, because a form parameter may repeat where a JSON key may not.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::BTreeMap;
+/// use sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings;
+/// use sce_rust_runtime::ScriptValue;
+///
+/// let mut params = BTreeMap::new();
+/// params.insert("n".to_string(), vec![ScriptValue::Int(7)]);
+/// let wire = typed_params_to_wire_strings(&params);
+/// assert_eq!(wire["n"], vec!["7".to_string()]);
+/// ```
+pub fn typed_params_to_wire_strings(
+    params: &BTreeMap<String, Vec<ScriptValue>>,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut wire = std::collections::HashMap::with_capacity(params.len());
+    for (name, values) in params {
+        wire.insert(
+            name.clone(),
+            values.iter().map(script_value_to_wire_string).collect(),
+        );
+    }
+    wire
+}
+
 /// §scxml-5.10: Build JSON string from evaluated params.
 ///
 /// Supports duplicate param names (W3C test 178) by storing multiple values
