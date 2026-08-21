@@ -332,41 +332,50 @@
         return 0
 
     def _build_http_params(self, engine, params_specs, namelist: str):
-        """W3C SCXML C.2 — assemble the form-encoded multi-map handed
-        to `engine.perform_http_send`. `params_specs` is a sequence of
-        `(name, lua_expr)` tuples (one per `<param>`); `namelist` is
-        the whitespace-separated variable list. Eval errors on an
-        individual `<param>` drop that pair and report it: W3C SCXML
-        5.7.1 asks for both halves — `error.execution` on the internal
-        queue AND the name and value ignored — and it asks for them
-        wherever a `<param>` is evaluated, so the wire this send crosses
-        does not change the answer. The surrounding block is NOT
-        aborted; only the pair is."""
+        """W3C SCXML C.2 — the form-encoded multi-map handed to
+        `engine.perform_http_send`, RENDERED from the one evaluation
+        `_eval_send_payload` performs.
+
+        W3C SCXML 6.2.3 evaluates a `<send>`'s arguments when the element
+        is evaluated, once. This used to read the data model a second
+        time, and the two readings answered differently: the namelist arm
+        here swallowed an unreadable item (`except: continue`) where
+        `_eval_send_payload` reports `error.execution` and abandons the
+        message, and a `<param>` that failed reported the error twice on
+        the arm that ran both. Rendering the payload keeps one answer —
+        and keeps C.2's "MUST map its variable names and values to HTTP
+        POST parameters" true for a namelist without spelling it twice.
+
+        Used by the arm that has no payload yet — the statically-known
+        absolute URL. An arm that already called `_eval_send_payload`,
+        because it also needs the data for a non-HTTP target, renders its
+        result with `_wire_params_from_payload` instead, so neither path
+        evaluates twice."""
+        return self._wire_params_from_payload(
+            self._eval_send_payload(engine, params_specs, "", "", namelist)
+        )
+
+    def _wire_params_from_payload(self, marshalled):
+        """The rendering half of the above: an evaluated `<send>` payload
+        as W3C SCXML C.2 form parameters.
+
+        A repeated name keeps every value, in document order — a form
+        parameter may repeat where a JSON key may not, which is why the
+        payload's list form is unwrapped here rather than stringified. A
+        payload that is not a name/value mapping (a `<content>` body, or
+        the empty string a `<send>` with no arguments returns) carries no
+        form parameters at all."""
+        if not isinstance(marshalled, dict):
+            return {}
         result = {}
-        if namelist:
-            for var in namelist.split():
-                try:
-                    value = engine._script_engine.get_variable(
-                        self._session_id, var
-                    )
-                except _ScriptError:
-                    continue
-                result.setdefault(var, []).append(value.to_wire_string())
-        for name, lua_expr in params_specs:
-            try:
-                value = engine._script_engine.evaluate_expression(
-                    self._session_id, lua_expr
-                )
-            except _ScriptError:
-                self._raise_error_execution(
-                    engine, f"<send> <param name='{name}'> expr failed to evaluate"
-                )
-                continue
-            # `str(value.to_python())` spelled these in Python — `True`
-            # where every other channel writes `true`, `[1, 2]` where the
-            # wire form is `[1,2]`. The rendering is the value's, not the
-            # sender's language's.
-            result.setdefault(name, []).append(value.to_wire_string())
+        for name, value in marshalled.items():
+            values = value if isinstance(value, list) else [value]
+            # `str(...)` spelled these in Python — `True` where every other
+            # channel writes `true`, `[1, 2]` where the wire form is `[1,2]`.
+            # The rendering is the value's, not the sender's language's.
+            result[name] = [
+                _ScriptValue.of(item).to_wire_string() for item in values
+            ]
         return result
 
     def _eval_send_payload(

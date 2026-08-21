@@ -188,11 +188,11 @@
 {{ indent }}    pass  # W3C 6.2: invalid target sentinel — no error.execution descriptor declared
 {% endif %}
 {{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
-{{ indent }}    _http_params_dyn = self._build_http_params(engine, [
-{%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
-{%- endfor -%}
-], {{ action.namelist | py_string_literal }})
+{# W3C SCXML 6.2.3: the arguments were evaluated once, above, before the
+   target decided which transport carries them. The form is a rendering of
+   that payload — re-reading the data model here is what let this arm and
+   the payload disagree about an unreadable namelist item. #}
+{{ indent }}    _http_params_dyn = self._wire_params_from_payload(_data)
 {% if action.contentexpr -%}
 {{ indent }}    try:
 {{ indent }}        _http_content_dyn = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.contentexpr | to_lua_expr | py_string_literal }}).to_python())

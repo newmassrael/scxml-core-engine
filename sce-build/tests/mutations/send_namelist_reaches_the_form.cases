@@ -1,0 +1,76 @@
+# Mutation cases for W3C SCXML C.2 + 6.2.3 on the BasicHTTP arm — the half
+# of `<send namelist>` the IRP corpus states and cannot measure.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/send_namelist_reaches_the_form.cases`.
+#
+# Two clauses, and the corpus makes neither falsifiable:
+#
+#   §scxml-C-2 asks that a namelist's names and values become HTTP POST
+#   parameters. test518 is titled exactly that and its whole verdict is
+#   `<transition event="test" target="pass"/>` — it passes on arrival,
+#   whatever the message carried. This channel posted an empty form for as
+#   long as that was the only witness.
+#
+#   §scxml-6.2.3 discards a message whose arguments would not evaluate, and
+#   §scxml-5.9.2 reports it. `<param>`'s per-item exception (§scxml-5.7.1,
+#   "ignore the name and value") has no counterpart for namelist anywhere in
+#   the specification — the two clauses are complementary, not competing.
+#
+# The template reaches `cargo test` only through the committed tree the
+# regeneration below writes, so both halves are declared: the generated file
+# is compiled into the test, and `mutation_regen` is what carries a mutated
+# template into it. Without that bridge `cargo test --no-run` would rebuild
+# the same committed source and every case here would be INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test send_namelist_over_http
+mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2
+mutation_targets backends/rust/runtime/src/helpers/event_data.rs
+mutation_targets backends/rust/tests/src/integration/send_namelist_over_http/send_namelist_over_http_sm.rs
+mutation_regen scripts/regen_send_namelist_over_http.sh
+
+mutation_oracles backends/rust/tests/tests/send_namelist_over_http.rs
+
+# ── The form is built from `<param>` alone ──────────────────────────
+#
+# The defect this fixture was written for, restored exactly: the BasicHTTP
+# arm collects parameters without consulting the evaluated payload, so a
+# document whose only argument is a namelist posts an empty form. The
+# `mapPhase` verdict is what notices, because it reads back what it sent.
+
+mutation_case "the namelist is evaluated and then left out of the form" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     """        let http_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);""",
+     """        let http_params = std::collections::HashMap::<String, Vec<String>>::new();""")
+PY
+
+# ── A broken namelist item stops discarding the message ─────────────
+#
+# §scxml-6.2.3's half. The failure is still reported — the `error.execution`
+# raise above the anchor is untouched — so what this case removes is only
+# the discard, which is the half a channel can drop while still looking
+# well-behaved to a document that watches the error queue.
+
+mutation_case "an unreadable namelist item no longer abandons the send" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     """            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> namelist names '{{ name }}', which is not declared"));
+{% endif %}
+            _send_aborted = true;""",
+     """            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> namelist names '{{ name }}', which is not declared"));
+{% endif %}""")
+PY
+
+# ── The name crosses and the value does not ─────────────────────────
+#
+# §scxml-C-2 names both: "MUST map its variable names AND values". A form
+# carrying the key with nothing under it is what a rendering that forgot the
+# second half produces, and it is indistinguishable from a delivered payload
+# to anything that only checks the event arrived.
+
+mutation_case "the form carries the namelist's name without its value" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_data.rs",
+     """            values.iter().map(script_value_to_wire_string).collect(),""",
+     """            values.iter().map(|_| String::new()).collect(),""")
+PY

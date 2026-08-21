@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 45fa83625e6b8ed5f1d3803a56ad41a23f2d14f770e66b07d9e986dd8b492ac0
+// template-hash: 425ba724b674422eeb8ae587e59be1ebd91946f100b21ea20ddcaaca3bba7133
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -673,20 +673,29 @@ impl StatePolicy for Test354Policy {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
                         let mut _send_aborted = false;
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        // While it was block-scoped they had to, and what they re-read was
+                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                        // posted zero form parameters, against §scxml-C-2.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
                         // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
                         let event_data_string: String = {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                            // delivered, so each name carries a vector. The typed value is kept
-                            // rather than its text — a receiver reading `_event.data.value === 42`
-                            // finds the string "42" unequal.
-                            let mut wire_params: ::std::collections::BTreeMap<
-                                String,
-                                Vec<::sce_rust_runtime::ScriptValue>,
-                            > = ::std::collections::BTreeMap::new();
+                            let wire_params = &mut _send_wire_params;
                             match se.evaluate_expression(&sid, "2") {
                                 Ok(val) => {
                                     wire_params
@@ -744,7 +753,7 @@ impl StatePolicy for Test354Policy {
                             if _send_aborted {
                                 String::new()
                             } else {
-                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(&wire_params)
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
                             }
                         };
                         // W3C SCXML 6.2: event_data defaults to empty if namelist failed

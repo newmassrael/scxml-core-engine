@@ -4492,6 +4492,10 @@
         {
           "file": "scripts/regen_host_event_reaches_the_child_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_send_namelist_over_http_go.sh",
+          "kind": "references"
         }
       ]
     },

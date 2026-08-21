@@ -235,6 +235,25 @@ type EventDataParam struct {
 	Value interface{}
 }
 
+// WireParamsFromTypedParams renders the same once-evaluated params as the
+// form parameters a transport takes.
+//
+// §scxml-6.2.3 evaluates a `<send>`'s arguments when the element is evaluated,
+// once, so the map a BasicHTTP POST sends (W3C SCXML C.2) is a RENDERING of
+// that evaluation rather than a second reading of the data model. The BasicHTTP
+// arm used to re-read: it collected the namelist again with no error arm, so
+// the two readings could only agree while nothing failed.
+//
+// A repeated name keeps every value in document order — a form parameter may
+// repeat where a JSON key may not.
+func WireParamsFromTypedParams(params []EventDataParam) map[string][]string {
+	wire := make(map[string][]string, len(params))
+	for _, p := range params {
+		wire[p.Name] = append(wire[p.Name], ToWireString(p.Value))
+	}
+	return wire
+}
+
 // BuildJSONFromTypedParams builds the JSON `_event.data` a `<send>` ships.
 //
 // W3C test178: a name may repeat and every value must be delivered, so one
