@@ -178,7 +178,23 @@
                         )
                     )
                 except _ScriptError:
-                    pass
+                    # §scxml-5.7.1: BOTH halves — `error.execution` on the
+                    # internal queue AND the name and value ignored. Only the
+                    # silent half was here (`pass`), so a document that
+                    # miscomputed one `<param>` got a child with a `<data>`
+                    # nothing explained and no event to act on.
+                    #
+                    # The clause delegates only the SUCCESSFUL name and value to
+                    # the context — "Otherwise the use of the name and value
+                    # depends on the context in which the <param> element occurs.
+                    # See 5.5 <donedata>, 6.2 <send> and 6.4 <invoke>" — so
+                    # §scxml-6.4.2's "terminate the processing of the element" is
+                    # not what a failing `<param>` costs: the child still starts,
+                    # one pair short, and no `_ActionAbort` is raised here.
+                    self._raise_error_execution(
+                        engine,
+                        {{ ("<invoke> <param name='" ~ param.name ~ "'> expr failed to evaluate") | py_string_literal }},
+                    )
 {% else %}
                 # §scxml-6.4.3: {{ param.name }} matches no top-level `<data>`
                 # of the child, so the Processor MUST NOT add it to the

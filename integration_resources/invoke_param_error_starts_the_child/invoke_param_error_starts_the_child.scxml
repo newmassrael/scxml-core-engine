@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 5.7.1 under 6.4: a `<param>` of an `<invoke>` whose expression
+     will not evaluate.
+
+     Two clauses meet here and only one of them governs, which is the whole
+     reason this fixture exists — the corpus has no document that asks.
+
+       §scxml-6.4.2 says "When the <invoke> element is executed, if the
+       evaluation of its arguments produces an error, the SCXML Processor
+       MUST terminate the processing of the element without further action",
+       and the sentence after it — "Otherwise the Processor MUST start a new
+       logical instance" — makes the alternative explicit: no instance.
+
+       §scxml-5.7.1 says a `<param>` whose 'expr' produces an error costs
+       `error.execution` on the internal queue and "MUST ignore the name and
+       value", and then: "Otherwise the use of the name and value depends on
+       the context in which the <param> element occurs. See 5.5 <donedata>,
+       6.2 <send> and 6.4 <invoke> for details."
+
+     5.7.1 handles the FAILURE itself and delegates only the SUCCESSFUL name
+     and value to the context. So a failing `<param>` is not the argument
+     error 6.4.2 terminates on: it is a per-item rule that has already said
+     what to do, in all three contexts by name, and reading 6.4.2 over it
+     would leave "ignore the name and value" with nothing to mean — there
+     would be no invoked session for the name to be absent from. W3C test343
+     settles the same clause from the `<donedata>` side: an illegal `<param>`
+     raises `error.execution` AND the `done.state` event still arrives.
+
+     That reading is what this fixture pins, on the one context no IRP
+     document reaches. Three claims, one invoke, each with its own verdict
+     state so a failure names which half broke:
+
+       the failure is reported
+         `error.execution` reaches the internal queue while the `<invoke>`
+         is being evaluated, so it is dequeued before the child's first
+         word. The handler is targetless so this state is still standing
+         when `childUp` arrives — one state judges both queues.
+
+       the child is started anyway
+         Reaching `failInvokeNotStarted` means the channel read 6.4.2 over
+         5.7.1 and terminated the element: the machine then waits for a
+         session that was never created, which is what a document sees as a
+         stall rather than as an error.
+
+       the offending pair is left out, and only it
+         `kept` reaches the child's matching `<data>` (§scxml-6.4.3), and
+         `broken` does not arrive as a placeholder. A channel that seeds the
+         empty string under the failed name gives the child a value the
+         author never wrote, and `=== ''` is what separates that from an
+         absent field in every expression language here.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="paramPhase"
+       name="invoke_param_error_starts_the_child">
+
+    <datamodel>
+        <!-- Read by the failing `<param expr>` below. Indexing `null` is a
+             runtime error in every expression language this corpus runs — a
+             TypeError in ECMAScript, an index-of-nil in Lua — which is what
+             makes one document able to ask all seven channels the same
+             question. -->
+        <data id="nothing" expr="null"/>
+        <!-- Set by the targetless `error.execution` handler. A counter rather
+             than a state, because the phase has to still be standing when the
+             child's own event arrives: the verdict is about what BOTH queues
+             did, and moving states would answer only the first. -->
+        <data id="sawParamError" expr="0"/>
+    </datamodel>
+
+    <state id="paramPhase">
+        <onentry>
+            <!-- A channel that terminates the element leaves the machine
+                 waiting on a session that was never created. Without a clock
+                 that is a hang; with one it is a verdict. -->
+            <send event="timeout" delay="3s"/>
+        </onentry>
+
+        <invoke type="scxml" id="inv_probe">
+            <param name="kept" expr="'here'"/>
+            <param name="broken" expr="nothing.deep"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="report">
+                    <datamodel>
+                        <!-- §scxml-6.4.3: a `<param>` seeds the child's
+                             matching `<data>`. Both names are declared, so
+                             the child can report what each one holds rather
+                             than failing to compile on an unknown name. -->
+                        <data id="kept"/>
+                        <data id="broken"/>
+                    </datamodel>
+                    <!-- The report rides an eventless `<transition>` body, not
+                         `<onentry>`, and the difference is not style. C11 seeds
+                         an invoke's params AFTER `_init_with_parent`, and that
+                         call already runs the child's `<onentry>` — so a child
+                         that reports from `<onentry>` reads its `<data>` before
+                         the parent has written to it, and this fixture would be
+                         measuring the seeding ORDER instead of what a failed
+                         `<param>` costs. That order is its own open debt (the
+                         C11 `_init` split); binding two axes into one document
+                         is what makes an unrelated channel red. Sends from a
+                         transition body fire from the macrostep loop, after the
+                         transfer, on every channel. -->
+                    <state id="report">
+                        <transition target="done">
+                            <send target="#_parent" event="childUp">
+                                <param name="kept" expr="kept"/>
+                                <param name="brokenPlaceholder" expr="broken === ''"/>
+                            </send>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+
+        <transition event="error.execution">
+            <assign location="sawParamError" expr="1"/>
+        </transition>
+        <transition event="childUp" cond="sawParamError !== 1" target="failNoParamError"/>
+        <transition event="childUp" cond="_event.data.kept !== 'here'" target="failGoodParamLost"/>
+        <transition event="childUp" cond="_event.data.brokenPlaceholder === true"
+                    target="failBrokenParamSeeded"/>
+        <transition event="childUp" target="pass"/>
+        <transition event="timeout" target="failInvokeNotStarted"/>
+    </state>
+
+    <final id="pass"/>
+    <final id="failNoParamError"/>
+    <final id="failInvokeNotStarted"/>
+    <final id="failGoodParamLost"/>
+    <final id="failBrokenParamSeeded"/>
+</scxml>

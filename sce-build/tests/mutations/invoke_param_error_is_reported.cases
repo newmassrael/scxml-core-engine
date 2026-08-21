@@ -1,0 +1,80 @@
+# Mutation cases for W3C SCXML 5.7.1 under 6.4 — what a `<param>` of an
+# `<invoke>` costs when its expression will not evaluate.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/invoke_param_error_is_reported.cases`.
+#
+# Two clauses meet and only one governs. §scxml-6.4.2 terminates the element
+# when "the evaluation of its arguments produces an error", and the sentence
+# after it — "Otherwise the Processor MUST start a new logical instance" —
+# makes the alternative explicit. §scxml-5.7.1 says a failing `<param>` costs
+# `error.execution` AND the name and value, then delegates only the SUCCESSFUL
+# name and value to the context, naming `<donedata>`, `<send>` and `<invoke>`
+# in that sentence. So 5.7.1 has already answered, in this context by name,
+# and 6.4.2 is the clause for the element's OWN arguments.
+#
+# No IRP document asks it here — test343 settles the same clause from the
+# `<donedata>` side and nothing reaches the invoke context — which is why the
+# seven channels held three different answers with every suite green: five
+# silent (C++ AOT wrote a log line, which is not a queue), and Kotlin and the
+# C++ Interpreter cancelling the whole invoke without saying so.
+#
+# The template reaches `cargo test` only through the committed tree the
+# regeneration below writes, so both halves are declared: the generated file is
+# compiled into the test, and `mutation_regen` is what carries a mutated
+# template into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test invoke_param_error_starts_the_child
+mutation_targets tools/codegen/templates/rust/invoke_methods.rs.jinja2
+# Every file the regeneration writes, not just the one the mutation reaches:
+# snapshot and restore cover declared files only, and the round has to put the
+# whole generated tree back or the case after it measures a moved baseline.
+mutation_targets backends/rust/tests/src/integration/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child_sm.rs
+mutation_targets backends/rust/tests/src/integration/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe_sm.rs
+mutation_targets backends/rust/tests/src/integration/invoke_param_error_starts_the_child/mod.rs
+mutation_regen scripts/regen_invoke_param_error_starts_the_child.sh
+
+mutation_oracles backends/rust/tests/tests/invoke_param_error_starts_the_child.rs
+
+# ── The failure goes unreported ─────────────────────────────────────
+#
+# The defect this fixture was written for, restored exactly: the parent
+# evaluates, the evaluation fails, and nothing reaches the internal queue. The
+# child still comes up, so the only thing missing is the sentence that would
+# have explained the `<data>` it did not get.
+
+mutation_case "a failed invoke param raises nothing" <<'PY'
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     """                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));""",
+     """                            let _ = &e;""")
+PY
+
+# ── The failure takes the whole invoke with it ──────────────────────
+#
+# The other reading — §scxml-6.4.2 over 5.7.1 — which Kotlin and the C++
+# Interpreter both held. The child never starts, so the document waits on a
+# session that was never created: a stall rather than an error, which is what
+# `failInvokeNotStarted` is there to name.
+
+mutation_case "a failed invoke param cancels the child" <<'PY'
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     """                        Err(e) => {""",
+     """                        Err(e) => {
+                            let _ = &e;
+                            return;""")
+PY
+
+# ── The offending pair is seeded anyway ─────────────────────────────
+#
+# "MUST ignore the name and value" is the half a channel can drop while still
+# looking well-behaved to a document that only watches the error queue: the
+# child finds a placeholder under the failed name that the author never wrote.
+
+mutation_case "the failed pair is seeded with a placeholder" <<'PY'
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     """                            ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' eval failed: {}", e);""",
+     """                            ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' eval failed: {}", e);
+                            child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", ::sce_rust_runtime::ScriptValue::String(String::new()));""")
+PY
