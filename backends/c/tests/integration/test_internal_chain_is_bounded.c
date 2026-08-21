@@ -154,6 +154,51 @@ int main(void) {
         }
     }
 
+    // A dequeue that selected nothing is not a microstep, so it spends no
+    // budget. Appendix D takes a microstep for a transition that was SELECTED;
+    // a dequeue that matched none is the loop turn the clause does not count.
+    // The fixture's unanswered chain is `bounded` with one unmatched event
+    // added per link, so the two differ in exactly that and must cost the same.
+    //
+    // Measured 2026-08-21: this claim had no witness in any channel. The
+    // mutation that spends the budget on every dequeue SURVIVED all five
+    // outcomes, because every other chain here answers every event it raises.
+    {
+        internal_chain_is_bounded_t sm;
+        internal_chain_is_bounded_init(&sm);
+
+        deliver(&sm, INTERNAL_CHAIN_IS_BOUNDED_EVENT_UNANSWERED);
+
+        int64_t ignores = -1;
+        (void)internal_chain_is_bounded_ignores(&sm, &ignores);
+        if (ignores != MAX_MICROSTEPS) {
+            fprintf(stderr,
+                    "internal_chain_is_bounded: FAIL - the chain is the same length as `bounded`; "
+                    "the unmatched events between its links are dequeues that selected nothing, "
+                    "and those are not microsteps (want %d, got %lld).\n",
+                    MAX_MICROSTEPS, (long long)ignores);
+            rc = 1;
+        }
+
+        if (internal_chain_is_bounded_truncated_macrosteps(&sm) != 0u) {
+            fprintf(stderr, "internal_chain_is_bounded: FAIL - a thousand microsteps and a "
+                            "thousand discards is a thousand microsteps: an engine that counted "
+                            "the discards refuses this document at link five hundred and reports "
+                            "a runaway that is not one.\n");
+            rc = 1;
+        }
+
+        if (!sm.is_running) {
+            fprintf(stderr, "internal_chain_is_bounded: FAIL - the document settled on its own.\n");
+            rc = 1;
+        }
+
+        if (!internal_chain_is_bounded_in_state(&sm, INTERNAL_CHAIN_IS_BOUNDED_STATE_IGNORING)) {
+            fprintf(stderr, "internal_chain_is_bounded: FAIL - the chain rests where it ended.\n");
+            rc = 1;
+        }
+    }
+
     // The case a per-branch budget lets through: a chain that alternates one
     // <raise> with one eventless transition. Neither branch of Appendix D's
     // inner loop reaches the ceiling on its own here, so an engine that gives

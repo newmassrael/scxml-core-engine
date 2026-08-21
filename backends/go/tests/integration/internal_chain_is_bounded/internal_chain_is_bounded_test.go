@@ -126,6 +126,41 @@ func TestARaiseChainThatEndsAtTheCeilingIsNotRefused(t *testing.T) {
 	}
 }
 
+// A dequeue that selected nothing is not a microstep, so it spends no budget.
+//
+// Appendix D takes a microstep for a transition that was SELECTED; a dequeue
+// that matched none is the loop turn the clause does not count. The fixture's
+// unanswered chain is `bounded` with one unmatched event added per link, so the
+// two differ in exactly that and must cost the same.
+//
+// Measured 2026-08-21: this claim had no witness in any channel. The mutation
+// that spends the budget on every dequeue SURVIVED all five outcomes, because
+// every other chain here answers every event it raises — an engine that
+// over-counted would report this settling document as a runaway at half its
+// length, and nothing could see it.
+func TestADequeueThatSelectedNothingSpendsNoBudget(t *testing.T) {
+	engine, policy := started(t)
+
+	engine.ProcessEvent(InternalChainIsBoundedEventUnanswered)
+
+	if got := counter(t, policy, "ignores"); got != maxMicrosteps {
+		t.Fatalf("the chain is the same length as `bounded`; the unmatched events between "+
+			"its links are dequeues that selected nothing, and those are not microsteps; "+
+			"want %d got %d", maxMicrosteps, got)
+	}
+	if got := engine.TruncatedMacrosteps(); got != 0 {
+		t.Fatalf("a thousand microsteps and a thousand discards is a thousand microsteps: an "+
+			"engine that counted the discards refuses this document at link five hundred and "+
+			"reports a runaway that is not one; got %d", got)
+	}
+	if _, ok := engine.LastTruncatedMacrostepState(); ok {
+		t.Fatal("and nothing names a state, because nothing was stopped")
+	}
+	if !engine.IsRunning() {
+		t.Fatal("the document settled on its own")
+	}
+}
+
 // The case a per-branch budget lets through: a chain that alternates one
 // <raise> with one eventless transition. Neither branch of Appendix D's inner
 // loop reaches the ceiling on its own here, so an engine that gives each branch
