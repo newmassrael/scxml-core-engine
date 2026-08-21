@@ -200,6 +200,120 @@ fn a_selector_naming_a_suite_that_does_not_exist_is_refused() {
     assert_rejected(&f, "names no test target");
 }
 
+// ── A template target, and the step between it and the binaries ──
+
+/// A codegen template that is in the tree, named the way a casefile names it.
+///
+/// A real path, because the refusal under test is about where the file lives:
+/// the fixtures above write their subject into a temp directory, and a temp
+/// path is not under `tools/codegen/templates/` however it is spelled. The
+/// refusal fires before the snapshot, so nothing in the working tree is read
+/// or written by these two tests.
+const A_TEMPLATE: &str = "tools/codegen/templates/rust/invoke_methods.rs.jinja2";
+
+/// A selector whose artifacts do NOT embed the templates.
+///
+/// `sce-build` writes the template tree into its own binaries through its
+/// build script, so a round selecting one of ITS tests reaches a template
+/// with nothing declared — which is what the seven casefiles that mutate
+/// templates in a cargo round rely on. `sce-rust-tests` links no such crate
+/// (measured through `cargo metadata`: its dependency closure does not
+/// contain `sce-build`), so a template mutation reaches its binaries only
+/// through the committed generated tree, and only if something regenerates
+/// it. That is the shape these two tests are about.
+const SELECTOR_WITHOUT_THE_TEMPLATES: &str = "mutation_tests -p sce-rust-tests --test ai_loop";
+
+/// A casefile declaring the temp subject AND a real template, with whatever
+/// extra declarations the test is about.
+fn fixture_with_template(extra: &str) -> Fixture {
+    fixture_with_template_under(SELECTOR_WITHOUT_THE_TEMPLATES, extra)
+}
+
+fn fixture_with_template_under(selector: &str, extra: &str) -> Fixture {
+    let dir = tempdir().expect("temp dir");
+    let target = dir.path().join("subject.txt");
+    fs::write(&target, "fn keep(x: u8) -> u8 {\n    x + 1\n}\n").expect("write the subject");
+    let oracle = dir.path().join("oracle.txt");
+    fs::write(&oracle, "the assertions that would catch it\n").expect("write the oracle");
+
+    let path = target.display().to_string();
+    let casefile = dir.path().join("fixture.cases");
+    fs::write(
+        &casefile,
+        format!(
+            "{selector}\n\
+             mutation_targets {path}\n\
+             mutation_targets {A_TEMPLATE}\n\
+             mutation_oracles {}\n\
+             {extra}\n\n\
+             mutation_case \"studies the generated code\" <<'PY'\n\
+             edit({path:?}, \"x + 1\", \"x + 2\")\n\
+             PY\n",
+            oracle.display()
+        ),
+    )
+    .expect("write the casefile");
+
+    Fixture {
+        _dir: dir,
+        casefile,
+        target,
+    }
+}
+
+/// A cargo round cannot reach a template it does not regenerate.
+///
+/// `cargo test --no-run` compiles the committed generated tree; the codegen
+/// step that writes that tree is not part of it. Measured on CI 2026-08-21:
+/// both cases of `invoke_param_is_a_value_not_source.cases` reported
+/// INCONCLUSIVE — "the mutation never reached the code under test" — for
+/// exactly this reason, days after the round that wrote them read as evidence.
+#[test]
+fn a_cargo_casefile_that_mutates_a_template_without_regenerating_it_is_refused() {
+    let f = fixture_with_template("");
+    assert_rejected(
+        &f,
+        "a codegen template is declared as a target of a cargo round",
+    );
+    let (_, output) = check(&f.casefile);
+    assert!(
+        output.contains(A_TEMPLATE),
+        "the refusal did not name the template it is about:\n{output}"
+    );
+}
+
+/// And the same casefile is accepted once the step is declared.
+///
+/// The other half of the measurement: a check that only ever refuses is
+/// indistinguishable from one that refuses everything, and this suite's whole
+/// subject is a mode whose verdicts nothing else re-proves.
+#[test]
+fn a_cargo_casefile_that_declares_the_regeneration_is_accepted() {
+    let f = fixture_with_template("mutation_regen true");
+    let (ok, output) = check(&f.casefile);
+    assert!(
+        ok,
+        "a template target with its regeneration declared was refused:\n{output}"
+    );
+}
+
+/// And a round whose binaries CONTAIN the templates needs no declaration.
+///
+/// The third reading, and the one that decides whether the refusal above is
+/// a rule or a nuisance: seven casefiles in the corpus mutate a template
+/// under a selector that reaches `sce-build`, whose build script writes the
+/// template tree into the artifact. Rebuilding it is the bridge. A check that
+/// could not tell those from the inert one would have to be switched off.
+#[test]
+fn a_cargo_casefile_whose_binaries_embed_the_templates_needs_no_regeneration() {
+    let f = fixture_with_template_under(LIVE_SELECTOR, "");
+    let (ok, output) = check(&f.casefile);
+    assert!(
+        ok,
+        "a template target was refused under a selector that embeds it:\n{output}"
+    );
+}
+
 // ── The ctest selector, and the tree it is resolved against ──────
 
 /// Whether `ninja` will answer for a directory at all.
