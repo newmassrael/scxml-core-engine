@@ -508,7 +508,7 @@ def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
     * it was load-bearing: `<send>` shipped Lua source, so this rung was
       the deserializer for every param a document sent.
 
-    The sender now ships JSON (§scxml-B-2-9: data that leaves the data
+    The sender now ships JSON (W3C SCXML B.2.9: data that leaves the data
     model is serialized to JSON), which is what cpp always shipped."""
     if not event_data:
         return None
@@ -545,7 +545,7 @@ class _DomElement:
     """W3C SCXML B.2 — Lua-facing wrapper around a `xml.dom.minidom`
     node, carrying DOM Level 1 Core's read surface.
 
-    §scxml-B-2-1 obliges the Processor to create *"the corresponding DOM
+    W3C SCXML B.2.1 obliges the Processor to create *"the corresponding DOM
     structure"*, so what a handle answers is that interface and not the
     two calls the W3C IRP suite happens to read. Measured 2026-08-18,
     three methods were all any backend had: `d.tagName`, `d.childNodes`
