@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4f209294ba851e9f433a2fd839fc088f718569422204e93318892b83dc408fac
-// template-hash: 2531476627eb1f2b85917395efe91d1b55da71c6abf9c48b9fabdfd63b215bfa
+// template-hash: 45fa83625e6b8ed5f1d3803a56ad41a23f2d14f770e66b07d9e986dd8b492ac0
 // generated-at: 0
 
 
@@ -130,8 +130,9 @@ type ParallelDoneStateIsDeliveredPolicy struct {
 	ParentExternalQueue chan sce.ParentEvent
 	InvokeID           string
 	ChildSessionID     string
-	// W3C SCXML 6.4.1: Deferred params from parent invoke (applied after datamodel init)
-	pendingParams      map[string]string
+	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
+	// this machine's datamodel init so they override its `<data>` defaults.
+	pendingParams      map[string]interface{}
 }
 
 // NewParallelDoneStateIsDeliveredPolicy creates a new policy with default values.
@@ -157,8 +158,8 @@ func (p *ParallelDoneStateIsDeliveredPolicy) IsStateActive(stateID string) bool 
 // No script engine needed for this state machine.
 func (p *ParallelDoneStateIsDeliveredPolicy) InitializeDataModel(eng *sce.Engine[ParallelDoneStateIsDeliveredState, ParallelDoneStateIsDeliveredEvent]) {}
 
-// SetParamInScriptEngine is a no-op for state machines without script engine.
-func (p *ParallelDoneStateIsDeliveredPolicy) SetParamInScriptEngine(name, expr string) {}
+// SetParamValueInScriptEngine is a no-op for state machines without script engine.
+func (p *ParallelDoneStateIsDeliveredPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
 
 
 // ExecutePendingInvokes is a no-op (no invokes in this SM).
