@@ -67,10 +67,10 @@ public:
         }
 
         // W3C SCXML C.2: Create and start HTTP server
-        W3C::W3CHttpTestServer httpServer(W3C::BASIC_HTTP_TEST_PORT, W3C::BASIC_HTTP_TEST_PATH);
+        W3C::W3CHttpTestServer httpServer(W3C::basicHttpTestPort(), W3C::basicHttpTestPath());
 
         if (!httpServer.start()) {
-            SCE_LOG_ERROR("HttpAotTest {}: Failed to start HTTP server on port {}", TestNum, W3C::BASIC_HTTP_TEST_PORT);
+            SCE_LOG_ERROR("HttpAotTest {}: Failed to start HTTP server on port {}", TestNum, W3C::basicHttpTestPort());
             return false;
         }
 

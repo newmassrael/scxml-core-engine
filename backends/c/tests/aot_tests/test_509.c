@@ -8,18 +8,20 @@
 
 #include <stdio.h>
 
+#include "basic_http_test_endpoint.h"
 #include "test509_sm.h"
 
 int main(void) {
     test509_t sm;
-    /* W3C SCXML C.2.3: the ctest fixture owns the inbound listener
-       (tests/w3c/http_server_fixture.sh binds localhost:8080/test), so this
-       runner declares that address as the machine's published BasicHTTP
-       'location'. The converted W3C document reads
-       `_ioprocessors['basichttp'].location` to address its send, so a machine
-       initialised through plain `_init` would publish no entry and send
-       nowhere. */
-    test509_init_with_basic_http(&sm, "http://localhost:8080/test");
+    char access_uri[SCE_W3C_HTTP_URI_MAX];
+    /* W3C SCXML C.2.3: the ctest fixture owns the inbound listener, and
+       basic_http_test_endpoint.h is the one place that says where it answers.
+       The fixture script, the gates and this runner all read it, so the bind
+       address and the published 'location' cannot come apart. The converted
+       W3C document reads `_ioprocessors['basichttp'].location` to address its
+       send, so a machine initialised through plain `_init` would publish no
+       entry and send nowhere. */
+    test509_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri));
     test509_run(&sm);
 
     int rc = test509_in_state(&sm, TEST509_STATE_PASS) ? 0 : 1;

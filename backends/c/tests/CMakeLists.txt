@@ -338,7 +338,13 @@ if(SCE_C_RUNTIME_POSIX)
 
         add_executable(${_target} ${_runner} ${_generated} ${_child_sources})
         target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_runtime_posix)
-        target_include_directories(${_target} PRIVATE "${SCE_C_GENERATED_DIR}")
+        # `tests/w3c` carries the ONE owner of the BasicHTTP fixture endpoint
+        # (`basic_http_test_endpoint.h`, a C11 header for exactly this reason).
+        # Without it in reach each NEEDS_HTTP runner writes the address again,
+        # which is how one fact came to be spelled in five places.
+        target_include_directories(${_target} PRIVATE
+            "${SCE_C_GENERATED_DIR}"
+            "${CMAKE_SOURCE_DIR}/tests/w3c")
         # Each arm names SCE_ENABLE_LUA alongside its fixture flag. The
         # `continue()` above already means a script-engine fixture has no
         # target here without it, so these conjuncts change no build — what
