@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4.3: what an `<invoke>` `<param>` puts in the invoked
+     session's data model, and what it must not.
+
+     Two sentences of that section govern this fixture, and each one has
+     a phase:
+
+       "If the 'name' of a <param> element in the <invoke> matches the
+        'id' of a <data> element in the top-level data declarations of
+        the invoked session, the SCXML Processor MUST use the value of
+        the <param> element as the initial value of the corresponding
+        <data> element."
+
+       "If the names do not match, the Processor MUST NOT add the value
+        of the <param> element or namelist key/value pair to the invoked
+        session's data model."
+
+     The first sentence says VALUE. A processor that hands the child the
+     author's expression TEXT and lets the child's engine evaluate it
+     answers a different question — "what does this source mean in the
+     child?" — and the two questions only agree while the expression is
+     a literal. The whole W3C IRP param/namelist surface is literals
+     (226, 240, 241, 243, 244, 245, 276 all pass `1`), so a suite that
+     is green says nothing about which session evaluated: `1` is `1` in
+     either data model. This fixture makes the two answers differ.
+
+       shadowed    the child declares `token` too, with its own value.
+                   `<param name="seen" expr="token"/>` must carry the
+                   PARENT's `token`. A child-side evaluation finds the
+                   child's and reports it — a wrong value with no error
+                   anywhere, which is why nothing caught this.
+
+       soleName    `<param name="seen" expr="only_here"/>` names a
+                   variable only the parent has. A child-side evaluation
+                   cannot resolve it at all, so this phase separates
+                   "evaluated in the wrong session and found a shadow"
+                   from "evaluated in the wrong session and found
+                   nothing".
+
+       unmatched   two params, one naming a `<data>` the child declares
+                   and one naming nothing. The declared one must arrive;
+                   the other must not become a variable in the child.
+                   The child reports `typeof` on it, so a leak is named
+                   rather than inferred from an absence.
+
+       namelist    the same rule for the sibling syntax §scxml-6.4.1
+                   spells as "the value stored at the location is the
+                   value", carrying a STRING so that a processor which
+                   forwards the rendered text as an expression is caught
+                   doing an identifier lookup in the child.
+
+     Every child answers with an EVENT of its own rather than through
+     `<donedata>`, for the reason docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md
+     states as a rule: fixtures stay on one axis. A `<donedata>` verdict
+     would make a regression in the donedata lift — which
+     `donedata_local_invoke` owns — arrive here disguised as a param
+     seeding failure. It also decides the question in the wrong place:
+     the child is where the seeded value lives, so the child is what
+     should compare it, and a bare event name carries that answer with
+     no payload path in between.
+
+     The vocabulary is one set of four names, reused by every phase, and
+     the parent's transitions in each phase say what they mean there:
+
+       seed.ok        the child saw exactly the invoking session's value
+       seed.shadowed  the child saw its OWN same-named variable instead
+       seed.missing   the child saw neither — its `<data>` default stood
+       seed.leaked    a name the child never declared became a variable
+
+     Each phase lands its failure in a `<final>` of its own, so a
+     regression says which sentence broke rather than "param passing
+     failed".
+
+     This fixture is the canonical source for all 7 channels — see
+     docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test
+     locations and engine-channel coverage (Interpreter / AOT).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="shadowed"
+       name="invoke_param_seeds_declared_child_data">
+    <datamodel>
+        <data id="token" expr="'parent'"/>
+        <data id="only_here" expr="'sole'"/>
+    </datamodel>
+
+    <state id="shadowed">
+        <invoke type="scxml" id="inv_shadow">
+            <param name="seen" expr="token"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="report">
+                    <datamodel>
+                        <data id="seen" expr="'unset'"/>
+                        <data id="token" expr="'child'"/>
+                    </datamodel>
+                    <state id="report">
+                        <transition cond="seen === 'parent'" target="done">
+                            <send target="#_parent" event="seed.ok"/>
+                        </transition>
+                        <transition cond="seen === 'child'" target="done">
+                            <send target="#_parent" event="seed.shadowed"/>
+                        </transition>
+                        <transition target="done">
+                            <send target="#_parent" event="seed.missing"/>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="seed.ok" target="soleName"/>
+        <transition event="seed.shadowed" target="failChildEvaluatedTheExpression"/>
+        <transition event="seed.missing" target="failShadowSeedLost"/>
+        <transition event="error.execution" target="failShadowSeedLost"/>
+    </state>
+
+    <state id="soleName">
+        <invoke type="scxml" id="inv_sole">
+            <param name="seen" expr="only_here"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="report">
+                    <datamodel>
+                        <data id="seen" expr="'unset'"/>
+                    </datamodel>
+                    <state id="report">
+                        <transition cond="seen === 'sole'" target="done">
+                            <send target="#_parent" event="seed.ok"/>
+                        </transition>
+                        <transition target="done">
+                            <send target="#_parent" event="seed.missing"/>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="seed.ok" target="unmatched"/>
+        <transition event="seed.missing" target="failParentOnlyExprLost"/>
+        <transition event="error.execution" target="failParentOnlyExprLost"/>
+    </state>
+
+    <state id="unmatched">
+        <invoke type="scxml" id="inv_unmatched">
+            <param name="declared" expr="'carried'"/>
+            <param name="nowhere" expr="'leaked'"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="report">
+                    <datamodel>
+                        <data id="declared" expr="'unset'"/>
+                    </datamodel>
+                    <state id="report">
+                        <transition cond="typeof nowhere !== 'undefined'" target="done">
+                            <send target="#_parent" event="seed.leaked"/>
+                        </transition>
+                        <transition cond="declared === 'carried'" target="done">
+                            <send target="#_parent" event="seed.ok"/>
+                        </transition>
+                        <transition target="done">
+                            <send target="#_parent" event="seed.missing"/>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="seed.ok" target="namelistPhase"/>
+        <transition event="seed.leaked" target="failUnmatchedParamEnteredTheChild"/>
+        <transition event="seed.missing" target="failDeclaredParamLost"/>
+        <transition event="error.execution" target="failDeclaredParamLost"/>
+    </state>
+
+    <!-- §scxml-6.4.1 names the same rule for the sibling syntax: "the name
+         of the location is the attribute and THE VALUE STORED AT THE
+         LOCATION is the value". `namelist` may not occur alongside
+         `<param>` on one `<invoke>` (§scxml-6.4.1 attribute constraints),
+         so it needs its own.
+
+         The parent's `token` is a STRING here, which is what makes this
+         phase see anything: a processor that renders the value and hands
+         the child that text as an EXPRESSION turns 'parent' into an
+         identifier lookup in the child's data model, where no such name
+         exists. The W3C corpus passes numbers through namelist (240, 241,
+         244, 245), and `1` renders to `1`, which evaluates to `1` — the
+         defect is invisible to every one of them. -->
+    <state id="namelistPhase">
+        <invoke type="scxml" id="inv_namelist" namelist="token">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="report">
+                    <datamodel>
+                        <data id="token" expr="'unset'"/>
+                    </datamodel>
+                    <state id="report">
+                        <transition cond="token === 'parent'" target="done">
+                            <send target="#_parent" event="seed.ok"/>
+                        </transition>
+                        <transition target="done">
+                            <send target="#_parent" event="seed.missing"/>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="seed.ok" target="pass"/>
+        <transition event="seed.missing" target="failNamelistValueLost"/>
+        <transition event="error.execution" target="failNamelistValueLost"/>
+    </state>
+
+    <final id="pass"/>
+    <final id="failChildEvaluatedTheExpression"/>
+    <final id="failShadowSeedLost"/>
+    <final id="failParentOnlyExprLost"/>
+    <final id="failUnmatchedParamEnteredTheChild"/>
+    <final id="failDeclaredParamLost"/>
+    <final id="failNamelistValueLost"/>
+</scxml>

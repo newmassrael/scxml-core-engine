@@ -463,6 +463,24 @@ fn analyze_model_features(model: &mut SCXMLModel) {
         model.needs_dom_helper = Some(true);
     }
 
+    // §scxml-6.4.1: an `<invoke namelist="...">` reads the invoking
+    // session's locations through the same helper a `<send namelist>`
+    // does, so it needs the same declaration.
+    //
+    // The flag was set from `<send>` alone, and the C++ include that
+    // gates on it therefore arrived only in documents that also sent
+    // something. Every W3C IRP test with an invoke namelist (240, 241,
+    // 244, 245) opens with `<send event="timeout" delay="2s"/>`, so all
+    // four carried the include for an unrelated reason and the emitted
+    // code compiled by coincidence — a document with an invoke namelist
+    // and no `<send>` at all named `::SCE::NamelistHelper` with no
+    // header declaring it. That is the same defect
+    // [`SCXMLModel::needs_donedata_helper`] records for W3C 179, two
+    // helpers over.
+    if model.has_invoke_namelist() {
+        model.needs_namelist_helper = Some(true);
+    }
+
     // Donedata-param/content and child-invoke `needs_script_engine`
     // propagation used to flip the flag a second time here; both cases
     // are now folded into [`crate::script_engine_analyzer`]

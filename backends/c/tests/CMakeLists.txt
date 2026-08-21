@@ -1187,6 +1187,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # §scxml-6.4.3: an <invoke> <param> gives a declared <data> of the invoked
+    # session the value the INVOKING session produced, and a name matching no
+    # top-level <data> there is not added at all. This backend already answers
+    # both halves — lua_xfer_top_to_child moves the value across the two Lua
+    # states, and the emission is gated on the child's declared names — so the
+    # driver is here to make that correctness asserted rather than incidental.
+    sce_generate_static_integration_c_test(invoke_param_seeds_declared_child_data "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist
+    )
+
+    add_executable(sce_c_integration_invoke_param_seeds_declared_child_data
+        integration/test_invoke_param_seeds_declared_child_data.c
+        ${INTEGRATION_C_TEST_invoke_param_seeds_declared_child_data_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_invoke_param_seeds_declared_child_data PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_invoke_param_seeds_declared_child_data PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_invoke_param_seeds_declared_child_data PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_invoke_param_seeds_declared_child_data
+        COMMAND sce_c_integration_invoke_param_seeds_declared_child_data
+    )
+    set_tests_properties(c11_integration_invoke_param_seeds_declared_child_data PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML C.1: the origin of a delivered event is the location the
     # sending session published for the SCXML Event I/O Processor, and that
     # location is a usable <send> target. The IRP suite checks neither half

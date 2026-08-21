@@ -71,8 +71,15 @@
 {% endif %}
 {% if model.needs_send_helper %}
 #include "common/SendHelper.h"
+{% endif %}
+{% if model.needs_send_helper or model.needs_namelist_helper %}
+// §scxml-6.4.1: `namelist` reads the invoking session's locations, and
+// `<invoke>` spells that attribute as well as `<send>` does. Gating this
+// on the send flag alone let the include arrive only in documents that
+// also sent something — which every W3C IRP invoke-namelist test happens
+// to do — so a machine whose only namelist is on an `<invoke>` named the
+// helper with nothing declaring it.
 #include "common/NamelistHelper.h"
-#include "common/DatamodelValidationHelper.h"
 {% endif %}
 {% if model.needs_script_engine %}
 #include "common/FinalizeHelper.h"
@@ -766,9 +773,12 @@ public:
 {% endif %}
 
 {% if model.needs_script_engine %}
-    // W3C SCXML 6.4.1: Wrapper for setting invoke params (delegates to policy)
-    void setParamInScriptEngine(const std::string& paramName, const std::string& paramExpr) {
-        this->policy_.setParamInScriptEngine(paramName, paramExpr);
+    // §scxml-6.4.3: wrapper for seeding an invoke param's VALUE into this
+    // session's data model (delegates to policy). The parent calls it on the
+    // child instance right after construction, which is why it lives on the
+    // machine rather than only on the policy.
+    void setParamValueInScriptEngine(const std::string& paramName, const ::ScriptValue& paramValue) {
+        this->policy_.setParamValueInScriptEngine(paramName, paramValue);
     }
 {% endif %}
 

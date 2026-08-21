@@ -769,6 +769,8 @@ add_executable(integration_tests
     integration/ParallelDoneStateIsDeliveredAotTest.cpp
     integration/SendParamPayloadTest.cpp
     integration/SendParamPayloadAotTest.cpp
+    integration/InvokeParamSeedsDeclaredChildDataTest.cpp
+    integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp
     integration/SCXMLEventTest.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
@@ -1287,6 +1289,16 @@ sce_generate_static_integration_test(donedata_late_completion ${STATIC_INTEGRATI
 # two land in distinct final states so a failure names the path.
 sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_emitter
+)
+
+# §scxml-6.4.3: an `<invoke>` `<param>` gives a declared `<data>` of the
+# invoked session the value the INVOKING session produced, and a name that
+# matches no top-level `<data>` there is not added at all. The W3C IRP param
+# surface passes literals only, which evaluate the same in either data model,
+# so the four phases here are what separate "the parent evaluated this" from
+# "the child evaluated this text".
+sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist
 )
 
 # Wire the integration headers + include path into the integration_tests

@@ -38,6 +38,7 @@ pub mod event_schema_native;
 pub mod eventless_macrostep_is_bounded;
 pub mod host_processor;
 pub mod internal_chain_is_bounded;
+pub mod invoke_param_seeds_declared_child_data;
 pub mod invoke_precedes_dequeue_midrun;
 pub mod invoke_precedes_external_dequeue;
 pub mod invoke_unsupported_type;

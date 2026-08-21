@@ -21,16 +21,23 @@
         return *result;
     }
 
-    // Helper: Set param in JSEngine for static invoke (W3C SCXML 6.4)
-    void setParamInScriptEngine(const std::string& paramName, const std::string& paramExpr) {
+    // §scxml-6.4.3: seed a `<data>` this session declares with the value the
+    // INVOKING session produced for an `<invoke>` `<param>` or namelist
+    // location.
+    //
+    // This side only stores. It used to take the author's expression TEXT and
+    // evaluate it here, which asks a different question — what does this
+    // source mean in the CHILD's data model — and the two questions agree
+    // only while the expression is a literal. The entire W3C IRP param and
+    // namelist surface is literals (226, 240, 241, 243, 244, 245, 276), so
+    // every one of them was green either way; `integration_resources/
+    // invoke_param_seeds_declared_child_data/` is the document where the
+    // answers differ. The Interpreter's `InvokeExecutor` evaluated in the
+    // invoking session all along, so this is the AOT half catching up to a
+    // reference that was already in the tree.
+    void setParamValueInScriptEngine(const std::string& paramName, const ::ScriptValue& paramValue) {
         ensureScriptEngine();
-        auto& scriptEngine = getScriptEngine();
-        auto valueResult = scriptEngine.evaluateExpression(sessionId_.value(), paramExpr).get();
-        if (::SCE::ScriptResultUtils::isSuccess(valueResult)) {
-            scriptEngine.setVariable(sessionId_.value(), paramName, valueResult.getInternalValue());
-        } else {
-            SCE_LOG_ERROR("Failed to evaluate param expression for {}: {}", paramName, paramExpr);
-        }
+        getScriptEngine().setVariable(sessionId_.value(), paramName, paramValue);
     }
 {% endif %}
 

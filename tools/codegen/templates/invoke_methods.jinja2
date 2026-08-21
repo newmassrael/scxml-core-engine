@@ -52,6 +52,12 @@
                         {% if invoke_info.namelist %}
                         // W3C SCXML 6.4.1: Namelist handling - validate and pass values to child
                         std::map<std::string, std::vector<std::string>> namelistParams;
+                        // §scxml-6.4.1: "the value stored at the location is
+                        // the value" — so what crosses into the child is the
+                        // ScriptValue, not its rendering. `namelistParams`
+                        // stays for the diagnostic text below, where a string
+                        // is what a log wants.
+                        std::map<std::string, std::vector<::ScriptValue>> namelistTypedParams;
 
                         // Step 1: Validate namelist variables before creating child
                         {
@@ -67,7 +73,8 @@
                                     SCE_LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
                                     // W3C SCXML 6.4.1: Raise error.execution on namelist error
                                     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
-                                }
+                                },
+                                &namelistTypedParams
                             );
 
                             if (!namelistValid) {
@@ -126,24 +133,37 @@
                         {% endif %}
 
                         {% if invoke_info.namelist %}
-                        // W3C SCXML 6.4.1: Pass namelist values to child datamodel (Step 2)
+                        // §scxml-6.4.1 + §scxml-6.4.3: pass namelist VALUES to
+                        // the child datamodel (Step 2). Which names are
+                        // eligible is decided here rather than at runtime,
+                        // because both the namelist and the child's top-level
+                        // `<data>` ids are static — the C11 backend has
+                        // filtered this way from the start, and deciding it at
+                        // codegen time keeps a `std::set` per invoke out of
+                        // every machine that has one.
                         {% if invoke_info.child_needs_script_engine %}
-                        // W3C SCXML 6.3.2: Child datamodel variables for validation
-                        // ARCHITECTURE.md Zero Duplication: Matches InvokeExecutor.cpp:322-359 logic
-                        static const std::set<std::string> childDatamodelVars_{{ invoke_info.invoke_id }} = DatamodelValidationHelper::buildChildDatamodelSet({{ '{' }}{% for var in invoke_info.child_datamodel_vars %}"{{ var }}"{{ ", " if not loop.last }}{% endfor %}{{ '}' }});
-
-                        for (const auto& [varName, values] : namelistParams) {
-                            // W3C SCXML 6.3.2: Only set variable if it exists in child's datamodel
-                            if (!DatamodelValidationHelper::isVariableDeclaredInChild(varName, childDatamodelVars_{{ invoke_info.invoke_id }})) {
-                                AOT_DEBUG("Skipping namelist variable '{}' - not defined in child's datamodel", varName);
-                                continue;
-                            }
-
-                            if (!values.empty()) {
-                                AOT_DEBUG("Setting namelist variable '{}' = '{}' in child {{ invoke_info.invoke_id }}", varName, values[0]);
-                                child_{{ invoke_info.field_suffix }}_->setParamInScriptEngine(varName, values[0]);
+                        {% for ns_name in invoke_info.namelist.split() %}
+                        {% if invoke_info.child_datamodel_vars and ns_name in invoke_info.child_datamodel_vars %}
+                        // §scxml-6.4.3: `{{ ns_name }}` matches a top-level `<data>` of
+                        // the child, so the value at that location becomes its
+                        // initial value — and the `<data>`'s own expression is
+                        // ignored.
+                        {
+                            const auto __sce_nl = namelistTypedParams.find("{{ ns_name }}");
+                            if (__sce_nl != namelistTypedParams.end() && !__sce_nl->second.empty()) {
+                                AOT_DEBUG("Seeding namelist location '{{ ns_name }}' in child {{ invoke_info.invoke_id }}");
+                                child_{{ invoke_info.field_suffix }}_->setParamValueInScriptEngine("{{ ns_name }}", __sce_nl->second.front());
                             }
                         }
+                        {% else %}
+                        // §scxml-6.4.3: `{{ ns_name }}` matches no top-level `<data>` of
+                        // the child, so the Processor MUST NOT add it to the
+                        // invoked session's data model. Nothing is emitted for
+                        // it — the parent still evaluates it, because a
+                        // location the parent does not declare is an
+                        // error.execution either way (test553).
+                        {% endif %}
+                        {% endfor %}
                         {% else %}
                         // Child does not use JSEngine - namelist handled via static datamodel
                         AOT_DEBUG("Namelist variables - child uses static datamodel");
@@ -151,10 +171,34 @@
                         {% endif %}
 
                         {% if invoke_info.params %}
-                        // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
+                        // §scxml-6.4.3: pass param VALUES to the child
+                        // datamodel before initialization. The expression is
+                        // evaluated HERE, in the invoking session, because the
+                        // clause says the value of the `<param>` element is
+                        // what becomes the child `<data>`'s initial value.
+                        // Evaluating the author's text in the child instead
+                        // asks what that source means there — the same answer
+                        // for a literal, a different one for anything that
+                        // names a variable, and the whole W3C IRP param
+                        // surface is literals. The Interpreter
+                        // (`InvokeExecutor.cpp`) has always done it this way.
                         {% for param in invoke_info.params %}
                         {% if invoke_info.child_needs_script_engine %}
-                        child_{{ invoke_info.field_suffix }}_->setParamInScriptEngine("{{ param.name | escape_cpp }}", "{{ param.expr | escape_cpp }}");
+                        {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
+                        {
+                            ensureScriptEngine();
+                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
+                            if (::SCE::ScriptResultUtils::isSuccess(__sce_param)) {
+                                child_{{ invoke_info.field_suffix }}_->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());
+                            } else {
+                                SCE_LOG_ERROR("Failed to evaluate <invoke> param expression for {}: {}", "{{ param.name | escape_cpp }}", "{{ param.expr | escape_cpp }}");
+                            }
+                        }
+                        {% else %}
+                        // §scxml-6.4.3: `{{ param.name | escape_cpp }}` matches no top-level
+                        // `<data>` of the child, so the Processor MUST NOT add
+                        // it to the invoked session's data model.
+                        {% endif %}
                         {% else %}
                         // Child does not use JSEngine - params handled via static datamodel
                         AOT_DEBUG("Param {{ param.name | escape_cpp }}={{ param.expr | escape_cpp }} - child uses static datamodel");

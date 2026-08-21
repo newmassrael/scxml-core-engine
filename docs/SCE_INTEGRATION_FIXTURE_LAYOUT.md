@@ -714,6 +714,44 @@ The Python AOT channel (Phase D of the layout RFC) is separate from
 this pybind11 path and verifies the codegen-emitted Python state-table
 code independently.
 
+`invoke_param_seeds_declared_child_data` covers §scxml-6.4.3's two
+sentences about what an `<invoke>` `<param>` puts in the invoked session's
+data model: a name matching a top-level `<data>` id takes the param's
+VALUE (and that `<data>`'s own expression is ignored), and a name matching
+nothing is not added at all. The distinction the fixture exists for is
+which session evaluates. The W3C IRP param and namelist surface — 226,
+240, 241, 243, 244, 245, 276 — passes literals only, and a literal
+evaluates the same in either data model, so a processor that hands the
+child the author's expression TEXT is green across all seven of them. The
+phases make the answers differ: one where the child declares a variable of
+the same name with a different value, so a child-side evaluation reports a
+shadow with no error raised anywhere; one where the expression names a
+variable only the parent has, so the same defect surfaces as an absence;
+one where a param names nothing in the child, whose `typeof` the child
+reports so a leak is named rather than inferred; and one carrying a STRING
+through `namelist`, where forwarding the rendered value as an expression
+turns it into an identifier lookup.
+
+It is the one axis on this list where a reference implementation was
+already in the tree on the other side of the same language:
+`InvokeExecutor` evaluates each param in the invoking session and passes
+the resulting value, so the divergence was C++ Interpreter against C++
+AOT. C11 was the other channel that had it right, and its template says
+why in a comment predating the fixture.
+
+Each child answers with an event of its own — `seed.ok`,
+`seed.shadowed`, `seed.missing`, `seed.leaked` — rather than through
+`<donedata>`, for the same reason `autoforward_event_fields` does. The
+first draft used `<donedata>` and the C11 channel went red on a
+`<donedata>` ordering question instead of on param seeding: a child whose
+initial configuration is already its top-level `<final>` evaluates that
+`<donedata>` inside the entry walk, and on that backend the walk runs
+before the parent applies the params. Two axes in one verdict, exactly
+what the rule above forbids. Deciding it in the child also puts the
+comparison where the seeded value lives, and a bare event name carries
+the answer with no payload path in between. The C11 ordering question is
+recorded as its own debt.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

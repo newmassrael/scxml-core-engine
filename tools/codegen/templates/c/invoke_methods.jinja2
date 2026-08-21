@@ -199,21 +199,29 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                `sm->L`'s top of stack, then transfer to the child's
                `lua_State` as a global under the param/namelist name —
                overriding the `<data expr=...>` defaults that the
-               child's `_init` already seeded. The cpp backend mirrors
-               this shape via `child->setParamInScriptEngine(name, expr)`
-               (`tools/codegen/templates/invoke_methods.jinja2:118-128`)
-               but transfers the expr STRING for re-evaluation in the
-               child's engine; C11 evaluates parent-side because each
-               generated SM owns its own Lua state and a parent-side
-               variable name is undefined in the child's state. For
-               literal exprs (the entire W3C corpus param/namelist
-               surface) both shapes converge on the same observable.
+               child's `_init` already seeded. C11 evaluates
+               parent-side because each generated SM owns its own Lua
+               state and a parent-side variable name is undefined in
+               the child's state.
+
+               The cpp backend transferred the expr STRING for
+               re-evaluation in the child's engine until the fixture
+               `integration_resources/invoke_param_seeds_declared_child_data/`
+               separated the two: for literal exprs — the entire W3C
+               corpus param/namelist surface — both shapes converge on
+               the same observable, which is why the divergence lived
+               as long as it did. It now passes the value, so this
+               backend's shape and cpp's are the same shape.
 
                Names not declared in the child's `<datamodel>` skip
                the transfer (test245: namelist Var2 with no child
-               <data id="Var2"> stays unbound) — mirrors cpp's
+               <data id="Var2"> stays unbound). §scxml-6.4.3 requires
+               it — "if the names do not match, the Processor MUST NOT
+               add the value ... to the invoked session's data model" —
+               and cpp decides the same question at codegen time now,
+               having reached it through the runtime
                `DatamodelValidationHelper::isVariableDeclaredInChild`
-               filter at `invoke_methods.jinja2:102-104`. */
+               on its namelist arm alone. */
             {% if invoke_info.params %}
             {% for param in invoke_info.params %}
             {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}

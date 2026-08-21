@@ -999,16 +999,19 @@
    `src_L`'s top of stack; this macro copies that top value to `dst_L`'s
    global table under `dst_name` and pops the source slot.
 
-   cpp `invoke_methods.jinja2:118-128` passes the param's expr STRING to the
-   child's script engine (`child->setParamInScriptEngine(name, expr)`) so
-   the child re-evaluates in its own context. C11 cannot mirror that shape:
-   each generated SM owns a dedicated `lua_State` per `_init`, so a string
-   that names a parent-side variable would be undefined in the child's
-   state. Instead we evaluate parent-side and transfer the value — which is
-   also closer to W3C 6.4.1's intent ("evaluate the expr in the calling
-   context"). For literal-expression W3C tests (all of test226/240/241/243
-   /244/245/276 use `expr="1"` or namelist names that resolve to integers),
-   both shapes converge on the same observable child datamodel.
+   C11 evaluates parent-side and transfers the value because each generated
+   SM owns a dedicated `lua_State` per `_init`, so a string that names a
+   parent-side variable would be undefined in the child's state. §scxml-6.4.3
+   asks for exactly that — the VALUE of the `<param>` element becomes the
+   matching child `<data>`'s initial value.
+
+   cpp passed the param's expr STRING to the child's script engine so the
+   child re-evaluated it in its own context, until the fixture
+   `integration_resources/invoke_param_seeds_declared_child_data/` made the
+   two answers differ. For literal-expression W3C tests (all of test226/240
+   /241/243/244/245/276 use `expr="1"` or namelist names that resolve to
+   integers) both shapes converge on the same observable child datamodel,
+   which is why that divergence survived every suite.
 
    Type dispatch covers the W3C corpus param/namelist value types: integer
    / float (Lua number, distinguished via lua_isinteger so 0 stays an int

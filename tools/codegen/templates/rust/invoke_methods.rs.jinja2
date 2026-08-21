@@ -128,9 +128,16 @@
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 {% for param in invoke_info.params %}
+{% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
                     if let Ok(val) = se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
                         child_policy.set_param_in_script_engine("{{ param.name | escape_rust }}", &se.to_script_literal(&val));
                     }
+{% else %}
+                    // §scxml-6.4.3: `{{ param.name | escape_rust }}` matches no top-level `<data>` of
+                    // the child, so the Processor MUST NOT add it to the invoked
+                    // session's data model. Decided here because both the param
+                    // names and the child's declarations are static.
+{% endif %}
 {% endfor %}
                 }
 {% endif %}

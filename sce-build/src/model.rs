@@ -1993,6 +1993,23 @@ impl SCXMLModel {
     pub fn has_scxml_invoke(&self) -> bool {
         self.states.values().any(|s| s.has_scxml_invoke())
     }
+    /// True iff any `<invoke type="scxml">` in the model carries a
+    /// `namelist` attribute.
+    ///
+    /// §scxml-6.4.1 gives `namelist` on `<invoke>` the same reading it has
+    /// on `<send>` — a list of data-model locations read in the invoking
+    /// session — so a document carrying one needs the namelist helper
+    /// declared whether or not it also sends anything. Only
+    /// [`Invoke::Scxml`] can carry the attribute: the hybrid, mesh-rpc and
+    /// unsupported variants have no namelist field.
+    pub fn has_invoke_namelist(&self) -> bool {
+        self.states.values().any(|s| {
+            s.invokes.iter().any(|i| match i {
+                Invoke::Scxml(si) => !si.namelist.is_empty(),
+                _ => false,
+            })
+        })
+    }
     /// True iff any state in the model declares a hybrid [`Invoke::Hybrid`].
     /// Replaces the legacy `has_hybrid_invoke: bool` field.
     pub fn has_hybrid_invoke(&self) -> bool {
