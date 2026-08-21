@@ -315,12 +315,20 @@ jobs:
     - name: Generate Rust W3C Tests
       run: ./target/debug/sce-codegen generate-w3c -l rust
 
+    # The endpoint is read from tests/w3c/basic_http_test_endpoint.h — the
+    # header the compiled runners include — rather than spelled here, so this
+    # job cannot bind one address while the machines it then runs publish
+    # another. `sce_http_endpoint_port` is the same reader the gates use.
     - name: Start W3C HTTP Test Server
       run: |
-        node tests/w3c/standalone_http_server.js 8080 /test &
+        source scripts/lib/sce_http_endpoint.sh
+        port="$(sce_http_endpoint_port "$PWD")"
+        path="$(sce_http_endpoint_path "$PWD")"
+        echo "SCE_W3C_HTTP_PORT=$port" >> "$GITHUB_ENV"
+        node tests/w3c/standalone_http_server.js "$port" "$path" &
         echo $! > /tmp/http_server.pid
         sleep 1
-        echo "W3C HTTP test server started (PID: $(cat /tmp/http_server.pid))"
+        echo "W3C HTTP test server started on localhost:${port}${path} (PID: $(cat /tmp/http_server.pid))"
 
     - name: Run W3C Tests
       run: |

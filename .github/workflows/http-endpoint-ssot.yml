@@ -1,0 +1,48 @@
+name: BasicHTTP Endpoint SSOT
+
+# Where the W3C BasicHTTP fixture listener answers is owned by
+# tests/w3c/basic_http_test_endpoint.h — a C header so every channel can read
+# it: the C11 AOT runners include it, the C++ harness wraps it, CMake reads its
+# defaults, and the gates and CI go through scripts/lib/sce_http_endpoint.sh.
+# Three files that ship inside emitted standalone suites (the Rust and Go
+# harnesses, the Python conftest) carry a PINNED mirror instead, because they
+# have no repository above them where they land.
+#
+# Why this needs its own lane rather than riding another one's coattails:
+# nothing else can catch the defect. A re-spelled port that happens to equal
+# the owner's still WORKS — every suite stays green — and the drift only
+# surfaces the day someone moves the endpoint, as a listener bound to one
+# address while the machines publish another. There is no compile error and no
+# failing fixture to lean on, so a lane that asks the question directly is the
+# only thing standing between the tree and that silence.
+#
+# The trigger is the catch-all on purpose: a re-spelling can appear in any file,
+# and narrowing to the paths anyone happens to remember misses exactly the one
+# nobody thought of. Affordable because the gate asks `git grep` for the files
+# that name the number at all and only then does the expensive part — 124ms
+# measured over this tree, against 14.7s when it read every tracked source file.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  endpoint-ssot:
+    name: One owner for the BasicHTTP fixture endpoint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Verify the endpoint has one owner
+      # Two invariants: every shipped mirror still pins the owner's value, and
+      # no file outside the owner and its stated exceptions spells the port.
+      run: scripts/gate http-endpoint-ssot

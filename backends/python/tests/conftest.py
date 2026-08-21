@@ -2,21 +2,25 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """pytest harness — W3C SCXML C.2 BasicHTTP Event I/O Processor test server.
 
-Spawns a Python `http.server.HTTPServer` on port 8080 with the same echo
-semantics as `tests/w3c/standalone_http_server.js`, so the AOT-generated
-HTTP fixtures (test201 / test509-534 / test567 / test577) can round-trip
-their `<send target="http://localhost:8080/test">` against a real socket
-without requiring Node.js to be installed.
+Spawns a Python `http.server.HTTPServer` with the same echo semantics as
+`tests/w3c/standalone_http_server.js`, so the AOT-generated HTTP fixtures
+(test201 / test509-534 / test567 / test577) can round-trip their
+`<send target="...">` against a real socket without requiring Node.js.
 
-The W3C HTTP test fixtures all hardcode `http://localhost:8080/test`, so
-the listener uses a fixed port (the spec test infrastructure makes the
-same assumption across Rust / Go / C++ backends). Tests that don't need
-HTTP simply don't take the fixture and pay no startup cost.
+WHERE it listens is owned by `tests/w3c/basic_http_test_endpoint.h`, the header
+the C11 runners include and the C++ harness wraps, so this listener binds the
+address the generated machines publish as their 'location'. The default below
+is a PINNED MIRROR of that header rather than a second opinion: this file ships
+inside the standalone suites sce-build emits, so it cannot read the header, and
+`scripts/gates/http-endpoint-ssot.sh` refuses a tree where the two disagree.
+Tests that don't need HTTP simply don't take the fixture and pay no startup
+cost.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import urllib.parse
@@ -31,9 +35,31 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "runtime"))
 
-
-_HTTP_PORT = 8080
+# §scxml-C-2-3: the fixture endpoint's default, PINNED to
+# `tests/w3c/basic_http_test_endpoint.h`.
+#
+# Spelled here rather than read from there because sce-build embeds THIS FILE
+# and writes it into the standalone suites it emits, where no repository sits
+# above it — a conftest that reached back for the header would work in-tree and
+# fail wherever it ships. `scripts/gates/http-endpoint-ssot.sh` reads both
+# values and refuses a tree where they disagree, so the forced copy cannot rot.
+#
+# SCE_W3C_HTTP_PORT overrides it, which is how a second checkout runs the
+# BasicHTTP suites while the first holds the port.
+_DEFAULT_HTTP_PORT = 8080
 _HTTP_PATH = "/test"
+
+
+def _resolve_http_port() -> int:
+    raw = os.environ.get("SCE_W3C_HTTP_PORT", "")
+    if raw:
+        if not raw.isdigit() or not 1 <= int(raw) <= 65535:
+            raise RuntimeError(f'SCE_W3C_HTTP_PORT="{raw}" is not a TCP port')
+        return int(raw)
+    return _DEFAULT_HTTP_PORT
+
+
+_HTTP_PORT = _resolve_http_port()
 _HTTP_TIMEOUT_SECONDS = 3.0
 
 

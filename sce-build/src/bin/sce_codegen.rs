@@ -5617,7 +5617,7 @@ impl W3cBackend for RustBackend {
         };
         let http_access_uri = if is_http && needs_script {
             format!(
-                "\x20   policy.set_basic_http_access_uri({suite}::harness::HTTP_TEST_SERVER_URL);\n"
+                "\x20   policy.set_basic_http_access_uri({suite}::harness::http_test_server_url());\n"
             )
         } else {
             String::new()
@@ -5872,7 +5872,7 @@ impl W3cBackend for GoBackend {
             // _ioprocessors. The converted documents address their BasicHTTP
             // sends through that entry.
             let access_uri = if is_http {
-                "\tpolicy.BasicHTTPAccessURI = scegotest.BasicHTTPAccessURI\n"
+                "\tpolicy.BasicHTTPAccessURI = scegotest.BasicHTTPAccessURI()\n"
             } else {
                 ""
             };

@@ -12,8 +12,11 @@
  * Usage:
  *   node standalone_http_server.js [port] [path]
  *
- * Example:
- *   node standalone_http_server.js 8080 /test
+ * Both arguments are optional; omitting one takes the endpoint the harness
+ * owns, from `basic_http_test_endpoint.h` via `http_endpoint.js`. The default
+ * is NOT written here: this server binds the address the compiled runners
+ * publish as their 'location', and a second author of that fact would let the
+ * two drift — the machines would post somewhere this never claimed.
  *
  * This server runs as a separate Node.js process to avoid event loop conflicts
  * with WASM test execution. The w3c_test_wrapper.js script manages its lifecycle.
@@ -21,10 +24,11 @@
 
 const http = require('http');
 const querystring = require('querystring');
+const endpoint = require('./http_endpoint');
 
-// Parse command-line arguments
-const port = parseInt(process.argv[2]) || 8080;
-const path = process.argv[3] || '/test';
+// Parse command-line arguments, falling back to the owned endpoint.
+const port = process.argv[2] ? parseInt(process.argv[2], 10) : endpoint.endpointPort();
+const path = process.argv[3] || endpoint.endpointPath();
 
 // Create HTTP server
 const server = http.createServer((req, res) => {

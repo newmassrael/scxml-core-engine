@@ -186,8 +186,8 @@ sce_gate_codegen() {
     sce_codegen_require "$SCE_REPO_ROOT"
 }
 
-# Start the W3C BasicHTTP fixture server on localhost:8080 for the caller,
-# and stop it when the gate exits.
+# Start the W3C BasicHTTP fixture server for the caller, and stop it when the
+# gate exits.
 #
 # Several conformance arms need it — the Rust workspace suite, the Go suite,
 # and any other backend running the W3C SCXML C.2 fixtures (test_201, _509,
@@ -197,9 +197,18 @@ sce_gate_codegen() {
 # is what keeps the settle window, the failure message and the cleanup from
 # being written three times and drifting.
 #
-# The C++ suite is the opposite case and must NOT have this: a live 8080 makes
-# its ctest run report 13 tests Not Run. That asymmetry is the reason this is a
-# call a gate makes rather than something the runner does for everyone.
+# WHERE the listener answers is not decided here. It is read from
+# `tests/w3c/basic_http_test_endpoint.h` via `sce_http_endpoint_port`, the same
+# header the compiled runners include, so the address this binds and the
+# 'location' those runners publish cannot come apart. The gate also EXPORTS the
+# value, because the suites it starts the server for run runners that read it —
+# a gate that bound one port and let its children address another would fail
+# every fixture for a reason that has nothing to do with the backend.
+#
+# The C++ suite is the opposite case and must NOT have this: a live listener on
+# the endpoint makes its ctest run report 13 tests Not Run. That asymmetry is
+# the reason this is a call a gate makes rather than something the runner does
+# for everyone.
 #
 # Answers into SCE_GATE_HTTP_FIXTURE_PID rather than onto stdout, because the
 # obvious `pid="$(_sce_gate_http_fixture_start)"` would put `sce_gate_fail`
@@ -229,25 +238,37 @@ _sce_gate_http_fixture_start() {
 
     # One listener per gate, whichever entry point asked for it. Mixing the two
     # forms would leave the gate-wide server orphaned the moment a scoped round
-    # cleared the variable, and an orphan on 8080 is what the next suite fails
-    # to bind against. Refused rather than reconciled: a gate wanting both is
-    # asking for something neither form means.
+    # cleared the variable, and an orphan on the endpoint is what the next suite
+    # fails to bind against. Refused rather than reconciled: a gate wanting both
+    # is asking for something neither form means.
     [[ -z "$SCE_GATE_HTTP_FIXTURE_PID" ]] \
         || sce_gate_fail "a W3C HTTP fixture server is already up for this gate (pid $SCE_GATE_HTTP_FIXTURE_PID). Use sce_gate_http_fixture_server for a gate-wide one or sce_gate_with_http_fixture_server per command, not both."
 
-    local log
+    local port path log
+    # Sourced HERE, not at file scope: `gate_registry_contract` materialises a
+    # SUBSET of the tree into a temp dir and runs the gates there, so a
+    # top-level source of a file that subset does not carry kills every gate
+    # before it starts. `sce_gate_codegen_require` sources its own library the
+    # same way, and that sibling is the contract.
+    source "$SCE_REPO_ROOT/scripts/lib/sce_http_endpoint.sh"
+    port="$(sce_http_endpoint_port "$SCE_REPO_ROOT")" \
+        || sce_gate_fail "could not resolve the W3C BasicHTTP fixture endpoint port"
+    path="$(sce_http_endpoint_path "$SCE_REPO_ROOT")" \
+        || sce_gate_fail "could not resolve the W3C BasicHTTP fixture endpoint path"
+    export SCE_W3C_HTTP_PORT="$port"
+
     log="$(mktemp)"
     sce_gate_on_exit "rm -f '$log'"
-    node "$SCE_REPO_ROOT/tests/w3c/standalone_http_server.js" 8080 /test >"$log" 2>&1 &
+    node "$SCE_REPO_ROOT/tests/w3c/standalone_http_server.js" "$port" "$path" >"$log" 2>&1 &
     SCE_GATE_HTTP_FIXTURE_PID=$!
     _sce_gate_http_fixture_arm_cleanup
     # Match the CI workflows' settle window before issuing requests.
     sleep 1
     if ! kill -0 "$SCE_GATE_HTTP_FIXTURE_PID" 2>/dev/null; then
         cat "$log" >&2
-        sce_gate_fail "W3C HTTP fixture server failed to start (port 8080 already in use?)"
+        sce_gate_fail "W3C HTTP fixture server failed to start (port $port already in use?)"
     fi
-    sce_gate_step "W3C HTTP fixture server up on localhost:8080"
+    sce_gate_step "W3C HTTP fixture server up on localhost:${port}${path}"
 }
 
 # The whole gate needs it: start once, stop at exit.
@@ -260,12 +281,12 @@ sce_gate_http_fixture_server() {
 #
 # The scoped form exists because holding the port is not free. `mutation-rounds`
 # runs several rounds in one invocation and only some of them want a listener on
-# 8080; the rest drive ctest, where the C11 BasicHTTP entries bring up their own
-# copy through the `w3c_c_http_server` CMake fixture (backends/c/tests/
-# CMakeLists.txt) and the C++ W3C runner binds the port itself. A server left
-# up across the whole gate would make those fail to bind — the same 13-cases-
-# Not-Run shape `sce_gate_requires_free_http_port` refuses for, arrived at from
-# the other direction.
+# the endpoint; the rest drive ctest, where the C11 BasicHTTP entries bring up
+# their own copy through the `w3c_c_http_server` CMake fixture (backends/c/
+# tests/CMakeLists.txt) and the C++ W3C runner binds the port itself. A server
+# left up across the whole gate would make those fail to bind — the same
+# 13-cases-Not-Run shape `sce_gate_requires_free_http_port` refuses for,
+# arrived at from the other direction.
 #
 # The exit cleanup armed by the start covers the path this function's own stop
 # cannot: a gate interrupted mid-round (Ctrl-C, a cancelled CI job) never
@@ -410,14 +431,24 @@ sce_prune_ctest_temporaries() {
     return 0
 }
 
-# Refuse to run when something already holds 8080.
+# Refuse to run when something already holds the fixture endpoint's port.
 #
 # The C++ conformance suite reports 13 of its cases Not Run when the fixture
 # server is live, which is a smaller suite reported as a passing one. The case
 # floor would catch the count, but not name the cause; this does.
+#
+# The port comes from the endpoint owner rather than being spelled here, so a
+# tree configured onto a different one checks the port it will actually use.
+# This is what lets a second checkout run this suite while the first holds the
+# default — the collision the old literal made unavoidable.
 sce_gate_requires_free_http_port() {
-    if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ':8080 '; then
-        sce_gate_fail "something is listening on localhost:8080. The W3C HTTP fixture server makes this suite report 13 cases Not Run, so the run would be a smaller suite reported as a passing one. Stop it and retry."
+    local port
+    # Sourced here for the reason its sibling above is.
+    source "$SCE_REPO_ROOT/scripts/lib/sce_http_endpoint.sh"
+    port="$(sce_http_endpoint_port "$SCE_REPO_ROOT")" \
+        || sce_gate_fail "could not resolve the W3C BasicHTTP fixture endpoint port"
+    if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ":${port} "; then
+        sce_gate_fail "something is listening on localhost:${port}. The W3C HTTP fixture server makes this suite report 13 cases Not Run, so the run would be a smaller suite reported as a passing one. Stop it and retry, or point this tree at another port with SCE_W3C_HTTP_PORT."
     fi
 }
 
