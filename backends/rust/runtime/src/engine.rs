@@ -58,6 +58,7 @@ use std::time::Instant;
 use crate::clock::SceClock;
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
+use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::{hierarchy, state_policy_concepts as concepts};
 use crate::sched_send_id::ScheduledSendIdLike;
@@ -916,6 +917,88 @@ impl<P: StatePolicy> Engine<P> {
                 cb();
             }
         }
+    }
+
+    /// Enter a configuration this machine was already in, WITHOUT running
+    /// `<onentry>`.
+    ///
+    /// [`initialize`](Self::initialize) is the other door and the contrast is
+    /// the whole point: it enters the document's initial configuration and runs
+    /// the entry actions of every state on the way in. This one enters a
+    /// configuration the caller names and runs none of them. A host that has
+    /// persisted where a machine was, and is bringing it back in a new process,
+    /// wants the second: §scxml-3.8 entry actions are "executed when the state
+    /// is entered", and re-executing them is a replay of what the earlier run
+    /// already did — an `<onentry><send>` would post its event a second time,
+    /// to a peer that already received it.
+    ///
+    /// # What it takes, and why two arguments
+    ///
+    /// Exactly what the two readers on this engine publish:
+    /// [`get_active_states`](Self::get_active_states) and
+    /// [`get_current_state`](Self::get_current_state). Handing back both is not
+    /// redundancy — for a machine with `<parallel>` states the configuration
+    /// does not determine the current state. `current_state` is the leaf the
+    /// engine descended to through `get_initial_or_history_child`, so which
+    /// region it sits in is a fact about the transition history rather than
+    /// about the configuration, and a chain alone cannot recover it. For a
+    /// machine without parallel states `current` is the chain's leaf and the
+    /// check below simply confirms the caller agrees.
+    ///
+    /// # What it refuses
+    ///
+    /// Every chain that is not a configuration of THIS document — see
+    /// [`configuration::validate`](crate::helpers::configuration::validate) for
+    /// the rules and [`ConfigurationRejection`](crate::helpers::configuration::ConfigurationRejection)
+    /// for what each refusal says. Validation runs before any mutation, so a
+    /// refused call leaves the engine exactly as it was; entering "near" the
+    /// requested configuration is the one outcome this door must never produce,
+    /// because a host has no way to detect it afterwards.
+    ///
+    /// # What it does not do
+    ///
+    /// - No `<onentry>`, and no `<onexit>`: no state is entered or left.
+    /// - No macrostep. [`initialize`](Self::initialize) settles the machine
+    ///   before returning; this does not, because the configuration handed in
+    ///   was already a settled one — running the loop here could take an
+    ///   eventless transition the earlier run had no reason to take, and fire
+    ///   the `<send>`s on the way. The host drives the machine on from here
+    ///   with [`step`](Self::step) or [`tick`](Self::tick) as it otherwise
+    ///   would.
+    /// - No datamodel restore. §scxml-5.3 declaration still runs, so the
+    ///   variables exist with their document defaults and a host can then put
+    ///   its saved values back through `IScriptEngine` — the engine does not
+    ///   persist datamodel state and does not pretend to. (Plain code span, not
+    ///   an intra-doc link: `scripting` is gated out of the no_std docs profile,
+    ///   where a link to it cannot resolve.)
+    pub fn enter_at(
+        &mut self,
+        configuration: &hierarchy::StateChain<P::State>,
+        current: P::State,
+    ) -> Result<(), ConfigurationRejection<P::State>> {
+        // Before anything is touched: a rejection must not half-enter.
+        crate::helpers::configuration::validate::<P>(configuration, current)?;
+
+        // §scxml-5.3: the datamodel is declared before anything can read it.
+        // This is not a state entry action — `<datamodel>` holds `<data>`, not
+        // executable content — so it runs here for the same reason it runs in
+        // `initialize`: a `cond` or an `assign` evaluated after this call would
+        // otherwise reference variables that were never declared.
+        if concepts::has_data_model_init::<P>() {
+            self.initialize_data_model_dispatch();
+        }
+
+        self.current_state = current;
+
+        // §scxml-3.4: a machine that keeps its own active set is handed it back.
+        // The condition is the one the generator emits `set_active_states`
+        // under, so a policy reached here has the override.
+        if concepts::has_active_states::<P>() {
+            self.policy.set_active_states(configuration.clone());
+        }
+
+        self.is_running = true;
+        Ok(())
     }
 
     /// Process one macrostep: drain queues and run eventless transitions.

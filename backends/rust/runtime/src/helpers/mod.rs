@@ -18,6 +18,7 @@
 //!
 //! ## Module index
 //!
+//! - [`configuration`]: §scxml-3.3 / §scxml-3.4 restored-configuration validation
 //! - [`datamodel_init`]: Datamodel initialization helpers
 //! - `datamodel_read` (std-only): Typed reads of a live datamodel variable
 //! - [`done_data`]: Donedata processing
@@ -46,6 +47,11 @@
 // marker set in lockstep with the actual `cfg(not(feature = "no_std"))`
 // gating instead.
 
+// §scxml-3.3 / §scxml-3.4: whether a chain a host hands back is a configuration
+// this document can hold. Ungated — it reads the policy's static hierarchy and
+// allocates nothing, so the no_std profile asks the same question the std one
+// does. `Engine::enter_at` is its only caller.
+pub mod configuration;
 pub mod datamodel_init;
 // Typed reads of a live datamodel variable. Gated for the same reason
 // `io_processors` is — a typed accessor is emitted only for a `<data>` that
