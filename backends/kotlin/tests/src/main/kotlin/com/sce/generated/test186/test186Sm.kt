@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
+// template-hash: 2cf4917c7dff79eaf746b52e649909e9c7318e80b65f49555ba6a2bcd0d8eaca
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -338,7 +338,13 @@ class Test186StateMachine(
                 val engineE = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsE = mutableMapOf<String, Any?>()
-                try { putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, "Var1")) } catch (_: Exception) { putParam(paramsE, "aParam", "") }
+                try {
+                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, "Var1"))
+                } catch (_: Exception) {
+                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
+                    raisePlatformError(Test186Event.Error.Execution, "<send> <param name='aParam'> expr failed to evaluate")
+                }
+
                 val eventDataE = buildJsonFromParams(paramsE)
                 scheduleSend("__send_0", 1000L, Test186Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = eventDataE))
             }

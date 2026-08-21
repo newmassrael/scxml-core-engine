@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f524cef2066d73e88ffccad2cc701b342488a62174d08ce0c0f5b45b36ac885f
-// template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
+// source-hash: 93906883b5b4165f4116a79fbaaf89b99fecf00e95a105efdfc747f19d8b3ab1
+// template-hash: 2cf4917c7dff79eaf746b52e649909e9c7318e80b65f49555ba6a2bcd0d8eaca
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: send_param_payload.scxml:62 :: _machine"]
-// SCE-MAP: send_param_payload.scxml:62 :: _machine
+#![doc = "SCE-MAP: send_param_payload.scxml:82 :: _machine"]
+// SCE-MAP: send_param_payload.scxml:82 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -85,12 +85,16 @@ pub enum SendParamPayloadState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
     AwaitChild,
+    FailBrokenParamDelivered,
     FailChildPayload,
     FailDuplicateParams,
     FailInternalPayload,
+    FailNoParamError,
     FailNumberType,
+    FailSiblingParamLost,
     FailStringType,
     InternalPhase,
+    ParamErrorPhase,
     Pass,
     TypedPhase,
 }
@@ -107,6 +111,7 @@ pub enum SendParamPayloadEvent {
     FromChild,
     Loopback,
     Typed,
+    WithBadParam,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -131,6 +136,7 @@ impl SendParamPayloadEvent {
         SendParamPayloadEvent::FromChild,
         SendParamPayloadEvent::Loopback,
         SendParamPayloadEvent::Typed,
+        SendParamPayloadEvent::WithBadParam,
     ];
 }
 
@@ -143,6 +149,9 @@ pub struct SendParamPayloadPolicy {
     last_transition_is_internal: bool,
     last_transition_is_targetless: bool,
     last_transition_source_state: SendParamPayloadState,
+    // W3C SCXML 3.13: Transition action tracking
+    last_transition_index: usize,
+    has_transition_actions: bool,
     // W3C SCXML 5.10.1: External event flag for _event.type classification
     next_event_is_external: bool,
     // W3C SCXML 5.10: Event name for _event.name binding
@@ -205,6 +214,21 @@ pub struct SendParamPayloadPolicy {
 }
 
 impl SendParamPayloadPolicy {
+    /// §scxml-5.3: what the `sawParamError` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `sawParamError` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn saw_param_error(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "sawParamError",
+        )
+    }
+
     /// §scxml-5.3: what the `tag` datamodel variable is holding now.
     ///
     /// The live value, not the authored one: `<assign>` writes into the
@@ -234,6 +258,8 @@ impl SendParamPayloadPolicy {
             last_transition_is_internal: false,
             last_transition_is_targetless: false,
             last_transition_source_state: SendParamPayloadState::AwaitChild,
+            last_transition_index: 0,
+            has_transition_actions: false,
             next_event_is_external: false,
             pending_event_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),
@@ -287,6 +313,22 @@ impl SendParamPayloadPolicy {
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.2/5.3: Initialize 'nothing' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "nothing", "nil",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'sawParamError' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "sawParamError",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
 
         // W3C SCXML 5.3: Early binding - Initialize state typedPhase datamodel variables
         // W3C SCXML 5.2/5.3: Initialize 'tag' from expr (typedPhase)
@@ -321,6 +363,30 @@ impl SendParamPayloadPolicy {
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.2/5.3: Initialize 'nothing' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "nothing", "nil",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                SendParamPayloadEvent::ErrorExecution,
+                "<data id='nothing'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'sawParamError' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "sawParamError",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                SendParamPayloadEvent::ErrorExecution,
+                "<data id='sawParamError'> expr failed to evaluate",
+            ));
+        }
 
         // W3C SCXML 5.3: Early binding - Initialize state typedPhase datamodel variables
         // W3C SCXML 5.2/5.3: Initialize 'tag' from expr (typedPhase)
@@ -676,10 +742,13 @@ impl StatePolicy for SendParamPayloadPolicy {
 
     fn is_final_state(state: Self::State) -> bool {
         match state {
+            SendParamPayloadState::FailBrokenParamDelivered => true,
             SendParamPayloadState::FailChildPayload => true,
             SendParamPayloadState::FailDuplicateParams => true,
             SendParamPayloadState::FailInternalPayload => true,
+            SendParamPayloadState::FailNoParamError => true,
             SendParamPayloadState::FailNumberType => true,
+            SendParamPayloadState::FailSiblingParamLost => true,
             SendParamPayloadState::FailStringType => true,
             SendParamPayloadState::Pass => true,
             _ => false,
@@ -716,13 +785,17 @@ impl StatePolicy for SendParamPayloadPolicy {
     fn get_document_order(state: Self::State) -> u32 {
         match state {
             SendParamPayloadState::AwaitChild => 0,
-            SendParamPayloadState::FailChildPayload => 4,
-            SendParamPayloadState::FailDuplicateParams => 8,
-            SendParamPayloadState::FailInternalPayload => 5,
-            SendParamPayloadState::FailNumberType => 6,
-            SendParamPayloadState::FailStringType => 7,
+            SendParamPayloadState::FailBrokenParamDelivered => 11,
+            SendParamPayloadState::FailChildPayload => 5,
+            SendParamPayloadState::FailDuplicateParams => 9,
+            SendParamPayloadState::FailInternalPayload => 6,
+            SendParamPayloadState::FailNoParamError => 10,
+            SendParamPayloadState::FailNumberType => 7,
+            SendParamPayloadState::FailSiblingParamLost => 12,
+            SendParamPayloadState::FailStringType => 8,
             SendParamPayloadState::InternalPhase => 1,
-            SendParamPayloadState::Pass => 3,
+            SendParamPayloadState::ParamErrorPhase => 3,
+            SendParamPayloadState::Pass => 4,
             SendParamPayloadState::TypedPhase => 2,
         }
     }
@@ -735,6 +808,7 @@ impl StatePolicy for SendParamPayloadPolicy {
             SendParamPayloadEvent::FromChild => "fromChild",
             SendParamPayloadEvent::Loopback => "loopback",
             SendParamPayloadEvent::Typed => "typed",
+            SendParamPayloadEvent::WithBadParam => "withBadParam",
             SendParamPayloadEvent::Null => "",
         }
     }
@@ -747,6 +821,7 @@ impl StatePolicy for SendParamPayloadPolicy {
             "fromChild" => Some(SendParamPayloadEvent::FromChild),
             "loopback" => Some(SendParamPayloadEvent::Loopback),
             "typed" => Some(SendParamPayloadEvent::Typed),
+            "withBadParam" => Some(SendParamPayloadEvent::WithBadParam),
             _ => None,
         }
     }
@@ -754,12 +829,16 @@ impl StatePolicy for SendParamPayloadPolicy {
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
             SendParamPayloadState::AwaitChild => "awaitChild",
+            SendParamPayloadState::FailBrokenParamDelivered => "failBrokenParamDelivered",
             SendParamPayloadState::FailChildPayload => "failChildPayload",
             SendParamPayloadState::FailDuplicateParams => "failDuplicateParams",
             SendParamPayloadState::FailInternalPayload => "failInternalPayload",
+            SendParamPayloadState::FailNoParamError => "failNoParamError",
             SendParamPayloadState::FailNumberType => "failNumberType",
+            SendParamPayloadState::FailSiblingParamLost => "failSiblingParamLost",
             SendParamPayloadState::FailStringType => "failStringType",
             SendParamPayloadState::InternalPhase => "internalPhase",
+            SendParamPayloadState::ParamErrorPhase => "paramErrorPhase",
             SendParamPayloadState::Pass => "pass",
             SendParamPayloadState::TypedPhase => "typedPhase",
         }
@@ -851,8 +930,8 @@ impl StatePolicy for SendParamPayloadPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: send_param_payload.scxml:62 :: _machine"]
-    // SCE-MAP: send_param_payload.scxml:62 :: _machine
+    #[doc = "SCE-MAP: send_param_payload.scxml:82 :: _machine"]
+    // SCE-MAP: send_param_payload.scxml:82 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -865,7 +944,7 @@ impl StatePolicy for SendParamPayloadPolicy {
         let _ = path_child;
         match state {
             SendParamPayloadState::AwaitChild => {
-                // SCE-MAP: send_param_payload.scxml:66 :: awaitChild :: _state_body
+                // SCE-MAP: send_param_payload.scxml:100 :: awaitChild :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -880,7 +959,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                 }
             }
             SendParamPayloadState::InternalPhase => {
-                // SCE-MAP: send_param_payload.scxml:91 :: internalPhase :: _state_body
+                // SCE-MAP: send_param_payload.scxml:125 :: internalPhase :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -911,8 +990,74 @@ impl StatePolicy for SendParamPayloadPolicy {
                     }
                 }
             }
+            SendParamPayloadState::ParamErrorPhase => {
+                // SCE-MAP: send_param_payload.scxml:192 :: paramErrorPhase :: _state_body
+                // W3C SCXML 3.8: onentry block 1/1
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+
+                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        let event_data_string: String = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            let mut wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            wire_params
+                                .entry("kept".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::String("here".to_string()));
+                            match se.evaluate_expression(&sid, "nothing.deep") {
+                                Ok(val) => {
+                                    wire_params
+                                        .entry("broken".to_string())
+                                        .or_default()
+                                        .push(val);
+                                }
+                                Err(e) => {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "send param 'broken' eval failed: {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            SendParamPayloadEvent::ErrorExecution,
+                                            "<send> <param name='broken'> expr failed to evaluate",
+                                        ),
+                                    );
+                                }
+                            }
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                &wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                SendParamPayloadEvent::WithBadParam,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
+                }
+            }
             SendParamPayloadState::TypedPhase => {
-                // SCE-MAP: send_param_payload.scxml:107 :: typedPhase :: _state_body
+                // SCE-MAP: send_param_payload.scxml:141 :: typedPhase :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1026,8 +1171,8 @@ impl StatePolicy for SendParamPayloadPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: send_param_payload.scxml:62 :: _machine"]
-    // SCE-MAP: send_param_payload.scxml:62 :: _machine
+    #[doc = "SCE-MAP: send_param_payload.scxml:82 :: _machine"]
+    // SCE-MAP: send_param_payload.scxml:82 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1064,8 +1209,8 @@ impl StatePolicy for SendParamPayloadPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: send_param_payload.scxml:62 :: _machine"]
-    // SCE-MAP: send_param_payload.scxml:62 :: _machine
+    #[doc = "SCE-MAP: send_param_payload.scxml:82 :: _machine"]
+    // SCE-MAP: send_param_payload.scxml:82 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -1120,11 +1265,53 @@ impl StatePolicy for SendParamPayloadPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: send_param_payload.scxml:62 :: _machine"]
-    // SCE-MAP: send_param_payload.scxml:62 :: _machine
+    #[doc = "SCE-MAP: send_param_payload.scxml:82 :: _machine"]
+    // SCE-MAP: send_param_payload.scxml:82 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        // W3C SCXML 3.13: No transition actions in this state machine
-        let _ = engine;
+        if !self.has_transition_actions {
+            return;
+        }
+
+        // Switch on source state, then transition index
+        match self.last_transition_source_state {
+            SendParamPayloadState::ParamErrorPhase => {
+                match self.last_transition_index {
+                    0 => {
+                        // SCE-MAP: send_param_payload.scxml:199 :: paramErrorPhase :: _transition_0
+                        // W3C SCXML 3.13: Transition 0 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="sawParamError">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "1";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "sawParamError", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'sawParamError': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    SendParamPayloadEvent::ErrorExecution,
+                                    "<assign> to 'sawParamError' failed",
+                                ));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+
+        // Reset flags after execution
+        self.has_transition_actions = false;
     }
     // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
     // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
@@ -1169,6 +1356,8 @@ impl SendParamPayloadPolicy {
                     ) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
+                        self.last_transition_index = 0;
+                        self.has_transition_actions = false;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
 
@@ -1181,6 +1370,8 @@ impl SendParamPayloadPolicy {
                 if event == SendParamPayloadEvent::FromChild {
                     // W3C SCXML 3.4: Track transition metadata
                     self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = false;
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
 
@@ -1190,10 +1381,13 @@ impl SendParamPayloadPolicy {
                 }
                 false
             }
+            SendParamPayloadState::FailBrokenParamDelivered => false,
             SendParamPayloadState::FailChildPayload => false,
             SendParamPayloadState::FailDuplicateParams => false,
             SendParamPayloadState::FailInternalPayload => false,
+            SendParamPayloadState::FailNoParamError => false,
             SendParamPayloadState::FailNumberType => false,
+            SendParamPayloadState::FailSiblingParamLost => false,
             SendParamPayloadState::FailStringType => false,
             SendParamPayloadState::InternalPhase => {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
@@ -1206,6 +1400,8 @@ impl SendParamPayloadPolicy {
                     ) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
+                        self.last_transition_index = 0;
+                        self.has_transition_actions = false;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
 
@@ -1218,10 +1414,90 @@ impl SendParamPayloadPolicy {
                 if event == SendParamPayloadEvent::Loopback {
                     // W3C SCXML 3.4: Track transition metadata
                     self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = false;
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
 
                     *current_state = SendParamPayloadState::FailInternalPayload;
+                    *transition_taken = true;
+                    return true;
+                }
+                false
+            }
+            SendParamPayloadState::ParamErrorPhase => {
+                // W3C SCXML 3.12: Event-triggered transitions (document order)
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == SendParamPayloadEvent::ErrorExecution {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = true;
+                    self.last_transition_is_targetless = true;
+
+                    // W3C SCXML 5.9.2: Targetless internal transition
+                    *transition_taken = true;
+                    return true;
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == SendParamPayloadEvent::WithBadParam {
+                    // W3C SCXML 5.9: Script engine guard
+                    if self.safe_evaluate_guard("(sawParamError ~= 1)", engine) {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_index = 1;
+                        self.has_transition_actions = false;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
+
+                        *current_state = SendParamPayloadState::FailNoParamError;
+                        *transition_taken = true;
+                        return true;
+                    }
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == SendParamPayloadEvent::WithBadParam {
+                    // W3C SCXML 5.9: Script engine guard
+                    if self.safe_evaluate_guard("(_event.data.broken == \"\")", engine) {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_index = 2;
+                        self.has_transition_actions = false;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
+
+                        *current_state = SendParamPayloadState::FailBrokenParamDelivered;
+                        *transition_taken = true;
+                        return true;
+                    }
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == SendParamPayloadEvent::WithBadParam {
+                    // W3C SCXML 5.9: Script engine guard
+                    if self.safe_evaluate_guard("(_event.data.kept ~= \"here\")", engine) {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_index = 3;
+                        self.has_transition_actions = false;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
+
+                        *current_state = SendParamPayloadState::FailSiblingParamLost;
+                        *transition_taken = true;
+                        return true;
+                    }
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == SendParamPayloadEvent::WithBadParam {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 4;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = SendParamPayloadState::Pass;
                     *transition_taken = true;
                     return true;
                 }
@@ -1236,6 +1512,8 @@ impl SendParamPayloadPolicy {
                     if self.safe_evaluate_guard("(_event.data.n ~= 7)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
+                        self.last_transition_index = 0;
+                        self.has_transition_actions = false;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
 
@@ -1250,6 +1528,8 @@ impl SendParamPayloadPolicy {
                     if self.safe_evaluate_guard("(_event.data.s ~= \"kept\")", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
+                        self.last_transition_index = 1;
+                        self.has_transition_actions = false;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
 
@@ -1264,10 +1544,12 @@ impl SendParamPayloadPolicy {
                     if self.safe_evaluate_guard("(((#_event.data.d == 2) and (_event.data.d[1] == 1)) and (_event.data.d[2] == 2))", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
+                        self.last_transition_index = 2;
+                        self.has_transition_actions = false;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
 
-                            *current_state = SendParamPayloadState::Pass;
+                            *current_state = SendParamPayloadState::ParamErrorPhase;
                             *transition_taken = true;
                         return true;
                     }
@@ -1276,6 +1558,8 @@ impl SendParamPayloadPolicy {
                 if event == SendParamPayloadEvent::Typed {
                     // W3C SCXML 3.4: Track transition metadata
                     self.last_transition_source_state = check_state;
+                    self.last_transition_index = 3;
+                    self.has_transition_actions = false;
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
 
