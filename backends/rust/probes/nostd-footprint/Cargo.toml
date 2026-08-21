@@ -47,7 +47,7 @@ sce-nostd-build-probe = { path = "../nostd-build" }
 # A pass-through so the gate can weigh the same engine twice — once reporting
 # its refusals, once not — and state what the report costs instead of guessing.
 # Feature unification makes enabling it here enough for the whole graph.
-no-macrostep-diagnostics = ["sce-rust-runtime/no-macrostep-diagnostics"]
+no_macrostep_diagnostics = ["sce-rust-runtime/no_macrostep_diagnostics"]
 
 # Release, because a debug build measures the inliner's day off. The consumer
 # reports on `--release`, and a footprint compared across two profiles is two

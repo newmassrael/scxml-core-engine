@@ -61,7 +61,7 @@ no_std = ["dep:heapless"]
 # It is opt-OUT, which is deliberate and unusual. Additive opt-in is the Cargo
 # convention, and the convention is wrong here: a consumer who does nothing
 # must keep the report, because losing it silently is exactly the failure the
-# report exists to prevent. Naming `no-macrostep-diagnostics` is a consumer
+# report exists to prevent. Naming `no_macrostep_diagnostics` is a consumer
 # stating that nothing in their image reads those counters.
 #
 # Measured on `thumbv7em-none-eabihf` before it was offered — see
@@ -70,7 +70,7 @@ no_std = ["dep:heapless"]
 # residue is not logging (2026-08-21): with `lto = true` and no logger
 # installed, link-time optimisation had already discarded every `log::` call,
 # so `release_max_level_off` bought them exactly zero bytes.
-no-macrostep-diagnostics = []
+no_macrostep_diagnostics = []
 
 [dependencies]
 log = { workspace = true }
