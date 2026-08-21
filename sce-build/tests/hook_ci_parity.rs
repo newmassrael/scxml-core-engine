@@ -708,12 +708,34 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
     let _ = fs::remove_dir_all(&scratch);
     let branch = format!("audit-hook-probe-{}", std::process::id());
 
-    // The hook slugs the main worktree's path into a memory directory
-    // under $HOME; seed exactly that directory so the validation has
+    // The hook slugs the MAIN worktree's path into a memory directory under
+    // $HOME (commit_audit.sh: "The slug keys off the *main* worktree, not the
+    // invoking directory"); seed exactly that directory so the validation has
     // something to report.
+    //
+    // Resolved the way the hook resolves it, not from `root`. `root` is
+    // CARGO_MANIFEST_DIR's parent, which is the checkout the test is COMPILED
+    // in — and when that is a linked worktree the two paths differ, so seeding
+    // under `root` put the memo somewhere the hook never looks and the banner
+    // never named it. Measured: this test passed from the main checkout and
+    // failed from either of two linked worktrees carrying unrelated changes,
+    // which is a test that cannot run where the repository is meant to be
+    // workable rather than a defect in the hook.
+    let main_worktree = {
+        let out = std::process::Command::new("git")
+            .current_dir(&root)
+            .args(["worktree", "list", "--porcelain"])
+            .output()
+            .expect("git worktree list runs");
+        let text = String::from_utf8_lossy(&out.stdout);
+        text.lines()
+            .find_map(|line| line.strip_prefix("worktree "))
+            .expect("git worktree list names the main worktree first")
+            .to_string()
+    };
     let home = std::env::temp_dir().join(format!("sce-audit-hook-home-{}", std::process::id()));
     let _ = fs::remove_dir_all(&home);
-    let slug = root.display().to_string().replace('/', "-");
+    let slug = main_worktree.replace('/', "-");
     let memory = home.join(".claude/projects").join(&slug).join("memory");
     fs::create_dir_all(&memory).expect("seed memory dir");
     // A memo that VIOLATES the lifecycle contract: `feedback_*.md` must
