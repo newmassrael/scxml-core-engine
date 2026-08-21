@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 09b7454cf9165bde8e92b3225905fad8bae3b40d103c1bd2ce5da264bfe36345
-// template-hash: 2cf4917c7dff79eaf746b52e649909e9c7318e80b65f49555ba6a2bcd0d8eaca
+// template-hash: 2531476627eb1f2b85917395efe91d1b55da71c6abf9c48b9fabdfd63b215bfa
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -500,8 +500,15 @@ impl ParallelSelfTransitionKeepsItsLeafPolicy {
         Self::get_state_name(state) == name
     }
 
-    // W3C SCXML 6.4.1: Set parameter in child's script engine before invoke initialization
-    // Matches C++ child->setParamInScriptEngine(name, expr)
+    // §scxml-6.4.3: set an invoke param in this (child) session's script
+    // engine before its datamodel initialises.
+    //
+    // The caller renders the parent-evaluated value as an engine literal and
+    // this re-parses it, so the value survives — but it is a round trip
+    // through source that neither the Interpreter, C++ AOT, C11 nor Python
+    // performs: each of those passes the value itself. What remains here is
+    // the last consumer of `IScriptEngine::to_script_literal` on the invoke
+    // path.
     pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
