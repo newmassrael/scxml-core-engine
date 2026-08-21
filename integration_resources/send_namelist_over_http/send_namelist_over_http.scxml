@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML C.2 + 6.2.3: what a `namelist` costs a `<send>` that crosses
+     BasicHTTP, on the two halves the IRP corpus states and does not measure.
+
+     The corpus has a document for each half and neither can fail:
+
+       test518 is titled "test that namelist values get encoded as POST
+       parameters" and its whole verdict is `<transition event="test"
+       target="pass"/>` — it passes as soon as the event comes BACK, whatever
+       the message carried. Measured 2026-08-21: the Rust channel posted a
+       form with no parameters at all for a year of pushes and test518 stayed
+       green, because `http_params` was filled from `<param>` alone and a
+       `namelist` reached the payload by a different road.
+
+       test519 means to check a `<param>` on the same wire and spells its
+       guard `<transition event="test" expr="...">`. `expr` is not an
+       attribute of `<transition>`, so the guard is not a guard; that one also
+       passes on arrival. test567 is the only IRP document that reads an HTTP
+       payload back, and it reads a `<param>`.
+
+     So both claims below are ones no suite makes, which is why they are here
+     rather than in a W3C fixture: the IRP documents are the spec's and cannot
+     be strengthened.
+
+       a namelist name and value reach the form
+         W3C SCXML C.2: "If the namelist attribute is defined, the SCXML
+         Processor MUST map its variable names and values to HTTP POST
+         parameters." The harness server echoes the form back as the event's
+         data, so a document can read what it posted — which is how test567
+         reads a `<param>` and how this reads a namelist.
+
+       an unreadable namelist item reports AND discards the message
+         Two clauses, complementary rather than competing. W3C SCXML 5.9.2
+         makes a namelist item a location expression and requires
+         `error.execution` when one yields no valid location; W3C SCXML 6.2.3
+         requires the message itself to be discarded when the evaluation of a
+         `<send>`'s arguments produces an error. Neither is `<param>`'s rule:
+         5.7.1 is an explicit per-item exception ("MUST ignore the name and
+         value") and the whole message still goes. There is no such exception
+         for namelist anywhere in the specification.
+
+         test553 makes the same claim over the default processor and every
+         channel keeps it there. This asks it of the HTTP arm, which used to
+         answer separately — Python's `_build_http_params` swallowed the
+         failure and posted the rest.
+
+     The verdict states are separate so a failure names which half broke: a
+     form that arrived empty is a different defect from a message that should
+     never have been sent.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="mapPhase"
+       name="send_namelist_over_http">
+
+    <datamodel>
+        <!-- Posted by name in the first phase and read back out of the echo. -->
+        <data id="Var1" expr="2"/>
+        <!-- What came back, held in a variable rather than compared in the
+             transition's own guard: the form value crosses as text, and
+             test567 settles the reading by assigning first and comparing
+             after — the shape every channel already passes. -->
+        <data id="echoed" expr="0"/>
+        <!-- Set by the targetless `error.execution` handler below. A counter
+             rather than a state, because the phase has to still be standing
+             when the timeout arrives: the verdict is about what BOTH queues
+             did, and moving states would answer only the first. -->
+        <data id="sawNamelistError" expr="0"/>
+    </datamodel>
+
+    <!-- W3C SCXML C.2: the namelist name and value become POST parameters. -->
+    <state id="mapPhase">
+        <onentry>
+            <!-- A machine that never hears back must reach a verdict rather
+                 than hang: a channel that posts nothing still gets its event
+                 echoed, but one that cannot reach the server at all would
+                 otherwise stall with no name for what went wrong. -->
+            <send event="timeoutMap" delay="3s"/>
+            <send event="mapped" namelist="Var1"
+                  targetexpr="_ioprocessors['basichttp'].location"
+                  type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+        </onentry>
+        <transition event="mapped" target="mapVerdict">
+            <assign location="echoed" expr="_event.data.Var1"/>
+        </transition>
+        <transition event="timeoutMap" target="failNamelistNeverArrived"/>
+    </state>
+
+    <state id="mapVerdict">
+        <transition cond="echoed == 2" target="discardPhase"/>
+        <transition target="failNamelistNotPosted"/>
+    </state>
+
+    <!-- W3C SCXML 5.9.2 + 6.2.3: an item that names no location is reported,
+         and the message it belonged to is not delivered. -->
+    <state id="discardPhase">
+        <onentry>
+            <!-- The negative claim needs a clock: "the message never arrived"
+                 is only observable once something else has. test553 settles
+                 it the same way — if the timeout comes first, the send was
+                 discarded. -->
+            <send event="timeoutDiscard" delay="2s"/>
+            <send event="shouldNotArrive" namelist="__sce_not_declared__"
+                  targetexpr="_ioprocessors['basichttp'].location"
+                  type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+        </onentry>
+        <transition event="error.execution">
+            <assign location="sawNamelistError" expr="1"/>
+        </transition>
+        <transition event="shouldNotArrive" target="failMessageNotDiscarded"/>
+        <transition event="timeoutDiscard" cond="sawNamelistError !== 1"
+                    target="failNoNamelistError"/>
+        <transition event="timeoutDiscard" target="pass"/>
+    </state>
+
+    <final id="pass"/>
+    <final id="failNamelistNeverArrived"/>
+    <final id="failNamelistNotPosted"/>
+    <final id="failMessageNotDiscarded"/>
+    <final id="failNoNamelistError"/>
+</scxml>

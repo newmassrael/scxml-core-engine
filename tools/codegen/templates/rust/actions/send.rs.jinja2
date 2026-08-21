@@ -142,18 +142,27 @@
     let mut _send_aborted = false;
 {% endif %}
 {% if has_dynamic_params or has_namelist %}
+    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+    // delivered, so each name carries a vector. The typed value is kept
+    // rather than its text — a receiver reading `_event.data.value === 42`
+    // finds the string "42" unequal.
+    //
+    // Declared out here rather than inside the payload block because
+    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+    // below are renderings of that one evaluation: the BasicHTTP and
+    // host-served arms read this map instead of asking the data model again.
+    // While it was block-scoped they had to, and what they re-read was
+    // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+    // posted zero form parameters, against §scxml-C-2.
+    let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
+        ::std::collections::BTreeMap::new();
     // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
     let event_data_string: String = {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-        // delivered, so each name carries a vector. The typed value is kept
-        // rather than its text — a receiver reading `_event.data.value === 42`
-        // finds the string "42" unequal.
-        let mut wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
-            ::std::collections::BTreeMap::new();
+        let wire_params = &mut _send_wire_params;
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
@@ -213,10 +222,10 @@
         if _send_aborted {
             String::new()
         } else {
-            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(&wire_params)
+            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
         }
 {% else %}
-        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(&wire_params)
+        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
 {% endif %}
     };
 {% if has_namelist %}
@@ -350,7 +359,9 @@
 {# `mut` only when something fills it: a `<send>` with no `<param>` would
    otherwise emit an unused-mut warning into the consumer's crate, and a
    generated file is not a place a host can silence one. #}
-{% if has_params %}
+{% if has_dynamic_params or has_namelist %}
+        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+{% elif has_params %}
         let mut host_params = std::collections::HashMap::<String, Vec<String>>::new();
 {{ collect_params_into(action, model, 'host_params', machine_name) }}
 {% else %}
@@ -446,9 +457,17 @@
 {% endif %}
         } else {
 {% endif %}
+{% if has_dynamic_params or has_namelist %}
+        // W3C SCXML C.2: "If the namelist attribute is defined, the SCXML
+        // Processor MUST map its variable names and values to HTTP POST
+        // parameters." Both kinds of argument are already evaluated, so the
+        // form is a rendering of that map rather than a second reading.
+        let http_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+{% elif has_params %}
         let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
-{% if has_params %}
 {{ collect_params_into(action, model, 'http_params', machine_name) -}}
+{% else %}
+        let http_params = std::collections::HashMap::<String, Vec<String>>::new();
 {% endif %}
         engine.perform_http_send(
             {{ http_target_rs }},

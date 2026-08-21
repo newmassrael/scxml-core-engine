@@ -190,10 +190,17 @@
 			}
 {% endif %}
 		} else {
-{% if has_params or has_namelist %}
-			// W3C SCXML C.2: Build HTTP params map from <param>/namelist elements
+{% if has_dynamic_params or has_namelist %}
+			// W3C SCXML C.2 + 6.2.3: the arguments were evaluated once, above.
+			// The form is a rendering of that payload — this arm used to read
+			// the data model again, and its second reading of the namelist had
+			// no error arm at all, so the two could only agree while nothing
+			// failed. It also mapped `<param>` alone, which is the shape that
+			// left a namelist out of the POST entirely.
+			httpParams := sce.WireParamsFromTypedParams(parts)
+{% elif has_params %}
+			// W3C SCXML C.2: Build HTTP params map from <param> elements
 			httpParams := make(map[string][]string)
-{% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
 			httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
@@ -222,18 +229,11 @@
 			}
 {% endif %}
 {% endfor %}
-{% endif %}
-{% if has_namelist %}
-{% for name in action.namelist | split %}
-			if httpNlVal, httpNlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ name }}`); httpNlErr == nil {
-				httpParams["{{ name }}"] = append(httpParams["{{ name }}"], sce.ToWireString(httpNlVal))
-			}
-{% endfor %}
-{% endif %}
-			engine.PerformHTTPSend(httpTarget, httpEvtName, "", httpParams, "{{ send_id | default('') | escape_go }}")
 {% else %}
-			engine.PerformHTTPSend(httpTarget, httpEvtName, eventDataStr, nil, "{{ send_id | default('') | escape_go }}")
+			// No arguments to map: a nil form leaves the body to `<content>`.
+			var httpParams map[string][]string
 {% endif %}
+			engine.PerformHTTPSend(httpTarget, httpEvtName, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, "{{ send_id | default('') | escape_go }}")
 		}
 	}
 {% elif action.target == '#_internal' %}
