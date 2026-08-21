@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7cd9869d6fe2e1be89509dbe50d4cddbd9611592b51012e0d6e1e3825d914ed7
+// source-hash: 5eba0d45073fc837c42ae33f20795f0ee658705613f4c4e42a59b557f47ce142
 // template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
-// generated-at: 0
+// generated-at: 1787283457
 
 
 // SPDX-License-Identifier: MIT
@@ -51,8 +51,9 @@ const (
 	InternalChainIsBoundedStateAlt InternalChainIsBoundedState = 0
 	InternalChainIsBoundedStateBounded InternalChainIsBoundedState = 1
 	InternalChainIsBoundedStateIdle InternalChainIsBoundedState = 2
-	InternalChainIsBoundedStateResuming InternalChainIsBoundedState = 3
-	InternalChainIsBoundedStateSpin InternalChainIsBoundedState = 4
+	InternalChainIsBoundedStateIgnoring InternalChainIsBoundedState = 3
+	InternalChainIsBoundedStateResuming InternalChainIsBoundedState = 4
+	InternalChainIsBoundedStateSpin InternalChainIsBoundedState = 5
 )
 
 func (s InternalChainIsBoundedState) String() string {
@@ -63,6 +64,8 @@ func (s InternalChainIsBoundedState) String() string {
 		return "bounded"
 	case InternalChainIsBoundedStateIdle:
 		return "idle"
+	case InternalChainIsBoundedStateIgnoring:
+		return "ignoring"
 	case InternalChainIsBoundedStateResuming:
 		return "resuming"
 	case InternalChainIsBoundedStateSpin:
@@ -80,15 +83,18 @@ type InternalChainIsBoundedEvent int
 const (
 	InternalChainIsBoundedEventAlternate InternalChainIsBoundedEvent = 0
 	InternalChainIsBoundedEventBeat InternalChainIsBoundedEvent = 1
-	InternalChainIsBoundedEventBounded InternalChainIsBoundedEvent = 2
-	InternalChainIsBoundedEventErrorExecution InternalChainIsBoundedEvent = 3
-	InternalChainIsBoundedEventLink InternalChainIsBoundedEvent = 4
-	InternalChainIsBoundedEventPoke InternalChainIsBoundedEvent = 5
-	InternalChainIsBoundedEventResume InternalChainIsBoundedEvent = 6
-	InternalChainIsBoundedEventSpin InternalChainIsBoundedEvent = 7
-	InternalChainIsBoundedEventTick InternalChainIsBoundedEvent = 8
+	InternalChainIsBoundedEventBeatless InternalChainIsBoundedEvent = 2
+	InternalChainIsBoundedEventBounded InternalChainIsBoundedEvent = 3
+	InternalChainIsBoundedEventErrorExecution InternalChainIsBoundedEvent = 4
+	InternalChainIsBoundedEventLink InternalChainIsBoundedEvent = 5
+	InternalChainIsBoundedEventPoke InternalChainIsBoundedEvent = 6
+	InternalChainIsBoundedEventResume InternalChainIsBoundedEvent = 7
+	InternalChainIsBoundedEventSpin InternalChainIsBoundedEvent = 8
+	InternalChainIsBoundedEventTick InternalChainIsBoundedEvent = 9
+	InternalChainIsBoundedEventUnanswered InternalChainIsBoundedEvent = 10
+	InternalChainIsBoundedEventUnheard InternalChainIsBoundedEvent = 11
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InternalChainIsBoundedEventNull InternalChainIsBoundedEvent = 9
+	InternalChainIsBoundedEventNull InternalChainIsBoundedEvent = 12
 )
 
 func (e InternalChainIsBoundedEvent) String() string {
@@ -97,6 +103,8 @@ func (e InternalChainIsBoundedEvent) String() string {
 		return "alternate"
 	case InternalChainIsBoundedEventBeat:
 		return "beat"
+	case InternalChainIsBoundedEventBeatless:
+		return "beatless"
 	case InternalChainIsBoundedEventBounded:
 		return "bounded"
 	case InternalChainIsBoundedEventErrorExecution:
@@ -111,6 +119,10 @@ func (e InternalChainIsBoundedEvent) String() string {
 		return "spin"
 	case InternalChainIsBoundedEventTick:
 		return "tick"
+	case InternalChainIsBoundedEventUnanswered:
+		return "unanswered"
+	case InternalChainIsBoundedEventUnheard:
+		return "unheard"
 	case InternalChainIsBoundedEventNull:
 		return ""
 	}
@@ -224,6 +236,18 @@ func (p *InternalChainIsBoundedPolicy) Alts() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "alts")
 }
 
+// Ignores reports what the `ignores` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `ignores` was assigned a value of another type, or the engine refused.
+func (p *InternalChainIsBoundedPolicy) Ignores() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "ignores")
+}
+
 // Pending reports what the `pending` datamodel variable is holding now
 // (W3C SCXML 5.3).
 //
@@ -331,6 +355,16 @@ func (p *InternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Inter
 		} else {
 			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='alts'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "alts", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize ignores from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "ignores", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='ignores'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "ignores", nil)
 		}
 	}
 	// W3C SCXML 5.2/5.3: Initialize pending from expr="0"
@@ -505,6 +539,8 @@ func (p *InternalChainIsBoundedPolicy) GetDocumentOrder(state InternalChainIsBou
 		return 1
 	case InternalChainIsBoundedStateIdle:
 		return 0
+	case InternalChainIsBoundedStateIgnoring:
+		return 5
 	case InternalChainIsBoundedStateResuming:
 		return 3
 	case InternalChainIsBoundedStateSpin:
@@ -525,6 +561,8 @@ func (p *InternalChainIsBoundedPolicy) GetEventFromName(name string) (InternalCh
 		return InternalChainIsBoundedEventAlternate, true
 	case "beat":
 		return InternalChainIsBoundedEventBeat, true
+	case "beatless":
+		return InternalChainIsBoundedEventBeatless, true
 	case "bounded":
 		return InternalChainIsBoundedEventBounded, true
 	case "error.execution":
@@ -539,6 +577,10 @@ func (p *InternalChainIsBoundedPolicy) GetEventFromName(name string) (InternalCh
 		return InternalChainIsBoundedEventSpin, true
 	case "tick":
 		return InternalChainIsBoundedEventTick, true
+	case "unanswered":
+		return InternalChainIsBoundedEventUnanswered, true
+	case "unheard":
+		return InternalChainIsBoundedEventUnheard, true
 	}
 	return InternalChainIsBoundedEventNull, false
 }
@@ -824,6 +866,46 @@ func (p *InternalChainIsBoundedPolicy) tryTransitionInState(checkState InternalC
 			p.hasTransitionActions = true
 			return true
 		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == InternalChainIsBoundedEventUnanswered {
+			*currentState = InternalChainIsBoundedStateIgnoring
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = InternalChainIsBoundedStateIdle
+			p.lastTransitionIndex = 5
+			p.hasTransitionActions = true
+			return true
+		}
+	case InternalChainIsBoundedStateIgnoring:
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == InternalChainIsBoundedEventBeatless {
+			if p.evaluateGuard(`(ignores < 999)`, engine) {
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = true
+			p.lastTransitionSourceState = InternalChainIsBoundedStateIgnoring
+			p.lastTransitionIndex = 0
+			p.hasTransitionActions = true
+			return true
+			}
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == InternalChainIsBoundedEventBeatless {
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = true
+			p.lastTransitionSourceState = InternalChainIsBoundedStateIgnoring
+			p.lastTransitionIndex = 1
+			p.hasTransitionActions = true
+			return true
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == InternalChainIsBoundedEventPoke {
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = true
+			p.lastTransitionSourceState = InternalChainIsBoundedStateIgnoring
+			p.lastTransitionIndex = 2
+			p.hasTransitionActions = true
+			return true
+		}
 	case InternalChainIsBoundedStateResuming:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventBeat {
@@ -887,7 +969,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == InternalChainIsBoundedStateAlt && idx == 0 {
-		//line internal_chain_is_bounded.scxml:205
+		//line internal_chain_is_bounded.scxml:212
 
 	// W3C SCXML 5.3: <assign location="alts" expr="alts + 1">
 	if err := p.assignVariable(`alts`, `_scxml_add(alts, 1)`); err != nil {
@@ -903,7 +985,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateAlt && idx == 1 {
-		//line internal_chain_is_bounded.scxml:209
+		//line internal_chain_is_bounded.scxml:216
 
 	// W3C SCXML 5.3: <assign location="pending" expr="0">
 	if err := p.assignVariable(`pending`, `0`); err != nil {
@@ -916,7 +998,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateAlt && idx == 2 {
-		//line internal_chain_is_bounded.scxml:213
+		//line internal_chain_is_bounded.scxml:220
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -926,7 +1008,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateBounded && idx == 0 {
-		//line internal_chain_is_bounded.scxml:147
+		//line internal_chain_is_bounded.scxml:154
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
@@ -939,7 +1021,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateBounded && idx == 1 {
-		//line internal_chain_is_bounded.scxml:151
+		//line internal_chain_is_bounded.scxml:158
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
@@ -949,7 +1031,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateBounded && idx == 2 {
-		//line internal_chain_is_bounded.scxml:156
+		//line internal_chain_is_bounded.scxml:163
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -959,7 +1041,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateIdle && idx == 0 {
-		//line internal_chain_is_bounded.scxml:119
+		//line internal_chain_is_bounded.scxml:123
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -969,35 +1051,78 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateIdle && idx == 1 {
-		//line internal_chain_is_bounded.scxml:122
+		//line internal_chain_is_bounded.scxml:126
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
 		return
 	}
 	if source == InternalChainIsBoundedStateIdle && idx == 2 {
-		//line internal_chain_is_bounded.scxml:125
+		//line internal_chain_is_bounded.scxml:129
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
 		return
 	}
 	if source == InternalChainIsBoundedStateIdle && idx == 3 {
-		//line internal_chain_is_bounded.scxml:128
+		//line internal_chain_is_bounded.scxml:132
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeat))
 
 		return
 	}
 	if source == InternalChainIsBoundedStateIdle && idx == 4 {
-		//line internal_chain_is_bounded.scxml:131
+		//line internal_chain_is_bounded.scxml:135
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventTick))
 
 		return
 	}
+	if source == InternalChainIsBoundedStateIdle && idx == 5 {
+		//line internal_chain_is_bounded.scxml:138
+
+	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeatless))
+
+		return
+	}
+	if source == InternalChainIsBoundedStateIgnoring && idx == 0 {
+		//line internal_chain_is_bounded.scxml:245
+
+	// W3C SCXML 5.3: <assign location="ignores" expr="ignores + 1">
+	if err := p.assignVariable(`ignores`, `_scxml_add(ignores, 1)`); err != nil {
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'ignores' failed"))
+	}
+
+
+	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventUnheard))
+
+
+	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeatless))
+
+		return
+	}
+	if source == InternalChainIsBoundedStateIgnoring && idx == 1 {
+		//line internal_chain_is_bounded.scxml:250
+
+	// W3C SCXML 5.3: <assign location="ignores" expr="ignores + 1">
+	if err := p.assignVariable(`ignores`, `_scxml_add(ignores, 1)`); err != nil {
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'ignores' failed"))
+	}
+
+		return
+	}
+	if source == InternalChainIsBoundedStateIgnoring && idx == 2 {
+		//line internal_chain_is_bounded.scxml:253
+
+	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
+	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+	}
+
+		return
+	}
 	if source == InternalChainIsBoundedStateResuming && idx == 0 {
-		//line internal_chain_is_bounded.scxml:186
+		//line internal_chain_is_bounded.scxml:193
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
@@ -1010,7 +1135,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateResuming && idx == 1 {
-		//line internal_chain_is_bounded.scxml:190
+		//line internal_chain_is_bounded.scxml:197
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
@@ -1020,7 +1145,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateResuming && idx == 2 {
-		//line internal_chain_is_bounded.scxml:193
+		//line internal_chain_is_bounded.scxml:200
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -1030,7 +1155,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateSpin && idx == 0 {
-		//line internal_chain_is_bounded.scxml:168
+		//line internal_chain_is_bounded.scxml:175
 
 	// W3C SCXML 5.3: <assign location="links" expr="links + 1">
 	if err := p.assignVariable(`links`, `_scxml_add(links, 1)`); err != nil {
@@ -1043,7 +1168,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == InternalChainIsBoundedStateSpin && idx == 1 {
-		//line internal_chain_is_bounded.scxml:172
+		//line internal_chain_is_bounded.scxml:179
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {

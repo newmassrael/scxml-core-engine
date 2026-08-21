@@ -109,6 +109,10 @@
              one lap is one raise plus one eventless transition, so a shared
              budget of a thousand microsteps buys five hundred of them. -->
         <data id="alts" expr="0"/>
+        <!-- Links of the chain that raises an event nothing answers alongside
+             each real link. Same length as `bounded`, so the two differ in
+             exactly one thing: half the dequeues here select no transition. -->
+        <data id="ignores" expr="0"/>
         <!-- The alternating chain's baton. `1` means the eventless half is
              enabled; the internal half sets it, the eventless half clears it
              and raises the next link. -->
@@ -130,6 +134,9 @@
         </transition>
         <transition event="alternate" target="alt">
             <raise event="tick"/>
+        </transition>
+        <transition event="unanswered" target="ignoring">
+            <raise event="beatless"/>
         </transition>
     </state>
 
@@ -209,6 +216,39 @@
         <transition cond="pending == 1">
             <assign location="pending" expr="0"/>
             <raise event="tick"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- The same chain as `bounded`, with one event added per link that NO
+         transition answers. Appendix D takes a microstep only for a dequeue
+         that selected something, so the two chains must cost the same: a
+         thousand microsteps, at the ceiling, refused nothing.
+
+         What it exists to catch is an engine that spends the budget on the
+         dequeue rather than on the microstep. That engine reaches a thousand
+         after five hundred links and reports a document that settles on its
+         own as a runaway — and no other outcome here can see it, because
+         every other chain answers every event it raises. Measured 2026-08-21:
+         the mutation that removes the `Discarded` guard SURVIVED all five,
+         which is how this gap was found.
+
+         `unheard` is raised BEFORE the next link so the discarded dequeue
+         happens between two real ones rather than after the last. The
+         thousandth link raises nothing at all — not even `unheard` — because
+         a queue that still holds an event when the count reaches the ceiling
+         is refused, and that refusal would be this outcome's own doing rather
+         than the engine's defect. -->
+    <state id="ignoring">
+        <transition event="beatless" cond="ignores &lt; 999">
+            <assign location="ignores" expr="ignores + 1"/>
+            <raise event="unheard"/>
+            <raise event="beatless"/>
+        </transition>
+        <transition event="beatless">
+            <assign location="ignores" expr="ignores + 1"/>
         </transition>
         <transition event="poke">
             <assign location="pokes" expr="pokes + 1"/>
