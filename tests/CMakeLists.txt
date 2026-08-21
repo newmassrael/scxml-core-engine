@@ -773,6 +773,8 @@ add_executable(integration_tests
     integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp
     integration/InvokeParamErrorStartsTheChildTest.cpp
     integration/InvokeParamErrorStartsTheChildAotTest.cpp
+    integration/EmptyFinalizeUpdatesTheLocationTest.cpp
+    integration/EmptyFinalizeUpdatesTheLocationAotTest.cpp
     integration/HostEventReachesTheChildTest.cpp
     integration/HostEventReachesTheChildAotTest.cpp
     integration/SCXMLEventTest.cpp
@@ -1315,6 +1317,19 @@ sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${ST
 # five channels were silent and one cancelled the whole invoke.
 sce_generate_static_integration_test(invoke_param_error_starts_the_child ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_probe
+)
+
+# §scxml-6.5.2: an EMPTY `<finalize>` means the automatic data-model update —
+# "for each item in the 'namelist' attribute and each such <param> element,
+# the Processor MUST update the corresponding location as if by <assign>" —
+# and an absent one means the opposite: "the automatic update does not take
+# place if the <finalize> element is absent as opposed to empty". The corpus
+# holds two `<finalize>` documents (W3C 233/234) and zero empty ones, so the
+# clause had no witness; it had no implementation either, because
+# `finalize_content` is one string and an empty element was indistinguishable
+# from a missing one.
+sce_generate_static_integration_test(empty_finalize_updates_the_location ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_empty inv_absent inv_unmatched
 )
 
 # §scxml-D-mainEventLoop: the preliminary `<finalize>` / autoforward step is

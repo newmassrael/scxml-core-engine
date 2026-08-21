@@ -209,6 +209,12 @@
                         setInvokeParams(childSM, invokeParams)
 {% endif %}
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+{# §scxml-6.5: the `<finalize>` body is authored content, and this channel is
+   the one that needs no lowering for it — Kotlin evaluates through Rhino, a
+   JavaScript engine, so the parser's JavaScript is already the engine's own
+   language. The Lua-backed channels (Rust, Go, cpp-AOT, C11, Python) apply
+   `to_lua_script` at their own emission sites for the same reason: authored
+   content reaches the engine through the frontend that speaks to it. #}
                         startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, {% if inv.finalize_content %}"{{ inv.finalize_content | escape_kotlin }}"{% else %}""{% endif %}, generatedInvokeId)
                     }
                 }

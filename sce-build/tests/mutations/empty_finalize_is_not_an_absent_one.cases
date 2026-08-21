@@ -1,0 +1,86 @@
+# Mutation cases for W3C SCXML 6.5.2 — the clause an EMPTY `<finalize>`
+# carries, and the line it draws against an absent one.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/empty_finalize_is_not_an_absent_one.cases`.
+#
+# "If no executable content is specified, the SCXML Processor MUST update the
+# data model each time an event is received from the child process ... for
+# each item in the 'namelist' attribute and each such <param> element, the
+# Processor MUST update the corresponding location as if by <assign> with any
+# return value that has a name that matches ... Note that the automatic update
+# does not take place if the <finalize> element is absent as opposed to
+# empty."
+#
+# The whole corpus holds two `<finalize>` documents (W3C 233/234) and zero
+# empty ones, so nothing measured this until the fixture below. Nothing
+# implemented it either: `finalize_content` is one string, so an empty element
+# and a missing one were the same value and every engine gates on that string
+# being non-empty.
+#
+# The synthesis is in the parser rather than in seven templates because the
+# clause names the content the empty element stands for. That decides which
+# suite these cases can be measured against, and the first attempt got it
+# wrong: a `-p sce-rust-tests` round with `mutation_regen` SURVIVED two of
+# three cases, because the regeneration resolves `sce-codegen` through
+# `sce_codegen_require`, which keeps an existing binary whose
+# `verify-generator` check passes — and that check is over the TEMPLATE tree.
+# A mutation to `parser.rs` changes no template, so the stale binary generated
+# the unmutated tree and the round measured nothing. The bridge carries a
+# mutated TEMPLATE into a generated tree; it does not carry a mutated
+# COMPILER.
+#
+# So the selector is `-p sce-build`: the parser is linked into that crate's
+# own test binaries, the mutation reaches the code with no bridge at all, and
+# the oracle is the parser-level witness. The seven-channel behaviour keeps
+# its own witness in `integration_resources/empty_finalize_updates_the_location/`.
+
+mutation_tests -p sce-build --features cli --test empty_finalize_is_not_an_absent_one
+mutation_targets sce-build/src/parser.rs
+
+mutation_oracles sce-build/tests/empty_finalize_is_not_an_absent_one.rs
+
+# ── The empty element goes back to meaning nothing ──────────────────
+#
+# The state this clause was in before the round: an empty `<finalize>` and a
+# missing one produce the same empty string, so the automatic update never
+# happens. `failNotUpdated` is what a document sees.
+
+mutation_case "an empty finalize stands for no content at all" <<'PY'
+# The synthesised text is still computed and then dropped, so the helper stays
+# used: `warnings = deny` turns an unused function into a compile error, and a
+# mutation that will not compile is INCONCLUSIVE rather than a verdict.
+edit("sce-build/src/parser.rs",
+     """            if finalize_content.trim().is_empty() {
+                finalize_content =
+                    synthesize_automatic_finalize(&namelist, &hybrid_params);
+            }""",
+     """            if finalize_content.trim().is_empty() {
+                let _ = synthesize_automatic_finalize(&namelist, &hybrid_params);
+            }""")
+PY
+
+# ── The update stops being conditional ──────────────────────────────
+#
+# "With ANY return value that has a name that matches" is a condition. Without
+# the guard, an event that mentions nothing writes `undefined` over the
+# parent's value — the opposite of what the clause is for, and invisible to
+# any fixture whose child always answers with every name.
+
+mutation_case "the automatic update writes even when the name is absent" <<'PY'
+edit("sce-build/src/parser.rs",
+     """            "if (_event.data && _event.data.{item} !== undefined) {{ {item} = _event.data.{item}; }}\"""",
+     """            "{item} = _event.data.{item};\"""")
+PY
+
+# ── The guard is inverted ───────────────────────────────────────────
+#
+# The nearest wrong answer that still compiles and still looks conditional:
+# the location is written only when the event does NOT carry the name. A
+# fixture that checks the value arrived is what separates this from the real
+# clause; one that only checks "something ran" cannot.
+
+mutation_case "the automatic update runs only when the name is missing" <<'PY'
+edit("sce-build/src/parser.rs",
+     """            "if (_event.data && _event.data.{item} !== undefined) {{ {item} = _event.data.{item}; }}\"""",
+     """            "if (_event.data && _event.data.{item} === undefined) {{ {item} = _event.data.{item}; }}\"""")
+PY

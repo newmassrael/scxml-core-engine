@@ -10001,6 +10001,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "synthesize_automatic_finalize",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

@@ -233,6 +233,14 @@
                                 "{{ invoke_info.invoke_id }}",
                                 sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
                                 {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.1: autoforward
+                                {# §scxml-6.5: the finalize body crosses as AUTHOR text here, and
+                                   that is this channel's contract rather than an omission — the
+                                   C++ engine runs `EcmaScriptToLuaTransformer` itself, which is
+                                   why this filter set has `to_author_*` where the Lua-backed
+                                   codegen channels have `to_lua_*`. Rust and Go had no such
+                                   transformer behind them and passed the same JavaScript to a Lua
+                                   engine unlowered, so a `<finalize>` worked there only when its
+                                   JavaScript was valid Lua as well; they now lower at emission. #}
                                 "{{ invoke_info.finalize_content | replace('"', '\"') }}"  // W3C SCXML 6.5: finalize
                             };
                         }

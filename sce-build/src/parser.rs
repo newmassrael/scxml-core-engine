@@ -3005,11 +3005,37 @@ impl SCXMLParser {
         }
 
         // Parse <finalize>
+        //
+        // W3C SCXML 6.5.2 gives an EMPTY `<finalize>` a meaning of its own,
+        // and says so in the one sentence that separates it from an absent one
+        // (the machine-checked citation for this clause is on
+        // `synthesize_automatic_finalize`, which is where it is implemented):
+        // "Note that the automatic update does not take place if the
+        // <finalize> element is absent as opposed to empty." With no
+        // executable content, the clause requires the Processor to update the
+        // data model instead — "for each item in the 'namelist' attribute and
+        // each such <param> element, the Processor MUST update the
+        // corresponding location as if by <assign> with any return value that
+        // has a name that matches".
+        //
+        // "As if by `<assign>`" is what makes this a codegen-time answer
+        // rather than seven runtime ones: the clause names the executable
+        // content the empty element stands for, so synthesising that content
+        // here lets every channel's existing `<finalize>` path run it
+        // unchanged. Measured 2026-08-22: no channel implemented the automatic
+        // update at all — every engine, the Interpreter included, gates on
+        // `finalize_content.is_empty()`, and the model had no way to tell an
+        // empty element from a missing one, so the clause was unrepresentable
+        // rather than merely unimplemented. The whole corpus contains two
+        // `<finalize>` documents (W3C 233/234) and zero empty ones.
         let mut finalize_content = String::new();
         if let Some(finalize_elem) = scxml_child(elem, "finalize") {
             let finalize_actions =
                 self.parse_executable_content(&finalize_elem, model, source_name)?;
             finalize_content = actions_to_javascript(&finalize_actions);
+            if finalize_content.trim().is_empty() {
+                finalize_content = synthesize_automatic_finalize(&namelist, &hybrid_params);
+            }
         }
 
         // §scxml-6.4: Classify invoke type
@@ -4354,6 +4380,53 @@ fn restore_context_strings(code: &str, literals: &[String]) -> String {
         result = result.replace(&placeholder, literal);
     }
     result
+}
+
+/// §scxml-6.5.2: the executable content an EMPTY `<finalize>` stands for.
+///
+/// The clause spells the behaviour as content rather than as a rule: "for
+/// each item in the 'namelist' attribute and each such `<param>` element, the
+/// Processor MUST update the corresponding location as if by `<assign>` with
+/// any return value that has a name that matches the 'namelist' item or the
+/// 'name' of the `<param>` element". Writing that content here is what lets
+/// the seven channels keep one `<finalize>` execution path: none of them needs
+/// to learn a second rule, and the update lands at exactly the point the
+/// clause requires — "right before the event is pulled off the external event
+/// queue" — because that is where a `<finalize>` body already runs.
+///
+/// "With ANY return value that has a name that matches" is a condition, not an
+/// unconditional write: an event that carries no such name must leave the
+/// location alone, so each assignment is guarded. Without the guard an event
+/// from the child that mentions nothing would blank the parent's data model,
+/// which is the opposite of what the clause is for.
+///
+/// A `<param>` contributes only when it carries `location` — that is the
+/// clause's own wording ("`<param>` children containing 'location'
+/// attributes") — and the name it matches on is the param's `name`, which may
+/// differ from the location it writes.
+///
+/// Returns the empty string when there is nothing to update, which keeps an
+/// empty `<finalize>` on a plain `<invoke>` exactly as inert as the clause
+/// leaves it.
+fn synthesize_automatic_finalize(namelist: &str, params: &[Param]) -> String {
+    let mut lines: Vec<String> = Vec::new();
+
+    for item in namelist.split_whitespace() {
+        lines.push(format!(
+            "if (_event.data && _event.data.{item} !== undefined) {{ {item} = _event.data.{item}; }}"
+        ));
+    }
+    for param in params {
+        if param.location.is_empty() || param.name.is_empty() {
+            continue;
+        }
+        let (name, location) = (&param.name, &param.location);
+        lines.push(format!(
+            "if (_event.data && _event.data.{name} !== undefined) {{ {location} = _event.data.{name}; }}"
+        ));
+    }
+
+    lines.join("\n")
 }
 
 /// §scxml-6.5: Convert finalize actions to JavaScript code string.
