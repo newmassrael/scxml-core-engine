@@ -757,6 +757,16 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
           "symbol": "Ignored",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "processEvent",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5239,6 +5249,16 @@
           "file": "backends/python/runtime/sce_runtime/policy.py",
           "symbol": "StatePolicy",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processDispatchedEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "processDispatchedEvent",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -9370,6 +9390,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "tick_in_turn",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "applyExternalEventPreamble",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -9614,6 +9639,11 @@
         {
           "file": "backends/go/runtime/engine.go",
           "symbol": "processNextExternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "applyExternalEventPreamble",
           "kind": "implements"
         }
       ],
@@ -9875,6 +9905,16 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_process_next_external_event",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "applyExternalEventPreamble",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEvent",
           "kind": "implements"
         }
       ],
@@ -13273,6 +13313,21 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "initialize",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "applyExternalEventPreamble",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEventImpl",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEvent",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14901,6 +14956,18 @@
       "target_kind": "section",
       "target_id": "scxml-6.4.1",
       "reason": "ToScriptLiteral removed: the invoke path passes values, so no engine spells a literal"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "in-class declarations resolve unqualified in this header; re-added as processEvent"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "in-class declarations resolve unqualified in this header; re-added as processDispatchedEvent"
     }
   ],
   "frames": {},

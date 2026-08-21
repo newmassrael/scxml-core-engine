@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4 autoforward is owed to the external event, not to the queue
+     it arrived on.
+
+     The sibling fixtures pin what is forwarded (`autoforward_done_invoke`,
+     name-blind), what is not (`autoforward_internal_queue`, nothing off the
+     internal queue), which fields survive (`autoforward_event_fields`) and
+     *when* the forward happens (`autoforward_dequeue_point`, one statement
+     after the dequeue). All four drive the machine the same way: they let it
+     run and the events it forwards are ones it queued for itself. None of
+     them can see the question this one asks, because none of them ever hands
+     the machine an event from outside.
+
+     A host has two ways to give a running machine an external event: put it
+     on the external queue and let the machine drain it, or call the engine's
+     own "here is an event" entry point. Appendix D's `mainEventLoop` binds
+     the preliminary step to the event, not to the door:
+
+       externalEvent = externalQueue.dequeue()
+       datamodel["_event"] = externalEvent
+       for state in configuration:
+           for inv in state.invoke:
+               if inv.invokeid == externalEvent.invokeid:
+                   applyFinalize(inv, externalEvent)
+               if inv.autoforward:
+                   send(inv.id, externalEvent)
+       enabledTransitions = selectTransitions(externalEvent)
+
+     An engine that runs that step at one door and not the other satisfies
+     every forwarding rule the four sibling fixtures state and still leaves an
+     `autoforward` child blind to everything its host delivers — the two
+     sessions stop agreeing about what has happened, which is the whole point
+     of `autoforward`. Measured 2026-08-21: the C++ AOT engine forwarded a
+     dequeued event and dropped an identical one handed to `processEvent()`,
+     because the step was written inline in the drain.
+
+     The verdict is decided by a race the child cannot lose either way, so
+     neither outcome depends on a timeout and no wall-clock delay is involved:
+
+       inv_probe's onentry sends `ready` to the parent
+         -> the parent moves to `armed`, which is where it can be handed an
+            event from outside
+         -> the host hands the parent `hostPing` through the engine's own
+            entry point, NOT through the external queue
+         -> the parent's `hostPing` transition sends `marker` straight to the
+            child with `<send target="#_inv_probe">`
+
+       forwarded      the child sees hostPing first (the preliminary step runs
+                      before transition selection) -> sawHostPing -> pass
+       not forwarded  the child only ever sees marker              -> sawMarkerOnly -> fail
+
+     The child opens the exchange, so it is provably alive for everything that
+     follows and the fixture does not assume when a backend starts its pending
+     invokes. Both child verdicts are top-level `<final>` states, and no
+     `<final>` is nested inside a compound state — whether a nested final ends
+     a session is a separate question, and mixing the two would let one
+     regression masquerade as the other.
+
+     The `<invoke>` sits on `phase` while the arming happens in its children,
+     because exiting the state that holds an `<invoke>` cancels it (§6.4) —
+     the child has to outlive the handshake that proves it is there.
+
+     Every event is named in full because the AOT backends resolve a forwarded
+     event by exact name against the child's own event enum and silently drop
+     names it does not declare.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="host_event_reaches_the_child">
+    <state id="phase" initial="waiting">
+        <invoke type="scxml" id="inv_probe" autoforward="true">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="watch">
+                    <state id="watch">
+                        <onentry>
+                            <send target="#_parent" event="ready"/>
+                        </onentry>
+                        <transition event="hostPing" target="forwarded">
+                            <send target="#_parent" event="sawHostPing"/>
+                        </transition>
+                        <transition event="marker" target="unforwarded">
+                            <send target="#_parent" event="sawMarkerOnly"/>
+                        </transition>
+                    </state>
+                    <final id="forwarded"/>
+                    <final id="unforwarded"/>
+                </scxml>
+            </content>
+        </invoke>
+        <state id="waiting">
+            <transition event="ready" target="armed"/>
+        </state>
+        <state id="armed">
+            <transition event="hostPing">
+                <send target="#_inv_probe" event="marker"/>
+            </transition>
+        </state>
+        <transition event="sawHostPing" target="pass"/>
+        <transition event="sawMarkerOnly" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

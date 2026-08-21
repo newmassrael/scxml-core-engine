@@ -1220,6 +1220,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # §scxml-D-mainEventLoop: the preliminary <finalize> / autoforward step is
+    # owed to the external event, not to the queue it arrived on. The four
+    # autoforward_* fixtures above all let the machine forward events it queued
+    # for itself, so every one of them drives the engine through its drain and
+    # none can see a step that runs at one door and not another. This one hands
+    # the machine an event from outside, through the host-facing entry point.
+    sce_generate_static_integration_c_test(host_event_reaches_the_child "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_probe
+    )
+
+    add_executable(sce_c_integration_host_event_reaches_the_child
+        integration/test_host_event_reaches_the_child.c
+        ${INTEGRATION_C_TEST_host_event_reaches_the_child_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_host_event_reaches_the_child PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_host_event_reaches_the_child PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_host_event_reaches_the_child PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_host_event_reaches_the_child
+        COMMAND sce_c_integration_host_event_reaches_the_child
+    )
+    set_tests_properties(c11_integration_host_event_reaches_the_child PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML C.1: the origin of a delivered event is the location the
     # sending session published for the SCXML Event I/O Processor, and that
     # location is a usable <send> target. The IRP suite checks neither half

@@ -225,12 +225,40 @@ public:
     void stop();
 
     /**
-     * @brief Process an event
+     * @brief Process an event a host is handing to this machine
+     *
+     * §scxml-3.12 makes this an external event, so W3C SCXML Appendix D's
+     * preliminary step — the `<finalize>` for the invoke it came from, and the
+     * autoforward copy to every child that asked for one — runs before
+     * transitions are selected for it, exactly as it would had the event come
+     * off the external queue. Callers that are themselves the event raiser
+     * dispatching a queued event want `processDispatchedEvent` instead: the
+     * context is already established there, and an internal event that came
+     * through here would be forwarded to children that must never see it.
+     *
      * @param eventName Name of the event to process
      * @param eventData Optional event data (JSON string)
      * @return Transition result
      */
     TransitionResult processEvent(const std::string &eventName, const std::string &eventData = "");
+
+    /**
+     * @brief Process an event the EventRaiser has already dequeued
+     *
+     * The entry point for raiser callbacks: it reads the queue category, the
+     * origin session and the rest of the §scxml-5.10 metadata from the
+     * thread-local context the raiser established around this dispatch,
+     * instead of declaring the event external the way `processEvent` does. An
+     * internal event reaching the machine this way is therefore kept out of
+     * the autoforward set by the queue it was raised onto, which is the
+     * distinction W3C SCXML Appendix D draws and not one the event's name
+     * could express.
+     *
+     * @param eventName Name of the event to process
+     * @param eventData Optional event data (JSON string)
+     * @return Transition result
+     */
+    TransitionResult processDispatchedEvent(const std::string &eventName, const std::string &eventData = "");
 
     /**
      * @brief Process an event with origin tracking for W3C SCXML finalize support
