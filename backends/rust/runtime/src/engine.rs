@@ -2120,6 +2120,7 @@ impl<P: StatePolicy> Engine<P> {
                 // will find it, and the count says the configuration a host
                 // reads now is not a stable one.
                 self.record_truncated_macrostep(self.current_state);
+                #[cfg(not(feature = "no_macrostep_diagnostics"))]
                 sce_log_error!(
                     "Engine::process_internal_queue: macrostep still going after {} microsteps; stopped",
                     MAX_MACROSTEP_MICROSTEPS
@@ -2367,6 +2368,7 @@ impl<P: StatePolicy> Engine<P> {
                 // publish the refusal: the configuration left behind is not a
                 // stable one and only this counter says so.
                 self.record_truncated_macrostep(old_state);
+                #[cfg(not(feature = "no_macrostep_diagnostics"))]
                 sce_log_error!(
                     "Engine::check_eventless_transitions: macrostep still going after {} microsteps; stopped",
                     MAX_MACROSTEP_MICROSTEPS
