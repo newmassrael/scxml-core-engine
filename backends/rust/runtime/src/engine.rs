@@ -537,10 +537,17 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) last_error_cascade_event: Option<P::Event>,
     /// Macrosteps this engine stopped at [`MAX_MACROSTEP_MICROSTEPS`] with the
     /// chain still going — see
-    /// [`truncated_macrosteps`](Self::truncated_macrosteps).
+    /// `truncated_macrosteps`.
+    ///
+    /// Gone under `no-macrostep-diagnostics`, and the RAM is the point of
+    /// removing it: this and its sibling below are per-ENGINE, so an MCU image
+    /// holding five machines carries five copies whether or not anything reads
+    /// them.
+    #[cfg(not(feature = "no-macrostep-diagnostics"))]
     pub(crate) truncated_macrosteps: u32,
     /// The state the drain was in when it last stopped that way — see
-    /// [`last_truncated_macrostep_state`](Self::last_truncated_macrostep_state).
+    /// `last_truncated_macrostep_state`.
+    #[cfg(not(feature = "no-macrostep-diagnostics"))]
     pub(crate) last_truncated_macrostep_state: Option<P::State>,
     /// Microsteps taken by the macrostep now in progress, against
     /// [`MAX_MACROSTEP_MICROSTEPS`].
@@ -611,7 +618,9 @@ impl<P: StatePolicy> Engine<P> {
             error_cascade_depth: 0,
             error_cascade_events: 0,
             last_error_cascade_event: None,
+            #[cfg(not(feature = "no-macrostep-diagnostics"))]
             truncated_macrosteps: 0,
+            #[cfg(not(feature = "no-macrostep-diagnostics"))]
             last_truncated_macrostep_state: None,
             macrostep_microsteps_taken: 0,
             macrostep_truncated: false,
@@ -1258,6 +1267,12 @@ impl<P: StatePolicy> Engine<P> {
     /// only counted here when the loop still had work after them — a
     /// transition enabled by NULL, or an event left on the internal queue.
     /// Long chains are ordinary; endless ones are not.
+    ///
+    /// Absent under `no-macrostep-diagnostics`, deliberately. A consumer who
+    /// compiled the report out and then called this would be handed a `0` that
+    /// means "not counted" while reading it as "did not happen" — a wrong
+    /// answer where a compile error is available.
+    #[cfg(not(feature = "no-macrostep-diagnostics"))]
     pub fn truncated_macrosteps(&self) -> u32 {
         self.truncated_macrosteps
     }
@@ -1272,6 +1287,9 @@ impl<P: StatePolicy> Engine<P> {
     /// standing in when it stopped taking internal events. The count alone
     /// says a document somewhere cannot settle; this says where to look. Copy,
     /// so reading it costs nothing on the no_std profile.
+    ///
+    /// Absent under `no-macrostep-diagnostics`, for the reason its sibling is.
+    #[cfg(not(feature = "no-macrostep-diagnostics"))]
     pub fn last_truncated_macrostep_state(&self) -> Option<P::State> {
         self.last_truncated_macrostep_state
     }
@@ -2287,9 +2305,22 @@ impl<P: StatePolicy> Engine<P> {
     /// the branch it died in is a detail of the document, not of the contract.
     /// Two copies of this would be two chances for one of them to stop setting
     /// the flag that keeps the same chain from being handed a second budget.
+    ///
+    /// `macrostep_truncated` is set on BOTH sides of the feature gate below,
+    /// and that is the line between the bound and its report. The flag is what
+    /// stops the drain re-entering a chain it already refused — remove it and
+    /// the engine spins. The counter and the state snapshot are what a host
+    /// READS, and a consumer who reads neither can compile them out with
+    /// `no-macrostep-diagnostics` (see this crate's Cargo.toml for why that
+    /// one is opt-out rather than opt-in).
     pub(crate) fn record_truncated_macrostep(&mut self, state: P::State) {
-        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
-        self.last_truncated_macrostep_state = Some(state);
+        #[cfg(not(feature = "no-macrostep-diagnostics"))]
+        {
+            self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
+            self.last_truncated_macrostep_state = Some(state);
+        }
+        #[cfg(feature = "no-macrostep-diagnostics")]
+        let _ = state;
         self.macrostep_truncated = true;
     }
 
