@@ -2584,6 +2584,14 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "initialize_in_turn",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/configuration.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/mod.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2897,6 +2905,19 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_enter_state",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/configuration.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "enter_at",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/mod.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3528,6 +3549,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "onEntry",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "enter_at",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6006,6 +6032,11 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "initialize_in_turn",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "enter_at",
           "kind": "implements"
         }
       ],

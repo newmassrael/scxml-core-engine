@@ -459,6 +459,33 @@ pub trait StatePolicy: Sized + 'static {
         hierarchy::new_chain()
     }
 
+    /// Put the active state set back (§scxml-3.4), for
+    /// [`Engine::enter_at`](crate::Engine::enter_at).
+    ///
+    /// Generated wherever [`get_active_states`](Self::get_active_states) is, and
+    /// for the same reason: a machine that keeps its own active set is the only
+    /// machine that can be handed one. `enter_at` calls this exactly when
+    /// [`has_active_states`](crate::helpers::state_policy_concepts::has_active_states)
+    /// holds, which is the same condition the generator emits both under.
+    ///
+    /// The default is a tripwire rather than a no-op, unlike its reading
+    /// sibling. The sibling's empty chain is a truthful answer for a machine
+    /// with no parallel regions — there is no active set beyond the hierarchy
+    /// walk. Silently discarding a *write* has no such reading: the caller
+    /// would be told the configuration was restored while the policy still held
+    /// the one it was constructed with, which is the "looks fine, is elsewhere"
+    /// outcome `enter_at` exists to refuse. Reaching it means the policy
+    /// declares `HAS_ACTIVE_STATES` without generating this override, so it is a
+    /// generator defect and says so — the same discipline as
+    /// [`push_chain`](crate::helpers::hierarchy::push_chain)'s capacity
+    /// tripwire.
+    fn set_active_states(&mut self, _states: StateChain<Self::State>) {
+        panic!(
+            "policy declares HAS_ACTIVE_STATES but did not generate set_active_states \
+             (generator bug): Engine::enter_at cannot restore this machine's active set"
+        );
+    }
+
     /// Forward external events to autoforward children (§scxml-6.4.1).
     ///
     /// Generated only when `HAS_AUTOFORWARD` is `true`.
