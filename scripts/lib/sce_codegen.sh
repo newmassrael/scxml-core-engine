@@ -25,6 +25,26 @@
 # and moving it moved only some of them. `codegen_binary_resolution.rs`
 # fails if a profile-specific path reappears outside the four locators.
 
+# Pin the `generated-at` header stamp for every generator run this shell
+# makes, unless the caller already chose a value.
+#
+# `docs/SCE_CODEGEN_DETERMINISM.md` §1 names `SOURCE_DATE_EPOCH=0` as half of
+# what makes "regenerate and expect no diff" true, and
+# `committed_trees_carry_a_pinned_generated_at` rejects a committed file whose
+# stamp is anything else. Only `regen_all_committed_trees.sh` exported it, so
+# all 115 per-stem `regen_<stem>*.sh` scripts stamped wall-clock: regenerating
+# one fixture — the normal shape of a round that changes one fixture — put a
+# dirty header on every file it touched and the drift gate rejected the push.
+# Measured 2026-08-21, and it had cost a push cycle the day before.
+#
+# Here rather than in each script, because this file is the one thing all 115
+# already source, and a 115-line change is the same list-shaped defect: the
+# next regen script written would be the one that forgot.
+#
+# The default is only a default: `SOURCE_DATE_EPOCH=1234 scripts/regen_x.sh`
+# still stamps 1234, so a caller that wants a real time can still say so.
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
+
 # Print the path of an existing sce-codegen binary, or return 1.
 sce_codegen_path() {
     local root="${1:-$(git rev-parse --show-toplevel)}"
