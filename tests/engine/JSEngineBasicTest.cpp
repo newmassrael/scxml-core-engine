@@ -548,6 +548,57 @@ TEST_F(JSEngineBasicTest, IntegratedAPI_ResultConversion) {
     EXPECT_TRUE(typedBool.value()) << "Typed boolean value mismatch";
 }
 
+// W3C SCXML B.1: a number's text is ECMAScript's `String(value)`, including
+// the three spellings that are not digits.
+//
+// `resultToString` is what every outbound surface asks for a value's text — a
+// `targetexpr`, a `delayexpr`, a `<log>` label, and every `<param>` a
+// BasicHTTP send form-encodes (W3C SCXML C.2). Two of the arms below were
+// wrong in ways that only a document using them would ever see:
+//
+//   * `std::floor(inf) == inf` is true, so an infinity took the INTEGER branch
+//     and reached `static_cast<int64_t>(inf)` — undefined behaviour, observed
+//     as INT64_MIN. A document that sent Infinity put -9223372036854775808 on
+//     the wire. Every finite double at or above 2^63 casts the same way, which
+//     is why the bound is asserted here and not only the infinity.
+//   * NaN fell through to an ostringstream, which writes C++'s "nan" for a
+//     value the document wrote as `NaN`.
+//
+// The four ported runtimes (Rust, Go, Python, Kotlin) carry both rules
+// already; this pins the original against them.
+TEST_F(JSEngineBasicTest, ResultToString_NonFiniteNumbersUseEcmaScriptSpelling) {
+    struct Case {
+        const char *expr;
+        const char *want;
+    };
+
+    const Case cases[] = {
+        {"NaN", "NaN"},
+        {"Infinity", "Infinity"},
+        {"-Infinity", "-Infinity"},
+        // Integral and small enough to be an integer: unchanged behaviour, and
+        // the control that keeps the integer branch alive.
+        {"5.0", "5"},
+        {"-7", "-7"},
+    };
+
+    for (const auto &c : cases) {
+        auto result = engine_->evaluateExpression(sessionId_, c.expr).get();
+        ASSERT_TRUE(result.isSuccess()) << "evaluation failed for " << c.expr;
+        EXPECT_EQ(SCE::JSEngine::resultToString(result), c.want) << "for expression " << c.expr;
+    }
+
+    // Above 2^63 the integer cast is undefined, so the answer must come from
+    // the formatting branch. What matters is that it is neither empty nor the
+    // saturated integer; the exponent form itself is ECMAScript's.
+    auto huge = engine_->evaluateExpression(sessionId_, "1e300").get();
+    ASSERT_TRUE(huge.isSuccess()) << "evaluation failed for 1e300";
+    const std::string hugeStr = SCE::JSEngine::resultToString(huge);
+    EXPECT_NE(hugeStr, "-9223372036854775808") << "a huge double saturated an int64 cast";
+    EXPECT_NE(hugeStr, "9223372036854775807") << "a huge double saturated an int64 cast";
+    EXPECT_NE(hugeStr.find("1e+300"), std::string::npos) << "got " << hugeStr;
+}
+
 TEST_F(JSEngineBasicTest, IntegratedAPI_JSONStringifyFallback) {
     // Test JSON.stringify fallback for complex objects - reuses proven ActionExecutorImpl logic
 
