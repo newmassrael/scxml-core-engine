@@ -130,10 +130,34 @@
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 {% for param in invoke_info.params %}
 {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
-                    if let Ok(val) = se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
-                        // §scxml-6.4.3: the VALUE of the param element becomes
-                        // the child `<data>`'s initial value.
-                        child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", val);
+                    match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
+                        Ok(val) => {
+                            // §scxml-6.4.3: the VALUE of the param element becomes
+                            // the child `<data>`'s initial value.
+                            child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", val);
+                        }
+                        Err(e) => {
+                            // §scxml-5.7.1: BOTH halves — `error.execution` on the
+                            // internal queue AND the name and value ignored. Only
+                            // the silent half was here: an `if let Ok` dropped the
+                            // failure, so a document that miscomputed one `<param>`
+                            // of an `<invoke>` got a child with a `<data>` nothing
+                            // explained and no event to act on.
+                            //
+                            // The clause delegates only the SUCCESSFUL name and
+                            // value to the context — "Otherwise the use of the name
+                            // and value depends on the context in which the <param>
+                            // element occurs. See 5.5 <donedata>, 6.2 <send> and 6.4
+                            // <invoke>" — so §scxml-6.4.2's "terminate the
+                            // processing of the element" is not what a failing
+                            // `<param>` costs: the child still starts, one pair
+                            // short. W3C test343 settles the same clause from the
+                            // `<donedata>` side.
+                            ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+{% endif %}
+                        }
                     }
 {% else %}
                     // §scxml-6.4.3: `{{ param.name | escape_rust }}` matches no top-level `<data>` of

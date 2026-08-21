@@ -230,7 +230,21 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 "return ({{ param.expr | to_lua_expr | escape_c }})") == 0) {
 {{ se.lua_xfer_top_to_child("sm->L", "sm->child_" ~ invoke_info.field_suffix ~ ".L", param.name) }}
             } else {
+                /* §scxml-5.7.1: BOTH halves — `error.execution` on the internal
+                   queue AND the name and value ignored. Only the silent half was
+                   here: the error object was popped and the child came up with a
+                   `<data>` nothing explained.
+
+                   The clause delegates only the SUCCESSFUL name and value to the
+                   context ("Otherwise the use of the name and value depends on
+                   the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
+                   <invoke>"), so §scxml-6.4.2's "terminate the processing of the
+                   element" is not what a failing `<param>` costs: the child still
+                   starts, one pair short. */
                 lua_pop(sm->L, 1);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
             }
             {% endif %}
             {% endfor %}

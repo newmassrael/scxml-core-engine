@@ -1,0 +1,490 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 387554cf9d8d5415c8347a9554c4bb2db1133a43787a7fb935ba3f3f9103b433
+// template-hash: 84a841eae761d6fbf94d15cd646ae14f47646822f90559441b47e8f14bddfb19
+// generated-at: 0
+
+// GENERATED CODE — DO NOT EDIT
+// Source: integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: invoke_param_error_starts_the_child.scxml:52 :: _machine
+
+package com.sce.integration.invoke_param_error_starts_the_child
+
+import com.sce.runtime.*
+
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface InvokeParamErrorStartsTheChildState : State {
+    data object FailBrokenParamSeeded : InvokeParamErrorStartsTheChildState
+    data object FailGoodParamLost : InvokeParamErrorStartsTheChildState
+    data object FailInvokeNotStarted : InvokeParamErrorStartsTheChildState
+    data object FailNoParamError : InvokeParamErrorStartsTheChildState
+    data object ParamPhase : InvokeParamErrorStartsTheChildState
+    data object Pass : InvokeParamErrorStartsTheChildState
+}
+
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface InvokeParamErrorStartsTheChildEvent : Event {
+    sealed interface Cancel : InvokeParamErrorStartsTheChildEvent {
+        data object Invoke : Cancel
+    }
+    data object ChildUp : InvokeParamErrorStartsTheChildEvent
+    sealed interface Done : InvokeParamErrorStartsTheChildEvent {
+        data object Invoke : Done
+    }
+    sealed interface Error : InvokeParamErrorStartsTheChildEvent {
+        data object Execution : Error
+    }
+    data object Timeout : InvokeParamErrorStartsTheChildEvent
+}
+// --- State Machine (W3C SCXML) ---
+
+class InvokeParamErrorStartsTheChildStateMachine(
+    scriptEngine: ScxmlScriptEngine,
+) : StateMachineEngine<InvokeParamErrorStartsTheChildState, InvokeParamErrorStartsTheChildEvent>(scriptEngine) {
+
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+
+    /**
+     * §scxml-5.3: what the `sawParamError` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `sawParamError` was assigned a value of another type, or the engine refused.
+     */
+    fun sawParamError(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "sawParamError")
+
+    override val initialState: InvokeParamErrorStartsTheChildState = InvokeParamErrorStartsTheChildState.ParamPhase
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = true
+
+    // W3C SCXML B.1: Initialize script engine before entering initial state
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        super.enterInitialConfiguration()
+    }
+
+
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): InvokeParamErrorStartsTheChildState? = when (stateId) {
+        "failBrokenParamSeeded" -> InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded
+        "failGoodParamLost" -> InvokeParamErrorStartsTheChildState.FailGoodParamLost
+        "failInvokeNotStarted" -> InvokeParamErrorStartsTheChildState.FailInvokeNotStarted
+        "failNoParamError" -> InvokeParamErrorStartsTheChildState.FailNoParamError
+        "paramPhase" -> InvokeParamErrorStartsTheChildState.ParamPhase
+        "pass" -> InvokeParamErrorStartsTheChildState.Pass
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: InvokeParamErrorStartsTheChildState): String = when (state) {
+        is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> "failBrokenParamSeeded"
+        is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> "failGoodParamLost"
+        is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> "failInvokeNotStarted"
+        is InvokeParamErrorStartsTheChildState.FailNoParamError -> "failNoParamError"
+        is InvokeParamErrorStartsTheChildState.ParamPhase -> "paramPhase"
+        is InvokeParamErrorStartsTheChildState.Pass -> "pass"
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: InvokeParamErrorStartsTheChildState): Boolean = when (state) {
+        else -> true
+    }
+
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: InvokeParamErrorStartsTheChildState): Int = when (state) {
+        is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> 5
+        is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> 4
+        is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> 3
+        is InvokeParamErrorStartsTheChildState.FailNoParamError -> 2
+        is InvokeParamErrorStartsTheChildState.ParamPhase -> 0
+        is InvokeParamErrorStartsTheChildState.Pass -> 1
+    }
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): InvokeParamErrorStartsTheChildEvent? = when (name) {
+        "cancel.invoke" -> InvokeParamErrorStartsTheChildEvent.Cancel.Invoke
+        "childUp" -> InvokeParamErrorStartsTheChildEvent.ChildUp
+        "done.invoke" -> InvokeParamErrorStartsTheChildEvent.Done.Invoke
+        "error.execution" -> InvokeParamErrorStartsTheChildEvent.Error.Execution
+        "timeout" -> InvokeParamErrorStartsTheChildEvent.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: InvokeParamErrorStartsTheChildEvent): String? = when (event) {
+        is InvokeParamErrorStartsTheChildEvent.Cancel.Invoke -> "cancel.invoke"
+        is InvokeParamErrorStartsTheChildEvent.ChildUp -> "childUp"
+        is InvokeParamErrorStartsTheChildEvent.Done.Invoke -> "done.invoke"
+        is InvokeParamErrorStartsTheChildEvent.Error.Execution -> "error.execution"
+        is InvokeParamErrorStartsTheChildEvent.Timeout -> "timeout"
+    }
+
+
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        engine.setupSystemVariables(
+            sid,
+            "invoke_param_error_starts_the_child",
+            com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
+        )
+
+        // W3C SCXML 5.3: Initialize variable 'nothing' with expr
+        try {
+            val initResult_nothing = engine.evaluateExpr(sid, "null")
+            engine.setVariable(sid, "nothing", initResult_nothing)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'sawParamError' with expr
+        try {
+            val initResult_sawParamError = engine.evaluateExpr(sid, "0")
+            engine.setVariable(sid, "sawParamError", initResult_sawParamError)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='sawParamError'> expr failed to evaluate")
+        }
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "a <transition> cond failed to evaluate")
+            false
+        }
+    }
+
+    // W3C SCXML B.2: the value of an inline `<content>` body, serialized
+    // for transport.
+    //
+    // The reading is decided at build time — `source` is already the
+    // expression or string literal the clause's ordered readings give —
+    // and this evaluates it *here*, at send time, rather than handing the
+    // expression to whatever reads `_event.data` later. That distinction
+    // is not academic: the two engines this backend runs on disagree
+    // about what a data string is. QuickJS tries a JS evaluation before
+    // falling back; Rhino goes straight from JSON to the normalized
+    // string, so an expression handed to it arrives as its own source
+    // text. `JSON.stringify` is what both of them can read back, and it
+    // is the same shape the C++ backend transports.
+    private fun evaluateSendContent(source: String): String {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "an expression could not be serialised to JSON")
+            ""
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    private fun executeAssign(location: String, expr: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        try {
+            engine.assign(sid, location, expr)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<assign> failed")
+        }
+    }
+
+    // W3C SCXML 5.8: Script block execution
+    private fun executeScriptBlock(script: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        try {
+            engine.executeScript(sid, script)
+        } catch (e: Exception) {
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<script> failed to execute")
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: InvokeParamErrorStartsTheChildEvent) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val eventName = eventNameOf(event) ?: return
+        val meta = currentEventMetadata
+        // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
+        val effectiveType = when {
+            eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"
+            else -> meta.type
+        }
+        // W3C SCXML 5.10.1: C++ pattern — origin/origintype only for external events
+        // Internal events (<raise>) have empty origin; external events (<send>) have session ID
+        // W3C SCXML C.1: `_event.origin` is the sender's published
+        // `_ioprocessors` location, not its bare session id — and this is the
+        // one place that publishes `_event` to the document, so this is where
+        // the id becomes a location. The engine keeps the bare id in
+        // `EventMetadata.origin` because its session-keyed lookups (`<finalize>`
+        // dispatch, cancelled-invoke filtering) match on it; converting at the
+        // raise would make one value serve two consumers that need different
+        // spellings. The conversion itself lives in
+        // `com.sce.runtime.IoProcessors.publishedOrigin`, the port of the
+        // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
+        // spelling of the rule is how the backends would stop agreeing.
+        val effectiveOrigin = com.sce.runtime.IoProcessors.publishedOrigin(
+            if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        )
+        val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
+        engine.setCurrentEvent(
+            sid,
+            com.sce.runtime.SetCurrentEventArgs(
+                name = eventName,
+                data = meta.data,
+                type = effectiveType,
+                sendId = meta.sendId,
+                origin = effectiveOrigin,
+                originType = effectiveOriginType,
+                invokeId = meta.invokeId
+            )
+        )
+    }
+
+
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
+    override fun processEvent(
+        state: InvokeParamErrorStartsTheChildState,
+        event: InvokeParamErrorStartsTheChildEvent
+    ): TransitionResult<InvokeParamErrorStartsTheChildState> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
+        is InvokeParamErrorStartsTheChildState.ParamPhase -> processParamPhase(event)
+        else -> TransitionResult.Ignored
+    }
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processParamPhase(
+        event: InvokeParamErrorStartsTheChildEvent
+    ): TransitionResult<InvokeParamErrorStartsTheChildState> = when {
+        // W3C SCXML 3.13: Targetless transition (actions only)
+        event is InvokeParamErrorStartsTheChildEvent.Error.Execution -> TransitionResult.Internal
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard("sawParamError !== 1") -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailNoParamError, InvokeParamErrorStartsTheChildState.ParamPhase)
+
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard("_event.data.kept !== 'here'") -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailGoodParamLost, InvokeParamErrorStartsTheChildState.ParamPhase)
+
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard("_event.data.brokenPlaceholder === true") -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded, InvokeParamErrorStartsTheChildState.ParamPhase)
+
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp -> TransitionResult.External(InvokeParamErrorStartsTheChildState.Pass, InvokeParamErrorStartsTheChildState.ParamPhase)
+
+        event is InvokeParamErrorStartsTheChildEvent.Timeout -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailInvokeNotStarted, InvokeParamErrorStartsTheChildState.ParamPhase)
+
+        else -> TransitionResult.Ignored
+    }
+
+
+
+    // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: invoke_param_error_starts_the_child.scxml:52 :: _machine
+    override fun onEntry(state: InvokeParamErrorStartsTheChildState, pathChild: InvokeParamErrorStartsTheChildState?) {
+        when (state) {
+            is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:132 :: failBrokenParamSeeded :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("failBrokenParamSeeded")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:131 :: failGoodParamLost :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("failGoodParamLost")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:130 :: failInvokeNotStarted :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("failInvokeNotStarted")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is InvokeParamErrorStartsTheChildState.FailNoParamError -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:129 :: failNoParamError :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("failNoParamError")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is InvokeParamErrorStartsTheChildState.ParamPhase -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:70 :: paramPhase :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("paramPhase")) return
+
+
+            scheduleSend("__send_0", 3000L, InvokeParamErrorStartsTheChildEvent.Timeout)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "paramPhase.${System.identityHashCode(this)}.inv_probe"
+                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
+                    ensureScriptEngine()
+                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                    val invokeParams = mutableMapOf<String, Any?>()
+                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
+                    // `error.execution` on the internal queue AND the name and
+                    // value — and nothing else. The clause delegates only the
+                    // SUCCESSFUL name and value to the context ("Otherwise the use
+                    // of the name and value depends on the context in which the
+                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
+                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
+                    // of the element" is not reached by a failing `<param>`.
+                    //
+                    // This arm used to `return@run`, cancelling the whole invoke
+                    // and raising nothing — the strictest reading of 6.4.2 with
+                    // 5.7.1's reporting half dropped, so a document lost the child
+                    // AND the event that would have explained why. The comment
+                    // called that "the C++ pattern"; C++ does not cancel. The map
+                    // insert is inside the `try`, so a failure leaves the name
+                    // absent, which is the clause's other half.
+                    try {
+                        invokeParams["kept"] = engineInv.evaluateExpr(sidInv, "'here'")
+                    } catch (_: Exception) {
+                        raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='kept'> expr failed to evaluate")
+                    }
+                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
+                    // `error.execution` on the internal queue AND the name and
+                    // value — and nothing else. The clause delegates only the
+                    // SUCCESSFUL name and value to the context ("Otherwise the use
+                    // of the name and value depends on the context in which the
+                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
+                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
+                    // of the element" is not reached by a failing `<param>`.
+                    //
+                    // This arm used to `return@run`, cancelling the whole invoke
+                    // and raising nothing — the strictest reading of 6.4.2 with
+                    // 5.7.1's reporting half dropped, so a document lost the child
+                    // AND the event that would have explained why. The comment
+                    // called that "the C++ pattern"; C++ does not cancel. The map
+                    // insert is inside the `try`, so a failure leaves the name
+                    // absent, which is the clause's other half.
+                    try {
+                        invokeParams["broken"] = engineInv.evaluateExpr(sidInv, "nothing.deep")
+                    } catch (_: Exception) {
+                        raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='broken'> expr failed to evaluate")
+                    }
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                        setInvokeParams(childSM, invokeParams)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("inv_probe", childSM, false, InvokeParamErrorStartsTheChildEvent.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
+            }
+            is InvokeParamErrorStartsTheChildState.Pass -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:128 :: pass :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: invoke_param_error_starts_the_child.scxml:52 :: _machine
+    override fun onExit(state: InvokeParamErrorStartsTheChildState) {
+        when (state) {
+            is InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:132 :: failBrokenParamSeeded :: _state_body
+                activeStateIds.remove("failBrokenParamSeeded")
+            }
+            is InvokeParamErrorStartsTheChildState.FailGoodParamLost -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:131 :: failGoodParamLost :: _state_body
+                activeStateIds.remove("failGoodParamLost")
+            }
+            is InvokeParamErrorStartsTheChildState.FailInvokeNotStarted -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:130 :: failInvokeNotStarted :: _state_body
+                activeStateIds.remove("failInvokeNotStarted")
+            }
+            is InvokeParamErrorStartsTheChildState.FailNoParamError -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:129 :: failNoParamError :: _state_body
+                activeStateIds.remove("failNoParamError")
+            }
+            is InvokeParamErrorStartsTheChildState.ParamPhase -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:70 :: paramPhase :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("inv_probe")
+                activeStateIds.remove("paramPhase")
+            }
+            is InvokeParamErrorStartsTheChildState.Pass -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:128 :: pass :: _state_body
+                activeStateIds.remove("pass")
+            }
+        }
+    }
+
+
+    // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: invoke_param_error_starts_the_child.scxml:52 :: _machine
+    override fun executeTransitionActions(
+        source: InvokeParamErrorStartsTheChildState,
+        event: InvokeParamErrorStartsTheChildEvent?
+    ) {
+        when (source) {
+        is InvokeParamErrorStartsTheChildState.ParamPhase -> when {
+            event is InvokeParamErrorStartsTheChildEvent.Error.Execution -> {
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:117 :: paramPhase :: _transition_0
+
+
+            executeAssign("sawParamError", "1")
+            }
+            else -> {}
+        }
+        else -> {}
+        }
+    }
+}

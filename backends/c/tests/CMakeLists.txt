@@ -1260,6 +1260,40 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # §scxml-5.7.1 under §scxml-6.4: a `<param>` of an `<invoke>` whose
+    # expression will not evaluate. 6.4.2 terminates the element when "the
+    # evaluation of its arguments produces an error"; 5.7.1 reports the failure
+    # and ignores the name and value, and delegates only the SUCCESSFUL name and
+    # value to the context — naming `<invoke>` in that sentence, so it is 5.7.1
+    # that governs. This backend's arm popped the Lua error object and moved on,
+    # so the child came up with a `<data>` nothing explained.
+    sce_generate_static_integration_c_test(invoke_param_error_starts_the_child "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_probe
+    )
+
+    add_executable(sce_c_integration_invoke_param_error_starts_the_child
+        integration/test_invoke_param_error_starts_the_child.c
+        ${INTEGRATION_C_TEST_invoke_param_error_starts_the_child_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_invoke_param_error_starts_the_child PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_invoke_param_error_starts_the_child PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_invoke_param_error_starts_the_child PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_invoke_param_error_starts_the_child
+        COMMAND sce_c_integration_invoke_param_error_starts_the_child
+    )
+    set_tests_properties(c11_integration_invoke_param_error_starts_the_child PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-D-mainEventLoop: the preliminary <finalize> / autoforward step is
     # owed to the external event, not to the queue it arrived on. The four
     # autoforward_* fixtures above all let the machine forward events it queued

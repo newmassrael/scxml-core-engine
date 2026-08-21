@@ -771,6 +771,8 @@ add_executable(integration_tests
     integration/SendParamPayloadAotTest.cpp
     integration/InvokeParamSeedsDeclaredChildDataTest.cpp
     integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp
+    integration/InvokeParamErrorStartsTheChildTest.cpp
+    integration/InvokeParamErrorStartsTheChildAotTest.cpp
     integration/HostEventReachesTheChildTest.cpp
     integration/HostEventReachesTheChildAotTest.cpp
     integration/SCXMLEventTest.cpp
@@ -1301,6 +1303,18 @@ sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUT
 # "the child evaluated this text".
 sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist inv_infinite
+)
+
+# §scxml-5.7.1 under §scxml-6.4: a `<param>` of an `<invoke>` whose expression
+# will not evaluate. Two clauses meet — 6.4.2 terminates the element when "the
+# evaluation of its arguments produces an error", 5.7.1 reports the failure and
+# ignores the name and value — and 5.7.1 governs, because it delegates only the
+# SUCCESSFUL name and value to the context and names `<invoke>` in that
+# sentence. No IRP document asks it here: test343 settles the same clause from
+# the `<donedata>` side and nothing reaches the invoke context, which is why
+# five channels were silent and one cancelled the whole invoke.
+sce_generate_static_integration_test(invoke_param_error_starts_the_child ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_probe
 )
 
 # §scxml-D-mainEventLoop: the preliminary `<finalize>` / autoforward step is

@@ -39,6 +39,7 @@ pub mod eventless_macrostep_is_bounded;
 pub mod host_event_reaches_the_child;
 pub mod host_processor;
 pub mod internal_chain_is_bounded;
+pub mod invoke_param_error_starts_the_child;
 pub mod invoke_param_seeds_declared_child_data;
 pub mod invoke_precedes_dequeue_midrun;
 pub mod invoke_precedes_external_dequeue;

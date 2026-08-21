@@ -191,7 +191,22 @@
                             if (::SCE::ScriptResultUtils::isSuccess(__sce_param)) {
                                 child_{{ invoke_info.field_suffix }}_->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());
                             } else {
+                                // §scxml-5.7.1: BOTH halves — `error.execution` on
+                                // the internal queue AND the name and value
+                                // ignored. The log line alone kept neither: a log
+                                // is not a queue, so the document that miscomputed
+                                // the `<param>` saw a child come up with a `<data>`
+                                // nothing explained and had no event to act on.
+                                //
+                                // The clause delegates only the SUCCESSFUL name and
+                                // value to the context ("Otherwise the use of the
+                                // name and value depends on the context ... See 5.5
+                                // <donedata>, 6.2 <send> and 6.4 <invoke>"), so
+                                // §scxml-6.4.2's "terminate the processing of the
+                                // element" is not what a failing `<param>` costs:
+                                // the child still starts, one pair short.
                                 SCE_LOG_ERROR("Failed to evaluate <invoke> param expression for {}: {}", "{{ param.name | escape_cpp }}", "{{ param.expr | escape_cpp }}");
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));
                             }
                         }
                         {% else %}

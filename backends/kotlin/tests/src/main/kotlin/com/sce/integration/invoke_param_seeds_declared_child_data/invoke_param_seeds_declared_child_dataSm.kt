@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: 7914245a302af6112e722e36ab0278821b7fbccd84f029fffa6bd9dd419eb713
+// template-hash: 84a841eae761d6fbf94d15cd646ae14f47646822f90559441b47e8f14bddfb19
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -504,11 +504,26 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
+                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
+                    // `error.execution` on the internal queue AND the name and
+                    // value — and nothing else. The clause delegates only the
+                    // SUCCESSFUL name and value to the context ("Otherwise the use
+                    // of the name and value depends on the context in which the
+                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
+                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
+                    // of the element" is not reached by a failing `<param>`.
+                    //
+                    // This arm used to `return@run`, cancelling the whole invoke
+                    // and raising nothing — the strictest reading of 6.4.2 with
+                    // 5.7.1's reporting half dropped, so a document lost the child
+                    // AND the event that would have explained why. The comment
+                    // called that "the C++ pattern"; C++ does not cancel. The map
+                    // insert is inside the `try`, so a failure leaves the name
+                    // absent, which is the clause's other half.
                     try {
                         invokeParams["seen"] = engineInv.evaluateExpr(sidInv, "1/0")
                     } catch (_: Exception) {
-                        return@run  // C++ pattern: invoke cancelled on param error
+                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
                     }
                     deferInvoke(state, generatedInvokeId) {
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
@@ -565,11 +580,26 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
+                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
+                    // `error.execution` on the internal queue AND the name and
+                    // value — and nothing else. The clause delegates only the
+                    // SUCCESSFUL name and value to the context ("Otherwise the use
+                    // of the name and value depends on the context in which the
+                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
+                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
+                    // of the element" is not reached by a failing `<param>`.
+                    //
+                    // This arm used to `return@run`, cancelling the whole invoke
+                    // and raising nothing — the strictest reading of 6.4.2 with
+                    // 5.7.1's reporting half dropped, so a document lost the child
+                    // AND the event that would have explained why. The comment
+                    // called that "the C++ pattern"; C++ does not cancel. The map
+                    // insert is inside the `try`, so a failure leaves the name
+                    // absent, which is the clause's other half.
                     try {
                         invokeParams["seen"] = engineInv.evaluateExpr(sidInv, "token")
                     } catch (_: Exception) {
-                        return@run  // C++ pattern: invoke cancelled on param error
+                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
                     }
                     deferInvoke(state, generatedInvokeId) {
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
@@ -592,11 +622,26 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
+                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
+                    // `error.execution` on the internal queue AND the name and
+                    // value — and nothing else. The clause delegates only the
+                    // SUCCESSFUL name and value to the context ("Otherwise the use
+                    // of the name and value depends on the context in which the
+                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
+                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
+                    // of the element" is not reached by a failing `<param>`.
+                    //
+                    // This arm used to `return@run`, cancelling the whole invoke
+                    // and raising nothing — the strictest reading of 6.4.2 with
+                    // 5.7.1's reporting half dropped, so a document lost the child
+                    // AND the event that would have explained why. The comment
+                    // called that "the C++ pattern"; C++ does not cancel. The map
+                    // insert is inside the `try`, so a failure leaves the name
+                    // absent, which is the clause's other half.
                     try {
                         invokeParams["seen"] = engineInv.evaluateExpr(sidInv, "only_here")
                     } catch (_: Exception) {
-                        return@run  // C++ pattern: invoke cancelled on param error
+                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
                     }
                     deferInvoke(state, generatedInvokeId) {
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
@@ -619,17 +664,47 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
+                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
+                    // `error.execution` on the internal queue AND the name and
+                    // value — and nothing else. The clause delegates only the
+                    // SUCCESSFUL name and value to the context ("Otherwise the use
+                    // of the name and value depends on the context in which the
+                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
+                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
+                    // of the element" is not reached by a failing `<param>`.
+                    //
+                    // This arm used to `return@run`, cancelling the whole invoke
+                    // and raising nothing — the strictest reading of 6.4.2 with
+                    // 5.7.1's reporting half dropped, so a document lost the child
+                    // AND the event that would have explained why. The comment
+                    // called that "the C++ pattern"; C++ does not cancel. The map
+                    // insert is inside the `try`, so a failure leaves the name
+                    // absent, which is the clause's other half.
                     try {
                         invokeParams["declared"] = engineInv.evaluateExpr(sidInv, "'carried'")
                     } catch (_: Exception) {
-                        return@run  // C++ pattern: invoke cancelled on param error
+                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='declared'> expr failed to evaluate")
                     }
-                    // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
+                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
+                    // `error.execution` on the internal queue AND the name and
+                    // value — and nothing else. The clause delegates only the
+                    // SUCCESSFUL name and value to the context ("Otherwise the use
+                    // of the name and value depends on the context in which the
+                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
+                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
+                    // of the element" is not reached by a failing `<param>`.
+                    //
+                    // This arm used to `return@run`, cancelling the whole invoke
+                    // and raising nothing — the strictest reading of 6.4.2 with
+                    // 5.7.1's reporting half dropped, so a document lost the child
+                    // AND the event that would have explained why. The comment
+                    // called that "the C++ pattern"; C++ does not cancel. The map
+                    // insert is inside the `try`, so a failure leaves the name
+                    // absent, which is the clause's other half.
                     try {
                         invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, "'leaked'")
                     } catch (_: Exception) {
-                        return@run  // C++ pattern: invoke cancelled on param error
+                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='nowhere'> expr failed to evaluate")
                     }
                     deferInvoke(state, generatedInvokeId) {
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))

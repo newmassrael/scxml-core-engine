@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: 7914245a302af6112e722e36ab0278821b7fbccd84f029fffa6bd9dd419eb713
+// template-hash: 84a841eae761d6fbf94d15cd646ae14f47646822f90559441b47e8f14bddfb19
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -551,10 +551,38 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    if let Ok(val) = se.evaluate_expression(&sid, "(1 / 0)") {
-                        // §scxml-6.4.3: the VALUE of the param element becomes
-                        // the child `<data>`'s initial value.
-                        child_policy.set_param_value_in_script_engine("seen", val);
+                    match se.evaluate_expression(&sid, "(1 / 0)") {
+                        Ok(val) => {
+                            // §scxml-6.4.3: the VALUE of the param element becomes
+                            // the child `<data>`'s initial value.
+                            child_policy.set_param_value_in_script_engine("seen", val);
+                        }
+                        Err(e) => {
+                            // §scxml-5.7.1: BOTH halves — `error.execution` on the
+                            // internal queue AND the name and value ignored. Only
+                            // the silent half was here: an `if let Ok` dropped the
+                            // failure, so a document that miscomputed one `<param>`
+                            // of an `<invoke>` got a child with a `<data>` nothing
+                            // explained and no event to act on.
+                            //
+                            // The clause delegates only the SUCCESSFUL name and
+                            // value to the context — "Otherwise the use of the name
+                            // and value depends on the context in which the <param>
+                            // element occurs. See 5.5 <donedata>, 6.2 <send> and 6.4
+                            // <invoke>" — so §scxml-6.4.2's "terminate the
+                            // processing of the element" is not what a failing
+                            // `<param>` costs: the child still starts, one pair
+                            // short. W3C test343 settles the same clause from the
+                            // `<donedata>` side.
+                            ::sce_rust_runtime::sce_log_error!(
+                                "invoke param 'seen' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                "<invoke> <param name='seen'> expr failed to evaluate",
+                            ));
+                        }
                     }
                 }
 
@@ -794,10 +822,38 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    if let Ok(val) = se.evaluate_expression(&sid, "token") {
-                        // §scxml-6.4.3: the VALUE of the param element becomes
-                        // the child `<data>`'s initial value.
-                        child_policy.set_param_value_in_script_engine("seen", val);
+                    match se.evaluate_expression(&sid, "token") {
+                        Ok(val) => {
+                            // §scxml-6.4.3: the VALUE of the param element becomes
+                            // the child `<data>`'s initial value.
+                            child_policy.set_param_value_in_script_engine("seen", val);
+                        }
+                        Err(e) => {
+                            // §scxml-5.7.1: BOTH halves — `error.execution` on the
+                            // internal queue AND the name and value ignored. Only
+                            // the silent half was here: an `if let Ok` dropped the
+                            // failure, so a document that miscomputed one `<param>`
+                            // of an `<invoke>` got a child with a `<data>` nothing
+                            // explained and no event to act on.
+                            //
+                            // The clause delegates only the SUCCESSFUL name and
+                            // value to the context — "Otherwise the use of the name
+                            // and value depends on the context in which the <param>
+                            // element occurs. See 5.5 <donedata>, 6.2 <send> and 6.4
+                            // <invoke>" — so §scxml-6.4.2's "terminate the
+                            // processing of the element" is not what a failing
+                            // `<param>` costs: the child still starts, one pair
+                            // short. W3C test343 settles the same clause from the
+                            // `<donedata>` side.
+                            ::sce_rust_runtime::sce_log_error!(
+                                "invoke param 'seen' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                "<invoke> <param name='seen'> expr failed to evaluate",
+                            ));
+                        }
                     }
                 }
 
@@ -902,10 +958,38 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    if let Ok(val) = se.evaluate_expression(&sid, "only_here") {
-                        // §scxml-6.4.3: the VALUE of the param element becomes
-                        // the child `<data>`'s initial value.
-                        child_policy.set_param_value_in_script_engine("seen", val);
+                    match se.evaluate_expression(&sid, "only_here") {
+                        Ok(val) => {
+                            // §scxml-6.4.3: the VALUE of the param element becomes
+                            // the child `<data>`'s initial value.
+                            child_policy.set_param_value_in_script_engine("seen", val);
+                        }
+                        Err(e) => {
+                            // §scxml-5.7.1: BOTH halves — `error.execution` on the
+                            // internal queue AND the name and value ignored. Only
+                            // the silent half was here: an `if let Ok` dropped the
+                            // failure, so a document that miscomputed one `<param>`
+                            // of an `<invoke>` got a child with a `<data>` nothing
+                            // explained and no event to act on.
+                            //
+                            // The clause delegates only the SUCCESSFUL name and
+                            // value to the context — "Otherwise the use of the name
+                            // and value depends on the context in which the <param>
+                            // element occurs. See 5.5 <donedata>, 6.2 <send> and 6.4
+                            // <invoke>" — so §scxml-6.4.2's "terminate the
+                            // processing of the element" is not what a failing
+                            // `<param>` costs: the child still starts, one pair
+                            // short. W3C test343 settles the same clause from the
+                            // `<donedata>` side.
+                            ::sce_rust_runtime::sce_log_error!(
+                                "invoke param 'seen' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                "<invoke> <param name='seen'> expr failed to evaluate",
+                            ));
+                        }
                     }
                 }
 
@@ -1008,10 +1092,38 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    if let Ok(val) = se.evaluate_expression(&sid, "\"carried\"") {
-                        // §scxml-6.4.3: the VALUE of the param element becomes
-                        // the child `<data>`'s initial value.
-                        child_policy.set_param_value_in_script_engine("declared", val);
+                    match se.evaluate_expression(&sid, "\"carried\"") {
+                        Ok(val) => {
+                            // §scxml-6.4.3: the VALUE of the param element becomes
+                            // the child `<data>`'s initial value.
+                            child_policy.set_param_value_in_script_engine("declared", val);
+                        }
+                        Err(e) => {
+                            // §scxml-5.7.1: BOTH halves — `error.execution` on the
+                            // internal queue AND the name and value ignored. Only
+                            // the silent half was here: an `if let Ok` dropped the
+                            // failure, so a document that miscomputed one `<param>`
+                            // of an `<invoke>` got a child with a `<data>` nothing
+                            // explained and no event to act on.
+                            //
+                            // The clause delegates only the SUCCESSFUL name and
+                            // value to the context — "Otherwise the use of the name
+                            // and value depends on the context in which the <param>
+                            // element occurs. See 5.5 <donedata>, 6.2 <send> and 6.4
+                            // <invoke>" — so §scxml-6.4.2's "terminate the
+                            // processing of the element" is not what a failing
+                            // `<param>` costs: the child still starts, one pair
+                            // short. W3C test343 settles the same clause from the
+                            // `<donedata>` side.
+                            ::sce_rust_runtime::sce_log_error!(
+                                "invoke param 'declared' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                "<invoke> <param name='declared'> expr failed to evaluate",
+                            ));
+                        }
                     }
                     // §scxml-6.4.3: `nowhere` matches no top-level `<data>` of
                     // the child, so the Processor MUST NOT add it to the invoked
