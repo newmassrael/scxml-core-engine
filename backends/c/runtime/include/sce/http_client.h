@@ -43,11 +43,11 @@ extern "C" {
 /**
  * Parsed `http://<host>:<port><path>` URL components.
  *
- * Inline buffers (no malloc) because the §scxml-C-2 corpus uses
- * literal `http://localhost:8080/test` exclusively (TXMLConverter.h:
- * `HTTP_TEST_SERVER_URL`); 128/256-byte caps are far above the
- * fixture URLs while keeping the struct stack-allocatable inside a
- * generated `_perform_http_send_*` block.
+ * Inline buffers (no malloc) because the §scxml-C-2 corpus addresses
+ * one loopback endpoint, owned by `tests/w3c/basic_http_test_endpoint.h`;
+ * 128/256-byte caps are far above the fixture URLs while keeping the
+ * struct stack-allocatable inside a generated `_perform_http_send_*`
+ * block.
  */
 typedef struct {
     char host[128];

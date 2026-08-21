@@ -279,6 +279,49 @@ endif()
 option(BUILD_TESTS "Build the tests" ON)
 if(BUILD_TESTS)
     enable_testing()
+
+    # §scxml-C-2-3: where the W3C BasicHTTP fixture listener answers.
+    #
+    # The DEFAULT is read out of `tests/w3c/basic_http_test_endpoint.h` instead
+    # of being restated here, because that header is what the compiled runners
+    # include. Restating it would make CMake a second author of one fact, and
+    # the two would drift the first time either moved — the listener would bind
+    # one port while the machines published another, and every BasicHTTP
+    # fixture would fail for a reason unrelated to what it tests.
+    #
+    # It is a cache variable because the listener is a MACHINE-GLOBAL resource:
+    # one process per host can hold a port, so two checkouts of this repository
+    # cannot both run the BasicHTTP suites while both compile the same number
+    # in. Configuring the second tree with -DSCE_W3C_HTTP_PORT=N is what lets
+    # them run at the same time; the value is exported to each runner through
+    # its test ENVIRONMENT, so the bind address and the published 'location'
+    # move together.
+    set(SCE_W3C_HTTP_ENDPOINT_HEADER
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/w3c/basic_http_test_endpoint.h")
+    file(STRINGS "${SCE_W3C_HTTP_ENDPOINT_HEADER}" _sce_w3c_http_port_line
+        REGEX "^#define[ \t]+SCE_W3C_HTTP_DEFAULT_PORT[ \t]")
+    string(REGEX MATCH "[0-9]+" _sce_w3c_http_default_port "${_sce_w3c_http_port_line}")
+    file(STRINGS "${SCE_W3C_HTTP_ENDPOINT_HEADER}" _sce_w3c_http_path_line
+        REGEX "^#define[ \t]+SCE_W3C_HTTP_TEST_PATH[ \t]")
+    string(REGEX MATCH "\"[^\"]+\"" _sce_w3c_http_default_path "${_sce_w3c_http_path_line}")
+    string(REPLACE "\"" "" _sce_w3c_http_default_path "${_sce_w3c_http_default_path}")
+    if(NOT _sce_w3c_http_default_port OR NOT _sce_w3c_http_default_path)
+        message(FATAL_ERROR
+            "${SCE_W3C_HTTP_ENDPOINT_HEADER} no longer declares "
+            "SCE_W3C_HTTP_DEFAULT_PORT and SCE_W3C_HTTP_TEST_PATH. That header "
+            "owns the BasicHTTP fixture endpoint for every channel; configuring "
+            "on a guessed port would bind one address and publish another.")
+    endif()
+    set(SCE_W3C_HTTP_PORT "${_sce_w3c_http_default_port}" CACHE STRING
+        "TCP port the W3C BasicHTTP fixture listener binds and the generated \
+machines publish as their 'location'. Defaults to the value in \
+tests/w3c/basic_http_test_endpoint.h; override so a second checkout can run \
+the BasicHTTP suites concurrently with the first.")
+    set(SCE_W3C_HTTP_PATH "${_sce_w3c_http_default_path}" CACHE STRING
+        "Path the W3C BasicHTTP fixture listener answers on. Read from \
+tests/w3c/basic_http_test_endpoint.h; the documents address it through the \
+published location, so this rarely needs overriding.")
+
     add_subdirectory(tests)
     # RFC §5.J.1 — C11 backend conformance harness, sibling of the
     # C++ tests/ tree. Lives at the repo root next to backends/c/runtime

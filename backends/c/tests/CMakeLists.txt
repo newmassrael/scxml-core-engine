@@ -384,8 +384,14 @@ if(SCE_C_RUNTIME_POSIX)
             LABELS "w3c;c11;aot"
         )
         if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP)
+            # The runner reads the endpoint from the environment at run time
+            # (basic_http_test_endpoint.h), so the tree's configured port has
+            # to reach it here. Without this the fixture would bind the
+            # configured port while the machine published the header default,
+            # and the fixture would fail on any tree that moved the port.
             set_tests_properties(w3c_c_aot_${TEST_NUM} PROPERTIES
                 FIXTURES_REQUIRED w3c_c_http_server
+                ENVIRONMENT "SCE_W3C_HTTP_PORT=${SCE_W3C_HTTP_PORT}"
             )
         endif()
     endforeach()
@@ -1690,10 +1696,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA AND W3C_C_AOT_TESTS_NEEDS_HTTP)
         set(_http_fixture_sh "${CMAKE_SOURCE_DIR}/tests/w3c/http_server_fixture.sh")
         set(_http_server_js "${CMAKE_SOURCE_DIR}/tests/w3c/standalone_http_server.js")
 
+        # The endpoint comes from the top-level SCE_W3C_HTTP_PORT/PATH, which
+        # read their defaults out of tests/w3c/basic_http_test_endpoint.h --
+        # the header the runners themselves include. One fact, so the address
+        # this binds is the address they publish.
         add_test(NAME w3c_c_http_server_setup
             COMMAND bash "${_http_fixture_sh}" start
                 "${SCE_TEST_NODE_EXECUTABLE}" "${_http_server_js}"
-                8080 /test "${_http_fixture_pid}"
+                "${SCE_W3C_HTTP_PORT}" "${SCE_W3C_HTTP_PATH}" "${_http_fixture_pid}"
         )
         set_tests_properties(w3c_c_http_server_setup PROPERTIES
             FIXTURES_SETUP w3c_c_http_server

@@ -699,9 +699,9 @@ mod tests {
         // Compiled in rather than restated, so the assertion worth
         // making is that each really is the file it claims to be.
         assert!(RUST_HARNESS_SOURCE.contains("pub fn setup_http_test"));
-        assert!(RUST_HARNESS_SOURCE.contains("pub const HTTP_TEST_SERVER_URL"));
+        assert!(RUST_HARNESS_SOURCE.contains("pub fn http_test_server_url"));
         assert!(GO_HARNESS_SOURCE.contains("func SetupHTTPTest"));
-        assert!(GO_HARNESS_SOURCE.contains("const BasicHTTPAccessURI"));
+        assert!(GO_HARNESS_SOURCE.contains("func BasicHTTPAccessURI"));
         assert!(PYTHON_CONFTEST_SOURCE.contains("setup_http"));
         assert_eq!(KOTLIN_SUITE_SOURCES.len(), 3);
         assert!(KOTLIN_SUITE_SOURCES[0]

@@ -34,7 +34,12 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", "..", "..", ".."
 
 sys.path.insert(0, os.path.join(_SCRIPT_DIR, "..", "python"))
 
+# §scxml-C-2-3: the BasicHTTP fixture endpoint, read from the header that owns
+# it for every channel rather than spelled again here.
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "tests", "w3c"))
+
 import _sce as sce
+import sce_http_endpoint
 
 # W3C test list (202 tests, from build/W3CAotTestList.cmake)
 W3C_TEST_IDS = [
@@ -71,7 +76,7 @@ POLL_INTERVAL_SEC = 0.01
 
 # ---------------------------------------------------------------------------
 # W3C BasicHTTP Event I/O Processor test server
-# Mirrors C++ W3CHttpTestServer: receives POST on localhost:8080/test,
+# Mirrors C++ W3CHttpTestServer: receives POST on the harness's owned endpoint,
 # extracts event name/data per W3C SCXML C.2, and forwards to the engine.
 # ---------------------------------------------------------------------------
 
@@ -84,7 +89,9 @@ class W3CHttpTestServer:
     engine via engine.send_external_event() (W3C SCXML external queue).
     """
 
-    def __init__(self, port=8080, path="/test"):
+    def __init__(self, port=None, path=None):
+        port = sce_http_endpoint.endpoint_port() if port is None else port
+        path = sce_http_endpoint.endpoint_path() if path is None else path
         self.port = port
         self.path = path
         self._engine = None
@@ -341,9 +348,10 @@ def main():
     # server but reusing is safe since we swap the engine reference per test)
     http_server = None
     if not skip_http:
-        http_server = W3CHttpTestServer(port=8080, path="/test")
+        http_server = W3CHttpTestServer()
         if not http_server.start():
-            print("WARNING: Failed to start HTTP server on port 8080, HTTP tests will be skipped")
+            print(f"WARNING: Failed to start HTTP server on port {http_server.port}, "
+                  "HTTP tests will be skipped")
             http_server = None
 
     total = len(test_ids)

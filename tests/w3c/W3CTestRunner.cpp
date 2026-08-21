@@ -1096,11 +1096,11 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
                 W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
 
                 if (!httpServer.start()) {
-                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
+                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testId, basicHttpTestPort());
                     throw std::runtime_error("Failed to start HTTP server for test " + std::to_string(testId));
                 }
 
-                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on localhost:8080/test", testId);
+                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testId, basicHttpTestAccessUri());
 
                 try {
                     // Run the test with HTTP server running
@@ -1536,11 +1536,11 @@ TestReport W3CTestRunner::runSpecificTest(int testId) {
                 W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
 
                 if (!httpServer.start()) {
-                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
+                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testId, basicHttpTestPort());
                     throw std::runtime_error("Failed to start HTTP server for test " + std::to_string(testId));
                 }
 
-                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on localhost:8080/test", testId);
+                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testId, basicHttpTestAccessUri());
 
                 try {
                     // Run the test with HTTP server running
@@ -1625,11 +1625,11 @@ TestReport W3CTestRunner::runTest(const std::string &testId) {
                 W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
 
                 if (!httpServer.start()) {
-                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
+                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testId, basicHttpTestPort());
                     throw std::runtime_error("Failed to start HTTP server for test " + testId);
                 }
 
-                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on localhost:8080/test", testId);
+                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testId, basicHttpTestAccessUri());
 
                 try {
                     TestReport result = runSingleTestWithHttpServer(testDir, &httpServer);
@@ -1701,11 +1701,13 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
                         W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
 
                         if (!httpServer.start()) {
-                            SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
+                            SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testId,
+                                          basicHttpTestPort());
                             throw std::runtime_error("Failed to start HTTP server for test " + std::to_string(testId));
                         }
 
-                        SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on localhost:8080/test", testId);
+                        SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testId,
+                                     basicHttpTestAccessUri());
 
                         try {
                             TestReport result = runSingleTestWithHttpServer(testDir, &httpServer);
