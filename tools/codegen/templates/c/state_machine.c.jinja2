@@ -50,7 +50,10 @@
    wholesale on serialisation error; C11 stops appending after capacity
    and still ships the truncated prefix — a stricter cancel-and-raise
    lands when a fixture forces it.                                        #}
-{% macro lua_table_from_params(params) %}
+{# `csym_prefix` and `machine` are parameters rather than globals because a
+   macro body does not see the render context, and W3C SCXML 5.7.1 needs
+   the machine's own `_raise_platform_error` symbol here. #}
+{% macro lua_table_from_params(params, csym_prefix, machine) %}
 {% if params | rejectattr("is_static_literal") | list | length == 0 %}
                 /* W3C SCXML 6.2 + B-2-9: every value is a literal, so the
                    payload is finished at codegen time — and it has to be,
@@ -70,6 +73,13 @@
 {% else %}
                 char _ed[SCE_MAX_DATA_LEN];
                 int _ed_len = 0;
+                /* W3C SCXML 5.7.1: a pair whose expression will not evaluate is
+                   left out entirely, so whether a separator is due is a runtime
+                   question — the position in the document no longer answers it.
+                   `_ed_any` is that answer: it turns 1 only once a pair has
+                   actually been written, so a first param that fails does not
+                   leave `_scxml_params(,{...})` behind. */
+                int _ed_any = 0;
                 /* W3C SCXML 6.2: the params go through `_scxml_params`, which
                    is what lets a repeated name become an Array of its values —
                    a table constructor has already collapsed the duplicate by
@@ -84,51 +94,61 @@
                     }
                 }
                 {% for param in params %}
-                {% if not loop.first %}
-                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
-                {% endif %}
                 {
-                    static const char *_pn = "{\"{{ param.name | escape_lua | escape_c }}\", ";
-                    int _pnl = (int)strlen(_pn);
-                    if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
-                        memcpy(_ed + _ed_len, _pn, (size_t)_pnl);
-                        _ed_len += _pnl;
-                    }
-                }
-{% if param.is_static_literal %}
-                {
-                    static const char *_pv = "\"{{ param.static_value | escape_lua | escape_c }}\"";
-                    int _pvl = (int)strlen(_pv);
-                    if (_ed_len + _pvl < (int)SCE_MAX_DATA_LEN - 1) {
-                        memcpy(_ed + _ed_len, _pv, (size_t)_pvl);
-                        _ed_len += _pvl;
-                    }
-                }
-{% else %}
-                if (luaL_dostring(sm->L,
-                    "local _v = ({{ param.expr | to_lua_expr | escape_c }}); "
-                    "if type(_v) == 'string' then return string.format('%q', _v) "
-                    "elseif type(_v) == 'number' or type(_v) == 'boolean' then return tostring(_v) "
-                    "else return 'nil' end") == 0) {
-                    const char *_v = lua_tostring(sm->L, -1);
-                    if (_v != NULL) {
-                        int _vl = (int)strlen(_v);
-                        if (_ed_len + _vl < (int)SCE_MAX_DATA_LEN - 1) {
-                            memcpy(_ed + _ed_len, _v, (size_t)_vl);
-                            _ed_len += _vl;
+                    /* Rewind point: everything this pair writes is undone when
+                       its value cannot be produced. */
+                    int _pstart = _ed_len;
+                    if (_ed_any && _ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
+                    {
+                        static const char *_pn = "{\"{{ param.name | escape_lua | escape_c }}\", ";
+                        int _pnl = (int)strlen(_pn);
+                        if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
+                            memcpy(_ed + _ed_len, _pn, (size_t)_pnl);
+                            _ed_len += _pnl;
                         }
                     }
-                    lua_pop(sm->L, 1);
-                } else {
-                    lua_pop(sm->L, 1);
-                    /* Param eval failure: insert `nil` placeholder. */
-                    if (_ed_len + 3 < (int)SCE_MAX_DATA_LEN - 1) {
-                        memcpy(_ed + _ed_len, "nil", 3);
-                        _ed_len += 3;
+{% if param.is_static_literal %}
+                    {
+                        static const char *_pv = "\"{{ param.static_value | escape_lua | escape_c }}\"";
+                        int _pvl = (int)strlen(_pv);
+                        if (_ed_len + _pvl < (int)SCE_MAX_DATA_LEN - 1) {
+                            memcpy(_ed + _ed_len, _pv, (size_t)_pvl);
+                            _ed_len += _pvl;
+                        }
                     }
-                }
+                    if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
+                    _ed_any = 1;
+                    (void)_pstart;
+{% else %}
+                    if (luaL_dostring(sm->L,
+                        "local _v = ({{ param.expr | to_lua_expr | escape_c }}); "
+                        "if type(_v) == 'string' then return string.format('%q', _v) "
+                        "elseif type(_v) == 'number' or type(_v) == 'boolean' then return tostring(_v) "
+                        "else return 'nil' end") == 0) {
+                        const char *_v = lua_tostring(sm->L, -1);
+                        if (_v != NULL) {
+                            int _vl = (int)strlen(_v);
+                            if (_ed_len + _vl < (int)SCE_MAX_DATA_LEN - 1) {
+                                memcpy(_ed + _ed_len, _v, (size_t)_vl);
+                                _ed_len += _vl;
+                            }
+                        }
+                        lua_pop(sm->L, 1);
+                        if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
+                        _ed_any = 1;
+                    } else {
+                        lua_pop(sm->L, 1);
+                        /* W3C SCXML 5.7.1: report the failure and ignore the
+                           name and value. The `nil` placeholder this used to
+                           write was the opposite of ignoring them — a receiver
+                           asking whether the field is there was told yes. */
+                        _ed_len = _pstart;
+                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                            "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
+                    }
 {% endif %}
-                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
+                }
                 {% endfor %}
                 if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ')'; }
                 _ed[_ed_len] = '\0';
@@ -727,7 +747,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                prefix — a stricter cancel-and-raise lift lands when a
                fixture forces it. */
             if (sm->parent_dispatch != NULL) {
-{{ lua_table_from_params(action.params) }}
+{{ lua_table_from_params(action.params, csym_prefix, model.name) }}
                 sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id, _ed);
             }
 {% elif action.event and action.target and action.target.startswith('#_') and action.target not in ('#_parent', '#_internal') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
@@ -780,7 +800,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
 {% if action.params %}
             {
-{{ lua_table_from_params(action.params) }}
+{{ lua_table_from_params(action.params, csym_prefix, model.name) }}
                 /* Truncating here would ship JSON that does not parse, so
                    the payload is copied only when it fits whole. Measured
                    from the buffer rather than from an assembly counter: the
