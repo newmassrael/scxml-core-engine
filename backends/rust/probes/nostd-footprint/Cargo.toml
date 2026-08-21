@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The MCU footprint instrument. Its sibling `nostd-build` proves a generated
+# machine COMPILES without an allocator; this one exists so the engine's
+# generic code is MONOMORPHISED for an MCU target, which is the only way a
+# byte of it can be weighed.
+#
+# Why a second crate rather than a driver inside `nostd-build`: that crate's
+# `[lib] path` points straight at the generated `*_sm.rs`, and a generated
+# machine opens with `#![no_std]` — a crate-root inner attribute. It cannot be
+# `mod`-included or `include!`d from a wrapper without editing generated code,
+# which is the one thing a generated tree must never need.
+#
+# WHAT WAS INVISIBLE UNTIL THIS EXISTED. A downstream bare-metal consumer
+# measured `Engine<..>::run_main_event_loop` growing 60-198 bytes per
+# instantiation across two SCE pins (2026-08-21, thumbv7m). Nothing in this
+# repository could confirm or deny it: `nostd-mcu` compiles for the MCU target
+# but links no image, and `nm` on the `nostd-build` rlib returns ZERO engine
+# symbols, because a `StatePolicy` that is never handed to an `Engine` never
+# instantiates one. Thirty-one gates, none of them able to weigh a section.
+
+[package]
+name = "sce-nostd-footprint-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "MCU-target footprint instrument: monomorphises Engine<P> so its .text can be weighed"
+license = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+
+# A STATICLIB, not an rlib, and the reason is the measurement itself: with
+# `lto = true` an rlib carries LLVM bitcode rather than machine code, so `nm`
+# reports "no symbols" and a gate reading it would pass on an empty file
+# forever. Measured 2026-08-21 — the first shape of this probe did exactly
+# that. A staticlib is code, produced by the same pipeline a firmware image
+# uses, which is what makes its bytes comparable to the ones a consumer reports.
+[lib]
+name = "sce_nostd_footprint_probe"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+sce-rust-runtime = { path = "../../runtime", default-features = false, features = ["no_std"] }
+sce-nostd-build-probe = { path = "../nostd-build" }
+
+[features]
+# A pass-through so the gate can weigh the same engine twice — once reporting
+# its refusals, once not — and state what the report costs instead of guessing.
+# Feature unification makes enabling it here enough for the whole graph.
+no-macrostep-diagnostics = ["sce-rust-runtime/no-macrostep-diagnostics"]
+
+# Release, because a debug build measures the inliner's day off. The consumer
+# reports on `--release`, and a footprint compared across two profiles is two
+# different questions.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+# Detached from the parent workspace for the reason `nostd-build` is: cargo's
+# feature unification would otherwise turn on `sce-rust-runtime/no_std` for the
+# std builds in the same invocation.
+[workspace]
