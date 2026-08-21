@@ -1482,25 +1482,39 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
 {% for var_name in action.namelist | split %}
                     {
                         /* W3C SCXML 5.10 + C.1: namelist variable
-                           `{{ var_name }}` evaluated against the active
-                           datamodel and appended as a form parameter.
-                           An undeclared name reads nil and crosses as the
-                           empty string rather than as a ReferenceError —
-                           cpp's `NamelistHelper::evaluateNamelist` raises
-                           on missing vars but no W3C C.2 fixture forces
-                           that arm; the eval-on-demand path here mirrors
-                           how the SCXMLEventProcessor send arm
-                           (state_machine.c.jinja2 line 447) handles it.
-                           It used to cross as the four letters `nil`,
-                           which is Lua's word for absence and nobody
-                           else's — see `lua_eval_to_wire_string`. */
+                           `{{ var_name }}` read from the active datamodel
+                           and appended as a form parameter.
+
+                           Read as a LOCATION, not as an authored
+                           expression: §scxml-6.2.2 defines a namelist item
+                           that way and §scxml-5.9.2 makes an item that
+                           yields no valid location a runtime
+                           `error.execution`. Lowering it through
+                           `lua_eval_to_wire_string` asked the ECMAScript
+                           frontend instead, which REFUSED the document —
+                           so this arm answered the clause with a
+                           generation failure while the same file's
+                           SCXMLEventProcessor arm answered it with the
+                           declared-guard, correctly. It used to cross as
+                           the four letters `nil`, which is Lua's word for
+                           absence and nobody else's — see
+                           `lua_eval_to_wire_string`. */
                         char _nl_buf[256];
                         bool _nl_ok = false;
-                        {{ se.lua_eval_to_wire_string(var_name, "_nl_buf", "256", "_nl_ok") }}
-                        if (_nl_ok) {
-                            (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
-                                                            "{{ var_name }}", _nl_buf);
+                        {{ se.lua_namelist_var_to_wire_string(var_name, "_nl_buf", "256", "_nl_ok") }}
+                        if (!_nl_ok) {
+                            /* §scxml-5.9.2 reports it and §scxml-6.2.3
+                               discards the message: the two clauses are
+                               complementary, and `<param>`'s per-item
+                               exception (§scxml-5.7.1) has no counterpart
+                               for a namelist anywhere in the spec. */
+                            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                                "<send> namelist item names no location");
+                            return;
                         }
+                        (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
+                                                        "{{ var_name }}", _nl_buf);
                     }
 {% endfor %}
 {% endif %}
