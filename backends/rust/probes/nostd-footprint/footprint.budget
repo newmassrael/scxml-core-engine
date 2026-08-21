@@ -1,0 +1,46 @@
+# What the engine costs an MCU image, in bytes, and how far it may drift.
+#
+# Read by `scripts/gates/nostd-mcu.sh`. Every figure here is MEASURED, on
+# `thumbv7em-none-eabihf` with the toolchain the gates pin, from the staticlib
+# `backends/rust/probes/nostd-footprint` produces — summing the `.text` sizes
+# of every `sce_rust_runtime::engine::Engine<..>` symbol `nm` reports.
+#
+# WHY A BUDGET AND NOT A TREND. A downstream bare-metal consumer measured this
+# growing 60-198 bytes per instantiation across two SCE pins and filed it
+# (2026-08-21) because nothing on our side could see it: the MCU gate compiled
+# but linked nothing, so no gate in this repository had ever weighed a section.
+# A budget is what turns "the engine got bigger" from a consumer's bug report
+# into our own red.
+#
+# RE-PINNING IS A DECISION, NOT A CHORE. When a change legitimately grows the
+# engine, move TOTAL_BYTES and say in the commit message what the bytes bought.
+# The gate fails on a DROP as well, which is not pedantry: the first shape of
+# this probe emitted LLVM bitcode instead of machine code and `nm` reported
+# zero symbols, so a one-sided gate would have passed forever on an empty
+# measurement. A number that falls without a reason means the instrument
+# stopped seeing, and that is the failure this file exists to prevent.
+
+# Sum of every Engine<..> symbol in the staticlib, as the engine ships.
+TOTAL_BYTES=1666
+
+# The same sum with `no-macrostep-diagnostics`, which compiles the macrostep
+# REPORT out and leaves the bound in place.
+#
+# The difference — 44 bytes per instantiation — is the number that feature is
+# worth, and it is here rather than in a commit message because it is the
+# answer to a question a consumer asked: whether gating the diagnostics would
+# recover what two commits cost their image. It recovers 14-20% of it. The rest
+# is the bound, which is not on offer. Measuring both ways is also what keeps
+# the opt-out configuration from rotting — a feature nothing builds is a
+# feature that stops compiling and nobody learns until a consumer sets it.
+TOTAL_BYTES_NO_DIAGNOSTICS=1622
+
+# Drift allowed either way before the gate speaks. Wide enough that an
+# unrelated inlining decision does not cry wolf, tight enough that one more
+# copy of a cold path (the 2026-08-21 report's ~170 B per instantiation) does.
+TOLERANCE_PCT=8
+
+# The instrument's own floor. Below this the probe is not measuring the engine
+# at all — a renamed symbol, a bitcode rlib, a driver that stopped driving —
+# and every byte figure above it is meaningless.
+MIN_SYMBOLS=8
