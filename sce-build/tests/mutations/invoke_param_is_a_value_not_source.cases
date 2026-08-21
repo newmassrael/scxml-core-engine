@@ -27,6 +27,21 @@
 
 mutation_tests -p sce-rust-tests --test invoke_param_seeds_declared_child_data
 mutation_targets tools/codegen/templates/rust/invoke_methods.rs.jinja2 tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2
+
+# The templates above reach `cargo test` only through the committed tree the
+# regeneration below writes, so both halves are declared: the generated files
+# are compiled into the tests, and the command is what carries a mutated
+# template into them. Without it, `cargo test --no-run` rebuilds the same
+# committed sources and every case is INCONCLUSIVE — measured on CI
+# 2026-08-21, both cases, "the mutation never reached the code under test".
+mutation_targets backends/rust/tests/src/integration/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data_sm.rs
+mutation_targets backends/rust/tests/src/integration/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite_sm.rs
+mutation_targets backends/rust/tests/src/integration/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist_sm.rs
+mutation_targets backends/rust/tests/src/integration/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow_sm.rs
+mutation_targets backends/rust/tests/src/integration/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole_sm.rs
+mutation_targets backends/rust/tests/src/integration/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched_sm.rs
+mutation_regen scripts/regen_invoke_param_seeds_declared_child_data.sh
+
 mutation_oracles backends/rust/tests/tests/invoke_param_seeds_declared_child_data.rs
 
 # ── The param is evaluated but never handed over ────────────────────
