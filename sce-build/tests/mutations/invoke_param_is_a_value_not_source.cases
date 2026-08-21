@@ -1,0 +1,59 @@
+# Mutation cases for §scxml-6.4.3 on the two channels that used to render an
+# invoke param as engine source — the Rust half, which is the half this
+# harness can reach.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/invoke_param_is_a_value_not_source.cases`.
+#
+# The clause asks for "the value of the <param> element" as the initial value
+# of the child's matching <data>. Rust and Go evaluated the expression in the
+# invoking session — correct — and then rendered the result as a Lua literal
+# for the child to evaluate back, which is correct for every value Lua can
+# spell and silent for the ones it cannot: `to_script_literal` gave a
+# non-finite number the text `inf`, an undeclared identifier to the engine
+# reading it back, so `<param expr="1/0"/>` arrived as nothing at all. The
+# five other channels always passed the value.
+#
+# The literal renderer is gone, so a case cannot restore the old shape by
+# calling it. What these two restore instead is the property that replaced
+# it: the child receives THIS value. A seeding that drops the value, or
+# substitutes one the engine finds equally storable, is what the fixture's
+# five phases are between them sensitive to.
+#
+# The Go half has no round here — the harness reaches cargo and ctest only
+# (open debt M8/N10). Its witness is the same fixture in `go test`.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test invoke_param_seeds_declared_child_data
+mutation_targets tools/codegen/templates/rust/invoke_methods.rs.jinja2 tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2
+mutation_oracles backends/rust/tests/tests/invoke_param_seeds_declared_child_data.rs
+
+# ── The param is evaluated but never handed over ────────────────────
+#
+# The nearest thing to the old failure mode that the new code can express:
+# the parent does its half and the child is told nothing. `shadowed` is the
+# phase that reports it, because its child declares the same name and its
+# own value stands.
+
+mutation_case "an invoke param is evaluated in the parent and then dropped" <<'PY'
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     """                        // §scxml-6.4.3: the VALUE of the param element becomes
+                        // the child `<data>`'s initial value.
+                        child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", val);""",
+     """                        let _ = val;""")
+PY
+
+# ── The child is seeded with an absence instead of the value ────────
+#
+# Storable, so nothing errors, and every phase's guard reads false. This is
+# the shape a serialisation defect takes when the round trip parses but
+# loses the value — which is what `+Inf` did on the Go side, arriving as a
+# string the child could not compare.
+
+mutation_case "the child is seeded with absence rather than the parent's value" <<'PY'
+edit("tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2",
+     """        let _ = se.set_variable(&sid, name, value);""",
+     """        let _ = value;
+        let _ = se.set_variable(&sid, name, sce_rust_runtime::ScriptValue::Null);""")
+PY
