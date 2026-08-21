@@ -512,6 +512,7 @@ pub use clock::SceClock;
 pub use engine::Engine;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
+pub use helpers::configuration::ConfigurationRejection;
 pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 #[cfg(not(feature = "no_std"))]
 pub use host_processor::{
