@@ -1,0 +1,7 @@
+# Build artifacts for the detached footprint probe (compiled fresh by the gate).
+# Same reasoning as the sibling `nostd-build/.gitignore`: this crate is outside
+# the parent workspace, so its lock and target directory are its own, and a
+# stray untracked file here makes every `bx` transfer refuse — measured on the
+# sibling twice.
+/target
+Cargo.lock
