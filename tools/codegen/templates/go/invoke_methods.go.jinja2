@@ -79,9 +79,9 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				se := p.ScriptEngine
 {% for var_name in invoke_info.namelist | split %}
 				if val, err := se.EvaluateExpression(p.SessionID, "{{ var_name }}"); err == nil {
-					// The child seeds this by evaluating source, so the
-					// spelling is the engine's — not the value's.
-					childPolicy.SetParamInScriptEngine("{{ var_name }}", se.ToScriptLiteral(val))
+					// §scxml-6.4.1: "the value stored at the location is the
+					// value" — so the value crosses, not a rendering of it.
+					childPolicy.SetParamValueInScriptEngine("{{ var_name }}", val)
 				}
 {% endfor %}
 			}
@@ -98,7 +98,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				{# Raw string: no escaping. See entry_exit_actions.go.jinja2. #}
 				{# §scxml-6.4.3's "if the names do not match, the Processor MUST
 				   NOT add the value ... to the invoked session's data model" is
-				   NOT decided here. `SetParamInScriptEngine` defers to the
+				   NOT decided here. `SetParamValueInScriptEngine` defers to the
 				   child's `InitializeDataModel`, which applies each pending
 				   param only when `HasVariable` says the child declared it.
 				   Measured 2026-08-21: adding a second, codegen-time copy of
@@ -107,7 +107,9 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				   — and one clause implemented twice is the defect that round
 				   was repaying. #}
 				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); err == nil {
-					childPolicy.SetParamInScriptEngine("{{ param.name | escape_go }}", se.ToScriptLiteral(val))
+					// §scxml-6.4.3: the VALUE of the param element becomes the
+					// child `<data>`'s initial value.
+					childPolicy.SetParamValueInScriptEngine("{{ param.name | escape_go }}", val)
 				}
 {% endfor %}
 			}

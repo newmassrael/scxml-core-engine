@@ -1194,7 +1194,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # states, and the emission is gated on the child's declared names — so the
     # driver is here to make that correctness asserted rather than incidental.
     sce_generate_static_integration_c_test(invoke_param_seeds_declared_child_data "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist
+        SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist inv_infinite
     )
 
     add_executable(sce_c_integration_invoke_param_seeds_declared_child_data
