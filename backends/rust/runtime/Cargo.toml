@@ -45,6 +45,33 @@ test-clock = []
 # the wire shape today and migrate incrementally.
 no_std = ["dep:heapless"]
 
+# §scxml-3.13: the macrostep ceiling REPORTS itself, and this turns the report
+# off — never the ceiling.
+#
+# The two are not the same thing and the distinction is the whole design. A
+# macrostep that cannot end is a document the specification permits, so this
+# engine's refusal to walk one forever is a departure it must not make
+# silently: `truncated_macrosteps`, `last_truncated_macrostep_state` and the
+# error log are how a host learns the configuration it is reading is not a
+# stable one. The BOUND — the budget, and the flag that stops the same chain
+# being handed a second one — is not behind this feature and cannot be turned
+# off. A policy that could opt out of terminating is not a policy this engine
+# offers.
+#
+# It is opt-OUT, which is deliberate and unusual. Additive opt-in is the Cargo
+# convention, and the convention is wrong here: a consumer who does nothing
+# must keep the report, because losing it silently is exactly the failure the
+# report exists to prevent. Naming `no-macrostep-diagnostics` is a consumer
+# stating that nothing in their image reads those counters.
+#
+# Measured on `thumbv7em-none-eabihf` before it was offered — see
+# `backends/rust/probes/nostd-footprint`, whose budget file carries both
+# figures. A downstream bare-metal consumer asked for this after proving the
+# residue is not logging (2026-08-21): with `lto = true` and no logger
+# installed, link-time optimisation had already discarded every `log::` call,
+# so `release_max_level_off` bought them exactly zero bytes.
+no-macrostep-diagnostics = []
+
 [dependencies]
 log = { workspace = true }
 # `thiserror` is consumed only inside `pub mod scripting` (gated to
