@@ -241,58 +241,6 @@ impl Default for LuaEngine {
 // Conversion helpers: ScriptValue <-> LuaValue
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// A value as Lua source — this engine's answer to
-/// [`IScriptEngine::to_script_literal`].
-///
-/// Every spelling below is Lua's and nobody else's: `nil` for absence, a
-/// braced list for a sequence, `["k"] = v` for a keyed table. The engine that
-/// reads it back does so through `load("return " .. literal)`, so the text has
-/// to be a Lua expression, and a value that stayed engine-neutral could not
-/// have known that.
-fn lua_literal(val: &ScriptValue) -> String {
-    match val {
-        ScriptValue::Null | ScriptValue::Undefined => "nil".to_string(),
-        ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-        ScriptValue::Int(i) => i.to_string(),
-        ScriptValue::Double(f) => {
-            if f.fract() == 0.0 && f.is_finite() {
-                // Lua 5.4 keeps the float subtype only if the literal has a
-                // decimal point; `5` would come back as an integer.
-                format!("{:.1}", f)
-            } else {
-                format!("{}", f)
-            }
-        }
-        ScriptValue::String(s) => format!("\"{}\"", escape_lua_string(s)),
-        ScriptValue::Array(arr) => {
-            let items: Vec<String> = arr.iter().map(lua_literal).collect();
-            format!("{{{}}}", items.join(", "))
-        }
-        ScriptValue::Object(map) => {
-            // Keys sorted: a table literal that reordered itself per run would
-            // make identical values compare unequal as text.
-            let mut keys: Vec<&String> = map.keys().collect();
-            keys.sort();
-            let items: Vec<String> = keys
-                .iter()
-                .map(|k| format!("[\"{}\"] = {}", escape_lua_string(k), lua_literal(&map[*k])))
-                .collect();
-            format!("{{{}}}", items.join(", "))
-        }
-        // The DOM crosses as the document text it was parsed from; the
-        // receiving side parses it again.
-        ScriptValue::Dom(s) => format!("\"{}\"", escape_lua_string(s)),
-    }
-}
-
-fn escape_lua_string(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-}
-
 fn script_value_to_lua(lua: &Lua, val: &ScriptValue) -> LuaResult<LuaValue> {
     match val {
         ScriptValue::Null | ScriptValue::Undefined => Ok(LuaValue::Nil),
@@ -486,10 +434,6 @@ impl IScriptEngine for LuaEngine {
             .eval::<LuaValue>()
             .map_err(map_lua_err)?;
         Ok(lua_value_to_script(&result))
-    }
-
-    fn to_script_literal(&self, value: &ScriptValue) -> String {
-        lua_literal(value)
     }
 
     fn evaluate_expression(&self, session_id: &str, expression: &str) -> ScriptResult<ScriptValue> {

@@ -9567,16 +9567,6 @@
           "file": "sce-build/src/generator.rs",
           "symbol": "StatechartCodegenOptions",
           "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/helpers.go",
-          "symbol": "IScriptEngine",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
-          "symbol": "IScriptEngine",
-          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -12190,11 +12180,6 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "valueToWireString",
           "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
-          "symbol": "IScriptEngine",
-          "kind": "references"
         },
         {
           "file": "backends/go/runtime/wire_value_test.go",
@@ -14898,6 +14883,24 @@
       "target_kind": "section",
       "target_id": "scxml-C-2",
       "reason": "resolver attributes a trait method's doc comment to the enclosing trait; rebinding to IScriptEngine"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "to_script_literal removed: the invoke path passes values, so no engine spells a literal"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "to_script_literal removed: the wire direction keeps its own neutral helper"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "ToScriptLiteral removed: the invoke path passes values, so no engine spells a literal"
     }
   ],
   "frames": {},
