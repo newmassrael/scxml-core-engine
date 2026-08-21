@@ -14,9 +14,7 @@
 
 namespace {
 
-/// W3C SCXML 6.5.2: the executable content an EMPTY `<finalize>` stands for.
-/// (The machine-checked citation for this clause in this file is on
-/// `SCE::InvokeParser::parseFinalizeElement`, its only caller.)
+/// §scxml-6.5.2: the executable content an EMPTY `<finalize>` stands for.
 ///
 /// The clause spells the behaviour as content rather than as a rule — "update
 /// the corresponding location as if by `<assign>` with any return value that

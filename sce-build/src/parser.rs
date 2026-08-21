@@ -3006,10 +3006,10 @@ impl SCXMLParser {
 
         // Parse <finalize>
         //
-        // W3C SCXML 6.5.2 gives an EMPTY `<finalize>` a meaning of its own,
-        // and says so in the one sentence that separates it from an absent one
-        // (the machine-checked citation for this clause is on
-        // `synthesize_automatic_finalize`, which is where it is implemented):
+        // §scxml-6.5.2 gives an EMPTY `<finalize>` a meaning of its own, and
+        // says so in the one sentence that separates it from an absent one
+        // (the content it stands for is built by
+        // `synthesize_automatic_finalize`, which implements the clause):
         // "Note that the automatic update does not take place if the
         // <finalize> element is absent as opposed to empty." With no
         // executable content, the clause requires the Processor to update the
