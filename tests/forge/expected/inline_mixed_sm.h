@@ -251,9 +251,12 @@ public:
 
     inline_mixed() = default;
 
-    // W3C SCXML 6.4.1: Wrapper for setting invoke params (delegates to policy)
-    void setParamInScriptEngine(const std::string& paramName, const std::string& paramExpr) {
-        this->policy_.setParamInScriptEngine(paramName, paramExpr);
+    // §scxml-6.4.3: wrapper for seeding an invoke param's VALUE into this
+    // session's data model (delegates to policy). The parent calls it on the
+    // child instance right after construction, which is why it lives on the
+    // machine rather than only on the policy.
+    void setParamValueInScriptEngine(const std::string& paramName, const ::ScriptValue& paramValue) {
+        this->policy_.setParamValueInScriptEngine(paramName, paramValue);
     }
 
     // W3C SCXML B.1: forward per-instance script engine injection to the policy
