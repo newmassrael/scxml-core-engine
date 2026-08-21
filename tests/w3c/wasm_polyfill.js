@@ -87,8 +87,13 @@ if (typeof module !== 'undefined' && typeof require !== 'undefined') {
     // Start HTTP server and wait for ready signal
     async function startHttpServer() {
         const serverScript = path.resolve(__dirname, 'standalone_http_server.js');
-        const serverPort = 8080;
-        const serverPath = '/test';
+        // W3C SCXML C.2.3: the endpoint the harness owns, not a number spelled
+        // here. The WASM run's listener has to answer where the generated
+        // machines publish, and `http_endpoint.js` reads that from the same
+        // header the native runners include.
+        const endpoint = require('./http_endpoint');
+        const serverPort = endpoint.endpointPort();
+        const serverPath = endpoint.endpointPath();
 
         httpServerProcess = spawn('node', [serverScript, serverPort.toString(), serverPath], {
             stdio: ['ignore', 'pipe', 'pipe'],

@@ -200,16 +200,63 @@ pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
     });
 }
 
-/// W3C BasicHTTP test server endpoint baked into codegen for
+/// §scxml-C-2-3: the fixture endpoint's default, PINNED to
+/// `tests/w3c/basic_http_test_endpoint.h`.
+///
+/// This file is not only compiled in this repository — `sce-build` embeds it
+/// and writes it into the standalone suites it emits, where there is no
+/// repository above it. So it cannot read the owning header, at compile time or
+/// at run time: an earlier cut used `include_str!` and the emitted suite failed
+/// with "couldn't read ../../../../tests/w3c/basic_http_test_endpoint.h".
+///
+/// A shipped copy is therefore structurally forced, and the answer to a forced
+/// copy is not to let it drift: `scripts/gates/http-endpoint-ssot.sh` reads
+/// both this value and the owner's and REFUSES a tree where they disagree.
+/// One author, a mirror that cannot rot.
+const DEFAULT_ENDPOINT_PORT: u16 = 8080;
+/// The fixture path, pinned to the owner by the same gate.
+const DEFAULT_ENDPOINT_PATH: &str = "/test";
+
+/// §scxml-C-2-3: the port the fixture listener binds and this harness
+/// addresses. `SCE_W3C_HTTP_PORT` overrides the pinned default, which is how a
+/// second checkout runs the BasicHTTP suites while the first holds the port —
+/// the gates, CMake and CI all export it from the one owner.
+pub fn http_test_endpoint_port() -> u16 {
+    match std::env::var("SCE_W3C_HTTP_PORT") {
+        Ok(raw) if !raw.is_empty() => raw
+            .parse()
+            .unwrap_or_else(|_| panic!("SCE_W3C_HTTP_PORT=\"{raw}\" is not a TCP port")),
+        _ => DEFAULT_ENDPOINT_PORT,
+    }
+}
+
+/// The path the fixture listener answers on.
+pub fn http_test_endpoint_path() -> &'static str {
+    DEFAULT_ENDPOINT_PATH
+}
+
+/// W3C BasicHTTP test server endpoint, referenced by codegen for
 /// `conf:basicHTTPAccessURITarget=""` (see `tools/codegen/templates/rust/...` +
-/// every `tests/generated/test*/test*_sm.rs` BasicHTTP fixture). Kept here
-/// so the reachability assertion below uses the same string the SM emits.
+/// every `tests/generated/test*/test*_sm.rs` BasicHTTP fixture), so the
+/// reachability assertion below uses the same address the SM publishes.
+///
 /// §scxml-C-2-3: where the harness's inbound BasicHTTP listener answers, and
 /// therefore the address the generated tests declare as the machine's
 /// published 'location'. Bind address and published address are one fact — a
 /// document that posts somewhere the listener never claimed would fail for a
 /// reason unrelated to what it tests.
-pub const HTTP_TEST_SERVER_URL: &str = "http://localhost:8080/test";
+///
+/// It is a function rather than the `const` it replaced because the endpoint is
+/// a property of the RUN, not of the source: it is read from
+/// `basic_http_test_endpoint.h`, the header every channel reads, and moved by
+/// `SCE_W3C_HTTP_PORT`.
+pub fn http_test_server_url() -> String {
+    format!(
+        "http://localhost:{}{}",
+        http_test_endpoint_port(),
+        http_test_endpoint_path()
+    )
+}
 
 /// Verify the W3C BasicHTTP test server is reachable. Panics with a
 /// developer-actionable message on first call if the socket connect fails.
@@ -229,13 +276,14 @@ fn assert_http_test_server_reachable() {
         // Any non-network error (e.g. 404/405) still means the socket is
         // accepting connections, which is all we need to assert here — the
         // server's handler shape is exercised by the test itself.
-        if probe.get(HTTP_TEST_SERVER_URL).send().is_err() {
+        let url = http_test_server_url();
+        if probe.get(&url).send().is_err() {
             panic!(
                 "\nW3C BasicHTTP test server is not reachable at {url}.\n\
                  \n\
                  Start it before running BasicHTTP-dependent tests:\n\
                  \n\
-                   node tests/w3c/standalone_http_server.js 8080 /test\n\
+                   node tests/w3c/standalone_http_server.js {port} {path}\n\
                  \n\
                  Affected tests include: test_201, test_207, test_208,\n\
                  test_509, test_510, test_513, test_518, test_519, test_520,\n\
@@ -243,7 +291,9 @@ fn assert_http_test_server_reachable() {
                  fixture whose SM emits `<send type=\"...#BasicHTTPEventProcessor\">`).\n\
                  Without the server these silently route to their\n\
                  `<transition event=\"*\"/>` fail branch.\n",
-                url = HTTP_TEST_SERVER_URL,
+                url = url,
+                port = http_test_endpoint_port(),
+                path = http_test_endpoint_path(),
             );
         }
     });

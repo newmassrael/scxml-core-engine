@@ -377,6 +377,30 @@ GATES: dict[str, dict] = {
         "cost_s": 0,
         "summary": "license SSOT vs the tree it describes",
     },
+    # Where the W3C BasicHTTP fixture listener answers had come to be spelled in
+    # five places at once — twelve C11 runners, two gate helpers, a CI job, the
+    # Rust and Go harnesses, two Python suites — and the drift only became
+    # visible when a second checkout could not run the BasicHTTP suites while
+    # the first held the port. `tests/w3c/basic_http_test_endpoint.h` owns it
+    # now; this keeps that ownership a property of the tree.
+    #
+    # Trigger is deliberately the catch-all, and that is affordable rather than
+    # lazy: a re-spelling can appear in any file, and narrowing to the paths we
+    # happen to remember would miss exactly the one nobody thought of. The gate
+    # asks `git grep` for the handful of files that name the number at all and
+    # runs its comment-stripper only on those — 124ms measured, down from 14.7s
+    # when it stripped every tracked source file.
+    #
+    # It gets its own lane rather than riding another's because nothing else
+    # can catch the defect: a re-spelled port that equals the owner's still
+    # WORKS, so every suite stays green and the drift surfaces only the day
+    # someone moves the endpoint. There is no compile error to lean on.
+    "http-endpoint-ssot": {
+        "workflows": ["http-endpoint-ssot.yml"],
+        "runner_workflow": True,
+        "cost_s": 0,
+        "summary": "BasicHTTP fixture endpoint has one owner",
+    },
     # The generated codecs are committed goldens, not workspace members:
     # `cargo metadata` lists eight packages and none of them is a codec, so
     # `clippy --workspace` lints the generator and never its output. Both arms
