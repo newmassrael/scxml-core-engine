@@ -1,0 +1,151 @@
+# Mutation cases for §scxml-6.4.3 — what an `<invoke>` `<param>` puts in the
+# invoked session's data model, and what it must not.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/invoke_param_seeds_declared_child_data.cases`.
+#
+# Two sentences are under test. "If the 'name' of a <param> element in the
+# <invoke> matches the 'id' of a <data> element in the top-level data
+# declarations of the invoked session, the SCXML Processor MUST use the value
+# of the <param> element as the initial value of the corresponding <data>
+# element" — the VALUE, which only the invoking session can produce. And "if
+# the names do not match, the Processor MUST NOT add the value of the <param>
+# element or namelist key/value pair to the invoked session's data model".
+#
+# Measured 2026-08-21: the C++ Interpreter held both, C11 held both, and the
+# C++ AOT held neither — it handed the child the author's expression TEXT and
+# it filtered nothing. The reference was therefore inside the same language,
+# on the other engine. Rust, Go, Python and Kotlin each carried the value
+# correctly and five of the seven channels added names the child never
+# declared.
+#
+# Why no suite saw it: every W3C IRP test that passes an invoke param or
+# namelist — 226, 240, 241, 243, 244, 245, 276 — passes a literal, and a
+# literal evaluates to the same value in either data model. `conf:expr="1"`
+# is `1` on both sides of the boundary. The fixture's four phases are what
+# make the answers differ.
+#
+# The C++ AOT and C11 targets are TEMPLATES rather than generated files, for
+# the reason `c11_datamodel_reader.cases` gives: neither backend commits a
+# generated tree, so the template is what the built binaries carry, and
+# `--write-deps` makes each generated header depend on every jinja2 file that
+# rendered it.
+#
+# The analyzer half of this axis (`has_invoke_namelist`, which is what puts
+# `NamelistHelper.h` in a machine whose only namelist is on an `<invoke>`) has
+# no case here on purpose: reverting it does not make a test fail, it makes
+# the generated C++ stop compiling, which this harness reports as
+# INCONCLUSIVE rather than as a witness. The fixture is still what found it —
+# it is the first document in the repository with an invoke namelist and no
+# `<send>`.
+#
+# The Rust, Go, Kotlin and Python halves have no round: the harness reaches
+# cargo and ctest only (open debt M8/N10). Their witness is the same fixture
+# run in their own suites.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_invoke_param_seeds_declared_child_data)$'
+mutation_targets sce/src/runtime/InvokeExecutor.cpp tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
+mutation_oracles tests/integration/InvokeParamSeedsDeclaredChildDataTest.cpp tests/integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp backends/c/tests/integration/test_invoke_param_seeds_declared_child_data.c
+
+# ── C++ Interpreter: which session evaluates ───────────────────────
+#
+# The reference implementation, mutated into the defect the AOT engine had.
+# Evaluating in the child finds the child's own `token`, so the value that
+# arrives is well-formed and wrong — no error is raised anywhere, which is
+# why only a document that declares the same name on both sides can see it.
+
+mutation_case "the interpreter evaluates an invoke param in the child session" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     """            auto future = scriptEngine_.evaluateExpression(parentSessionId, expr);
+            auto result = future.get();""",
+     """            auto future = scriptEngine_.evaluateExpression(childSessionId, expr);
+            auto result = future.get();""")
+PY
+
+# ── C++ Interpreter: which names are added ─────────────────────────
+#
+# Dropping the declared-name filter on the param loop. The namelist loop
+# above keeps its own copy of this check, so only the param phase moves —
+# which is what makes the anchor unambiguous between the two.
+
+mutation_case "the interpreter adds an invoke param the child never declared" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     """            if (!DatamodelValidationHelper::isVariableDeclaredInChild(name, childDatamodelVars)) {
+                SCE_LOG_DEBUG("SCXMLInvokeHandler: Skipping param '{}' - not defined in child's datamodel", name);
+                continue;
+            }
+""",
+     """""")
+PY
+
+# ── C++ AOT: which session evaluates ───────────────────────────────
+#
+# `childSessionId` is in scope here — the parent built it a few lines above
+# to name the child's session — so this is the exact shape the template
+# carried before this axis, minus the round trip through the child object.
+
+mutation_case "the cpp aot engine evaluates an invoke param in the child session" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     """                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();""",
+     """                            auto __sce_param = getScriptEngine().evaluateExpression(childSessionId, "{{ param.expr | escape_cpp }}").get();""")
+PY
+
+# ── C++ AOT: which names are added ─────────────────────────────────
+#
+# Emitting the seed for every param regardless of what the child declares.
+# The `{% else %}` arm's comment goes with it, since a template that always
+# takes the first branch never renders the second.
+
+mutation_case "the cpp aot engine seeds an invoke param the child never declared" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     """                        {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
+                        {
+                            ensureScriptEngine();""",
+     """                        {% if true %}
+                        {
+                            ensureScriptEngine();""")
+PY
+
+# ── C++ AOT: the namelist arm carries a value at all ───────────────
+#
+# `namelist` is the sibling syntax for the same rule and the same site. With
+# the seeding suppressed the child keeps its own `<data>` default, which is
+# what a rendered string forwarded as an expression also produces — the
+# identifier does not resolve in the child, so nothing is assigned.
+
+mutation_case "the cpp aot engine seeds nothing from an invoke namelist" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     """                        {% if invoke_info.child_datamodel_vars and ns_name in invoke_info.child_datamodel_vars %}""",
+     """                        {% if false %}""")
+PY
+
+# ── C11: which session evaluates ───────────────────────────────────
+#
+# This backend has evaluated parent-side from the start, and its template
+# comment says why: each generated SM owns its own `lua_State`, so a
+# parent-side name is undefined in the child's. Pointing the chunk at the
+# child's state makes it find the child's `token` instead.
+
+mutation_case "the c11 engine evaluates an invoke param in the child lua state" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     """            if (luaL_dostring(sm->L,
+                "return ({{ param.expr | to_lua_expr | escape_c }})") == 0) {""",
+     """            if (luaL_dostring(sm->child_{{ invoke_info.field_suffix }}.L,
+                "return ({{ param.expr | to_lua_expr | escape_c }})") == 0) {""")
+PY
+
+# ── C11: which names are added ─────────────────────────────────────
+#
+# The filter this backend has always had, removed. Its `<data>` default is
+# overwritten by `_init` afterwards for declared names, so the only phase
+# that moves is the one asking about a name the child does not declare.
+
+mutation_case "the c11 engine transfers an invoke param the child never declared" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     """            {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
+            /* `<param name="{{ param.name }}" expr="{{ param.expr | escape_c }}"/>` */""",
+     """            {% if true %}
+            /* `<param name="{{ param.name }}" expr="{{ param.expr | escape_c }}"/>` */""")
+PY

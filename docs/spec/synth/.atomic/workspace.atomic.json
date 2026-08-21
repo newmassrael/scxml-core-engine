@@ -4468,6 +4468,18 @@
         {
           "file": "scripts/regen_send_param_payload_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_param_seeds_declared_child_data.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_param_seeds_declared_child_data_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_param_seeds_declared_child_data_kotlin.sh",
+          "kind": "references"
         }
       ]
     },
