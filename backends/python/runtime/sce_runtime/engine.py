@@ -476,9 +476,9 @@ class Engine(Generic[S, E]):
         """How many macrosteps this engine stopped short because their chain
         was still going after `MAX_MACROSTEP_MICROSTEPS` microsteps.
 
-        §scxml-3.13 says a macrostep ends in a configuration where nothing is
-        enabled by NULL and no internal event is left, and the specification's
-        Principles and Constraints (§scxml-D) add that a macrostep *may not
+        W3C SCXML 3.13 says a macrostep ends in a configuration where nothing
+        is enabled by NULL and no internal event is left, and the
+        specification's Principles and Constraints add that a macrostep *may not
         terminate* and that this "is currently allowed". A document with a
         cyclic eventless transition is therefore not malformed, and neither is
         one whose `<raise>` answers itself; both are documents whose macrostep
@@ -495,7 +495,7 @@ class Engine(Generic[S, E]):
         act on, which is what this count is for — every other reading says the
         machine is fine: `current_state` answers, `is_running` is `True`, and
         the call returned. The configuration behind those answers is not the
-        stable one §scxml-3.13 promises.
+        stable one W3C SCXML 3.13 promises.
 
         A document whose chain is a hundred microsteps long and then settles
         counts zero: the ceiling is on microsteps *taken*, and the macrostep is
