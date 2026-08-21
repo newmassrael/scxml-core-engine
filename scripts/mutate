@@ -88,6 +88,13 @@
 # would call every such case INCONCLUSIVE. The evidence there is that the
 # file on disk differed from the baseline while the tests ran.
 #
+# A file compiled into the tests THROUGH A GENERATION STEP — a codegen
+# template, whose output is a committed tree — is a `mutation_targets` file
+# like any other, and the step between it and the binaries is declared with
+# `mutation_regen`. The ctest runner needs no declaration, because its
+# `cmake --build` already runs that step; the cargo runner compiles the
+# committed tree and needs one, or the mutation reaches nothing.
+#
 #     mutation_case "parser accepts a wildcard token" <<'PY'
 #     edit("sce-build/src/parser.rs",
 #          "if tok == \"*\" ||",
@@ -159,6 +166,7 @@ MUTATION_BUILD_DIR=""
 MUTATION_TARGET_FILES=()
 MUTATION_RUNTIME_FILES=()
 MUTATION_ORACLE_FILES=()
+MUTATION_REGEN_CMDS=()
 MUTATION_ARTIFACTS=()
 # Which tests turned red on the last run, one name per line.
 #
@@ -294,6 +302,39 @@ mutation_runtime_targets() { MUTATION_RUNTIME_FILES+=("$@"); }
 # forty-minute ctest round on half of all pushes is the shape of gate that gets
 # switched off. The files actually named moved 0-2 times in those 200.
 mutation_oracles() { MUTATION_ORACLE_FILES+=("$@"); }
+
+# The command that carries a mutated source INTO the tree the tests compile,
+# for a target that reaches the binaries through a generation step.
+#
+# A template is compiled into the tests the way any source is, but not
+# directly: `tools/codegen/templates/rust/invoke_methods.rs.jinja2` becomes
+# `backends/rust/tests/src/integration/<stem>/<stem>_sm.rs`, and that tree is
+# COMMITTED. Under the ctest runner the step between them is inside
+# `cmake --build`, which the harness already runs, so a template mutation
+# reaches the binaries with nothing declared. Under cargo there is no such
+# step — `cargo test --no-run` compiles the committed tree — so a mutated
+# template changed a file nothing read.
+#
+# Measured 2026-08-21, and this is what the omission cost: CI's Mutation
+# Rounds reported both cases of `invoke_param_is_a_value_not_source.cases`
+# INCONCLUSIVE — "every test binary is byte-identical to the baseline" —
+# which was the harness telling the truth about a bridge that was never
+# built. The clause those cases defend had been defended by nothing since
+# the round that wrote them.
+#
+# Each declaration is one command, run in the repository root after a case
+# body applies and before the artifacts are hashed. A casefile may declare
+# several: one stem's regeneration per line, in the order they must run.
+# A command that fails ends the case as INCONCLUSIVE, named — the same
+# verdict a mutated tree that will not compile gets, and for the same
+# reason: no test ran, so there is nothing to report about one.
+#
+# The regenerated files go in `mutation_targets` alongside the template, which
+# is where they belong on their own merits — they ARE compiled into the tests
+# — and which is what makes the round own its restore. Snapshot and restore
+# reach declared files only, so a generated tree left off that list would
+# carry the last case's mutation out of the round and into the working tree.
+mutation_regen() { MUTATION_REGEN_CMDS+=("$*"); }
 
 # ── Internals ──────────────────────────────────────────────────────
 
@@ -467,6 +508,30 @@ mutation_restore_quiet() {
 mutation_resolve_artifacts() { "mutation_${MUTATION_RUNNER}_resolve"; }
 mutation_build_and_hash() { "mutation_${MUTATION_RUNNER}_build_and_hash"; }
 mutation_run_artifacts() { "mutation_${MUTATION_RUNNER}_run"; }
+
+# Run every declared bridge, in declaration order, from the repository root.
+#
+# De-duplicated for the reason the target lists are: the casefile is sourced
+# on both passes, so an accumulating declaration is seen twice, and running a
+# regeneration twice is slower without being different.
+#
+# On failure the status is non-zero and MUTATION_REGEN_ERROR carries the
+# command and its last lines, for the caller to print under the case's own
+# verdict header — a bridge that refused is a fact about the mutation, not
+# about the harness, so it is reported where that mutation is named.
+MUTATION_REGEN_ERROR=""
+mutation_regenerate() {
+    local cmd out
+    MUTATION_REGEN_ERROR=""
+    while IFS= read -r cmd; do
+        [[ -n "$cmd" ]] || continue
+        if ! out="$(cd "$SCE_REPO_ROOT" && bash -c "$cmd" 2>&1)"; then
+            MUTATION_REGEN_ERROR="$cmd"$'\n'"$(printf '%s\n' "$out" | tail -10)"
+            return 1
+        fi
+    done < <(printf '%s\n' ${MUTATION_REGEN_CMDS[@]+"${MUTATION_REGEN_CMDS[@]}"} |
+                 awk 'NF && !seen[$0]++')
+}
 
 # The same build again, this time with its output, for the one place a build
 # failure is terminal rather than a verdict.
@@ -839,6 +904,125 @@ mutation_check_oracles() {
     (( missing == 0 ))
 }
 
+# The package whose build script embeds the template tree into every binary
+# that links it.
+#
+# Established by `sce-build/build.rs`, which walks `tools/codegen/templates/`
+# and writes `embedded_templates.rs`, and read back by
+# `sce-build/src/template_registry.rs` — whose own test refuses an empty
+# registry, so this fact cannot quietly stop being true. A test binary that
+# links this package CONTAINS the templates: mutating one changes that
+# binary, and the mutation reaches the tests with nothing else declared.
+# Seven casefiles in the corpus mutate templates in a cargo round on exactly
+# that basis and are right to.
+MUTATION_TEMPLATE_EMBEDDING_PACKAGE=sce-build
+
+# A template target the tests can actually be reached from.
+#
+# A template reaches a cargo round by one of two routes, and a casefile that
+# has neither proves nothing while reading as evidence:
+#
+#   - the selector names a binary that LINKS the embedding package above, so
+#     the template is inside the artifact and rebuilding it is the bridge; or
+#   - the casefile declares `mutation_regen`, which writes the committed
+#     generated tree the artifact is actually compiled from.
+#
+# Without either, `cargo test --no-run` rebuilds the same sources it started
+# from and every case is INCONCLUSIVE — "the mutation never reached the code
+# under test". The harness says so honestly, but only to whoever runs the
+# round: between two commits, that is CI, days later. Measured 2026-08-21,
+# `invoke_param_is_a_value_not_source.cases` stood in the registry as evidence
+# for §scxml-6.4.3 while both its cases had been inert since the day they were
+# written. This refuses the shape where it is cheap to see — the corpus-wide
+# `--check` that runs on every push.
+#
+# The ctest runner is exempt, and not by omission: `cmake --build` runs the
+# generation step, so a template reaches its binaries there with nothing
+# declared at all.
+mutation_check_template_bridge() {
+    [[ "$MUTATION_RUNNER" == cargo ]] || return 0
+    (( ${#MUTATION_REGEN_CMDS[@]} == 0 )) || return 0
+
+    local unbridged f
+    unbridged="$(mutation_all_targets | grep '^tools/codegen/templates/' || true)"
+    [[ -n "$unbridged" ]] || return 0
+    [[ "$(mutation_cargo_selector_embeds_templates)" != embeds ]] || return 0
+
+    red "a codegen template is declared as a target of a cargo round that"
+    red "cannot reach it — the selector links no binary embedding the"
+    red "templates, and no mutation_regen writes the tree it compiles:"
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        red "  $f"
+    done <<<"$unbridged"
+    red "'cargo test --no-run' would rebuild the committed generated sources"
+    red "unchanged, so every case here would report INCONCLUSIVE. Declare the"
+    red "regeneration — 'mutation_regen scripts/regen_<stem>.sh' — together"
+    red "with the files it writes, which are compiled into the tests and so"
+    red "are mutation_targets exactly as the template is."
+    return 1
+}
+
+# "embeds" when some package the selector reaches links the embedding package,
+# empty otherwise. Silent on a metadata failure for the same reason
+# `mutation_cargo_oracles` is: the answer this feeds is a refusal, and a
+# refusal must not rest on a question that could not be asked.
+mutation_cargo_selector_embeds_templates() {
+    local meta="$WORK/cargo-metadata-embeds.json"
+    cargo metadata --no-deps --format-version 1 >"$meta" 2>/dev/null || return 0
+    python3 - "$meta" "$MUTATION_TEMPLATE_EMBEDDING_PACKAGE" "${MUTATION_RUNNER_ARGS[@]}" <<'PY'
+import json
+import sys
+
+meta = json.load(open(sys.argv[1]))
+embedder = sys.argv[2]
+args = sys.argv[3:]
+
+named_pkgs, wanted_tests = [], []
+i = 0
+while i < len(args):
+    a = args[i]
+    if a in ("-p", "--package") and i + 1 < len(args):
+        named_pkgs.append(args[i + 1]); i += 2; continue
+    if a == "--test" and i + 1 < len(args):
+        wanted_tests.append(args[i + 1]); i += 2; continue
+    i += 1
+
+packages = {p["name"]: p for p in meta["packages"]}
+# Same scoping rule as the selector check and the oracle resolver: no `-p`
+# means the whole workspace, so a named target may live in any member.
+scope = [packages[n] for n in named_pkgs if n in packages] or list(packages.values())
+
+# Which members the round actually builds. A `--test X` narrows the scope to
+# the members owning an X; a selector without one (`--lib`, a bare `-p`)
+# builds everything in scope.
+if wanted_tests:
+    selected = {
+        p["name"]
+        for p in scope
+        for t in p["targets"]
+        if t["name"] in wanted_tests and "test" in t["kind"]
+    }
+else:
+    selected = {p["name"] for p in scope}
+
+# Workspace-internal dependency closure. `--no-deps` lists every member's
+# dependencies by name, which is all this needs: the embedder is a member,
+# and a path outside the workspace cannot lead back into it.
+deps = {p["name"]: {d["name"] for d in p.get("dependencies", [])} for p in meta["packages"]}
+seen, frontier = set(), list(selected)
+while frontier:
+    name = frontier.pop()
+    if name in seen:
+        continue
+    seen.add(name)
+    frontier.extend(deps.get(name, ()))
+
+if embedder in seen:
+    print("embeds")
+PY
+}
+
 mutation_check_selector() { "mutation_${MUTATION_RUNNER}_check_selector"; }
 
 # The cargo selector still names a package that exists, features that
@@ -1026,6 +1210,7 @@ mutation_init() {
     # wise die on the missing one with `cp`'s message instead of this one.
     mutation_check_targets_exist || exit 2
     mutation_check_oracles || exit 2
+    mutation_check_template_bridge || exit 2
     mutation_snapshot
 
     if [[ "$MUTATION_MODE" == "check" ]]; then
@@ -1137,6 +1322,25 @@ PY
     then
         red "INCONCLUSIVE  $label"
         red "              the case body did not apply"
+        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_restore
+        return
+    fi
+
+    # Carry the mutation across any generation step the tests compile through,
+    # before anything is hashed — the generated tree is a target like the
+    # template that produced it, so the readings below have to see it settled.
+    #
+    # `--check` skips this: it neither builds nor runs, so a bridge would cost
+    # a corpus-wide gate one regeneration per case to establish nothing that
+    # mode reports. What it does report — does the anchor still apply — is
+    # answered by the case body alone.
+    if [[ "$MUTATION_MODE" != "check" ]] && ! mutation_regenerate; then
+        red "INCONCLUSIVE  $label"
+        red "              a mutation_regen command failed; the tests never ran"
+        while IFS= read -r line; do
+            dim "              $line"
+        done <<<"$MUTATION_REGEN_ERROR"
         MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
         mutation_restore
         return
