@@ -102,16 +102,17 @@
 {% for var_name in invoke_info.namelist | split %}
                     if child_vars.contains(&"{{ var_name }}") {
                         if let Ok(val) = se.evaluate_expression(&sid, "{{ var_name }}") {
-                            // The child seeds this by evaluating source, so the
-                            // spelling is the engine's — not the value's.
-                            child_policy.set_param_in_script_engine("{{ var_name }}", &se.to_script_literal(&val));
+                            // §scxml-6.4.1: "the value stored at the location
+                            // is the value" — so the value crosses, not a
+                            // rendering of it.
+                            child_policy.set_param_value_in_script_engine("{{ var_name }}", val);
                         }
                     }
 {% endfor %}
 {% else %}
 {% for var_name in invoke_info.namelist | split %}
                     if let Ok(val) = se.evaluate_expression(&sid, "{{ var_name }}") {
-                        child_policy.set_param_in_script_engine("{{ var_name }}", &se.to_script_literal(&val));
+                        child_policy.set_param_value_in_script_engine("{{ var_name }}", val);
                     }
 {% endfor %}
 {% endif %}
@@ -130,7 +131,9 @@
 {% for param in invoke_info.params %}
 {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
                     if let Ok(val) = se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
-                        child_policy.set_param_in_script_engine("{{ param.name | escape_rust }}", &se.to_script_literal(&val));
+                        // §scxml-6.4.3: the VALUE of the param element becomes
+                        // the child `<data>`'s initial value.
+                        child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", val);
                     }
 {% else %}
                     // §scxml-6.4.3: `{{ param.name | escape_rust }}` matches no top-level `<data>` of

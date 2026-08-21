@@ -1298,7 +1298,7 @@ sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUT
 # so the four phases here are what separate "the parent evaluated this" from
 # "the child evaluated this text".
 sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist
+    SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist inv_infinite
 )
 
 # Wire the integration headers + include path into the integration_tests
