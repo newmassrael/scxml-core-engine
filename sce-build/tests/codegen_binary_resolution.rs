@@ -534,3 +534,63 @@ fn the_shell_locator_rebuilds_a_generator_that_disagrees_with_the_tree() {
         "a current generator must be handed back as found; got {current_path:?}",
     );
 }
+
+/// Enough regen scripts must reach the scan for a clean result to mean
+/// anything. 115 per-stem scripts existed when this bound was measured
+/// (2026-08-21); the floor sits well under that so adding or retiring a
+/// fixture does not move it, and a glob that matched nothing still fails.
+const MIN_REGEN_SCRIPTS: usize = 80;
+
+/// Every regen script reaches the generator through the shell locator.
+///
+/// The locator is not only where the binary is found — it is also where
+/// `SOURCE_DATE_EPOCH` is defaulted to 0, which is what makes the
+/// `generated-at` header of a regenerated file reproducible.
+/// `committed_trees_carry_a_pinned_generated_at` rejects any other stamp, so
+/// a regen script that reaches the generator some other way writes a
+/// wall-clock header into a committed tree and the drift gate rejects the
+/// push. That is not hypothetical: only the master script exported the
+/// variable and all 115 per-stem scripts did not, so regenerating a single
+/// fixture — the normal shape of a round that changes one fixture — cost a
+/// push cycle on 2026-08-20.
+///
+/// Stated over the scripts rather than over the exported variable, because
+/// the variable is set in one place and a test that read it back there would
+/// be asking the fix whether it applied itself. What can actually drift is a
+/// script that stops going through the locator.
+#[test]
+fn every_regen_script_sources_the_shell_locator() {
+    let root = repo_root();
+    let mut scanned = 0usize;
+    let mut orphans: Vec<String> = Vec::new();
+
+    for rel in tracked_files(&root) {
+        let Some(name) = rel.strip_prefix("scripts/") else {
+            continue;
+        };
+        if !name.starts_with("regen_") || !name.ends_with(".sh") {
+            continue;
+        }
+        scanned += 1;
+        let Ok(text) = std::fs::read_to_string(root.join(&rel)) else {
+            continue;
+        };
+        if !code_lines(&text).any(|(_, l)| l.contains("lib/sce_codegen.sh")) {
+            orphans.push(rel);
+        }
+    }
+
+    assert!(
+        scanned >= MIN_REGEN_SCRIPTS,
+        "only {scanned} regen scripts reached the scan, under the floor of \
+         {MIN_REGEN_SCRIPTS} — the naming convention this walks moved",
+    );
+    assert!(
+        orphans.is_empty(),
+        "{} regen script(s) do not source scripts/lib/sce_codegen.sh, so they \
+         inherit neither the binary search nor the SOURCE_DATE_EPOCH pin and \
+         will stamp wall-clock `generated-at` headers into committed trees: \
+         {orphans:#?}",
+        orphans.len(),
+    );
+}
