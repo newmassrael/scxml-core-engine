@@ -29,10 +29,29 @@ TOTAL_BYTES=1666
 # The difference — 44 bytes per instantiation — is the number that feature is
 # worth, and it is here rather than in a commit message because it is the
 # answer to a question a consumer asked: whether gating the diagnostics would
-# recover what two commits cost their image. It recovers 14-20% of it. The rest
-# is the bound, which is not on offer. Measuring both ways is also what keeps
-# the opt-out configuration from rotting — a feature nothing builds is a
+# recover what two commits cost their image. Measuring both ways is also what
+# keeps the opt-out configuration from rotting — a feature nothing builds is a
 # feature that stops compiling and nobody learns until a consumer sets it.
+#
+# WHAT THE 44 IS A FRACTION OF, measured at four pins in this same tree at one
+# fixed path (`7f94b580` -> `7db6aebc` -> `e0fdd46b` -> `a8026fd6`):
+#
+#   1072 -> 1418 -> 1418 -> 1666 bytes, i.e. +594 per instantiation over the
+#   two commits that landed the macrostep ceiling (37a47335a3, e00d4eee04).
+#
+# So the report is 44 of 594 — **7%** — and the other 550 is the bound: the
+# per-microstep budget and the guard that stops a refused chain being handed a
+# second one. There is no version of this engine that both terminates and does
+# not pay that. The figure is on `thumbv7em-none-eabihf` at `opt-level = "z"`;
+# a consumer on another target or profile should expect the RATIO to hold and
+# the absolutes not to.
+#
+# The two `sce_log_error!` sites are inside the feature gate as well, and
+# measured zero: the sum above is identical with and without them, because the
+# format arguments live in `.rodata` and the call is a handful of instructions
+# the linker folds elsewhere. A downstream consumer reached the same conclusion
+# from the other end — with `lto = true` and no logger installed, their image
+# had already discarded every `log::` call before we asked them to try.
 TOTAL_BYTES_NO_DIAGNOSTICS=1622
 
 # Drift allowed either way before the gate speaks. Wide enough that an
