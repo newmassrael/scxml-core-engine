@@ -10006,6 +10006,16 @@
           "file": "sce-build/src/parser.rs",
           "symbol": "synthesize_automatic_finalize",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_invoke",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/InvokeParser.cpp",
+          "symbol": "synthesizeAutomaticFinalize",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
