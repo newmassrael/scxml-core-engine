@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
+// template-hash: 2cf4917c7dff79eaf746b52e649909e9c7318e80b65f49555ba6a2bcd0d8eaca
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -378,7 +378,13 @@ class Test354StateMachine(
                 val engineE = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsE = mutableMapOf<String, Any?>()
-                try { putParam(paramsE, "param1", engineE.evaluateExpr(sidE, "2")) } catch (_: Exception) { putParam(paramsE, "param1", "") }
+                try {
+                    putParam(paramsE, "param1", engineE.evaluateExpr(sidE, "2"))
+                } catch (_: Exception) {
+                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
+                    raisePlatformError(Test354Event.Error.Execution, "<send> <param name='param1'> expr failed to evaluate")
+                }
+
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
                 if (!engineE.hasVariable(sidE, "Var1")) {
                     raisePlatformError(Test354Event.Error.Execution, "<send> namelist names 'Var1', which is not declared")
