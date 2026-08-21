@@ -33,14 +33,15 @@ use std::collections::BTreeMap;
 /// definition: the receiver may be a different session, a different process,
 /// or a different backend, and the only thing all of them can read is data.
 ///
-/// This is the counterpart of [`IScriptEngine::to_script_literal`], and the
-/// difference between them is the whole point. An engine literal is *source*:
-/// reading it back requires an interpreter for the language the sender
-/// happened to be written in, which made `_event.data` mean one thing on a
-/// Lua backend and another on a JavaScript one, and made a payload from any
-/// sender executable by the receiver. JSON is read by a parser.
-///
-/// [`IScriptEngine::to_script_literal`]: crate::scripting::IScriptEngine::to_script_literal
+/// The alternative would be an engine literal, and the difference is the
+/// whole point. Such a literal is *source*: reading it back requires an
+/// interpreter for the language the sender happened to be written in, which
+/// made `_event.data` mean one thing on a Lua backend and another on a
+/// JavaScript one, and made a payload from any sender executable by the
+/// receiver. JSON is read by a parser. (This engine had a
+/// `to_script_literal` for the one path that did want source — seeding an
+/// `<invoke>` child — until 2026-08-21, when that path started passing the
+/// value instead and the method lost its last caller.)
 ///
 /// Object keys are sorted. `HashMap` iteration order is not stable between
 /// runs, and the wire form has to be byte-identical for equal content —
@@ -99,9 +100,9 @@ pub fn script_value_to_json(value: &ScriptValue) -> String {
 /// to `_event.data` — no script engine reads it at either end. That is why
 /// this is neither of the two serializations beside it: [`script_value_to_json`]
 /// would wrap a string in quotes that are not part of it, and an engine
-/// literal (`IScriptEngine::to_script_literal`) would put the sender's
-/// *language* on the wire, so one value would read `nil` from a Lua-backed
-/// sender and `null` from a JavaScript-backed one.
+/// literal would put the sender's *language* on the wire, so one value would
+/// read `nil` from a Lua-backed sender and `null` from a JavaScript-backed
+/// one.
 ///
 /// The rendering is ECMAScript's `String(value)` — §scxml-B-1 makes the data
 /// model ECMAScript, so its `ToString` is what a number or a boolean means as
