@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
+// template-hash: 2cf4917c7dff79eaf746b52e649909e9c7318e80b65f49555ba6a2bcd0d8eaca
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -337,7 +337,10 @@ class Test519StateMachine(
                     // the platform's spelling of the value; this is the document's.
                     httpParams["param1"] = listOf(valueToWireString(v))
                 } catch (_: Exception) {
-                    httpParams["param1"] = listOf("")
+                    // W3C SCXML 5.7.1: report the failure and omit the name and
+                    // value. The clause names no processor, so a document must
+                    // not go quiet just because this send crosses HTTP.
+                    raisePlatformError(Test519Event.Error.Execution, "<send> <param name='param1'> expr failed to evaluate")
                 }
                 val httpContent = ""
                 performHttpSend(_rt, "test", httpContent, httpParams, "__send_1")

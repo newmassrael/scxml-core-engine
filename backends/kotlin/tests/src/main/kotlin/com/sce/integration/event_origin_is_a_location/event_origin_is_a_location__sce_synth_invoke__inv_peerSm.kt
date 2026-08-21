@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
+// template-hash: 2cf4917c7dff79eaf746b52e649909e9c7318e80b65f49555ba6a2bcd0d8eaca
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -286,7 +286,13 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
                 val engineP = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
-                try { putParam(paramsP, "myLocation", engineP.evaluateExpr(sidP, "_ioprocessors['scxml'].location")) } catch (_: Exception) { putParam(paramsP, "myLocation", "") }
+                try {
+                    putParam(paramsP, "myLocation", engineP.evaluateExpr(sidP, "_ioprocessors['scxml'].location"))
+                } catch (_: Exception) {
+                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
+                    raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<send> <param name='myLocation'> expr failed to evaluate")
+                }
+
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("fromChild", eventDataP)
             }
