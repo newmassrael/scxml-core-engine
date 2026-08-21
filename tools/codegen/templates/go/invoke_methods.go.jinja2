@@ -141,7 +141,19 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% endif %}
 				ParentSessionID: p.SessionID,
 				Autoforward:     {{ 'true' if invoke_info.autoforward else 'false' }},
-				FinalizeScript:  `{{ invoke_info.finalize_content | escape_go }}`,
+{# §scxml-6.5: the `<finalize>` body is authored content and reaches the
+   engine through the ECMAScript frontend, like every other authored
+   expression. This line used to hand the parser's JavaScript to a Lua
+   engine unlowered, so a `<finalize>` worked only when its JavaScript was
+   valid Lua as well — which W3C test233's single bare assignment happens
+   to be, and it is the only `<finalize>` document with executable content
+   in the corpus. Python and C11 already applied this filter; Go, Rust,
+   Kotlin and cpp-AOT did not. #}
+{# A quoted literal rather than a raw one, because `escape_go` emits the
+   escape sequences a quoted Go string reads — and a lowered `<finalize>` is
+   the first content here that spans lines. Inside backticks `\n` stays two
+   characters, which reaches Lua as a syntax error rather than a newline. #}
+				FinalizeScript:  "{{ invoke_info.finalize_content | to_lua_script | escape_go }}",
 			}
 
 			childEngine := sce.NewEngine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event](&childPolicy)

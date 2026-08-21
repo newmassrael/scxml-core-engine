@@ -1294,6 +1294,41 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # §scxml-6.5.2: an EMPTY `<finalize>` means the automatic data-model update
+    # — "for each item in the 'namelist' attribute and each such <param>
+    # element, the Processor MUST update the corresponding location as if by
+    # <assign>" — and an absent one means the opposite: "the automatic update
+    # does not take place if the <finalize> element is absent as opposed to
+    # empty". The corpus holds two `<finalize>` documents (W3C 233/234) and zero
+    # empty ones, so the clause had no witness, and `finalize_content` being one
+    # string meant it had no implementation either.
+    sce_generate_static_integration_c_test(empty_finalize_updates_the_location "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_empty inv_absent inv_unmatched
+    )
+
+    add_executable(sce_c_integration_empty_finalize_updates_the_location
+        integration/test_empty_finalize_updates_the_location.c
+        ${INTEGRATION_C_TEST_empty_finalize_updates_the_location_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_empty_finalize_updates_the_location PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_empty_finalize_updates_the_location PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_empty_finalize_updates_the_location PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_empty_finalize_updates_the_location
+        COMMAND sce_c_integration_empty_finalize_updates_the_location
+    )
+    set_tests_properties(c11_integration_empty_finalize_updates_the_location PROPERTIES
+        TIMEOUT 40
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-D-mainEventLoop: the preliminary <finalize> / autoforward step is
     # owed to the external event, not to the queue it arrived on. The four
     # autoforward_* fixtures above all let the machine forward events it queued

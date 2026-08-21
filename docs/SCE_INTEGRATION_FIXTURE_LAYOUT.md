@@ -123,6 +123,39 @@ that reported on entry would measure the seeding ORDER instead of what a
 failed `<param>` costs. That order is its own open debt — the C11 `_init`
 split — and this fixture found its witness while deliberately not carrying it.
 
+`empty_finalize_updates_the_location` covers the clause an empty element
+carries. W3C §6.5.2 gives `<finalize>` with no executable content a meaning of
+its own — the Processor "MUST update the data model each time an event is
+received from the child process ... for each item in the 'namelist' attribute
+and each such `<param>` element ... as if by `<assign>` with any return value
+that has a name that matches" — and then draws the line: "the automatic update
+does not take place if the `<finalize>` element is absent as opposed to empty."
+
+Nothing here asked it. The whole corpus holds two `<finalize>` documents —
+W3C test233 (the content runs before transition selection) and test234 (in
+parallel, only the invoking state's runs) — and zero empty ones. Measured
+2026-08-22 the clause had no implementation either, and for a reason worth
+recording: `finalize_content` is one string, so an empty element and a missing
+one were the same value, and every engine gates the finalize step on that
+string being non-empty. The clause was unrepresentable rather than merely
+unimplemented. The fix is the clause's own wording — "as if by `<assign>`"
+names the content the empty element stands for, so both parsers synthesise
+that content and every channel's existing finalize path runs it unchanged.
+
+Adding it found a second gap on the way: the `<finalize>` body reaches the
+engine as author-language text, and Rust and Go handed the parser's JavaScript
+to a Lua engine unlowered. A `<finalize>` worked there only when its
+JavaScript was valid Lua as well — test233's single bare assignment is, which
+is why the surface passed on a coincidence. Python and C11 already applied
+`to_lua_script`; Kotlin needs none (Rhino is a JavaScript engine) and neither
+does the C++ AOT channel (its engine runs `EcmaScriptToLuaTransformer`
+itself), which is why the fix landed in exactly two templates.
+
+The children answer from a `<transition>` body rather than `<onentry>`, and
+the two invokes are sequential rather than parallel: §scxml-6.5's "only the
+finalize code in the original invoking state is executed" is test234's axis,
+and running both at once would let that clause decide this fixture's verdict.
+
 The autoforward family is three fixtures on three questions, and each was
 built blind to the other two. `autoforward_done_invoke` pins *which* events
 are forwarded: Appendix D's `mainEventLoop` forwards whatever comes off the

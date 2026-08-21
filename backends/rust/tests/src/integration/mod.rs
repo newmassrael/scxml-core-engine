@@ -31,6 +31,7 @@ pub mod autoforward_internal_queue;
 pub mod discarded_event_is_observable;
 pub mod donedata_late_completion;
 pub mod donedata_local_invoke;
+pub mod empty_finalize_updates_the_location;
 pub mod error_cascade_is_bounded;
 pub mod event_data_arrives_as_sent;
 pub mod event_origin_is_a_location;

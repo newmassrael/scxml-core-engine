@@ -183,7 +183,18 @@
 {% endif %}
                         parent_session_id: self.session_id.clone().unwrap_or_default(),
                         autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
-                        finalize_script: "{{ invoke_info.finalize_content | escape_rust }}".to_string(),
+{# §scxml-6.5: the `<finalize>` body is AUTHORED content and reaches the
+   engine like every other authored expression — through the ECMAScript
+   frontend. The parser hands it over as JavaScript
+   (`actions_to_javascript`), and this line used to escape that text and
+   pass it to a Lua engine unlowered, so a `<finalize>` worked only when
+   its JavaScript happened to be valid Lua as well. W3C test233's body is
+   one bare assignment (`Var1 = _event.data.aParam`), which is valid in
+   both, and it is the only `<finalize>` document with executable content
+   in the whole corpus — so the surface passed on a coincidence.
+   The C++ Interpreter never had the gap: it keeps the finalize as XML and
+   re-parses it as executable content, which lowers each action normally. #}
+                        finalize_script: "{{ invoke_info.finalize_content | to_lua_script | escape_rust }}".to_string(),
                     },
                 );
 

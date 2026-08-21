@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ceb5ba77c107690ed8824e3a95913c8f850f275ca17535023aec22eab166125d
-// template-hash: 84a841eae761d6fbf94d15cd646ae14f47646822f90559441b47e8f14bddfb19
+// template-hash: f7291ab6d7896ee95dd448a8f7fc2759f6a0259c69bcc8f54f868651f4b8fe72
 // generated-at: 0
 
 
@@ -201,7 +201,7 @@ func (p *HostEventReachesTheChildPolicy) ExecutePendingInvokes(engine *sce.Engin
 				InvokeID:        "inv_probe",
 				ParentSessionID: p.SessionID,
 				Autoforward:     true,
-				FinalizeScript:  ``,
+				FinalizeScript:  "",
 			}
 
 			childEngine := sce.NewEngine[HostEventReachesTheChildSceSynthInvokeInvProbeState, HostEventReachesTheChildSceSynthInvokeInvProbeEvent](&childPolicy)
