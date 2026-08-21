@@ -5,6 +5,25 @@
    Expects `action` and `machine_name` variables in scope.
    Uses action.auto_send_id for unique delayed send identification (C++ UniqueIdGenerator pattern).
    Target resolution follows C++ "resolve once, use everywhere" pattern. #}
+{# W3C SCXML 5.7.1: one `<param expr>` arm for the four maps this template
+   fills (internal, parent, typed/external, engine-served), written once so
+   they cannot drift apart.
+
+   The clause asks for two things and this arm used to do neither: it
+   swallowed the exception, which no document can observe, and then wrote
+   the name with an empty value, which is the opposite of "MUST ignore the
+   name and value" — a receiver testing `typeof _event.data.x ===
+   'undefined'` was told the field is present. W3C test343 gives the
+   reading: `error.execution` goes on the internal queue AND the event
+   still arrives with the offending pair absent. #}
+{% macro param_expr_arm(param, map, eng, sid, machine_name, indent) %}
+{{ indent }}try {
+{{ indent }}    putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ eng }}.evaluateExpr({{ sid }}, "{{ param.expr | escape_kotlin }}"))
+{{ indent }}} catch (_: Exception) {
+{{ indent }}    // W3C SCXML 5.7.1: report the failure and omit the name and value.
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+{{ indent }}}
+{% endmacro %}
 {% if action.idlocation and model.needs_script_engine %}
             // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332)
             run {
@@ -110,7 +129,7 @@
 {% if param.is_static_literal %}
                 putParam(paramsI, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
-                try { putParam(paramsI, "{{ param.name | escape_kotlin }}", engineI.evaluateExpr(sidI, "{{ param.expr | escape_kotlin }}")) } catch (_: Exception) { putParam(paramsI, "{{ param.name | escape_kotlin }}", "") }
+{{ param_expr_arm(param, 'paramsI', 'engineI', 'sidI', machine_name, '                ') }}
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -156,7 +175,7 @@
 {% if param.is_static_literal %}
                 putParam(paramsP, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
-                try { putParam(paramsP, "{{ param.name | escape_kotlin }}", engineP.evaluateExpr(sidP, "{{ param.expr | escape_kotlin }}")) } catch (_: Exception) { putParam(paramsP, "{{ param.name | escape_kotlin }}", "") }
+{{ param_expr_arm(param, 'paramsP', 'engineP', 'sidP', machine_name, '                ') }}
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -226,7 +245,7 @@
 {% if param.is_static_literal %}
                 putParam(paramsT, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
-                try { putParam(paramsT, "{{ param.name | escape_kotlin }}", engineT.evaluateExpr(sidT, "{{ param.expr | escape_kotlin }}")) } catch (_: Exception) { putParam(paramsT, "{{ param.name | escape_kotlin }}", "") }
+{{ param_expr_arm(param, 'paramsT', 'engineT', 'sidT', machine_name, '                ') }}
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -338,7 +357,7 @@
 {% if param.is_static_literal %}
                 putParam(paramsE, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
-                try { putParam(paramsE, "{{ param.name | escape_kotlin }}", engineE.evaluateExpr(sidE, "{{ param.expr | escape_kotlin }}")) } catch (_: Exception) { putParam(paramsE, "{{ param.name | escape_kotlin }}", "") }
+{{ param_expr_arm(param, 'paramsE', 'engineE', 'sidE', machine_name, '                ') }}
 {% endif %}
 {% endfor %}
 {% if action.namelist %}

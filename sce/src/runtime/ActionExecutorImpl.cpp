@@ -873,20 +873,43 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 try {
                     // Evaluate and preserve both string (for JSON serialization) and ScriptValue (for typed pipeline)
                     auto evalResult = scriptEngine_.evaluateExpression(sessionId_, paramValueExpr).get();
+                    // §scxml-5.7.1: an expression that will not evaluate costs
+                    // the document two things — the pair is left out AND the
+                    // failure is reported. Pushing the failed reading under the
+                    // param's name was the opposite of "ignore the name and
+                    // value": a receiver asking whether the field arrived was
+                    // told yes, and nothing on any queue said otherwise. The
+                    // message itself still goes: the "discard the message" rule
+                    // in the <send> section governs that element's own
+                    // arguments, and W3C test343 is the fixture that separates
+                    // the two — an illegal <param> raises the error AND the
+                    // event still arrives, carrying empty data.
+                    if (!evalResult.isSuccess()) {
+                        SCE_LOG_ERROR("ActionExecutorImpl: Failed to evaluate param '{}' expr '{}'", param.name,
+                                      paramValueExpr);
+                        if (eventRaiser_) {
+                            eventRaiser_->raiseEvent("error.execution", "<send> <param name='" + param.name +
+                                                                            "'> expr failed to evaluate");
+                        }
+                        continue;
+                    }
                     std::string paramValue =
                         ScriptResultUtils::resultToString(evalResult, &scriptEngine_, sessionId_, paramValueExpr);
                     evaluatedParams[param.name].push_back(
                         paramValue);  // W3C SCXML: Support duplicate param names (Test 178)
                     // Preserve ScriptValue for engine-agnostic typed data pipeline
-                    if (evalResult.isSuccess()) {
-                        typedParams[param.name].push_back(evalResult.getInternalValue());
-                    }
+                    typedParams[param.name].push_back(evalResult.getInternalValue());
                     SCE_LOG_DEBUG("ActionExecutorImpl: Param[{}] {}={} (expr: '{}')", paramCount, param.name,
                                   paramValue, paramValueExpr);
                 } catch (const std::exception &e) {
                     SCE_LOG_ERROR("ActionExecutorImpl: Failed to evaluate param '{}' expr '{}': {}", param.name,
                                   paramValueExpr, e.what());
-                    // W3C SCXML: Continue with other params despite failures
+                    // §scxml-5.7.1: a throwing engine is the same failure as a
+                    // result that reports one — same two halves, same answer.
+                    if (eventRaiser_) {
+                        eventRaiser_->raiseEvent("error.execution",
+                                                 "<send> <param name='" + param.name + "'> expr failed to evaluate");
+                    }
                 }
             }
 

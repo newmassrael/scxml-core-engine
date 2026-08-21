@@ -20,8 +20,19 @@
    fewer parameter kinds than an HTTP one from the same document.
 
    A repeated name keeps every value: W3C SCXML 6.2 permits repetition,
-   and `or_default().push(...)` is what makes the map's Vec meaningful. #}
-{% macro collect_params_into(action, model, map) %}
+   and `or_default().push(...)` is what makes the map's Vec meaningful.
+
+   A failed evaluation drops the pair and says so. W3C SCXML 5.7.1 puts
+   both halves on the same clause — `error.execution` on the internal
+   queue AND the name and value ignored — and says nothing about which
+   processor the message is bound for, so the wire cannot change the
+   answer. These two arms used to keep only the silent half, which made
+   the same document report its miscomputed `<param>` when it sent to an
+   SCXML session and stay quiet when it sent over HTTP.
+
+   `machine_name` is a parameter rather than a global because a macro
+   body does not see the render context. #}
+{% macro collect_params_into(action, model, map, machine_name) %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
         {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
@@ -39,7 +50,13 @@
                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                     {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
                 }
-                Err(_) => {}
+                Err(e) => {
+                    // W3C SCXML 5.7.1: report the failure and omit the pair.
+                    ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+{% endif %}
+                }
             }
         }
 {% elif param.location and model.needs_script_engine %}
@@ -53,7 +70,14 @@
                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                     {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
                 }
-                Err(_) => {}
+                Err(e) => {
+                    // W3C SCXML 5.7.1: a location naming nothing is the same
+                    // failure as an expression that will not evaluate.
+                    ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' location read failed: {}", e);
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> location could not be read"));
+{% endif %}
+                }
             }
         }
 {% endif %}
@@ -328,7 +352,7 @@
    generated file is not a place a host can silence one. #}
 {% if has_params %}
         let mut host_params = std::collections::HashMap::<String, Vec<String>>::new();
-{{ collect_params_into(action, model, 'host_params') }}
+{{ collect_params_into(action, model, 'host_params', machine_name) }}
 {% else %}
         let host_params = std::collections::HashMap::<String, Vec<String>>::new();
 {% endif %}
@@ -424,7 +448,7 @@
 {% endif %}
         let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
 {% if has_params %}
-{{ collect_params_into(action, model, 'http_params') -}}
+{{ collect_params_into(action, model, 'http_params', machine_name) -}}
 {% endif %}
         engine.perform_http_send(
             {{ http_target_rs }},
