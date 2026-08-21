@@ -149,10 +149,10 @@ class ScriptValue:
         inside its own engine, `lua_engine._python_to_lua_literal`)
         would put the sender's *language* on the wire.
 
-        The rendering is ECMAScript's `String(value)` (§scxml-B-1 makes
-        the data model ECMAScript) with the two amendments C++
+        The rendering is ECMAScript's `String(value)` (W3C SCXML B.1
+        makes the data model ECMAScript) with the two amendments C++
         `ScriptResultUtils::resultToString` already made: absence renders
-        empty rather than as a word (§scxml-C-1), and a structured value
+        empty rather than as a word (W3C SCXML C.1), and a structured value
         renders as JSON, because a receiver that is not a script engine
         has no other reading of it.
 
