@@ -161,32 +161,6 @@ pub trait IScriptEngine: Send + Sync {
     /// if the syntax is valid. Used by the datamodel parser for early error detection.
     fn validate_expression(&self, session_id: &str, expression: &str) -> ScriptResult<bool>;
 
-    /// A value as source this engine can evaluate back — the inverse of
-    /// [`Self::evaluate_expression`].
-    ///
-    /// §scxml-6.4.1 has the parent evaluate an `<invoke>`'s `<param>` and
-    /// namelist expressions and hand the *values* to the child, and the child
-    /// seeds them by evaluating source in its own datamodel. That round trip
-    /// is the only reason a literal is spelled at all, and it is why the
-    /// spelling belongs here: `nil` versus `null`, `{1, 2}` versus `[1, 2]`,
-    /// `{["k"] = v}` versus `{"k": v}` are answers about the engine, not
-    /// about the value. This lived on [`ScriptValue`] as `to_lua_literal`
-    /// until 2026-08-21, where a value that had never met an engine already
-    /// knew Lua — so a second engine inherited a syntax it cannot parse while
-    /// still compiling.
-    ///
-    /// Required, deliberately: a defaulted method would hand the next engine
-    /// the previous engine's grammar silently, which is the defect this
-    /// method exists to make impossible. An implementation must answer in its
-    /// own language.
-    ///
-    /// This is *not* the serialization for a value that leaves the process —
-    /// a payload or an §scxml-C-2 wire param is read by a parser or a human,
-    /// not by an engine, and has its own two helpers
-    /// (`helpers::event_data::script_value_to_json` /
-    /// `script_value_to_wire_string`).
-    fn to_script_literal(&self, value: &ScriptValue) -> String;
-
     // ════════════════════════════════════════
     // Variable Management
     // ════════════════════════════════════════

@@ -3,14 +3,18 @@
 #
 # Run with `scripts/mutate sce-build/tests/mutations/wire_value_is_not_engine_source.cases`.
 #
-# A value leaves the ECMAScript data model two ways and only one of them is a
-# language: an `<invoke>` child seeds its datamodel by EVALUATING source, so
-# that text belongs to the engine that will parse it, while an HTTP `<param>`,
-# a `targetexpr` and a `delayexpr` leave the process for a reader that is not
-# an engine at all. Until 2026-08-21 one function answered both — Lua's
-# spelling, on the engine-neutral value type — so the same param read `nil`
-# from the Rust backend and empty from the C++ one, `{1, 2}` here and `[1,2]`
-# there. Measured that day: six backends, six answers, one field.
+# An HTTP `<param>`, a `targetexpr` and a `delayexpr` leave the process for a
+# reader that is not an engine at all. Until 2026-08-21 the function that
+# rendered them was the engine's own literal renderer — Lua's spelling, living
+# on the engine-neutral value type — so the same param read `nil` from the Rust
+# backend and empty from the C++ one, `{1, 2}` here and `[1,2]` there.
+# Measured that day: six backends, six answers, one field.
+#
+# The engine-source direction that renderer also served is gone as of the same
+# week: §scxml-6.4.3 asks for the VALUE of an `<invoke>` `<param>`, and
+# rendering it as source lost every value Lua cannot spell. Its case here went
+# with it, and `integration_resources/invoke_param_seeds_declared_child_data/`
+# is the witness that replaced it — on seven channels rather than one.
 #
 # What each case restores, and what it would cost unnoticed:
 #   * absence as a word — a peer receives the four letters `nil` where the
@@ -19,16 +23,13 @@
 #     so a receiver comparing the text against "5" reads false.
 #   * a string re-quoted — the quotes the old path added and then trimmed off,
 #     which ate the quotes a value carried itself.
-#   * the engine's grammar back on the neutral type — a second engine
-#     inheriting Lua's `nil` while still compiling, which is the shape of the
-#     original defect rather than one of its symptoms.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-runtime --test wire_value_is_not_engine_source -p sce-rust-lua --test engine_owns_its_literal
-mutation_targets backends/rust/runtime/src/helpers/event_data.rs backends/rust/lua/src/lib.rs
-mutation_oracles backends/rust/runtime/tests/wire_value_is_not_engine_source.rs backends/rust/lua/tests/engine_owns_its_literal.rs
+mutation_tests -p sce-rust-runtime --test wire_value_is_not_engine_source
+mutation_targets backends/rust/runtime/src/helpers/event_data.rs
+mutation_oracles backends/rust/runtime/tests/wire_value_is_not_engine_source.rs
 
 mutation_case "the wire spells absence with Lua's word again" <<'PY'
 edit("backends/rust/runtime/src/helpers/event_data.rs",
@@ -56,24 +57,10 @@ edit("backends/rust/runtime/src/helpers/event_data.rs",
         // DOM crosses as that text rather than as a quoted JSON string.""")
 PY
 
-mutation_case "the engine's literal answers in someone else's grammar" <<'PY'
-edit("backends/rust/lua/src/lib.rs",
-     """        ScriptValue::Null | ScriptValue::Undefined => "nil".to_string(),
-        ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-        ScriptValue::Int(i) => i.to_string(),
-        ScriptValue::Double(f) => {
-            if f.fract() == 0.0 && f.is_finite() {""",
-     """        ScriptValue::Null | ScriptValue::Undefined => "null".to_string(),
-        ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-        ScriptValue::Int(i) => i.to_string(),
-        ScriptValue::Double(f) => {
-            if f.fract() == 0.0 && f.is_finite() {""")
-PY
-
-# ⚠ Not a case: dropping the `keys.sort()` in the Lua table literal. The
-# assertion that pins the sorted spelling would fail only on the runs where
-# `HashMap`'s per-process seed happens to hand the keys over in the other
-# order, so the witness would be a coin flip. The sort is held by the
-# deterministic expectation in `a_structured_value_survives_as_a_table`
-# instead, which is a weaker guard honestly labelled rather than a mutation
-# case that reports SURVIVED half the time.
+# ⚠ Not a case any more: "the engine's literal answers in someone else's
+# grammar", which mutated `lua_literal`'s absence arm from `nil` to `null`.
+# That renderer no longer exists — the invoke path passes values, so nothing
+# asked an engine to spell one, and a required trait method with no caller is
+# a tax rather than a contract. The clause it guarded is now held by
+# `invoke_param_seeds_declared_child_data`, whose `infinite` phase is red on
+# any channel that renders a value as source.

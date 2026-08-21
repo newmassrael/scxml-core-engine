@@ -16,9 +16,13 @@
 // the socket cannot be expected to know which backend compiled the sender.
 //
 // ToWireString is the neutral rendering, and its rows below are C++
-// ScriptResultUtils::resultToString arm for arm. The source direction moved to
-// IScriptEngine.ToScriptLiteral, whose Lua answer is exercised in
-// backends/go/lua/script_literal_test.go.
+// ScriptResultUtils::resultToString arm for arm. The source direction is gone
+// rather than relocated: an <invoke> <param> hands the child the value, and
+// rendering it as source lost every value Lua cannot spell — `1/0` reached the
+// child as the text `+Inf`, which is not a Lua expression, so the pair arrived
+// as nothing. The clause that says so is held by
+// integration_resources/invoke_param_seeds_declared_child_data/ on all seven
+// channels; this file is only about what leaves the process.
 
 package sce
 

@@ -95,9 +95,9 @@ func ToSlice(value interface{}) ([]interface{}, bool) {
 // so the value crosses as *text* and the receiving end hands that text to
 // _event.data — no script engine reads it at either end. That is why this is
 // neither of the two serialisations beside it: [ScriptValueToJSON] would wrap a
-// string in quotes that are not part of it, and an engine literal
-// (IScriptEngine.ToScriptLiteral) would put the sender's *language* on the
-// wire, so one value read `nil` from this backend and `` from the C++ one.
+// string in quotes that are not part of it, and an engine literal would put the
+// sender's *language* on the wire, so one value read `nil` from this backend and
+// `` from the C++ one.
 //
 // The rendering is ECMAScript's String(value) — §scxml-B-1 makes the data model
 // ECMAScript — with the two amendments C++ ScriptResultUtils::resultToString
@@ -155,12 +155,11 @@ func ToWireString(value interface{}) string {
 // the data model: the reader is another dequeue, often another session, and in
 // a mesh another process running another backend.
 //
-// This is the counterpart of IScriptEngine.ToScriptLiteral, and the difference
-// is the point. An engine literal is *source*: reading it back needs an
-// interpreter for the language the sender happened to be written in. That made
-// `_event.data` mean one thing on a Lua backend and another on a JavaScript
-// one, and made a payload executable at the receiving end. JSON is read by a
-// parser.
+// The alternative would be an engine literal, and the difference is the point.
+// Such a literal is *source*: reading it back needs an interpreter for the
+// language the sender happened to be written in. That made `_event.data` mean
+// one thing on a Lua backend and another on a JavaScript one, and made a
+// payload executable at the receiving end. JSON is read by a parser.
 //
 // 1:1 port of the C++ `scriptValueToJson` static in
 // `sce/src/common/EventDataHelper.cpp`. Object keys are sorted: Go map
@@ -447,23 +446,6 @@ type IScriptEngine interface {
 	// Core execution
 	ExecuteScript(sessionID, script string) error
 	EvaluateExpression(sessionID, expr string) (interface{}, error)
-
-	// ToScriptLiteral renders a value as source this engine can evaluate back
-	// — the inverse of EvaluateExpression.
-	//
-	// §scxml-6.4.1 has the parent evaluate an <invoke>'s <param> and namelist
-	// expressions and hand the values to the child, and the child seeds them
-	// by evaluating source. That round trip is the only reason a literal is
-	// spelled at all, and it is why the spelling belongs to the engine: `nil`
-	// versus `null`, `{1, 2}` versus `[1, 2]` are answers about the engine,
-	// not about the value. This was a free function (ToLuaLiteral) on the
-	// runtime package until 2026-08-21, where a value that had never met an
-	// engine already knew Lua.
-	//
-	// Not to be confused with [ToWireString] or [ScriptValueToJSON]: a value
-	// that leaves the process is read by a parser or a human, never by an
-	// engine.
-	ToScriptLiteral(value interface{}) string
 
 	// Variable management
 	SetVariable(sessionID, name string, value interface{}) error
