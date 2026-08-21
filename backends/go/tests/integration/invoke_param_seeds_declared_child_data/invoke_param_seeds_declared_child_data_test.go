@@ -56,9 +56,8 @@ func TestAnInvokeParamCarriesTheInvokingSessionsValue(t *testing.T) {
 				"child has no shadow to find. "+
 				"FailUnmatchedParamEnteredTheChild: a `<param>` naming no top-level "+
 				"`<data>` of the child became a variable there anyway — the clause "+
-				"forbids adding it; the filter belongs in "+
-				"`tools/codegen/templates/go/invoke_methods.go.jinja2` next to the "+
-				"param evaluation. "+
+				"forbids adding it; on this channel that filter is the "+
+				"`HasVariable` guard in the child's `InitializeDataModel`. "+
 				"FailShadowSeedLost / FailDeclaredParamLost / FailNamelistValueLost: "+
 				"the child saw neither the parent's value nor a shadow, so its own "+
 				"`<data>` default stood — nothing was seeded at all.",

@@ -49,6 +49,11 @@
                    forwards the rendered text as an expression is caught
                    doing an identifier lookup in the child.
 
+       infinite    a non-finite number, which the data model holds and no
+                   Lua grammar can spell. A channel that renders the
+                   value as source for the child to re-read loses the
+                   pair outright; one that passes the value delivers it.
+
      Every child answers with an EVENT of its own rather than through
      `<donedata>`, for the reason docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md
      states as a rule: fixtures stay on one axis. A `<donedata>` verdict
@@ -66,6 +71,7 @@
        seed.shadowed  the child saw its OWN same-named variable instead
        seed.missing   the child saw neither — its `<data>` default stood
        seed.leaked    a name the child never declared became a variable
+       seed.collapsed the value arrived as a different type than it was
 
      Each phase lands its failure in a `<final>` of its own, so a
      regression says which sentence broke rather than "param passing
@@ -204,9 +210,56 @@
                 </scxml>
             </content>
         </invoke>
-        <transition event="seed.ok" target="pass"/>
+        <transition event="seed.ok" target="infinite"/>
         <transition event="seed.missing" target="failNamelistValueLost"/>
         <transition event="error.execution" target="failNamelistValueLost"/>
+    </state>
+
+    <!-- §scxml-6.4.3 again, on the value a processor can least afford to
+         re-render: a non-finite number. `1/0` is Infinity under §scxml-B-2's
+         ECMAScript semantics, and it is a value the data model holds
+         perfectly well — every channel that hands the child the VALUE
+         delivers it.
+
+         A channel that renders the value as engine SOURCE for the child to
+         re-read has to spell Infinity in that engine's grammar, and Lua has
+         no spelling for it: the renderers produce `inf` (Rust's `{}`) and
+         `+Inf` (Go's `%g`), neither of which is a Lua expression. The child
+         then fails to evaluate what it was handed and the pair is dropped
+         entirely — the same hole this repository already closed on the WIRE
+         side, where `ScriptResultUtils::resultToString` reached
+         `static_cast<int64_t>(inf)`.
+
+         So this phase is what separates "passes the value" from "passes
+         source that happens to parse back for every value a test tried". -->
+    <state id="infinite">
+        <invoke type="scxml" id="inv_infinite">
+            <param name="seen" expr="1/0"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="report">
+                    <datamodel>
+                        <data id="seen" expr="'unset'"/>
+                    </datamodel>
+                    <state id="report">
+                        <transition cond="typeof seen === 'number' &amp;&amp; seen &gt; 1e308" target="done">
+                            <send target="#_parent" event="seed.ok"/>
+                        </transition>
+                        <transition cond="typeof seen === 'string'" target="done">
+                            <send target="#_parent" event="seed.missing"/>
+                        </transition>
+                        <transition target="done">
+                            <send target="#_parent" event="seed.collapsed"/>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="seed.ok" target="pass"/>
+        <transition event="seed.missing" target="failInfiniteParamLost"/>
+        <transition event="seed.collapsed" target="failInfiniteParamCollapsed"/>
+        <transition event="error.execution" target="failInfiniteParamLost"/>
     </state>
 
     <final id="pass"/>
@@ -216,4 +269,6 @@
     <final id="failUnmatchedParamEnteredTheChild"/>
     <final id="failDeclaredParamLost"/>
     <final id="failNamelistValueLost"/>
+    <final id="failInfiniteParamLost"/>
+    <final id="failInfiniteParamCollapsed"/>
 </scxml>

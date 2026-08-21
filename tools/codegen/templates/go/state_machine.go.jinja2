@@ -202,8 +202,9 @@ type {{ machine_name }}Policy struct {
 	ParentExternalQueue chan sce.ParentEvent
 	InvokeID           string
 	ChildSessionID     string
-	// W3C SCXML 6.4.1: Deferred params from parent invoke (applied after datamodel init)
-	pendingParams      map[string]string
+	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
+	// this machine's datamodel init so they override its `<data>` defaults.
+	pendingParams      map[string]interface{}
 }
 
 // New{{ machine_name }}Policy creates a new policy with default values.
