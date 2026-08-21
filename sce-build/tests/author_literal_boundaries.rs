@@ -263,8 +263,19 @@ const PASTE_BACKENDS: &[Backend] = &[
 /// — renamed marker, branch removed, shape dropped — pushes the count
 /// below its floor and fails, which is the only thing standing between
 /// "the gate is green" and "the gate read nothing".
+///
+/// Rust and Go dropped from 126 to 119 on 2026-08-21, and the seven sites
+/// each lost were duplicates rather than coverage: their BasicHTTP and
+/// host-served arms used to re-collect `<param>` from the data model after
+/// the send-time evaluation had already done it, so the same authored
+/// literal was pasted twice per document. §scxml-6.2.3 evaluates a
+/// `<send>`'s arguments once; the arms now render that one evaluation, so
+/// there is one paste site where there were two. Lowering a floor is the
+/// one edit this constant invites suspicion of — the difference is that
+/// the sites are gone from the templates, not merely unread by the scan,
+/// which `send_namelist_over_http` witnesses from the other side.
 const MIN_CHECKS_PER_BACKEND: &[(&str, usize)] =
-    &[("cpp", 63), ("rust", 126), ("go", 126), ("kotlin", 105)];
+    &[("cpp", 63), ("rust", 119), ("go", 119), ("kotlin", 105)];
 
 fn fixtures_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
