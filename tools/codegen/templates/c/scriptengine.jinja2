@@ -956,6 +956,61 @@
     lua_pop(sm->L, 1);
 {% endmacro %}
 
+{# W3C SCXML C.2: one namelist item, rendered as the form parameter a
+   BasicHTTP POST carries.
+
+   Not `lua_eval_to_wire_string`, and the difference is the whole point.
+   §scxml-6.2.2 defines a namelist item as a DATA MODEL LOCATION and sends
+   the reader to §scxml-5.9.2; it is not an authored expression. Lowering it
+   through `to_lua_expr` asks the ECMAScript frontend whether the name is
+   declared, and the frontend answers by REFUSING the document — so a
+   `<send namelist>` naming something the datamodel does not hold stopped
+   being a runtime error (`error.execution`, §scxml-5.9.2) and became a
+   document this backend will not generate. Measured 2026-08-21: the same
+   backend's SCXMLEventProcessor arm reads the same construct with
+   `lua_eval_namelist_var`'s declared-guard and is right, so one clause had
+   two answers here, and only the arm with a witness (W3C test553) had the
+   right one — test553 declares no `<data>` at all, which is the only reason
+   the frontend stayed silent on it.
+
+   The declared-guard is the same two-source check that macro uses
+   (`_scxml_declared` for the document's own declarations, `rawget` for what
+   the running machine has bound since). A miss leaves `out_ok` false and the
+   caller discards the message, per §scxml-6.2.3. #}
+{% macro lua_namelist_var_to_wire_string(var_name, out_buf, out_cap, out_ok) %}
+    {{ out_ok }} = false;
+    {{ out_buf }}[0] = '\0';
+    if (luaL_dostring(sm->L,
+        "if not _scxml_declared['{{ var_name | escape_c }}'] and "
+          "rawget(_G, '{{ var_name | escape_c }}') == nil then "
+          "error('namelist variable not declared: {{ var_name | escape_c }}') "
+        "end\n"
+        "local v = ({{ var_name | escape_c }})\n"
+        "if v == nil then return '' end\n"
+        "local t = type(v)\n"
+        "if t == 'string' then return v end\n"
+        "if t == 'boolean' then return tostring(v) end\n"
+        "if t == 'number' then\n"
+        "  local i = math.tointeger(v)\n"
+        "  if i ~= nil then return tostring(i) end\n"
+        "  return tostring(v)\n"
+        "end\n"
+        "if t == 'table' then return JSON.stringify(v) end\n"
+        "return tostring(v)") == 0) {
+        size_t _wire_len = 0u;
+        const char *_wire_str = lua_tolstring(sm->L, -1, &_wire_len);
+        if (_wire_str != NULL) {
+            if (_wire_len >= (size_t)({{ out_cap }})) {
+                _wire_len = (size_t)({{ out_cap }}) - 1u;
+            }
+            memcpy({{ out_buf }}, _wire_str, _wire_len);
+            {{ out_buf }}[_wire_len] = '\0';
+            {{ out_ok }} = true;
+        }
+    }
+    lua_pop(sm->L, 1);
+{% endmacro %}
+
 {# W3C SCXML 6.2 (test175): evaluate `<send delayexpr="...">` and parse the
    resulting string into milliseconds, mirroring cpp
    `SendSchedulingHelper::parseDelayString`. Grammar (parser.rs:2799):

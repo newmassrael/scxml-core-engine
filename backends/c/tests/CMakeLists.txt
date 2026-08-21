@@ -681,6 +681,46 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML C.2 + 6.2.3: a `<send namelist>` that crosses BasicHTTP. The
+    # IRP corpus states both claims and measures neither — test518's verdict is
+    # `<transition event="test" target="pass"/>`, which passes on arrival
+    # whatever the form carried, and no IRP document reads a namelist back out
+    # of an HTTP payload at all. This backend answered the discard clause twice:
+    # the SCXMLEventProcessor arm with `lua_eval_namelist_var`'s declared-guard
+    # (right, and witnessed by test553) and the BasicHTTP arm through the
+    # ECMAScript frontend, which refused the document instead of raising
+    # `error.execution` at run time. test553 declares no `<data>`, so the
+    # frontend stayed silent on it and the split survived.
+    sce_generate_static_integration_c_test(send_namelist_over_http "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_send_namelist_over_http
+        integration/test_send_namelist_over_http.c
+        ${INTEGRATION_C_TEST_send_namelist_over_http_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_send_namelist_over_http PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_send_namelist_over_http PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_send_namelist_over_http PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_send_namelist_over_http
+        COMMAND sce_c_integration_send_namelist_over_http
+    )
+    # The same listener the C11 W3C BasicHTTP fixtures use: the document
+    # addresses its send through `_ioprocessors['basichttp'].location`, which
+    # `_init_with_basic_http` publishes, so bind address and published address
+    # are one fact rather than two literals that have to agree.
+    set_tests_properties(c11_integration_send_namelist_over_http PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+        FIXTURES_REQUIRED w3c_c_http_server
+    )
+
     # W3C SCXML 3.12.2: the processor raises its own failures as `error.*` on the
     # internal queue, and the clause says they are ignored when nothing matches
     # them. Ignoring them is the clause; being unable to say it happened is not.
