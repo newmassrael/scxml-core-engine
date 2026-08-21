@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
-// template-hash: 2531476627eb1f2b85917395efe91d1b55da71c6abf9c48b9fabdfd63b215bfa
+// template-hash: 45fa83625e6b8ed5f1d3803a56ad41a23f2d14f770e66b07d9e986dd8b492ac0
 // generated-at: 0
 
 
@@ -108,8 +108,9 @@ type NestedFinalNotTerminalPolicy struct {
 	ParentExternalQueue chan sce.ParentEvent
 	InvokeID           string
 	ChildSessionID     string
-	// W3C SCXML 6.4.1: Deferred params from parent invoke (applied after datamodel init)
-	pendingParams      map[string]string
+	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
+	// this machine's datamodel init so they override its `<data>` defaults.
+	pendingParams      map[string]interface{}
 }
 
 // NewNestedFinalNotTerminalPolicy creates a new policy with default values.
@@ -124,8 +125,8 @@ func NewNestedFinalNotTerminalPolicy() NestedFinalNotTerminalPolicy {
 // No script engine needed for this state machine.
 func (p *NestedFinalNotTerminalPolicy) InitializeDataModel(eng *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {}
 
-// SetParamInScriptEngine is a no-op for state machines without script engine.
-func (p *NestedFinalNotTerminalPolicy) SetParamInScriptEngine(name, expr string) {}
+// SetParamValueInScriptEngine is a no-op for state machines without script engine.
+func (p *NestedFinalNotTerminalPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
 
 
 // ExecutePendingInvokes is a no-op (no invokes in this SM).

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5008f21a462556c3f5bc28f70b0c8eb6b288ae4de5066bda7215f55d3830bfd1
-// template-hash: 2531476627eb1f2b85917395efe91d1b55da71c6abf9c48b9fabdfd63b215bfa
+// source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
+// template-hash: 45fa83625e6b8ed5f1d3803a56ad41a23f2d14f770e66b07d9e986dd8b492ac0
 // generated-at: 0
 
 
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine
+// SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
 
 package invoke_param_seeds_declared_child_data
 
@@ -50,15 +50,18 @@ type InvokeParamSeedsDeclaredChildDataState int
 const (
 	InvokeParamSeedsDeclaredChildDataStateFailChildEvaluatedTheExpression InvokeParamSeedsDeclaredChildDataState = 0
 	InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost InvokeParamSeedsDeclaredChildDataState = 1
-	InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost InvokeParamSeedsDeclaredChildDataState = 2
-	InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost InvokeParamSeedsDeclaredChildDataState = 3
-	InvokeParamSeedsDeclaredChildDataStateFailShadowSeedLost InvokeParamSeedsDeclaredChildDataState = 4
-	InvokeParamSeedsDeclaredChildDataStateFailUnmatchedParamEnteredTheChild InvokeParamSeedsDeclaredChildDataState = 5
-	InvokeParamSeedsDeclaredChildDataStateNamelistPhase InvokeParamSeedsDeclaredChildDataState = 6
-	InvokeParamSeedsDeclaredChildDataStatePass InvokeParamSeedsDeclaredChildDataState = 7
-	InvokeParamSeedsDeclaredChildDataStateShadowed InvokeParamSeedsDeclaredChildDataState = 8
-	InvokeParamSeedsDeclaredChildDataStateSoleName InvokeParamSeedsDeclaredChildDataState = 9
-	InvokeParamSeedsDeclaredChildDataStateUnmatched InvokeParamSeedsDeclaredChildDataState = 10
+	InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamCollapsed InvokeParamSeedsDeclaredChildDataState = 2
+	InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost InvokeParamSeedsDeclaredChildDataState = 3
+	InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost InvokeParamSeedsDeclaredChildDataState = 4
+	InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost InvokeParamSeedsDeclaredChildDataState = 5
+	InvokeParamSeedsDeclaredChildDataStateFailShadowSeedLost InvokeParamSeedsDeclaredChildDataState = 6
+	InvokeParamSeedsDeclaredChildDataStateFailUnmatchedParamEnteredTheChild InvokeParamSeedsDeclaredChildDataState = 7
+	InvokeParamSeedsDeclaredChildDataStateInfinite InvokeParamSeedsDeclaredChildDataState = 8
+	InvokeParamSeedsDeclaredChildDataStateNamelistPhase InvokeParamSeedsDeclaredChildDataState = 9
+	InvokeParamSeedsDeclaredChildDataStatePass InvokeParamSeedsDeclaredChildDataState = 10
+	InvokeParamSeedsDeclaredChildDataStateShadowed InvokeParamSeedsDeclaredChildDataState = 11
+	InvokeParamSeedsDeclaredChildDataStateSoleName InvokeParamSeedsDeclaredChildDataState = 12
+	InvokeParamSeedsDeclaredChildDataStateUnmatched InvokeParamSeedsDeclaredChildDataState = 13
 )
 
 func (s InvokeParamSeedsDeclaredChildDataState) String() string {
@@ -67,6 +70,10 @@ func (s InvokeParamSeedsDeclaredChildDataState) String() string {
 		return "failChildEvaluatedTheExpression"
 	case InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost:
 		return "failDeclaredParamLost"
+	case InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamCollapsed:
+		return "failInfiniteParamCollapsed"
+	case InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost:
+		return "failInfiniteParamLost"
 	case InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost:
 		return "failNamelistValueLost"
 	case InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost:
@@ -75,6 +82,8 @@ func (s InvokeParamSeedsDeclaredChildDataState) String() string {
 		return "failShadowSeedLost"
 	case InvokeParamSeedsDeclaredChildDataStateFailUnmatchedParamEnteredTheChild:
 		return "failUnmatchedParamEnteredTheChild"
+	case InvokeParamSeedsDeclaredChildDataStateInfinite:
+		return "infinite"
 	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
 		return "namelistPhase"
 	case InvokeParamSeedsDeclaredChildDataStatePass:
@@ -99,12 +108,13 @@ const (
 	InvokeParamSeedsDeclaredChildDataEventCancelInvoke InvokeParamSeedsDeclaredChildDataEvent = 0
 	InvokeParamSeedsDeclaredChildDataEventDoneInvoke InvokeParamSeedsDeclaredChildDataEvent = 1
 	InvokeParamSeedsDeclaredChildDataEventErrorExecution InvokeParamSeedsDeclaredChildDataEvent = 2
-	InvokeParamSeedsDeclaredChildDataEventSeedLeaked InvokeParamSeedsDeclaredChildDataEvent = 3
-	InvokeParamSeedsDeclaredChildDataEventSeedMissing InvokeParamSeedsDeclaredChildDataEvent = 4
-	InvokeParamSeedsDeclaredChildDataEventSeedOk InvokeParamSeedsDeclaredChildDataEvent = 5
-	InvokeParamSeedsDeclaredChildDataEventSeedShadowed InvokeParamSeedsDeclaredChildDataEvent = 6
+	InvokeParamSeedsDeclaredChildDataEventSeedCollapsed InvokeParamSeedsDeclaredChildDataEvent = 3
+	InvokeParamSeedsDeclaredChildDataEventSeedLeaked InvokeParamSeedsDeclaredChildDataEvent = 4
+	InvokeParamSeedsDeclaredChildDataEventSeedMissing InvokeParamSeedsDeclaredChildDataEvent = 5
+	InvokeParamSeedsDeclaredChildDataEventSeedOk InvokeParamSeedsDeclaredChildDataEvent = 6
+	InvokeParamSeedsDeclaredChildDataEventSeedShadowed InvokeParamSeedsDeclaredChildDataEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokeParamSeedsDeclaredChildDataEventNull InvokeParamSeedsDeclaredChildDataEvent = 7
+	InvokeParamSeedsDeclaredChildDataEventNull InvokeParamSeedsDeclaredChildDataEvent = 8
 )
 
 func (e InvokeParamSeedsDeclaredChildDataEvent) String() string {
@@ -115,6 +125,8 @@ func (e InvokeParamSeedsDeclaredChildDataEvent) String() string {
 		return "done.invoke"
 	case InvokeParamSeedsDeclaredChildDataEventErrorExecution:
 		return "error.execution"
+	case InvokeParamSeedsDeclaredChildDataEventSeedCollapsed:
+		return "seed.collapsed"
 	case InvokeParamSeedsDeclaredChildDataEventSeedLeaked:
 		return "seed.leaked"
 	case InvokeParamSeedsDeclaredChildDataEventSeedMissing:
@@ -168,12 +180,15 @@ type InvokeParamSeedsDeclaredChildDataPolicy struct {
 	pendingDoneInvokeInvUnmatched bool
 	childInvNamelist sce.ChildEngine
 	pendingDoneInvokeInvNamelist bool
+	childInvInfinite sce.ChildEngine
+	pendingDoneInvokeInvInfinite bool
 	// W3C SCXML 6.4: Parent communication
 	ParentExternalQueue chan sce.ParentEvent
 	InvokeID           string
 	ChildSessionID     string
-	// W3C SCXML 6.4.1: Deferred params from parent invoke (applied after datamodel init)
-	pendingParams      map[string]string
+	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
+	// this machine's datamodel init so they override its `<data>` defaults.
+	pendingParams      map[string]interface{}
 }
 
 // NewInvokeParamSeedsDeclaredChildDataPolicy creates a new policy with default values.
@@ -279,15 +294,15 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) InitializeDataModel(eng *sce.E
 
 
 
-	// W3C SCXML 6.4.1: Apply deferred params from parent invoke (override defaults, skip undeclared)
+	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
+	// `<data>` default this block just seeded, and only for a name the child
+	// declares ("if the names do not match, the Processor MUST NOT add the
+	// value ... to the invoked session's data model"). `HasVariable` is that
+	// filter, and it is this channel's only copy of the rule.
 	if len(p.pendingParams) > 0 {
-		for paramName, paramExpr := range p.pendingParams {
+		for paramName, paramValue := range p.pendingParams {
 			if engine.HasVariable(sessionID, paramName) {
-				if val, err := engine.EvaluateExpression(sessionID, paramExpr); err == nil {
-					_ = engine.SetVariable(sessionID, paramName, val)
-				} else {
-					_ = engine.SetVariable(sessionID, paramName, paramExpr)
-				}
+				_ = engine.SetVariable(sessionID, paramName, paramValue)
 			}
 		}
 		p.pendingParams = nil
@@ -365,13 +380,21 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) getVariable(name string) inter
 	return result
 }
 
-// SetParamInScriptEngine stores a parameter for deferred application after datamodel init (W3C SCXML 6.4.1).
-// Params are applied at the end of InitializeDataModel, overriding defaults only for declared vars.
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetParamInScriptEngine(name, expr string) {
+// SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
+// application after datamodel init (§scxml-6.4.3).
+//
+// Params are applied at the end of InitializeDataModel, overriding the
+// `<data>` default only for names the child declares. The value crosses as a
+// value: this took the parent's value rendered as Lua source and
+// re-evaluated it here until 2026-08-21, which survived every value a test
+// had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
+// non-finite number as `+Inf`, which is not a Lua expression, so an
+// `<invoke>` `<param expr="1/0"/>` arrived as nothing at all.
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetParamValueInScriptEngine(name string, value interface{}) {
 	if p.pendingParams == nil {
-		p.pendingParams = make(map[string]string)
+		p.pendingParams = make(map[string]interface{})
 	}
-	p.pendingParams[name] = expr
+	p.pendingParams[name] = value
 }
 
 
@@ -388,6 +411,78 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
+		if strings.Contains(pending.InvokeID, ".inv_infinite") {
+
+			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
+			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
+
+			// W3C SCXML 6.4: Create child state machine
+			childPolicy := NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy()
+			childPolicy.ScriptEngine = p.ScriptEngine
+			parentQueue := make(chan sce.ParentEvent, 100)
+			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.InvokeID = pending.InvokeID
+			childPolicy.ChildSessionID = childSessionID
+			// W3C SCXML C.1: the child adopts the id its parent recorded for
+			// it. The parent mints `parentSession.invokeId` and keys
+			// `activeInvokes` on it, so an event from this child reaches the
+			// parent carrying that id as its origin; if the child also minted
+			// an id of its own, the location it publishes in `_ioprocessors`
+			// and the origin the parent sees would be two names for one
+			// session that can never be compared — which is exactly what C.1
+			// requires of them.
+			childPolicy.SessionID = childSessionID
+
+
+			// W3C SCXML 6.4.1: Pass params to child datamodel before initialization
+			{
+				p.ensureScriptEngine()
+				se := p.ScriptEngine
+				if val, err := se.EvaluateExpression(p.SessionID, `(1 / 0)`); err == nil {
+					// §scxml-6.4.3: the VALUE of the param element becomes the
+					// child `<data>`'s initial value.
+					childPolicy.SetParamValueInScriptEngine("seen", val)
+				}
+			}
+
+			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
+			p.activeInvokes["inv_infinite"] = &sce.ChildSession{
+				SessionID:       childSessionID,
+				InvokeID:        "inv_infinite",
+				ParentSessionID: p.SessionID,
+				Autoforward:     false,
+				FinalizeScript:  ``,
+			}
+
+			childEngine := sce.NewEngine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent](&childPolicy)
+			// §scxml-6.4: the child's delayed sends are measured against the
+			// same clock as ours. A child reading its own would start its
+			// origin at construction time, so <send delay="100ms"> on either
+			// side of the boundary would mean two different absolute instants —
+			// and on a host-owned clock the child would not move at all,
+			// because the host advances the engine it holds, not the ones that
+			// engine invoked.
+			childEngine.SetClock(engine.Clock())
+			childEngine.SetCompletionCallback(func() {})
+			childEngine.Initialize()
+
+			// W3C SCXML 6.4: Store child and create wrapper
+			wrapper := &childEngineWrapperInvInfinite{engine: childEngine, policy: &childPolicy}
+			p.childInvInfinite = wrapper
+
+			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
+			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "inv_infinite", engine)
+
+			// W3C SCXML 6.4: Check if child completed during initialize
+			if wrapper.IsInFinalState() {
+				p.pendingDoneInvokeInvInfinite = true
+				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
+				// and the Rust raise_done_invoke(donedata) 3-arg signature.
+				sce.RaiseDoneInvoke("inv_infinite", wrapper.DonedataAtFinal(), engine)
+			}
+			continue
+		}
 		if strings.Contains(pending.InvokeID, ".inv_namelist") {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
@@ -427,9 +522,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			{
 				se := p.ScriptEngine
 				if val, err := se.EvaluateExpression(p.SessionID, "token"); err == nil {
-					// The child seeds this by evaluating source, so the
-					// spelling is the engine's — not the value's.
-					childPolicy.SetParamInScriptEngine("token", se.ToScriptLiteral(val))
+					// §scxml-6.4.1: "the value stored at the location is the
+					// value" — so the value crosses, not a rendering of it.
+					childPolicy.SetParamValueInScriptEngine("token", val)
 				}
 			}
 
@@ -500,7 +595,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				if val, err := se.EvaluateExpression(p.SessionID, `token`); err == nil {
-					childPolicy.SetParamInScriptEngine("seen", se.ToScriptLiteral(val))
+					// §scxml-6.4.3: the VALUE of the param element becomes the
+					// child `<data>`'s initial value.
+					childPolicy.SetParamValueInScriptEngine("seen", val)
 				}
 			}
 
@@ -570,7 +667,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				if val, err := se.EvaluateExpression(p.SessionID, `only_here`); err == nil {
-					childPolicy.SetParamInScriptEngine("seen", se.ToScriptLiteral(val))
+					// §scxml-6.4.3: the VALUE of the param element becomes the
+					// child `<data>`'s initial value.
+					childPolicy.SetParamValueInScriptEngine("seen", val)
 				}
 			}
 
@@ -640,10 +739,14 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				if val, err := se.EvaluateExpression(p.SessionID, `"carried"`); err == nil {
-					childPolicy.SetParamInScriptEngine("declared", se.ToScriptLiteral(val))
+					// §scxml-6.4.3: the VALUE of the param element becomes the
+					// child `<data>`'s initial value.
+					childPolicy.SetParamValueInScriptEngine("declared", val)
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"leaked"`); err == nil {
-					childPolicy.SetParamInScriptEngine("nowhere", se.ToScriptLiteral(val))
+					// §scxml-6.4.3: the VALUE of the param element becomes the
+					// child `<data>`'s initial value.
+					childPolicy.SetParamValueInScriptEngine("nowhere", val)
 				}
 			}
 
@@ -739,6 +842,18 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) TickChildren(engine *sce.Engin
 			sce.RaiseDoneInvoke("inv_namelist", child.DonedataAtFinal(), engine)
 		}
 	}
+	if !p.pendingDoneInvokeInvInfinite && p.childInvInfinite != nil {
+		child := p.childInvInfinite
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_infinite", engine)
+		child.Tick()
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_infinite", engine)
+		if child.IsInFinalState() && !p.pendingDoneInvokeInvInfinite {
+			p.pendingDoneInvokeInvInfinite = true
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("inv_infinite", child.DonedataAtFinal(), engine)
+		}
+	}
 }
 
 
@@ -776,6 +891,12 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) DeliverToChildSession(childSes
 	if cs, ok := p.activeInvokes["inv_namelist"]; ok && cs.SessionID == childSessionID {
 		if p.childInvNamelist != nil {
 			p.childInvNamelist.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+	}
+	if cs, ok := p.activeInvokes["inv_infinite"]; ok && cs.SessionID == childSessionID {
+		if p.childInvInfinite != nil {
+			p.childInvInfinite.RaiseExternalByName(eventName, eventData)
 			return true
 		}
 	}
@@ -833,6 +954,18 @@ func (w *childEngineWrapperInvNamelist) RaiseExternalByNameWithMeta(name string,
 func (w *childEngineWrapperInvNamelist) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvNamelist) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvNamelist) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+type childEngineWrapperInvInfinite struct {
+	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]
+	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy
+}
+func (w *childEngineWrapperInvInfinite) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvInfinite) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvInfinite) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvInfinite) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvInfinite) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvInfinite) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvInfinite) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvInfinite) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
 
 // ======================================================================
@@ -850,6 +983,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) IsFinalState(state InvokeParam
 	case InvokeParamSeedsDeclaredChildDataStateFailChildEvaluatedTheExpression:
 		return true
 	case InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost:
+		return true
+	case InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamCollapsed:
+		return true
+	case InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost:
 		return true
 	case InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost:
 		return true
@@ -901,21 +1038,27 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) IsDescendantOf(desc, anc Invok
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetDocumentOrder(state InvokeParamSeedsDeclaredChildDataState) int {
 	switch state {
 	case InvokeParamSeedsDeclaredChildDataStateFailChildEvaluatedTheExpression:
-		return 5
-	case InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost:
-		return 9
-	case InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost:
-		return 10
-	case InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost:
-		return 7
-	case InvokeParamSeedsDeclaredChildDataStateFailShadowSeedLost:
 		return 6
-	case InvokeParamSeedsDeclaredChildDataStateFailUnmatchedParamEnteredTheChild:
+	case InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost:
+		return 10
+	case InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamCollapsed:
+		return 13
+	case InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost:
+		return 12
+	case InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost:
+		return 11
+	case InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost:
 		return 8
+	case InvokeParamSeedsDeclaredChildDataStateFailShadowSeedLost:
+		return 7
+	case InvokeParamSeedsDeclaredChildDataStateFailUnmatchedParamEnteredTheChild:
+		return 9
+	case InvokeParamSeedsDeclaredChildDataStateInfinite:
+		return 4
 	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
 		return 3
 	case InvokeParamSeedsDeclaredChildDataStatePass:
-		return 4
+		return 5
 	case InvokeParamSeedsDeclaredChildDataStateShadowed:
 		return 0
 	case InvokeParamSeedsDeclaredChildDataStateSoleName:
@@ -940,6 +1083,8 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetEventFromName(name string) 
 		return InvokeParamSeedsDeclaredChildDataEventDoneInvoke, true
 	case "error.execution":
 		return InvokeParamSeedsDeclaredChildDataEventErrorExecution, true
+	case "seed.collapsed":
+		return InvokeParamSeedsDeclaredChildDataEventSeedCollapsed, true
 	case "seed.leaked":
 		return InvokeParamSeedsDeclaredChildDataEventSeedLeaked, true
 	case "seed.missing":
@@ -1079,15 +1224,25 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ClearEventMetadata() {
 
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
-//line invoke_param_seeds_declared_child_data.scxml:78
+//line invoke_param_seeds_declared_child_data.scxml:84
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state InvokeParamSeedsDeclaredChildDataState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], pathChild *InvokeParamSeedsDeclaredChildDataState) {
 	// Only a `<parallel>` machine descends into defaults here, so a machine
 	// without one has nothing to tell an ancestor entry from a target entry.
 	_ = pathChild
 	p.ensureScriptEngine()
 	switch state {
+	case InvokeParamSeedsDeclaredChildDataStateInfinite:
+		//line invoke_param_seeds_declared_child_data.scxml:235
+		// W3C SCXML 6.4: Defer invoke execution until macrostep end
+		{
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_infinite", "infinite", sce.NextInvokeCounter())
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
+				InvokeID: generatedInvokeID,
+				State:    InvokeParamSeedsDeclaredChildDataStateInfinite,
+			})
+		}
 	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
-		//line invoke_param_seeds_declared_child_data.scxml:187
+		//line invoke_param_seeds_declared_child_data.scxml:193
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_namelist", "namelistPhase", sce.NextInvokeCounter())
@@ -1097,7 +1252,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateShadowed:
-		//line invoke_param_seeds_declared_child_data.scxml:86
+		//line invoke_param_seeds_declared_child_data.scxml:92
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_shadow", "shadowed", sce.NextInvokeCounter())
@@ -1107,7 +1262,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateSoleName:
-		//line invoke_param_seeds_declared_child_data.scxml:117
+		//line invoke_param_seeds_declared_child_data.scxml:123
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_sole", "soleName", sce.NextInvokeCounter())
@@ -1117,7 +1272,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateUnmatched:
-		//line invoke_param_seeds_declared_child_data.scxml:143
+		//line invoke_param_seeds_declared_child_data.scxml:149
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_unmatched", "unmatched", sce.NextInvokeCounter())
@@ -1132,11 +1287,18 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 }
 
 // ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
-//line invoke_param_seeds_declared_child_data.scxml:78
+//line invoke_param_seeds_declared_child_data.scxml:84
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state InvokeParamSeedsDeclaredChildDataState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], preTransitionActive []InvokeParamSeedsDeclaredChildDataState) {
 	p.ensureScriptEngine()
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
+	case InvokeParamSeedsDeclaredChildDataStateInfinite:
+		sce.CancelInvokesForState(&p.pendingInvokes, InvokeParamSeedsDeclaredChildDataStateInfinite)
+		if p.childInvInfinite != nil {
+			p.childInvInfinite = nil
+		}
+		delete(p.activeInvokes, "inv_infinite")
+		p.pendingDoneInvokeInvInfinite = false
 	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, InvokeParamSeedsDeclaredChildDataStateNamelistPhase)
 		if p.childInvNamelist != nil {
@@ -1175,7 +1337,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 
 // ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
 // Returns true if a transition was taken.
-//line invoke_param_seeds_declared_child_data.scxml:78
+//line invoke_param_seeds_declared_child_data.scxml:84
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) ProcessTransition(currentState *InvokeParamSeedsDeclaredChildDataState, event InvokeParamSeedsDeclaredChildDataEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) bool {
 	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
 	if event != InvokeParamSeedsDeclaredChildDataEventNull {
@@ -1193,13 +1355,46 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ProcessTransition(currentState
 
 
 // tryTransitionInState checks transitions for a single state.
-//line invoke_param_seeds_declared_child_data.scxml:78
+//line invoke_param_seeds_declared_child_data.scxml:84
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) tryTransitionInState(checkState InvokeParamSeedsDeclaredChildDataState, event InvokeParamSeedsDeclaredChildDataEvent, currentState *InvokeParamSeedsDeclaredChildDataState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) bool {
 	switch checkState {
-	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
+	case InvokeParamSeedsDeclaredChildDataStateInfinite:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedOk {
 			*currentState = InvokeParamSeedsDeclaredChildDataStatePass
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateInfinite
+			return true
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == InvokeParamSeedsDeclaredChildDataEventSeedMissing {
+			*currentState = InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateInfinite
+			return true
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == InvokeParamSeedsDeclaredChildDataEventSeedCollapsed {
+			*currentState = InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamCollapsed
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateInfinite
+			return true
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == InvokeParamSeedsDeclaredChildDataEventErrorExecution {
+			*currentState = InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateInfinite
+			return true
+		}
+	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == InvokeParamSeedsDeclaredChildDataEventSeedOk {
+			*currentState = InvokeParamSeedsDeclaredChildDataStateInfinite
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateNamelistPhase
@@ -1317,6 +1512,6 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) tryTransitionInState(checkStat
 }
 
 // ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
-//line invoke_param_seeds_declared_child_data.scxml:78
+//line invoke_param_seeds_declared_child_data.scxml:84
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteTransitionActions(engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) {
 }

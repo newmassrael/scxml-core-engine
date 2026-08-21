@@ -2,6 +2,8 @@
 
 mod invoke_param_seeds_declared_child_data_sm;
 pub use invoke_param_seeds_declared_child_data_sm::*;
+mod invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite_sm;
+pub use invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite_sm::*;
 mod invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist_sm;
 pub use invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist_sm::*;
 mod invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow_sm;
