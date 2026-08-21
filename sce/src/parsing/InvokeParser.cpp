@@ -10,6 +10,58 @@
 #ifndef __EMSCRIPTEN__
 #endif
 
+#include <sstream>
+
+namespace {
+
+/// W3C SCXML 6.5.2: the executable content an EMPTY `<finalize>` stands for.
+/// (The machine-checked citation for this clause in this file is on
+/// `SCE::InvokeParser::parseFinalizeElement`, its only caller.)
+///
+/// The clause spells the behaviour as content rather than as a rule — "update
+/// the corresponding location as if by `<assign>` with any return value that
+/// has a name that matches" — so writing that content is what implements it,
+/// and this engine then runs it through the same action executor an authored
+/// body would.
+///
+/// A `<param>` contributes only when it carries `location`, which is the
+/// clause's own wording ("`<param>` children containing 'location'
+/// attributes"), and the name it matches on is the param's `name` — which may
+/// differ from the location it writes.
+///
+/// Returns an empty string when there is nothing to update, leaving an empty
+/// `<finalize>` on a plain `<invoke>` exactly as inert as the clause does.
+std::string synthesizeAutomaticFinalize(const std::shared_ptr<SCE::IInvokeNode> &invokeNode) {
+    std::ostringstream out;
+
+    auto emit = [&out](const std::string &name, const std::string &location) {
+        // `&amp;&amp;` because this text is re-parsed as XML before it is
+        // executed: a bare `&&` inside `cond` would end the document.
+        out << "<if cond=\"_event.data &amp;&amp; _event.data." << name << " !== undefined\">"
+            << "<assign location=\"" << location << "\" expr=\"_event.data." << name << "\"/>"
+            << "</if>";
+    };
+
+    std::istringstream names(invokeNode->getNamelist());
+    std::string item;
+    while (names >> item) {
+        emit(item, item);
+    }
+
+    for (const auto &param : invokeNode->getParams()) {
+        const std::string &name = std::get<0>(param);
+        const std::string &location = std::get<2>(param);
+        if (name.empty() || location.empty()) {
+            continue;
+        }
+        emit(name, location);
+    }
+
+    return out.str();
+}
+
+}  // namespace
+
 SCE::InvokeParser::InvokeParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
     SCE_LOG_DEBUG("Creating invoke parser");
 }
@@ -112,6 +164,30 @@ void SCE::InvokeParser::parseFinalizeElement(const std::shared_ptr<IXMLElement> 
     // §scxml-6.5.2: Finalize can contain executable content
     // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
     std::string finalizeContent = XmlSerializationHelper::serializeContent(finalizeElement);
+
+    // §scxml-6.5.2: an EMPTY `<finalize>` is not an inert one. With no
+    // executable content the clause requires the automatic update instead —
+    // "for each item in the 'namelist' attribute and each such <param>
+    // element, the Processor MUST update the corresponding location as if by
+    // <assign> with any return value that has a name that matches" — and it
+    // draws the line explicitly: "the automatic update does not take place if
+    // the <finalize> element is absent as opposed to empty".
+    //
+    // The clause names the executable content the empty element stands for, so
+    // synthesising that content is what makes it work here: this engine
+    // re-parses the finalize body as SCXML executable content
+    // (`StateMachine.cpp`), so an `<if>`/`<assign>` pair runs through the same
+    // action executor an authored body would. The AOT side reaches the same
+    // answer in `sce-build`'s parser, in JavaScript rather than XML, because
+    // that is the form its `finalize_content` carries.
+    //
+    // "With ANY return value that has a name that matches" is a condition: an
+    // event carrying no such name must leave the location alone, which is why
+    // each assignment is guarded rather than unconditional.
+    if (finalizeContent.find_first_not_of(" \t\r\n") == std::string::npos) {
+        finalizeContent = synthesizeAutomaticFinalize(invokeNode);
+    }
+
     invokeNode->setFinalize(finalizeContent);
 
     SCE_LOG_DEBUG("Finalize element parsed for invoke: {}, content: '{}'", invokeNode->getId(), finalizeContent);

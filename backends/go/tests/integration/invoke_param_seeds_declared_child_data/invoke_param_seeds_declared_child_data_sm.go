@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: 84a841eae761d6fbf94d15cd646ae14f47646822f90559441b47e8f14bddfb19
+// template-hash: f7291ab6d7896ee95dd448a8f7fc2759f6a0259c69bcc8f54f868651f4b8fe72
 // generated-at: 0
 
 
@@ -464,7 +464,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 				InvokeID:        "inv_infinite",
 				ParentSessionID: p.SessionID,
 				Autoforward:     false,
-				FinalizeScript:  ``,
+				FinalizeScript:  "",
 			}
 
 			childEngine := sce.NewEngine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent](&childPolicy)
@@ -548,7 +548,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 				InvokeID:        "inv_namelist",
 				ParentSessionID: p.SessionID,
 				Autoforward:     false,
-				FinalizeScript:  ``,
+				FinalizeScript:  "",
 			}
 
 			childEngine := sce.NewEngine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent](&childPolicy)
@@ -633,7 +633,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 				InvokeID:        "inv_shadow",
 				ParentSessionID: p.SessionID,
 				Autoforward:     false,
-				FinalizeScript:  ``,
+				FinalizeScript:  "",
 			}
 
 			childEngine := sce.NewEngine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent](&childPolicy)
@@ -718,7 +718,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 				InvokeID:        "inv_sole",
 				ParentSessionID: p.SessionID,
 				Autoforward:     false,
-				FinalizeScript:  ``,
+				FinalizeScript:  "",
 			}
 
 			childEngine := sce.NewEngine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent](&childPolicy)
@@ -821,7 +821,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 				InvokeID:        "inv_unmatched",
 				ParentSessionID: p.SessionID,
 				Autoforward:     false,
-				FinalizeScript:  ``,
+				FinalizeScript:  "",
 			}
 
 			childEngine := sce.NewEngine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent](&childPolicy)

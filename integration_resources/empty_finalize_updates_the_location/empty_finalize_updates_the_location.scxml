@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.5.2: what an EMPTY `<finalize>` does, and what an absent one
+     does not.
+
+     The clause draws the distinction itself, in the one sentence that makes
+     the empty element mean something:
+
+       "If no executable content is specified, the SCXML Processor MUST update
+        the data model each time an event is received from the child process
+        ... for each item in the 'namelist' attribute and each such <param>
+        element, the Processor MUST update the corresponding location as if by
+        <assign> with any return value that has a name that matches ... Note
+        that the automatic update does not take place if the <finalize>
+        element is absent as opposed to empty."
+
+     Nothing in this repository asked it. The whole corpus holds exactly two
+     `<finalize>` documents — W3C test233 (the content runs before transition
+     selection) and test234 (in parallel, only the invoking state's runs) —
+     and zero empty ones, so the automatic update had no witness anywhere.
+     Measured 2026-08-22 it had no implementation either: every engine,
+     Interpreter included, gates the finalize step on the content being
+     non-empty, and the AOT model carried `finalize_content: String` with no
+     way to tell an empty element from a missing one. The clause was
+     unrepresentable rather than merely unimplemented.
+
+     Two phases, deliberately the same shape except for the one element under
+     test, so a failure names which half broke:
+
+       an empty <finalize> updates the location
+         `<invoke namelist="tally">` sends the parent's `tally` to the child;
+         the child answers with `tally` in its payload; the empty
+         `<finalize/>` must write that value back. Reaching `failNotUpdated`
+         means the empty element was treated as an absent one.
+
+       an absent <finalize> does not
+         The same invoke, the same namelist, the same answer — and no
+         `<finalize>` element. `guard` must still hold the value the parent
+         set, because the clause's note is a prohibition, not an omission.
+         Reaching `failUpdatedWithoutFinalize` means the automatic update was
+         wired to the namelist rather than to the empty element.
+
+     The two invokes are sequential rather than parallel: §scxml-6.5 says
+     "only the finalize code in the original invoking state is executed", and
+     running them at once would let that clause decide the verdict instead of
+     this one. W3C test234 owns the parallel axis.
+
+     The children answer from a `<transition>` body rather than `<onentry>`
+     for the reason `invoke_param_error_starts_the_child` records: C11 seeds an
+     invoke's params after `_init_with_parent`, which has already run the
+     child's `<onentry>`, and that ordering is a separate open debt.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="emptyPhase"
+       name="empty_finalize_updates_the_location">
+
+    <datamodel>
+        <!-- Sent to the first child by `namelist`, and the location the empty
+             `<finalize>` must write back into. -->
+        <data id="tally" expr="1"/>
+        <!-- The same axis under an ABSENT `<finalize>`. A second name rather
+             than reusing `tally`, so the second phase cannot pass on a value
+             the first phase happened to leave behind. -->
+        <data id="guard" expr="1"/>
+        <!-- The third phase's location. Its value has to be one no other
+             phase writes, so "it kept what the parent set" is a claim about
+             this phase alone. -->
+        <data id="keeper" expr="3"/>
+    </datamodel>
+
+    <!-- W3C SCXML 6.5.2: the empty element's automatic update. -->
+    <state id="emptyPhase">
+        <onentry>
+            <!-- A child that never answers must reach a verdict rather than
+                 hang: without a clock this phase is a stall, not a result. -->
+            <send event="timeoutEmpty" delay="3s"/>
+        </onentry>
+
+        <invoke type="scxml" id="inv_empty" namelist="tally">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="answer">
+                    <datamodel>
+                        <data id="tally"/>
+                    </datamodel>
+                    <state id="answer">
+                        <transition target="done">
+                            <send target="#_parent" event="fromEmptyChild">
+                                <param name="tally" expr="7"/>
+                            </send>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+            <finalize/>
+        </invoke>
+
+        <transition event="fromEmptyChild" cond="tally === 7" target="absentPhase"/>
+        <transition event="fromEmptyChild" target="failNotUpdated"/>
+        <transition event="timeoutEmpty" target="failEmptyChildSilent"/>
+    </state>
+
+    <!-- W3C SCXML 6.5.2: "the automatic update does not take place if the
+         <finalize> element is absent as opposed to empty." -->
+    <state id="absentPhase">
+        <onentry>
+            <send event="timeoutAbsent" delay="3s"/>
+        </onentry>
+
+        <invoke type="scxml" id="inv_absent" namelist="guard">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="answer">
+                    <datamodel>
+                        <data id="guard"/>
+                    </datamodel>
+                    <state id="answer">
+                        <transition target="done">
+                            <send target="#_parent" event="fromAbsentChild">
+                                <param name="guard" expr="9"/>
+                            </send>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+
+        <transition event="fromAbsentChild" cond="guard !== 1"
+                    target="failUpdatedWithoutFinalize"/>
+        <transition event="fromAbsentChild" target="unmatchedPhase"/>
+        <transition event="timeoutAbsent" target="failAbsentChildSilent"/>
+    </state>
+
+    <!-- W3C SCXML 6.5.2: "with ANY return value that has a NAME THAT MATCHES"
+         is a condition, not an unconditional write. An empty `<finalize>` on
+         an event that carries no such name must leave the location alone.
+
+         Without this phase the clause's guard is unfalsifiable: the two phases
+         above each have a child that answers with exactly the name it was sent,
+         so an unconditional write is indistinguishable from a guarded one. The
+         mutation harness said so — the case that removes the guard SURVIVED
+         until this phase existed. -->
+    <state id="unmatchedPhase">
+        <onentry>
+            <send event="timeoutUnmatched" delay="3s"/>
+        </onentry>
+
+        <invoke type="scxml" id="inv_unmatched" namelist="keeper">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="answer">
+                    <datamodel>
+                        <data id="keeper"/>
+                    </datamodel>
+                    <state id="answer">
+                        <transition target="done">
+                            <!-- Answers with a name the namelist does not
+                                 mention, so `keeper` has no matching return
+                                 value in this event. -->
+                            <send target="#_parent" event="fromUnmatchedChild">
+                                <param name="unrelated" expr="5"/>
+                            </send>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+            <finalize/>
+        </invoke>
+
+        <transition event="fromUnmatchedChild" cond="keeper !== 3"
+                    target="failUnmatchedNameWrote"/>
+        <transition event="fromUnmatchedChild" target="pass"/>
+        <transition event="timeoutUnmatched" target="failUnmatchedChildSilent"/>
+    </state>
+
+    <final id="pass"/>
+    <final id="failNotUpdated"/>
+    <final id="failUpdatedWithoutFinalize"/>
+    <final id="failUnmatchedNameWrote"/>
+    <final id="failEmptyChildSilent"/>
+    <final id="failAbsentChildSilent"/>
+    <final id="failUnmatchedChildSilent"/>
+</scxml>
