@@ -75,6 +75,31 @@ machine with no `lua_State`; and `<send target="#_internal">` with `<param>`
 children fell through to the unenumerated-shape fallback and raised
 `error.execution`.
 
+`send_namelist_over_http` covers the two halves of `<send namelist>` on the
+BasicHTTP wire, both of which the IRP corpus states and neither of which it
+measures. W3C §C.2 asks that a namelist's names and values become POST
+parameters; test518 is titled exactly that and its whole verdict is
+`<transition event="test" target="pass"/>`, which passes on arrival whatever
+the form carried — the Rust channel posted an empty form for as long as that
+was the only witness, because its BasicHTTP arm collected `<param>` alone.
+W3C §6.2.3 discards a message whose arguments would not evaluate and §5.9.2
+reports it; `<param>`'s per-item exception (§5.7.1, "ignore the name and
+value") has no counterpart for a namelist anywhere in the specification, so
+the two clauses are complementary rather than competing. The fixture reads
+its own posted form back out of the echoed event, the way test567 reads a
+`<param>`, and settles the negative half on a delayed `<send>` the way
+test553 does. Adding it found one clause with two implementations inside
+C11: its SCXMLEventProcessor arm reads a namelist item with a declared-guard
+and is right, while its BasicHTTP arm lowered the same item through the
+ECMAScript frontend, which refused the document instead of raising at run
+time — invisible to test553, which declares no `<data>` at all.
+
+Hosted by Rust, Go, Python and C11. Not by C++ or Kotlin, and the reason is
+recorded in `sce-build/tests/integration_stem_registration.rs`: the C++
+integration lane's own server answers a fixed body rather than echoing the
+form, and the Kotlin test tree binds no BasicHTTP harness at all. Both are
+missing harness, not engine behaviour.
+
 The autoforward family is three fixtures on three questions, and each was
 built blind to the other two. `autoforward_done_invoke` pins *which* events
 are forwarded: Appendix D's `mainEventLoop` forwards whatever comes off the

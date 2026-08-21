@@ -170,6 +170,46 @@ fn required_sites(stem: &str) -> Vec<Site> {
             stem.to_string(),
         ),
     ]
+    .into_iter()
+    .filter(|site| !channel_cannot_host(stem, site.channel))
+    .collect()
+}
+
+/// The channels a given stem cannot be asserted in, and why.
+///
+/// The failure message above asks for exactly this: a channel that cannot
+/// host a fixture is a decision with a reason, not an absence. The reason
+/// belongs next to the requirement it suspends, so a reader who meets the
+/// gap meets the measurement that explains it — and so the entry has to be
+/// deleted, deliberately, when the missing piece is built.
+///
+/// Every entry here names a MISSING PIECE OF HARNESS, never a defect in the
+/// engine: a channel whose engine gets the clause wrong must be red, not
+/// exempt.
+fn channel_cannot_host(stem: &str, channel: &str) -> bool {
+    match stem {
+        // W3C SCXML C.2: the fixture posts over BasicHTTP and reads the form
+        // back out of the echoed event, which needs a listener that echoes.
+        //
+        // C++: the integration lane's own server,
+        // `tests/integration/SimpleMockHttpServer.cpp`, answers a fixed body —
+        // `"data": ""` with `"form": {}` — so a document cannot read back what
+        // it posted there. The echoing listener
+        // (`tests/w3c/standalone_http_server.js`) is wired into the W3C lane
+        // only, through `HttpAotTest`; pointing the integration lane at it is
+        // its own piece of work and is open debt, not a property of C++.
+        //
+        // Kotlin: the Kotlin test tree has no BasicHTTP harness at all —
+        // neither an HTTP send callback nor an access-URI setter is bound
+        // anywhere under `backends/kotlin/tests/src` (measured 2026-08-21).
+        // The generated tree is still produced and compiled, which is what the
+        // drift gate checks; it is the assertion that is missing.
+        //
+        // Rust, Go, Python and C11 all host it: each already drives the
+        // echoing listener from its own lane.
+        "send_namelist_over_http" => channel.starts_with("C++") || channel == "Kotlin AOT driver",
+        _ => false,
+    }
 }
 
 /// The driver files a stem is asserted in, for the channels that have one.
