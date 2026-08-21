@@ -58,10 +58,44 @@
          `values.size() > 1` branch publishes the STRING vector and drops the
          typed values it is holding at the same moment. The claim is the array
          AND its element types: `d.length === 2 && d[0] === 1`.
+
+     A fourth phase asks what a `<param>` costs when its expression will not
+     evaluate. W3C SCXML 5.7.1 answers with two halves — "MUST place the
+     error 'error.execution' on the internal event queue and MUST ignore the
+     name and value" — and measurement on 2026-08-21 found five of the seven
+     channels keeping neither, each differently: C++ (both engines), Kotlin
+     and C11 said nothing and shipped a placeholder under the param's name,
+     and Python reported the error but discarded the entire message, so a
+     document that miscomputed one param lost the whole event and stalled
+     with nothing to act on. Rust and Go were already right.
+
+     The clause that governs is 5.7.1 and not 6.2.3's "discard the message":
+     that one is about `<send>`'s own arguments, and reading it over a
+     `<param>` leaves "ignore the name and value" with nothing to mean —
+     there would be no message for the name to be absent from. W3C test343
+     settles it from the other side of the same clause: an illegal `<param>`
+     under `<donedata>` raises `error.execution` AND the `done.state` event
+     still arrives, with empty data. `DoneDataHelper::evaluateParams` had
+     that reading written down all along; the five `<send>` sites had
+     re-derived it and got it wrong.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="ecmascript" initial="awaitChild"
        name="send_param_payload">
+
+    <datamodel>
+        <!-- Read by the fourth phase's `<param expr>`. Indexing `null` is a
+             runtime error in every expression language this corpus runs —
+             a TypeError in ECMAScript, an index-of-nil in Lua — which is
+             what makes one document able to ask all seven channels the
+             same question. -->
+        <data id="nothing" expr="null"/>
+        <!-- Set by the `error.execution` handler below. A counter rather
+             than a state, because the phase has to still be standing when
+             the send's own event arrives: the verdict is about what BOTH
+             queues did, and moving states would answer only the first. -->
+        <data id="sawParamError" expr="0"/>
+    </datamodel>
 
     <state id="awaitChild">
         <invoke type="scxml" id="inv_emitter">
@@ -128,8 +162,47 @@
         <transition event="typed" cond="_event.data.s !== 'kept'" target="failStringType"/>
         <transition event="typed"
                     cond="_event.data.d.length === 2 &amp;&amp; _event.data.d[0] === 1 &amp;&amp; _event.data.d[1] === 2"
-                    target="pass"/>
+                    target="paramErrorPhase"/>
         <transition event="typed" target="failDuplicateParams"/>
+    </state>
+
+    <!-- W3C SCXML 5.7.1: a `<param>` whose expression will not evaluate.
+         Three claims, one send, each with its own verdict state so a failure
+         names which half of the clause broke:
+
+           the failure is reported
+             `error.execution` reaches the internal queue, and it reaches it
+             BEFORE the send's own event, because the clause places it there
+             while the `<send>` is being evaluated. The handler is targetless
+             so this phase is still standing when `withBadParam` arrives —
+             that is what lets one state judge both queues.
+
+           the offending pair is left out
+             not carried with a placeholder value. A receiver that asks for
+             the field has to find nothing, which is what "MUST ignore the
+             name and value" means; four channels answered `""` or `nil`
+             under the name instead, and `=== ''` is what separates those
+             from an absent field in every expression language here.
+
+           the rest of the message still goes
+             `kept` arrives intact and `withBadParam` arrives at all. A
+             channel that discards the whole message reaches no verdict
+             state at all and times out — deliberately, because a stalled
+             machine is exactly what the defect did to a document. -->
+    <state id="paramErrorPhase">
+        <onentry>
+            <send target="#_internal" event="withBadParam">
+                <param name="kept" expr="'here'"/>
+                <param name="broken" expr="nothing.deep"/>
+            </send>
+        </onentry>
+        <transition event="error.execution">
+            <assign location="sawParamError" expr="1"/>
+        </transition>
+        <transition event="withBadParam" cond="sawParamError !== 1" target="failNoParamError"/>
+        <transition event="withBadParam" cond="_event.data.broken === ''" target="failBrokenParamDelivered"/>
+        <transition event="withBadParam" cond="_event.data.kept !== 'here'" target="failSiblingParamLost"/>
+        <transition event="withBadParam" target="pass"/>
     </state>
 
     <final id="pass"/>
@@ -138,4 +211,7 @@
     <final id="failNumberType"/>
     <final id="failStringType"/>
     <final id="failDuplicateParams"/>
+    <final id="failNoParamError"/>
+    <final id="failBrokenParamDelivered"/>
+    <final id="failSiblingParamLost"/>
 </scxml>

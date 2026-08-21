@@ -203,10 +203,22 @@
 				// rendered by the neutral helper — an engine literal would put
 				// this sender's language on the wire.
 				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], sce.ToWireString(httpParamVal))
+			} else {
+				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
+				// reported. The clause names no processor, so the same
+				// document must not go quiet just because this send crosses
+				// HTTP instead of reaching an SCXML session.
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
+{% endif %}
 			}
 {% elif param.location and model.needs_script_engine %}
 			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.location }}`); httpParamErr == nil {
 				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], sce.ToWireString(httpParamVal))
+			} else {
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> location could not be read"))
+{% endif %}
 			}
 {% endif %}
 {% endfor %}

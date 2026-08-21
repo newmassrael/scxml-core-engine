@@ -43,6 +43,12 @@ int main(void) {
     const int pass = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_PASS);
     const int fail_child = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILCHILDPAYLOAD);
     const int fail_internal = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILINTERNALPAYLOAD);
+    const int fail_number = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILNUMBERTYPE);
+    const int fail_string = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILSTRINGTYPE);
+    const int fail_dup = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILDUPLICATEPARAMS);
+    const int fail_no_error = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILNOPARAMERROR);
+    const int fail_broken_sent = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILBROKENPARAMDELIVERED);
+    const int fail_sibling = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILSIBLINGPARAMLOST);
 
     if (!pass) {
         if (fail_child) {
@@ -56,10 +62,40 @@ int main(void) {
                             "`_event.data.carried`. A `<send target=\"#_internal\">` must raise "
                             "its params as event data, not build them and drop them at the "
                             "internal-raise boundary.\n");
+        } else if (fail_number) {
+            fprintf(stderr, "send_param_payload: FAIL — `typed` arrived with `_event.data.n` "
+                            "unequal to 7. `expr=\"7\"` is the Number 7, and a backend that "
+                            "stringifies on the way through delivers \"7\", which `===` finds "
+                            "unequal.\n");
+        } else if (fail_string) {
+            fprintf(stderr, "send_param_payload: FAIL — `typed` arrived with `_event.data.s` "
+                            "unequal to 'kept'. A param that has to be EVALUATED reaches the "
+                            "runtime serialiser, whose string arm must emit the value rather "
+                            "than an engine spelling of it.\n");
+        } else if (fail_dup) {
+            fprintf(stderr, "send_param_payload: FAIL — `typed` did not carry both values of "
+                            "the repeated name `d` with their types. W3C SCXML 6.2 lets a name "
+                            "repeat and every value must be delivered.\n");
+        } else if (fail_no_error) {
+            fprintf(stderr, "send_param_payload: FAIL — `withBadParam` arrived with no "
+                            "`error.execution` before it. W3C SCXML 5.7.1 puts that error on "
+                            "the internal queue while the `<send>` is being evaluated, so it "
+                            "is dequeued first.\n");
+        } else if (fail_broken_sent) {
+            fprintf(stderr, "send_param_payload: FAIL — `_event.data.broken` arrived as the "
+                            "empty string. W3C SCXML 5.7.1 says ignore the name AND the value, "
+                            "so a receiver must find no field at all rather than a placeholder "
+                            "under the name.\n");
+        } else if (fail_sibling) {
+            fprintf(stderr, "send_param_payload: FAIL — `_event.data.kept` did not survive "
+                            "alongside the failed param. One `<param>` that will not evaluate "
+                            "costs its own pair and nothing else.\n");
         } else {
             fprintf(stderr,
-                    "send_param_payload: FAIL — settled in no verdict state, so neither "
-                    "send was judged. Diagnostic: in_PASS=%d in_FAILCHILD=%d "
+                    "send_param_payload: FAIL — settled in no verdict state, so no send was "
+                    "judged: the machine stalled, which is what discarding a whole `<send>` "
+                    "over one unevaluable `<param>` does to a document (W3C SCXML 5.7.1 drops "
+                    "the pair, not the message). Diagnostic: in_PASS=%d in_FAILCHILD=%d "
                     "in_FAILINTERNAL=%d\n",
                     pass, fail_child, fail_internal);
         }

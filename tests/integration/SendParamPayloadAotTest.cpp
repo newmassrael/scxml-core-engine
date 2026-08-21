@@ -52,7 +52,9 @@ TEST(SendParamPayloadAotTest, SendParamsReachEventDataFromChildAndInternalQueue)
     const bool reachedFinal = sm.runUntilCompletion(std::chrono::seconds(3));
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — it never saw "
-                                 "`fromChild` or never saw its own `loopback`";
+                                 "`fromChild`, never saw its own `loopback`, or discarded a whole "
+                                 "`<send>` because one `<param>` would not evaluate (W3C SCXML "
+                                 "5.7.1 drops the pair, not the message)";
     EXPECT_NE(sm.getCurrentState(), SM::State::FailChildPayload)
         << "`fromChild` arrived without `_event.data.value`: a `datamodel=\"null\"` child needs no "
            "script engine, but its `<send>` still has to carry the params it declares. The gate is "
@@ -61,6 +63,27 @@ TEST(SendParamPayloadAotTest, SendParamsReachEventDataFromChildAndInternalQueue)
         << "`loopback` arrived without `_event.data.carried`: a `<send target=\"#_internal\">` must "
            "raise its params as event data, not build them and drop them at the internal-raise "
            "boundary.";
+    EXPECT_NE(sm.getCurrentState(), SM::State::FailNumberType)
+        << "`typed` arrived with `_event.data.n` unequal to 7: `expr=\"7\"` is the Number 7, and a "
+           "backend that stringifies on the way through delivers \"7\", which `===` finds unequal.";
+    EXPECT_NE(sm.getCurrentState(), SM::State::FailStringType)
+        << "`typed` arrived with `_event.data.s` unequal to 'kept': a param that has to be "
+           "EVALUATED reaches the runtime serialiser, whose string arm must emit the value rather "
+           "than an engine spelling of it.";
+    EXPECT_NE(sm.getCurrentState(), SM::State::FailDuplicateParams)
+        << "`typed` did not carry both values of the repeated name `d` with their types: W3C SCXML "
+           "6.2 lets a name repeat and every value must be delivered.";
+    EXPECT_NE(sm.getCurrentState(), SM::State::FailNoParamError)
+        << "`withBadParam` arrived with no `error.execution` before it: W3C SCXML 5.7.1 puts that "
+           "error on the internal queue while the `<send>` is being evaluated, so it is dequeued "
+           "first.";
+    EXPECT_NE(sm.getCurrentState(), SM::State::FailBrokenParamDelivered)
+        << "`_event.data.broken` arrived as the empty string: W3C SCXML 5.7.1 says ignore the name "
+           "AND the value, so a receiver must find no field at all rather than a placeholder under "
+           "the name.";
+    EXPECT_NE(sm.getCurrentState(), SM::State::FailSiblingParamLost)
+        << "`_event.data.kept` did not survive alongside the failed param: one `<param>` that will "
+           "not evaluate costs its own pair and nothing else.";
     EXPECT_EQ(sm.getCurrentState(), SM::State::Pass);
 }
 

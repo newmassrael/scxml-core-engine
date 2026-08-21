@@ -47,6 +47,34 @@ _WHY = {
         "must raise its params as event data, not build them and drop them at the "
         "internal-raise boundary."
     ),
+    "failNumberType": (
+        "`typed` arrived with `_event.data.n` unequal to 7: expr=\"7\" is the Number 7, "
+        "and a backend that stringifies on the way through delivers \"7\", which `===` "
+        "finds unequal."
+    ),
+    "failStringType": (
+        "`typed` arrived with `_event.data.s` unequal to 'kept': a param that has to be "
+        "EVALUATED reaches the runtime serialiser, whose string arm must emit the value "
+        "rather than an engine spelling of it."
+    ),
+    "failDuplicateParams": (
+        "`typed` did not carry both values of the repeated name `d` with their types: "
+        "W3C SCXML 6.2 lets a name repeat and every value must be delivered."
+    ),
+    "failNoParamError": (
+        "`withBadParam` arrived with no `error.execution` before it: W3C SCXML 5.7.1 "
+        "puts that error on the internal queue while the <send> is being evaluated, so "
+        "it is dequeued first."
+    ),
+    "failBrokenParamDelivered": (
+        "`_event.data.broken` arrived as the empty string: 5.7.1 says ignore the name "
+        "AND the value, so a receiver must find no field at all rather than a "
+        "placeholder under the name."
+    ),
+    "failSiblingParamLost": (
+        "`_event.data.kept` did not survive alongside the failed param: one <param> "
+        "that will not evaluate costs its own pair and nothing else."
+    ),
 }
 
 
@@ -61,8 +89,9 @@ def test_send_param_payload_aot() -> None:
 
     assert engine.reached_final, (
         "send_param_payload did not reach a top-level <final> within 100 ms; "
-        f"last leaf={engine.current_state} — the parent never saw `fromChild` or "
-        "never saw its own `loopback`"
+        f"last leaf={engine.current_state} — the parent never saw `fromChild`, never "
+        "saw its own `loopback`, or discarded a whole <send> because one <param> "
+        "would not evaluate (W3C SCXML 5.7.1 drops the pair, not the message)"
     )
     actual = str(engine.current_state)
     assert actual == "pass", (

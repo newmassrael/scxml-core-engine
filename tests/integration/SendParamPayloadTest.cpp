@@ -95,8 +95,10 @@ TEST_F(SendParamPayloadTest, SendParamsReachEventDataFromChildAndInternalQueue) 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 5s — it never saw `fromChild` or "
-                                  << "never saw its own `loopback`";
+    ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 5s — it never saw `fromChild`, "
+                                  << "never saw its own `loopback`, or discarded a whole `<send>` "
+                                  << "because one `<param>` would not evaluate (W3C SCXML 5.7.1 "
+                                  << "drops the pair, not the message)";
 
     const std::string reached = sm->getCurrentState();
     EXPECT_NE(reached, "failChildPayload")
@@ -105,6 +107,24 @@ TEST_F(SendParamPayloadTest, SendParamsReachEventDataFromChildAndInternalQueue) 
     EXPECT_NE(reached, "failInternalPayload")
         << "`loopback` arrived without `_event.data.carried`: a `<send target=\"#_internal\">` must "
         << "raise its params as event data, not build them and drop them at the internal-raise boundary.";
+    EXPECT_NE(reached, "failNumberType")
+        << "`typed` arrived with `_event.data.n` unequal to 7: `expr=\"7\"` is the Number 7, and a "
+        << "backend that stringifies on the way through delivers \"7\", which `===` finds unequal.";
+    EXPECT_NE(reached, "failStringType")
+        << "`typed` arrived with `_event.data.s` unequal to 'kept': a param that has to be "
+        << "EVALUATED reaches the runtime serialiser, whose string arm must emit the value.";
+    EXPECT_NE(reached, "failDuplicateParams")
+        << "`typed` did not carry both values of the repeated name `d` with their types: W3C SCXML "
+        << "6.2 lets a name repeat and every value must be delivered.";
+    EXPECT_NE(reached, "failNoParamError")
+        << "`withBadParam` arrived with no `error.execution` before it: W3C SCXML 5.7.1 puts that "
+        << "error on the internal queue while the `<send>` is being evaluated, so it is dequeued first.";
+    EXPECT_NE(reached, "failBrokenParamDelivered")
+        << "`_event.data.broken` arrived as the empty string: W3C SCXML 5.7.1 says ignore the name "
+        << "AND the value, so a receiver must find no field at all rather than a placeholder.";
+    EXPECT_NE(reached, "failSiblingParamLost")
+        << "`_event.data.kept` did not survive alongside the failed param: one `<param>` that will "
+        << "not evaluate costs its own pair and nothing else.";
     EXPECT_EQ(reached, "pass");
 }
 

@@ -32,7 +32,10 @@
                     // the platform's spelling of the value; this is the document's.
                     httpParams["{{ param.name | escape_kotlin }}"] = listOf(valueToWireString(v))
                 } catch (_: Exception) {
-                    httpParams["{{ param.name | escape_kotlin }}"] = listOf("")
+                    // W3C SCXML 5.7.1: report the failure and omit the name and
+                    // value. The clause names no processor, so a document must
+                    // not go quiet just because this send crosses HTTP.
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
                 }
 {% endif %}
 {% endfor %}

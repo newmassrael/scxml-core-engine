@@ -335,10 +335,13 @@
         """W3C SCXML C.2 — assemble the form-encoded multi-map handed
         to `engine.perform_http_send`. `params_specs` is a sequence of
         `(name, lua_expr)` tuples (one per `<param>`); `namelist` is
-        the whitespace-separated variable list. Eval errors on
-        individual `<param>` skip that param (W3C "best effort"
-        form-encoding contract — the engine does NOT abort the
-        surrounding block for a malformed param)."""
+        the whitespace-separated variable list. Eval errors on an
+        individual `<param>` drop that pair and report it: W3C SCXML
+        5.7.1 asks for both halves — `error.execution` on the internal
+        queue AND the name and value ignored — and it asks for them
+        wherever a `<param>` is evaluated, so the wire this send crosses
+        does not change the answer. The surrounding block is NOT
+        aborted; only the pair is."""
         result = {}
         if namelist:
             for var in namelist.split():
@@ -355,6 +358,9 @@
                     self._session_id, lua_expr
                 )
             except _ScriptError:
+                self._raise_error_execution(
+                    engine, f"<send> <param name='{name}'> expr failed to evaluate"
+                )
                 continue
             # `str(value.to_python())` spelled these in Python — `True`
             # where every other channel writes `true`, `[1, 2]` where the
@@ -390,7 +396,16 @@
         does not run. Mirrors the Rust template's `_send_aborted` flag
         in `tools/codegen/templates/rust/actions/send.rs.jinja2`, but
         unified with the W3C 3.8 block-abort contract every other
-        Python-AOT helper already uses (`_assign`, `_exec`, `_guard`)."""
+        Python-AOT helper already uses (`_assign`, `_exec`, `_guard`).
+
+        A `<param>` is not one of those arguments. W3C SCXML 5.7.1 gives
+        the element its own rule — place `error.execution` on the internal
+        queue "and MUST ignore the name and value" — and that clause has
+        no content at all if the message is discarded, because there is
+        then no message left for the name to be absent from. W3C test343
+        is the fixture that settles it: an illegal `<param>` raises
+        `error.execution` AND the `done.state` event still arrives, with
+        empty data. The message goes; the offending pair does not."""
         if lua_content_expr:
             try:
                 return engine._script_engine.evaluate_expression(
@@ -468,10 +483,14 @@
                 else:
                     marshalled[name].append(_value)
             except _ScriptError:
+                # W3C SCXML 5.7.1: report and drop THIS pair, then carry on
+                # with the rest of the payload. Aborting the block here sent
+                # nothing at all, so a document that miscomputed one param
+                # lost the whole message and stalled with no event to act on.
                 self._raise_error_execution(
                     engine, f"<send> <param name='{name}'> expr failed to evaluate"
                 )
-                raise _ActionAbort
+                continue
         return marshalled
 
     def set_current_event(self, event, metadata) -> None:

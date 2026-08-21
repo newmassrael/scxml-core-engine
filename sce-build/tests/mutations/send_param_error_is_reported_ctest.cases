@@ -1,0 +1,134 @@
+# Mutation cases for §scxml-5.7.1 — what a `<param>` whose expression will
+# not evaluate costs the message it was travelling on.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/send_param_error_is_reported_ctest.cases`.
+#
+# The clause has two halves: "MUST place the error 'error.execution' on the
+# internal event queue" AND "MUST ignore the name and value". Measured
+# 2026-08-21, five of the seven channels kept neither, each in its own way —
+# C++ (both engines), Kotlin and C11 logged nothing a document could read and
+# then wrote a placeholder under the param's name; Python reported the error
+# and discarded the entire message. Rust and Go were already right, which is
+# why they are the shape the rest were brought to.
+#
+# The message is not discarded. §scxml-6.2.3's "discard the message" is about
+# `<send>`'s own arguments, and reading it over a `<param>` leaves "ignore the
+# name and value" with nothing to mean. W3C test343 settles it from the other
+# side of the same clause: an illegal `<param>` under `<donedata>` raises
+# `error.execution` and the `done.state` event still arrives, with empty data.
+# `DoneDataHelper::evaluateParams` had that reading written down all along.
+#
+# The C11 target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree,
+# so the template is what the built binaries carry. The C++ AOT target is a
+# template for the same reason its output is a build product — `--write-deps`
+# makes the generated header depend on every jinja2 file that rendered it, so
+# an edit here reaches the binary the round runs.
+#
+# The Kotlin, Go and Python halves of this axis have no round: the harness
+# reaches cargo and ctest only (open debt M8/N10). Their witness is the same
+# fixture run in their own suites.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_send_param_payload)$'
+mutation_targets sce/src/runtime/ActionExecutorImpl.cpp tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/SendParamPayloadTest.cpp tests/integration/SendParamPayloadAotTest.cpp backends/c/tests/integration/test_send_param_payload.c
+
+# ── C++ Interpreter: the report ────────────────────────────────────
+#
+# Dropping the pair without saying so. The payload still arrives intact
+# minus the failed name, so only `failNoParamError` can see it — which is
+# the point: correctness of the payload was never the half that was missing.
+
+mutation_case "the cpp interpreter drops the failed param without reporting it" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     """                        if (eventRaiser_) {
+                            eventRaiser_->raiseEvent("error.execution", "<send> <param name='" + param.name +
+                                                                            "'> expr failed to evaluate");
+                        }
+                        continue;""",
+     """                        continue;""")
+PY
+
+# ── C++ Interpreter: ignoring the name ─────────────────────────────
+#
+# The shipped behaviour before this axis: the failed reading goes out under
+# the param's name. `error.execution` is still raised, so `failNoParamError`
+# stays quiet and `failBrokenParamDelivered` is the only witness.
+
+mutation_case "the cpp interpreter carries the failed param under its name" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     """                        continue;
+                    }
+                    std::string paramValue =""",
+     """                        evaluatedParams[param.name].push_back("");
+                        continue;
+                    }
+                    std::string paramValue =""")
+PY
+
+# ── C++ AOT: the report ────────────────────────────────────────────
+#
+# One macro serves all five arms of the send template, so removing the raise
+# here removes it from every `<send>` shape the backend emits.
+
+mutation_case "the cpp aot template logs the failed param instead of reporting it" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     """{{ indent }}engine.raise(typename Engine::EventWithMetadata(
+{{ indent }}    Event::Error_execution,
+{{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));""",
+     """{{ indent }}(void)0;""")
+PY
+
+# ── C++ AOT: ignoring the name ─────────────────────────────────────
+
+mutation_case "the cpp aot template carries the failed param under its name" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     """{{ indent }}// W3C SCXML 5.7.1: report the failure and omit the name and value.""",
+     """{{ indent }}params["{{ param.name | escape_cpp }}"].push_back("");""")
+PY
+
+# ── C11: the report ────────────────────────────────────────────────
+
+mutation_case "the c11 template rewinds the failed param without reporting it" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                            "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");""",
+     """                        (void)sm;""")
+PY
+
+# ── C11: the rewind ────────────────────────────────────────────────
+#
+# Without it the buffer keeps `{"broken", ` with no value and no closing
+# brace, so the assembled `_scxml_params(...)` call does not parse and the
+# whole payload comes back empty — `kept` included. `failSiblingParamLost`
+# is what names that: one param that will not evaluate must cost its own
+# pair and nothing else.
+
+mutation_case "the c11 template leaves the half-written pair in the buffer" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """                        _ed_len = _pstart;
+                        {{ csym_prefix }}{{ machine }}_raise_platform_error(""",
+     """                        {{ csym_prefix }}{{ machine }}_raise_platform_error(""")
+PY
+
+# ── C11: the separator ─────────────────────────────────────────────
+#
+# `_ed_any` exists because the rewind made "is a comma due?" a runtime
+# question rather than a document-position one. Answering it before the
+# pair is known to have been written puts a separator in front of the
+# FIRST pair too, so the assembled `_scxml_params(,{...})` does not parse
+# and the whole payload comes back empty — `failSiblingParamLost` again,
+# from the opposite end of the same buffer.
+
+mutation_case "the c11 template decides the separator before the pair is written" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """                    int _pstart = _ed_len;
+                    if (_ed_any && _ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }""",
+     """                    int _pstart = _ed_len;
+                    _ed_any = 1;
+                    if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }""")
+PY

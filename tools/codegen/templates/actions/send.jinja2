@@ -1,6 +1,28 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
+{# W3C SCXML 5.7.1: what a `<param>` whose expression will not evaluate
+   does, written once for the five arms of this template that evaluate one
+   (mesh parent, local parent, BasicHTTP, delayed, immediate).
+
+   The clause has two halves and this file used to keep neither: it logged,
+   which no document can read, and then pushed an empty string under the
+   param's name, which is the opposite of "MUST ignore the name and value" —
+   a receiver testing `typeof _event.data.x === 'undefined'` was told the
+   field is there. W3C test343 fixes the reading: an illegal `<param>` puts
+   `error.execution` on the internal queue AND the event still arrives, with
+   the offending pair absent. The message is not discarded; §6.2.3's
+   "discard the message" governs `<send>`'s own arguments, not its children.
+
+   `indent` is the caller's leading whitespace, because these five arms sit
+   at three different depths. #}
+{% macro param_eval_failed(param, indent) %}
+{{ indent }}// W3C SCXML 5.7.1: report the failure and omit the name and value.
+{{ indent }}SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
+{{ indent }}engine.raise(typename Engine::EventWithMetadata(
+{{ indent }}    Event::Error_execution,
+{{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));
+{% endmacro %}
 {
 {% if action.id %}
 std::string sendId = "{{ action.id }}";
@@ -157,8 +179,7 @@ return;
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
             typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
         } else {
-            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
-            params["{{ param.name | escape_cpp }}"].push_back("");
+{{ param_eval_failed(param, '            ') }}
         }
     }
 {% endif %}
@@ -240,8 +261,7 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
             typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
         } else {
-            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
-            params["{{ param.name | escape_cpp }}"].push_back("");
+{{ param_eval_failed(param, '            ') }}
         }
     }
 {% endif %}
@@ -400,7 +420,7 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             httpParams["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
         } else {
-            httpParams["{{ param.name | escape_cpp }}"].push_back("");
+{{ param_eval_failed(param, '            ') }}
         }
     }
 {% endif %}
@@ -528,8 +548,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
             typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
         } else {
-            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
-            params["{{ param.name | escape_cpp }}"].push_back("");
+{{ param_eval_failed(param, '            ') }}
         }
     }
 {% elif param.is_static_literal %}
@@ -607,8 +626,7 @@ std::map<std::string, std::vector<ScriptValue>> typedParams;
         params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
         typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
     } else {
-        SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
-        params["{{ param.name | escape_cpp }}"].push_back("");
+{{ param_eval_failed(param, '        ') }}
     }
 }
 {% elif param.is_static_literal %}
