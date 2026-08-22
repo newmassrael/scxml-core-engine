@@ -44,7 +44,7 @@ func TestSendNamelistReachesTheFormAndABrokenItemDiscardsTheMessage(t *testing.T
 	policy := NewSendNamelistOverHttpPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
-	policy.BasicHTTPAccessURI = scegotest.BasicHTTPAccessURI
+	policy.BasicHTTPAccessURI = scegotest.BasicHTTPAccessURI()
 	engine := sce.NewEngine[SendNamelistOverHttpState, SendNamelistOverHttpEvent](&policy)
 	scegotest.SetupHTTPTest(engine)
 	engine.Initialize()
