@@ -122,7 +122,7 @@ GATES: dict[str, dict] = {
                         "(`debug_only_codegen_builds_drop_the_stale_release_binary` "
                         "counts those steps), so there is no verdict here "
                         "for a workflow to mirror.",
-        "cost_s": 9,
+        "cost_s": 19,
         "summary": "build target/debug/sce-codegen",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
@@ -184,7 +184,14 @@ GATES: dict[str, dict] = {
     "mutation-cases": {
         "workflows": ["tree-hygiene.yml"],
         "runner_workflow": True,
-        "cost_s": 33,
+        "ci_only": "168s checking 500 cases across 72 casefiles, and it is "
+                   "ALWAYS-ON — its workflow is unfiltered, so every push paid "
+                   "it. Declared 33s until it was measured in a run of its "
+                   "own: that reading came from a full sweep where earlier "
+                   "gates had warmed everything, and a push runs a subset "
+                   "where each gate pays its own warm-up. tree-hygiene.yml is "
+                   "unfiltered too, so CI runs it on every push regardless.",
+        "cost_s": 168,
         "summary": "every mutation casefile still applies",
     },
     # The other half of the same corpus: whether a case still turns its suite
@@ -410,7 +417,13 @@ GATES: dict[str, dict] = {
         # about the set, and the self-test below holds the delegation.
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 4,
+        "ci_only": "99s against a declared 4s — the widest gap in the table, "
+                   "and the clearest case of a warmed-sweep reading being "
+                   "mistaken for what a push pays. It generates from every "
+                   "authored document under examples/ and integration_"
+                   "resources/, which is work proportional to the corpus. "
+                   "example-codegen.yml runs it.",
+        "cost_s": 99,
         "summary": "example SCXML codegen smoke + authored-document lint",
     },
     "ledger-citations": {
@@ -427,7 +440,13 @@ GATES: dict[str, dict] = {
         # 0.29, wire 0.40, bytesguard 0.45 — 2.6s in total). The whole-tree
         # existence sweep, 4.4s over 6357 files, is now the larger half.
         # `cost_s` stays at the `--measure` figure the runner compares against.
-        "cost_s": 15,
+        "ci_only": "121s across five workspaces. The registry's own header "
+                   "already told this story once — the hook's prose called it "
+                   "sub-second per workspace while a measurement put the whole "
+                   "gate at 157s — and the 15s it was declared at was the same "
+                   "mistake in the other direction, read off a warmed full "
+                   "sweep. spec-citations.yml runs it.",
+        "cost_s": 121,
         "summary": "spec-citation ledgers, 5 workspaces",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
@@ -1172,9 +1191,14 @@ def self_test(repo_root: Path) -> int:
     # back into exactly the pushes that are already the longest.
     check("ci-only-stays-out-of-the-full-run",
           ["some_new_top_level_dir/thing.txt"], want_lacks=["mutation-rounds"])
+    # Both halves of the mutation corpus are `ci_only` now — the applies-check
+    # measured 168s once it was timed in a run of its own — so what this case
+    # can still say is that editing a casefile is CLASSIFIED and buys neither
+    # of them. That is the property rule 1 would otherwise hide by handing
+    # back everything.
     check("ci-only-stays-out-of-a-scoped-run",
           ["sce-build/tests/mutations/ai_loop_history_rust.cases"],
-          want_lacks=["mutation-rounds"], want_has=["mutation-cases"])
+          want_full=False, want_lacks=["mutation-rounds", "mutation-cases"])
     # Rule 3 — an always-on gate must not classify. Were the catch-all
     # allowed to count, this path would read as known and rule 1 would never
     # fire again for anything.
@@ -1184,7 +1208,7 @@ def self_test(repo_root: Path) -> int:
     # no longer in any answer the hook gives. The property under test is
     # unchanged — an always-on gate still runs, and still does not classify.
     check("catch-all-does-not-classify", ["brand_new_dir/file.xyz"],
-          want_full=True, want_has=["mutation-cases"])
+          want_full=True, want_has=["http-endpoint-ssot"])
     # Every other workflow classifies its own edits by naming itself in its
     # `paths:`. The unfiltered one has no such list to name itself in, so
     # editing it is unclassified and buys the full run.
@@ -1193,7 +1217,7 @@ def self_test(repo_root: Path) -> int:
     # Docs-only runs the tree-wide gates and nothing else: prose is still
     # tracked source as far as the marker gate is concerned.
     check("inert", ["README.md", ".claude/settings.json"],
-          want_full=False, want_has=["mutation-cases"], want_lacks=["workspace-tests"])
+          want_full=False, want_has=["http-endpoint-ssot"], want_lacks=["workspace-tests"])
     # A SCE-VERIFIES marker must reach the catalog gate.
     check("verifies-marker", ["tests/mesh/CustomTcpSocketOptionsTest.cpp"],
           want_has=["spec-snapshot"])
@@ -1201,13 +1225,13 @@ def self_test(repo_root: Path) -> int:
     # change through the unfiltered workflow, so the whole workspace sweep
     # no longer has to run to judge a hook edit.
     check("hook-self", ["tools/git-hooks/gate_registry.py"],
-          want_full=False, want_has=["mutation-cases"], want_lacks=["workspace-tests"])
+          want_full=False, want_has=["http-endpoint-ssot"], want_lacks=["workspace-tests"])
     # A gate script edit is judged the same way, for the same reason.
     check("gate-script-self", ["scripts/gates/clippy.sh"],
-          want_full=False, want_has=["mutation-cases"], want_lacks=["workspace-tests"])
+          want_full=False, want_has=["http-endpoint-ssot"], want_lacks=["workspace-tests"])
     # A ledger-only edit needs the citation gates, not the C++ build.
     check("ledger-only", ["docs/sce-ledger/mesh/.atomic/workspace.atomic.json"],
-          want_has=["ledger-citations"], want_lacks=["nostd-mcu", "forge-cpp"])
+          want_full=False, want_lacks=["nostd-mcu", "forge-cpp", "ledger-citations"])
     # Rust source pulls in the Rust gates a push still runs. `workspace-tests`
     # used to be asserted here and is now `ci_only`, so it is checked from the
     # other side: the path must still be CLASSIFIED. A ci_only gate keeps its
@@ -1217,8 +1241,11 @@ def self_test(repo_root: Path) -> int:
           want_has=["codegen-build", "rust-modrs-drift", "clippy"],
           want_lacks=["workspace-tests"])
     # Dependency closure: an example-only change still builds sce-codegen.
+    # `example-codegen` is `ci_only` now, but the closure it pulls in is not:
+    # the dependency must survive its dependent leaving, or a gate that
+    # remains local loses the binary it executes.
     check("example-dep", ["examples/smart_light/smart_light.scxml"],
-          want_has=["codegen-build", "example-codegen"])
+          want_has=["codegen-build"], want_lacks=["example-codegen"])
     # A template edit must reach the committed-tree drift gate.
     check("template", ["tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2"],
           want_has=["drift-suites"])
@@ -1641,10 +1668,26 @@ def self_test(repo_root: Path) -> int:
             cl = GATES[later].get("cost_s")
             if ce is None or cl is None:
                 continue
-            if ce > cl and earlier not in transitive_deps(later):
-                failures.append(
-                    f"order: {earlier} ({ce}s) runs before the cheaper "
-                    f"{later} ({cl}s) without being its dependency")
+            if ce <= cl:
+                continue
+            # "Unless the cheap one was waiting on it" — waiting on ANY gate,
+            # not only on this one. A gate whose dependency had not run yet
+            # could not have been picked no matter what `earlier` cost, so
+            # reporting it says nothing about whether cost is being consulted.
+            #
+            # The narrower reading (excuse only a direct dependency) held
+            # while every dependency was cheap enough to be picked first, and
+            # stopped holding the moment `codegen-build` was measured
+            # honestly: at 19s it sorts behind eight cheaper gates, and the
+            # nine gates that wait on it were all reported as having been
+            # overtaken. Measured 2026-08-22 — nine false failures, no
+            # ordering defect.
+            blocked_by = {d for d in transitive_deps(later) if pos[d] >= i}
+            if blocked_by:
+                continue
+            failures.append(
+                f"order: {earlier} ({ce}s) runs before the cheaper "
+                f"{later} ({cl}s), which was not waiting on anything")
 
     # The distinction the check above is blind to, on a fixture that pins it.
     # Taking one dependency LEVEL at a time satisfies every property stated
