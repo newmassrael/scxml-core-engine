@@ -28,6 +28,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# This script is reached by the `embed-vendor` gate, so its build competes with
+# whatever else a push is running. The one place that decides how much of the
+# machine such a build may ask for.
+source "${SCE_ROOT}/scripts/lib/sce_build_jobs.sh"
+
 # Regenerate embed/ in an isolated scratch dir so a stale in-repo
 # embed/ cannot mask missing-file bugs — we want to assert that
 # package_embed.sh alone (SSOT-driven) produces a shippable tree.
@@ -137,7 +142,7 @@ cmake -S "${CONSUMER_SRC}" -B "${CONSUMER_BUILD}" \
 
 echo "[smoke] Building consumer"
 cmake --build "${CONSUMER_BUILD}" --target smoke_consumer \
-      --parallel "$(nproc 2>/dev/null || echo 2)" \
+      --parallel "$(sce_build_jobs_value)" \
       >"${SCRATCH}/build.log" 2>&1 || {
     echo "ERROR: consumer build failed. Log tail:" >&2
     tail -n 40 "${SCRATCH}/build.log" >&2

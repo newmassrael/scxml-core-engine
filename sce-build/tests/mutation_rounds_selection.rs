@@ -1305,6 +1305,18 @@ fn rounds_observed(rounds: &[&str]) -> RoundsRun {
         STANDIN_SERVICE,
     )
     .expect("write the stand-in service");
+    // The REAL endpoint owner, not a stand-in. `sce_gate_http_fixture_server`
+    // resolves where the listener answers by reading this header
+    // (§scxml-C-2-3), and refuses rather than defaulting when it cannot — so a
+    // fixture tree that carries the service but not the fact the service is
+    // addressed by fails the gate before any round runs. Copied rather than
+    // written here because a second spelling of the endpoint is the thing
+    // `http-endpoint-ssot` exists to refuse.
+    fs::copy(
+        repo_root().join("tests/w3c/basic_http_test_endpoint.h"),
+        root.join("tests/w3c/basic_http_test_endpoint.h"),
+    )
+    .expect("copy the endpoint owner");
 
     for args in [vec!["init", "-q"], vec!["add", "-A"]] {
         let out = Command::new("git")
