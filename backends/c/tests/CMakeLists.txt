@@ -725,6 +725,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.13 + Appendix D: an event handed to a machine that has already
+    # reached a top-level final state is refused, and the host cannot tell that
+    # from a guard that said no. This backend has a second reason to answer it:
+    # its queues are fixed-size arrays, so a host that keeps feeding a halted
+    # machine would otherwise silently overrun one.
+    sce_generate_static_integration_c_test(unseen_event_is_reported "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_unseen_event_is_reported
+        integration/test_unseen_event_is_reported.c
+        ${INTEGRATION_C_TEST_unseen_event_is_reported_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_unseen_event_is_reported PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_unseen_event_is_reported PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_unseen_event_is_reported PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_unseen_event_is_reported
+        COMMAND sce_c_integration_unseen_event_is_reported
+    )
+    set_tests_properties(c11_integration_unseen_event_is_reported PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML C.2 + 6.2.3: a `<send namelist>` that crosses BasicHTTP. The
     # IRP corpus states both claims and measures neither — test518's verdict is
     # `<transition event="test" target="pass"/>`, which passes on arrival

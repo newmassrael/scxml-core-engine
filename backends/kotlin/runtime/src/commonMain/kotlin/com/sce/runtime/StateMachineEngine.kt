@@ -523,6 +523,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var lastUndecodable: E? = null
 
     /**
+     * W3C SCXML 3.13: external events this machine never looked at, because it
+     * had already reached a top-level final state, and the most recent of
+     * them. See [unseenExternalEvents] and [lastUnseenEvent].
+     */
+    private var unseenExternalEventCount: Int = 0
+    private var lastUnseen: E? = null
+
+    /**
      * §scxml-3.12.2: `error.*` events this engine raised that no transition
      * matched, and the most recent of them. See [unhandledErrorEvents] and
      * [lastUnhandledError].
@@ -785,6 +793,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * are silently discarded (SM no longer processes events per §scxml-3.7).
      */
     fun send(event: E) {
+        if (isInFinalState) {
+            // The queue this would join is one nothing will drain again, and
+            // in coroutine mode the channel is already closed — `trySend`
+            // would answer failure to a caller that discards it. Counted
+            // instead, at the door, for the same reason the loop counts what
+            // it abandons. See [unseenExternalEvents].
+            noteUnseenEvent(event)
+            return
+        }
         if (syncMode) {
             externalEventQueue.addLast(QueuedEvent(event))
         } else {
@@ -798,6 +815,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Used by generated send actions that need to attach event metadata.
      */
     fun send(event: E, metadata: EventMetadata) {
+        if (isInFinalState) {
+            // Same refusal as the overload above, same reason it is counted.
+            noteUnseenEvent(event)
+            return
+        }
         if (syncMode) {
             externalEventQueue.addLast(QueuedEvent(event, metadata))
         } else {
@@ -1188,6 +1210,72 @@ abstract class StateMachineEngine<S : State, E : Event>(
     fun lastUndecodablePayload(): E? = lastUndecodable
 
     /**
+     * Record one external event this machine will never look at.
+     *
+     * W3C SCXML Appendix D: the loop that would have dequeued it has ended, so
+     * the event is not "pending" — it is over.
+     */
+    private fun noteUnseenEvent(event: E) {
+        unseenExternalEventCount++
+        lastUnseen = event
+    }
+
+    /**
+     * Empty the external queue into the count above, at the moment the main
+     * event loop ends.
+     *
+     * Drained rather than left in place so each event is counted exactly once:
+     * a host that keeps driving a halted machine would otherwise re-count the
+     * same queue on every call, and a count that grows while nothing arrives
+     * is a count nobody can use.
+     */
+    private fun recordUnseenExternalEvents() {
+        while (externalEventQueue.isNotEmpty()) {
+            noteUnseenEvent(externalEventQueue.removeFirst().event)
+        }
+    }
+
+    /**
+     * W3C SCXML 3.13: how many external events the host handed this machine
+     * that it never looked at, because it had already stopped.
+     *
+     * Appendix D's main event loop exits when the machine reaches a top-level
+     * final state, and the clause is explicit that the interpreter is then
+     * done. Refusing the event is therefore correct — and, exactly as with
+     * [discardedExternalEvents] and [undecodablePayloads], being unable to SAY
+     * it happened is not part of the clause.
+     *
+     * This is the count that separates the third explanation from the other
+     * two. A host that sent an event and saw nothing move has three
+     * candidates:
+     *
+     * | what happened | which count moves |
+     * | --- | --- |
+     * | dequeued, no transition matched | [discardedExternalEvents] |
+     * | dequeued, a transition matched but its guard was false | neither |
+     * | never dequeued — the machine had stopped | this one |
+     *
+     * This backend has a second reason to answer it. In coroutine mode `send`
+     * writes to a channel that is CLOSED once the machine finishes, so the
+     * event does not even reach a queue; the failure was a `trySend` result
+     * nobody read.
+     *
+     * Measured 2026-08-22: a consumer reported a guarded transition that
+     * "never fires", and four rewrites of the guard later the guard was still
+     * the suspect. Driving the same document here fired it on the first try,
+     * at that consumer's own pinned revision — so the difference was never the
+     * guard, and nothing in this engine could have said so.
+     */
+    fun unseenExternalEvents(): Int = unseenExternalEventCount
+
+    /**
+     * The most recent event [unseenExternalEvents] counted, or `null` while
+     * that count is zero. A count says an event went unlooked-at; this says
+     * which one.
+     */
+    fun lastUnseenEvent(): E? = lastUnseen
+
+    /**
      * §scxml-3.12.2: how many `error.*` events this engine raised that no
      * transition in any active state answered.
      *
@@ -1422,7 +1510,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // W3C SCXML Appendix D: complete the macrostep on eventless
             // transitions and internal events alone.
             drainEventlessAndInternal()
-            if (isInFinalState) break
+            if (isInFinalState) {
+                // W3C SCXML Appendix D's main event loop ends here, and
+                // whatever the host put on the external queue ends with it.
+                // That is the clause: a machine that reached a top-level final
+                // state has exited the interpreter. Saying nothing about it is
+                // not the clause — see [unseenExternalEvents].
+                recordUnseenExternalEvents()
+                break
+            }
             // §scxml-6.4: invokes for states entered during this macrostep.
             executePendingInvokes()
             // W3C SCXML Appendix D: invoking may have raised internal error

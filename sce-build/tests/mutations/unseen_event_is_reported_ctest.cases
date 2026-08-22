@@ -1,0 +1,152 @@
+# Mutation cases for §scxml-3.13 / Appendix D on the three engines a cargo
+# round cannot see — the C++ Interpreter, the C++ AOT engine header, and the
+# C11 template.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/unseen_event_is_reported_ctest.cases`.
+#
+# Same axis as `unseen_event_is_reported.cases`: an event handed to a machine
+# that has already stopped is never looked at, and the host that sent it can
+# find out.
+#
+# The C++ Interpreter is the odd one here, and its case says why. That engine
+# ALREADY refuses out loud — `processEvent` returns a `TransitionResult` whose
+# `success` is false and whose `errorMessage` names the reason — so the count
+# it gained is about parity: `success == false` is what a DISCARD answers too,
+# and the six generated engines have no return value at all.
+#
+# The C11 target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree, so
+# the template is what the built binaries carry. It also has a refusal site the
+# others do not — `raise_external` turns an event away rather than pushing it
+# onto a fixed-size array that nothing will drain again.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_unseen_event_is_reported)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h
+mutation_targets sce/src/runtime/StateMachine.cpp
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/UnseenEventIsReportedAotTest.cpp tests/integration/UnseenEventIsReportedTest.cpp backends/c/tests/integration/test_unseen_event_is_reported.c
+
+# ── C++ AOT: the host door ─────────────────────────────────────────
+#
+# This backend's `processEvent` hands the event straight to `executeTransition`
+# rather than through the queue, so the door is where a refusal happens and the
+# loop's drain never sees it.
+
+mutation_case "the cpp aot door refuses without recording it" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """            // there. See `unseenExternalEvents()`.
+            noteUnseenEvent(event);
+            return;""",
+     """            // there. See `unseenExternalEvents()`.
+            return;""")
+PY
+
+# ── C++ AOT: the loop's abandoned queue ────────────────────────────
+
+mutation_case "the cpp aot loop abandons the queue silently" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                recordUnseenExternalEvents();
+                break;""",
+     """                break;""")
+PY
+
+# ── C++ AOT: counting the wrong fact ───────────────────────────────
+#
+# Reporting a refusal as a discard. The two are different facts and a host acts
+# differently on each, which is exactly what the driver's discard-vs-refusal
+# assertion pins.
+
+mutation_case "the cpp aot engine reports a refusal as a discard" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """    void noteUnseenEvent(Event event) {
+        ++unseenExternalEvents_;""",
+     """    void noteUnseenEvent(Event event) {
+        ++discardedExternalEvents_;""")
+PY
+
+# ── C++ AOT: naming the event ──────────────────────────────────────
+
+mutation_case "the cpp aot engine counts a refusal but never names it" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        ++unseenExternalEvents_;
+        lastUnseenEvent_ = event;
+        hasUnseenEvent_ = true;""",
+     """        ++unseenExternalEvents_;
+        lastUnseenEvent_ = event;""")
+PY
+
+# ── C++ Interpreter: the count beside the report ───────────────────
+#
+# The engine goes on returning `success = false`, so the assertion that reads
+# the TransitionResult still passes — and only the statistics assertion catches
+# this. That is the whole point of adding a count to an engine that already
+# answered.
+
+mutation_case "the interpreter reports the refusal but does not count it" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """        ++unseenExternalEvents_;
+        lastUnseenEventName_ = eventName;""",
+     """        if (false) {
+            ++unseenExternalEvents_;
+            lastUnseenEventName_ = eventName;
+        }""")
+PY
+
+# ── C++ Interpreter: the statistics wiring ─────────────────────────
+#
+# Counted correctly and never published. The member moves, the accessor does
+# not, and every other assertion in the suite still passes.
+
+mutation_case "the interpreter counts the refusal and never publishes it" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    stats.unseenExternalEvents = unseenExternalEvents_;
+    stats.lastUnseenEventName = lastUnseenEventName_;""",
+     """    stats.unseenExternalEvents = 0u;
+    stats.lastUnseenEventName = lastUnseenEventName_;""")
+PY
+
+# ── C11: the raise door ────────────────────────────────────────────
+#
+# This backend refuses at `raise_external` rather than queueing, because its
+# queue is a fixed-size array that nothing will drain again. Removing the
+# refusal puts the event back on that array — silently, and on an MCU.
+
+mutation_case "the c11 raise pushes onto a queue nothing will drain" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """           `_unseen_external_events`. */
+        note_unseen_event(sm, evt->event);
+        return;
+    }""",
+     """           `_unseen_external_events`. */
+        (void)0;
+    }""")
+PY
+
+# ── C11: the loop's abandoned queue ────────────────────────────────
+
+mutation_case "the c11 loop abandons the queue silently" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            record_unseen_external_events(sm);
+            break;""",
+     """            break;""")
+PY
+
+# ── C11: naming an event that was never refused ────────────────────
+#
+# The "nothing has been refused yet" arm is what catches an accessor that
+# always answers, and it is the arm a reader is most likely to drop.
+
+mutation_case "the c11 accessor answers before anything was refused" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm == NULL || out == NULL || !sm->has_unseen_event) {
+        return false;
+    }
+    *out = sm->last_unseen_event;""",
+     """    if (sm == NULL || out == NULL) {
+        return false;
+    }
+    *out = sm->last_unseen_event;""")
+PY

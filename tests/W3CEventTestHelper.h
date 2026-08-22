@@ -61,7 +61,7 @@ public:
 
         auto event = std::make_shared<SCE::Event>(name, type);
         auto result = engine_->setCurrentEvent(sessionId_, event).get();
-        ASSERT_TRUE(result.isSuccess()) << "Failed to trigger event '" << name << "' (type: " << type << ")";
+        ASSERT_TRUE(result.status.isSuccess()) << "Failed to trigger event '" << name << "' (type: " << type << ")";
     }
 
     /**

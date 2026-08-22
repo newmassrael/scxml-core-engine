@@ -511,6 +511,12 @@ pub struct Engine<P: StatePolicy> {
     /// The most recent event this engine discarded — see
     /// [`last_discarded_event`](Self::last_discarded_event).
     pub(crate) last_discarded_event: Option<P::Event>,
+    /// External events this machine never dequeued because it had stopped —
+    /// see [`unseen_external_events`](Self::unseen_external_events).
+    pub(crate) unseen_external_events: u32,
+    /// The most recent event this machine never looked at — see
+    /// [`last_unseen_event`](Self::last_unseen_event).
+    pub(crate) last_unseen_event: Option<P::Event>,
     /// Events delivered with a payload the datamodel could not read as
     /// structure — see [`undecodable_payloads`](Self::undecodable_payloads).
     pub(crate) undecodable_payloads: u32,
@@ -619,6 +625,8 @@ impl<P: StatePolicy> Engine<P> {
             unattended_scheduler_steps: 0,
             discarded_external_events: 0,
             last_discarded_event: None,
+            unseen_external_events: 0,
+            last_unseen_event: None,
             undecodable_payloads: 0,
             last_undecodable_payload: None,
             unhandled_error_events: 0,
@@ -1244,8 +1252,7 @@ impl<P: StatePolicy> Engine<P> {
         // W3C SCXML B.2.8.1 is the clause the reading comes from, named in
         // prose rather than as a `§` citation: this method REPORTS the rung a
         // script engine chose, and a bound citation here would claim it
-        // implements the clause. The ladder itself is where that claim
-        // belongs.
+        // implements the clause. The ladder itself is where that claim belongs.
         if reading.is_undecodable() {
             self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
             self.last_undecodable_payload = Some(event);
@@ -1285,6 +1292,66 @@ impl<P: StatePolicy> Engine<P> {
     /// the same reason: a count says something was lost, this says what.
     pub fn last_undecodable_payload(&self) -> Option<P::Event> {
         self.last_undecodable_payload
+    }
+
+    /// Record one external event this machine will never look at.
+    fn note_unseen_event(&mut self, event: P::Event) {
+        // §scxml-D-mainEventLoop: the loop that would have dequeued this has
+        // ended, so the event is not "pending" — it is over.
+        self.unseen_external_events = self.unseen_external_events.saturating_add(1);
+        self.last_unseen_event = Some(event);
+    }
+
+    /// Empty the external queue into the count above, at the moment the main
+    /// event loop ends.
+    ///
+    /// Drained rather than left in place so each event is counted exactly
+    /// once: a host that keeps calling `step()` on a halted machine would
+    /// otherwise re-count the same queue on every call, and a count that grows
+    /// while nothing arrives is a count nobody can use.
+    fn record_unseen_external_events(&mut self) {
+        while let Some(meta) = self.external_queue.pop() {
+            self.note_unseen_event(meta.event);
+        }
+    }
+
+    /// How many external events the host handed this machine that it never
+    /// looked at, because it had already stopped.
+    ///
+    /// §scxml-D-mainEventLoop exits when the machine reaches a top-level final
+    /// state, and W3C SCXML 3.13 is explicit that the interpreter is then
+    /// done. Refusing the event is therefore correct — and, exactly as with
+    /// [`discarded_external_events`](Self::discarded_external_events) and
+    /// [`undecodable_payloads`](Self::undecodable_payloads), being unable to
+    /// SAY it happened is not part of the clause.
+    ///
+    /// This is the count that separates the third explanation from the other
+    /// two. A host that sent an event and saw nothing move has three
+    /// candidates:
+    ///
+    /// | what happened | which count moves |
+    /// | --- | --- |
+    /// | dequeued, no transition matched | `discarded_external_events` |
+    /// | dequeued, a transition matched but its guard was false | neither |
+    /// | never dequeued — the machine had stopped | this one |
+    ///
+    /// Measured 2026-08-22: a consumer reported a guarded transition that
+    /// "never fires", and four rewrites of the guard later the guard was still
+    /// the suspect. Driving the same document here fired it on the first try,
+    /// at that consumer's own pinned revision — so the difference was never
+    /// the guard, and nothing in this engine could have said so.
+    pub fn unseen_external_events(&self) -> u32 {
+        self.unseen_external_events
+    }
+
+    /// The most recent event [`unseen_external_events`](Self::unseen_external_events)
+    /// counted, or `None` while that count is zero.
+    ///
+    /// A count says an event went unlooked-at; this says which one, which is
+    /// what a host debugging a supervisor that stopped answering actually
+    /// needs.
+    pub fn last_unseen_event(&self) -> Option<P::Event> {
+        self.last_unseen_event
     }
 
     /// How many `error.*` events this engine raised that no transition in any
@@ -1716,6 +1783,11 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `processEvent(Event)`.
     pub fn process_event(&mut self, event: P::Event) {
         if !self.is_running {
+            // Refused rather than queued, so the drain in
+            // `run_main_event_loop` never sees it — which is why the count is
+            // taken here as well as there. See
+            // [`unseen_external_events`](Self::unseen_external_events).
+            self.note_unseen_event(event);
             return;
         }
         self.raise_external(event, "", "");
@@ -1727,6 +1799,8 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `processEvent(Event, const EventMetadata&)`.
     pub fn process_event_with_meta(&mut self, event: P::Event, metadata: EventMetadata) {
         if !self.is_running {
+            // Same refusal as `process_event`, same reason it is counted here.
+            self.note_unseen_event(event);
             return;
         }
         let meta = EventWithMetadata {
@@ -2204,6 +2278,21 @@ impl<P: StatePolicy> Engine<P> {
             }
 
             if !self.is_running || self.is_in_final_state() {
+                // §scxml-D-mainEventLoop ends here, and whatever the host put
+                // on the external queue ends with it. That is the clause: a
+                // machine that has reached a top-level final state exits the
+                // interpreter, and events that arrive afterwards are not
+                // processed. Saying nothing about it is not the clause.
+                //
+                // The host cannot tell this outcome from the two it already
+                // has. `discarded_external_events` counts an event that WAS
+                // dequeued and matched nothing; a guard that evaluated false
+                // leaves no count at all. All three leave the configuration
+                // alone, so "I sent it and nothing happened" has three
+                // explanations and the host could distinguish none of them —
+                // measured 2026-08-22 against a consumer that spent four
+                // attempts rewriting a guard that was never evaluated.
+                self.record_unseen_external_events();
                 break;
             }
 
