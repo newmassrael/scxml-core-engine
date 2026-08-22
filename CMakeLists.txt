@@ -300,7 +300,18 @@ if(BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/w3c/basic_http_test_endpoint.h")
     file(STRINGS "${SCE_W3C_HTTP_ENDPOINT_HEADER}" _sce_w3c_http_port_line
         REGEX "^#define[ \t]+SCE_W3C_HTTP_DEFAULT_PORT[ \t]")
-    string(REGEX MATCH "[0-9]+" _sce_w3c_http_default_port "${_sce_w3c_http_port_line}")
+    # The number AFTER the symbol, never the first digit run on the line. A
+    # bare `[0-9]+` matched the `3` in `SCE_W3C_HTTP_DEFAULT_PORT` and every
+    # tree configured itself onto port 3, where the fixture died with EACCES.
+    # It survived a probe that configured `-DSCE_W3C_HTTP_PORT=8080` and
+    # `=19080` explicitly, because passing the default is not exercising it.
+    string(REGEX REPLACE "^#define[ \t]+SCE_W3C_HTTP_DEFAULT_PORT[ \t]+([0-9]+).*$" "\\1"
+        _sce_w3c_http_default_port "${_sce_w3c_http_port_line}")
+    if(NOT _sce_w3c_http_default_port MATCHES "^[0-9]+$")
+        message(FATAL_ERROR
+            "could not read a port out of '${_sce_w3c_http_port_line}' in "
+            "${SCE_W3C_HTTP_ENDPOINT_HEADER}")
+    endif()
     file(STRINGS "${SCE_W3C_HTTP_ENDPOINT_HEADER}" _sce_w3c_http_path_line
         REGEX "^#define[ \t]+SCE_W3C_HTTP_TEST_PATH[ \t]")
     string(REGEX MATCH "\"[^\"]+\"" _sce_w3c_http_default_path "${_sce_w3c_http_path_line}")
