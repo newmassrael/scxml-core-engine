@@ -21,6 +21,17 @@ on:
       - 'Cargo.lock'
       - 'Cargo.toml'
       - '.github/workflows/forge-conformance.yml'
+      # The arms' own `extra` triggers, which the globs above do not express:
+      # a forge arm is built against the engine and its backend, so a change
+      # to either can break it without touching forge-runtime. That widening
+      # lived only in the gate table while the gates ran at push time, and
+      # became a hole the moment they moved here —
+      # `ci-only-coverage` in tools/git-hooks/gate_registry.py refuses the
+      # two lists disagreeing.
+      - 'sce/**'
+      - 'backends/rust/**'
+      - 'backends/go/**'
+      - 'backends/python/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -32,6 +43,17 @@ on:
       - 'Cargo.lock'
       - 'Cargo.toml'
       - '.github/workflows/forge-conformance.yml'
+      # The arms' own `extra` triggers, which the globs above do not express:
+      # a forge arm is built against the engine and its backend, so a change
+      # to either can break it without touching forge-runtime. That widening
+      # lived only in the gate table while the gates ran at push time, and
+      # became a hole the moment they moved here —
+      # `ci-only-coverage` in tools/git-hooks/gate_registry.py refuses the
+      # two lists disagreeing.
+      - 'sce/**'
+      - 'backends/rust/**'
+      - 'backends/go/**'
+      - 'backends/python/**'
   workflow_dispatch:
 
 concurrency:
