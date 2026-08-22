@@ -31,7 +31,7 @@
 // `sce_generate_static_integration_c_test(send_namelist_over_http ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 //
-// Needs the W3C harness server on localhost:8080/test — the ctest entry
+// Needs the W3C harness server on the fixture endpoint — the ctest entry
 // declares `FIXTURES_REQUIRED w3c_c_http_server`, the same listener the C11
 // W3C BasicHTTP fixtures use.
 
@@ -42,14 +42,8 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "basic_http_test_endpoint.h"
 #include "send_namelist_over_http_sm.h"
-
-// §scxml-C-2-3: where the harness's inbound BasicHTTP listener answers, and
-// therefore the address this machine publishes as its `_ioprocessors`
-// location. The document addresses its own send through that entry rather
-// than through a literal URL, so bind address and published address stay one
-// fact.
-static const char *const HTTP_ACCESS_URI = "http://localhost:8080/test";
 
 // The fixture settles each phase with a delayed `<send>` (3 s then 2 s), so
 // the host drives a real clock rather than a manual one: the HTTP round trip
@@ -73,7 +67,14 @@ int main(void) {
     int rc = 0;
 
     send_namelist_over_http_t sm;
-    send_namelist_over_http_init_with_basic_http(&sm, HTTP_ACCESS_URI);
+    // §scxml-C-2-3: where the harness's inbound BasicHTTP listener answers, and
+    // therefore the address this machine publishes as its `_ioprocessors`
+    // location. The document addresses its own send through that entry rather
+    // than through a literal URL, so bind address and published address stay
+    // one fact — and `basic_http_test_endpoint.h` is the one place that says
+    // which address that is.
+    char access_uri[SCE_W3C_HTTP_URI_MAX];
+    send_namelist_over_http_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri));
 
     if (!run_to_final(&sm, 15000u)) {
         printf("FAIL: send_namelist_over_http never reached a final state — the "

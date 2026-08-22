@@ -712,8 +712,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     target_link_libraries(sce_c_integration_send_namelist_over_http PRIVATE
         sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
     )
+    # `tests/w3c` carries the ONE owner of the BasicHTTP fixture endpoint
+    # (`basic_http_test_endpoint.h`), the same reason the W3C C arm above
+    # names it: this test publishes that address and must not spell it again.
     target_include_directories(sce_c_integration_send_namelist_over_http PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/tests/w3c"
     )
     set_target_properties(sce_c_integration_send_namelist_over_http PROPERTIES
         C_STANDARD 11

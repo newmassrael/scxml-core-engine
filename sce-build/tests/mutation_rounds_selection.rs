@@ -1135,8 +1135,8 @@ fn a_path_that_only_resembles_a_declared_target_selects_nothing() {
 /// The one function in the Rust test harness that asserts the W3C BasicHTTP
 /// fixture server is reachable, and panics with instructions when it is not
 /// (`backends/rust/tests/src/harness.rs`). A test that calls it cannot pass
-/// without a listener on localhost:8080, so a round over such a suite needs one
-/// started for it.
+/// without a listener on the fixture endpoint, so a round over such a suite
+/// needs one started for it.
 ///
 /// Matched as a CALL — the name followed by its open paren — rather than as a
 /// bare mention. The first shape of this scan looked for the name alone and
@@ -1220,9 +1220,9 @@ fn a_casefile_whose_suite_needs_the_http_fixture_declares_it() {
 ///
 /// The port is the reason it is a stand-in. This test runs inside `cargo test
 /// --workspace`, which the `workspace-tests` gate runs with a real fixture
-/// server already listening on 8080: a second one would refuse to bind, and one
-/// this test held would make the C++ ctest suite report 13 of its cases Not Run
-/// — the shape `sce_gate_requires_free_http_port` exists to refuse. What is
+/// server already holding the endpoint: a second one would refuse to bind, and
+/// one this test held would make the C++ ctest suite report 13 of its cases
+/// Not Run — the shape `sce_gate_requires_free_http_port` refuses. What is
 /// under test is whether the gate PROVISIONS a declared service around the
 /// round that declared it, not the service's HTTP.
 ///
@@ -1478,8 +1478,8 @@ fn the_gate_starts_the_declared_service_for_that_round_and_no_other() {
         run.observed[0].1, "down",
         "⚠ the service was already up for `{}`, which declares none. A gate-wide \
          `sce_gate_http_fixture_server` does that, and it is why the scoped form \
-         exists: the ctest rounds beside these bind 8080 themselves and fail \
-         against a listener already held.\n{}",
+         exists: the ctest rounds beside these bind the endpoint themselves and \
+         fail against a listener already held.\n{}",
         controls[0], run.log
     );
     assert_eq!(
