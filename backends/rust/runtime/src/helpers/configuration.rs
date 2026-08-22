@@ -50,7 +50,7 @@ use crate::policy::StatePolicy;
 /// Each variant names the state it tripped on so a host can say which one.
 /// `Debug` prints the GENERATED Rust identifier for a state, which is not the
 /// word the document uses — pass the state to
-/// [`StatePolicy::get_state_name`](crate::policy::StatePolicy::get_state_name)
+/// [`StatePolicy::get_state_name`]
 /// to render it in the document's own vocabulary, which is the vocabulary a host
 /// persisted it under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
