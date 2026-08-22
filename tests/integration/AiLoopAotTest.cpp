@@ -27,9 +27,14 @@
 #include "ai_loop_sm.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <gtest/gtest.h>
+#include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
+#include "core/EventMetadata.h"
 #include "scripting/JSEngine.h"
 #include "scripting/ScriptEngineProvider.h"
 
@@ -209,6 +214,40 @@ TEST_F(AiLoopAotTest, AnUnmatchedDialogWakesThePersonWhoAnswers) {
     sm.processEvent(Machine::Event::Turn_done);
     EXPECT_TRUE(holds(sm, Machine::State::Judging))
         << "once the person has answered, the turn completes where it left off; active: " << describe(sm);
+}
+
+// A person answering does not re-introduce the session to itself.
+//
+// `paused` is a sibling of `running`, so answering targets `judging` and enters
+// `running` on the way - as an ANCESTOR. §scxml-D-addAncestorStatesToEnter adds
+// such a state without its default initial child, and here the default is
+// `priming`, whose `<onentry>` sends the opening prompt. An engine that gives
+// every entered compound state its default leaves the cycle in two states at
+// once and the host, reading the configuration, sends the start prompt again -
+// measured 2026-08-15 on both AOT engines, with every W3C fixture green and the
+// rest of this file green with them.
+//
+// The clause itself is pinned across all seven channels by
+// `integration_resources/ancestor_entry_is_not_default_entry/`. This test is the
+// worked example's own stake in it, so a regression here fails as a supervision
+// bug rather than as an abstract entry-set one. The Rust channel asserts the
+// same clause on the same document
+// (`answering_a_question_does_not_re_prime_the_session`).
+TEST_F(AiLoopAotTest, AnsweringAQuestionDoesNotRePrimeTheSession) {
+    Machine sm;
+    start(sm);
+
+    sm.processEvent(Machine::Event::Turn_blocked);
+    sm.processEvent(Machine::Event::Screen_none);
+    sm.processEvent(Machine::Event::Turn_done);
+
+    ASSERT_TRUE(holds(sm, Machine::State::Judging))
+        << "the answered turn has to land in `judging`; active: " << describe(sm);
+    EXPECT_FALSE(holds(sm, Machine::State::Priming))
+        << "`running` has two children active at once. `priming` sends `prompt.start`, so a host "
+           "driving this configuration re-sends the opening prompt every time a person answers a "
+           "dialog; active: "
+        << describe(sm);
 }
 
 TEST_F(AiLoopAotTest, HoldAndResumeReturnToExactlyWhereTheCycleWas) {
@@ -395,6 +434,142 @@ TEST_F(AiLoopAotTest, TheStrategyAHostEditsIsTheStrategyItCanReadBack) {
         << *start_prompt;
     EXPECT_NE(start_prompt->find("Report what you did"), std::string::npos)
         << "including the instruction half: " << *start_prompt;
+}
+
+// The standing instructions are readable, which is what makes them standing.
+//
+// `screen_rules` is the block that decides when a person is NOT woken. The
+// document keeps it in the authored half deliberately - its own comment says the
+// loop is carrying out a decision made in advance and written down - and a
+// decision written down where nobody can read it back is indistinguishable from
+// the loop deciding on its own authority. A supervisor showing a human "these
+// three questions are being answered for you" has to get the list from the
+// machine.
+//
+// The parts asserted here are the ones a reader acts on - which question is
+// matched and what answer it gets - rather than the whole text, so that
+// reformatting the block inside the document does not fail this.
+//
+// The Rust channel asserts the same clause on the same document
+// (`the_standing_instructions_can_be_read_back_off_the_machine`), so a
+// structured accessor that only one backend emits fails on the other.
+TEST_F(AiLoopAotTest, TheStandingInstructionsCanBeReadBackOffTheMachine) {
+    Machine sm;
+    start(sm);
+
+    const auto rules = sm.getPolicy().screen_rules();
+    ASSERT_TRUE(rules.has_value())
+        << "the standing-instruction table must be readable off the machine - a host that cannot "
+           "list it cannot show anyone which questions are being answered without them";
+
+    EXPECT_EQ(rules->rfind('[', 0), 0U) << "the block is authored as an array and must come back as one: " << *rules;
+    for (const auto *question : {"design-decision", "design-proposal", "multiple-choice"}) {
+        EXPECT_NE(rules->find(question), std::string::npos)
+            << "`" << question << "` is screened by the document but absent from what the machine reports: " << *rules;
+    }
+    EXPECT_NE(rules->find("Rethink for the most durable answer"), std::string::npos)
+        << "the reply a screened question receives is the half a person most needs to see, and it "
+           "is what distinguishes carrying out a decision from making one: "
+        << *rules;
+}
+
+// A structured variable answers with what it is holding, not with what it was
+// declared as.
+//
+// The scalar readers refuse a value of another type, and this asserts the json
+// one does too - from both directions. A write into the session must be visible,
+// because a reader frozen at generation time would answer the document's literal
+// for the whole run; and a scalar written into a variable declared structured
+// must read as "cannot answer" rather than as the scalar's own JSON.
+//
+// The writes go through `setVariable`, which takes a value rather than source
+// text. That is the half of the engine interface that is the same whichever
+// engine a deployment injected - `evaluateExpression` takes the ENGINE's
+// language - so a test written in either language would be asserting about the
+// injection rather than about the reader.
+//
+// The Rust channel asserts the same clause on the same document
+// (`a_structured_read_follows_the_assignment_and_refuses_another_type`).
+TEST_F(AiLoopAotTest, AStructuredReadFollowsTheAssignmentAndRefusesAnotherType) {
+    Machine sm;
+    start(sm);
+
+    ASSERT_TRUE(sm.getPolicy().sessionId_.has_value()) << "a started machine holds a session";
+    const auto sessionId = sm.getPolicy().sessionId_.value();
+    auto &scriptEngine = SCE::ScriptEngineProvider::getScriptEngine();
+
+    auto later = std::make_shared<::ScriptObject>();
+    later->properties["when"] = ::ScriptValue{std::string("later")};
+    auto table = std::make_shared<::ScriptArray>();
+    table->elements.push_back(::ScriptValue{later});
+    ASSERT_TRUE(scriptEngine.setVariable(sessionId, "screen_rules", ::ScriptValue{table}).get().isSuccess())
+        << "the session takes a structured value";
+
+    const auto after = sm.getPolicy().screen_rules();
+    ASSERT_TRUE(after.has_value()) << "a reassigned structured variable is still readable";
+    EXPECT_NE(after->find("later"), std::string::npos)
+        << "the reader answered with something other than what the session now holds: " << *after;
+    EXPECT_EQ(after->find("design-decision"), std::string::npos)
+        << "the reader answered with the authored table after the session was assigned another one: " << *after;
+
+    ASSERT_TRUE(
+        scriptEngine.setVariable(sessionId, "screen_rules", ::ScriptValue{static_cast<int64_t>(5)}).get().isSuccess())
+        << "the session takes a scalar too";
+    EXPECT_EQ(sm.getPolicy().screen_rules(), std::nullopt)
+        << "a variable declared structured and now holding a number must report that the machine "
+           "cannot answer. `5` is valid JSON, so a reader that forwarded whatever the serializer "
+           "produced would hand a consumer a document shape that no longer exists.";
+}
+
+// What a reflection writes is what the restarted session is primed with.
+//
+// This is the loop's whole reason for having a restart state: `reflecting`
+// rewrites the prompts and `restarting` replaces the session so a fresh one
+// reads them. Both halves are invisible to an outcome - a run converges just the
+// same whether the text it sent afterwards was the reflection's, the author's,
+// or empty - so the example's own driver reads the prompts it actually sent and
+// this reads what the machine holds.
+//
+// It is asserted because the example was wrong here: its host wrote
+// `{"start_prompt":"","turn_prompt":"","milestone":"refined"}`, so the document
+// came back holding two empty strings and the fresh session was primed with
+// nothing at all, under a scenario titled "restarts into the improved prompts".
+// Measured 2026-08-15 in the example's own output.
+//
+// The payload arrives through `processEvent(Event, const EventMetadata &)` -
+// the public door a host with a payload to deliver uses - so what is under test
+// includes the seam that carries `_event.data` into the three `<assign>`s.
+// The Rust channel asserts the same clause on the same document
+// (`what_a_reflection_writes_is_what_the_machine_then_holds`).
+TEST_F(AiLoopAotTest, WhatAReflectionWritesIsWhatTheMachineThenHolds) {
+    Machine sm;
+    start(sm);
+
+    const auto authored = sm.getPolicy().start_prompt();
+    ASSERT_TRUE(authored.has_value()) << "a started loop can read its opening prompt";
+
+    for (int n = 1; n <= 8; ++n) {
+        turn(sm);
+    }
+    ASSERT_TRUE(holds(sm, Machine::State::Reflecting))
+        << "the document sets `reflect_every` to 8, so the eighth completed turn reflects; active: " << describe(sm);
+
+    sm.processEvent(Machine::Event::Reflect_applied,
+                    SCE::Core::EventMetadata("reflect.applied", R"({"start_prompt":"Resuming. Milestone: refined",)"
+                                                                R"("turn_prompt":"Continue toward: refined",)"
+                                                                R"("milestone":"refined"})"));
+
+    EXPECT_EQ(sm.getPolicy().milestone(), std::optional<std::string>("refined"))
+        << "the reflection's milestone did not reach the datamodel, so the restart it is about to "
+           "pay for improves nothing";
+
+    const auto after = sm.getPolicy().start_prompt();
+    ASSERT_TRUE(after.has_value()) << "the prompt a restarted session is primed with must still be readable";
+    EXPECT_EQ(*after, "Resuming. Milestone: refined") << "the machine is not holding what the reflection wrote";
+    EXPECT_NE(*after, *authored) << "the reflection has to have changed something, or this test would pass against a "
+                                    "machine that ignored it";
+    EXPECT_FALSE(after->empty()) << "an empty prompt is what a host sends when reflection erased it, and the run still "
+                                    "converges - which is why this is asserted rather than watched";
 }
 
 // A machine that has not been booted cannot answer, and says so.
