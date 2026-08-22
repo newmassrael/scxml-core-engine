@@ -58,6 +58,17 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust-workspace-tests.yml'
+      # Inputs the suite reads without compiling: the acceptance doc, the
+      # wire schemas and the API headers are `include_str!`-ed by tests
+      # here. The `workspace-tests` gate has always declared them in its
+      # `extra`, and this filter did not, which was harmless only while the
+      # gate also ran at push time. It is now `ci_only`, so this list is the
+      # only thing that starts the suite —
+      # `ci-only-coverage` in tools/git-hooks/gate_registry.py refuses the
+      # two lists disagreeing.
+      - 'docs/SCE_ACCEPTED_SUBSET.md'
+      - 'schemas/**'
+      - 'apis/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -68,6 +79,17 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust-workspace-tests.yml'
+      # Inputs the suite reads without compiling: the acceptance doc, the
+      # wire schemas and the API headers are `include_str!`-ed by tests
+      # here. The `workspace-tests` gate has always declared them in its
+      # `extra`, and this filter did not, which was harmless only while the
+      # gate also ran at push time. It is now `ci_only`, so this list is the
+      # only thing that starts the suite —
+      # `ci-only-coverage` in tools/git-hooks/gate_registry.py refuses the
+      # two lists disagreeing.
+      - 'docs/SCE_ACCEPTED_SUBSET.md'
+      - 'schemas/**'
+      - 'apis/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
