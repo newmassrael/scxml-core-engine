@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: f7291ab6d7896ee95dd448a8f7fc2759f6a0259c69bcc8f54f868651f4b8fe72
+// template-hash: 465642caa5c7ae5f006b7e4c3302ebaf26878f27c380322c3cf9d87ca35b0ee6
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -705,6 +705,18 @@ impl StatePolicy for Test580Policy {
     // both resolve correctly.
     fn get_active_states(&self) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         self.active_states.clone()
+    }
+
+    // §scxml-3.4: the write half of the pair above, for `Engine::enter_at`.
+    // Emitted under the same condition as the read half because the same fact
+    // decides both — this machine keeps its own active set, so this machine is
+    // the one that can be handed one back. The trait default is a tripwire, so
+    // emitting the reader without this one would turn a restore into a panic.
+    fn set_active_states(
+        &mut self,
+        states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State>,
+    ) {
+        self.active_states = states;
     }
 
     fn set_next_event_is_external(&mut self, value: bool) {
