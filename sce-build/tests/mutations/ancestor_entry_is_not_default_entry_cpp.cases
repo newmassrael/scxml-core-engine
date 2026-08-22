@@ -1,0 +1,83 @@
+# Mutation cases for §scxml-D-addAncestorStatesToEnter — a state entered only
+# because the transition's target lies inside it takes NO default child.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/ancestor_entry_is_not_default_entry_cpp.cases`.
+#
+# Appendix D asks two different questions with two functions.
+# `addDescendantStatesToEnter` gives a compound state its default child and is
+# called for the transition's TARGET; `addAncestorStatesToEnter` walks the
+# states between the target and the LCCA and adds them WITHOUT defaults. In the
+# C++ AOT backend that difference is spelled as `pathChild`: the entry walk
+# hands every link BEFORE the target the next one, and `nullopt` from the
+# target onwards, and `executeEntryActions` adds a default child only when
+# `pathChild` is empty.
+#
+# ⚠ The target is the TEMPLATE, and that was measured rather than assumed.
+# The first draft of this file aimed at `executeOnEntryChain` in
+# `sce/include/static/StaticExecutionEngine.h`, which computes exactly the same
+# `pathChild` — and both cases came back INCONCLUSIVE and SURVIVED. Applying
+# the mutation by hand, rebuilding for 28s and running the oracles showed all
+# 21 green: the generated transition code computes its OWN `pathChild` and
+# never reaches the engine's copy for this shape of transition. A mutation that
+# does not reach the code under test proves nothing about the tests that miss
+# it.
+#
+# The template does reach the build, which was also measured rather than
+# assumed: `add_custom_command`'s `DEPENDS` names only the SCXML and the
+# codegen binary, so the templates look like non-dependencies — but a dry run
+# after editing this file schedules `SCE: Generating ai_loop (cpp) from SCXML`,
+# because the `Checking sce-codegen against the sources it was built from` step
+# covers them.
+#
+# Why the clause needs a witness at all. It is asserted in three places and
+# was witnessed in none: `integration_resources/ancestor_entry_is_not_default_entry/`
+# pins it across seven channels, `examples/ai_loop/ai_loop.scxml` demonstrates
+# it, and `AnsweringAQuestionDoesNotRePrimeTheSession` asserts it as the
+# supervision bug it shipped as — and until this file nothing under
+# `sce-build/tests/mutations/` broke the entry walk to find out whether any of
+# them would notice.
+#
+# The defect it restores is not loud. Measured 2026-08-15 on both AOT engines
+# with every W3C fixture green: an engine that gives every entered compound
+# state its default leaves two of one state's children active at once, and in
+# the worked example the extra child is `priming`, whose `<onentry>` sends the
+# opening prompt. The symptom was a supervised session being re-sent its
+# opening prompt every time a person answered a dialog. Nothing crashed.
+#
+# Both cases keep every local in use. A mutation that leaves `reachedTarget`
+# written and never read does not compile under `-Werror`, and a case that
+# cannot build has no witness at all — the round reports INCONCLUSIVE and the
+# clause stays unmeasured, which is the state this file exists to end.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets tools/codegen/templates/process_transition.jinja2
+mutation_oracles tests/integration/AncestorEntryIsNotDefaultEntryAotTest.cpp
+mutation_oracles tests/integration/AiLoopAotTest.cpp
+
+# ── The ancestor half is applied to the wrong half of the chain ────
+#
+# Dropping the `!` gives `pathChild` to the links AFTER the target and
+# `nullopt` to the ancestors before it, which is Appendix D read backwards:
+# every ancestor now takes its default initial child. One character, and it is
+# the shape a reader writing this loop from the spec's prose can land on,
+# because "the state we have reached" and "the states on the way to it" are one
+# word apart.
+
+mutation_case "ancestors take their default child and the target does not" <<'PY'
+edit("tools/codegen/templates/process_transition.jinja2",
+     "                        (!reachedTarget && chainIdx + 1 < entryChain.size())",
+     "                        (reachedTarget && chainIdx + 1 < entryChain.size())")
+PY
+
+# ── The walk believes it is already past the target ────────────────
+#
+# The same defect reached from the other end: seeding the flag true makes every
+# link read as "at or after the target", so the whole chain is entered with
+# `nullopt` and every compound state on it takes its default. Worth pinning
+# separately because it survives any rewrite of the conditional above.
+
+mutation_case "the whole entry chain is walked as though it were the target" <<'PY'
+edit("tools/codegen/templates/process_transition.jinja2",
+     "                bool reachedTarget = false;",
+     "                bool reachedTarget = true;")
+PY
