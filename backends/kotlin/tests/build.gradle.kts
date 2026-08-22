@@ -115,14 +115,45 @@ tasks.test {
     // W3C test timeouts: 10s per test (most complete in <100ms)
     systemProperty("junit.jupiter.execution.timeout.default", "10s")
 
-    // JUnit5 parallel execution
+    // Two independent parallelism knobs act on this one suite, and they
+    // MULTIPLY. Gradle forks `maxParallelForks` test JVMs; JUnit then sizes a
+    // pool inside each one. Sized separately, each is reasonable and the
+    // product is not: on a 32-processor machine the fork count was 16 and the
+    // `dynamic` strategy asked each fork for `availableProcessors * 2` = 64,
+    // because a forked JVM sees the whole machine and knows nothing about its
+    // 15 siblings. That is 1024 concurrent tests on 32 processors.
+    //
+    // Almost every test here is a few microsteps and does not notice. The one
+    // that does is any test whose VERDICT is wall-clock: a W3C document that
+    // arms `<send event="timeout" delay="2s"/>` as its own failure timer is
+    // racing real time, and the harness's `tick()` loop has to be scheduled
+    // often enough to finish the document's work before that timer fires.
+    // Measured 2026-08-22, test253 (an `<invoke type="scxml">` handshake behind
+    // exactly such a timer) took 0.51s run alone and 5.5s run in the suite, and
+    // failed every time in the suite — including on `main`, where the red had
+    // been standing unread.
+    //
+    // So the fork count stays, and the per-fork pool is derived FROM it rather
+    // than from the machine a second time. Both numbers now come from one
+    // reading of `availableProcessors`, and their product is that reading.
+    val cpus = Runtime.getRuntime().availableProcessors()
+    val forks = (cpus / 2).coerceAtLeast(1)
+
+    // JUnit5 parallel execution, bounded so the whole suite fits the machine.
     systemProperty("junit.jupiter.execution.parallel.enabled", "true")
     systemProperty("junit.jupiter.execution.parallel.mode.default", "concurrent")
-    systemProperty("junit.jupiter.execution.parallel.config.strategy", "dynamic")
-    systemProperty("junit.jupiter.execution.parallel.config.dynamic.factor", "2")
+    // `fixed` rather than `dynamic`: the dynamic strategy multiplies a factor
+    // by the processor count the JVM can see, which is the whole machine no
+    // matter how many forks are sharing it. A fixed number is the only way to
+    // say "this fraction of the machine".
+    systemProperty("junit.jupiter.execution.parallel.config.strategy", "fixed")
+    systemProperty(
+        "junit.jupiter.execution.parallel.config.fixed.parallelism",
+        (cpus / forks).coerceAtLeast(1).toString()
+    )
 
     // Gradle-level fork control
-    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+    maxParallelForks = forks
 
     testLogging {
         events("passed", "skipped", "failed")

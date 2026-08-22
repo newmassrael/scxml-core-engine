@@ -36,6 +36,7 @@ from .event import EventMetadata, EventWithMetadata, is_error_event
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
 from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
+from .payload_reading import PayloadReading
 from .policy import StatePolicy, TransitionResult
 from .scheduler import Scheduler
 
@@ -158,6 +159,11 @@ class Engine(Generic[S, E]):
         # `discarded_external_events`.
         self._discarded_external_events: int = 0
         self._last_discarded_event: Optional[E] = None
+        # §scxml-B-2-8-1 — deliveries whose payload announced structure and
+        # that the datamodel could not read as one, and the most recent of
+        # them. See `undecodable_payloads`.
+        self._undecodable_payloads: int = 0
+        self._last_undecodable_payload: Optional[E] = None
         # §scxml-3.12.2 — `error.*` events this engine raised that no
         # transition matched, and the most recent of them. See
         # `unhandled_error_events`.
@@ -391,6 +397,48 @@ class Engine(Generic[S, E]):
         actually has.
         """
         return self._last_discarded_event
+
+    def note_payload_reading(self, event: E, reading: PayloadReading) -> None:
+        """Record which §scxml-B-2-8-1 rung the payload just bound got.
+
+        Called by generated code immediately after it binds `_event`,
+        because that is the only moment the rung is known. Four of the
+        five readings are the ladder working and are recorded by being
+        ignored; the fifth is the one a host is wrong about.
+        """
+        if reading is PayloadReading.UNDECODABLE:
+            self._undecodable_payloads += 1
+            self._last_undecodable_payload = event
+
+    def undecodable_payloads(self) -> int:
+        """W3C SCXML B.2.8.1 — how many events arrived carrying a payload
+        that announced itself as structure and that the datamodel could
+        not read as one.
+
+        The clause requires the fallback: content the processor cannot
+        interpret becomes a space-normalized string. What it does not
+        require — and what nothing here used to provide — is any way for
+        the host that SENT that payload to learn its fields have stopped
+        existing. The document reads `_event.data.field`, gets nothing,
+        assigns nothing, and the run continues; measured 2026-08-22 on
+        three independent Lua implementations, a payload in Lua's own
+        table syntax silently emptied every variable the receiving
+        transition assigned, including the one that primes the next
+        session.
+
+        Counts only the reading a host can act on. Prose delivered as
+        text is the ladder working (W3C test 562) and is not counted,
+        because a diagnostic that fires when nothing is wrong is one
+        nobody reads.
+        """
+        return self._undecodable_payloads
+
+    def last_undecodable_payload(self) -> Optional[E]:
+        """The most recent event `undecodable_payloads` counted, or `None`
+        while that count is zero. A count says something was lost; this
+        says which delivery lost it.
+        """
+        return self._last_undecodable_payload
 
     def unhandled_error_events(self) -> int:
         """W3C SCXML 3.12.2 — how many `error.*` events this engine raised

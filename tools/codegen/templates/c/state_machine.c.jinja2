@@ -3702,7 +3702,14 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
    fixture declares no events (then both the switch and the parameters
    fall through unused). #}
 {% if model.needs_script_engine %}
-SCE_SM_FN static void set_current_event(lua_State *L, const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+{# §scxml-B-2-8-1: the helper RETURNS the reading it gave the payload rather
+   than recording it, because this function holds `L` and the event and not the
+   machine — and handing it the machine so it can count would give a helper
+   named for binding `_event` a second job. The six sibling backends answer the
+   same way (rust `set_current_event -> ScriptResult<PayloadReading>`, cpp
+   `SetCurrentEventResult`, go `(PayloadReading, error)`), so the caller below
+   is the one place a rung becomes a statistic on every channel. #}
+SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     (void)L;
     (void)evt;
     /* W3C SCXML 5.10.1 (test332): expose `evt->send_id` to the lua side
@@ -3902,23 +3909,70 @@ SCE_SM_FN static void set_current_event(lua_State *L, const {{ csym_prefix }}{{ 
             lua_pushvalue(L, -2);
             lua_setfield(L, -2, "data");
             lua_pop(L, 2);
-            return;
+            return SCE_PAYLOAD_DOM;
         }
         lua_pushstring(L, evt->data);
         lua_setglobal(L, "_sce_raw_event_data");
+        /* §scxml-B-2-8-1: the chunk reports which of the two remaining rungs
+           it took, because only the side that ATTEMPTED the structured read
+           knows whether it attempted one. A caller inspecting `_event.data`
+           afterwards can tell a string from a table, but not a string chosen
+           because the content was prose from one chosen because the parse
+           refused — and that is exactly the difference a host acts on.
+
+           `_sce_payload_decoded` rather than a return value: `luaL_dostring`
+           answers only whether the chunk itself ran, and the chunk running is
+           this engine's invariant rather than the payload's reading. */
         if (luaL_dostring(L,
                           "do "
                           "local _c = _sce_raw_event_data; "
                           "local _val, _ok = JSON._parse_document(_c); "
                           "if _ok then _event.data = _val "
                           "else _event.data = _scxml_normalize_ws(_c) end; "
+                          "_sce_payload_decoded = _ok and true or false; "
                           "_sce_raw_event_data = nil "
                           "end") != 0) {
             (void)fprintf(stderr, "SCE: event payload decode failed: %s\n",
                           lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error");
             lua_pop(L, 1);
+            /* The chunk itself broke, so `_event.data` holds whatever the
+               previous delivery left. That is this engine's invariant failing
+               rather than the payload's reading, and it is already said out
+               loud above; claiming a rung here would file an engine fault
+               under the host's payload. */
+            return SCE_PAYLOAD_ABSENT;
         }
+        lua_getglobal(L, "_sce_payload_decoded");
+        const bool _decoded = lua_toboolean(L, -1) != 0;
+        lua_pop(L, 1);
+        lua_pushnil(L);
+        lua_setglobal(L, "_sce_payload_decoded");
+        /* The third rung splits in two, and `sce_payload_reading_of_text` is
+           where that split is defined for every C11 machine — see the header
+           for why only `{` and `[` announce structure. */
+        return _decoded ? SCE_PAYLOAD_STRUCTURED : sce_payload_reading_of_text(evt->data);
     }
+    return SCE_PAYLOAD_ABSENT;
+}
+
+/* §scxml-B-2-8-1: turn the reading above into something the host can read
+   back. Called at the dequeue sites rather than inside the helper so that the
+   event being recorded is the event being DELIVERED — cpp learned this the
+   hard way, where the guard that restores the previous `_event` runs later and
+   a count taken after it describes a different delivery.
+
+   Only `SCE_PAYLOAD_UNDECODABLE` is recorded. The other four are the clause
+   working, and a statistic that also counts success cannot be used to detect
+   failure without the host re-deriving which of the two it was told about. */
+SCE_SM_FN static void note_payload_reading({{ csym_prefix }}{{ model.name }}_t *sm,
+                            const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt,
+                            sce_payload_reading_t reading) {
+    if (sm == NULL || evt == NULL || reading != SCE_PAYLOAD_UNDECODABLE) {
+        return;
+    }
+    sm->undecodable_payloads++;
+    sm->last_undecodable_payload = evt->event;
+    sm->has_undecodable_payload = true;
 }
 {% endif %}
 
@@ -4065,7 +4119,7 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
            per-enum case reads `_pending_event_type` back, with the
            error and done event families overriding to 'platform'. */
         (void)luaL_dostring(sm->L, "_pending_event_type = 'internal'");
-        set_current_event(sm->L, &evt);
+        note_payload_reading(sm, &evt, set_current_event(sm->L, &evt));
         {% endif %}
 
         if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
@@ -4212,7 +4266,7 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         /* `_event.data` hydration from `evt.data` now happens inside
            `set_current_event`, so the internal drain gets the same rule
            this site used to hold alone. */
-        set_current_event(sm->L, &evt);
+        note_payload_reading(sm, &evt, set_current_event(sm->L, &evt));
         {% endif %}
 
         if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
@@ -4760,6 +4814,25 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ c
         return false;
     }
     *out = sm->last_discarded_event;
+    return true;
+}
+
+/* W3C SCXML B.2.8.1: payloads that announced structure and arrived as text
+   because the datamodel could not read them. The clause mandates the fallback
+   and says nothing about telling anyone; without this the host that built the
+   payload sees `_event.data.field` evaluate to nil and cannot tell a field it
+   forgot to set from a whole payload that never parsed. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_undecodable_payloads(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->undecodable_payloads;
+}
+
+/* W3C SCXML B.2.8.1: which delivery the count above last recorded. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_undecodable_payload(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out) {
+    if (sm == NULL || out == NULL || !sm->has_undecodable_payload) {
+        return false;
+    }
+    *out = sm->last_undecodable_payload;
     return true;
 }
 

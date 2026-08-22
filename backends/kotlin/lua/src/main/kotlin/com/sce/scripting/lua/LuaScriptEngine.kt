@@ -13,6 +13,7 @@ package com.sce.scripting.lua
 
 import com.sce.runtime.IoProcessorDescriptor
 import com.sce.runtime.SceXmlDom
+import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -229,8 +230,9 @@ class LuaScriptEngine : ScxmlScriptEngine {
         session.declaredVars.add(location.split('.')[0])
     }
 
-    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs) {
-        val session = sessions[sessionId] ?: return
+    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs): PayloadReading {
+        val session = sessions[sessionId] ?: return PayloadReading.Absent
+        var reading = PayloadReading.Absent
         val L = session.handle
 
         LuaNative.createTable(L, 0, 8)
@@ -242,19 +244,19 @@ class LuaScriptEngine : ScxmlScriptEngine {
         pushField(L, "invokeid", args.invokeId)
 
         if (args.data.isNotEmpty()) {
-            val parsed = parseDataValueInternal(L, args.data)
-            if (parsed) {
-                LuaNative.setField(L, -2, "data")
-            } else {
-                LuaNative.pushNil(L)
-                LuaNative.setField(L, -2, "data")
-            }
+            // Every rung of the ladder leaves a value on the stack, so the
+            // reading is what it answers with rather than whether it managed
+            // to push one — the `false` this used to return could only mean
+            // "nothing pushed", which no rung produces.
+            reading = parseDataValueInternal(L, args.data)
+            LuaNative.setField(L, -2, "data")
         } else {
             LuaNative.pushNil(L)
             LuaNative.setField(L, -2, "data")
         }
 
         LuaNative.setGlobal(L, "_event")
+        return reading
     }
 
     override fun clearCurrentEvent(sessionId: String) {
@@ -333,10 +335,14 @@ class LuaScriptEngine : ScxmlScriptEngine {
     override fun parseDataValue(sessionId: String, data: String): Any? {
         val session = sessions[sessionId] ?: return data
         val L = session.handle
-        val pushed = parseDataValueInternal(L, data)
-        return if (pushed) {
-            wrapLuaResult(L, session)
-        } else data
+        // Every rung of §scxml-B-2-8-1 pushes a value — the third one pushes
+        // the space-normalized string — so the branch that used to return the
+        // raw `data` when nothing was pushed was unreachable. What the helper
+        // reports now is WHICH rung, which is the fact `setCurrentEvent` needs
+        // and this caller does not: a `<data>` element's value is whatever the
+        // ladder made of it either way.
+        parseDataValueInternal(L, data)
+        return wrapLuaResult(L, session)
     }
 
     // === Private Helpers ===
@@ -609,11 +615,11 @@ class LuaScriptEngine : ScxmlScriptEngine {
      *
      * Returns true if a value was pushed onto the Lua stack, false otherwise.
      */
-    private fun parseDataValueInternal(L: Long, data: String): Boolean {
+    private fun parseDataValueInternal(L: Long, data: String): PayloadReading {
         // Step 1: XML detection
         val firstNonWs = data.indexOfFirst { !it.isWhitespace() }
         if (firstNonWs >= 0 && data[firstNonWs] == '<') {
-            if (pushDOMObject(L, data)) return true
+            if (pushDOMObject(L, data)) return PayloadReading.Dom
         }
 
         // Step 2: JSON.parse via atomic chunk — cleanup guaranteed inside chunk
@@ -650,14 +656,20 @@ class LuaScriptEngine : ScxmlScriptEngine {
             LuaNative.pop(L, 1)
             LuaNative.pushNil(L); LuaNative.setGlobal(L, "__sce_tmp")
         } else if (!LuaNative.isNil(L, -1)) {
-            return true
+            return PayloadReading.Structured
         } else {
             LuaNative.pop(L, 1)
         }
 
         // Step 3: Space-normalized string (W3C SCXML B.2, test 562)
         LuaNative.pushString(L, normalizeWhitespace(data))
-        return true
+        // Which of the two third-rung readings this is. The clause treats them
+        // the same and a host does not: prose arriving as text is the ladder
+        // working, and a payload that opened with a brace and would not parse
+        // is a payload whose fields have just stopped existing. Only here is
+        // that difference still visible, because only here was the structured
+        // read attempted.
+        return PayloadReading.ofText(data)
     }
 
     /**

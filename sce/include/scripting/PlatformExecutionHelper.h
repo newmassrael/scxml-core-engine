@@ -21,6 +21,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <optional>
 
 namespace SCE {
 
@@ -67,6 +68,59 @@ public:
      * W3C SCXML: Asynchronous execution for non-blocking state machine operations
      */
     virtual std::future<ScriptResult> executeAsync(std::function<ScriptResult()> operation) = 0;
+
+    /**
+     * @brief Run an operation on the engine's thread and answer with ITS type.
+     *
+     * What this helper decides is WHERE an operation runs — QuickJS is bound
+     * to one thread and every session call has to reach it. What an operation
+     * answers with is the operation's business, and `executeAsync` above ties
+     * the two together because `ScriptResult` was every script call's answer
+     * when it was written.
+     *
+     * `setCurrentEvent` now answers with more than success: it also reports
+     * which rung of W3C SCXML B.2.8.1 the payload got, which is the one fact
+     * about a delivered event that nothing can recover afterwards (see
+     * `SetCurrentEventResult`). Rather than widen every caller of the virtual,
+     * the result travels in a promise this wrapper owns while the virtual goes
+     * on deciding the thread.
+     *
+     * The inner `ScriptResult` is a placeholder the queue's signature requires
+     * and nobody reads; the operation's real answer travels beside it.
+     *
+     * `onRefused` is not a formality. A queued executor whose worker has been
+     * joined REFUSES an operation rather than running it — it answers the
+     * caller with an error `ScriptResult` and never invokes the function. That
+     * refusal is itself the fix for a measured 180-second hang, and a wrapper
+     * that assumed its function always runs would replace the hang with a
+     * broken promise: `.get()` would throw where every caller expects a value.
+     * So the refusing result is handed to `onRefused`, which says what that
+     * means for `R`.
+     */
+    template <typename R>
+    std::future<R> executeAsyncReturning(std::function<R()> operation,
+                                         std::function<R(const ScriptResult &)> onRefused) {
+        auto answered = std::make_shared<std::optional<R>>();
+        std::future<ScriptResult> queued = executeAsync([answered, operation]() {
+            *answered = operation();
+            return ScriptResult::createSuccess();
+        });
+
+        // Waiting here does not move when the CALLER waits: `executeAsync`
+        // hands back a future, and every caller of every operation on this
+        // class `.get()`s it on the next expression. The wait is what lets the
+        // refusal above be told apart from a completed run, which is the one
+        // thing the queued future knows and the promise does not.
+        const ScriptResult queuedResult = queued.get();
+
+        std::promise<R> promise;
+        if (answered->has_value()) {
+            promise.set_value(std::move(**answered));
+        } else {
+            promise.set_value(onRefused(queuedResult));
+        }
+        return promise.get_future();
+    }
 
     /**
      * @brief Shutdown platform-specific execution infrastructure

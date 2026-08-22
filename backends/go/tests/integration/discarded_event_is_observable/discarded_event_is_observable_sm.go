@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: df2ef2c591564c7e52022e112ae9c5e384db80574b200165584f410ac8201d24
-// template-hash: 465642caa5c7ae5f006b7e4c3302ebaf26878f27c380322c3cf9d87ca35b0ee6
+// template-hash: cbaac820582d5e7f1cadaf34e8320b857485c1af2fdc07d0fa3a39daaee19641
 // generated-at: 0
 
 
@@ -277,8 +277,17 @@ func (p *DiscardedEventIsObservablePolicy) executeScript(script string) error {
 	return engine.ExecuteScript(p.SessionID, script)
 }
 
-// setCurrentEvent binds _event system variable (W3C SCXML 5.10).
-func (p *DiscardedEventIsObservablePolicy) setCurrentEvent(name string) {
+// setCurrentEvent binds _event system variable (W3C SCXML 5.10) and answers
+// which rung of §scxml-B-2-8-1 the payload got, because the binding is the
+// only place that knows.
+//
+// This used to be `_ = engine.SetCurrentEvent(...)`: the ladder decided
+// between a DOM, a value and a space-normalized string, and the decision was
+// dropped one line later. A payload that announced structure and would not
+// parse therefore reached the document as raw characters, every
+// _event.data.<field> read empty, and nothing anywhere could say so — see
+// sce.PayloadReading.
+func (p *DiscardedEventIsObservablePolicy) setCurrentEvent(name string) sce.PayloadReading {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	data := p.pendingEventData
@@ -297,7 +306,7 @@ func (p *DiscardedEventIsObservablePolicy) setCurrentEvent(name string) {
 	origin := sce.PublishedOrigin(p.pendingEventOrigin)
 	originType := p.pendingEventOrigintype
 	invokeID := p.pendingEventInvokeid
-	_ = engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
+	reading, err := engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
 		Name:       name,
 		Data:       data,
 		Type:       eventType,
@@ -306,6 +315,13 @@ func (p *DiscardedEventIsObservablePolicy) setCurrentEvent(name string) {
 		OriginType: originType,
 		InvokeID:   invokeID,
 	})
+	if err != nil {
+		// An engine that could not bind _event at all has a larger problem
+		// than an unreadable payload, and reporting PayloadUndecodable for it
+		// would point a host at the wrong thing.
+		return sce.PayloadAbsent
+	}
+	return reading
 }
 
 // assignVariable assigns a value to a datamodel variable via script engine.
@@ -589,7 +605,10 @@ func (p *DiscardedEventIsObservablePolicy) ExecuteExitActions(state DiscardedEve
 func (p *DiscardedEventIsObservablePolicy) ProcessTransition(currentState *DiscardedEventIsObservableState, event DiscardedEventIsObservableEvent, engine *sce.Engine[DiscardedEventIsObservableState, DiscardedEventIsObservableEvent]) bool {
 	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
 	if event != DiscardedEventIsObservableEventNull {
-		p.setCurrentEvent(p.GetEventName(event))
+		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
+		// rather than dropped. This is the only frame that has both the
+		// reading and the event it belongs to.
+		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
 
 	// W3C SCXML 3.12: Try transitions in current state first

@@ -515,6 +515,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var lastDiscarded: E? = null
 
     /**
+     * W3C SCXML B.2.8.1: deliveries whose payload announced structure and that
+     * the datamodel could not read as one, and the most recent of them. See
+     * [undecodablePayloads] and [lastUndecodablePayload].
+     */
+    private var undecodablePayloadCount: Int = 0
+    private var lastUndecodable: E? = null
+
+    /**
      * §scxml-3.12.2: `error.*` events this engine raised that no transition
      * matched, and the most recent of them. See [unhandledErrorEvents] and
      * [lastUnhandledError].
@@ -1131,6 +1139,53 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * the question a host debugging a stalled supervisor actually has.
      */
     fun lastDiscardedEvent(): E? = lastDiscarded
+
+    /**
+     * Record which W3C SCXML B.2.8.1 rung the payload just bound got.
+     *
+     * Called by generated code immediately after it binds `_event`, because
+     * that is the only moment the rung is known. Four of the five readings are
+     * the ladder working and are recorded by being ignored; the fifth is the
+     * one a host is wrong about.
+     */
+    fun notePayloadReading(event: E, reading: PayloadReading) {
+        if (reading == PayloadReading.Undecodable) {
+            undecodablePayloadCount++
+            lastUndecodable = event
+        }
+    }
+
+    /**
+     * W3C SCXML B.2.8.1: how many events arrived carrying a payload that
+     * announced itself as structure and that the datamodel could not read as
+     * one.
+     *
+     * The clause requires the fallback: content the processor cannot interpret
+     * becomes a space-normalized string. What it does not require — and what
+     * nothing here used to provide — is any way for the host that SENT that
+     * payload to learn its fields have stopped existing. The document reads
+     * `_event.data.field`, gets nothing, assigns nothing, and the run
+     * continues; measured 2026-08-22 on three independent Lua implementations,
+     * a payload in Lua's own table syntax silently emptied every variable the
+     * receiving transition assigned, including the one that primes the next
+     * session.
+     *
+     * This backend has four script engines behind one interface, and which one
+     * a document gets is the embedder's constructor argument. That choice used
+     * to decide whether a lost payload was knowable; now all four report it.
+     *
+     * Counts only the reading a host can act on. Prose delivered as text is
+     * the ladder working (W3C test 562) and is not counted, because a
+     * diagnostic that fires when nothing is wrong is one nobody reads.
+     */
+    fun undecodablePayloads(): Int = undecodablePayloadCount
+
+    /**
+     * The most recent event [undecodablePayloads] counted, or `null` while
+     * that count is zero. A count says something was lost; this says which
+     * delivery lost it.
+     */
+    fun lastUndecodablePayload(): E? = lastUndecodable
 
     /**
      * §scxml-3.12.2: how many `error.*` events this engine raised that no

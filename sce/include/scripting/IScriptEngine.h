@@ -5,6 +5,10 @@
 
 #include "SCXMLTypes.h"
 #include "common/IOProcessorHelper.h"
+// W3C SCXML B.2.8.1: `PayloadReading` travels out of `setCurrentEvent` below and
+// is counted by engines that include no `scripting/` header, so it lives with
+// the event metadata rather than here — see the note in that file.
+#include "core/PayloadReading.h"
 #include "scripting/ISessionLifecycle.h"
 #include "scripting/ScriptResult.h"
 #include <functional>
@@ -16,6 +20,20 @@
 namespace SCE {
 
 class Event;  // Forward declaration for Event-based setCurrentEvent overload
+
+/**
+ * @brief What `setCurrentEvent` answers: whether it bound, and which rung.
+ *
+ * The rung used to be discarded one line after it was decided — the generated
+ * Rust binding was literally `let _ = se.set_current_event(...)`. It is
+ * returned rather than left to a "ask me afterwards" accessor because an
+ * accessor can drift out of step with the binding it describes, and a decision
+ * handed back by the function that made it cannot.
+ */
+struct SetCurrentEventResult {
+    ScriptResult status;
+    PayloadReading reading = PayloadReading::Absent;
+};
 
 /**
  * @brief Parameter object for the §scxml-5.10 `setCurrentEvent` boundary.
@@ -146,19 +164,23 @@ public:
      * @brief Set current event from Event object (§scxml-5.10)
      * @param sessionId Target session context
      * @param event Event object containing all event fields
-     * @return Future indicating success/failure
+     * @return Future carrying success/failure AND which W3C SCXML B.2.8.1 rung
+     *         the payload got — see `PayloadReading`. An implementation that
+     *         binds no payload reports `Absent`; one that cannot tell the
+     *         rungs apart must not guess, because a wrong `Undecodable` is a
+     *         host chasing a payload that arrived intact.
      */
-    virtual std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
-                                                      const std::shared_ptr<Event> &event) = 0;
+    virtual std::future<SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
+                                                               const std::shared_ptr<Event> &event) = 0;
 
     /**
      * @brief Set current event from individual fields (§scxml-5.10)
      * @param sessionId Target session context
      * @param args SetCurrentEventArgs bundling eventName + 6 metadata fields
-     * @return Future indicating success/failure
+     * @return Future carrying success/failure AND the W3C SCXML B.2.8.1 rung.
      */
-    virtual std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
-                                                      const SetCurrentEventArgs &args) = 0;
+    virtual std::future<SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
+                                                               const SetCurrentEventArgs &args) = 0;
 
     // === Global Function Management ===
 

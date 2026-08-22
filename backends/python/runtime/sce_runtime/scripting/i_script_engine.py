@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from ..io_processors import IoProcessorDescriptor
+from ..payload_reading import PayloadReading
 
 
 def _json_string(text: str) -> str:
@@ -404,13 +405,21 @@ class IScriptEngine(ABC):
         self,
         session_id: str,
         args: "SetCurrentEventArgs",
-    ) -> None:
+    ) -> PayloadReading:
         """W3C SCXML 5.10 — bind the `_event` system variable for the
         currently-processing event. Called by the runtime before guard
         evaluation and action execution for each event. The 7 metadata
         fields are bundled into a [SetCurrentEventArgs] mirroring the
         C++ `SCE::SetCurrentEventArgs` struct and the Rust
-        `SetCurrentEventArgs<'a>` parameter object."""
+        `SetCurrentEventArgs<'a>` parameter object.
+
+        Returns which rung of §scxml-B-2-8-1 the payload got. The
+        implementation is walking that ladder either way, and the rung
+        is the one fact about a delivered event that nothing else can
+        recover afterwards — see [PayloadReading]. An implementation
+        that binds no payload returns `ABSENT`; one that cannot tell the
+        rungs apart must not guess, because a wrong `UNDECODABLE` is a
+        host chasing a payload that arrived intact."""
 
     # ── Global functions / native bindings ─────────────────────────
 

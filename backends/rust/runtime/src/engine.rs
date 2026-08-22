@@ -511,6 +511,12 @@ pub struct Engine<P: StatePolicy> {
     /// The most recent event this engine discarded — see
     /// [`last_discarded_event`](Self::last_discarded_event).
     pub(crate) last_discarded_event: Option<P::Event>,
+    /// Events delivered with a payload the datamodel could not read as
+    /// structure — see [`undecodable_payloads`](Self::undecodable_payloads).
+    pub(crate) undecodable_payloads: u32,
+    /// The most recent event whose payload could not be read — see
+    /// [`last_undecodable_payload`](Self::last_undecodable_payload).
+    pub(crate) last_undecodable_payload: Option<P::Event>,
     /// `error.*` events this engine raised that no transition matched — see
     /// [`unhandled_error_events`](Self::unhandled_error_events).
     pub(crate) unhandled_error_events: u32,
@@ -613,6 +619,8 @@ impl<P: StatePolicy> Engine<P> {
             unattended_scheduler_steps: 0,
             discarded_external_events: 0,
             last_discarded_event: None,
+            undecodable_payloads: 0,
+            last_undecodable_payload: None,
             unhandled_error_events: 0,
             last_unhandled_error: None,
             handling_error_event: false,
@@ -1223,6 +1231,60 @@ impl<P: StatePolicy> Engine<P> {
     /// so reading it costs nothing on the no_std profile.
     pub fn last_discarded_event(&self) -> Option<P::Event> {
         self.last_discarded_event
+    }
+
+    /// Record which reading W3C SCXML B.2.8.1 gave the payload just bound.
+    ///
+    /// Called by generated code immediately after it binds `_event`, because
+    /// that is the only moment the rung is known — see
+    /// [`PayloadReading`](crate::PayloadReading). Four of the five readings are
+    /// the ladder working and are recorded by being ignored; the fifth is the
+    /// one a host is wrong about.
+    pub fn note_payload_reading(&mut self, event: P::Event, reading: crate::PayloadReading) {
+        // W3C SCXML B.2.8.1 is the clause the reading comes from, named in
+        // prose rather than as a `§` citation: this method REPORTS the rung a
+        // script engine chose, and a bound citation here would claim it
+        // implements the clause. The ladder itself is where that claim
+        // belongs.
+        if reading.is_undecodable() {
+            self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
+            self.last_undecodable_payload = Some(event);
+        }
+    }
+
+    /// How many events arrived carrying a payload that announced itself as
+    /// structure and that the datamodel could not read as one.
+    ///
+    /// The clause requires the fallback: content the processor cannot
+    /// interpret becomes a space-normalized string. What it does not require —
+    /// and what nothing here used to provide — is any way for the host that
+    /// SENT that payload to learn its fields have stopped existing. The
+    /// document reads `_event.data.field`, gets nothing, assigns nothing, and
+    /// the run continues; measured 2026-08-22 on three independent Lua
+    /// implementations, a payload in Lua's own table syntax silently emptied
+    /// every variable the receiving transition assigned, including the one
+    /// that primes the next session.
+    ///
+    /// Counts only the reading a host can act on. Prose delivered as text is
+    /// the ladder working (W3C test 562) and is not counted, because a
+    /// diagnostic that fires when nothing is wrong is one nobody reads.
+    ///
+    /// Comparing the count across a delivery is what turns "the machine
+    /// ignored my payload" into a fact, and
+    /// [`last_undecodable_payload`](Self::last_undecodable_payload) says which
+    /// delivery it was.
+    pub fn undecodable_payloads(&self) -> u32 {
+        self.undecodable_payloads
+    }
+
+    /// The most recent event [`undecodable_payloads`](Self::undecodable_payloads)
+    /// counted, or `None` while that count is zero.
+    ///
+    /// Copy, so reading it costs nothing on the no_std profile — the same
+    /// shape as [`last_discarded_event`](Self::last_discarded_event), and for
+    /// the same reason: a count says something was lost, this says what.
+    pub fn last_undecodable_payload(&self) -> Option<P::Event> {
+        self.last_undecodable_payload
     }
 
     /// How many `error.*` events this engine raised that no transition in any

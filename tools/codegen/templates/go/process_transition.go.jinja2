@@ -25,7 +25,10 @@ func (p *{{ machine_name }}Policy) ProcessTransition(currentState *{{ machine_na
 {% if model.needs_script_engine %}
 	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
 	if event != {{ machine_name }}EventNull {
-		p.setCurrentEvent(p.GetEventName(event))
+		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
+		// rather than dropped. This is the only frame that has both the
+		// reading and the event it belongs to.
+		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
 {% endif %}
 

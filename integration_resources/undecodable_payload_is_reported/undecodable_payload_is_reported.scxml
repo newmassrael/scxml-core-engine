@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML B.2.8.1 gives a payload three readings: interpretable as an XML
+     document becomes a DOM, interpretable as structured data becomes the
+     corresponding value, "otherwise" it becomes a space-normalized string.
+     The third is a fallback, and this fixture is about what a fallback costs.
+
+     A host builds `{"done":true}` and sends it. Something truncates it, or a
+     serializer emits a trailing comma, or the field is a NaN. The clause is
+     satisfied: the content becomes a string. The document then evaluates
+     `_event.data.done`, gets nothing, and takes the transition it would have
+     taken had the host sent a payload with no `done` field at all. Nothing is
+     raised - the fallback is CORRECT behaviour, not an error - and nothing is
+     counted. The run continues, one belief poorer, and says nothing.
+
+     These two deliveries are what the document cannot tell apart:
+
+       answer  {"done":                the payload never parsed
+       answer  {"ready":true}          it parsed; `done` is genuinely absent
+
+     Both leave `answers` at +1 and the configuration in `waiting`. The
+     datamodel counters are here for the same reason `discarded_event_is_
+     observable` carries its own: without them a passing run cannot be told
+     apart from a run in which nothing fired at all.
+
+     So the three deliveries the drivers send walk the readings the clause
+     names, and the fourth proves the new count is a count of FAILURES rather
+     than of payloads:
+
+       note    just a sentence         rung 3, working - W3C test 562 sends
+                                       exactly this and requires it to arrive
+                                       as a string. Must NOT be counted; a
+                                       diagnostic that fires when nothing is
+                                       wrong is one nobody reads.
+       answer  {"done":                rung 3, reached by content that asked
+                                       for rung 2. Counted.
+       note    [1,2                    the same, announced with `[`, and under
+                                       a DIFFERENT event name - so a channel
+                                       that reports "the last event" rather
+                                       than "the last event that lost a
+                                       payload" is red here rather than
+                                       accidentally right.
+       answer  {"done":true}           rung 2. Reaches `accepted`, which is how
+                                       the drivers know the structured read
+                                       genuinely worked instead of merely not
+                                       being counted - and the count must not
+                                       move.
+
+     Rung 1 (XML -> DOM) is deliberately absent: `xml_data_is_a_dom_tree` owns
+     that axis, and the ladder returns from it before reaching the rule this
+     fixture measures.
+
+     Deliberately single-axis: no delayed `<send>`, no `<invoke>`, no
+     `<parallel>`. This fixture owns only what a host learns about a payload
+     the datamodel could not read.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="waiting"
+       name="undecodable_payload_is_reported">
+    <datamodel>
+        <data id="answers" expr="0"/>
+        <data id="notes" expr="0"/>
+    </datamodel>
+    <state id="waiting">
+        <transition event="answer" cond="_event.data.done" target="accepted"/>
+        <transition event="answer">
+            <assign location="answers" expr="answers + 1"/>
+        </transition>
+        <transition event="note">
+            <assign location="notes" expr="notes + 1"/>
+        </transition>
+    </state>
+    <final id="accepted"/>
+</scxml>

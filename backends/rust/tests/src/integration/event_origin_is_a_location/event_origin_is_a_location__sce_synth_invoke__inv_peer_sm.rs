@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 465642caa5c7ae5f006b7e4c3302ebaf26878f27c380322c3cf9d87ca35b0ee6
+// template-hash: cbaac820582d5e7f1cadaf34e8320b857485c1af2fdc07d0fa3a39daaee19641
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -322,6 +322,16 @@ impl EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
     // `helpers::io_processors::published_origin`, the port of the
     // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
     // spelling of the rule is how the backends would stop agreeing.
+    // Returns which rung of §scxml-B-2-8-1 the payload got, because the
+    // binding is the only place that knows. This used to be `let _ = ...`:
+    // the ladder decided between a DOM, a value and a space-normalized string,
+    // and the decision was dropped one line later. A payload that announced
+    // structure and would not parse therefore reached the document as raw
+    // characters, every `_event.data.<field>` read empty, and nothing anywhere
+    // could say so — see `sce_rust_runtime::PayloadReading`.
+    //
+    // A session that has not been created yet binds nothing, which is
+    // `Absent` rather than a failure: there is no payload in play.
     fn set_current_event_in_script_engine(
         &self,
         event_name: &str,
@@ -331,12 +341,12 @@ impl EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
         origin: &str,
         origin_type: &str,
         invoke_id: &str,
-    ) {
+    ) -> sce_rust_runtime::PayloadReading {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             let published = sce_rust_runtime::helpers::io_processors::published_origin(origin);
-            let _ = se.set_current_event(
+            se.set_current_event(
                 sid,
                 sce_rust_runtime::SetCurrentEventArgs {
                     event_name,
@@ -347,7 +357,13 @@ impl EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
                     origin_type,
                     invoke_id,
                 },
-            );
+            )
+            // An engine that could not bind `_event` at all has a larger
+            // problem than an unreadable payload, and reporting `Undecodable`
+            // for it would point a host at the wrong thing.
+            .unwrap_or(sce_rust_runtime::PayloadReading::Absent)
+        } else {
+            sce_rust_runtime::PayloadReading::Absent
         }
     }
 
@@ -715,7 +731,10 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
             let ev_origin: &str = &self.pending_event_origin;
             let ev_origintype: &str = &self.pending_event_origintype;
             let ev_invokeid: &str = &self.pending_event_invokeid;
-            self.set_current_event_in_script_engine(
+            // §scxml-B-2-8-1: the rung the payload got, handed to the engine
+            // rather than dropped. This is the only frame that has both the
+            // reading and the event it belongs to.
+            let payload_reading = self.set_current_event_in_script_engine(
                 event_name,
                 ev_data,
                 event_type,
@@ -724,6 +743,7 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
                 ev_origintype,
                 ev_invokeid,
             );
+            engine.note_payload_reading(event, payload_reading);
         }
 
         // Flat state machine: no hierarchy, direct transition check

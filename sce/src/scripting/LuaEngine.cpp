@@ -900,11 +900,11 @@ std::future<ScriptResult> LuaEngine::setupSystemVariables(const std::string &ses
 
 // === Event Management ===
 
-std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionId,
-                                                     const std::shared_ptr<Event> &event) {
+std::future<SetCurrentEventResult> LuaEngine::setCurrentEvent(const std::string &sessionId,
+                                                              const std::shared_ptr<Event> &event) {
     if (!event) {
-        std::promise<ScriptResult> p;
-        p.set_value(ScriptResult::createSuccess(true));
+        std::promise<SetCurrentEventResult> p;
+        p.set_value({ScriptResult::createSuccess(true), PayloadReading::Absent});
         return p.get_future();
     }
 
@@ -920,8 +920,8 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
         std::lock_guard<std::mutex> lock(sessionMutex_);
         auto it = sessions_.find(sessionId);
         if (it == sessions_.end()) {
-            std::promise<ScriptResult> p;
-            p.set_value(ScriptResult::createError("Session not found: " + sessionId));
+            std::promise<SetCurrentEventResult> p;
+            p.set_value({ScriptResult::createError("Session not found: " + sessionId), PayloadReading::Absent});
             return p.get_future();
         }
 
@@ -952,8 +952,13 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
 
         lua_setglobal(L, "_event");
 
-        std::promise<ScriptResult> p;
-        p.set_value(ScriptResult::createSuccess(true));
+        // The typed path never walks §scxml-B-2-8-1's ladder: the value was
+        // already a value when it arrived, so there was no reading to choose
+        // and nothing that could have been lost. `Structured` rather than
+        // `Absent`, because a payload IS present and a host asking "did my
+        // data survive" should not be told there was none.
+        std::promise<SetCurrentEventResult> p;
+        p.set_value({ScriptResult::createSuccess(true), PayloadReading::Structured});
         return p.get_future();
     }
 
@@ -964,7 +969,8 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
                                                           event->getOriginType(), event->getInvokeId()});
 }
 
-std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) {
+std::future<SetCurrentEventResult> LuaEngine::setCurrentEvent(const std::string &sessionId,
+                                                              const SetCurrentEventArgs &args) {
     const std::string &eventName = args.eventName;
     const std::string &eventData = args.eventData;
     const std::string &eventType = args.eventType;
@@ -975,12 +981,18 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
-        std::promise<ScriptResult> p;
-        p.set_value(ScriptResult::createError("Session not found: " + sessionId));
+        std::promise<SetCurrentEventResult> p;
+        p.set_value({ScriptResult::createError("Session not found: " + sessionId), PayloadReading::Absent});
         return p.get_future();
     }
 
     lua_State *L = it->second->L;
+
+    // Which rung of §scxml-B-2-8-1 the payload ends up on, recorded as the
+    // ladder below walks. Only the code that ATTEMPTED a structured read knows
+    // whether it attempted one, and that is the difference between prose
+    // arriving as text and a payload whose fields have stopped existing.
+    PayloadReading reading = PayloadReading::Absent;
 
     // Create _event table
     lua_newtable(L);
@@ -1021,6 +1033,7 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
 
         if (opensLikeXML && LuaDOMBinding::pushDOMObject(L, eventData) == 1) {
             lua_setfield(L, -2, "data");
+            reading = PayloadReading::Dom;
         } else {
             // §scxml-B-2: JSON becomes the corresponding value.
             //
@@ -1048,11 +1061,16 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
             if (parsed.has_value()) {
                 pushScriptValue(L, parsed.value());
                 lua_setfield(L, -2, "data");
+                reading = PayloadReading::Structured;
             } else {
                 // §scxml-B-2 (test 562): Space-normalize plain text content
                 std::string normalized = normalizeWhitespace(eventData);
                 lua_pushstring(L, normalized.c_str());
                 lua_setfield(L, -2, "data");
+                // Which of the two third-rung readings this is — the clause
+                // treats them alike and a host does not. See
+                // `SCE::payloadReadingOfText`.
+                reading = payloadReadingOfText(eventData);
             }
         }
     } else {
@@ -1062,8 +1080,8 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
 
     lua_setglobal(L, "_event");
 
-    std::promise<ScriptResult> p;
-    p.set_value(ScriptResult::createSuccess(true));
+    std::promise<SetCurrentEventResult> p;
+    p.set_value({ScriptResult::createSuccess(true), reading});
     return p.get_future();
 }
 

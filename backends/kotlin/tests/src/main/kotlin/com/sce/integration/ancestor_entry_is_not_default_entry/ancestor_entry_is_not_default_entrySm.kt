@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 215c3b8c048d546a929c95bb520cc0c508e71ce4c95c9630e94bb32b22528dc2
-// template-hash: 465642caa5c7ae5f006b7e4c3302ebaf26878f27c380322c3cf9d87ca35b0ee6
+// template-hash: cbaac820582d5e7f1cadaf34e8320b857485c1af2fdc07d0fa3a39daaee19641
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -387,7 +387,18 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
             if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
         )
         val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
-        engine.setCurrentEvent(
+        // §scxml-B-2-8-1: the binding answers which rung the payload got, and
+        // that answer used to end here. The ladder decided between a DOM, a
+        // value and a space-normalized string, and the decision was dropped —
+        // so a payload that announced structure and would not parse reached
+        // the document as raw characters, every `_event.data.<field>` read
+        // empty, and nothing anywhere could say so.
+        //
+        // Recorded on the spot rather than returned up: this class extends
+        // `StateMachineEngine`, so the frame that binds already holds both the
+        // reading and the event it belongs to — which is the pairing the count
+        // needs.
+        val payloadReading = engine.setCurrentEvent(
             sid,
             com.sce.runtime.SetCurrentEventArgs(
                 name = eventName,
@@ -399,6 +410,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
                 invokeId = meta.invokeId
             )
         )
+        notePayloadReading(event, payloadReading)
     }
 
 

@@ -222,11 +222,18 @@ func (e *LuaEngine) SetupSystemVariables(sessionID, sessionName string, ioProces
 	return nil
 }
 
-func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventArgs) error {
+func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventArgs) (sce.PayloadReading, error) {
 	sess, err := e.getSession(sessionID)
 	if err != nil {
-		return err
+		return sce.PayloadAbsent, err
 	}
+
+	// Which rung of the ladder below this payload ends up on. Recorded as the
+	// walk happens rather than re-derived afterwards: only the code that
+	// ATTEMPTED a structured read knows whether it attempted one, and a caller
+	// re-guessing from a leading brace would call a payload undecodable that
+	// the ladder never tried to decode.
+	reading := sce.PayloadAbsent
 
 	// W3C SCXML 5.10: Create _event table
 	sess.l.NewTable()
@@ -250,6 +257,7 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 		// failed` opens with `<` and is not a document.
 		if strings.HasPrefix(trimmed, "<") && e.pushDOMTable(sess, args.Data) {
 			sess.l.SetField(-2, "data")
+			reading = sce.PayloadDom
 		} else {
 			// §scxml-B-2-8-1 gives `_event.data` three readings and no
 			// fourth: XML becomes a DOM, JSON becomes the value, and
@@ -275,11 +283,19 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 			if jsonVal, ok := decodeJSON(args.Data); ok {
 				pushJSONValue(sess.l, jsonVal)
 				sess.l.SetField(-2, "data")
+				reading = sce.PayloadStructured
 			} else {
 				// W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
 				normalized := strings.Join(strings.Fields(args.Data), " ")
 				sess.l.PushString(normalized)
 				sess.l.SetField(-2, "data")
+				// Which of the two third-rung readings this is. The clause
+				// treats them the same and a host does not: prose arriving as
+				// text is the ladder working, and a payload that opened with a
+				// brace and would not parse is a payload whose fields have
+				// just stopped existing. Only this branch knows the
+				// difference, because only this branch tried.
+				reading = sce.PayloadReadingOfText(args.Data)
 			}
 		}
 	} else {
@@ -305,7 +321,7 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 	sess.l.SetField(-2, "invokeid")
 
 	sess.l.SetGlobal("_event")
-	return nil
+	return reading, nil
 }
 
 // pushDOMTable parses xml into a full DOM tree and pushes a Lua table

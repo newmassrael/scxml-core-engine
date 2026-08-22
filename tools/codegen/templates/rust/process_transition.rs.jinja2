@@ -84,9 +84,13 @@
 {% else %}
             let ev_invokeid: &str = "";
 {% endif %}
-            self.set_current_event_in_script_engine(
+            // §scxml-B-2-8-1: the rung the payload got, handed to the engine
+            // rather than dropped. This is the only frame that has both the
+            // reading and the event it belongs to.
+            let payload_reading = self.set_current_event_in_script_engine(
                 event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
             );
+            engine.note_payload_reading(event, payload_reading);
         }
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
