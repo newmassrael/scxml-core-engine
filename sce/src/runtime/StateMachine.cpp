@@ -512,6 +512,13 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     std::string eventType = EventRaiserImpl::getCurrentEventType();
     if (!isRunning_) {
         SCE_LOG_WARN("StateMachine: Cannot process event - state machine not running");
+        // §scxml-3.13: this engine has always told the CALLER — `success` is
+        // false and the message names the reason. The count is added because
+        // the six generated engines have no return value to carry it, so a
+        // host that polls statistics reads the same fact on every backend.
+        // See `Statistics::unseenExternalEvents`.
+        ++unseenExternalEvents_;
+        lastUnseenEventName_ = eventName;
         TransitionResult result;
         result.success = false;
         result.errorMessage = "State machine not running";
@@ -2215,6 +2222,12 @@ StateMachine::Statistics StateMachine::getStatistics() const {
     // the LAST binding took; `setCurrentEvent` below turns that into a count.
     stats.undecodablePayloads = undecodablePayloads_;
     stats.lastUndecodablePayloadEvent = lastUndecodablePayloadEvent_;
+    // W3C SCXML 3.13: events handed to a machine that had already stopped. This
+    // engine also refuses them through `TransitionResult::success`; the count
+    // is what the generated engines can offer, and parity is what makes a
+    // document portable between them.
+    stats.unseenExternalEvents = unseenExternalEvents_;
+    stats.lastUnseenEventName = lastUnseenEventName_;
     return stats;
 }
 

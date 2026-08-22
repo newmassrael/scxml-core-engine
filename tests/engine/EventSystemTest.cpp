@@ -100,7 +100,7 @@ TEST_F(EventSystemTest, InternalEventDataUpdating) {
     testEvent->setRawJsonData("\"test_data\"");  // JSON string format
 
     auto setResult = engine_->setCurrentEvent(sessionId_, testEvent).get();
-    ASSERT_TRUE(setResult.isSuccess());
+    ASSERT_TRUE(setResult.status.isSuccess());
 
     auto checkResult = engine_->executeScript(sessionId_, "_event.name + '|' + _event.data").get();
     ASSERT_TRUE(checkResult.isSuccess());
@@ -111,7 +111,7 @@ TEST_F(EventSystemTest, InternalEventDataUpdating) {
     objectEvent->setRawJsonData("{\"key\": \"value\", \"number\": 42}");
 
     auto objectSetResult = engine_->setCurrentEvent(sessionId_, objectEvent).get();
-    ASSERT_TRUE(objectSetResult.isSuccess());
+    ASSERT_TRUE(objectSetResult.status.isSuccess());
 
     auto objectCheckResult = engine_->executeScript(sessionId_, "_event.data.key + '_' + _event.data.number").get();
     ASSERT_TRUE(objectCheckResult.isSuccess());
@@ -122,7 +122,7 @@ TEST_F(EventSystemTest, InternalEventDataUpdating) {
     arrayEvent->setRawJsonData("[1, 2, 3]");
 
     auto arraySetResult = engine_->setCurrentEvent(sessionId_, arrayEvent).get();
-    ASSERT_TRUE(arraySetResult.isSuccess());
+    ASSERT_TRUE(arraySetResult.status.isSuccess());
 
     auto arrayCheckResult = engine_->executeScript(sessionId_, "_event.data.length").get();
     ASSERT_TRUE(arrayCheckResult.isSuccess());
@@ -134,7 +134,7 @@ TEST_F(EventSystemTest, InternalEventNameAndTypeUpdating) {
     // Test setting event name via setCurrentEvent API
     auto loginEvent = std::make_shared<SCE::Event>("user.login", "internal");
     auto nameSetResult = engine_->setCurrentEvent(sessionId_, loginEvent).get();
-    ASSERT_TRUE(nameSetResult.isSuccess());
+    ASSERT_TRUE(nameSetResult.status.isSuccess());
 
     auto nameResult = engine_->executeScript(sessionId_, "_event.name").get();
     ASSERT_TRUE(nameResult.isSuccess());
@@ -143,7 +143,7 @@ TEST_F(EventSystemTest, InternalEventNameAndTypeUpdating) {
     // Test setting event type via setCurrentEvent API
     auto platformEvent = std::make_shared<SCE::Event>("platform.event", "platform");
     auto typeSetResult = engine_->setCurrentEvent(sessionId_, platformEvent).get();
-    ASSERT_TRUE(typeSetResult.isSuccess());
+    ASSERT_TRUE(typeSetResult.status.isSuccess());
 
     auto typeResult = engine_->executeScript(sessionId_, "_event.type").get();
     ASSERT_TRUE(typeResult.isSuccess());
@@ -152,7 +152,7 @@ TEST_F(EventSystemTest, InternalEventNameAndTypeUpdating) {
     // Test complex event names with dots
     auto complexEvent = std::make_shared<SCE::Event>("error.execution.timeout", "internal");
     auto complexSetResult = engine_->setCurrentEvent(sessionId_, complexEvent).get();
-    ASSERT_TRUE(complexSetResult.isSuccess());
+    ASSERT_TRUE(complexSetResult.status.isSuccess());
 
     auto complexNameResult = engine_->executeScript(sessionId_, "_event.name").get();
     ASSERT_TRUE(complexNameResult.isSuccess());
@@ -165,7 +165,7 @@ TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
     auto internalEvent = std::make_shared<SCE::Event>("internal.event", "internal");
     internalEvent->setOrigin("#_internal");
     auto originSetResult = engine_->setCurrentEvent(sessionId_, internalEvent).get();
-    ASSERT_TRUE(originSetResult.isSuccess());
+    ASSERT_TRUE(originSetResult.status.isSuccess());
 
     auto originResult = engine_->executeScript(sessionId_, "_event.origin").get();
     ASSERT_TRUE(originResult.isSuccess());
@@ -175,7 +175,7 @@ TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
     auto scxmlEvent = std::make_shared<SCE::Event>("scxml.event", "internal");
     scxmlEvent->setOriginType("http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
     auto origintypeSetResult = engine_->setCurrentEvent(sessionId_, scxmlEvent).get();
-    ASSERT_TRUE(origintypeSetResult.isSuccess());
+    ASSERT_TRUE(origintypeSetResult.status.isSuccess());
 
     auto origintypeResult = engine_->executeScript(sessionId_, "_event.origintype").get();
     ASSERT_TRUE(origintypeResult.isSuccess());
@@ -185,7 +185,7 @@ TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
     auto invokeEvent = std::make_shared<SCE::Event>("invoke.event", "internal");
     invokeEvent->setInvokeId("invoke_123");
     auto invokeidSetResult = engine_->setCurrentEvent(sessionId_, invokeEvent).get();
-    ASSERT_TRUE(invokeidSetResult.isSuccess());
+    ASSERT_TRUE(invokeidSetResult.status.isSuccess());
 
     auto invokeidResult = engine_->executeScript(sessionId_, "_event.invokeid").get();
     ASSERT_TRUE(invokeidResult.isSuccess());
@@ -195,7 +195,7 @@ TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
     auto sendEvent = std::make_shared<SCE::Event>("send.event", "internal");
     sendEvent->setSendId("send_456");
     auto sendidSetResult = engine_->setCurrentEvent(sessionId_, sendEvent).get();
-    ASSERT_TRUE(sendidSetResult.isSuccess());
+    ASSERT_TRUE(sendidSetResult.status.isSuccess());
 
     auto sendidResult = engine_->executeScript(sessionId_, "_event.sendid").get();
     ASSERT_TRUE(sendidResult.isSuccess());
@@ -208,7 +208,7 @@ TEST_F(EventSystemTest, EventInExpressions) {
     auto userEvent = std::make_shared<SCE::Event>("user.action", "internal");
     userEvent->setRawJsonData("{\"userId\": 123, \"action\": \"click\"}");
     auto setupResult = engine_->setCurrentEvent(sessionId_, userEvent).get();
-    ASSERT_TRUE(setupResult.isSuccess());
+    ASSERT_TRUE(setupResult.status.isSuccess());
 
     // Test using event in conditional expressions
     auto conditionalResult =
@@ -233,7 +233,7 @@ TEST_F(EventSystemTest, EventSerialization) {
     auto complexEvent = std::make_shared<SCE::Event>("complex.event", "internal");
     complexEvent->setRawJsonData("{\"user\":{\"id\":1,\"name\":\"test\"},\"items\":[1,2,3]}");
     auto setupResult = engine_->setCurrentEvent(sessionId_, complexEvent).get();
-    ASSERT_TRUE(setupResult.isSuccess());
+    ASSERT_TRUE(setupResult.status.isSuccess());
 
     // Test JSON serialization of event data
     auto serializeResult = engine_->evaluateExpression(sessionId_, "JSON.stringify(_event.data)").get();
@@ -258,7 +258,7 @@ TEST_F(EventSystemTest, EventPersistence) {
     auto persistentEvent = std::make_shared<SCE::Event>("persistent.event", "internal");
     persistentEvent->setRawJsonData("\"persistent_data\"");  // JSON string format
     auto setResult = engine_->setCurrentEvent(sessionId_, persistentEvent).get();
-    ASSERT_TRUE(setResult.isSuccess());
+    ASSERT_TRUE(setResult.status.isSuccess());
 
     // Check event data persists in subsequent evaluations
     auto checkNameResult = engine_->evaluateExpression(sessionId_, "_event.name").get();
@@ -273,7 +273,7 @@ TEST_F(EventSystemTest, EventPersistence) {
     auto modifiedEvent = std::make_shared<SCE::Event>("persistent.event", "internal");
     modifiedEvent->setRawJsonData("\"modified_data\"");  // JSON string format
     auto modifyResult = engine_->setCurrentEvent(sessionId_, modifiedEvent).get();
-    ASSERT_TRUE(modifyResult.isSuccess());
+    ASSERT_TRUE(modifyResult.status.isSuccess());
 
     // Verify modification persists
     auto verifyResult = engine_->evaluateExpression(sessionId_, "_event.data").get();

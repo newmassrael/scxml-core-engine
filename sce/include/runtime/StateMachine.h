@@ -454,6 +454,30 @@ public:
         /// empty while it is zero. A count says something was lost; this says
         /// which delivery lost it.
         std::string lastUndecodablePayloadEvent;
+        /// W3C SCXML 3.13: external events handed to this machine after it had
+        /// stopped, which it therefore never looked at.
+        ///
+        /// Appendix D's main event loop exits when the machine reaches a
+        /// top-level final state, and the clause is explicit that the
+        /// interpreter is then done. Refusing the event is correct; being
+        /// unable to say it happened is what this counts.
+        ///
+        /// This engine already tells the caller — `processEvent` returns a
+        /// `TransitionResult` whose `success` is false and whose
+        /// `errorMessage` names the reason. The count exists because the six
+        /// generated engines have no return value to carry it, and a host
+        /// polling statistics must read the same fact on every backend.
+        ///
+        /// It is the count that separates the third explanation from the
+        /// other two. A host that sent an event and saw nothing move has
+        /// three candidates: it was dequeued and matched nothing
+        /// (`failedTransitions` / the AOT `discardedExternalEvents`), it was
+        /// dequeued and a transition's guard was false (nothing moves), or it
+        /// was never dequeued at all (this).
+        uint32_t unseenExternalEvents = 0;
+        /// The name of the most recent event that count recorded, empty while
+        /// it is zero.
+        std::string lastUnseenEventName;
     };
 
     Statistics getStatistics() const;
@@ -779,6 +803,11 @@ private:
     /// host holds.
     uint32_t undecodablePayloads_ = 0;
     std::string lastUndecodablePayloadEvent_;
+    /// W3C SCXML 3.13: external events refused because this machine had stopped,
+    /// and the name of the last one. Reported through
+    /// `Statistics::unseenExternalEvents`.
+    uint32_t unseenExternalEvents_ = 0;
+    std::string lastUnseenEventName_;
     /// Microsteps this macrostep has taken, on eventless transitions and on
     /// internal events alike. A member rather than a loop counter because this
     /// engine's chain is recursive — executing one microstep re-enters the

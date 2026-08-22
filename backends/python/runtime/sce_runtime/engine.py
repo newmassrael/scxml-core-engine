@@ -159,7 +159,12 @@ class Engine(Generic[S, E]):
         # `discarded_external_events`.
         self._discarded_external_events: int = 0
         self._last_discarded_event: Optional[E] = None
-        # §scxml-B-2-8-1 — deliveries whose payload announced structure and
+        # W3C SCXML 3.13 — external events this machine never dequeued because it
+        # had already stopped, and the most recent of them. See
+        # `unseen_external_events`.
+        self._unseen_external_events: int = 0
+        self._last_unseen_event: Optional[E] = None
+        # W3C SCXML B.2.8.1 — deliveries whose payload announced structure and
         # that the datamodel could not read as one, and the most recent of
         # them. See `undecodable_payloads`.
         self._undecodable_payloads: int = 0
@@ -440,6 +445,64 @@ class Engine(Generic[S, E]):
         """
         return self._last_undecodable_payload
 
+    def _note_unseen_event(self, event: E) -> None:
+        """Record one external event this machine will never look at.
+
+        §scxml-D-mainEventLoop: the loop that would have dequeued it has
+        ended, so the event is not "pending" — it is over.
+        """
+        self._unseen_external_events += 1
+        self._last_unseen_event = event
+
+    def _record_unseen_external_events(self) -> None:
+        """Empty the external queue into the count above, at the moment the
+        main event loop ends.
+
+        Drained rather than left in place so each event is counted exactly
+        once: a host that keeps driving a halted machine would otherwise
+        re-count the same queue on every call, and a count that grows while
+        nothing arrives is a count nobody can use.
+        """
+        while self._external_queue:
+            self._note_unseen_event(self._external_queue.popleft().event)
+
+    def unseen_external_events(self) -> int:
+        """W3C SCXML 3.13 — how many external events the host handed this
+        machine that it never looked at, because it had already stopped.
+
+        §scxml-D-mainEventLoop exits when the machine reaches a top-level
+        final state, and the clause is explicit that the interpreter is then
+        done. Refusing the event is therefore correct — and, exactly as with
+        `discarded_external_events` and `undecodable_payloads`, being unable
+        to SAY it happened is not part of the clause.
+
+        This is the count that separates the third explanation from the other
+        two. A host that sent an event and saw nothing move has three
+        candidates:
+
+        ==========================================  =========================
+        what happened                               which count moves
+        ==========================================  =========================
+        dequeued, no transition matched             `discarded_external_events`
+        dequeued, matched, but its guard was false  neither
+        never dequeued — the machine had stopped    this one
+        ==========================================  =========================
+
+        Measured 2026-08-22: a consumer reported a guarded transition that
+        "never fires", and four rewrites of the guard later the guard was
+        still the suspect. Driving the same document here fired it on the
+        first try, at that consumer's own pinned revision — so the difference
+        was never the guard, and nothing in this engine could have said so.
+        """
+        return self._unseen_external_events
+
+    def last_unseen_event(self) -> Optional[E]:
+        """The most recent event `unseen_external_events` counted, or `None`
+        while that count is zero. A count says an event went unlooked-at;
+        this says which one.
+        """
+        return self._last_unseen_event
+
     def unhandled_error_events(self) -> int:
         """W3C SCXML 3.12.2 — how many `error.*` events this engine raised
         that no transition in any active state answered.
@@ -580,6 +643,10 @@ class Engine(Generic[S, E]):
     def send_event(self, event: E, metadata: Optional[EventMetadata] = None) -> None:
         """W3C SCXML 5.10.1 — enqueue an external event and process to stability."""
         if not self._is_running:
+            # Refused rather than queued, so the drain in
+            # `_run_main_event_loop` never sees it — which is why the count is
+            # taken here as well as there. See `unseen_external_events`.
+            self._note_unseen_event(event)
             return
         self._external_queue.append(
             EventWithMetadata(event=event, metadata=metadata or EventMetadata())
@@ -896,6 +963,11 @@ class Engine(Generic[S, E]):
             # transitions and internal events alone.
             self._process_internal_queue()
             if not self._is_running or self._reached_final:
+                # §scxml-D-mainEventLoop ends here, and whatever the host put
+                # on the external queue ends with it. That is the clause; being
+                # unable to say it happened is not. See
+                # `unseen_external_events`.
+                self._record_unseen_external_events()
                 return
             # §scxml-6.4: invokes for states entered during this macrostep.
             self._start_pending_invokes()

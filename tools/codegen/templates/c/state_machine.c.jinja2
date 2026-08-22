@@ -2061,6 +2061,14 @@ SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t 
 SCE_SM_FN static void enter_state_recursive_ex({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s,
                                                bool expand_parent_parallel);
 SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
+/* §scxml-3.13: an external event this machine will never look at, and the
+   drain that records the whole queue's worth of them. Both are defined with
+   the accessors they feed, at the bottom of this file; declared here because
+   their first callers — `raise_external` and `run_main_event_loop` — come long
+   before that. */
+SCE_SM_FN static void note_unseen_event({{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t event);
+SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.name }}_t *sm);
 {% if model.has_history_states %}
 /* enter_state_recursive's compound-with-history dispatch routes to
    enter_history_state, which is defined alongside the rest of the
@@ -3394,6 +3402,15 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.name }}_t *sm,
                                      const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+    if (!sm->is_running) {
+        /* §scxml-D-mainEventLoop has already ended, so nothing will drain this
+           queue again. Pushing would grow a buffer nobody reads — and on this
+           backend that buffer is a fixed-size array, so it would eventually
+           drop the event with no record at all. Counted instead; see
+           `_unseen_external_events`. */
+        note_unseen_event(sm, evt->event);
+        return;
+    }
     event_queue_push(&sm->external_queue, evt);
 }
 
@@ -4447,6 +4464,12 @@ SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *s
         }
 
         if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
+            /* §scxml-D-mainEventLoop ends here, and whatever the host put on
+               the external queue ends with it. That is the clause: a machine
+               that reached a top-level final state has exited the interpreter.
+               Saying nothing about it is not the clause — see
+               `_unseen_external_events`. */
+            record_unseen_external_events(sm);
             break;
         }
 
@@ -5129,6 +5152,74 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ mod
     {% else %}
     (void)sm;
     {% endif %}
+}
+
+{# §scxml-3.13: the refusal bookkeeping lives HERE, past the
+   `has_parent_communication` split above, because its callers do. The forward
+   declarations near `enter_state_recursive`, the refusal in `raise_external`
+   and the drain in `run_main_event_loop` are all unconditional, so a child
+   machine — which takes the other arm of that split — declared both functions,
+   called both, and defined neither. Measured 2026-08-23: ten synth-invoke
+   children failed to compile with "used but never defined", and only a build
+   of the WHOLE tree showed it; the integration fixtures are all parents. #}
+/* §scxml-3.13: the loop that would have dequeued this event has ended, so the
+   event is not "pending" — it is over. Forward-declared above `raise_external`,
+   which is its first caller. */
+SCE_SM_FN static void note_unseen_event({{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t event) {
+    if (sm == NULL) {
+        return;
+    }
+    sm->unseen_external_events++;
+    sm->last_unseen_event = event;
+    sm->has_unseen_event = true;
+}
+
+/* §scxml-3.13: empty the external queue into the count above, at the moment
+   the main event loop ends.
+
+   Drained rather than left in place so each event is counted exactly once: a
+   host that keeps calling `_step` on a halted machine would otherwise re-count
+   the same queue on every call, and a count that grows while nothing arrives
+   is a count nobody can use. */
+SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.name }}_t *sm) {
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t _abandoned;
+    while (event_queue_pop(&sm->external_queue, &_abandoned)) {
+        note_unseen_event(sm, _abandoned.event);
+    }
+}
+
+/* W3C SCXML 3.13: external events the host sent that this machine never looked
+   at, because it had already stopped.
+
+   §scxml-D-mainEventLoop exits when the machine reaches a top-level final
+   state, and the clause is explicit that the interpreter is then done.
+   Refusing the event is therefore correct — and, exactly as with
+   `_discarded_external_events` and `_undecodable_payloads`, being unable to
+   SAY it happened is not part of the clause.
+
+   This is the count that separates the third explanation from the other two. A
+   host that sent an event and saw nothing move has three candidates: it was
+   dequeued and matched nothing (`_discarded_external_events`), it was dequeued
+   and a transition's guard was false (nothing moves), or it was never dequeued
+   at all (this).
+
+   This backend has a second reason to answer it: its queues are fixed-size
+   arrays, so a host that keeps feeding a halted machine would otherwise
+   silently overrun one. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_unseen_external_events(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->unseen_external_events;
+}
+
+/* W3C SCXML 3.13: which event the count above last recorded. Returns false,
+   leaving `*out` untouched, while that count is zero. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_unseen_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out) {
+    if (sm == NULL || out == NULL || !sm->has_unseen_event) {
+        return false;
+    }
+    *out = sm->last_unseen_event;
+    return true;
 }
 
 SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_active_states(const {{ csym_prefix }}{{ model.name }}_t *sm) {

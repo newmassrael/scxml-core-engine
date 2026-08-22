@@ -523,6 +523,41 @@ absent because `xml_data_is_a_dom_tree` owns it and the ladder returns from it
 before reaching the rule this fixture measures. It owns only what the host
 learns about a payload the datamodel could not read.
 
+`unseen_event_is_reported` covers W3C SCXML 3.13 and Appendix D's main event
+loop, and completes the trio the two entries around it began. A host that sent
+an event and saw nothing move has exactly three explanations, and until this
+fixture it could distinguish only one of them: the event was dequeued and
+nothing matched (`discarded_event_is_observable`'s axis, already counted); it
+was dequeued, a transition matched, and that transition's guard said no
+(nothing counted, correctly — a guard that refuses is the document working);
+or it was never dequeued at all, because the machine had already reached a
+top-level final state and the loop had ended. The third is this one, and it
+was silent.
+
+The document is deliberately thin — one targetless transition to prove a
+delivery ran, one transition to a final state, and no guard anywhere — because
+the axis is about the ENGINE's door rather than anything a document does. A
+guard here would put the second explanation back inside a fixture whose whole
+purpose is separating it from the third. Each driver asserts the
+indistinguishability directly: every accessor a host had reads identically
+before and after the refused delivery, and only the new count differs.
+
+The Interpreter channel is not a mirror here either, but for the opposite
+reason to `discarded_event_is_observable`'s: it already answers, through
+`processEvent`'s `TransitionResult::success` and an `errorMessage` naming the
+reason. Its driver pins both halves, because `success == false` is also what a
+DISCARD returns — the boolean alone does not separate the two, which is exactly
+why the count exists on all seven. C11 has a second reason to carry it: its
+queues are fixed-size arrays, so a host that keeps feeding a halted machine
+would otherwise silently overrun one.
+
+Measured 2026-08-22, and the reason this earned a fixture rather than a
+footnote: a consumer reported a guarded transition that "never fires" and spent
+four rewrites of the guard on it, ending with a trivially true arithmetic one.
+The same document driven here fired it on the first attempt, at that consumer's
+own pinned revision. The guard was never the difference, and no accessor in any
+of the seven engines could say what was.
+
 `unhandled_error_is_observable` covers W3C SCXML 3.12.2: the processor MUST
 signal its own failures by raising `error.*` events into the **internal** queue,
 and the same paragraph says they "are ignored if no transition is found that
