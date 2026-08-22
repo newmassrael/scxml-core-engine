@@ -339,8 +339,21 @@ ScriptResult JSEngine::getVariableInternal(const std::string &sessionId, const s
     return ScriptResult::createSuccess(result);
 }
 
-// §scxml-B-2: Helper function to parse event data as JSON, XML DOM, or space-normalized string
-static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
+/// What the ladder in `parseEventData` produced, and which of its rungs
+/// produced it.
+///
+/// The rung is returned rather than re-derived by the caller. A caller can
+/// tell a string from an object afterwards, but not a string the ladder chose
+/// because the content was prose from one it chose because a structured read
+/// failed — and that difference is the whole point of `PayloadReading`.
+struct ParsedEventData {
+    ::JSValue value;
+    SCE::PayloadReading reading;
+};
+
+static ParsedEventData parseEventData(JSContext *ctx, const std::string &dataStr) {
+    // §scxml-B-2: parse the event data as JSON, an XML DOM, or a
+    // space-normalized string.
     // §scxml-B-2-8-1: _event.data carries what the event supplied — key-value pairs
     // become named properties, JSON becomes the corresponding object, valid XML becomes
     // a DOM, and anything else becomes a space-normalized string.
@@ -358,7 +371,7 @@ static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
     if (opensLikeXML) {
         ::JSValue dom = SCE::DOMBinding::createDOMObject(ctx, dataStr);
         if (!JS_IsException(dom)) {
-            return dom;
+            return {dom, SCE::PayloadReading::Dom};
         }
         // `createDOMObject` refuses with `JS_ThrowSyntaxError`, which leaves a
         // pending exception on the context. Clearing it here is not tidying:
@@ -375,7 +388,7 @@ static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
     // Try to parse as JSON
     ::JSValue jsonValue = JS_ParseJSON(ctx, dataStr.c_str(), dataStr.length(), "<event-data>");
     if (!JS_IsException(jsonValue)) {
-        return jsonValue;
+        return {jsonValue, SCE::PayloadReading::Structured};
     }
 
     // §scxml-B-2 test 562: If not XML or JSON, create space-normalized string
@@ -406,14 +419,27 @@ static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
         normalized.pop_back();
     }
 
-    return JS_NewString(ctx, normalized.c_str());
+    // Which of the two third-rung readings this is. The clause treats them the
+    // same and a host does not: prose arriving as text is the ladder working
+    // (W3C test 562), and a payload that opened with a brace and would not
+    // parse is a payload whose fields have just stopped existing. Only here is
+    // that difference still visible, because only here was the structured read
+    // attempted.
+    return {JS_NewString(ctx, normalized.c_str()), SCE::payloadReadingOfText(dataStr)};
 }
 
-ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event) {
+SetCurrentEventResult JSEngine::setCurrentEventInternal(const std::string &sessionId,
+                                                        const std::shared_ptr<Event> &event) {
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        return ScriptResult::createError("Session not found: " + sessionId);
+        return {ScriptResult::createError("Session not found: " + sessionId), PayloadReading::Absent};
     }
+
+    // Which rung of W3C SCXML B.2.8.1 the payload ended up on. Recorded as the
+    // ladder walks rather than re-derived afterwards: a caller can tell a
+    // string from an object, but not a string chosen because the content was
+    // prose from one chosen because a structured read failed.
+    PayloadReading reading = PayloadReading::Absent;
 
     JSContext *ctx = session->jsContext;
     ::JSValue global = JS_GetGlobalObject(ctx);
@@ -434,9 +460,10 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
         // Set event data
         if (event->hasData()) {
             std::string dataStr = event->getDataAsString();
-            ::JSValue dataValue = parseEventData(ctx, dataStr);
-            if (!JS_IsException(dataValue)) {
-                JS_SetPropertyStr(ctx, eventObj, "data", dataValue);
+            ParsedEventData parsed = parseEventData(ctx, dataStr);
+            if (!JS_IsException(parsed.value)) {
+                JS_SetPropertyStr(ctx, eventObj, "data", parsed.value);
+                reading = parsed.reading;
             } else {
                 JS_SetPropertyStr(ctx, eventObj, "data", JS_UNDEFINED);
                 SCE_LOG_ERROR("JSEngine: Failed to parse event data for eventObj");
@@ -475,7 +502,8 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
             JS_FreeValue(ctx, eventObj);
             JS_FreeValue(ctx, global);
             SCE_LOG_ERROR("JSEngine: Failed to initialize _event object on first event - sessionId: {}", sessionId);
-            return ScriptResult::createError("Failed to create __eventData object for session: " + sessionId);
+            return {ScriptResult::createError("Failed to create __eventData object for session: " + sessionId),
+                    PayloadReading::Absent};
         }
         SCE_LOG_DEBUG("JSEngine: _event object successfully initialized for session: {}", sessionId);
     } else {
@@ -484,7 +512,8 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
             JS_FreeValue(ctx, eventDataProperty);
             JS_FreeValue(ctx, eventObj);
             JS_FreeValue(ctx, global);
-            return ScriptResult::createError("__eventData object not found for session: " + sessionId);
+            return {ScriptResult::createError("__eventData object not found for session: " + sessionId),
+                    PayloadReading::Absent};
         }
     }
 
@@ -501,9 +530,10 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
         if (event->hasData()) {
             std::string dataStr = event->getDataAsString();
             SCE_LOG_DEBUG("JSEngine: Setting event data from string: '{}'", dataStr);
-            ::JSValue dataValue = parseEventData(ctx, dataStr);
-            if (!JS_IsException(dataValue)) {
-                JS_SetPropertyStr(ctx, eventDataProperty, "data", dataValue);
+            ParsedEventData parsed = parseEventData(ctx, dataStr);
+            if (!JS_IsException(parsed.value)) {
+                JS_SetPropertyStr(ctx, eventDataProperty, "data", parsed.value);
+                reading = parsed.reading;
                 SCE_LOG_DEBUG("JSEngine: Successfully set event data");
             } else {
                 JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
@@ -537,7 +567,7 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
     JS_FreeValue(ctx, eventObj);
     JS_FreeValue(ctx, global);
 
-    return ScriptResult::createSuccess();
+    return {ScriptResult::createSuccess(), reading};
 }
 
 ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,

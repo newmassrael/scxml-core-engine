@@ -167,12 +167,20 @@ private:
 public:
 // Helper: Set _event variable in script engine (W3C SCXML 5.10)
 // Always generated for compile-time compatibility, but no-op if JSEngine not needed
-void setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
+// Returns which rung of §scxml-B-2-8-1 the payload got, because the
+// binding is the only place that knows. This used to end in `.get()` with
+// the answer dropped: the ladder decided between a DOM, a value and a
+// space-normalized string, and one line later the decision was gone. A
+// payload that announced structure and would not parse therefore reached
+// the document as raw characters, every `_event.data.<field>` read empty,
+// and nothing anywhere could say so — see `SCE::PayloadReading`.
+::SCE::PayloadReading setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
                             [[maybe_unused]] const std::string& eventType = "", [[maybe_unused]] const std::string& sendId = "",
                             [[maybe_unused]] const std::string& origin = "", [[maybe_unused]] const std::string& originType = "",
                             [[maybe_unused]] const std::string& invokeId = "",
                             [[maybe_unused]] const std::optional<ScriptValue>& typedData = std::nullopt) {
     // No-op: This state machine doesn't use JSEngine
+    return ::SCE::PayloadReading::Absent;
 }
 
 // Helper: Ensure script engine session is destroyed before stack unwinding

@@ -17,6 +17,6 @@
 pub mod i_script_engine;
 
 pub use i_script_engine::{
-    IScriptEngine, NativeMethod, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs,
-    StateQueryCallback,
+    IScriptEngine, NativeMethod, PayloadReading, ScriptError, ScriptResult, ScriptValue,
+    SetCurrentEventArgs, StateQueryCallback,
 };

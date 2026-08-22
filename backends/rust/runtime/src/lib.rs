@@ -492,6 +492,13 @@ pub mod http;
 /// Mirrors `helpers::invoke_processing` whole-module gate (same atomic).
 #[cfg(not(feature = "no_std"))]
 pub mod invoke;
+/// Which reading `§scxml-B-2-8-1` gave a delivered payload.
+///
+/// Deliberately NOT under `scripting`, which is gated out of `no_std`: the
+/// engine counts these readings and is the surface an MCU consumer builds.
+/// That module is named in plain text rather than linked, because a link to
+/// it does not resolve in the very profile this module exists for.
+pub mod payload_reading;
 pub mod policy;
 /// Per-machine scheduled-send-id storage policy (SCE Protocol-Synthesis RFC §synth-5-J-2).
 pub mod sched_send_id;
@@ -533,6 +540,10 @@ pub use http::{HttpSendRequest, HttpSendResponse};
 /// crate and so silently made `log` an undeclared dependency of every consumer
 /// compiling a machine with a datamodel.
 pub use log;
+/// Ungated on purpose — see [`payload_reading`]. The `scripting` re-export
+/// below carries the same name for `std` builds, which is why this one is
+/// spelled from the module that defines it rather than added to that list.
+pub use payload_reading::PayloadReading;
 pub use policy::StatePolicy;
 pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
 #[cfg(not(feature = "no_std"))]

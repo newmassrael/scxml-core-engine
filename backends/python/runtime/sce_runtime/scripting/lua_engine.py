@@ -26,6 +26,7 @@ from threading import RLock
 from typing import Any, Callable, Dict, List, Optional
 
 from ..io_processors import IoProcessorDescriptor
+from ..payload_reading import PayloadReading, payload_reading_of_text
 
 try:
     import lupa  # type: ignore[import-not-found]
@@ -401,7 +402,7 @@ class LuaScriptEngine(IScriptEngine):
         self,
         session_id: str,
         args: SetCurrentEventArgs,
-    ) -> None:
+    ) -> PayloadReading:
         """W3C SCXML 5.10 — bind the `_event` table for the current
         microstep. Mirrors the C++ `setCurrentEvent` signature and the
         Rust `set_current_event` parsing chain: Lua-eval the payload
@@ -409,12 +410,19 @@ class LuaScriptEngine(IScriptEngine):
         members are dot-accessible from generated expressions); fall
         back to whitespace-normalised string when neither parse path
         succeeds. Empty payloads bind no `data` field at all so
-        guards reading `_event.data` get Lua nil (== ES `undefined`)."""
+        guards reading `_event.data` get Lua nil (== ES `undefined`).
+
+        Answers which rung of §scxml-B-2-8-1 the payload got. The ladder
+        is walked either way, and the rung is the one fact about a
+        delivered event that nothing else can recover afterwards — see
+        [PayloadReading]."""
         session = self._require_session(session_id)
         event_table = session.runtime.table()
         event_table["name"] = args.event_name
+        reading = PayloadReading.ABSENT
         if args.event_data:
-            data_value: Any = _coerce_event_data_to_lua(
+            data_value: Any
+            data_value, reading = _coerce_event_data_to_lua(
                 session.runtime, args.event_data
             )
             event_table["data"] = data_value
@@ -430,6 +438,7 @@ class LuaScriptEngine(IScriptEngine):
         if args.invoke_id:
             event_table["invokeid"] = args.invoke_id
         session.runtime.globals()["_event"] = event_table
+        return reading
 
     # ── Native bindings ────────────────────────────────────────────
 
@@ -486,9 +495,17 @@ class LuaScriptEngine(IScriptEngine):
 # ── Event payload coercion ───────────────────────────────────────
 
 
-def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
+def _coerce_event_data_to_lua(
+    runtime: Any, event_data: str
+) -> "tuple[Any, PayloadReading]":
     """W3C SCXML B.2.8.1 — turn the raw `event_data` string into the Lua
-    value `_event.data` should expose.
+    value `_event.data` should expose, and say which rung produced it.
+
+    The rung is returned alongside the value rather than re-derived by
+    the caller: a caller can tell a string from a table afterwards, but
+    not a string this function chose because the content was prose from
+    one it chose because a structured read failed — and that difference
+    is the whole point of [PayloadReading].
 
     The clause gives three readings and no fourth: XML becomes a DOM,
     JSON becomes the value, anything else becomes a space-normalized
@@ -511,10 +528,10 @@ def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
     The sender now ships JSON (W3C SCXML B.2.9: data that leaves the data
     model is serialized to JSON), which is what cpp always shipped."""
     if not event_data:
-        return None
+        return None, PayloadReading.ABSENT
     text = event_data.strip()
     if not text:
-        return event_data
+        return event_data, PayloadReading.TEXT
     # Path 1 — XML payload (§scxml-B-2-8-1's first reading).
     # `<send><content>XML</content></send>` lands `_event.data` as a
     # DOM-style object exposing `getElementsByTagName` / `getAttribute`
@@ -524,18 +541,24 @@ def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
     if text.startswith("<"):
         dom = _parse_xml_to_dom(text, runtime)
         if dom is not None:
-            return dom
+            return dom, PayloadReading.DOM
     # Path 2 — JSON, rewritten into Lua table syntax. The transform is
     # intentionally narrow: it swaps `:` for `=` only inside object
     # literals and quotes the key.
     converted = _json_to_lua_table(text)
     if converted is not None:
         try:
-            return runtime.eval(converted)
+            return runtime.eval(converted), PayloadReading.STRUCTURED
         except Exception:
             pass
     # Path 3 — whitespace-normalised string fallback (W3C B.2 test562).
-    return " ".join(event_data.split())
+    #
+    # Which of the two third-rung readings this is. The clause treats them the
+    # same and a host does not: prose arriving as text is the ladder working,
+    # and a payload that opened with a brace and would not parse is a payload
+    # whose fields have just stopped existing. Only here is that difference
+    # still visible, because only here was the structured read attempted.
+    return " ".join(event_data.split()), payload_reading_of_text(event_data)
 
 
 # ── XML DOM (§scxml-B-2 ECMAScript data model) ─────────────────

@@ -81,8 +81,9 @@ public:
                                .setCurrentEvent(sessionId, SetCurrentEventArgs{eventName, eventData, "external", sendId,
                                                                                origin, originType, invokeId})
                                .get();
-        if (!eventResult.isSuccess()) {
-            SCE_LOG_ERROR("FinalizeHelper: Failed to bind _event before finalize: {}", eventResult.getErrorMessage());
+        if (!eventResult.status.isSuccess()) {
+            SCE_LOG_ERROR("FinalizeHelper: Failed to bind _event before finalize: {}",
+                          eventResult.status.getErrorMessage());
             return false;
         }
 

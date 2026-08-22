@@ -10,6 +10,7 @@
 package com.sce.scripting
 
 import com.sce.runtime.IoProcessorDescriptor
+import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -218,8 +219,9 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         return name.all { it.isLetterOrDigit() || it == '_' }
     }
 
-    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs) {
-        val session = sessions[sessionId] ?: return
+    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs): PayloadReading {
+        val session = sessions[sessionId] ?: return PayloadReading.Absent
+        var reading = PayloadReading.Absent
         val cx = Context.enter()
         try {
             val scope = session.scope
@@ -233,7 +235,8 @@ class RhinoScriptEngine : ScxmlScriptEngine {
 
             if (args.data.isNotEmpty()) {
                 val parsed = parseDataValueInternal(cx, scope, args.data)
-                ScriptableObject.putProperty(eventObj, "data", parsed ?: Undefined.instance)
+                ScriptableObject.putProperty(eventObj, "data", parsed.value ?: Undefined.instance)
+                reading = parsed.reading
             } else {
                 ScriptableObject.putProperty(eventObj, "data", Undefined.instance)
             }
@@ -242,6 +245,7 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         } finally {
             Context.exit()
         }
+        return reading
     }
 
     override fun clearCurrentEvent(sessionId: String) {
@@ -337,7 +341,9 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         val session = sessions[sessionId] ?: return data
         val cx = Context.enter()
         try {
-            return parseDataValueInternal(cx, session.scope, data)
+            // This caller wants the value only — it is not delivering an
+            // event, so there is no reading for anyone to act on.
+            return parseDataValueInternal(cx, session.scope, data).value
         } finally {
             Context.exit()
         }
@@ -350,11 +356,22 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         return name.all { it.isLetterOrDigit() || it == '_' || it == '$' }
     }
 
-    private fun parseDataValueInternal(cx: Context, scope: ScriptableObject, data: String): Any? {
+    /**
+     * What the ladder produced, and which of its rungs produced it.
+     *
+     * The rung is returned rather than re-derived by the caller: a caller can
+     * tell a string from an object afterwards, but not a string the ladder
+     * chose because the content was prose from one it chose because a
+     * structured read failed — and that difference is the whole point of
+     * [PayloadReading].
+     */
+    private data class ParsedPayload(val value: Any?, val reading: PayloadReading)
+
+    private fun parseDataValueInternal(cx: Context, scope: ScriptableObject, data: String): ParsedPayload {
         val firstNonWhitespace = data.indexOfFirst { it != ' ' && it != '\t' && it != '\r' && it != '\n' }
         if (firstNonWhitespace >= 0 && data[firstNonWhitespace] == '<') {
             val domObj = createRhinoDOMObject(cx, scope, data)
-            if (domObj != null) return domObj
+            if (domObj != null) return ParsedPayload(domObj, PayloadReading.Dom)
         }
 
         try {
@@ -363,12 +380,14 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             ScriptableObject.putProperty(scope, "__sce_tmp_data__", data)
             val parsed = cx.evaluateString(scope, "JSON.parse(__sce_tmp_data__)", "json-parse", 1, null)
             ScriptableObject.deleteProperty(scope, "__sce_tmp_data__")
-            if (parsed != null && parsed !is Undefined) return parsed
+            if (parsed != null && parsed !is Undefined) return ParsedPayload(parsed, PayloadReading.Structured)
         } catch (_: Exception) {
             ScriptableObject.deleteProperty(scope, "__sce_tmp_data__")
         }
 
-        return normalizeWhitespace(data)
+        // Which of the two third-rung readings this is — the clause treats
+        // them alike and a host does not. See [PayloadReading.ofText].
+        return ParsedPayload(normalizeWhitespace(data), PayloadReading.ofText(data))
     }
 
     private fun createRhinoDOMObject(cx: Context, scope: ScriptableObject, xmlContent: String): Scriptable? {

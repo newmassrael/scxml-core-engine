@@ -1,0 +1,154 @@
+# Mutation cases for §scxml-B-2-8-1 — a payload the datamodel could not read
+# arrives as a space-normalized string, and the host that built it can find out.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/undecodable_payload_is_reported.cases`.
+#
+# The clause gives a payload three readings and names the third "otherwise".
+# Delivering the string is the clause; staying silent about WHY it is a string
+# is not part of it. A host that serialized `{"done":true}` and got `{"done":`
+# past a truncation sees the document evaluate `_event.data.done`, find nothing,
+# and take exactly the transition it would have taken had the field been
+# legitimately absent — same state, same configuration, same datamodel counters.
+#
+# The trap these cases exist for is the third one below. The reading is decided
+# inside the script engine, which is the only place that knows whether a
+# structured parse was ATTEMPTED, and the value it hands back is a value the
+# call site can drop with no compiler complaining — which is what every backend
+# did with it before this axis (`let _ =`, `.get();`, `_ =`). A mutation that
+# reinstates the drop leaves every other assertion in the suite passing.
+#
+# The C++ engines and the C11 template halves of the same axis live in
+# `undecodable_payload_is_reported_ctest.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test undecodable_payload_is_reported
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_targets backends/rust/lua/src/lib.rs
+mutation_targets backends/rust/runtime/src/scripting/i_script_engine.rs
+mutation_targets tools/codegen/templates/rust/process_transition.rs.jinja2
+mutation_targets backends/rust/tests/src/integration/undecodable_payload_is_reported/undecodable_payload_is_reported_sm.rs
+mutation_regen scripts/regen_undecodable_payload_is_reported.sh
+
+mutation_oracles backends/rust/tests/tests/undecodable_payload_is_reported.rs
+
+# ── The count itself ───────────────────────────────────────────────
+#
+# The engine goes back to knowing and not saying. Every driver's first
+# assertion is this one.
+
+mutation_case "the engine stops recording the reading it was told" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if reading.is_undecodable() {
+            self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
+            self.last_undecodable_payload = Some(event);
+        }""",
+     """        if false {
+            self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
+            self.last_undecodable_payload = Some(event);
+        }""")
+PY
+
+# ── An always-true count ───────────────────────────────────────────
+#
+# A count that fires for every delivery is exactly as useless as one that never
+# fires, and only the prose and intact-payload assertions catch it. W3C test 562
+# sends prose and requires it to arrive as a string: a diagnostic that fires
+# when nothing is wrong is one nobody reads.
+
+mutation_case "every delivery with a payload is counted" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if reading.is_undecodable() {""",
+     """        if reading != PayloadReading::Absent {""")
+PY
+
+# ── The generated call site drops the value again ──────────────────
+#
+# The failure shape this whole axis came out of: the reading is computed
+# correctly and then discarded at the binding, which no compiler objects to.
+# The bridge carries the mutated TEMPLATE into the committed tree.
+
+mutation_case "the generated binding drops the reading" <<'PY'
+edit("tools/codegen/templates/rust/process_transition.rs.jinja2",
+     """        engine.note_payload_reading(event, payload_reading);""",
+     """        let _ = payload_reading;""")
+PY
+
+# ── The rung the clause splits in two ──────────────────────────────
+#
+# `of_text` is the one rule that separates prose from content that asked for
+# structure. Answering `Text` for everything is the pre-fixture state with the
+# plumbing intact — the count exists, is wired, and never fires.
+
+mutation_case "content that announces an object is read as prose" <<'PY'
+edit("backends/rust/runtime/src/scripting/i_script_engine.rs",
+     """        match payload.trim_start().as_bytes().first() {
+            Some(b'{' | b'[') => Self::Undecodable,
+            _ => Self::Text,
+        }""",
+     """        match payload.trim_start().as_bytes().first() {
+            Some(b'{' | b'[') => Self::Text,
+            _ => Self::Text,
+        }""")
+PY
+
+# ── The other side of the same rule ────────────────────────────────
+#
+# Prose reported as a lost payload. The clause's third reading is the NORMAL
+# outcome for a `<content>` element an author wrote, so this is the mutation
+# that turns the statistic into noise rather than into silence.
+
+mutation_case "prose is reported as a payload that failed to parse" <<'PY'
+edit("backends/rust/runtime/src/scripting/i_script_engine.rs",
+     """        match payload.trim_start().as_bytes().first() {
+            Some(b'{' | b'[') => Self::Undecodable,
+            _ => Self::Text,
+        }""",
+     """        match payload.trim_start().as_bytes().first() {
+            Some(b'{' | b'[') => Self::Undecodable,
+            _ => Self::Undecodable,
+        }""")
+PY
+
+# ── The successful parse reports the wrong rung ────────────────────
+#
+# One rung up: the JSON parsed, and the engine says it did not. The fixture's
+# fourth delivery is what refuses this — it reaches `accepted`, so the
+# structured read demonstrably happened.
+
+mutation_case "a payload that parsed is reported as one that did not" <<'PY'
+edit("backends/rust/lua/src/lib.rs",
+     """                    reading = PayloadReading::Structured;""",
+     """                    reading = PayloadReading::of_text(event_data);""")
+PY
+
+# ── Naming the delivery ────────────────────────────────────────────
+#
+# The count says a payload was lost; a host debugging a stalled supervisor
+# needs to know which delivery lost it. Leaving it at `None` still counts
+# correctly.
+
+mutation_case "the lost payload is counted but its delivery never named" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            self.last_undecodable_payload = Some(event);""",
+     """            self.last_undecodable_payload = None;""")
+PY
+
+# ── Naming the wrong delivery ──────────────────────────────────────
+#
+# The record has to track the last event THAT LOST A PAYLOAD, not the last
+# event. Only the fixture's two-event sequence separates the two, which is why
+# the second loss arrives under a different name.
+
+mutation_case "every delivery overwrites the name of the last loss" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if reading.is_undecodable() {
+            self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
+            self.last_undecodable_payload = Some(event);
+        }""",
+     """        self.last_undecodable_payload = Some(event);
+        if reading.is_undecodable() {
+            self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
+        }""")
+PY

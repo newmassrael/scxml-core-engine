@@ -254,7 +254,7 @@ TEST_F(StateMachineIntegrationTest, EventSystemIntegration) {
 
     // Simulate event reception and processing using C++ API (SCXML W3C compliance)
     auto eventSetup = engine_->setCurrentEvent(sessionId_, std::make_shared<Event>("testEvent", "platform")).get();
-    EXPECT_TRUE(eventSetup.isSuccess());
+    EXPECT_TRUE(eventSetup.status.isSuccess());
 
     // Execute transition script
     auto transitionScript =

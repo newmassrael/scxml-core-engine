@@ -88,6 +88,21 @@ public:
     void setCurrentEvent(const EventMetadata &metadata);
 
     /**
+     * @brief Which W3C SCXML B.2.8.1 rung the payload of the last bound event got.
+     *
+     * The ladder decides between a DOM, a value and a space-normalized string,
+     * and that decision used to end at the script engine. It is kept here so
+     * the Interpreter can report the same thing the generated engines do:
+     * `PayloadReading::Undecodable` means the document is about to read fields
+     * off a payload that no longer has any.
+     *
+     * `Absent` until an event with a payload has been bound.
+     */
+    PayloadReading lastPayloadReading() const {
+        return lastPayloadReading_;
+    }
+
+    /**
      * @brief Get current event metadata (§scxml-5.10 _event protection during nested processing)
      * @return Current event metadata
      */
@@ -112,6 +127,10 @@ public:
 
 private:
     IScriptEngine &scriptEngine_;
+    /// W3C SCXML B.2.8.1: which rung the last bound payload got — see
+    /// `lastPayloadReading()`. Written where the binding returns, so it cannot
+    /// describe a different event than the one just delivered.
+    PayloadReading lastPayloadReading_ = PayloadReading::Absent;
     std::string sessionId_;
     std::string currentEventName_;
     std::string currentEventData_;

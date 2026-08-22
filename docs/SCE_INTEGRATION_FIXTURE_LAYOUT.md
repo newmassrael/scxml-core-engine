@@ -490,6 +490,39 @@ It owns only what the host learns about an event it injected: no delayed
 `<send>`, no `<invoke>`, no `<parallel>`. `late_tick_honours_cancel` owns
 scheduler dispatch order.
 
+`undecodable_payload_is_reported` covers W3C SCXML B.2.8.1, which gives an
+event payload three readings — XML document to DOM, structured data to the
+corresponding value, "otherwise" a space-normalized string — and is the sibling
+of the two entries around it in shape: the clause is satisfied, and being unable
+to say what happened is what the fixture is about. A host serializes
+`{"done":true}`, something truncates it to `{"done":`, and the content correctly
+becomes a string. The document evaluates `_event.data.done`, finds nothing, and
+takes the transition it would have taken had the host sent `{"ready":true}` —
+valid JSON in which `done` is genuinely absent. Those two deliveries leave the
+same state, the same configuration and the same datamodel counters, so each
+driver asserts that indistinguishability directly and the fixture fails if it
+ever stops measuring what it claims.
+
+The four deliveries walk the readings the clause names. `note` with prose is the
+third reading working — W3C test 562 sends exactly that shape and requires it to
+arrive as a string — and must NOT be counted, because a diagnostic that fires
+when nothing is wrong is one nobody reads. `answer` with `{"done":` and `note`
+with `[1,2` are the same rung reached by content that asked for the second one,
+under two event names so that a channel reporting "the last event" rather than
+"the last event that lost a payload" cannot pass by accident. `answer` with the
+intact object reaches `accepted`, which is how the drivers know the structured
+read genuinely worked instead of merely not being counted, and the count must
+not move for it.
+
+Unlike the entry above, the Interpreter channel is not the reason this axis
+exists — it was as silent as the six generated engines. What it does have is the
+`TransitionResult` those engines lacked, and this fixture is where that report
+is shown to be about the TRANSITION rather than the payload: every delivery here
+matches a transition and returns success. Rung 1 (XML to DOM) is deliberately
+absent because `xml_data_is_a_dom_tree` owns it and the ladder returns from it
+before reaching the rule this fixture measures. It owns only what the host
+learns about a payload the datamodel could not read.
+
 `unhandled_error_is_observable` covers W3C SCXML 3.12.2: the processor MUST
 signal its own failures by raising `error.*` events into the **internal** queue,
 and the same paragraph says they "are ignored if no transition is found that
