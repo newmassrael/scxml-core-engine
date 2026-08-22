@@ -95,6 +95,13 @@
 # `cmake --build` already runs that step; the cargo runner compiles the
 # committed tree and needs one, or the mutation reaches nothing.
 #
+# A suite that talks to a service outside this tree declares that service with
+# `mutation_needs`, so the caller can provision it and the round can refuse
+# early when nobody did:
+#
+#     mutation_needs http-fixture
+#
+#
 #     mutation_case "parser accepts a wildcard token" <<'PY'
 #     edit("sce-build/src/parser.rs",
 #          "if tok == \"*\" ||",
@@ -167,6 +174,7 @@ MUTATION_TARGET_FILES=()
 MUTATION_RUNTIME_FILES=()
 MUTATION_ORACLE_FILES=()
 MUTATION_REGEN_CMDS=()
+MUTATION_NEEDS=()
 MUTATION_ARTIFACTS=()
 # Which tests turned red on the last run, one name per line.
 #
@@ -336,6 +344,55 @@ mutation_oracles() { MUTATION_ORACLE_FILES+=("$@"); }
 # carry the last case's mutation out of the round and into the working tree.
 mutation_regen() { MUTATION_REGEN_CMDS+=("$*"); }
 
+# A service outside this tree that the round's SUITE needs running — not a
+# compiler, not a configured build directory, but a listener something under
+# test talks to.
+#
+# The one service today is `http-fixture`: the W3C harness server on
+# localhost:8080/test (`tests/w3c/standalone_http_server.js`), which every
+# BasicHTTP fixture posts to. `backends/rust/tests/src/harness.rs` refuses to
+# run such a test without it, by design and with instructions — and that
+# refusal is a FAILING TEST, which is what a round reads as "baseline is not
+# green" and stops on.
+#
+# Measured 2026-08-21/22: `send_namelist_reaches_the_form.cases` went red in
+# CI on both runs it ever had, from the round it was written in onwards, with
+# the verdict `baseline is not green (1 failing)` and no word about a socket.
+# Every other consumer of that suite starts the server — `workspace-tests` and
+# `w3c-go` call `sce_gate_http_fixture_server`, the two Rust and W3C workflows
+# start their own copy, and the C11 ctest entries declare
+# `FIXTURES_REQUIRED w3c_c_http_server` — so the requirement was known
+# everywhere except where a round could read it. It was invisible here because
+# the harness had no word for it: a casefile could name what its cases break
+# and what noticed, but not what has to be up for either to mean anything.
+#
+# Declared rather than sniffed. The suite behind `--test send_namelist_over_http`
+# is a selector, not a path, and deciding "does this suite talk to the network"
+# by reading its sources would be the second, drifting copy of an answer the
+# author already has. What the declaration buys is two things a comment could
+# not: `--declares` hands it to the gate, which provisions the service for that
+# round and no other (`sce_gate_with_http_fixture_server`), and `mutation_init`
+# checks it before the baseline so a by-hand run names the socket instead of
+# blaming the tree.
+#
+# The vocabulary is closed: an unknown service is refused rather than recorded,
+# because a name nothing provisions would read as satisfied.
+mutation_needs() {
+    local service
+    for service in "$@"; do
+        case "$service" in
+        http-fixture) MUTATION_NEEDS+=("$service") ;;
+        *)
+            red "mutation_needs names '$service', which is not a service this"
+            red "harness knows how to provide. The vocabulary is: http-fixture"
+            red "A name nothing provisions would read as satisfied, so it is"
+            red "refused here rather than recorded and ignored."
+            exit 2
+            ;;
+        esac
+    done
+}
+
 # ── Internals ──────────────────────────────────────────────────────
 
 # Every file a case may edit, of either kind.
@@ -348,6 +405,15 @@ mutation_regen() { MUTATION_REGEN_CMDS+=("$*"); }
 mutation_all_targets() {
     printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
                   ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"} |
+        awk 'NF && !seen[$0]++'
+}
+
+# Every service the round needs, once each — deduplicated for the same reason
+# the target list is: the casefile is sourced on both passes, so an
+# accumulating declaration is seen twice, and a caller starting one server per
+# line would leave the second refusing the port the first holds.
+mutation_all_needs() {
+    printf '%s\n' ${MUTATION_NEEDS[@]+"${MUTATION_NEEDS[@]}"} |
         awk 'NF && !seen[$0]++'
 }
 
@@ -1164,6 +1230,48 @@ mutation_ctest_check_selector() {
     return 1
 }
 
+# Every service the casefile declared is actually up, before the round pays for
+# a baseline it already knows the answer to.
+#
+# Checked, never STARTED. Which process owns the listener is the caller's
+# question and the callers disagree for good reasons: `mutation-rounds` brings
+# one up around the rounds that asked for it and takes it down again, because
+# the ctest rounds beside them bind 8080 themselves; a developer running one
+# casefile by hand already has the line in their scrollback. A harness that
+# started its own would be a third owner racing the other two for the port.
+#
+# What this replaces is a true verdict about the wrong thing. Without it the
+# round reaches its baseline, the suite's own guard refuses for want of a
+# socket, and the harness reports `baseline is not green (1 failing)` — which
+# is accurate, unactionable, and reads as a defect in the tree. That verdict
+# stood over two CI runs of `send_namelist_reaches_the_form.cases` before
+# anybody traced it to a server nobody had started.
+mutation_check_needs() {
+    local service failed=0
+    while IFS= read -r service; do
+        [[ -n "$service" ]] || continue
+        case "$service" in
+        http-fixture)
+            if timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/8080' 2>/dev/null; then
+                dim "declared service is up: http-fixture (localhost:8080)"
+            else
+                red "the casefile declares 'mutation_needs http-fixture' and nothing is"
+                red "listening on localhost:8080. Every case below would read as CAUGHT"
+                red "for that reason rather than for the clause it defends."
+                red ""
+                red "  node tests/w3c/standalone_http_server.js 8080 /test"
+                red ""
+                red "The mutation-rounds gate starts it for the rounds that declare it;"
+                red "by hand, start it first and stop it afterwards — a live 8080 makes"
+                red "the C++ ctest suite report 13 of its cases Not Run."
+                failed=1
+            fi
+            ;;
+        esac
+    done < <(mutation_all_needs)
+    return "$failed"
+}
+
 mutation_init() {
     if [[ -z "$MUTATION_RUNNER" ]]; then
         red "the casefile declared no mutation_tests or mutation_ctest selector"
@@ -1204,6 +1312,14 @@ mutation_init() {
         while IFS= read -r _oracle; do
             [[ -n "$_oracle" ]] && printf 'oracle\t%s\n' "$_oracle"
         done < <(mutation_all_oracles)
+        # What has to be RUNNING for the round to mean anything, on its own key
+        # for the same reason the two path keys are separate: a caller acts on
+        # this one differently. Targets and oracles are intersected against a
+        # change set to decide WHETHER to run; this is provisioned to decide
+        # whether the run can start at all.
+        while IFS= read -r _need; do
+            [[ -n "$_need" ]] && printf 'needs\t%s\n' "$_need"
+        done < <(mutation_all_needs)
         exit 0
     fi
     # Before the snapshot, which reads every declared file and would other-
@@ -1222,6 +1338,11 @@ mutation_init() {
         echo
         return
     fi
+
+    # After the `--check` return, deliberately: `mutation-cases` runs that mode
+    # on every push and does not provision anything, so a socket demanded there
+    # would fail every push for a service no push needs.
+    mutation_check_needs || exit 2
 
     mutation_resolve_artifacts
     dim "resolved ${#MUTATION_ARTIFACTS[@]} test artifact(s) via $MUTATION_RUNNER"
@@ -1515,7 +1636,7 @@ while (( $# )); do
             printf 'usage: scripts/mutate [--check|--declares] <casefile>\n\n'
             printf '  (default)   full round — build, run, require every case CAUGHT\n'
             printf '  --check     apply and restore only; no build, no test run\n'
-            printf '  --declares  print the declared runner and targets, then exit\n\n'
+            printf '  --declares  print the declared runner, targets and services, then exit\n\n'
             printf 'The casefile vocabulary is documented in this file'\''s header.\n'
             exit 0 ;;
         -*) red "mutate: unknown option $1"; exit 2 ;;
