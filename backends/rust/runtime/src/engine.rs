@@ -949,8 +949,7 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Every chain that is not a configuration of THIS document — see
     /// [`configuration::validate`](crate::helpers::configuration::validate) for
-    /// the rules and [`ConfigurationRejection`](crate::helpers::configuration::ConfigurationRejection)
-    /// for what each refusal says. Validation runs before any mutation, so a
+    /// the rules and [`ConfigurationRejection`] for what each refusal says. Validation runs before any mutation, so a
     /// refused call leaves the engine exactly as it was; entering "near" the
     /// requested configuration is the one outcome this door must never produce,
     /// because a host has no way to detect it afterwards.
