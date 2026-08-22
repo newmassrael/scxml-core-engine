@@ -39,7 +39,7 @@ fn send_namelist_reaches_the_form_and_a_broken_item_discards_the_message() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut policy = SendNamelistOverHttpPolicy::new(script_engine);
-    policy.set_basic_http_access_uri(sce_rust_tests::harness::HTTP_TEST_SERVER_URL);
+    policy.set_basic_http_access_uri(sce_rust_tests::harness::http_test_server_url());
     let mut engine = sce_rust_runtime::Engine::new(policy);
     sce_rust_tests::harness::setup_http_test(&mut engine);
     engine.initialize();
