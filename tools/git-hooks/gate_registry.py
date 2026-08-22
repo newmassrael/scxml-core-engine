@@ -76,6 +76,42 @@ from pathlib import Path
 # workspace" and it sat last of seventeen, while a measurement puts the
 # whole gate at 157s — still nowhere near last, and the prose was
 # describing one step of it.
+# ── The push budget ───────────────────────────────────────────────
+#
+# The ceiling on what a push may cost the developer, in the same warm
+# wall-clock seconds `cost_s` is measured in. Set by the owner: a push
+# takes under five minutes.
+#
+# It bounds the WORST case, not the average. Rule 1 hands back every gate
+# a push can run for any unclassified path, so that set is what a developer
+# can actually be made to wait for, and bounding the median would leave the
+# longest pushes — the ones that decide whether anybody keeps using the
+# hook — unbounded.
+#
+# The costs it sums are the WORSE of two `--measure` runs of the same set,
+# not one run. Measured 2026-08-22: the same gates varied by as much as 27s
+# between consecutive warm runs (`clippy` alone read 15s and then 42s), so a
+# ceiling built on a single run is a ceiling met on lucky runs. Taking the
+# max is what makes "under five minutes" a property of every push rather
+# than of the run that happened to be measured.
+#
+# What this replaced is worth recording, because the numbers were wrong in a
+# direction nobody would have noticed. Before the ceiling, the local set was
+# never timed end to end: the declared costs summed to 659s and the first
+# real measurement of them was 529s — with `tree-hygiene` alone reading 193s
+# against a declared 13. Selections over the previous forty commits, priced
+# with those stale numbers, came out at median 382s and worst 969s, so even
+# the diagnosis that motivated this was built on figures that were fifteen
+# times off in one place.
+#
+# `budget_is_not_exceeded` in the self-test enforces it. That is the point
+# of writing it down as a number: a gate that grows past the ceiling, or a
+# new one that does not fit, fails here rather than being discovered as a
+# push somebody started bypassing. The fix is to move the most expensive
+# gate to `ci_only` — the same greedy rule that produced today's set —
+# never to raise this constant without the owner saying so.
+PUSH_BUDGET_S = 300
+
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
     # Triggered by its own sources, and forced on by its dependents.
@@ -86,7 +122,7 @@ GATES: dict[str, dict] = {
                         "(`debug_only_codegen_builds_drop_the_stale_release_binary` "
                         "counts those steps), so there is no verdict here "
                         "for a workflow to mirror.",
-        "cost_s": 0,
+        "cost_s": 9,
         "summary": "build target/debug/sce-codegen",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
@@ -125,7 +161,17 @@ GATES: dict[str, dict] = {
     "tree-hygiene": {
         "workflows": ["tree-hygiene.yml"],
         "runner_workflow": True,
-        "cost_s": 13,
+        # 193s measured 2026-08-22, against a declared 13 — the single
+        # largest gate a push could run, and it runs on EVERY push because
+        # its workflow is unfiltered. The old number was not a lie about the
+        # work, it was fifteen times out of date, which is the failure mode a
+        # hand-written cost has and the reason `--measure` exists.
+        "ci_only": "193s measured, on every push, because a tree-wide gate "
+                   "has no path filter to narrow it. Nothing else in the "
+                   "budget comes close. tree-hygiene.yml is unfiltered too, "
+                   "so CI runs it on exactly the pushes this would have — "
+                   "the delegation is total rather than partial.",
+        "cost_s": 193,
         "summary": "tree-wide marker + trigger + parity gates",
     },
     # Rides the same unfiltered workflow, for the same reason in a different
@@ -138,7 +184,7 @@ GATES: dict[str, dict] = {
     "mutation-cases": {
         "workflows": ["tree-hygiene.yml"],
         "runner_workflow": True,
-        "cost_s": 7,
+        "cost_s": 33,
         "summary": "every mutation casefile still applies",
     },
     # The other half of the same corpus: whether a case still turns its suite
@@ -198,14 +244,14 @@ GATES: dict[str, dict] = {
     "clippy": {
         "workflows": ["clippy-check.yml"],
         "runner_workflow": True,
-        "cost_s": 1,
+        "cost_s": 42,
         "summary": "cargo clippy --workspace --all-targets",
     },
     "nostd-mcu": {
         "workflows": ["sce-rust-runtime-no-std.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 2,
+        "cost_s": 9,
         "summary": "no_std MCU build + clippy + probes",
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
@@ -216,7 +262,7 @@ GATES: dict[str, dict] = {
     "rustdoc-links": {
         "workflows": ["doc-check.yml"],
         "runner_workflow": True,
-        "cost_s": 3,
+        "cost_s": 2,
         "summary": "cargo doc broken intra-doc links, both profiles",
     },
     "embed-vendor": {
@@ -230,6 +276,11 @@ GATES: dict[str, dict] = {
         # The most expensive gate in the set: three scratch-directory builds,
         # one of which packages embed/ from scratch and builds a consumer
         # against it.
+        "ci_only": "311s, and on its own it is more than the whole push "
+                   "budget of 300s. Three scratch-directory builds, one of "
+                   "which packages embed/ from scratch and builds a consumer "
+                   "against it — none of that gets cheaper on a warm tree, "
+                   "because the scratch directories are the point.",
         "cost_s": 311,
         "summary": "embed manifest drift + payload lag + consumer smoke",
     },
@@ -251,6 +302,19 @@ GATES: dict[str, dict] = {
         # it.
         "runner_workflow": True,
         "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
+        # 151s — half the budget for one gate, and the hardest of the four to
+        # give up, so the reason is stated rather than left to the number.
+        # This is the densest correctness net in the tree: every contract test
+        # under `sce-build/tests/` runs here. It leaves anyway because the
+        # budget is a ceiling on what a developer waits for, not a ranking of
+        # what is valuable, and a gate that eats half the ceiling decides the
+        # budget for every other gate. `rust-workspace-tests.yml` runs the
+        # same command with `--no-fail-fast`.
+        "ci_only": "151s, half the 300s push budget for one gate. Fully "
+                   "mirrored by rust-workspace-tests.yml, which runs the same "
+                   "command. The trade is the sharpest of the four: this is "
+                   "where every sce-build contract test lives, so a broken "
+                   "contract now reaches main and is answered a round later.",
         "cost_s": 151,
         "summary": "cargo test --workspace --features cli",
     },
@@ -265,13 +329,20 @@ GATES: dict[str, dict] = {
         "workflows": ["regen-reproduces.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
+        "ci_only": "117s regenerating every committed tree, which is work "
+                   "proportional to the corpus and not to the change. "
+                   "regen-reproduces.yml runs it. What this costs is worth "
+                   "naming: a template edit that does not carry its "
+                   "regenerated trees now lands, and that exact miss shipped "
+                   "once already (PR-90, where enter_at panicked in the real "
+                   "generated code while the branch's own suite was green).",
         "cost_s": 117,
         "summary": "regeneration reproduces every committed tree",
     },
     "drift-suites": {
         "workflows": ["drift-verify.yml"],
         "runner_workflow": True,
-        "cost_s": 0,
+        "cost_s": 17,
         "summary": "committed-tree drift + sourcemap, serial",
     },
     # forge-conformance.yml verifies the language arms in parallel jobs, and
@@ -286,7 +357,7 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
-        "cost_s": 9,
+        "cost_s": 8,
         "summary": "Go forge conformance regenerate + test",
     },
     "forge-rust": {
@@ -295,14 +366,14 @@ GATES: dict[str, dict] = {
         "extra": ["backends/rust/**"],
         # Warm reads as 0; the release profile it needs is a separate build
         # tree from every other gate, so a cold run pays that once.
-        "cost_s": 0,
+        "cost_s": 14,
         "summary": "Rust forge conformance (numerical, release)",
     },
     "forge-python": {
         "workflows": ["forge-conformance.yml"],
         "runner_workflow": True,
         "extra": ["backends/python/**"],
-        "cost_s": 8,
+        "cost_s": 9,
         "summary": "Python forge conformance (numerical)",
     },
     "forge-cpp": {
@@ -318,7 +389,7 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/cpp/**", "sce/**"],
         "deps": ["codegen-build"],
-        "cost_s": 9,
+        "cost_s": 10,
         "summary": "C++ forge conformance build + test",
     },
     # Catches codegen breakage in the example documents (the namespace
@@ -339,7 +410,7 @@ GATES: dict[str, dict] = {
         # about the set, and the self-test below holds the delegation.
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 1,
+        "cost_s": 4,
         "summary": "example SCXML codegen smoke + authored-document lint",
     },
     "ledger-citations": {
@@ -356,7 +427,7 @@ GATES: dict[str, dict] = {
         # 0.29, wire 0.40, bytesguard 0.45 — 2.6s in total). The whole-tree
         # existence sweep, 4.4s over 6357 files, is now the larger half.
         # `cost_s` stays at the `--measure` figure the runner compares against.
-        "cost_s": 16,
+        "cost_s": 15,
         "summary": "spec-citation ledgers, 5 workspaces",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
@@ -365,7 +436,7 @@ GATES: dict[str, dict] = {
     "spec-snapshot": {
         "workflows": ["spec-snapshot-drift.yml"],
         "runner_workflow": True,
-        "cost_s": 2,
+        "cost_s": 3,
         "summary": "spec snapshot integrity + verifies-catalog drift",
     },
     # A compliance verdict — an LGPL section 1 / MIT section 1 violation in a
@@ -409,13 +480,13 @@ GATES: dict[str, dict] = {
     "codec-clippy": {
         "workflows": ["sce-forge-codec-clippy.yml"],
         "runner_workflow": True,
-        "cost_s": 18,
+        "cost_s": 12,
         "summary": "clippy generated codecs, alloc on",
     },
     "codec-no-alloc": {
         "workflows": ["sce-forge-codec-no-alloc.yml"],
         "runner_workflow": True,
-        "cost_s": 17,
+        "cost_s": 11,
         "summary": "generated codecs compile without alloc",
     },
     # The two conformance surfaces nothing local ran. Both narrow their
@@ -437,7 +508,14 @@ GATES: dict[str, dict] = {
                   "resources/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 60,
+        "ci_only": "55s, and it is the gate that decides whether the budget "
+                   "is met on a good run or on every run. Without it the set "
+                   "measured 286s against a 300s ceiling, and the same gates "
+                   "measured twice varied by as much as 27s (clippy alone "
+                   "swung 15s to 42s), so fourteen seconds of headroom is "
+                   "none. w3c-tests.yml declares no `paths:` filter, so CI "
+                   "runs this arm on every push regardless.",
+        "cost_s": 55,
         "summary": "W3C conformance, C++ Interpreter + AOT",
     },
     # A deploy workflow whose three build steps are verdicts. Its trigger
@@ -446,7 +524,11 @@ GATES: dict[str, dict] = {
     "visualizer-wasm": {
         "workflows": ["deploy-visualizer.yml"],
         "runner_workflow": True,
-        "cost_s": 42,
+        "ci_only": "77s measured 2026-08-22 (declared 42) building three "
+                   "WASM artifacts. deploy-visualizer.yml runs it, and this "
+                   "gate declares no trigger of its own, so the workflow's "
+                   "filter IS the trigger — the two cannot disagree.",
+        "cost_s": 77,
         "summary": "codegen + visualizer + DOOM WASM builds",
     },
     # The other half of the main tree's ctest partition, and the half nothing
@@ -468,6 +550,11 @@ GATES: dict[str, dict] = {
                   "examples/**", "resources/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
+        "ci_only": "110s building and running the whole C++ ctest tree. "
+                   "cpp-suite.yml runs it. Its `extra` list is wide on "
+                   "purpose — sce/**, tests/**, examples/** — so it was "
+                   "selected by most pushes, which is what made it a budget "
+                   "problem rather than an occasional one.",
         "cost_s": 110,
         "summary": "C++ ctest suite (engine + mesh), the non-c11 half",
     },
@@ -480,7 +567,7 @@ GATES: dict[str, dict] = {
         "extra": ["backends/c/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 6,
+        "cost_s": 4,
         "summary": "W3C conformance, C11 MCU backend",
     },
     "w3c-go": {
@@ -491,7 +578,7 @@ GATES: dict[str, dict] = {
         "extra": ["backends/go/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 6,
+        "cost_s": 9,
         "summary": "W3C conformance, Go AOT",
     },
     "w3c-kotlin": {
@@ -508,7 +595,7 @@ GATES: dict[str, dict] = {
         # do when an earlier gate already did it. The second JVM engine is a
         # re-run of the test task against that tree, which is why covering it
         # costs a fraction of the first.
-        "cost_s": 10,
+        "cost_s": 13,
         "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS)",
     },
     "w3c-python": {
@@ -520,7 +607,7 @@ GATES: dict[str, dict] = {
         "extra": ["backends/python/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 3,
+        "cost_s": 8,
         "summary": "W3C conformance, Python AOT",
     },
     # The wrapper layer, not the engine under it: the trigger is the binding
@@ -535,7 +622,7 @@ GATES: dict[str, dict] = {
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "the pybind11 wrapper sources.",
         "extra": ["backends/python/bindings/**"],
-        "cost_s": 47,
+        "cost_s": 23,
         "summary": "W3C conformance, pybind11 -> C++ Interpreter",
     },
 }
@@ -880,10 +967,18 @@ def transitive_deps(slug: str, table=None) -> set[str]:
     return seen
 
 
-def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
-    """Return (gates to run in order, reason). Empty list means nothing to do."""
+def matched(repo_root: Path, changed: list[str]) -> tuple[set[str], str]:
+    """Every gate the change set reaches, BEFORE `ci_only` is applied.
+
+    Split out of `select` so the two readers of this answer share one
+    implementation. `select` drops the `ci_only` gates and runs the rest;
+    `ci_owed` keeps exactly the ones it dropped, which is what the hook
+    prints so a developer knows which verdicts the push handed to CI. A
+    second copy of the matching would be a second answer to "what does this
+    change touch", and the two would disagree the first time a trigger moved.
+    """
     if not changed:
-        return ([], "no changed paths — nothing to verify")
+        return (set(), "no changed paths — nothing to verify")
 
     triggers = gate_triggers(repo_root)
     # Rule 3. Held out of `compiled` so they cannot classify a path, and
@@ -907,7 +1002,7 @@ def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
         if any(p.match(path) for p in inert):
             continue
         # Rule 1: an unclassified path buys the full run rather than silence.
-        return (run_order(drop_ci_only(set(GATES))),
+        return (set(GATES),
                 f"unclassified path '{path}' — running every gate")
 
     # Dependency closure, applied until it stops growing: a dep may itself
@@ -921,7 +1016,26 @@ def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
                     selected.add(dep)
                     changed_set = True
 
-    return (run_order(drop_ci_only(selected)), "path-scoped selection")
+    return (selected, "path-scoped selection")
+
+
+def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
+    """Return (gates to run in order, reason). Empty list means nothing to do."""
+    reached, reason = matched(repo_root, changed)
+    return (run_order(drop_ci_only(reached)), reason)
+
+
+def ci_owed(repo_root: Path, changed: list[str]) -> list[str]:
+    """The gates this change reaches that only CI will run.
+
+    A push that silently stops running four gates is how a lane stays red for
+    eight pushes without anybody noticing — measured on this repository. The
+    hook prints this list so the delegation is stated at the moment it
+    happens, in the same terminal, naming the workflow that now owns each
+    verdict.
+    """
+    reached, _ = matched(repo_root, changed)
+    return run_order({s for s in reached if GATES[s].get("ci_only")})
 
 
 def drop_ci_only(selected) -> set[str]:
@@ -932,12 +1046,28 @@ def drop_ci_only(selected) -> set[str]:
     verified before pushing, which is the property the runner's toolchain pin
     exists to protect.
 
-    `ci_only` buys one thing back — a gate whose cost is unbounded by anything
-    the developer chose. `mutation-rounds` measured 877s on the first push
-    whose change set reached its casefiles, against 4s on a push that reached
-    none, and there is no value of `cost_s` that is honest about both. The
-    trade recorded here is the owner's: a red arrives one round later, and the
-    push stays a length somebody will keep paying.
+    `ci_only` buys back the two things a push cannot afford.
+
+    The first is a cost unbounded by anything the developer chose.
+    `mutation-rounds` measured 877s on the first push whose change set
+    reached its casefiles, against 4s on a push that reached none, and there
+    is no value of `cost_s` that is honest about both.
+
+    The second is simply not fitting in `PUSH_BUDGET_S`. The set is derived,
+    not curated: take the most expensive gate still local until the rest fit
+    the ceiling. That produced `embed-vendor`, `workspace-tests`,
+    `regen-reproduces` and `cpp-suite`, in that order, and left 280s. Greedy
+    by cost is the honest reading of a budget — it moves the fewest gates,
+    and it does not let "this one feels important" quietly raise the ceiling
+    for everything else. Each moved gate states its own trade in its entry;
+    `workspace-tests` has the sharpest one and says so.
+
+    The trade recorded here is the owner's: a red arrives one round later,
+    and the push stays a length somebody will keep paying. What makes that
+    survivable is that every gate here has a CI workflow that runs it —
+    `every_ci_only_gate_has_a_workflow` refuses one that does not, because a
+    gate excluded from the push and absent from CI is a gate that was
+    deleted.
 
     Applied at the end so it covers the full-run path too. Rule 1 hands back
     every gate for an unclassified path, and a gate excluded from the hook has
@@ -984,8 +1114,13 @@ def self_test(repo_root: Path) -> int:
     # Rule 3 — an always-on gate must not classify. Were the catch-all
     # allowed to count, this path would read as known and rule 1 would never
     # fire again for anything.
+    # The witness is `mutation-cases` rather than `tree-hygiene`: both ride
+    # the same unfiltered workflow and are therefore both always-on, and
+    # `tree-hygiene` became `ci_only` when it was measured at 193s, so it is
+    # no longer in any answer the hook gives. The property under test is
+    # unchanged — an always-on gate still runs, and still does not classify.
     check("catch-all-does-not-classify", ["brand_new_dir/file.xyz"],
-          want_full=True, want_has=["tree-hygiene"])
+          want_full=True, want_has=["mutation-cases"])
     # Every other workflow classifies its own edits by naming itself in its
     # `paths:`. The unfiltered one has no such list to name itself in, so
     # editing it is unclassified and buys the full run.
@@ -994,7 +1129,7 @@ def self_test(repo_root: Path) -> int:
     # Docs-only runs the tree-wide gates and nothing else: prose is still
     # tracked source as far as the marker gate is concerned.
     check("inert", ["README.md", ".claude/settings.json"],
-          want_full=False, want_has=["tree-hygiene"], want_lacks=["workspace-tests"])
+          want_full=False, want_has=["mutation-cases"], want_lacks=["workspace-tests"])
     # A SCE-VERIFIES marker must reach the catalog gate.
     check("verifies-marker", ["tests/mesh/CustomTcpSocketOptionsTest.cpp"],
           want_has=["spec-snapshot"])
@@ -1002,16 +1137,21 @@ def self_test(repo_root: Path) -> int:
     # change through the unfiltered workflow, so the whole workspace sweep
     # no longer has to run to judge a hook edit.
     check("hook-self", ["tools/git-hooks/gate_registry.py"],
-          want_full=False, want_has=["tree-hygiene"], want_lacks=["workspace-tests"])
+          want_full=False, want_has=["mutation-cases"], want_lacks=["workspace-tests"])
     # A gate script edit is judged the same way, for the same reason.
     check("gate-script-self", ["scripts/gates/clippy.sh"],
-          want_full=False, want_has=["tree-hygiene"], want_lacks=["workspace-tests"])
+          want_full=False, want_has=["mutation-cases"], want_lacks=["workspace-tests"])
     # A ledger-only edit needs the citation gates, not the C++ build.
     check("ledger-only", ["docs/sce-ledger/mesh/.atomic/workspace.atomic.json"],
           want_has=["ledger-citations"], want_lacks=["nostd-mcu", "forge-cpp"])
-    # Rust source pulls in clippy and the workspace suite.
-    check("rust", ["sce-build/src/mesh/deploy.rs"],
-          want_has=["codegen-build", "rust-modrs-drift", "clippy", "workspace-tests"])
+    # Rust source pulls in the Rust gates a push still runs. `workspace-tests`
+    # used to be asserted here and is now `ci_only`, so it is checked from the
+    # other side: the path must still be CLASSIFIED. A ci_only gate keeps its
+    # triggers for exactly this reason — they are what stop rule 1 from
+    # handing back the whole table for a path the registry does understand.
+    check("rust", ["sce-build/src/mesh/deploy.rs"], want_full=False,
+          want_has=["codegen-build", "rust-modrs-drift", "clippy"],
+          want_lacks=["workspace-tests"])
     # Dependency closure: an example-only change still builds sce-codegen.
     check("example-dep", ["examples/smart_light/smart_light.scxml"],
           want_has=["codegen-build", "example-codegen"])
@@ -1060,6 +1200,93 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             "trigger: no gate script was seen sweeping tracked files — "
             "the extractor is broken, not the gates")
+
+    # The push budget, held as a number rather than as an intention.
+    #
+    # What is bounded is the WORST case: rule 1 hands back every gate a push
+    # can run for any unclassified path, so that set is what a developer can
+    # actually be made to wait for. Bounding an average would leave the
+    # longest pushes unbounded, and those are the ones that decide whether
+    # the hook gets bypassed.
+    cases += 1
+    local = drop_ci_only(set(GATES))
+    worst = sum(GATES[slug].get("cost_s") or 0 for slug in local)
+    if worst > PUSH_BUDGET_S:
+        over = sorted(((GATES[s].get("cost_s") or 0, s) for s in local),
+                      reverse=True)[:3]
+        failures.append(
+            f"budget: a push can be made to run {worst}s of gates, over the "
+            f"{PUSH_BUDGET_S}s ceiling. Most expensive still local: "
+            + ", ".join(f"{s} ({c}s)" for c, s in over)
+            + ". Move the top one to `ci_only` — that is the rule the current "
+              "set was derived by — rather than raising PUSH_BUDGET_S, which "
+              "is the owner's number.")
+
+    # A gate held out of the push must still run somewhere, or it was not
+    # moved to CI — it was deleted. Naming a workflow is the first half.
+    cases += 1
+    ci_only_seen = 0
+    for slug in sorted(GATES):
+        if not GATES[slug].get("ci_only"):
+            continue
+        ci_only_seen += 1
+        if not GATES[slug].get("workflows"):
+            failures.append(
+                f"ci-only-coverage: {slug} is ci_only and names no workflow, "
+                f"so nothing runs it at all")
+    # Lower bound, for the same reason every sweep here carries one: an empty
+    # ci_only set satisfies the loop above and proves nothing.
+    if ci_only_seen < 1:
+        failures.append(
+            "ci-only-coverage: no gate is ci_only, so this case read nothing")
+
+    # The second half, and the one that actually bites. A gate that runs
+    # locally may be triggered by paths its own workflow's `paths:` filter
+    # does not list — `extra` exists precisely for inputs the filter cannot
+    # express. While the gate is local that asymmetry is harmless: the hook
+    # covers the difference. The moment it becomes `ci_only` the difference
+    # becomes a hole, and a hole in the shape nobody looks at, because both
+    # halves report green.
+    #
+    # Found this way rather than reasoned: `workspace-tests` declares
+    # `schemas/**`, `apis/**` and the acceptance doc, and
+    # rust-workspace-tests.yml listed none of the three. Moving the gate as
+    # it stood would have left an edit to any of them verified nowhere.
+    #
+    # Compared over tracked files rather than glob text, because two globs
+    # that describe the same set rarely spell it the same way — the same
+    # method the `trigger:` case above uses.
+    cases += 1
+    pairs_seen = 0
+    for slug in sorted(GATES):
+        spec = GATES[slug]
+        if not spec.get("ci_only"):
+            continue
+        wf_globs: list[str] = []
+        for wf in spec.get("workflows") or []:
+            wf_globs.extend(workflow_paths(repo_root, wf))
+        if "**" in wf_globs:
+            # An unfiltered workflow runs on every push, so it cannot miss a
+            # path. `cpp-suite` and `mutation-rounds` are both this shape.
+            pairs_seen += 1
+            continue
+        wf_pats = [glob_to_regex(g) for g in wf_globs]
+        for own in (spec.get("local") or []) + (spec.get("extra") or []):
+            pairs_seen += 1
+            for path in tracked_matching(repo_root, own):
+                if not any(p.match(path) for p in wf_pats):
+                    failures.append(
+                        f"ci-only-coverage: {slug} is ci_only and is "
+                        f"triggered by '{own}', but "
+                        f"{','.join(spec['workflows'])} does not run for "
+                        f"'{path}'. The gate was not moved to CI, it was "
+                        f"removed — widen the workflow's `paths:` to cover "
+                        f"the gate's own triggers, or keep the gate local.")
+                    break
+    if pairs_seen < 1:
+        failures.append(
+            "ci-only-coverage: no ci_only gate declared a trigger to compare "
+            "— the case read nothing")
 
     # Rule 2, held rather than described. A gate with no CI counterpart
     # states why in a field, not in a comment a reader has to find and a
@@ -1398,6 +1625,10 @@ def main() -> int:
                     help="print every gate in run order")
     ap.add_argument("--explain", action="store_true",
                     help="also print the selection reason to stderr")
+    ap.add_argument("--ci-owed", action="store_true",
+                    help="print the gates this change reaches that only CI "
+                         "runs, one 'slug workflow' pair per line, instead "
+                         "of the gates the push runs")
     ap.add_argument("--mapping", action="store_true",
                     help="print the table as JSON, so a consumer reads the "
                          "registry instead of parsing this file's source")
@@ -1456,6 +1687,12 @@ def main() -> int:
     else:
         ap.error("one of --changed / --changed-from / --self-test / --list is required")
         return 2
+
+    if args.ci_owed:
+        for slug in ci_owed(repo_root, changed):
+            workflows = ",".join(GATES[slug].get("workflows") or ["?"])
+            print(f"{slug} {workflows}")
+        return 0
 
     keys, reason = select(repo_root, changed)
     if args.explain:

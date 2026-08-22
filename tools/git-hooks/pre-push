@@ -23,7 +23,17 @@
 # What stays here is what only a push knows: which refs are being pushed and
 # what they change relative to the remote.
 #
-# `PREPUSH_FULL=1` runs every gate regardless of paths.
+# A push is bounded. `PUSH_BUDGET_S` in the registry is the ceiling on what
+# this hook may cost — the owner set it at five minutes — and the gates that
+# did not fit are marked `ci_only` and run in CI instead. The hook prints
+# which ones it handed over at the end of a run, because a delegation nobody
+# is told about is how a CI lane stays red for eight pushes.
+#
+# `PREPUSH_FULL=1` runs every gate regardless of paths, `ci_only` included,
+# so it is NOT bounded by the budget and is the deliberate way to verify a
+# tree end to end. It is the right tool after a `SKIP_PREPUSH=1` push, and
+# the wrong one for an ordinary push.
+#
 # Bypass (for genuine emergencies): `SKIP_PREPUSH=1 git push ...`.
 # Do not skip by habit — every gate corresponds to a CI failure that has
 # already cost a round-trip.
@@ -104,4 +114,36 @@ sort -u "$CHANGED_FILE" -o "$CHANGED_FILE"
 printf '\n==> pre-push: %s changed path(s)\n' \
     "$(wc -l <"$CHANGED_FILE" | tr -d ' ')" >&2
 
-"$RUNNER" --changed-from "$CHANGED_FILE"
+# `|| gate_rc=$?` rather than a bare call plus `$?`: `set -e` is on, so a
+# failing runner would end the script before the assignment ran and the
+# exit status below would never be reached.
+gate_rc=0
+"$RUNNER" --changed-from "$CHANGED_FILE" || gate_rc=$?
+
+# What this push did NOT verify, said out loud.
+#
+# `ci_only` keeps the push inside its budget by handing whole gates to CI,
+# and the failure mode of that trade is silence: four CI lanes on this
+# repository stayed red for five to eight pushes because nothing said they
+# were now the only thing looking. Printing the delegation names the
+# outstanding verdicts and the workflow that owns each, in the terminal
+# where the decision was made.
+#
+# Only on the path-scoped branch: `--all` above runs the ci_only gates too,
+# so on those branches nothing is owed. Failures here are swallowed — a
+# registry that cannot answer must not turn a passing push into a failing
+# one, since this paragraph is a notice and not a gate.
+if (( gate_rc == 0 )); then
+    OWED="$(python3 "$REPO_ROOT/tools/git-hooks/gate_registry.py" \
+                --changed-from "$CHANGED_FILE" --ci-owed 2>/dev/null || true)"
+    if [[ -n "$OWED" ]]; then
+        printf '\n==> pre-push: handed to CI, not run here:\n' >&2
+        while read -r slug workflow; do
+            [[ -z "$slug" ]] && continue
+            printf '      %-22s %s\n' "$slug" "$workflow" >&2
+        done <<<"$OWED"
+        printf '    Read them before building on this push.\n' >&2
+    fi
+fi
+
+exit $gate_rc
