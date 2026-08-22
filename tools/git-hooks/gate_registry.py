@@ -378,6 +378,15 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
+        "ci_only": "52s, and the budget stopped fitting when `w3c-c11` was "
+                   "re-measured at 95s on the contended machine this repository "
+                   "calibrates against (2026-08-23). Something had to move, and "
+                   "the choice is deliberate: this is the forge axis, which the "
+                   "engine rounds do not touch, while every gate kept local "
+                   "guards a backend a round actually edits. `forge-rust` is "
+                   "already here for its own reason, and this workflow's "
+                   "`paths:` already carries `backends/go/**` — the widening "
+                   "`ci-only-coverage` refuses to see missing.",
         "cost_s": 52,
         "summary": "Go forge conformance regenerate + test",
     },
@@ -613,7 +622,13 @@ GATES: dict[str, dict] = {
         "extra": ["backends/c/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 45,
+        # 45s was a warm reading. Measured 2026-08-23 on the contended machine
+        # this repository calibrates against — the baseline its owner chose —
+        # the same 245 tests took 85s and then 95s in consecutive runs, and the
+        # gate's own order check refused the run because 45 no longer sorted it
+        # correctly. 95 is the higher of the two readings, for the same reason
+        # the baseline is the pressed machine rather than the idle one.
+        "cost_s": 95,
         "summary": "W3C conformance, C11 MCU backend",
     },
     "w3c-go": {

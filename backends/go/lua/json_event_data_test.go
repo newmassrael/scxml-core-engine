@@ -18,7 +18,7 @@ import (
 
 func setEvent(t *testing.T, e *LuaEngine, session, data string) {
 	t.Helper()
-	if err := e.SetCurrentEvent(session, sce.SetCurrentEventArgs{
+	if _, err := e.SetCurrentEvent(session, sce.SetCurrentEventArgs{
 		Name: "brief",
 		Data: data,
 		Type: "external",

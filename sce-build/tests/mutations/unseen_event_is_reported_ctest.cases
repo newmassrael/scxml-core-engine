@@ -108,22 +108,16 @@ edit("sce/src/runtime/StateMachine.cpp",
     stats.lastUnseenEventName = lastUnseenEventName_;""")
 PY
 
-# ── C11: the raise door ────────────────────────────────────────────
+# ── C11: no case for the raise door, and that is the finding ───────
 #
-# This backend refuses at `raise_external` rather than queueing, because its
-# queue is a fixed-size array that nothing will drain again. Removing the
-# refusal puts the event back on that array — silently, and on an MCU.
-
-mutation_case "the c11 raise pushes onto a queue nothing will drain" <<'PY'
-edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """           `_unseen_external_events`. */
-        note_unseen_event(sm, evt->event);
-        return;
-    }""",
-     """           `_unseen_external_events`. */
-        (void)0;
-    }""")
-PY
+# There was one here. It refused at `raise_external`, on the reasoning that this
+# backend's queue is a fixed-size array nothing will drain again — and it was
+# wrong about which door that function is. The generated `<send>` actions call
+# `raise_external` too, so the guard turned away events the DOCUMENT sent to
+# itself: seven parallel-region fixtures went red, measured 2026-08-23.
+#
+# The refusal was removed rather than tested, so there is nothing here to
+# mutate. The abandonment this backend can still record is the loop's, below.
 
 # ── C11: the loop's abandoned queue ────────────────────────────────
 

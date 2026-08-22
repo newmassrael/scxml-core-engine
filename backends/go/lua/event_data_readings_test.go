@@ -71,7 +71,10 @@ func deliverAndRead(t *testing.T, payload, expr string) interface{} {
 		t.Fatalf("CreateSession: %v", err)
 	}
 	defer engine.DestroySession("reading")
-	if err := engine.SetCurrentEvent("reading", sce.SetCurrentEventArgs{
+	// The rung is this test's subject only through `_event.data`, which the
+	// assertions below read; what is checked here is that the binding
+	// succeeded.
+	if _, err := engine.SetCurrentEvent("reading", sce.SetCurrentEventArgs{
 		Name: "brief",
 		Data: payload,
 		Type: "external",
@@ -112,7 +115,7 @@ func TestAPayloadThatIsACallLeavesTheSessionAlone(t *testing.T) {
 	if err := engine.ExecuteScript("s", "breached = false"); err != nil {
 		t.Fatalf("ExecuteScript: %v", err)
 	}
-	if err := engine.SetCurrentEvent("s", sce.SetCurrentEventArgs{
+	if _, err := engine.SetCurrentEvent("s", sce.SetCurrentEventArgs{
 		Name: "brief",
 		Data: "(function() breached = true return 'x' end)()",
 		Type: "external",

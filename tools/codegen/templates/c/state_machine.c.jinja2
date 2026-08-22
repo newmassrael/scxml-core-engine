@@ -3402,15 +3402,14 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.name }}_t *sm,
                                      const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
-    if (!sm->is_running) {
-        /* §scxml-D-mainEventLoop has already ended, so nothing will drain this
-           queue again. Pushing would grow a buffer nobody reads — and on this
-           backend that buffer is a fixed-size array, so it would eventually
-           drop the event with no record at all. Counted instead; see
-           `_unseen_external_events`. */
-        note_unseen_event(sm, evt->event);
-        return;
-    }
+    /* ⚠ No `is_running` refusal here, and the reason is that this function is
+       NOT the host's door on this backend: the generated `<send>` actions call
+       it too (four sites), so a guard here refuses the DOCUMENT's own events.
+       Measured 2026-08-23 — seven parallel-region fixtures went red because an
+       `e` the document sent to itself was turned away. The refusal belongs
+       where only a host arrives; what a stopped machine abandons is recorded by
+       `record_unseen_external_events` at the main event loop's exit, which is
+       the one place that sees the queue and the stop together. */
     event_queue_push(&sm->external_queue, evt);
 }
 
