@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c97edcb094613d8138825758fc943d853d23ad4854f2fa7dcf6ff6f58539b674
-// template-hash: 551a2940764d5b9e82092f05cd858671b9417afc373ebc49bbf13bb0389006cb
+// template-hash: 40688f16ecbedc989f96890868d75e825c91fd7775d66bfd37b45df9857c9aa5
 // generated-at: 0
 
 
@@ -787,7 +787,14 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteFinalizeForChildEvent(eve
 		se := p.ScriptEngine
 		if se != nil {
 			eventName := p.GetEventName(eventWithMeta.Event)
-			_ = se.SetCurrentEvent(
+			// W3C SCXML 6.4: `<finalize>` binds the child's event so the
+			// handler can read it, and the rung that binding chose is not
+			// this site's to report. The parent's own dequeue already
+			// counted the delivery — see `NotePayloadReading` — and counting
+			// it again here would double every payload that reaches a
+			// document with an `<invoke>`. Discarded deliberately, and named
+			// rather than left to a bare `_`.
+			_, _ = se.SetCurrentEvent(
 				p.SessionID,
 				sce.SetCurrentEventArgs{
 					Name:       eventName,

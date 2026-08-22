@@ -398,7 +398,14 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 		se := p.ScriptEngine
 		if se != nil {
 			eventName := p.GetEventName(eventWithMeta.Event)
-			_ = se.SetCurrentEvent(
+			// W3C SCXML 6.4: `<finalize>` binds the child's event so the
+			// handler can read it, and the rung that binding chose is not
+			// this site's to report. The parent's own dequeue already
+			// counted the delivery — see `NotePayloadReading` — and counting
+			// it again here would double every payload that reaches a
+			// document with an `<invoke>`. Discarded deliberately, and named
+			// rather than left to a bare `_`.
+			_, _ = se.SetCurrentEvent(
 				p.SessionID,
 				sce.SetCurrentEventArgs{
 					Name:       eventName,
