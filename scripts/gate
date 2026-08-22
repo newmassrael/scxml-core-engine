@@ -203,20 +203,38 @@ if (( MEASURE )); then
 fi
 
 # Every run is a measurement, so every run can say whether the declared costs
-# still order the gates the way the truth would. `cost_s` is updated by hand
-# and nothing noticed when a value went stale: the gates all passed, and the
-# only thing the number decides — what runs first — was quietly wrong. The
-# registry's own order case cannot catch it (it derives the order from the
-# costs and checks it against the costs); this compares the declarations
-# against what actually happened.
+# still describe the gates. `cost_s` is updated by hand and nothing noticed
+# when a value went stale: the gates all passed, and the number was quietly
+# wrong. The registry's own order case cannot catch it (it derives the order
+# from the costs and checks it against the costs); this compares the
+# declarations against what actually happened.
+#
+# The verdict used to be discarded here — `|| true` — and that is exactly how
+# `tree-hygiene` came to be declared 13s while running 193s in every push for
+# weeks. Every one of those pushes had the measurement in hand and threw it
+# away, which is the defect `no_gate_discards_the_output_of_a_build_it_runs`
+# forbids one line at a time and this line did wholesale.
+#
+# What propagates now is narrow. Ordering drift stays a report: a slow machine
+# reorders gates and that is no reason to refuse a push. A BUDGET breach is a
+# claim about the table rather than the machine — the registry divides out
+# this run's own pace before making it — and that fails, because a ceiling
+# checked against a stale number is not a ceiling.
 DRIFT_ARGS=()
 for slug in "${ORDER[@]}"; do
     [[ -n "$slug" ]] || continue
     DRIFT_ARGS+=("${slug}=${ELAPSED[$slug]}")
 done
+drift_rc=0
 if (( ${#DRIFT_ARGS[@]} > 1 )); then
     python3 "$REGISTRY" --repo-root "$REPO_ROOT" \
-        --order-drift "${DRIFT_ARGS[@]}" || true
+        --order-drift "${DRIFT_ARGS[@]}" || drift_rc=$?
+fi
+
+if (( drift_rc != 0 )); then
+    printf '\ngate: %d gate(s) passed, but the push budget above is breached.\n' \
+        "${#ORDER[@]}" >&2
+    exit "$drift_rc"
 fi
 
 printf '\ngate: %d gate(s) passed.\n' "${#ORDER[@]}" >&2

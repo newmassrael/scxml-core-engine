@@ -953,6 +953,70 @@ def order_drift(measured: dict, table=None):
     return {"declared": declared_order, "measured": measured_order, "moved": moved}
 
 
+def budget_breach(measured: dict, table=None):
+    """Whether this run PROVES the push budget is breached.
+
+    `order_drift` above deliberately stops at a report, and the reason it
+    gives is right: a slow machine is not a reason to refuse a push. But the
+    number it is reporting on does not only decide the run order — it is what
+    `budget_is_not_exceeded` sums, so a stale `cost_s` also means the ceiling
+    is being checked against a fiction. Measured 2026-08-22: `tree-hygiene`
+    was declared 13s and ran 193s, and the runner threw that measurement away
+    (`scripts/gate` called this file with `|| true`), so a gate fifteen times
+    its declared cost sat inside the budget for as long as nobody timed it by
+    hand.
+
+    The slow-machine objection is answered rather than ignored. A machine that
+    is uniformly slow inflates every gate by about the same FACTOR, so the
+    run's own median ratio estimates its pace and dividing it out leaves each
+    gate expressed in the units `cost_s` is written in. What survives that is
+    a gate whose cost moved relative to its siblings — which is a fact about
+    the table, not about the machine, and is the only thing this refuses a
+    push for.
+
+    Returns None when the ceiling still stands, otherwise the recomputed worst
+    case and the gates whose measurement put it over.
+    """
+    table = GATES if table is None else table
+    local = {s for s in table if not table[s].get("ci_only")}
+    seen = [s for s in measured if s in local]
+
+    # Pace needs several gates with a non-trivial declared cost: one gate
+    # cannot tell a slow machine from a grown gate, and a gate declared 0s
+    # has no ratio to contribute.
+    ratios = sorted(
+        measured[s] / table[s]["cost_s"]
+        for s in seen
+        if (table[s].get("cost_s") or 0) >= COST_NOISE_S
+    )
+    if len(ratios) < 3:
+        return None
+    mid = len(ratios) // 2
+    pace = ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
+    if pace <= 0:
+        return None
+
+    total = 0.0
+    grown = []
+    for slug in local:
+        declared = table[slug].get("cost_s") or 0
+        if slug not in measured:
+            total += declared
+            continue
+        # What this gate would have cost on the machine the table was measured
+        # on, so the comparison is like for like.
+        at_table_pace = measured[slug] / pace
+        if cost_is_stale(declared, at_table_pace):
+            total += at_table_pace
+            grown.append((slug, declared, round(at_table_pace)))
+        else:
+            total += declared
+    if total <= PUSH_BUDGET_S:
+        return None
+    grown.sort(key=lambda row: row[1] - row[2])
+    return {"total": round(total), "grown": grown, "pace": round(pace, 2)}
+
+
 def transitive_deps(slug: str, table=None) -> set[str]:
     """Every gate `slug` needs, directly or through another gate."""
     table = GATES if table is None else table
@@ -1221,6 +1285,42 @@ def self_test(repo_root: Path) -> int:
             + ". Move the top one to `ci_only` — that is the rule the current "
               "set was derived by — rather than raising PUSH_BUDGET_S, which "
               "is the owner's number.")
+
+    # The budget's other half: a run that PROVES the ceiling is breached must
+    # say so, and a slow machine must not be mistaken for one.
+    #
+    # The second property is the subtle one and the one a later change is
+    # likely to drop, because dropping it makes the check "stricter" and a
+    # stricter check looks like a better one. It is not: refusing a push
+    # because the developer's laptop is busy teaches people to reach for
+    # SKIP_PREPUSH, and a bypassed gate is the state this repository has
+    # already paid for twice.
+    cases += 1
+    local_costs = {s: (GATES[s].get("cost_s") or 0)
+                   for s in GATES if not GATES[s].get("ci_only")}
+    if budget_breach(dict(local_costs)) is not None:
+        failures.append(
+            "budget-breach: a run that matches the declared costs exactly was "
+            "read as a breach")
+    for factor in (2, 3):
+        slow = {s: c * factor for s, c in local_costs.items()}
+        if budget_breach(slow) is not None:
+            failures.append(
+                f"budget-breach: a machine running uniformly {factor}x slower "
+                f"was read as a breach — the pace division is not working, and "
+                f"a push refused for being on a busy laptop is a push somebody "
+                f"bypasses")
+    grown = dict(local_costs)
+    grown["clippy"] = PUSH_BUDGET_S * 2
+    breach = budget_breach(grown)
+    if breach is None:
+        failures.append(
+            "budget-breach: a gate grown to twice the whole budget did not "
+            "register — the check reads nothing")
+    elif not any(row[0] == "clippy" for row in breach["grown"]):
+        failures.append(
+            f"budget-breach: the breach did not name the gate that caused it: "
+            f"{breach['grown']}")
 
     # A gate held out of the push must still run somewhere, or it was not
     # moved to CI — it was deleted. Naming a workflow is the first half.
@@ -1657,9 +1757,28 @@ def main() -> int:
             slug, _, secs = pair.partition("=")
             if slug in GATES:
                 measured[slug] = float(secs)
+        # The verdict half, printed before the report half because it is the
+        # one that stops the run. A breach is a claim about the TABLE, so it
+        # is worth failing for; the ordering report below is a claim about
+        # this machine, so it is not.
+        breach = budget_breach(measured)
+        if breach is not None:
+            print(f"\ngate: this run puts the push budget at {breach['total']}s, "
+                  f"over the {PUSH_BUDGET_S}s ceiling.", file=sys.stderr)
+            print(f"  This machine ran at {breach['pace']}x the pace cost_s was "
+                  f"measured at, and that has been divided out — what is left "
+                  f"is the table being wrong, not the machine being slow.",
+                  file=sys.stderr)
+            for slug, declared, actual in breach["grown"]:
+                print(f"    {slug:<26} declared {declared:>5}s  is really "
+                      f"{actual:>5}s", file=sys.stderr)
+            print("  Re-measure with `scripts/gate --measure --all`, write the "
+                  "numbers into cost_s, and move the most expensive gate to "
+                  "`ci_only` until the rest fit.\n", file=sys.stderr)
+
         drift = order_drift(measured)
         if drift is None:
-            return 0
+            return 1 if breach is not None else 0
         print("\ngate: the declared costs no longer order this run correctly.",
               file=sys.stderr)
         for slug, declared, actual in drift["moved"]:
@@ -1669,7 +1788,7 @@ def main() -> int:
         print(f"  would be: {' '.join(drift['measured'])}", file=sys.stderr)
         print("  Re-measure with `scripts/gate --measure --all` and update "
               "cost_s.\n", file=sys.stderr)
-        return 0
+        return 1 if breach is not None else 0
 
     if args.list:
         for slug in run_order(GATES.keys()):
