@@ -22,10 +22,19 @@
 # template into it. Without that bridge `cargo test --no-run` would rebuild
 # the same committed source and every case here would be INCONCLUSIVE.
 #
+# The suite posts over a real socket, so the W3C harness server has to be up —
+# `backends/rust/tests/src/harness.rs` refuses the test without it, and a
+# refusal is a failing test, which a round reads as a red baseline and stops
+# on. Declaring it here is what lets the gate start one for this round and the
+# harness name the socket instead of blaming the tree. The declaration was
+# missing for the two CI runs this casefile had, and both reported
+# `baseline is not green (1 failing)`.
+#
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-tests --test send_namelist_over_http
+mutation_needs http-fixture
 mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2
 mutation_targets backends/rust/runtime/src/helpers/event_data.rs
 mutation_targets backends/rust/tests/src/integration/send_namelist_over_http/send_namelist_over_http_sm.rs

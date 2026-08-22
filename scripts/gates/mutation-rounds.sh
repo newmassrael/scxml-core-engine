@@ -108,8 +108,22 @@ fi
 # 19 of the 30 casefiles were exposed that way; the other 11 were covered only
 # by the accident that their cases mutate their own test file, which put it in
 # `mutation_targets` for an unrelated reason.
+#
+# `needs` is the third key and the one this gate ACTS on rather than
+# intersects: a service the round's suite talks to, which somebody has to have
+# started. Measured 2026-08-21/22, and this is what its absence cost:
+# `send_namelist_reaches_the_form.cases` drives `--test send_namelist_over_http`,
+# whose harness refuses without the W3C fixture server on :8080. Nothing in
+# this path started one, so the round reported `baseline is not green (1
+# failing)` — a true sentence about a socket, phrased as a defect in the tree —
+# on every CI run the casefile ever had, from the round that wrote it onwards.
+# Every other consumer of that suite provisions it: `workspace-tests` and
+# `w3c-go` call `sce_gate_http_fixture_server`, `rust-workspace-tests.yml` and
+# `w3c-tests.yml` start their own, and the C11 ctest entries declare
+# `FIXTURES_REQUIRED w3c_c_http_server`.
 declare -A RUNNER_OF=()
 declare -A TARGETS_OF=()
+declare -A NEEDS_OF=()
 for casefile in "${CASEFILES[@]}"; do
     if ! declared="$(scripts/mutate --declares "$casefile" 2>&1)"; then
         sce_gate_fail "could not read the declaration of $casefile:
@@ -122,6 +136,7 @@ to remove."
         case "$key" in
             runner) RUNNER_OF["$casefile"]="$value" ;;
             target|oracle) TARGETS_OF["$casefile"]+="$value"$'\n' ;;
+            needs) NEEDS_OF["$casefile"]+="$value"$'\n' ;;
         esac
     done <<<"$declared"
 done
@@ -261,10 +276,22 @@ fi
 # found it. Every round is run before the verdict rather than stopping at the
 # first failure: a gate that stops early has not measured the rest, and the
 # author would fix one and rediscover the next on the following push.
+#
+# A round that declared a service runs inside it, and only that round does. The
+# scope is per-casefile rather than per-gate because holding :8080 is not free:
+# the ctest rounds beside these bring up their own listener on the same port —
+# the C11 entries through the `w3c_c_http_server` CMake fixture, the C++ W3C
+# runner by binding it directly — and both fail to start against one already
+# held. `sce_gate_with_http_fixture_server` starts it, runs the round, and
+# stops it before the loop's next turn.
 failed=()
 for casefile in "${SELECTED[@]}"; do
     sce_gate_step "round: $casefile"
-    if ! scripts/mutate "$casefile"; then
+    round=(scripts/mutate "$casefile")
+    if [[ "${NEEDS_OF[$casefile]:-}" == *"http-fixture"* ]]; then
+        round=(sce_gate_with_http_fixture_server "${round[@]}")
+    fi
+    if ! "${round[@]}"; then
         failed+=("$casefile")
     fi
 done
