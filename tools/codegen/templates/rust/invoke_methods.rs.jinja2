@@ -581,6 +581,12 @@
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             // W3C SCXML 6.5: Set _event metadata before executing finalize
             let event_name = Self::get_event_name(event_with_meta.event);
+            // The rung this binding chose is not this site's to report. The
+            // parent's own dequeue already counted the delivery — see
+            // `note_payload_reading` — and counting it again here would double
+            // every payload that reaches a document with an `<invoke>`. The Go
+            // twin of this site is where that came up: its `SetCurrentEvent`
+            // returns two values, so the same discard had to be spelled out.
             let _ = se.set_current_event(
                 &sid,
                 sce_rust_runtime::SetCurrentEventArgs {
