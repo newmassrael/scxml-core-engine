@@ -32,7 +32,7 @@ use dom::{XmlDoc, XmlRef};
 
 use sce_rust_runtime::helpers::io_processors::IoProcessorDescriptor;
 use sce_rust_runtime::scripting::{
-    IScriptEngine, NativeMethod, ScriptError, ScriptResult, ScriptValue,
+    IScriptEngine, NativeMethod, PayloadReading, ScriptError, ScriptResult, ScriptValue,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -602,7 +602,7 @@ impl IScriptEngine for LuaEngine {
         &self,
         session_id: &str,
         args: sce_rust_runtime::SetCurrentEventArgs<'_>,
-    ) -> ScriptResult<()> {
+    ) -> ScriptResult<PayloadReading> {
         let event_name = args.event_name;
         let event_data = args.event_data;
         let event_type = args.event_type;
@@ -618,6 +618,13 @@ impl IScriptEngine for LuaEngine {
 
         let event_table = session.lua.create_table().map_err(map_lua_err)?;
         event_table.set("name", event_name).map_err(map_lua_err)?;
+
+        // Which rung of the ladder below this payload ended up on. Recorded as
+        // the walk happens rather than re-derived afterwards: only the code
+        // that ATTEMPTED a structured read knows whether it attempted one, and
+        // a caller re-guessing from a leading brace would call a payload
+        // undecodable that the ladder never tried to decode.
+        let mut reading = PayloadReading::Absent;
 
         // Parse event_data as Lua value if non-empty
         if !event_data.is_empty() {
@@ -644,6 +651,7 @@ impl IScriptEngine for LuaEngine {
             };
             if let Some(dom_value) = dom_value {
                 event_table.set("data", dom_value).map_err(map_lua_err)?;
+                reading = PayloadReading::Dom;
             } else {
                 // §scxml-B-2-8-1 gives `_event.data` three readings and no
                 // fourth: XML becomes a DOM, JSON becomes the value, and
@@ -671,6 +679,7 @@ impl IScriptEngine for LuaEngine {
                 match json_to_lua_value(&session.lua, event_data) {
                     Some(val) => {
                         event_table.set("data", val).map_err(map_lua_err)?;
+                        reading = PayloadReading::Structured;
                     }
                     None => {
                         // W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
@@ -679,6 +688,14 @@ impl IScriptEngine for LuaEngine {
                             .collect::<Vec<&str>>()
                             .join(" ");
                         event_table.set("data", normalized).map_err(map_lua_err)?;
+                        // Which of the two third-rung readings this is. The
+                        // clause treats them the same and a host does not: a
+                        // `<content>` holding prose is the ladder working, and
+                        // a payload that opened with a brace and would not
+                        // parse is a payload whose fields have just stopped
+                        // existing. Only this side of the `match` knows the
+                        // difference, because only this side tried.
+                        reading = PayloadReading::of_text(event_data);
                     }
                 }
             }
@@ -707,7 +724,7 @@ impl IScriptEngine for LuaEngine {
             .globals()
             .set("_event", event_table)
             .map_err(map_lua_err)?;
-        Ok(())
+        Ok(reading)
     }
 
     fn register_global_function(&self, function_name: &str, callback: NativeMethod) -> bool {

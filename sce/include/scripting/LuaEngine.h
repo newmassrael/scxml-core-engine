@@ -60,9 +60,10 @@ public:
     bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                    const std::vector<IOProcessorDescriptor> &ioProcessors) override;
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
-                                              const std::shared_ptr<Event> &event) override;
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) override;
+    std::future<SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
+                                                       const std::shared_ptr<Event> &event) override;
+    std::future<SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
+                                                       const SetCurrentEventArgs &args) override;
     bool registerGlobalFunction(const std::string &functionName,
                                 std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) override;
     bool bindNativeObject(const std::string &sessionId, const std::string &objectName,

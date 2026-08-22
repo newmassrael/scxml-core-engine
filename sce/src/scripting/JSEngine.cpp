@@ -332,13 +332,23 @@ std::future<ScriptResult> JSEngine::getVariable(const std::string &sessionId, co
     return platformExecutor_->executeAsync([this, sessionId, name]() { return getVariableInternal(sessionId, name); });
 }
 
-std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event) {
-    // Zero Duplication Principle: Platform-agnostic execution through Helper
-    return platformExecutor_->executeAsync(
-        [this, sessionId, event]() { return setCurrentEventInternal(sessionId, event); });
+std::future<SetCurrentEventResult> JSEngine::setCurrentEvent(const std::string &sessionId,
+                                                             const std::shared_ptr<Event> &event) {
+    // Zero Duplication Principle: Platform-agnostic execution through Helper.
+    // `executeAsyncReturning` rather than `executeAsync` because this call
+    // answers with the W3C SCXML B.2.8.1 rung as well as success.
+    return platformExecutor_->executeAsyncReturning<SetCurrentEventResult>(
+        [this, sessionId, event]() { return setCurrentEventInternal(sessionId, event); },
+        // A shut-down executor refuses rather than runs, and this says what
+        // that means here: the binding did not happen, so no rung was chosen
+        // and `Absent` is the only honest answer. The refusal's own message is
+        // carried through unchanged — it names the engine state, which is what
+        // the caller has to act on.
+        [](const ScriptResult &refused) { return SetCurrentEventResult{refused, PayloadReading::Absent}; });
 }
 
-std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) {
+std::future<SetCurrentEventResult> JSEngine::setCurrentEvent(const std::string &sessionId,
+                                                             const SetCurrentEventArgs &args) {
     // For AOT engine: Create simple Event object from string parameters
     auto event = std::make_shared<Event>(args.eventName, args.eventType);
     if (!args.eventData.empty()) {

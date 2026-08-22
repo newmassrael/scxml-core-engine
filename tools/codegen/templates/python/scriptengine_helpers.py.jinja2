@@ -532,7 +532,17 @@
         # `sce_runtime.io_processors.published_origin`, the port of the
         # `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
         # spelling of the rule is how the backends would stop agreeing.
-        engine_ref._script_engine.set_current_event(
+        # §scxml-B-2-8-1: the binding answers which rung the payload got, and
+        # that answer used to end here. The ladder decided between a DOM, a
+        # value and a space-normalized string, and the decision was dropped one
+        # line later — so a payload that announced structure and would not
+        # parse reached the document as raw characters, every
+        # `_event.data.<field>` read empty, and nothing anywhere could say so.
+        #
+        # Handed to the engine on the spot rather than returned up: this frame
+        # already holds `engine_ref` AND the event the reading belongs to,
+        # which is the pairing the count needs.
+        reading = engine_ref._script_engine.set_current_event(
             self._session_id,
             _SetCurrentEventArgs(
                 event_name=_EVENT_NAMES.get(event, ""),
@@ -544,6 +554,7 @@
                 invoke_id=metadata.invoke_id,
             ),
         )
+        engine_ref.note_payload_reading(event, reading)
 
     def _resolve_send_id(self, engine, idlocation: str, explicit_id: str) -> str:
         """W3C SCXML 6.2 — produce the canonical sendid for a `<send>`.

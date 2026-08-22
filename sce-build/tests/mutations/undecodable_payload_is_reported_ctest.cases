@@ -1,0 +1,179 @@
+# Mutation cases for §scxml-B-2-8-1 on the three engines a cargo round cannot
+# see — the C++ Interpreter, the C++ AOT engine header, and the C11 template.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/undecodable_payload_is_reported_ctest.cases`.
+#
+# Same axis as `undecodable_payload_is_reported.cases`: a payload that announced
+# structure and that the datamodel could not read arrives as a space-normalized
+# string — which the clause requires — and the host that built it can find out,
+# which the clause says nothing about.
+#
+# The C++ half covers a hazard the other backends do not have. The Interpreter
+# records the rung inside `EventContextGuard`'s CONSTRUCTOR, because that guard
+# restores the previously bound event on the way out: a reading taken after it
+# describes a different delivery. A case below moves the read out of the
+# constructor, which is the shape a later reader would naturally write.
+#
+# The C11 target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree, so
+# the template is what the built binaries carry.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_undecodable_payload_is_reported)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h
+mutation_targets sce/src/runtime/StateMachine.cpp
+mutation_targets sce/src/scripting/JSEngineImpl.cpp
+mutation_targets sce/include/core/PayloadReading.h
+mutation_targets tools/codegen/templates/process_transition.jinja2
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/UndecodablePayloadIsReportedAotTest.cpp tests/integration/UndecodablePayloadIsReportedTest.cpp backends/c/tests/integration/test_undecodable_payload_is_reported.c
+
+# ── C++ AOT: the count itself ──────────────────────────────────────
+
+mutation_case "the cpp aot engine records nothing for a lost payload" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (reading == ::SCE::PayloadReading::Undecodable) {
+            ++undecodablePayloads_;""",
+     """        if (false) {
+            ++undecodablePayloads_;""")
+PY
+
+# ── C++ AOT: an always-true count ──────────────────────────────────
+#
+# A count that fires for every delivery with a payload is exactly as useless as
+# one that never fires, and only the prose assertion catches it. W3C test 562
+# sends prose and requires it to arrive as a string.
+
+mutation_case "the cpp aot engine counts every payload it was given" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (reading == ::SCE::PayloadReading::Undecodable) {""",
+     """        if (reading != ::SCE::PayloadReading::Absent) {""")
+PY
+
+# ── C++ AOT: the generated binding drops the value again ───────────
+#
+# The failure shape this whole axis came out of: the reading is computed
+# correctly and then discarded at the call site, which no compiler objects to.
+# CMake regenerates the C++ integration tree at build time, so the mutated
+# template is what the test binary carries.
+
+mutation_case "the cpp generated binding drops the reading" <<'PY'
+edit("tools/codegen/templates/process_transition.jinja2",
+     """            engine.notePayloadReading(event, payloadReading);""",
+     """            (void)payloadReading;""")
+PY
+
+# ── C++ Interpreter: the count itself ──────────────────────────────
+
+mutation_case "the interpreter records nothing for a lost payload" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {""",
+     """                if (false) {""")
+PY
+
+# ── C++ Interpreter: reading the rung too late ─────────────────────
+#
+# The hazard the constructor comment is about. `EventContextGuard`'s destructor
+# re-binds the SAVED event, so the executor's "last reading" after the guard
+# unwinds belongs to a different delivery — and for a fixture whose deliveries
+# all reach the same state, the wrong answer still looks plausible.
+
+mutation_case "the interpreter reads the rung after the guard restores" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
+                    ++owner_->undecodablePayloads_;
+                    owner_->lastUndecodablePayloadEvent_ = newEvent.name;
+                }""",
+     """                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
+                    ++owner_->undecodablePayloads_;
+                }""")
+PY
+
+# ── C++ QuickJS: the rung the clause splits in two ─────────────────
+#
+# `payloadReadingOfText` is the one rule that separates prose from content that
+# asked for structure. Answering `Text` for everything is the pre-fixture state
+# with the plumbing intact — the count exists, is wired, and never fires.
+
+mutation_case "cpp content that announces an object is read as prose" <<'PY'
+edit("sce/include/core/PayloadReading.h",
+     """    const char c = payload[first];
+    return (c == '{' || c == '[') ? PayloadReading::Undecodable : PayloadReading::Text;""",
+     """    const char c = payload[first];
+    (void)c;
+    return PayloadReading::Text;""")
+PY
+
+# ── C++ QuickJS: the successful parse reports the wrong rung ───────
+#
+# One rung up: the JSON parsed, and the engine says it did not. The fixture's
+# last delivery is what refuses this — it reaches `accepted`, so the structured
+# read demonstrably happened.
+
+mutation_case "cpp a payload that parsed is reported as one that did not" <<'PY'
+edit("sce/src/scripting/JSEngineImpl.cpp",
+     """        return {jsonValue, SCE::PayloadReading::Structured};""",
+     """        return {jsonValue, SCE::payloadReadingOfText(dataStr)};""")
+PY
+
+# ── C11: the count itself ──────────────────────────────────────────
+
+mutation_case "the c11 machine records nothing for a lost payload" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm == NULL || evt == NULL || reading != SCE_PAYLOAD_UNDECODABLE) {
+        return;
+    }""",
+     """    if (sm == NULL || evt == NULL) {
+        return;
+    }
+    if (reading != SCE_PAYLOAD_UNDECODABLE) {
+        return;
+    }
+    if (1) {
+        return;
+    }""")
+PY
+
+# ── C11: the chunk stops reporting which rung it took ──────────────
+#
+# `_sce_payload_decoded` is the only thing that separates the two text
+# readings, because only the Lua side attempted the structured parse. Pinning
+# it true makes every payload look like it parsed.
+
+mutation_case "the c11 chunk always claims the structured read succeeded" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """                          "_sce_payload_decoded = _ok and true or false; \"""",
+     """                          "_sce_payload_decoded = true; \"""")
+PY
+
+# ── C11: the dequeue drops the reading ─────────────────────────────
+#
+# The generated binding discarding a returned value, the same shape as the C++
+# and Rust cases above — and the one C has no warning for.
+
+mutation_case "the c11 dequeue drops the reading it was given" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        (void)luaL_dostring(sm->L, "_pending_event_type = 'internal'");
+        note_payload_reading(sm, &evt, set_current_event(sm->L, &evt));""",
+     """        (void)luaL_dostring(sm->L, "_pending_event_type = 'internal'");
+        (void)set_current_event(sm->L, &evt);""")
+PY
+
+# ── C11: naming a delivery that never lost a payload ───────────────
+#
+# The "nothing has been delivered yet" arm is what catches an accessor that
+# always answers, and it is the arm a reader is most likely to drop.
+
+mutation_case "the c11 accessor answers before anything was lost" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm == NULL || out == NULL || !sm->has_undecodable_payload) {
+        return false;
+    }
+    *out = sm->last_undecodable_payload;""",
+     """    if (sm == NULL || out == NULL) {
+        return false;
+    }
+    *out = sm->last_undecodable_payload;""")
+PY

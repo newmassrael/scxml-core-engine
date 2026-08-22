@@ -96,10 +96,33 @@ abstract class W3CTestBase<S : State, E : Event> {
     }
 
     /**
-     * Timeout for scheduled tests in milliseconds (C++ default: 2s).
-     * Override for tests with delayed sends that need more time.
+     * How long this harness polls a machine that did not finish during
+     * [StateMachineEngine.initialize].
+     *
+     * Three seconds, which is what the Rust and Go drivers already give the
+     * same documents: `generate_test_file` in `sce_codegen.rs` emits 3s for a
+     * simple test and 5s for a scheduled one, and that same source emits the
+     * `override val timeoutMs = 5000L` on this class's scheduled subclasses.
+     * This value was the one half of the Kotlin budget that had not been
+     * brought into line, so the lane gave a simple test less room than its
+     * siblings did and less than its own scheduled tests got.
+     *
+     * Why it matters that the two agree: a W3C document that can fail arms its
+     * own failure timer with `<send event="timeout" delay="Ns"/>`, and the
+     * shortest such timer in the corpus is 2s. A polling budget EQUAL to the
+     * document's own timer is a dead heat — whether the run passes depends on
+     * how many `tick()`s get scheduled inside that window, which is a property
+     * of the machine rather than of the clause under test.
+     *
+     * Stated plainly because the history is easy to misread: raising this from
+     * 2000L did NOT fix test253. That test failed on `main` and went on
+     * failing at 3000L, because a longer polling budget cannot help once the
+     * document's own timer has already fired. Its cause was the suite running
+     * a thousand tests at once on thirty-two processors — see the parallelism
+     * comment in `backends/kotlin/tests/build.gradle.kts`, which is what fixed
+     * it. This value is parity, and parity is worth having on its own.
      */
-    open val timeoutMs: Long = 2000L
+    open val timeoutMs: Long = 3000L
 
     @Test
     open fun testW3CConformance() {

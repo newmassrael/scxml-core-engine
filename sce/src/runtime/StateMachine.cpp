@@ -584,11 +584,17 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     // §scxml-5.10: RAII guard to protect _event during nested event processing (Test 230)
     struct EventContextGuard {
         ActionExecutorImpl *actionExecutorImpl_;  // Cached pointer to avoid dynamic_pointer_cast overhead
+        // W3C SCXML B.2.8.1: where the payload-reading tally lives. The guard is
+        // the only frame that sees a binding and the event it belonged to at
+        // the same moment — its own destructor rebinds the SAVED event, so a
+        // reading taken any later describes a different delivery.
+        StateMachine *owner_;
         EventMetadata savedEvent_;
         bool isNested_;
 
-        explicit EventContextGuard(ActionExecutorImpl *actionExecutorImpl, const EventMetadata &newEvent)
-            : actionExecutorImpl_(actionExecutorImpl), isNested_(false) {
+        explicit EventContextGuard(StateMachine *owner, ActionExecutorImpl *actionExecutorImpl,
+                                   const EventMetadata &newEvent)
+            : actionExecutorImpl_(actionExecutorImpl), owner_(owner), isNested_(false) {
             if (actionExecutorImpl_) {
                 // Save current event (may be from parent processEvent call)
                 savedEvent_ = actionExecutorImpl_->getCurrentEvent();
@@ -602,6 +608,14 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
                 // Set new event for this processing level
                 actionExecutorImpl_->setCurrentEvent(newEvent);
+                // W3C SCXML B.2.8.1: the binding just chose a rung, and this is
+                // the only frame that knows which event it belonged to. Read
+                // immediately rather than later — the guard's destructor binds
+                // the SAVED event on the way out, which would overwrite it.
+                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
+                    ++owner_->undecodablePayloads_;
+                    owner_->lastUndecodablePayloadEvent_ = newEvent.name;
+                }
             }
         }
 
@@ -648,7 +662,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     EventMetadata currentEventMetadata(eventName, eventData, eventType, sendId, invokeId, originType, originSessionId);
     // §scxml-5.10: Carry typed event data from EventRaiser thread-local (avoids JSON round-trip)
     currentEventMetadata.typedData = EventRaiserImpl::getCurrentTypedData();
-    EventContextGuard eventContextGuard(cachedExecutorImpl_, currentEventMetadata);
+    EventContextGuard eventContextGuard(this, cachedExecutorImpl_, currentEventMetadata);
 
     // Count this event
     stats_.totalEvents++;
@@ -2195,6 +2209,12 @@ StateMachine::Statistics StateMachine::getStatistics() const {
     // configuration from one this engine stopped walking.
     stats.truncatedMacrosteps = truncatedMacrosteps_;
     stats.lastTruncatedMacrostepState = lastTruncatedMacrostepState_;
+    // W3C SCXML B.2.8.1: counted here rather than in the executor because the
+    // executor binds one event at a time and has nowhere to keep a tally,
+    // while this is the object a host holds. The executor answers which rung
+    // the LAST binding took; `setCurrentEvent` below turns that into a count.
+    stats.undecodablePayloads = undecodablePayloads_;
+    stats.lastUndecodablePayloadEvent = lastUndecodablePayloadEvent_;
     return stats;
 }
 

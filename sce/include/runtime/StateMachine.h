@@ -434,6 +434,26 @@ public:
         /// count is zero. One state on the eventless cycle that could not
         /// settle, which is where an author looks first.
         std::string lastTruncatedMacrostepState;
+        /// W3C SCXML B.2.8.1: events delivered with a payload that announced
+        /// itself as structure and that the datamodel could not read as one.
+        ///
+        /// The clause requires the fallback — content the processor cannot
+        /// interpret becomes a space-normalized string — and says nothing
+        /// about telling anyone. So the document reads `_event.data.field`,
+        /// gets nothing, assigns nothing, and the run carries on. Measured
+        /// 2026-08-22 on three independent Lua implementations: a payload in
+        /// Lua's own table syntax emptied every variable the receiving
+        /// transition assigned, including the one that primed the next
+        /// session, and no gate anywhere went red.
+        ///
+        /// Counts only the reading a host can act on. Prose arriving as text
+        /// is the ladder working (W3C test 562) and is not counted, because a
+        /// diagnostic that fires when nothing is wrong is one nobody reads.
+        uint32_t undecodablePayloads = 0;
+        /// The name of the most recent event that count refused to read,
+        /// empty while it is zero. A count says something was lost; this says
+        /// which delivery lost it.
+        std::string lastUndecodablePayloadEvent;
     };
 
     Statistics getStatistics() const;
@@ -752,6 +772,13 @@ private:
     uint32_t truncatedMacrosteps_ = 0;
     std::string lastTruncatedMacrostepState_;
     bool macrostepTruncated_ = false;
+    /// W3C SCXML B.2.8.1: deliveries whose payload announced structure and could
+    /// not be read as one, and the name of the last such event. Reported
+    /// through `Statistics::undecodablePayloads` — the count lives here
+    /// because the executor binds one event at a time and this is the object a
+    /// host holds.
+    uint32_t undecodablePayloads_ = 0;
+    std::string lastUndecodablePayloadEvent_;
     /// Microsteps this macrostep has taken, on eventless transitions and on
     /// internal events alike. A member rather than a loop counter because this
     /// engine's chain is recursive — executing one microstep re-enters the

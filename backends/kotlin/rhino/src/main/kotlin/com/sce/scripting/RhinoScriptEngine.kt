@@ -7,6 +7,7 @@ package com.sce.scripting
 
 import com.sce.runtime.IoProcessorDescriptor
 import com.sce.runtime.SceXmlDom
+import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -228,8 +229,9 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         return name.all { it.isLetterOrDigit() || it == '_' }
     }
 
-    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs) {
-        val session = sessions[sessionId] ?: return
+    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs): PayloadReading {
+        val session = sessions[sessionId] ?: return PayloadReading.Absent
+        var reading = PayloadReading.Absent
         val cx = Context.enter()
         try {
             val scope = session.scope
@@ -244,7 +246,8 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             // W3C SCXML B.2: Parse event data using C++ parseEventData pattern
             if (args.data.isNotEmpty()) {
                 val parsed = parseDataValueInternal(cx, scope, args.data)
-                ScriptableObject.putProperty(eventObj, "data", parsed ?: Undefined.instance)
+                ScriptableObject.putProperty(eventObj, "data", parsed.value ?: Undefined.instance)
+                reading = parsed.reading
             } else {
                 ScriptableObject.putProperty(eventObj, "data", Undefined.instance)
             }
@@ -253,6 +256,7 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         } finally {
             Context.exit()
         }
+        return reading
     }
 
     override fun clearCurrentEvent(sessionId: String) {
@@ -364,7 +368,9 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         val session = sessions[sessionId] ?: return data
         val cx = Context.enter()
         try {
-            return parseDataValueInternal(cx, session.scope, data)
+            // This caller wants the value only — it is not delivering an event,
+            // so there is no reading for anyone to act on.
+            return parseDataValueInternal(cx, session.scope, data).value
         } finally {
             Context.exit()
         }
@@ -390,12 +396,12 @@ class RhinoScriptEngine : ScxmlScriptEngine {
      * W3C SCXML B.2: Internal parseDataValue with pre-entered Context.
      * C++ parseEventData() pattern: XML → DOM, JSON → JS object, else → space-normalized string.
      */
-    private fun parseDataValueInternal(cx: Context, scope: ScriptableObject, data: String): Any? {
+    private fun parseDataValueInternal(cx: Context, scope: ScriptableObject, data: String): ParsedPayload {
         // Step 1: XML detection (C++ pattern: skip leading whitespace, check for '<')
         val firstNonWhitespace = data.indexOfFirst { it != ' ' && it != '\t' && it != '\r' && it != '\n' }
         if (firstNonWhitespace >= 0 && data[firstNonWhitespace] == '<') {
             val domObj = createRhinoDOMObject(cx, scope, data)
-            if (domObj != null) return domObj
+            if (domObj != null) return ParsedPayload(domObj, PayloadReading.Dom)
         }
 
         // Step 2: Try strict JSON parsing (C++ JS_ParseJSON pattern)
@@ -407,15 +413,33 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             ScriptableObject.putProperty(scope, "__sce_tmp_data__", data)
             val parsed = cx.evaluateString(scope, "JSON.parse(__sce_tmp_data__)", "json-parse", 1, null)
             ScriptableObject.deleteProperty(scope, "__sce_tmp_data__")
-            if (parsed != null && parsed !is Undefined) return parsed
+            if (parsed != null && parsed !is Undefined) return ParsedPayload(parsed, PayloadReading.Structured)
         } catch (_: Exception) {
             ScriptableObject.deleteProperty(scope, "__sce_tmp_data__")
             // Not valid JSON — fall through
         }
 
         // Step 3: Space normalization (C++ parseEventData fallback)
-        return normalizeWhitespace(data)
+        //
+        // Which of the two third-rung readings this is. The clause treats them
+        // the same and a host does not: prose arriving as text is the ladder
+        // working (W3C test 562), and a payload that opened with a brace and
+        // would not parse is a payload whose fields have just stopped
+        // existing. Only here is that difference still visible, because only
+        // here was the structured read attempted.
+        return ParsedPayload(normalizeWhitespace(data), PayloadReading.ofText(data))
     }
+
+    /**
+     * What the ladder produced, and which of its rungs produced it.
+     *
+     * The rung is returned rather than re-derived by the caller: a caller can
+     * tell a string from an object afterwards, but not a string the ladder
+     * chose because the content was prose from one it chose because a
+     * structured read failed — and that difference is the whole point of
+     * [PayloadReading].
+     */
+    private data class ParsedPayload(val value: Any?, val reading: PayloadReading)
 
     /**
      * W3C SCXML B.2: Create Rhino-compatible DOM object from XML content.

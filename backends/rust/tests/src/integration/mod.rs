@@ -56,5 +56,6 @@ pub mod send_namelist_over_http;
 pub mod send_param_payload;
 pub mod session_ids_are_distinct;
 pub mod targetless_transition_completes_macrostep;
+pub mod undecodable_payload_is_reported;
 pub mod unhandled_error_is_observable;
 pub mod xml_data_is_a_dom_tree;

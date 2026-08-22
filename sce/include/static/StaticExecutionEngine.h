@@ -33,6 +33,11 @@
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/LogMacros.h"
+// W3C SCXML B.2.8.1: the rung a delivered payload got, which this engine counts.
+// A `core/` header on purpose — this engine includes nothing from `scripting/`
+// because the policy owns the script-engine handle, and the reading is a fact
+// about the event rather than about that interface.
+#include "core/PayloadReading.h"
 #include "core/StatePolicyConcepts.h"
 #include "events/EventDescriptor.h"
 #include <algorithm>
@@ -765,6 +770,12 @@ private:
     uint32_t unhandledErrorEvents_ = 0;
     Event lastUnhandledError_{};
     bool hasUnhandledError_ = false;
+    // W3C SCXML B.2.8.1: deliveries whose payload announced structure and that the
+    // datamodel could not read as one, and the most recent of them.
+    // `hasUndecodablePayload_` is separate for the same reason as above.
+    uint32_t undecodablePayloads_ = 0;
+    Event lastUndecodablePayload_{};
+    bool hasUndecodablePayload_ = false;
     // §scxml-3.12.2: the drain is executing a transition an `error.*` event
     // selected, which is the state in which a newly raised error is a link in
     // a chain rather than a first failure; how long that chain is; and what
@@ -1293,6 +1304,57 @@ public:
             return std::nullopt;
         }
         return lastDiscardedEvent_;
+    }
+
+    /**
+     * @brief Record which W3C SCXML B.2.8.1 rung the payload just bound got.
+     *
+     * Called by generated code immediately after it binds `_event`, because
+     * that is the only moment the rung is known. Four of the five readings are
+     * the ladder working and are recorded by being ignored; the fifth is the
+     * one a host is wrong about.
+     */
+    void notePayloadReading(Event event, ::SCE::PayloadReading reading) {
+        if (reading == ::SCE::PayloadReading::Undecodable) {
+            ++undecodablePayloads_;
+            lastUndecodablePayload_ = event;
+            hasUndecodablePayload_ = true;
+        }
+    }
+
+    /**
+     * @brief Events delivered with a payload the datamodel could not read
+     *
+     * The clause requires the fallback: content the processor cannot interpret
+     * becomes a space-normalized string. What it does not require — and what
+     * nothing here used to provide — is any way for the host that SENT the
+     * payload to learn its fields have stopped existing. The document reads
+     * `_event.data.field`, gets nothing, assigns nothing, and the run
+     * continues; measured 2026-08-22 on three independent Lua implementations,
+     * a payload in Lua's own table syntax silently emptied every variable the
+     * receiving transition assigned, including the one that primes the next
+     * session.
+     *
+     * Counts only the reading a host can act on. Prose delivered as text is
+     * the ladder working (W3C test 562) and is not counted, because a
+     * diagnostic that fires when nothing is wrong is one nobody reads.
+     */
+    uint32_t undecodablePayloads() const {
+        return undecodablePayloads_;
+    }
+
+    /**
+     * @brief The most recent event `undecodablePayloads()` counted
+     *
+     * `std::nullopt` while that count is zero, for the same reason as
+     * `lastDiscardedEvent()`: the generated `Event` enum's zero value is a
+     * real event and cannot stand in for "none".
+     */
+    std::optional<Event> lastUndecodablePayload() const {
+        if (!hasUndecodablePayload_) {
+            return std::nullopt;
+        }
+        return lastUndecodablePayload_;
     }
 
     /**

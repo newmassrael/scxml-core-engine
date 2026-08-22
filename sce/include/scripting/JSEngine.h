@@ -203,8 +203,8 @@ public:
      * @param event Event object with full metadata (name, type, data, sendid, origin, etc.)
      * @return Future indicating success/failure
      */
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
-                                              const std::shared_ptr<Event> &event) override;
+    std::future<SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
+                                                       const std::shared_ptr<Event> &event) override;
 
     /**
      * @brief Set current event object in JavaScript context (§scxml-5.10)
@@ -215,7 +215,8 @@ public:
      * @param args SetCurrentEventArgs bundling eventName + 6 metadata fields
      * @return Future indicating success/failure
      */
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) override;
+    std::future<SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
+                                                       const SetCurrentEventArgs &args) override;
 
     /**
      * @brief Setup SCXML system variables for a session
@@ -509,7 +510,7 @@ private:
     ScriptResult validateExpressionInternal(const std::string &sessionId, const std::string &expression);
     ScriptResult setVariableInternal(const std::string &sessionId, const std::string &name, const ScriptValue &value);
     ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
-    ScriptResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
+    SetCurrentEventResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
     ScriptResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
                                               const std::vector<IOProcessorDescriptor> &ioProcessors);
 

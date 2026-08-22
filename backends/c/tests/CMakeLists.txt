@@ -693,6 +693,38 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML B.2.8.1: a payload that announced structure and that the
+    # datamodel could not read as one arrives as a space-normalized string —
+    # which is what the clause requires and is indistinguishable, from inside
+    # the document, from a payload that parsed and simply lacked the field.
+    # This backend is where that matters most: an MCU consumer hands the
+    # payload in from outside the document and has no console to notice a quiet
+    # nil on.
+    sce_generate_static_integration_c_test(undecodable_payload_is_reported "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_undecodable_payload_is_reported
+        integration/test_undecodable_payload_is_reported.c
+        ${INTEGRATION_C_TEST_undecodable_payload_is_reported_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_undecodable_payload_is_reported PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_undecodable_payload_is_reported PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_undecodable_payload_is_reported PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_undecodable_payload_is_reported
+        COMMAND sce_c_integration_undecodable_payload_is_reported
+    )
+    set_tests_properties(c11_integration_undecodable_payload_is_reported PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML C.2 + 6.2.3: a `<send namelist>` that crosses BasicHTTP. The
     # IRP corpus states both claims and measures neither — test518's verdict is
     # `<transition event="test" target="pass"/>`, which passes on arrival

@@ -369,7 +369,7 @@ void ActionExecutorImpl::clearCurrentEvent() {
         try {
             std::shared_ptr<Event> nullEvent;
             auto result = scriptEngine_.setCurrentEvent(sessionId_, nullEvent).get();
-            if (!result.isSuccess()) {
+            if (!result.status.isSuccess()) {
                 SCE_LOG_DEBUG("Failed to clear current event");
             }
         } catch (const std::exception &e) {
@@ -495,7 +495,11 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
         );
 
         auto result = scriptEngine_.setCurrentEvent(sessionId_, event).get();
-        return result.isSuccess();
+        // W3C SCXML B.2.8.1: the Interpreter records which rung the payload got,
+        // so a host driving it can ask the same question the AOT engines
+        // answer — see `IActionExecutor::lastPayloadReading`.
+        lastPayloadReading_ = result.reading;
+        return result.status.isSuccess();
 
     } catch (const std::exception &e) {
         SCE_LOG_DEBUG("Error setting current event: {}", e.what());

@@ -218,8 +218,17 @@ func (p *{{ machine_name }}Policy) executeScript(script string) error {
 	return engine.ExecuteScript(p.SessionID, script)
 }
 
-// setCurrentEvent binds _event system variable (W3C SCXML 5.10).
-func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
+// setCurrentEvent binds _event system variable (W3C SCXML 5.10) and answers
+// which rung of §scxml-B-2-8-1 the payload got, because the binding is the
+// only place that knows.
+//
+// This used to be `_ = engine.SetCurrentEvent(...)`: the ladder decided
+// between a DOM, a value and a space-normalized string, and the decision was
+// dropped one line later. A payload that announced structure and would not
+// parse therefore reached the document as raw characters, every
+// _event.data.<field> read empty, and nothing anywhere could say so — see
+// sce.PayloadReading.
+func (p *{{ machine_name }}Policy) setCurrentEvent(name string) sce.PayloadReading {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 {% if model.needs_event_data %}
@@ -262,7 +271,7 @@ func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
 {% else %}
 	invokeID := ""
 {% endif %}
-	_ = engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
+	reading, err := engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
 		Name:       name,
 		Data:       data,
 		Type:       eventType,
@@ -271,6 +280,13 @@ func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
 		OriginType: originType,
 		InvokeID:   invokeID,
 	})
+	if err != nil {
+		// An engine that could not bind _event at all has a larger problem
+		// than an unreadable payload, and reporting PayloadUndecodable for it
+		// would point a host at the wrong thing.
+		return sce.PayloadAbsent
+	}
+	return reading
 }
 
 // assignVariable assigns a value to a datamodel variable via script engine.

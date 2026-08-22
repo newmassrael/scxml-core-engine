@@ -163,8 +163,8 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
     return ::std::async(::std::launch::deferred, [this, sessionId, event]() -> ExecutionResult {
         auto jsResult = scriptEngine_.setCurrentEvent(sessionId, event).get();
         ExecutionResult result;
-        result.success = jsResult.isSuccess();
-        result.errorMessage = jsResult.isSuccess() ? "" : "Failed to set current event";
+        result.success = jsResult.status.isSuccess();
+        result.errorMessage = jsResult.status.isSuccess() ? "" : "Failed to set current event";
         return result;
     });
 }

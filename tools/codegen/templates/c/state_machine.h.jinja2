@@ -33,6 +33,12 @@
    where `_Static_assert` is not a keyword. See
    backends/c/runtime/include/sce/portability.h. #}
 #include "sce/portability.h"
+{# §scxml-B-2-8-1: `sce_payload_reading_t`, which the dequeue sites in the
+   generated `.c` read to decide whether a delivery lost its payload. In the
+   HEADER rather than the source because the counters it feeds are part of this
+   machine's published surface, and a host that asks what a count means should
+   find the definition through the same include it already has. #}
+#include "sce/payload_reading.h"
 
 {% if model.needs_event_scheduler %}
 /* §scxml-6.2.2: `sce_clock_t`, the per-instance seam this machine measures its
@@ -352,6 +358,12 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint32_t discarded_external_events;
     {{ csym_prefix }}{{ model.name }}_event_t last_discarded_event;
     bool has_discarded_event;
+    /* W3C SCXML B.2.8.1: deliveries whose payload announced structure and that
+       the datamodel could not read as one, and the most recent of them.
+       `has_undecodable_payload` is separate for the same reason as above. */
+    uint32_t undecodable_payloads;
+    {{ csym_prefix }}{{ model.name }}_event_t last_undecodable_payload;
+    bool has_undecodable_payload;
     /* W3C SCXML 3.12.2: `error.*` events this engine raised that no transition
        matched, and the most recent of them. `has_unhandled_error` is separate
        for the same reason as above: the event enum's zero value is a real
@@ -662,6 +674,32 @@ uint32_t {{ csym_prefix }}{{ model.name }}_discarded_external_events(const {{ cs
    false, leaving `*out` untouched, while that count is zero — a count says
    something went nowhere; this says which thing did. */
 bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out);
+
+/* W3C SCXML B.2.8.1: events delivered with a payload that announced itself as
+   structure and that the datamodel could not read as one.
+
+   The clause requires the fallback: content the processor cannot interpret
+   becomes a space-normalized string. What it does not require — and what
+   nothing here used to provide — is any way for the host that SENT that
+   payload to learn its fields have stopped existing. The document reads
+   `_event.data.field`, gets nothing, assigns nothing, and the run continues.
+
+   This backend is where that matters most. An MCU consumer hands a payload in
+   from outside the document and has no console to notice a quiet nil on, and
+   this engine was the last of the six to route a host payload through a
+   decoder at all — measured 2026-08-16, before which a JSON payload was pasted
+   into Lua source and `_event.data` silently kept the PREVIOUS event's value.
+
+   Counts only the reading a host can act on. Prose delivered as text is the
+   ladder working (W3C test 562) and is not counted, because a diagnostic that
+   fires when nothing is wrong is one nobody reads. */
+uint32_t {{ csym_prefix }}{{ model.name }}_undecodable_payloads(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* W3C SCXML B.2.8.1: the most recent event the count above recorded. Returns
+   false, leaving `*out` untouched, while that count is zero — a count says
+   something was lost; this says which delivery lost it. */
+bool {{ csym_prefix }}{{ model.name }}_last_undecodable_payload(const {{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t *out);
 
 /* W3C SCXML 3.12.2: `error.*` events this engine raised that no transition in

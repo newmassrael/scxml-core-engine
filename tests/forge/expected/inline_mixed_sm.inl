@@ -65,7 +65,11 @@ bool processTransition(State& currentState, [[maybe_unused]] Event event, [[mayb
     if (event != Event() && (!pendingEventName_.empty() || !pendingEventData_.empty() || !pendingEventOrigin_.empty())) {
         AOT_DEBUG("AOT processTransition: Setting _event (name='{}', data='{}', type='{}', sendId='{}', origin='{}', invokeId='{}')",
                   pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventInvokeId_);
-        setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_, pendingEventTypedData_);
+        // §scxml-B-2-8-1: the rung the payload got, handed to the engine
+        // rather than dropped. This is the only frame that has both the
+        // reading and the event it belongs to.
+        const ::SCE::PayloadReading payloadReading = setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_, pendingEventTypedData_);
+        engine.notePayloadReading(event, payloadReading);
     }
     AOT_DEBUG("AOT processTransition: Called with event={}, currentState={}", static_cast<int>(event), static_cast<int>(currentState));
     bool transitionTaken = false;
@@ -338,12 +342,19 @@ std::string getEventType(const std::string& eventName) {
 public:
 // Helper: Set _event variable in script engine (W3C SCXML 5.10)
 // Always generated for compile-time compatibility, but no-op if JSEngine not needed
-void setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
+// Returns which rung of §scxml-B-2-8-1 the payload got, because the
+// binding is the only place that knows. This used to end in `.get()` with
+// the answer dropped: the ladder decided between a DOM, a value and a
+// space-normalized string, and one line later the decision was gone. A
+// payload that announced structure and would not parse therefore reached
+// the document as raw characters, every `_event.data.<field>` read empty,
+// and nothing anywhere could say so — see `SCE::PayloadReading`.
+::SCE::PayloadReading setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
                             [[maybe_unused]] const std::string& eventType = "", [[maybe_unused]] const std::string& sendId = "",
                             [[maybe_unused]] const std::string& origin = "", [[maybe_unused]] const std::string& originType = "",
                             [[maybe_unused]] const std::string& invokeId = "",
                             [[maybe_unused]] const std::optional<ScriptValue>& typedData = std::nullopt) {
-    if (eventName.empty()) return;
+    if (eventName.empty()) return ::SCE::PayloadReading::Absent;
     ensureScriptEngine();
     std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
     // W3C SCXML C.1: `_event.origin` is the address the sending session
@@ -365,14 +376,15 @@ void setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName
         event->setOriginType(originType);
         event->setInvokeId(invokeId);
         event->setTypedData(typedData.value());
-        getScriptEngine().setCurrentEvent(sessionId_.value(), event).get();
+        return getScriptEngine().setCurrentEvent(sessionId_.value(), event).get().reading;
     } else {
         // W3C SCXML 5.10: String-based path (standard)
-        getScriptEngine()
+        return getScriptEngine()
             .setCurrentEvent(sessionId_.value(),
                              ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, publishedOrigin,
                                                         originType, invokeId})
-            .get();
+            .get()
+            .reading;
     }
 }
 

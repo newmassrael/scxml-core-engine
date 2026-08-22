@@ -83,6 +83,14 @@ type Engine[S comparable, E comparable] struct {
 	lastDiscardedEvent E
 	hasDiscarded       bool
 
+	// undecodablePayloads counts deliveries whose payload announced structure
+	// and that the datamodel could not read as one (W3C SCXML B.2.8.1) — see
+	// UndecodablePayloads. hasUndecodable says whether lastUndecodablePayload
+	// holds one, because the zero value of E is a real event.
+	undecodablePayloads    uint32
+	lastUndecodablePayload E
+	hasUndecodable         bool
+
 	// unhandledErrorEvents counts error.* events this engine raised that no
 	// transition matched (§scxml-3.12.2) — see UnhandledErrorEvents.
 	unhandledErrorEvents uint32
@@ -744,6 +752,47 @@ func (e *Engine[S, E]) DiscardedExternalEvents() uint32 {
 // question a host debugging a stalled supervisor actually has.
 func (e *Engine[S, E]) LastDiscardedEvent() (E, bool) {
 	return e.lastDiscardedEvent, e.hasDiscarded
+}
+
+// NotePayloadReading records which W3C SCXML B.2.8.1 rung the payload just bound
+// got.
+//
+// Called by generated code immediately after it binds _event, because that is
+// the only moment the rung is known. Four of the five readings are the ladder
+// working and are recorded by being ignored; the fifth is the one a host is
+// wrong about.
+func (e *Engine[S, E]) NotePayloadReading(event E, reading PayloadReading) {
+	if reading == PayloadUndecodable {
+		e.undecodablePayloads++
+		e.lastUndecodablePayload = event
+		e.hasUndecodable = true
+	}
+}
+
+// UndecodablePayloads reports how many events arrived carrying a payload that
+// announced itself as structure and that the datamodel could not read as one.
+//
+// W3C SCXML B.2.8.1 requires the fallback: content the processor cannot interpret
+// becomes a space-normalized string. What it does not require — and what
+// nothing here used to provide — is any way for the host that SENT that
+// payload to learn its fields have stopped existing. The document reads
+// _event.data.field, gets nothing, assigns nothing, and the run continues;
+// measured 2026-08-22 on three independent Lua implementations, a payload in
+// Lua's own table syntax silently emptied every variable the receiving
+// transition assigned, including the one that primes the next session.
+//
+// Counts only the reading a host can act on. Prose delivered as text is the
+// ladder working (W3C test 562) and is not counted, because a diagnostic that
+// fires when nothing is wrong is one nobody reads.
+func (e *Engine[S, E]) UndecodablePayloads() uint32 {
+	return e.undecodablePayloads
+}
+
+// LastUndecodablePayload reports the most recent event UndecodablePayloads
+// counted. The bool is false while that count is zero, for the same reason as
+// LastDiscardedEvent: the zero value of E is a real event.
+func (e *Engine[S, E]) LastUndecodablePayload() (E, bool) {
+	return e.lastUndecodablePayload, e.hasUndecodable
 }
 
 // UnhandledErrorEvents reports how many error.* events this engine raised that

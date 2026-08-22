@@ -735,6 +735,8 @@ add_executable(integration_tests
     integration/InvokePrecedesDequeueMidrunAotTest.cpp
     integration/DiscardedEventIsObservableTest.cpp
     integration/DiscardedEventIsObservableAotTest.cpp
+    integration/UndecodablePayloadIsReportedTest.cpp
+    integration/UndecodablePayloadIsReportedAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp
     integration/UnhandledErrorIsObservableAotTest.cpp
     integration/ErrorCascadeIsBoundedTest.cpp
@@ -1135,6 +1137,15 @@ sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INT
 # not derivable from any other accessor — the Interpreter has reported it all
 # along and the generated engines were silent.
 sce_generate_static_integration_test(discarded_event_is_observable ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML B.2.8.1: the clause's third reading — "otherwise" the content
+# becomes a space-normalized string — is a fallback, and a fallback is where a
+# belief leaves the system quietly. A host that built `{"done":true}` and got
+# `{"done":` past a truncation sees the document evaluate `_event.data.done`,
+# find nothing, and take exactly the transition it would have taken had the
+# field been legitimately absent. The clause mandates the fallback and says
+# nothing about telling anyone; this fixture is what the engines say instead.
+sce_generate_static_integration_test(undecodable_payload_is_reported ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.12.2: the processor raises its own failures as `error.*` on the
 # internal queue, and the clause says they are ignored when nothing matches

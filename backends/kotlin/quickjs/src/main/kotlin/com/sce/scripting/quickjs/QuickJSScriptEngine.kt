@@ -14,6 +14,7 @@ package com.sce.scripting.quickjs
 
 import com.sce.runtime.IoProcessorDescriptor
 import com.sce.runtime.SceXmlDom
+import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -227,8 +228,8 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         }
     }
 
-    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs) {
-        val session = sessions[sessionId] ?: return
+    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs): PayloadReading {
+        val session = sessions[sessionId] ?: return PayloadReading.Absent
         val handle = session.handle
         val typeStr = args.type.ifEmpty { "external" }
 
@@ -246,9 +247,7 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         """.trimIndent())
 
         // Parse and set data if present
-        if (args.data.isNotEmpty()) {
-            setEventData(handle, args.data)
-        }
+        return if (args.data.isNotEmpty()) setEventData(handle, args.data) else PayloadReading.Absent
     }
 
     override fun clearCurrentEvent(sessionId: String) {
@@ -403,14 +402,14 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
      * Parse and set _event.data from raw string.
      * Detection order: XML DOM, JS expression, JSON, normalized string.
      */
-    private fun setEventData(handle: Long, data: String) {
+    private fun setEventData(handle: Long, data: String): PayloadReading {
         // Step 1: XML DOM
         val firstNonWs = data.indexOfFirst { !it.isWhitespace() }
         if (firstNonWs >= 0 && data[firstNonWs] == '<') {
             val domExpr = buildDOMExpression(data)
             if (domExpr != null) {
                 val err = QuickJSNative.eval(handle, "_event.data = $domExpr")
-                if (err == null) return
+                if (err == null) return PayloadReading.Dom
             }
         }
 
@@ -439,11 +438,18 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         // two engines of this backend answer the same question the same way.
         val err2 = QuickJSNative.eval(handle,
             "_event.data = JSON.parse(${jsStringLiteral(data)})")
-        if (err2 == null) return
+        if (err2 == null) return PayloadReading.Structured
 
         // Step 3: Normalized string
         QuickJSNative.eval(handle,
             "_event.data = ${jsStringLiteral(normalizeWhitespace(data))}")
+        // Which of the two third-rung readings this is. The clause treats them
+        // the same and a host does not: prose arriving as text is the ladder
+        // working (W3C test 562), and a payload that opened with a brace and
+        // would not parse is a payload whose fields have just stopped
+        // existing. Only here is that difference still visible, because only
+        // here was the structured read attempted.
+        return PayloadReading.ofText(data)
     }
 
     /**
