@@ -235,6 +235,21 @@ jobs:
     if: needs.select.outputs.count != '0'
     runs-on: ubuntu-latest
 
+    # Declared rather than inherited. GitHub's default is 360 minutes and the
+    # longest casefile measured 4h16m — `mutation_rounds_selection`, whose 21
+    # cases the matrix above cannot split because they live in ONE file. That
+    # is 76% of a ceiling nobody wrote down, and a job that crosses it is
+    # `cancelled`, which this workflow's own header records as the failure mode
+    # that let three consecutive commits go without a verdict: a cancelled lane
+    # is not a red one.
+    #
+    # 330 makes the margin explicit and puts the failure 30 minutes before the
+    # platform's, so it arrives as this lane's timeout with this lane's name on
+    # it. It is not headroom — `mutation_corpus_fits_its_lane` is what keeps
+    # the largest casefile from growing into it, and the fix when it does is to
+    # split that file by concern so the matrix can carry the halves apart.
+    timeout-minutes: 330
+
     strategy:
       # Every casefile is measured, not just the ones before the first
       # failure. The gate makes the same choice inside a job, and for the same
