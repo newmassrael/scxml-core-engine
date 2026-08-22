@@ -200,23 +200,91 @@ sce_gate_codegen() {
 # The C++ suite is the opposite case and must NOT have this: a live 8080 makes
 # its ctest run report 13 tests Not Run. That asymmetry is the reason this is a
 # call a gate makes rather than something the runner does for everyone.
-sce_gate_http_fixture_server() {
+#
+# Answers into SCE_GATE_HTTP_FIXTURE_PID rather than onto stdout, because the
+# obvious `pid="$(_sce_gate_http_fixture_start)"` would put `sce_gate_fail`
+# inside a command substitution — where its `exit` ends the subshell and the
+# caller reads on with an empty pid. A helper whose refusal cannot stop its
+# caller is worse than no helper.
+SCE_GATE_HTTP_FIXTURE_PID=""
+SCE_GATE_HTTP_FIXTURE_CLEANUP_ARMED=""
+
+# Stop whatever is up when the gate exits — registered once, and DEFERRED.
+#
+# The command is `eval`ed at exit, so it reads the variable then rather than
+# baking a number in at registration. Both properties are load-bearing for the
+# scoped form below, which starts and stops a server per round: a per-round
+# registration would leave the gate exiting with a list of kills for pids that
+# finished rounds ago, and a pid the kernel has since handed to somebody else is
+# a gate that kills an unrelated process on its way out.
+_sce_gate_http_fixture_arm_cleanup() {
+    [[ -z "$SCE_GATE_HTTP_FIXTURE_CLEANUP_ARMED" ]] || return 0
+    SCE_GATE_HTTP_FIXTURE_CLEANUP_ARMED=1
+    sce_gate_on_exit '[[ -z "$SCE_GATE_HTTP_FIXTURE_PID" ]] || kill "$SCE_GATE_HTTP_FIXTURE_PID" 2>/dev/null'
+}
+
+_sce_gate_http_fixture_start() {
     command -v node >/dev/null 2>&1 \
         || sce_gate_fail "node.js required for the W3C HTTP fixture server (apt install nodejs)"
+
+    # One listener per gate, whichever entry point asked for it. Mixing the two
+    # forms would leave the gate-wide server orphaned the moment a scoped round
+    # cleared the variable, and an orphan on 8080 is what the next suite fails
+    # to bind against. Refused rather than reconciled: a gate wanting both is
+    # asking for something neither form means.
+    [[ -z "$SCE_GATE_HTTP_FIXTURE_PID" ]] \
+        || sce_gate_fail "a W3C HTTP fixture server is already up for this gate (pid $SCE_GATE_HTTP_FIXTURE_PID). Use sce_gate_http_fixture_server for a gate-wide one or sce_gate_with_http_fixture_server per command, not both."
 
     local log
     log="$(mktemp)"
     sce_gate_on_exit "rm -f '$log'"
     node "$SCE_REPO_ROOT/tests/w3c/standalone_http_server.js" 8080 /test >"$log" 2>&1 &
-    local pid=$!
-    sce_gate_on_exit "kill $pid 2>/dev/null"
+    SCE_GATE_HTTP_FIXTURE_PID=$!
+    _sce_gate_http_fixture_arm_cleanup
     # Match the CI workflows' settle window before issuing requests.
     sleep 1
-    if ! kill -0 "$pid" 2>/dev/null; then
+    if ! kill -0 "$SCE_GATE_HTTP_FIXTURE_PID" 2>/dev/null; then
         cat "$log" >&2
         sce_gate_fail "W3C HTTP fixture server failed to start (port 8080 already in use?)"
     fi
     sce_gate_step "W3C HTTP fixture server up on localhost:8080"
+}
+
+# The whole gate needs it: start once, stop at exit.
+sce_gate_http_fixture_server() {
+    _sce_gate_http_fixture_start
+}
+
+# ONE command needs it: start, run, stop, and answer with the command's own
+# status.
+#
+# The scoped form exists because holding the port is not free. `mutation-rounds`
+# runs several rounds in one invocation and only some of them want a listener on
+# 8080; the rest drive ctest, where the C11 BasicHTTP entries bring up their own
+# copy through the `w3c_c_http_server` CMake fixture (backends/c/tests/
+# CMakeLists.txt) and the C++ W3C runner binds the port itself. A server left
+# up across the whole gate would make those fail to bind — the same 13-cases-
+# Not-Run shape `sce_gate_requires_free_http_port` refuses for, arrived at from
+# the other direction.
+#
+# The exit cleanup armed by the start covers the path this function's own stop
+# cannot: a gate interrupted mid-round (Ctrl-C, a cancelled CI job) never
+# reaches the line below, and a fixture server that outlives its gate is what
+# the next suite trips over. Clearing the pid after stopping is what keeps the
+# two from both firing.
+sce_gate_with_http_fixture_server() {
+    _sce_gate_http_fixture_start
+    local pid="$SCE_GATE_HTTP_FIXTURE_PID"
+
+    local rc=0
+    "$@" || rc=$?
+
+    # `wait` before returning, so the port is released before the caller's next
+    # round asks for it. `kill` only delivers the signal.
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    SCE_GATE_HTTP_FIXTURE_PID=""
+    return "$rc"
 }
 
 # Resolve the main CMake tree into SCE_MAIN_BUILD_DIR, configuring it when it

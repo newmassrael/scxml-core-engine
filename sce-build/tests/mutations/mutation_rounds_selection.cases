@@ -290,3 +290,37 @@ edit(".github/workflows/mutation-rounds.yml",
           END { printf "]}\\n" }
         ' "$selected")\"""")
 PY
+
+# ── What has to be RUNNING for a round to mean anything ─────────────
+#
+# The three links between a casefile saying it needs a service and something
+# starting one. Each is a place the chain was actually broken, or could be
+# broken back to where it was: `send_namelist_reaches_the_form.cases` drives a
+# suite that posts over a real socket, and with no link at all its round
+# reported `baseline is not green (1 failing)` on every CI run it ever had —
+# a true sentence about a listener nobody started, phrased as a defect in the
+# tree.
+
+mutation_case "the declared service never reaches the caller" <<'PY'
+edit("scripts/mutate",
+     """        while IFS= read -r _need; do
+            [[ -n "$_need" ]] && printf 'needs\\t%s\\n' "$_need"
+        done < <(mutation_all_needs)
+""",
+     "")
+PY
+
+mutation_case "the gate stops reading which service a round needs" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     """            needs) NEEDS_OF["$casefile"]+="$value"$'\\n' ;;""",
+     """            needs) : ;;""")
+PY
+
+mutation_case "the gate reads the service and provisions nothing" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     """    if [[ "${NEEDS_OF[$casefile]:-}" == *"http-fixture"* ]]; then
+        round=(sce_gate_with_http_fixture_server "${round[@]}")
+    fi
+""",
+     "")
+PY

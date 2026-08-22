@@ -230,6 +230,26 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
+/// The services a casefile says its round needs running, asked of the harness
+/// that owns the vocabulary.
+fn declared_needs(casefile: &str) -> Vec<String> {
+    let out = Command::new("scripts/mutate")
+        .args(["--declares", casefile])
+        .current_dir(repo_root())
+        .output()
+        .expect("run scripts/mutate --declares");
+    assert!(
+        out.status.success(),
+        "`scripts/mutate --declares {casefile}` failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("needs\t"))
+        .map(str::to_string)
+        .collect()
+}
+
 /// Whether a casefile drives its round through ctest — the same line the
 /// workflow reads to decide whether to configure CMake.
 fn declares_ctest(casefile: &str) -> bool {
@@ -1109,5 +1129,129 @@ fn a_path_that_only_resembles_a_declared_target_selects_nothing() {
         "⚠ `{parent}` and `{neighbour}` are not `{target}`, and matching them \
          would make one edit anywhere under a directory pull in every casefile \
          that declares a file there: {chosen:?}"
+    );
+}
+
+/// The one function in the Rust test harness that asserts the W3C BasicHTTP
+/// fixture server is reachable, and panics with instructions when it is not
+/// (`backends/rust/tests/src/harness.rs`). A test that calls it cannot pass
+/// without a listener on localhost:8080, so a round over such a suite needs one
+/// started for it.
+///
+/// Matched as a CALL — the name followed by its open paren — rather than as a
+/// bare mention. The first shape of this scan looked for the name alone and
+/// flagged `mutation_rounds_selection.cases`, whose oracle is THIS file, which
+/// mentions the name in the line below. A scanner that cannot tell a call from
+/// the string it searches for reports itself.
+const HTTP_HARNESS_ENTRY: &str = "setup_http_test";
+
+/// A suite that cannot pass without the W3C fixture server says so, so the gate
+/// can start one.
+///
+/// The requirement is invisible in a selector. `--test send_namelist_over_http`
+/// names a target, not a socket, and the only place the socket appears is
+/// inside the test's own source — where nothing choosing rounds ever looks. So
+/// `send_namelist_reaches_the_form.cases` was authored on a machine that had
+/// the server up from an earlier gate, and went red in CI on every run it ever
+/// had: `baseline is not green (1 failing)`, which is the harness reporting the
+/// guard's panic as an ordinary failing test. Two CI runs and 34 hours before
+/// anybody read past the verdict to the socket.
+///
+/// Asserted from the ORACLE side rather than from a list of casefile names,
+/// because a list would be the same missing-declaration failure with an extra
+/// place to forget it. The oracle is the test that noticed — the file the
+/// harness already resolves through `cargo metadata` — and whether it calls the
+/// harness entry above is a fact about that file, not about anybody's memory.
+///
+/// What it does not reach, stated rather than discovered later: a suite that
+/// talks to the server from a module the selector pulls in rather than from the
+/// oracle's own source. The floor below is what keeps that from silently
+/// becoming "no casefile needs anything" — a scan that matches nothing is
+/// indistinguishable from a corpus that is clean.
+#[test]
+fn a_casefile_whose_suite_needs_the_http_fixture_declares_it() {
+    let mut needing: Vec<String> = Vec::new();
+    let mut undeclared: Vec<(String, String)> = Vec::new();
+
+    let call = format!("{HTTP_HARNESS_ENTRY}(");
+    for casefile in casefiles() {
+        let Some(oracle) = declared_oracles(&casefile).into_iter().find(|oracle| {
+            oracle.ends_with(".rs")
+                && fs::read_to_string(repo_root().join(oracle))
+                    .map(|src| src.contains(&call))
+                    .unwrap_or(false)
+        }) else {
+            continue;
+        };
+        needing.push(casefile.clone());
+        if !declared_needs(&casefile)
+            .iter()
+            .any(|service| service == "http-fixture")
+        {
+            undeclared.push((casefile, oracle));
+        }
+    }
+
+    assert!(
+        !needing.is_empty(),
+        "⚠ no casefile in the corpus resolves an oracle that calls \
+         `{HTTP_HARNESS_ENTRY}`, so this test asserted nothing. Either the \
+         harness entry was renamed — re-aim `HTTP_HARNESS_ENTRY` at whatever \
+         asserts the server is reachable now — or `declared_oracles` stopped \
+         resolving cargo oracles to paths, which would blind the change-set \
+         intersection at the same stroke."
+    );
+
+    assert!(
+        undeclared.is_empty(),
+        "⚠ {} casefile(s) drive a suite that calls `{HTTP_HARNESS_ENTRY}` and do \
+         not declare `mutation_needs http-fixture`: {undeclared:?}\n\
+         Without the declaration nothing starts the W3C fixture server for the \
+         round, the suite's own guard refuses for want of a socket, and the \
+         round reports `baseline is not green` — a true verdict about the wrong \
+         thing, which is what this casefile's first two CI runs both said.",
+        undeclared.len()
+    );
+}
+
+/// The declaration reaches something that acts on it.
+///
+/// The half above proves a casefile SAYS what it needs; this proves the gate
+/// provisions it, and provisions it around one round rather than around the
+/// whole run. Both halves are needed and neither implies the other — a
+/// declaration nothing reads is a comment, and a gate that starts a server
+/// unconditionally breaks the ctest rounds beside it, whose C11 entries bring
+/// up their own listener on the same port through the `w3c_c_http_server` CMake
+/// fixture and whose C++ W3C runner binds it directly.
+///
+/// A wiring assertion rather than a behavioural one, deliberately: the
+/// behavioural version would have to bind :8080, and this test runs inside
+/// `cargo test --workspace`, which the `workspace-tests` gate runs with the
+/// fixture server already up. It would fail for holding the port against
+/// itself.
+#[test]
+fn the_gate_starts_the_fixture_server_for_the_rounds_that_declare_it() {
+    let lib = fs::read_to_string(repo_root().join("scripts/gates/lib.sh"))
+        .expect("read scripts/gates/lib.sh");
+    assert!(
+        lib.contains("sce_gate_with_http_fixture_server()"),
+        "⚠ `scripts/gates/lib.sh` no longer defines \
+         `sce_gate_with_http_fixture_server`. The scoped form is what lets one \
+         round hold :8080 while the ctest rounds beside it bind it themselves; \
+         the gate-wide `sce_gate_http_fixture_server` cannot do that."
+    );
+
+    let gate = fs::read_to_string(repo_root().join("scripts/gates/mutation-rounds.sh"))
+        .expect("read scripts/gates/mutation-rounds.sh");
+    assert!(
+        gate.contains("needs) NEEDS_OF["),
+        "⚠ the gate stopped reading the `needs` key out of `scripts/mutate \
+         --declares`, so a casefile's declared service is a comment again."
+    );
+    assert!(
+        gate.contains("sce_gate_with_http_fixture_server"),
+        "⚠ the gate reads the `needs` key and never provisions anything from \
+         it. That is the shape the defect had: the requirement was knowable \
+         everywhere and acted on nowhere."
     );
 }
