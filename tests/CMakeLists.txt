@@ -737,6 +737,8 @@ add_executable(integration_tests
     integration/DiscardedEventIsObservableAotTest.cpp
     integration/UndecodablePayloadIsReportedTest.cpp
     integration/UndecodablePayloadIsReportedAotTest.cpp
+    integration/UnseenEventIsReportedTest.cpp
+    integration/UnseenEventIsReportedAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp
     integration/UnhandledErrorIsObservableAotTest.cpp
     integration/ErrorCascadeIsBoundedTest.cpp
@@ -1146,6 +1148,12 @@ sce_generate_static_integration_test(discarded_event_is_observable ${STATIC_INTE
 # field been legitimately absent. The clause mandates the fallback and says
 # nothing about telling anyone; this fixture is what the engines say instead.
 sce_generate_static_integration_test(undecodable_payload_is_reported ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.13 + Appendix D: a machine that reached a top-level final state
+# has exited the interpreter, so an event handed to it afterwards is refused.
+# The refusal is the clause; the silence around it is what left a consumer
+# rewriting a guard four times for an event the engine never looked at.
+sce_generate_static_integration_test(unseen_event_is_reported ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.12.2: the processor raises its own failures as `error.*` on the
 # internal queue, and the clause says they are ignored when nothing matches

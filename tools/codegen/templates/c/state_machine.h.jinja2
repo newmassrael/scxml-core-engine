@@ -364,6 +364,12 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint32_t undecodable_payloads;
     {{ csym_prefix }}{{ model.name }}_event_t last_undecodable_payload;
     bool has_undecodable_payload;
+    /* W3C SCXML 3.13: external events this machine never looked at, because it
+       had already stopped, and the most recent of them. `has_unseen_event` is
+       separate for the same reason as above. */
+    uint32_t unseen_external_events;
+    {{ csym_prefix }}{{ model.name }}_event_t last_unseen_event;
+    bool has_unseen_event;
     /* W3C SCXML 3.12.2: `error.*` events this engine raised that no transition
        matched, and the most recent of them. `has_unhandled_error` is separate
        for the same reason as above: the event enum's zero value is a real
@@ -700,6 +706,26 @@ uint32_t {{ csym_prefix }}{{ model.name }}_undecodable_payloads(const {{ csym_pr
    false, leaving `*out` untouched, while that count is zero — a count says
    something was lost; this says which delivery lost it. */
 bool {{ csym_prefix }}{{ model.name }}_last_undecodable_payload(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out);
+
+/* W3C SCXML 3.13: external events the host sent that this machine never looked
+   at, because it had already stopped.
+
+   Appendix D's main event loop exits when the machine reaches a top-level
+   final state, and the clause is explicit that the interpreter is then done.
+   Refusing the event is correct; being unable to say it happened is what this
+   counts.
+
+   It is the count that separates the third explanation from the other two. A
+   host that sent an event and saw nothing move has three candidates: dequeued
+   and matched nothing (`_discarded_external_events`), dequeued and a
+   transition's guard was false (nothing moves), or never dequeued at all
+   (this). */
+uint32_t {{ csym_prefix }}{{ model.name }}_unseen_external_events(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* W3C SCXML 3.13: the most recent event the count above recorded. Returns
+   false, leaving `*out` untouched, while that count is zero. */
+bool {{ csym_prefix }}{{ model.name }}_last_unseen_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t *out);
 
 /* W3C SCXML 3.12.2: `error.*` events this engine raised that no transition in

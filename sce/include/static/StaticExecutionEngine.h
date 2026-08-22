@@ -776,6 +776,12 @@ private:
     uint32_t undecodablePayloads_ = 0;
     Event lastUndecodablePayload_{};
     bool hasUndecodablePayload_ = false;
+    // W3C SCXML 3.13: external events this machine never looked at, because it
+    // had already stopped, and the most recent of them. `hasUnseenEvent_` is
+    // separate for the same reason as above.
+    uint32_t unseenExternalEvents_ = 0;
+    Event lastUnseenEvent_{};
+    bool hasUnseenEvent_ = false;
     // §scxml-3.12.2: the drain is executing a transition an `error.*` event
     // selected, which is the state in which a newly raised error is a link in
     // a chain rather than a first failure; how long that chain is; and what
@@ -1358,6 +1364,74 @@ public:
     }
 
     /**
+     * @brief Record one external event this machine will never look at
+     *
+     * W3C SCXML Appendix D's main event loop: the loop that would have dequeued it has ended,
+     * so the event is not "pending" — it is over.
+     */
+    void noteUnseenEvent(Event event) {
+        ++unseenExternalEvents_;
+        lastUnseenEvent_ = event;
+        hasUnseenEvent_ = true;
+    }
+
+    /**
+     * @brief Empty the external queue into the count above
+     *
+     * Drained rather than left in place so each event is counted exactly once:
+     * a host that keeps driving a halted machine would otherwise re-count the
+     * same queue on every call, and a count that grows while nothing arrives
+     * is a count nobody can use.
+     */
+    void recordUnseenExternalEvents() {
+        while (externalQueue_.hasEvents()) {
+            noteUnseenEvent(externalQueue_.pop().event);
+        }
+    }
+
+    /**
+     * @brief External events the host sent that this machine never looked at
+     *
+     * W3C SCXML Appendix D's main event loop exits when the machine reaches a top-level final
+     * state, and W3C SCXML 3.13 is explicit that the interpreter is then done.
+     * Refusing the event is therefore correct — and, exactly as with
+     * `discardedExternalEvents()` and `undecodablePayloads()`, being unable to
+     * SAY it happened is not part of the clause.
+     *
+     * This is the count that separates the third explanation from the other
+     * two. A host that sent an event and saw nothing move has three
+     * candidates:
+     *
+     * | what happened | which count moves |
+     * | --- | --- |
+     * | dequeued, no transition matched | `discardedExternalEvents()` |
+     * | dequeued, a transition matched but its guard was false | neither |
+     * | never dequeued — the machine had stopped | this one |
+     *
+     * Measured 2026-08-22: a consumer reported a guarded transition that
+     * "never fires", and four rewrites of the guard later the guard was still
+     * the suspect. Driving the same document here fired it on the first try,
+     * at that consumer's own pinned revision — so the difference was never the
+     * guard, and nothing in this engine could have said so.
+     */
+    uint32_t unseenExternalEvents() const {
+        return unseenExternalEvents_;
+    }
+
+    /**
+     * @brief Which event the count above last recorded
+     *
+     * `std::nullopt` while that count is zero — the event enum's zero value is
+     * a real event and cannot stand in for "none".
+     */
+    std::optional<Event> lastUnseenEvent() const {
+        if (!hasUnseenEvent_) {
+            return std::nullopt;
+        }
+        return lastUnseenEvent_;
+    }
+
+    /**
      * @brief `error.*` events this engine raised that no transition answered
      *
      * §scxml-3.12.2 requires the processor to signal its own failures as
@@ -1691,6 +1765,12 @@ protected:
             }
 
             if (!isRunning_ || isInFinalState()) {
+                // §scxml-D-mainEventLoop ends here, and whatever the host put
+                // on the external queue ends with it. That is the clause: a
+                // machine that reached a top-level final state has exited the
+                // interpreter. Saying nothing about it is not the clause —
+                // see `unseenExternalEvents()`.
+                recordUnseenExternalEvents();
                 break;
             }
 
@@ -2261,6 +2341,10 @@ public:
      */
     void processEvent(Event event) {
         if (!isRunning_) {
+            // Refused rather than queued, so the drain in `runMainEventLoop`
+            // never sees it — which is why the count is taken here as well as
+            // there. See `unseenExternalEvents()`.
+            noteUnseenEvent(event);
             return;
         }
         // §scxml-D-mainEventLoop: a host event with nothing said about it is
@@ -2284,6 +2368,8 @@ public:
      */
     void processEvent(Event event, const SCE::Core::EventMetadata &metadata) {
         if (!isRunning_) {
+            // Same refusal as the overload above, same reason it is counted.
+            noteUnseenEvent(event);
             return;
         }
         policy_.currentEventMetadata_ = metadata;

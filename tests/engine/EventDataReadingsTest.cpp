@@ -191,9 +191,9 @@ std::vector<std::string> disagreements(SCE::IScriptEngine &engine, const std::st
         args.eventData = testCase.payload;
         args.eventType = "external";
         auto bound = engine.setCurrentEvent(sessionId, args).get();
-        if (!bound.isSuccess()) {
+        if (!bound.status.isSuccess()) {
             failures.push_back("payload \"" + testCase.payload +
-                               "\": setCurrentEvent failed: " + bound.getErrorMessage());
+                               "\": setCurrentEvent failed: " + bound.status.getErrorMessage());
             engine.destroySession(sessionId);
             continue;
         }
@@ -272,7 +272,7 @@ TEST(EventDataReadingsOnLuaEngine, APayloadThatIsACallLeavesTheSessionAlone) {
     args.eventData = "(function() breached = true return 'x' end)()";
     args.eventType = "external";
     auto bound = engine.setCurrentEvent(sessionId, args).get();
-    ASSERT_TRUE(bound.isSuccess()) << bound.getErrorMessage();
+    ASSERT_TRUE(bound.status.isSuccess()) << bound.status.getErrorMessage();
 
     auto result = engine.evaluateExpression(sessionId, "breached").get();
     ASSERT_TRUE(result.isSuccess()) << result.getErrorMessage();

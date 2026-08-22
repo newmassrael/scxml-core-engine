@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.13 and Appendix D's main event loop: a machine that reaches a
+     top-level final state has exited the interpreter, and events that arrive
+     afterwards are not processed. Refusing them is the clause. Being unable to
+     say it happened is what this fixture is about.
+
+     A host that sent an event and saw nothing move has three explanations, and
+     until now it could tell apart only one of them:
+
+       the event was dequeued and no transition matched
+         -> `discarded_event_is_observable`'s axis; a count already answers
+
+       the event was dequeued, a transition matched it, and that transition's
+       guard evaluated false
+         -> nothing moves and nothing is counted, correctly: a guard that says
+            no is the document working
+
+       the event was never dequeued at all, because the machine had stopped
+         -> THIS axis, and before it, silence
+
+     Measured 2026-08-22, and this is why the third one earns a fixture rather
+     than a footnote. A consumer reported a guarded transition that "never
+     fires" and spent four rewrites of the guard on it — every shape, ending
+     with a trivially true arithmetic one. Driving the same document here fired
+     it on the first attempt, at that consumer's own pinned revision. The guard
+     was never the difference, and no accessor in any of the seven engines
+     could have said what was.
+
+     The document is deliberately thin, because the axis is about the ENGINE's
+     door rather than about anything a document does. `poke` is handled by a
+     targetless transition, so the datamodel counter is the only witness that a
+     delivery ran anything at all — without it a passing run cannot be told
+     apart from a run in which nothing fired. `finish` is what stops the
+     machine. Everything after that is the axis.
+
+     Deliberately single-axis: no delayed `<send>`, no `<invoke>`, no
+     `<parallel>`, and no guard anywhere. A guard here would reintroduce the
+     second explanation into a fixture whose whole point is separating it from
+     the third.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="working"
+       name="unseen_event_is_reported">
+    <datamodel>
+        <data id="pokes" expr="0"/>
+    </datamodel>
+    <state id="working">
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <transition event="finish" target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>

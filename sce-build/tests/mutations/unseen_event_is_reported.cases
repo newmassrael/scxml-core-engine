@@ -1,0 +1,135 @@
+# Mutation cases for §scxml-3.13 / Appendix D — an event handed to a machine
+# that has already stopped is never looked at, and the host can find out.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/unseen_event_is_reported.cases`.
+#
+# Appendix D's main event loop exits when the machine reaches a top-level final
+# state. Refusing what arrives afterwards is the clause; saying nothing about it
+# is not. The silence is expensive because it is shaped exactly like the two
+# outcomes a host can already read — all three leave the configuration alone:
+#
+#   dequeued, no transition matched            `discarded_external_events`
+#   dequeued, matched, guard said no           nothing, correctly
+#   never dequeued — the machine had stopped   the count these cases pin
+#
+# The trap they exist for is the third one below. There are TWO refusal sites,
+# not one — `process_event` refuses before queueing, and the loop abandons what
+# is already queued — so a fix applied to either alone leaves a host that drives
+# the engine the other way still unable to tell. A case removes each.
+#
+# The C++ engines and the C11 template halves live in
+# `unseen_event_is_reported_ctest.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test unseen_event_is_reported
+mutation_targets backends/rust/runtime/src/engine.rs
+
+mutation_oracles backends/rust/tests/tests/unseen_event_is_reported.rs
+
+# ── The count itself ───────────────────────────────────────────────
+#
+# The engine goes back to refusing silently. Every driver's first assertion is
+# this one.
+
+mutation_case "the loop abandons the queue without recording it" <<'PY'
+# The call is kept behind a false guard rather than deleted: `warnings = deny`
+# turns an unused private method into a compile error, and a mutation that will
+# not build is INCONCLUSIVE rather than a verdict. Measured — deleting it
+# outright produced exactly that.
+edit("backends/rust/runtime/src/engine.rs",
+     """                self.record_unseen_external_events();
+                break;""",
+     """                if false {
+                    self.record_unseen_external_events();
+                }
+                break;""")
+PY
+
+# ── The other refusal site ─────────────────────────────────────────
+#
+# `process_event` never queues at all when the machine has stopped, so the
+# loop's drain cannot see that delivery. A host driving the engine through this
+# door reads zero while its events vanish.
+
+mutation_case "the convenience door refuses without recording it" <<'PY'
+# Deletes the RECORD, keeping the early return. Disabling the whole guard
+# instead — `if !self.is_running && false` — is an EQUIVALENT MUTANT and was
+# measured as one: control then falls through to `raise_external` + `step`, the
+# loop breaks on the same `!is_running`, and `record_unseen_external_events`
+# counts the very same delivery. 0 of 5 tests red, twice, because the two
+# programs are observably identical. The defect this axis is about is the
+# refusal that records NOTHING, which is this edit.
+#
+# `note_unseen_event` stays used — the loop's drain calls it — so the tree
+# still compiles under `warnings = deny`.
+edit("backends/rust/runtime/src/engine.rs",
+     """            self.note_unseen_event(event);
+            return;
+        }
+        self.raise_external(event, "", "");""",
+     """            return;
+        }
+        self.raise_external(event, "", "");""")
+PY
+
+# ── Counting the wrong fact ────────────────────────────────────────
+#
+# The defect this axis is really about: reporting a refusal as a discard. The
+# two are different facts — the first says the machine never looked, the second
+# says it looked and nothing matched — and a host acts differently on each.
+
+mutation_case "a refusal is reported as a discard" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        self.unseen_external_events = self.unseen_external_events.saturating_add(1);
+        self.last_unseen_event = Some(event);""",
+     """        self.discarded_external_events = self.discarded_external_events.saturating_add(1);
+        self.last_unseen_event = Some(event);""")
+PY
+
+# ── An always-true count ───────────────────────────────────────────
+#
+# A count that also fires while the machine is running is exactly as useless as
+# one that never fires, and only the assertions taken BEFORE `finish` catch it.
+
+mutation_case "every delivery is counted as unseen" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """    pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {""",
+     """    pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
+        self.note_unseen_event(event);""")
+PY
+
+# ── The queue is left in place ─────────────────────────────────────
+#
+# Counting without draining re-counts the same queue on every later `step()`,
+# so the number grows while nothing arrives. Only the assertion that pins the
+# count at exactly 1 after one refused delivery catches this.
+
+mutation_case "the abandoned queue is counted but not drained" <<'PY'
+# `len()` is deliberately NOT on `EventQueueLike` — the engine's dependency is
+# `raise` / `pop` / `has_events` only — so the re-count defect is expressed with
+# a single pop-and-put-back. A `while` around the same body would not terminate.
+edit("backends/rust/runtime/src/engine.rs",
+     """        while let Some(meta) = self.external_queue.pop() {
+            self.note_unseen_event(meta.event);
+        }""",
+     """        if let Some(meta) = self.external_queue.pop() {
+            self.note_unseen_event(meta.event);
+            self.external_queue.raise(meta);
+        }""")
+PY
+
+# ── Naming the event ───────────────────────────────────────────────
+#
+# The count says an event went unlooked-at; a host debugging a supervisor that
+# stopped answering needs the name. Leaving it at `None` still counts correctly.
+
+mutation_case "the refused event is counted but never named" <<'PY'
+# `event` stays referenced: dropping it makes the parameter unused, which
+# `warnings = deny` turns into a compile error, and a mutation that will not
+# build produces no verdict at all.
+edit("backends/rust/runtime/src/engine.rs",
+     """        self.last_unseen_event = Some(event);""",
+     """        self.last_unseen_event = if true { None } else { Some(event) };""")
+PY

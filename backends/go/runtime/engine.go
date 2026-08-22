@@ -83,6 +83,14 @@ type Engine[S comparable, E comparable] struct {
 	lastDiscardedEvent E
 	hasDiscarded       bool
 
+	// unseenExternalEvents counts external events this machine never dequeued
+	// because it had already stopped — see UnseenExternalEvents. hasUnseen
+	// says whether lastUnseenEvent holds one, because the zero value of E is a
+	// real event.
+	unseenExternalEvents uint32
+	lastUnseenEvent      E
+	hasUnseen            bool
+
 	// undecodablePayloads counts deliveries whose payload announced structure
 	// and that the datamodel could not read as one (W3C SCXML B.2.8.1) — see
 	// UndecodablePayloads. hasUndecodable says whether lastUndecodablePayload
@@ -505,6 +513,9 @@ func (e *Engine[S, E]) RaiseExternalWithMeta(event EventWithMetadata[E]) {
 // Matches Rust Engine::process_event.
 func (e *Engine[S, E]) ProcessEvent(event E) {
 	if !e.isRunning {
+		// Refused rather than queued, so the drain in runMainEventLoop never
+		// sees it — which is why the count is taken here as well as there.
+		e.noteUnseenEvent(event)
 		return
 	}
 	e.RaiseExternal(event, "", "")
@@ -516,6 +527,8 @@ func (e *Engine[S, E]) ProcessEvent(event E) {
 // Matches Rust Engine::process_event_with_meta.
 func (e *Engine[S, E]) ProcessEventWithMeta(event E, metadata EventMetadata) {
 	if !e.isRunning {
+		// Same refusal as ProcessEvent, same reason it is counted here.
+		e.noteUnseenEvent(event)
 		return
 	}
 	meta := EventWithMetadata[E]{
@@ -795,6 +808,67 @@ func (e *Engine[S, E]) LastUndecodablePayload() (E, bool) {
 	return e.lastUndecodablePayload, e.hasUndecodable
 }
 
+// noteUnseenEvent records one external event this machine will never look at.
+func (e *Engine[S, E]) noteUnseenEvent(event E) {
+	// W3C SCXML Appendix D's main event loop: the loop that would have dequeued this has
+	// ended, so the event is not "pending" — it is over.
+	e.unseenExternalEvents++
+	e.lastUnseenEvent = event
+	e.hasUnseen = true
+}
+
+// recordUnseenExternalEvents empties the external queue into the count above,
+// at the moment the main event loop ends.
+//
+// Drained rather than left in place so each event is counted exactly once: a
+// host that keeps calling Step() on a halted machine would otherwise re-count
+// the same queue on every call, and a count that grows while nothing arrives
+// is a count nobody can use.
+func (e *Engine[S, E]) recordUnseenExternalEvents() {
+	for {
+		meta, ok := e.externalQueue.Pop()
+		if !ok {
+			return
+		}
+		e.noteUnseenEvent(meta.Event)
+	}
+}
+
+// UnseenExternalEvents reports how many external events the host handed this
+// machine that it never looked at, because it had already stopped.
+//
+// W3C SCXML Appendix D's main event loop exits when the machine reaches a top-level final
+// state, and W3C SCXML 3.13 is explicit that the interpreter is then done.
+// Refusing the event is therefore correct — and, exactly as with
+// DiscardedExternalEvents and UndecodablePayloads, being unable to SAY it
+// happened is not part of the clause.
+//
+// This is the count that separates the third explanation from the other two. A
+// host that sent an event and saw nothing move has three candidates:
+//
+//	dequeued, no transition matched          -> DiscardedExternalEvents
+//	dequeued, a transition matched but its
+//	  guard was false                        -> neither
+//	never dequeued — the machine had stopped -> this one
+//
+// Measured 2026-08-22: a consumer reported a guarded transition that "never
+// fires", and four rewrites of the guard later the guard was still the
+// suspect. Driving the same document here fired it on the first try, at that
+// consumer's own pinned revision — so the difference was never the guard, and
+// nothing in this engine could have said so.
+func (e *Engine[S, E]) UnseenExternalEvents() uint32 {
+	return e.unseenExternalEvents
+}
+
+// LastUnseenEvent reports the most recent event UnseenExternalEvents counted,
+// and whether there is one.
+//
+// A count says an event went unlooked-at; this says which one, which is what a
+// host debugging a supervisor that stopped answering actually needs.
+func (e *Engine[S, E]) LastUnseenEvent() (E, bool) {
+	return e.lastUnseenEvent, e.hasUnseen
+}
+
 // UnhandledErrorEvents reports how many error.* events this engine raised that
 // no transition in any active state answered.
 //
@@ -1052,6 +1126,12 @@ func (e *Engine[S, E]) runMainEventLoop() {
 		}
 
 		if !e.isRunning || e.isInFinalState() {
+			// W3C SCXML Appendix D's main event loop ends here, and whatever the host put on
+			// the external queue ends with it. That is the clause: a machine
+			// that reached a top-level final state has exited the interpreter.
+			// Saying nothing about it is not the clause — see
+			// UnseenExternalEvents.
+			e.recordUnseenExternalEvents()
 			break
 		}
 
