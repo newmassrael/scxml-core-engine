@@ -55,46 +55,27 @@ sce_gate_cannot_run() {
 
 # How many parallel jobs a build inside a gate may ask this machine for.
 #
-# NOT `$(nproc)`, which is what seven gate scripts asked for and which means
-# "every core, whatever else is on the box". These gates do not run on a
-# dedicated runner: this workstation carries sixteen concurrent sessions and
-# six repositories at once, and a push here runs twenty-seven gates back to
-# back.
+# The rule and the measurement that produced it live in
+# `scripts/lib/sce_build_jobs.sh`, which is where they had to move once the
+# readers stopped being only gates: `smoke_embed_consumer.sh` and
+# `check_clang_format.sh` are reached by a gate and by the pre-commit hook but
+# are standalone scripts, and sourcing THIS file would `cd` them to the
+# repository root and make them report as a gate.
 #
-# MEASURED 2026-08-19. One push gate reached `cargo test --workspace` while the
-# machine was otherwise idle and produced eight concurrent rustc processes plus
-# a linker at 335% CPU, driving 600MB/s of reads and 400MB/s of writes through
-# the build cache; forty processes sat blocked on disk and CPU idle fell to
-# 43%. Earlier the same day an uncapped build in a sibling repository pushed
-# 13GB into swap and took the box to load 29 while 82% of its CPU sat idle —
-# every bit of that load was processes waiting on the paging disk. Asking for
-# all thirty-two cores does not make a gate finish sooner once the disk is the
-# thing that is short.
+# ⚠ THAT RULE IS A SECOND SPELLING of the one the build wrapper uses when it
+# sizes a remote run (cores minus the current run queue, never below one). The
+# gates cannot simply call that wrapper: several of them link against artifacts
+# an earlier gate left at a local path, so they cannot leave this machine at
+# all.
 #
-# ⚠ THIS IS A SECOND SPELLING of the rule the build wrapper uses when it sizes
-# a remote run (cores minus the current run queue, never below one), and it is
-# kept to four lines for exactly that reason — a longer one would drift from
-# the original and nothing would notice. The gates cannot simply call that
-# wrapper: several of them link against artifacts an earlier gate left at a
-# local path, so they cannot leave this machine at all.
-#
-# ⚠ Linux load counts uninterruptible sleep, so a box thrashing its disk reads
-# as busier than its idle CPU suggests. That error is in the safe direction
-# here: a machine already waiting on a disk is precisely the one that should
-# not be handed thirty-two more compile jobs.
-#
-# `$SCE_BUILD_JOBS` overrides, for a runner that really does own its cores.
+# ⚠ Sourced HERE, inside the function, not at file scope: `gate_registry_contract`
+# materialises a SUBSET of the tree into a temp dir and runs the gates there, so
+# a top-level source of a file that subset does not carry kills every gate
+# before it starts. `sce_gate_codegen` and `sce_gate_http_fixture_server` source
+# their own libraries the same way, and those siblings are the contract.
 sce_build_jobs() {
-    if [ -n "${SCE_BUILD_JOBS:-}" ]; then
-        printf '%s' "$SCE_BUILD_JOBS"
-        return 0
-    fi
-    local cores queued jobs
-    cores="$(nproc)"
-    queued="$(awk '{printf "%d", ($1 == int($1)) ? $1 : int($1) + 1}' /proc/loadavg)"
-    jobs=$(( cores - queued ))
-    if [ "$jobs" -lt 1 ]; then jobs=1; fi
-    printf '%s' "$jobs"
+    source "$SCE_REPO_ROOT/scripts/lib/sce_build_jobs.sh"
+    sce_build_jobs_value
 }
 
 # Progress line within a gate that runs several commands.
