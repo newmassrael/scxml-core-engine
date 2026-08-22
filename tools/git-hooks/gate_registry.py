@@ -122,7 +122,10 @@ GATES: dict[str, dict] = {
                         "(`debug_only_codegen_builds_drop_the_stale_release_binary` "
                         "counts those steps), so there is no verdict here "
                         "for a workflow to mirror.",
-        "cost_s": 19,
+        # Stays local however expensive it gets: `drop_ci_only` removes a
+        # gate without rescuing its dependents, so a `ci_only` dependency
+        # would leave the gates that execute its binary with nothing to run.
+        "cost_s": 62,
         "summary": "build target/debug/sce-codegen",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
@@ -251,14 +254,23 @@ GATES: dict[str, dict] = {
     "clippy": {
         "workflows": ["clippy-check.yml"],
         "runner_workflow": True,
-        "cost_s": 42,
+        # The one that hurts. Lint is the fastest feedback a Rust change can
+        # get and it leaves anyway, because the budget is a ceiling on what a
+        # developer waits for and is not a ranking of what is useful. It was
+        # measured at 15s, 42s and 82s in one afternoon on this machine, which
+        # is also the clearest single illustration of why the numbers here
+        # cannot be trusted to a factor of two.
+        "ci_only": "82s under load. clippy-check.yml runs it. Kept local "
+                   "through three earlier cuts and only moved when the table "
+                   "was priced at what a loaded machine charges.",
+        "cost_s": 82,
         "summary": "cargo clippy --workspace --all-targets",
     },
     "nostd-mcu": {
         "workflows": ["sce-rust-runtime-no-std.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 9,
+        "cost_s": 29,
         "summary": "no_std MCU build + clippy + probes",
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
@@ -269,7 +281,7 @@ GATES: dict[str, dict] = {
     "rustdoc-links": {
         "workflows": ["doc-check.yml"],
         "runner_workflow": True,
-        "cost_s": 2,
+        "cost_s": 4,
         "summary": "cargo doc broken intra-doc links, both profiles",
     },
     "embed-vendor": {
@@ -349,7 +361,9 @@ GATES: dict[str, dict] = {
     "drift-suites": {
         "workflows": ["drift-verify.yml"],
         "runner_workflow": True,
-        "cost_s": 17,
+        "ci_only": "146s. It is declared serial on purpose and that is what "
+                   "it costs; drift-verify.yml runs it.",
+        "cost_s": 146,
         "summary": "committed-tree drift + sourcemap, serial",
     },
     # forge-conformance.yml verifies the language arms in parallel jobs, and
@@ -364,7 +378,7 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
-        "cost_s": 8,
+        "cost_s": 52,
         "summary": "Go forge conformance regenerate + test",
     },
     "forge-rust": {
@@ -373,14 +387,21 @@ GATES: dict[str, dict] = {
         "extra": ["backends/rust/**"],
         # Warm reads as 0; the release profile it needs is a separate build
         # tree from every other gate, so a cold run pays that once.
-        "cost_s": 14,
+        "ci_only": "96s, a release build of the Rust forge arm. Its siblings "
+                   "are already in CI for the same reason and they share one "
+                   "workflow, forge-conformance.yml.",
+        "cost_s": 96,
         "summary": "Rust forge conformance (numerical, release)",
     },
     "forge-python": {
         "workflows": ["forge-conformance.yml"],
         "runner_workflow": True,
         "extra": ["backends/python/**"],
-        "cost_s": 9,
+        "ci_only": "107s. forge-conformance.yml verifies every language arm "
+                   "in parallel jobs, which is where this belongs — the arms "
+                   "fire together anyway, so paying for them serially at push "
+                   "time bought attribution and nothing else.",
+        "cost_s": 107,
         "summary": "Python forge conformance (numerical)",
     },
     "forge-cpp": {
@@ -396,7 +417,9 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/cpp/**", "sce/**"],
         "deps": ["codegen-build"],
-        "cost_s": 10,
+        "ci_only": "59s, the last move needed to fit the ceiling. "
+                   "forge-conformance.yml runs it beside the other arms.",
+        "cost_s": 59,
         "summary": "C++ forge conformance build + test",
     },
     # Catches codegen breakage in the example documents (the namespace
@@ -455,7 +478,7 @@ GATES: dict[str, dict] = {
     "spec-snapshot": {
         "workflows": ["spec-snapshot-drift.yml"],
         "runner_workflow": True,
-        "cost_s": 3,
+        "cost_s": 13,
         "summary": "spec snapshot integrity + verifies-catalog drift",
     },
     # A compliance verdict — an LGPL section 1 / MIT section 1 violation in a
@@ -499,13 +522,17 @@ GATES: dict[str, dict] = {
     "codec-clippy": {
         "workflows": ["sce-forge-codec-clippy.yml"],
         "runner_workflow": True,
-        "cost_s": 12,
+        "ci_only": "106s linting 95 generated codec goldens. "
+                   "sce-forge-codec-clippy.yml runs it.",
+        "cost_s": 106,
         "summary": "clippy generated codecs, alloc on",
     },
     "codec-no-alloc": {
         "workflows": ["sce-forge-codec-no-alloc.yml"],
         "runner_workflow": True,
-        "cost_s": 11,
+        "ci_only": "90s. sce-forge-codec-no-alloc.yml runs it, next to its "
+                   "alloc-on sibling.",
+        "cost_s": 90,
         "summary": "generated codecs compile without alloc",
     },
     # The two conformance surfaces nothing local ran. Both narrow their
@@ -586,7 +613,7 @@ GATES: dict[str, dict] = {
         "extra": ["backends/c/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 4,
+        "cost_s": 45,
         "summary": "W3C conformance, C11 MCU backend",
     },
     "w3c-go": {
@@ -597,7 +624,7 @@ GATES: dict[str, dict] = {
         "extra": ["backends/go/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 9,
+        "cost_s": 39,
         "summary": "W3C conformance, Go AOT",
     },
     "w3c-kotlin": {
@@ -614,7 +641,7 @@ GATES: dict[str, dict] = {
         # do when an earlier gate already did it. The second JVM engine is a
         # re-run of the test task against that tree, which is why covering it
         # costs a fraction of the first.
-        "cost_s": 13,
+        "cost_s": 34,
         "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS)",
     },
     "w3c-python": {
@@ -626,7 +653,9 @@ GATES: dict[str, dict] = {
         "extra": ["backends/python/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 8,
+        "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
+                   "every push.",
+        "cost_s": 72,
         "summary": "W3C conformance, Python AOT",
     },
     # The wrapper layer, not the engine under it: the trigger is the binding
@@ -641,7 +670,11 @@ GATES: dict[str, dict] = {
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "the pybind11 wrapper sources.",
         "extra": ["backends/python/bindings/**"],
-        "cost_s": 23,
+        "ci_only": "184s, the most expensive gate a push could still run once "
+                   "the table was priced at what a loaded machine charges. "
+                   "w3c-tests.yml declares no `paths:` filter, so CI runs this "
+                   "arm on every push.",
+        "cost_s": 184,
         "summary": "W3C conformance, pybind11 -> C++ Interpreter",
     },
 }
@@ -1238,8 +1271,8 @@ def self_test(repo_root: Path) -> int:
     # triggers for exactly this reason — they are what stop rule 1 from
     # handing back the whole table for a path the registry does understand.
     check("rust", ["sce-build/src/mesh/deploy.rs"], want_full=False,
-          want_has=["codegen-build", "rust-modrs-drift", "clippy"],
-          want_lacks=["workspace-tests"])
+          want_has=["codegen-build", "rust-modrs-drift"],
+          want_lacks=["workspace-tests", "clippy"])
     # Dependency closure: an example-only change still builds sce-codegen.
     # `example-codegen` is `ci_only` now, but the closure it pulls in is not:
     # the dependency must survive its dependent leaving, or a gate that
@@ -1248,7 +1281,8 @@ def self_test(repo_root: Path) -> int:
           want_has=["codegen-build"], want_lacks=["example-codegen"])
     # A template edit must reach the committed-tree drift gate.
     check("template", ["tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2"],
-          want_has=["drift-suites"])
+          want_full=False, want_has=["codegen-build"],
+          want_lacks=["drift-suites"])
     # doc-check.yml edits must reach the gate that mirrors it. Under the
     # numbered table this gate was mapped to the no_std workflow, so an edit
     # to doc-check.yml alone did not select it.
@@ -1338,13 +1372,17 @@ def self_test(repo_root: Path) -> int:
                 f"a push refused for being on a busy laptop is a push somebody "
                 f"bypasses")
     grown = dict(local_costs)
-    grown["clippy"] = PUSH_BUDGET_S * 2
+    # Whichever gate is dearest today, rather than a name: the set moves every
+    # time the table is re-priced, and a hard-coded slug that has since become
+    # `ci_only` leaves this case silently reading nothing.
+    victim = max(local_costs, key=lambda s: (local_costs[s], s))
+    grown[victim] = PUSH_BUDGET_S * 2
     breach = budget_breach(grown)
     if breach is None:
         failures.append(
             "budget-breach: a gate grown to twice the whole budget did not "
             "register — the check reads nothing")
-    elif not any(row[0] == "clippy" for row in breach["grown"]):
+    elif not any(row[0] == victim for row in breach["grown"]):
         failures.append(
             f"budget-breach: the breach did not name the gate that caused it: "
             f"{breach['grown']}")
