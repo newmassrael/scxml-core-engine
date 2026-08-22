@@ -1214,44 +1214,287 @@ fn a_casefile_whose_suite_needs_the_http_fixture_declares_it() {
     );
 }
 
-/// The declaration reaches something that acts on it.
+/// A stand-in for the W3C BasicHTTP fixture server, put where the gate looks
+/// for the real one. It records that it is up, un-records it when stopped, and
+/// binds no port.
 ///
-/// The half above proves a casefile SAYS what it needs; this proves the gate
-/// provisions it, and provisions it around one round rather than around the
-/// whole run. Both halves are needed and neither implies the other — a
-/// declaration nothing reads is a comment, and a gate that starts a server
-/// unconditionally breaks the ctest rounds beside it, whose C11 entries bring
-/// up their own listener on the same port through the `w3c_c_http_server` CMake
-/// fixture and whose C++ W3C runner binds it directly.
+/// The port is the reason it is a stand-in. This test runs inside `cargo test
+/// --workspace`, which the `workspace-tests` gate runs with a real fixture
+/// server already listening on 8080: a second one would refuse to bind, and one
+/// this test held would make the C++ ctest suite report 13 of its cases Not Run
+/// — the shape `sce_gate_requires_free_http_port` exists to refuse. What is
+/// under test is whether the gate PROVISIONS a declared service around the
+/// round that declared it, not the service's HTTP.
 ///
-/// A wiring assertion rather than a behavioural one, deliberately: the
-/// behavioural version would have to bind :8080, and this test runs inside
-/// `cargo test --workspace`, which the `workspace-tests` gate runs with the
-/// fixture server already up. It would fail for holding the port against
-/// itself.
-#[test]
-fn the_gate_starts_the_fixture_server_for_the_rounds_that_declare_it() {
-    let lib = fs::read_to_string(repo_root().join("scripts/gates/lib.sh"))
-        .expect("read scripts/gates/lib.sh");
+/// The marker is written at start and removed on the way out, which is what
+/// makes "was the service up while THIS round ran" a fact the round reads
+/// rather than a claim about the gate's source. The ceiling is what keeps a
+/// stand-in the gate forgot to stop from outliving the tree it was written
+/// into.
+const STANDIN_SERVICE: &str = r#"
+const fs = require('fs');
+const marker = process.env.SCE_ROUND_SERVICE_MARKER;
+const stop = () => {
+    try { fs.unlinkSync(marker); } catch (err) { /* already stopped */ }
+    process.exit(0);
+};
+process.on('SIGTERM', stop);
+process.on('SIGINT', stop);
+fs.writeFileSync(marker, `${process.pid}\n`);
+setTimeout(stop, 60000);
+"#;
+
+/// What each round saw of the service the gate was meant to provision for it,
+/// and whether anything was left running afterwards.
+struct RoundsRun {
+    ok: bool,
+    /// One `(casefile, "up" | "down")` per round, in the order they ran.
+    observed: Vec<(String, String)>,
+    service_outlived_the_run: bool,
+    log: String,
+}
+
+/// Run the gate over the named rounds and record, from INSIDE each round,
+/// whether the declared service was up while that round ran.
+///
+/// The rounds are stood in for; the gate is not. A real round is a rebuild plus
+/// a suite run — 139s for the cheapest cargo casefile in this corpus — and what
+/// is under test is which rounds the gate wraps in a service, not what any
+/// round concludes. Every DECLARATION query still reaches the real harness:
+/// `needs` is read out of `scripts/mutate --declares`, and a stand-in answering
+/// that would be this test writing both sides of the answer.
+///
+/// A copy under a fresh index rather than the checkout, for the reason
+/// `selection_without_a_cmake_tree` gives: the gate enumerates its corpus with
+/// `git ls-files`, so the tree has to be a repository — and this one must not
+/// carry the `build/` that would let a ctest round past the precondition.
+fn rounds_observed(rounds: &[&str]) -> RoundsRun {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    for entry in ["scripts", "sce-build/tests/mutations"] {
+        let dest = root.join(entry);
+        fs::create_dir_all(dest.parent().expect("a parent")).expect("create the fixture tree");
+        copy_tree(&repo_root().join(entry), &dest);
+    }
     assert!(
-        lib.contains("sce_gate_with_http_fixture_server()"),
-        "⚠ `scripts/gates/lib.sh` no longer defines \
-         `sce_gate_with_http_fixture_server`. The scoped form is what lets one \
-         round hold :8080 while the ctest rounds beside it bind it themselves; \
-         the gate-wide `sce_gate_http_fixture_server` cannot do that."
+        !root.join("build/CMakeCache.txt").exists(),
+        "this tree was supposed to be the one without a CMake cache"
     );
 
-    let gate = fs::read_to_string(repo_root().join("scripts/gates/mutation-rounds.sh"))
-        .expect("read scripts/gates/mutation-rounds.sh");
+    // The real harness moved aside, with a stand-in in its place that answers a
+    // ROUND and delegates every query. `--declares` is where the `needs` key is
+    // produced, so it has to stay the real one: a case that stops emitting the
+    // key must still reach the gate through this fixture.
+    let harness = root.join("scripts/mutate-under-test");
+    fs::rename(root.join("scripts/mutate"), &harness).expect("move the harness aside");
+    let marker = root.join("service.pid");
+    let observed = root.join("rounds.tsv");
+    write_shim(
+        &root.join("scripts/mutate"),
+        &format!(
+            "if [[ \"${{1:-}}\" == -* ]]; then exec '{harness}' \"$@\"; fi\n\
+             if [[ -e \"$SCE_ROUND_SERVICE_MARKER\" ]]; then state=up; else state=down; fi\n\
+             printf '%s\\t%s\\n' \"$1\" \"$state\" >> \"$SCE_ROUND_OBSERVED\"\n",
+            harness = harness.display()
+        ),
+    );
+
+    fs::create_dir_all(root.join("tests/w3c")).expect("create the fixture's service directory");
+    fs::write(
+        root.join("tests/w3c/standalone_http_server.js"),
+        STANDIN_SERVICE,
+    )
+    .expect("write the stand-in service");
+
+    for args in [vec!["init", "-q"], vec!["add", "-A"]] {
+        let out = Command::new("git")
+            .args(&args)
+            .current_dir(root)
+            .output()
+            .expect("prepare the fixture index");
+        assert!(out.status.success(), "git {args:?} failed in the fixture");
+    }
+
+    let out = Command::new("bash")
+        .arg("scripts/gates/mutation-rounds.sh")
+        .current_dir(root)
+        .env("SCE_MUTATION_ROUNDS", rounds.join(","))
+        .env("SCE_ROUND_SERVICE_MARKER", &marker)
+        .env("SCE_ROUND_OBSERVED", &observed)
+        // The selection is settled by the variable above; a dry run would stop
+        // the gate before the loop this test is about, and a change set left in
+        // a developer's environment would choose a different set of rounds.
+        .env_remove("SCE_MUTATION_ROUNDS_DRY_RUN")
+        .env_remove("SCE_GATE_CHANGED_FILE")
+        .output()
+        .expect("run the gate");
+
+    let service_outlived_the_run = marker.exists();
+    if service_outlived_the_run {
+        // Reaped here rather than left to the stand-in's own ceiling: the
+        // assertion below is about to fail, and a failing test must not leave a
+        // process behind to explain.
+        if let Ok(pid) = fs::read_to_string(&marker) {
+            let _ = Command::new("kill").arg(pid.trim()).status();
+        }
+    }
+
+    RoundsRun {
+        ok: out.status.success(),
+        observed: fs::read_to_string(&observed)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                let (casefile, state) = line.split_once('\t').unwrap_or_else(|| {
+                    panic!("⚠ every round line must be `casefile<TAB>state`; got {line:?}")
+                });
+                (casefile.to_string(), state.to_string())
+            })
+            .collect(),
+        service_outlived_the_run,
+        log: format!(
+            "--- stdout ---\n{}\n--- stderr ---\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    }
+}
+
+/// The declaration reaches something that acts on it — measured by running the
+/// gate and asking the rounds what was up while they ran.
+///
+/// The half above proves a casefile SAYS what it needs; this proves the gate
+/// provides it, and provides it around one round rather than around the whole
+/// run. Neither implies the other: a declaration nothing reads is a comment,
+/// and a gate that started a server unconditionally would break the ctest
+/// rounds beside it, whose C11 entries bring up their own listener on the same
+/// port through the `w3c_c_http_server` CMake fixture and whose C++ W3C runner
+/// binds it directly.
+///
+/// This was a source scan first — `lib.sh` defines the scoped helper, the gate
+/// reads the `needs` key, the gate mentions the helper — and the corpus
+/// measured what that was worth. `the gate reads the service and provisions
+/// nothing` deletes the two lines that wrap the round, and the scan kept
+/// passing: the helper's NAME survives the deletion, in the comment three lines
+/// above it. SURVIVED 0/11 red, CI run 32540592390. A check that greps for a
+/// name cannot tell a call from the prose describing it, and this file has now
+/// been on both sides of that mistake — `HTTP_HARNESS_ENTRY` above matches a
+/// call for the same reason.
+///
+/// So the observation is made from inside the rounds. Three of them: one before
+/// the declaring round, the declaring round, one after. `down, up, down` is the
+/// whole clause — the service is not up before the round that asked for it, is
+/// up while that round runs, and is down again by the next — and no arrangement
+/// of source text produces it without the gate actually starting and stopping a
+/// process.
+#[test]
+fn the_gate_starts_the_declared_service_for_that_round_and_no_other() {
+    let corpus = casefiles();
     assert!(
-        gate.contains("needs) NEEDS_OF["),
-        "⚠ the gate stopped reading the `needs` key out of `scripts/mutate \
-         --declares`, so a casefile's declared service is a comment again."
+        corpus.len() >= 20,
+        "the sweep found only {} casefile(s), so this test is not measuring \
+         the corpus it claims to",
+        corpus.len()
+    );
+
+    let needs_of: BTreeMap<String, Vec<String>> = corpus
+        .iter()
+        .map(|casefile| (casefile.clone(), declared_needs(casefile)))
+        .collect();
+
+    // Cargo rounds throughout: the fixture has no configured CMake tree on
+    // purpose, and the gate refuses a ctest round for that before it reaches
+    // the loop under test — a refusal is exit 3, not a verdict.
+    let declaring = corpus
+        .iter()
+        .find(|casefile| {
+            needs_of[*casefile]
+                .iter()
+                .any(|need| need == "http-fixture")
+                && !declares_ctest(casefile)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "⚠ no cargo casefile in the corpus declares `mutation_needs \
+                 http-fixture`, so this test asserted nothing. Either the \
+                 declaration was dropped — `send_namelist_reaches_the_form.cases` \
+                 carried it — or the service vocabulary moved and this test has \
+                 to be re-aimed at whatever names an outside service now."
+            )
+        })
+        .clone();
+    let controls: Vec<String> = corpus
+        .iter()
+        .filter(|casefile| needs_of[*casefile].is_empty() && !declares_ctest(casefile))
+        .take(2)
+        .cloned()
+        .collect();
+    assert_eq!(
+        controls.len(),
+        2,
+        "⚠ the corpus has fewer than two cargo casefiles that declare no \
+         service, so the rounds either side of the declaring one cannot be \
+         chosen and the scoping half of this test would assert nothing."
+    );
+
+    let order = vec![
+        controls[0].as_str(),
+        declaring.as_str(),
+        controls[1].as_str(),
+    ];
+    let run = rounds_observed(&order);
+
+    assert!(
+        run.ok,
+        "⚠ the gate failed while running the rounds:\n{}",
+        run.log
+    );
+    let ran: Vec<&str> = run
+        .observed
+        .iter()
+        .map(|(casefile, _)| casefile.as_str())
+        .collect();
+    assert_eq!(
+        ran, order,
+        "⚠ the gate must run every round it was named, in order. Anything else \
+         and the states below belong to rounds other than the ones this test \
+         chose:\n{}",
+        run.log
+    );
+
+    assert_eq!(
+        run.observed[1].1, "up",
+        "⚠ `{declaring}` declares `mutation_needs http-fixture` and its round \
+         ran with the service down. That is the defect exactly: the requirement \
+         is knowable everywhere and acted on nowhere. The round then reaches \
+         its baseline, the suite's own guard refuses for want of a socket, and \
+         the harness reports `baseline is not green (1 failing)` — a true \
+         verdict about the wrong thing, which is what this casefile's first two \
+         CI runs both said.\n{}",
+        run.log
+    );
+    assert_eq!(
+        run.observed[0].1, "down",
+        "⚠ the service was already up for `{}`, which declares none. A gate-wide \
+         `sce_gate_http_fixture_server` does that, and it is why the scoped form \
+         exists: the ctest rounds beside these bind 8080 themselves and fail \
+         against a listener already held.\n{}",
+        controls[0], run.log
+    );
+    assert_eq!(
+        run.observed[2].1, "down",
+        "⚠ the service was still up for `{}`, the round AFTER the one that \
+         declared it. `sce_gate_with_http_fixture_server` must stop it — and \
+         `wait` for it — before the loop's next turn, or the port is still held \
+         when a ctest round tries to bind it.\n{}",
+        controls[1], run.log
     );
     assert!(
-        gate.contains("sce_gate_with_http_fixture_server"),
-        "⚠ the gate reads the `needs` key and never provisions anything from \
-         it. That is the shape the defect had: the requirement was knowable \
-         everywhere and acted on nowhere."
+        !run.service_outlived_the_run,
+        "⚠ the gate exited with the service it started still running. A fixture \
+         server that outlives its gate is what the next suite trips over, which \
+         is why the start arms an exit cleanup as well as the scoped stop.\n{}",
+        run.log
     );
 }
