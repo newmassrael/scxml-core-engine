@@ -32,10 +32,10 @@ mutation_targets backends/rust/runtime/src/engine.rs \
 mutation_case "the dispatch never calls the handler" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        let handler = self.host_processors.handler_for(&processor_type)?;
-        let response = handler(request);""",
+        let replies = handler(request);""",
      """        let _handler = self.host_processors.handler_for(&processor_type)?;
         let _ = request;
-        let response: Option<crate::host_processor::HostSendResponse> = None;""")
+        let replies: Vec<crate::host_processor::HostSendResponse> = Vec::new();""")
 PY
 
 # Aimed at the name lookup rather than at the `raise` call. Deleting the
@@ -46,10 +46,10 @@ PY
 # the types inferred.
 mutation_case "the reply is looked up under a name the machine never declared" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if let Some(resp) = response.as_ref() {
-            if let Some(evt) = P::get_event_from_name(&resp.event_name) {""",
-     """        if let Some(resp) = response.as_ref() {
-            let _ = &resp.event_name;
+     """        for reply in &replies {
+            if let Some(evt) = P::get_event_from_name(&reply.event_name) {""",
+     """        for reply in &replies {
+            let _ = &reply.event_name;
             if let Some(evt) = P::get_event_from_name("") {""")
 PY
 
@@ -111,24 +111,24 @@ mutation_case "the request reaches the handler with no params" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        let processor_type = request.processor_type.clone();
         let handler = self.host_processors.handler_for(&processor_type)?;
-        let response = handler(request);""",
+        let replies = handler(request);""",
      """        let processor_type = request.processor_type.clone();
         let handler = self.host_processors.handler_for(&processor_type)?;
         let mut request = request;
         request.params.clear();
-        let response = handler(request);""")
+        let replies = handler(request);""")
 PY
 
 mutation_case "the request reaches the handler with no send id" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        let processor_type = request.processor_type.clone();
         let handler = self.host_processors.handler_for(&processor_type)?;
-        let response = handler(request);""",
+        let replies = handler(request);""",
      """        let processor_type = request.processor_type.clone();
         let handler = self.host_processors.handler_for(&processor_type)?;
         let mut request = request;
         request.send_id.clear();
-        let response = handler(request);""")
+        let replies = handler(request);""")
 PY
 
 # ── The invoke lifecycle ────────────────────────────────────────────

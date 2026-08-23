@@ -53,32 +53,15 @@ struct HostSendRequest {
 };
 
 /**
- * @brief A reply from a host-served processor, turned back into an event.
+ * @brief One event a host-served act produced.
  *
- * `std::nullopt` from a handler means "performed, no reply" — the common case
- * for a fire-and-forget act. A value is the request/reply shape: the engine
- * raises the named event on the EXTERNAL queue, which is where a reply from
+ * The engine raises each on the EXTERNAL queue, which is where a reply from
  * outside the machine belongs (§scxml-C-1).
  *
- * A handler that cannot answer now — the usual case for real work — returns
- * `std::nullopt` and raises the reply later through its own handle to the
- * engine's queue. That is not a second mechanism: the engine does not
- * distinguish an event a handler raised from one it was handed.
- *
- * ONE reply per send, and that is the portable shape rather than a limit of
- * this engine. A C++ handler happens to be able to re-enter the engine and
- * enqueue more, because it is called through a `std::function` while only the
- * queue is being mutated. Its Rust sibling cannot: `handler_for` hands out a
- * `&mut` borrowed from the engine, so the engine is not reachable while the
- * handler runs. A host written against the C++ freedom therefore does not
- * port, and a document relying on it would be served by one engine and not the
- * other — the single-engine door this whole surface exists to remove.
- *
- * So an act whose outcome is two events belongs to the host's own loop: return
- * the first, deliver the second on the next step. Note the order if you do
- * re-enter on C++ anyway — what the handler raises is enqueued while it runs
- * and what it returns is enqueued after, so the RETURNED event arrives last,
- * which is the opposite of how the pair reads.
+ * A handler answers with a LIST of these, in the order the document should see
+ * them — see HostSendHandler. Empty is "performed, nothing to report", which is
+ * the common case for a fire-and-forget act and for real work that will answer
+ * later through the host's own loop.
  */
 struct HostSendResponse {
     /// Event to raise. A name the generated machine does not declare is
@@ -91,12 +74,40 @@ struct HostSendResponse {
 /**
  * @brief What a host registers for one declared processor type.
  *
- * Returning a response is optional; see HostSendResponse for why the two
- * answers are not "delivered" and "failed". A handler that throws is a host
- * defect and is not caught here — the engine cannot invent a W3C-meaningful
- * outcome for it, and swallowing it would produce exactly the silence this
- * whole surface exists to remove.
+ * Answers with the events the act produced, IN ORDER. A list rather than a
+ * single reply, for one reason: an act can produce two observations that the
+ * document must see in a particular order, and every other way of expressing
+ * that costs portability or hides state.
+ *
+ * `examples/ai_loop/` is the case. Its `priming` state leaves on `prompt.sent`
+ * — "the session has been told what it is here for" — and only then is the
+ * machine somewhere a turn result means anything; its own comment says
+ * reporting the turn first leaves the run sitting in `priming` forever. So
+ * prompting a fresh session produces exactly two events with exactly one
+ * correct order.
+ *
+ * The two alternatives were measured and rejected:
+ *
+ *   * Let the handler re-enter the engine and raise the extra events. A C++
+ *     handler can (it is called through a `std::function` while only the queue
+ *     is being mutated); its Rust sibling cannot, because `handler_for` hands
+ *     out a `&mut` borrowed from the engine. A host written against the C++
+ *     freedom would not port — the single-engine door this whole surface
+ *     exists to remove. It also inverts the order, since what a handler raises
+ *     is enqueued while it runs and what it returns is enqueued after.
+ *   * Return one event and have the host deliver the rest on its next step.
+ *     That works on both engines and puts a pending slot back in the host —
+ *     the hidden host-side state that moving an act into the document is
+ *     supposed to remove.
+ *
+ * A list needs no re-entrancy on any backend, so the engines are equivalent by
+ * construction rather than by agreement, and the order is the one the host
+ * wrote down.
+ *
+ * A handler that throws is a host defect and is not caught here — the engine
+ * cannot invent a W3C-meaningful outcome for it, and swallowing it would
+ * produce exactly the silence this whole surface exists to remove.
  */
-using HostSendHandler = std::function<std::optional<HostSendResponse>(const HostSendRequest &)>;
+using HostSendHandler = std::function<std::vector<HostSendResponse>(const HostSendRequest &)>;
 
 }  // namespace SCE

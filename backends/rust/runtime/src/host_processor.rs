@@ -61,17 +61,20 @@ pub struct HostSendRequest {
     pub send_id: String,
 }
 
-/// A reply from a host-served processor, turned back into an event.
+/// One event a host-served act produced.
 ///
-/// `None` from a handler means "performed, no reply" — the common case
-/// for a fire-and-forget act. `Some` is the request/reply shape: the
-/// engine raises the named event on the external queue, which is where a
-/// reply from outside the machine belongs (§scxml-C-1).
+/// The engine raises each on the external queue, which is where a reply
+/// from outside the machine belongs (§scxml-C-1).
 ///
-/// A handler that cannot answer *now* — the usual case for real work —
-/// returns `None` and raises the reply later through its own handle to
-/// the engine's queue. That is not a second mechanism: the engine does
-/// not distinguish an event a handler raised from one it was handed.
+/// A handler answers with a LIST of these, in the order the document
+/// should see them — see `HostSendHandler`. Empty is "performed,
+/// nothing to report", which is the common case for a fire-and-forget
+/// act and for real work that will answer later through the host's own
+/// loop.
+///
+/// Named without a link because this type is `pub` and that one is
+/// `pub(crate)`: an intra-doc link from public documentation to a
+/// private item is what `rustdoc-links` refuses.
 #[derive(Debug, Clone, Default)]
 pub struct HostSendResponse {
     /// Event to raise. An unknown name is dropped, matching what the
@@ -83,8 +86,37 @@ pub struct HostSendResponse {
 }
 
 /// A registered handler and the type it answers for.
+///
+/// Answers with the events the act produced, IN ORDER. A list rather
+/// than a single reply, for one reason: an act can produce two
+/// observations the document must see in a particular order, and every
+/// other way of expressing that costs portability or hides state.
+///
+/// `examples/ai_loop/` is the case. Its `priming` state leaves on
+/// `prompt.sent` — "the session has been told what it is here for" — and
+/// only then is the machine somewhere a turn result means anything; its
+/// own comment says reporting the turn first leaves the run sitting in
+/// `priming` forever. So prompting a fresh session produces exactly two
+/// events with exactly one correct order.
+///
+/// The two alternatives were measured and rejected:
+///
+/// * Let the handler re-enter the engine and raise the extra events. A
+///   C++ handler can, because it is called through a `std::function`
+///   while only the queue is being mutated; this one cannot, because
+///   [`HostProcessorRegistry::handler_for`] hands out a `&mut` borrowed
+///   from the engine. A host written against the C++ freedom would not
+///   port — the single-engine door this surface exists to remove.
+/// * Return one event and have the host deliver the rest on its next
+///   step. That works on both engines and puts a pending slot back in
+///   the host — the hidden host-side state that moving an act into the
+///   document is supposed to remove.
+///
+/// A list needs no re-entrancy on any backend, so the engines are
+/// equivalent by construction rather than by agreement, and the order is
+/// the one the host wrote down.
 pub(crate) type HostSendHandler =
-    Box<dyn FnMut(HostSendRequest) -> Option<HostSendResponse> + Send + 'static>;
+    Box<dyn FnMut(HostSendRequest) -> Vec<HostSendResponse> + Send + 'static>;
 
 /// An `<invoke>` the host runs, at the point the state was entered.
 ///
