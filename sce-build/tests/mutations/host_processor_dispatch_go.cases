@@ -1,0 +1,91 @@
+# Mutation cases for the Go half of a host-served Event I/O Processor.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_dispatch_go.cases`.
+#
+# Sibling of `host_processor_dispatch.cases` (Rust),
+# `host_processor_dispatch_cpp.cases` and `host_processor_dispatch_c11.cases`.
+# The declaration half — the flag, the refusal, the manifest — is
+# `host_processor_declaration.cases` and is not repeated here.
+#
+# ⚠ WHAT THIS FILE CANNOT REACH, said out loud rather than left to be
+# discovered. The harness has two runners, `mutation_tests` (cargo) and
+# `mutation_ctest`, and the Go suite is neither: `scripts/gates/w3c-go.sh`
+# drives it with `go test`, which nothing here can select. So the oracle
+# below is the cargo-side channel test, and what it can judge is the EMITTED
+# TEXT — that the dispatch is there, that it carries the author's `<param>`,
+# that the refusal it replaced is gone.
+#
+# The runtime half — a registered handler being reached, an unregistered one
+# raising `error.execution`, a reply becoming an event — is covered by
+# `backends/go/tests/integration/statechart_host_processor/` and runs in the
+# `w3c-go` gate, but no mutation round asks whether those tests could fail.
+# A Go runner for this harness is the repair; until it exists this file
+# measures half the surface, and reading it as the whole one would be the
+# same mistake the gates it mirrors exist to prevent.
+
+mutation_tests -p sce-build --features cli --test host_processor_declaration
+# `backends/go/runtime/host_processor.go` is deliberately NOT a target. A
+# mutation there leaves every cargo test binary byte-identical, so the harness
+# would report INCONCLUSIVE — a case that cannot run reads as coverage and
+# measures nothing, which is worse than the gap it papers over. It belongs to
+# the Go runner this file's header asks for.
+#
+# Read at generation time rather than linked into the test binary, which is
+# how the harness detects that a mutation arrived. `sce_codegen` is here for
+# the reason the sibling casefile records: the CLI suite SPAWNS the binary, so
+# mutating it changes `sce-codegen` and leaves every test binary identical.
+mutation_runtime_targets tools/codegen/templates/go/actions/send.go.jinja2 \
+    sce-build/src/generator.rs
+mutation_oracles sce-build/tests/host_processor_declaration.rs
+
+# ── The dispatch stops being emitted ────────────────────────────────
+#
+# The feature's off switch. Without the arm the send falls through to a
+# sibling arm that knows nothing about the host, and the act reaches nobody.
+
+mutation_case "the go template emits no host dispatch" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "{% elif action.send_type_host_served %}",
+     "{% elif false and action.send_type_host_served %}")
+PY
+
+# ── …or is emitted alongside the refusal it replaced ────────────────
+#
+# A served type must stop being reported as one the platform cannot serve.
+# Emitting both would have the document see the act performed AND refused.
+
+mutation_case "a served type also takes the unsupported arm" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "{% if action.send_type_unsupported %}",
+     "{% if action.send_type_unsupported or action.send_type_host_served %}")
+PY
+
+# ── …or arrives stripped ────────────────────────────────────────────
+#
+# A document that can name an act but not parameterise it has lost most of
+# the reason to move the act into the document.
+
+mutation_case "the static params do not reach the request" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     """		hostParams := sce.WireParamsFromTypedParams([]sce.EventDataParam{
+{% for param in action.params %}
+			{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"},
+{% endfor %}
+		})""",
+     "		hostParams := map[string][]string{}")
+PY
+
+# ── The refusal list stops naming Go's missing half ─────────────────
+#
+# Go grew a `<send>` registry and no invoker one. Dropping the invoker
+# refusal too would have the build accept a declaration it cannot service —
+# the defect the whole surface exists to remove, one flag over.
+
+mutation_case "go accepts an invoker declaration it cannot service" <<'PY'
+edit("sce-build/src/generator.rs",
+     """    // See `generate_go` above: the Go backend has a `<send>` registry and no
+    // invoker one.
+    reject_host_invokers_in_unsupported_lang(model, "Go")?;""",
+     "")
+PY

@@ -140,6 +140,66 @@
 {% if in_entry_exit is defined and in_entry_exit %}
 	break
 {% endif %}
+{% elif action.send_type_host_served %}
+	// §scxml-6.2.5: "{{ action.send_type }}" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+{% if action.targetexpr and model.needs_script_engine %}
+		// §scxml-6.2: the target is resolved HERE rather than by the shared
+		// resolution further down, because that one sits inside the arm this
+		// branch replaces. A host-served processor is free to give a target
+		// any meaning it likes, so an unresolvable one is passed on as the
+		// empty string rather than refused — the refusals below it are the
+		// SCXML processor's rules about ITS addresses, not this one's.
+		hostTarget := ""
+		if hostTargetVal, hostTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`); hostTargetErr == nil && hostTargetVal != nil {
+			hostTarget = sce.ToWireString(hostTargetVal)
+		}
+{% endif %}
+{% if action.eventexpr and model.needs_script_engine %}
+		// Same reason: the event name a host-served act carries is whatever
+		// the document computed, and the shared evaluation is downstream.
+		hostEventName := ""
+		if hostEvtVal, hostEvtErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`); hostEvtErr == nil && hostEvtVal != nil {
+			hostEventName = sce.ToWireString(hostEvtVal)
+		}
+{% endif %}
+{% if has_dynamic_params or has_namelist %}
+		hostParams := sce.WireParamsFromTypedParams(parts)
+{% elif has_params %}
+		hostParams := sce.WireParamsFromTypedParams([]sce.EventDataParam{
+{% for param in action.params %}
+			{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"},
+{% endfor %}
+		})
+{% else %}
+		hostParams := map[string][]string{}
+{% endif %}
+		_, hostServed := engine.PerformHostSend(sce.HostSendRequest{
+			ProcessorType: "{{ action.send_type | escape_go }}",
+			EventName:     {% if action.eventexpr and model.needs_script_engine %}hostEventName{% else %}"{{ action.event | default('', true) | escape_go }}"{% endif %},
+			Target:        {% if action.targetexpr and model.needs_script_engine %}hostTarget{% else %}"{{ action.target | default('', true) | escape_go }}"{% endif %},
+			Content:       "{{ action.content | default('', true) | escape_go }}",
+			Params:        hostParams,
+			SendID:        "{{ send_id | default('') | escape_go }}",
+		})
+{% if 'error.execution' in model.events %}
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("{{ action.send_type | escape_go }}") {
+			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			engine.Raise(errEvt)
+		}
+{% else %}
+		_ = hostServed
+{% endif %}
+	}
 {% elif action.target and action.target is startingwith('!') %}
 	// W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
 {% if 'error.execution' in model.events %}

@@ -1556,7 +1556,10 @@ fn render_kotlin(
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
-    reject_host_processors_in_unsupported_lang(model, "Go")?;
+    // No `reject_host_processors_in_unsupported_lang` here: the Go runtime
+    // carries `Engine.RegisterEventProcessor` and the template emits the
+    // `<send>` dispatch into it. The invoker half is still absent, which is
+    // why the call below stays — the same split C++ and C11 forced.
     reject_host_invokers_in_unsupported_lang(model, "Go")?;
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
@@ -1573,7 +1576,8 @@ pub fn generate_go_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
-    reject_host_processors_in_unsupported_lang(model, "Go")?;
+    // See `generate_go` above: the Go backend has a `<send>` registry and no
+    // invoker one.
     reject_host_invokers_in_unsupported_lang(model, "Go")?;
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
