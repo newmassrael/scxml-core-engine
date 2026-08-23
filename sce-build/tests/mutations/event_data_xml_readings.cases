@@ -38,11 +38,13 @@ mutation_case "a failed parse ends the reading instead of falling through" <<'PY
 edit("backends/rust/lua/src/lib.rs",
      """            if let Some(dom_value) = dom_value {
                 event_table.set("data", dom_value).map_err(map_lua_err)?;
+                reading = PayloadReading::Dom;
             } else {""",
      """            if event_data.trim_start().starts_with('<') {
                 event_table
                     .set("data", dom_value.unwrap_or(mlua::Value::Nil))
                     .map_err(map_lua_err)?;
+                reading = PayloadReading::Dom;
             } else {""")
 PY
 

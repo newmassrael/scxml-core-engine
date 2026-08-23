@@ -93,12 +93,14 @@ mutation_case "the cpp lua engine keeps the DOM rung once it has guessed" <<'PY'
 edit("sce/src/scripting/LuaEngine.cpp",
      """        if (opensLikeXML && LuaDOMBinding::pushDOMObject(L, eventData) == 1) {
             lua_setfield(L, -2, "data");
+            reading = PayloadReading::Dom;
         } else {""",
      """        if (opensLikeXML) {
             if (LuaDOMBinding::pushDOMObject(L, eventData) == 0) {
                 lua_pushnil(L);
             }
             lua_setfield(L, -2, "data");
+            reading = PayloadReading::Dom;
         } else {""")
 PY
 
@@ -118,6 +120,7 @@ edit("sce/src/scripting/LuaEngine.cpp",
             if (parsed.has_value()) {
                 pushScriptValue(L, parsed.value());
                 lua_setfield(L, -2, "data");
+                reading = PayloadReading::Structured;
             } else {""",
      """            std::string loadExpr = "return " + eventData;
             if (luaL_dostring(L, loadExpr.c_str()) == LUA_OK) {
@@ -132,6 +135,7 @@ edit("sce/src/scripting/LuaEngine.cpp",
             if (parsed.has_value()) {
                 pushScriptValue(L, parsed.value());
                 lua_setfield(L, -2, "data");
+                reading = PayloadReading::Structured;
             } else {""")
 PY
 
