@@ -378,6 +378,18 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_parent({{ csym_prefix }}{{ mod
                                   const char *event_name,
                                   const char *send_id);
 {% endif %}
+{% if model.has_delayed_host_send %}
+/* W3C SCXML 6.2.4 + 6.2.5: a delayed `<send>` the HOST serves — a distinct
+   entry point from `scheduled_push` because the entry carries a REQUEST to
+   perform rather than an event to raise, the same split `scheduled_push_parent`
+   makes for a different reason. All three write the one `scheduled_queue_t`, so
+   `_tick`'s pop-by-fire-time ordering stays unified and `scheduled_cancel`'s
+   send_id walk reaches every kind of entry alike. */
+SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  uint64_t fire_time_ms,
+                                  const char *send_id,
+                                  const sce_host_send_request_t *request);
+{% endif %}
 {% endif %}
 {% if model.needs_http_send or model.host_processor_types %}
 
@@ -689,7 +701,31 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 _host_req.params = NULL;
                 _host_req.param_count = 0;
 {% endif %}
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% if action.delayexpr or host_delay_ms > 0 %}
+                /* W3C SCXML 6.2.4: a `delay` is a property of the SEND, not
+                   of the processor it named, so this waits exactly as an
+                   ordinary send does. Decided here rather than in the delay
+                   arms below, because this arm claims every host-served send
+                   before they are reached — which is how `delay` came to be
+                   discarded on every backend at once.
+                   W3C SCXML 6.3: it lands in the delayed-send queue under
+                   this send's id, so a `<cancel>` reaches it and the host
+                   never sees the act. */
+{% if action.delayexpr %}
+                char _host_delay_text[SCE_MAX_ID_LEN];
+                bool _host_delay_ok = false;
+{{ se.lua_eval_to_string(action.delayexpr, '_host_delay_text', 'sizeof(_host_delay_text)', '_host_delay_ok') }}
+                const uint64_t _host_delay_ms =
+                    _host_delay_ok ? sce_parse_delay_ms(_host_delay_text) : 0u;
+{% else %}
+                const uint64_t _host_delay_ms = {{ host_delay_ms }}u;
+{% endif %}
+                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,
+                                    _host_req.send_id, &_host_req);
+{% else %}
                 {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_host_req);
+{% endif %}
             }
 {% elif action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test172): dynamic event name via `eventexpr`,
@@ -3722,8 +3758,78 @@ SCE_SM_FN static void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
     slot->to_parent = false;
     slot->to_parent_event[0] = '\0';
 {% endif %}
+{% if model.has_delayed_host_send %}
+    slot->host_send = false;
+{% endif %}
     sm->scheduled_queue.count++;
 }
+
+{% if model.has_delayed_host_send %}
+/* W3C SCXML 6.2.4 + 6.2.5: sorted-insert a `<send delay>` the HOST serves,
+   to be PERFORMED when its deadline arrives rather than raised.
+
+   The same queue `scheduled_push` writes into, which is the contract: the
+   act is ordered against every other delayed send by deadline, a
+   `<cancel sendid>` drops it, and `_time_until_next_scheduled_ms` counts
+   it. A private list would answer none of those three.
+
+   The request's strings are COPIED into the slot. W3C SCXML 6.2 evaluates
+   a send's fields at send time, so the caller's buffers hold what the
+   document computed here — and most of them are stack arrays inside the
+   `<send>` block, which is gone long before the deadline.
+
+   A field too long for its slot is truncated rather than dropped, matching
+   `sce_copy_bounded_id`'s contract everywhere else in this file; the
+   bounds are SCE_MAX_ID_LEN / SCE_MAX_URI_LEN / SCE_MAX_DATA_LEN, the same
+   ones every other carried string in the generated machine uses. */
+SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model.name }}_t *sm,
+                           uint64_t fire_time_ms,
+                           const char *send_id,
+                           const sce_host_send_request_t *request) {
+    if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
+{% if 'error.execution' in model.events %}
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "the scheduled-send queue is full, so this <send delay> was dropped");
+{% endif %}
+        return;
+    }
+
+    uint8_t pos = sm->scheduled_queue.count;
+    for (uint8_t i = 0; i < sm->scheduled_queue.count; ++i) {
+        if (fire_time_ms < sm->scheduled_queue.buf[i].fire_time_ms) {
+            pos = i;
+            break;
+        }
+    }
+    for (uint8_t j = sm->scheduled_queue.count; j > pos; --j) {
+        sm->scheduled_queue.buf[j] = sm->scheduled_queue.buf[j - 1u];
+    }
+
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = &sm->scheduled_queue.buf[pos];
+    memset(slot, 0, sizeof(*slot));
+    slot->fire_time_ms = fire_time_ms;
+    slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
+    sce_copy_bounded_id(slot->send_id, send_id);
+{% if model.needs_script_engine %}
+    slot->payload_lua_ref = LUA_NOREF;
+{% endif %}
+    slot->host_send = true;
+    sce_copy_bounded_id(slot->host_processor_type, request->processor_type);
+    sce_copy_bounded_id(slot->host_event_name, request->event_name);
+    sce_copy_bounded_n(slot->host_target, request->target, sizeof(slot->host_target));
+    sce_copy_bounded_data(slot->host_content, request->content);
+{% if model.delayed_host_send_max_params > 0 %}
+    slot->host_param_count = 0;
+    for (int _p = 0; _p < request->param_count && _p < {{ model.delayed_host_send_max_params }}; ++_p) {
+        sce_copy_bounded_id(slot->host_param_names[_p], request->params[_p].name);
+        sce_copy_bounded_data(slot->host_param_values[_p], request->params[_p].value);
+        slot->host_param_count++;
+    }
+{% endif %}
+    sm->scheduled_queue.count++;
+}
+{% endif %}
 
 {% if model.has_parent_communication %}
 /* W3C SCXML 6.2 + 6.4 (test187): sorted-insert delayed entry whose
@@ -4725,6 +4831,47 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
     uint64_t now_ms = sched_now_ms(sm);
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t ready;
     while (scheduled_pop_ready(sm, now_ms, &ready)) {
+{% if model.has_delayed_host_send %}
+        /* W3C SCXML 6.2.4: the wait is over, so now the act happens.
+           Everything the immediate send site does happens here instead —
+           including `_perform_host_send`'s W3C SCXML 6.2 report for a
+           declared type nobody registered, which that site cannot make
+           for a deferred send because it returned when the send was
+           armed. The request is rebuilt over the entry's OWN buffers: the
+           values were evaluated at send time and the block that computed
+           them is long gone. */
+        if (ready.host_send) {
+{% if model.delayed_host_send_max_params > 0 %}
+            sce_host_send_param_t _ready_params[{{ model.delayed_host_send_max_params }}];
+            for (uint8_t _p = 0; _p < ready.host_param_count; ++_p) {
+                _ready_params[_p].name = ready.host_param_names[_p];
+                _ready_params[_p].value = ready.host_param_values[_p];
+            }
+{% endif %}
+            sce_host_send_request_t _ready_req;
+            _ready_req.processor_type = ready.host_processor_type;
+            _ready_req.event_name = ready.host_event_name;
+            _ready_req.target = ready.host_target;
+            _ready_req.content = ready.host_content;
+            _ready_req.send_id = ready.send_id;
+{% if model.delayed_host_send_max_params > 0 %}
+            _ready_req.params = ready.host_param_count > 0u ? _ready_params : NULL;
+            _ready_req.param_count = (int)ready.host_param_count;
+{% else %}
+            _ready_req.params = NULL;
+            _ready_req.param_count = 0;
+{% endif %}
+            {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_ready_req);
+
+            /* The macrostep this act drives may `<cancel>` a later entry,
+               so the queue is re-consulted after it rather than before. */
+            run_main_event_loop(sm);
+            if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
+                break;
+            }
+            continue;
+        }
+{% endif %}
 {% if model.has_parent_communication %}
         /* W3C SCXML 6.2 + 6.4 (test187): a `to_parent` entry routes
            through `parent_dispatch` instead of the local raise path —
@@ -4991,6 +5138,26 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ cs
                                   const sce_host_processor_registry_t *host_processors) {
     {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors);
 }
+{% if model.needs_event_scheduler %}
+
+/* §scxml-6.2.2 + §scxml-6.2.5: both seams at once — the clock this machine
+   measures its deadlines against AND the handlers that perform its
+   host-served acts.
+
+   Neither of the single-seam wrappers can stand in for this one, and that is
+   a property of `_init` rather than an inconvenience: it is construction and
+   `initialize()` in one call, so both values have to arrive as arguments —
+   `_init_with_clock` would install the monotonic clock's twin and NO
+   registry, and `_init_with_host_processors` installs the registry and the
+   MONOTONIC clock. A host that owns time and serves a processor could
+   therefore have one or the other, and a delayed host-served send is exactly
+   the case that needs both. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  sce_clock_t clock,
+                                  const sce_host_processor_registry_t *host_processors) {
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}, host_processors);
+}
+{% endif %}
 {% endif %}
 
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym_prefix }}{{ model.name }}_t *sm) {

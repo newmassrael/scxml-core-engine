@@ -30,6 +30,17 @@
 namespace SCE {
 
 /**
+ * @brief What a `<send>` addressed to a host-served processor said
+ *
+ * Forward-declared rather than included: `core/HostProcessor.h` is above this
+ * header in the dependency order, and a scheduled entry only ever stores,
+ * copies and hands back a `shared_ptr` to one. The pointer is created where the
+ * type is complete (`StaticExecutionEngine::scheduleHostSend`), which is where
+ * `shared_ptr` captures its deleter, so an incomplete type here is well-formed.
+ */
+struct HostSendRequest;
+
+/**
  * @brief Helper for W3C SCXML <send> delay parsing
  *
  * Single Source of Truth for delay parsing logic shared between:
@@ -122,10 +133,29 @@ public:
         std::string sendId;
         EventDataType eventData;
         uint64_t sequenceNum;  // FIFO ordering for same fireTime
+        /**
+         * @brief §scxml-6.2.5: the host-served send this entry performs instead
+         *        of raising `event`, or null for an ordinary delayed send
+         *
+         * §scxml-6.2.4 makes a `delay` a property of the SEND and not of the
+         * processor it named, so a host-served send with a delay is an ordinary
+         * delayed send whose delivery happens to be somebody else's. Keeping it
+         * in THIS queue is what makes that true in practice: one deadline order
+         * across both kinds, one `<cancel sendid>` path, one `nextFireTime()`.
+         * A parallel list would oblige every present and future query to
+         * remember it existed — and the one this engine already keeps for
+         * delayed HTTP sends is exactly that shape.
+         *
+         * A pointer, not a value: the request is several strings and a map, and
+         * the Interpreter's entries (which never carry one) would otherwise pay
+         * its size on every scheduled event.
+         */
+        std::shared_ptr<const HostSendRequest> hostSend;
 
-        ScheduledEntry(EventType evt, TimePoint fire, std::string id, EventDataType data, uint64_t seq)
+        ScheduledEntry(EventType evt, TimePoint fire, std::string id, EventDataType data, uint64_t seq,
+                       std::shared_ptr<const HostSendRequest> host = nullptr)
             : event(std::move(evt)), fireTime(fire), sendId(std::move(id)), eventData(std::move(data)),
-              sequenceNum(seq) {}
+              sequenceNum(seq), hostSend(std::move(host)) {}
     };
 
     using EntryPtr = std::shared_ptr<ScheduledEntry>;
@@ -158,7 +188,8 @@ public:
      * @return The sendId assigned
      */
     std::string schedule(EventType event, TimePoint fireTime, const std::string &sendId,
-                         EventDataType eventData = EventDataType{}) {
+                         EventDataType eventData = EventDataType{},
+                         std::shared_ptr<const HostSendRequest> hostSend = nullptr) {
         std::string actualSendId = sendId.empty() ? generateUniqueSendId() : sendId;
 
         // §scxml-6.3: Cancel existing event with same sendId (ACTUAL removal)
@@ -166,8 +197,8 @@ public:
 
         // Create and insert new entry
         uint64_t seqNum = sequenceCounter_++;
-        auto entry =
-            std::make_shared<ScheduledEntry>(std::move(event), fireTime, actualSendId, std::move(eventData), seqNum);
+        auto entry = std::make_shared<ScheduledEntry>(std::move(event), fireTime, actualSendId, std::move(eventData),
+                                                      seqNum, std::move(hostSend));
 
         OrderKey key{fireTime, seqNum};
         auto it = queue_.emplace(key, entry);
@@ -221,6 +252,22 @@ public:
         return popReadyEventImpl(now, outEvent, outEventData, outSendId);
     }
 
+    /**
+     * @brief Pop the act due first — an event to raise, or a host-served send
+     *        to perform (§scxml-6.2.4 + §scxml-6.2.5)
+     *
+     * The form a tick loop uses once a queue can hold both. `outHostSend` is
+     * null for an ordinary delayed send, in which case `outEvent` /
+     * `outEventData` are what to raise; when it is non-null the entry IS the
+     * act and the event fields carry nothing meaningful. Deadline order is the
+     * queue's, so the two kinds interleave by when the document said they were
+     * due and by nothing else.
+     */
+    bool popReadyAct(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
+                     std::shared_ptr<const HostSendRequest> &outHostSend) {
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend);
+    }
+
     bool hasPendingEvents() const {
         return !queue_.empty();
     }
@@ -260,7 +307,8 @@ public:
     }
 
 private:
-    bool popReadyEventImpl(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId) {
+    bool popReadyEventImpl(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
+                           std::shared_ptr<const HostSendRequest> *outHostSend = nullptr) {
         if (queue_.empty() || queue_.begin()->first.fireTime > now) {
             return false;
         }
@@ -269,6 +317,9 @@ private:
         outEvent = std::move(it->second->event);
         outEventData = std::move(it->second->eventData);
         outSendId = it->second->sendId;
+        if (outHostSend != nullptr) {
+            *outHostSend = std::move(it->second->hostSend);
+        }
 
         sendIdIndex_.erase(it->second->sendId);
         queue_.erase(it);
@@ -309,12 +360,36 @@ public:
         return core_.schedule(std::move(event), fireTimeMs, sendId, eventData);
     }
 
+    /**
+     * @brief §scxml-6.2.4 + §scxml-6.2.5: queue a host-served `<send>` to be
+     *        performed at `fireTimeMs` on the engine's clock
+     *
+     * The delayed twin of the immediate dispatch a generated send site makes.
+     * It goes in the same queue as `scheduleEventAt`, so `cancelEvent()` drops
+     * it (§scxml-6.3) and `nextFireTime()` counts it — the properties that make
+     * a delayed host-served send an ordinary delayed send rather than a private
+     * arrangement between the engine and one processor.
+     */
+    std::string scheduleHostSendAt(std::shared_ptr<const HostSendRequest> request, uint64_t fireTimeMs,
+                                   const std::string &sendId = "") {
+        return core_.schedule(EventType{}, fireTimeMs, sendId, std::string{}, std::move(request));
+    }
+
     bool hasReadyEvents(uint64_t nowMs) const {
         return core_.hasReadyEvents(nowMs);
     }
 
     bool popReadyEvent(uint64_t nowMs, EventType &outEvent, std::string &outEventData) {
         return core_.popReadyEvent(nowMs, outEvent, outEventData);
+    }
+
+    /**
+     * @brief Pop the act due first — see `SchedulerQueueCore::popReadyAct`
+     */
+    bool popReadyAct(uint64_t nowMs, EventType &outEvent, std::string &outEventData,
+                     std::shared_ptr<const HostSendRequest> &outHostSend) {
+        std::string sendId;
+        return core_.popReadyAct(nowMs, outEvent, outEventData, sendId, outHostSend);
     }
 
     bool hasPendingEvents() const {

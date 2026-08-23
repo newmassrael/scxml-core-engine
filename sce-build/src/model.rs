@@ -1576,6 +1576,34 @@ pub struct SCXMLModel {
     /// list would make declaring either silently claim both.
     #[serde(default)]
     pub host_invoker_types: Vec<String>,
+    /// Whether any host-served `<send>` in this document carries a delay
+    /// (§scxml-6.2.4 + §scxml-6.2.5).
+    ///
+    /// A delayed host-served send is performed from the scheduler drain
+    /// rather than at the send site, so whatever holds the delayed-send
+    /// queue must be able to hold the request itself. The backends with a
+    /// heap say so in a variant and pay nothing when the document has
+    /// none; the C11 backend's queue entry is a fixed-size struct, so it
+    /// needs this answer at generation time to decide whether to emit the
+    /// storage at all. Every backend can read it, so the decision is one
+    /// fact rather than six re-derivations of it.
+    ///
+    /// Derived in [`crate::host_processor_analyzer::declare_host_surfaces`],
+    /// from the same walk that marks each `<send>`
+    /// ([`Action::send_type_host_served`]) — it cannot be known before the
+    /// declaration is applied, because until then those sends are refusals.
+    #[serde(default)]
+    pub has_delayed_host_send: bool,
+    /// The largest `<param>` count on any delayed host-served `<send>`.
+    ///
+    /// Zero when [`Self::has_delayed_host_send`] is false, and zero also
+    /// for a document whose delayed host sends carry no parameters. Only
+    /// the C11 backend reads it: its deferred entry owns the evaluated
+    /// values (§scxml-6.2 evaluates a `<param>` at SEND time, not at fire
+    /// time — tests 176 and 186), and a fixed-size struct has to be told
+    /// how many to make room for.
+    #[serde(default)]
+    pub delayed_host_send_max_params: usize,
     /// Whether the document contains any `<cancel>` action (§scxml-6.3).
     ///
     /// Drives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free

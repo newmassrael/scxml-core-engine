@@ -907,6 +907,69 @@ class Engine(Generic[S, E]):
             return
         self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data)
 
+    def schedule_host_send(
+        self, request: HostSendRequest, delay_ms: int, sendid: str = ""
+    ) -> None:
+        """W3C SCXML 6.2.4 + 6.2.5 — arm a host-served `<send delay>`, to
+        be performed when the delay elapses.
+
+        The delayed twin of `perform_host_send`, called by the generated
+        send site in its place when the document wrote a delay. W3C SCXML
+        6.2.4 makes the wait a property of the send and not of the
+        processor it named, so the two differ in WHEN the act happens and
+        in nothing else — including the W3C SCXML 6.2 report owed when
+        nobody performs it, which the scheduler drain makes at the
+        deadline.
+
+        The act lands in the same queue as `schedule_send`, so
+        `cancel_send` drops it (W3C SCXML 6.3) and
+        `time_until_next_scheduled_ms` counts it.
+
+        A non-positive delay is performed at once, matching
+        `schedule_send`: a `delay="0s"` is not a deferral and the
+        document must not need a tick to see it."""
+        if delay_ms <= 0:
+            self._perform_deferred_host_send(request)
+            return
+        self._scheduler.schedule(
+            self._now_ms + delay_ms, sendid, None, "", host_send=request
+        )
+
+    def _perform_deferred_host_send(self, request: HostSendRequest) -> None:
+        """W3C SCXML 6.2 + 6.2.4 — perform a host-served send whose delay
+        has elapsed, and report it if nobody did.
+
+        The immediate path raises `error.execution` at the send site,
+        which knows the document's event enum by name. A deferred one
+        cannot: that site returned when the send was armed, so the engine
+        owes the report — and it can make it, because
+        `get_event_from_name` is the same lookup `perform_host_send`
+        already uses to turn a handler's replies into events. A document
+        that declares no `error.execution` transition resolves nothing and
+        nothing is raised, which is what the generated site's own template
+        guard does.
+
+        Without this, a wiring mistake on a delayed send is perfect
+        silence: the act never happens, nothing says so, and the document
+        goes on waiting for a reply that has nobody left to come from."""
+        if self.perform_host_send(request) is not None:
+            return
+        if self.has_event_processor(request.processor_type):
+            return
+        event = self._policy.get_event_from_name("error.execution")
+        if event is None:
+            return
+        # The same queue and the same classification the immediate site
+        # uses: §scxml-6.2 puts a send's own failure on the INTERNAL
+        # queue, and a consumer must not have to know whether the send it
+        # wrote carried a delay. §scxml-6.2.4 / §scxml-5.10 (test 332): the
+        # error event MUST carry the sendid, and a deferred send always has
+        # one — the scheduler needed it to be cancellable.
+        self.raise_internal(
+            event,
+            EventMetadata(send_id=request.send_id, event_type="platform"),
+        )
+
     def cancel_send(self, sendid: str) -> None:
         """W3C SCXML 6.2.2 — drop a previously scheduled `<send>` by id.
         No-op on empty sendid (matches W3C: cancel requires an id)."""
@@ -943,17 +1006,25 @@ class Engine(Generic[S, E]):
             entry = self._scheduler.pop_due(self._now_ms)
             if entry is None:
                 break
-            # §scxml-C-1: scheduler drain is the SCXML processor's
-            # delayed-delivery path — origintype mirrors send_external.
-            metadata = EventMetadata(
-                send_id=entry.sendid,
-                event_type="external",
-                data=entry.data,
-                origin_type=SCXML_EVENT_PROCESSOR_URI,
-            )
-            self._external_queue.append(
-                EventWithMetadata(event=entry.event, metadata=metadata)
-            )
+            if entry.host_send is not None:
+                # §scxml-6.2.4: the wait is over, so now the act happens.
+                # Everything the immediate send site does happens here
+                # instead — including reporting an act nobody performed,
+                # which that site cannot do for a deferred send because it
+                # returned long before the deadline.
+                self._perform_deferred_host_send(entry.host_send)
+            else:
+                # §scxml-C-1: scheduler drain is the SCXML processor's
+                # delayed-delivery path — origintype mirrors send_external.
+                metadata = EventMetadata(
+                    send_id=entry.sendid,
+                    event_type="external",
+                    data=entry.data,
+                    origin_type=SCXML_EVENT_PROCESSOR_URI,
+                )
+                self._external_queue.append(
+                    EventWithMetadata(event=entry.event, metadata=metadata)
+                )
             if not self._is_running or self._reached_final:
                 break
             self._run_main_event_loop()

@@ -178,14 +178,37 @@
 {% else %}
 		hostParams := map[string][]string{}
 {% endif %}
-		_, hostServed := engine.PerformHostSend(sce.HostSendRequest{
+		hostRequest := sce.HostSendRequest{
 			ProcessorType: "{{ action.send_type | escape_go }}",
 			EventName:     {% if action.eventexpr and model.needs_script_engine %}hostEventName{% else %}"{{ action.event | default('', true) | escape_go }}"{% endif %},
 			Target:        {% if action.targetexpr and model.needs_script_engine %}hostTarget{% else %}"{{ action.target | default('', true) | escape_go }}"{% endif %},
 			Content:       "{{ action.content | default('', true) | escape_go }}",
 			Params:        hostParams,
 			SendID:        "{{ send_id | default('') | escape_go }}",
-		})
+		}
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% if action.delayexpr or host_delay_ms > 0 %}
+{% if action.delayexpr and model.needs_script_engine %}
+		// W3C SCXML 6.2: the wait is named by an expression evaluated now, at
+		// send time — the same reading the event-carrying arms take.
+		hostDelayMs := int64(0)
+		if hostDelayVal, hostDelayErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.delayexpr | to_lua_expr }}`); hostDelayErr == nil && hostDelayVal != nil {
+			if parsed, parsedOK := sce.ParseDelayToMs(sce.ToWireString(hostDelayVal)); parsedOK {
+				hostDelayMs = int64(parsed)
+			}
+		}
+{% else %}
+		hostDelayMs := int64({{ host_delay_ms }})
+{% endif %}
+		// W3C SCXML 6.2.4: arm it. The engine performs the act when the
+		// deadline arrives and reports it there if nobody does, so the
+		// unregistered-handler branch belongs only to the immediate form —
+		// this site has returned long before the deadline. W3C SCXML 6.3: it
+		// lands in the delayed-send queue under SendID, so a <cancel> reaches
+		// it and the host never sees the act.
+		engine.ScheduleHostSend(hostRequest, time.Duration(hostDelayMs)*time.Millisecond, "{{ send_id | default('') | escape_go }}")
+{% else %}
+		_, hostServed := engine.PerformHostSend(hostRequest)
 {% if 'error.execution' in model.events %}
 		// W3C SCXML 6.2: a declared type with no handler registered is, from
 		// the document's side, a processor the platform does not support — the
@@ -198,6 +221,7 @@
 		}
 {% else %}
 		_ = hostServed
+{% endif %}
 {% endif %}
 	}
 {% elif action.target and action.target is startingwith('!') %}

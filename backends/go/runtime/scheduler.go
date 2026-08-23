@@ -26,6 +26,17 @@ type scheduledEntry[E any] struct {
 	eventData string
 	sendID    string
 	readyAtMs int64
+	// hostSend is the §scxml-6.2.5 host-served send this entry performs
+	// instead of raising event, or nil for an ordinary delayed send.
+	//
+	// §scxml-6.2.4 makes a delay a property of the SEND and not of the
+	// processor it named, so a host-served send carrying one is an ordinary
+	// delayed send whose delivery happens to be somebody else's. Keeping it in
+	// THIS queue is what makes that true in practice: one deadline order across
+	// both kinds, one <cancel sendid> path, one TimeUntilNextScheduled answer.
+	// A parallel list would oblige every present and future query to remember
+	// it existed.
+	hostSend *HostSendRequest
 }
 
 // NewPullScheduler constructs an empty scheduler.
@@ -53,6 +64,31 @@ func (s *PullScheduler[E]) ScheduleEventAt(event E, readyAtMs int64, sendID, eve
 		eventData: eventData,
 		sendID:    effectiveSendID,
 		readyAtMs: readyAtMs,
+	})
+	return effectiveSendID
+}
+
+// ScheduleHostSendAt queues a host-served `<send>` to be performed at readyAtMs
+// on the engine's clock (§scxml-6.2.4 + §scxml-6.2.5).
+//
+// The delayed twin of the immediate dispatch a generated send site makes. It
+// goes in the same queue as ScheduleEventAt, so CancelEvent drops it
+// (§scxml-6.3) and NextReadyAt counts it — the properties that make a delayed
+// host-served send an ordinary delayed send rather than a private arrangement
+// between the engine and one processor.
+//
+// If sendID is empty, an automatic ID is generated. Returns the ID used.
+func (s *PullScheduler[E]) ScheduleHostSendAt(request HostSendRequest, readyAtMs int64, sendID string) string {
+	effectiveSendID := sendID
+	if effectiveSendID == "" {
+		s.nextAutoSendID++
+		effectiveSendID = fmt.Sprintf("auto_send_%d", s.nextAutoSendID)
+	}
+	held := request
+	s.entries = append(s.entries, scheduledEntry[E]{
+		sendID:    effectiveSendID,
+		readyAtMs: readyAtMs,
+		hostSend:  &held,
 	})
 	return effectiveSendID
 }
@@ -100,6 +136,21 @@ func (s *PullScheduler[E]) HasReadyEventsAt(nowMs int64) bool {
 //
 // Matches Rust PullScheduler::pop_ready_event_at.
 func (s *PullScheduler[E]) PopReadyEventAt(nowMs int64) (E, string, bool) {
+	event, data, _, ok := s.PopReadyActAt(nowMs)
+	return event, data, ok
+}
+
+// PopReadyActAt pops the act that came due first — an event to raise, or a
+// host-served send to perform (§scxml-6.2.4 + §scxml-6.2.5).
+//
+// The returned *HostSendRequest is nil for an ordinary delayed send, in which
+// case the event and data are what to raise; when it is non-nil the entry IS
+// the act and the event fields carry nothing meaningful. Deadline order is the
+// queue's, so the two kinds interleave by when the document said they were due
+// and by nothing else.
+//
+// Matches Rust PullScheduler::pop_ready_act_at.
+func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (E, string, *HostSendRequest, bool) {
 	best := -1
 	for i, e := range s.entries {
 		if e.readyAtMs > nowMs {
@@ -111,11 +162,11 @@ func (s *PullScheduler[E]) PopReadyEventAt(nowMs int64) (E, string, bool) {
 	}
 	if best < 0 {
 		var zero E
-		return zero, "", false
+		return zero, "", nil, false
 	}
 	entry := s.entries[best]
 	s.entries = append(s.entries[:best], s.entries[best+1:]...)
-	return entry.event, entry.eventData, true
+	return entry.event, entry.eventData, entry.hostSend, true
 }
 
 // HasPendingEvents returns whether there are any scheduled events (ready or not).

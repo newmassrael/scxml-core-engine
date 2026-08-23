@@ -767,6 +767,7 @@ add_executable(integration_tests
     integration/XmlDataIsADomTreeAotTest.cpp
     integration/AiLoopAotTest.cpp
     integration/HostProcessorAotTest.cpp
+    integration/DelayedHostSendAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp
@@ -1413,6 +1414,17 @@ sce_add_state_machine(
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml
+    HOST_PROCESSOR x-sce-host
+)
+
+# §scxml-6.2.4 + §scxml-6.3: the delay side of the same surface. A separate
+# document rather than a `delay` added to the one above, because that one is
+# driven with `step()` and this one can only be driven with `tick()`: folding
+# them together would put a clock under every assertion the first one makes,
+# and a fixture measuring two things cannot say which of them broke.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml
     HOST_PROCESSOR x-sce-host
 )
 

@@ -47,14 +47,37 @@
 {% else -%}
 {{ indent }}_host_target = {{ action.target | py_string_literal }}
 {% endif -%}
-{{ indent }}_host_served = engine.perform_host_send(_HostSendRequest(
+{{ indent }}_host_request = _HostSendRequest(
 {{ indent }}    processor_type={{ action.send_type | py_string_literal }},
 {{ indent }}    event_name=_host_evt_name,
 {{ indent }}    target=_host_target,
 {{ indent }}    content={{ action.content | py_string_literal }},
 {{ indent }}    params=_host_params,
 {{ indent }}    send_id=_sid,
-{{ indent }}))
+{{ indent }})
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% if action.delayexpr or host_delay_ms > 0 %}
+{# W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the processor
+   it named, so a host-served send carrying one waits exactly as an ordinary
+   send does. Decided here rather than in the delay arms below, because this
+   branch claims every host-served send before they are reached — which is how
+   `delay` came to be discarded on every backend at once. The engine performs
+   the same act from its scheduler drain at the deadline, including the W3C
+   SCXML 6.2 report for an act nobody performed, so the unregistered-handler
+   branch belongs only to the immediate form. W3C SCXML 6.3: it lands in the
+   delayed-send queue under `_sid`, so a `<cancel>` reaches it and the host
+   never sees the act. #}
+{% if action.delayexpr %}
+{{ indent }}try:
+{{ indent }}    _host_delay_ms = _parse_delay_text(str(engine._script_engine.evaluate_expression(self._session_id, {{ action.delayexpr | to_lua_expr | py_string_literal }}).to_python()))
+{{ indent }}except _ScriptError:
+{{ indent }}    _host_delay_ms = 0
+{% else %}
+{{ indent }}_host_delay_ms = {{ host_delay_ms }}
+{% endif %}
+{{ indent }}engine.schedule_host_send(_host_request, _host_delay_ms, _sid)
+{% else %}
+{{ indent }}_host_served = engine.perform_host_send(_host_request)
 {% if 'error.execution' in model.events %}
 {# W3C SCXML 6.2 — a declared type with no handler registered is, from the
    document's side, a processor the platform does not support: the act it
@@ -62,6 +85,7 @@
    a wiring mistake cannot read as success. #}
 {{ indent }}if _host_served is None and not engine.has_event_processor({{ action.send_type | py_string_literal }}):
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
 {% endif %}
 {% elif action.target == '#_parent' %}
 {% if action.delay_ms > 0 %}

@@ -302,6 +302,73 @@ pub fn declare_host_surfaces(
     // the flags, and recomputing them from the flags just changed is what
     // keeps `needs_host_processor` and the emitted code the same answer.
     model.host_processor_causes = analyze(model);
+    record_delayed_host_sends(model);
+}
+
+/// Whether `action` is a host-served `<send>` the engine must WAIT before
+/// performing (§scxml-6.2.4).
+///
+/// The delay forms are read the way the templates read them: a literal
+/// `delay`, its parsed `delay_ms`, or a `delayexpr` whose value is not
+/// known until the send runs. A `delayexpr` counts even though it may
+/// evaluate to zero — the storage has to exist before the answer does.
+fn is_delayed_host_send(action: &Action) -> bool {
+    action.send_type_host_served
+        && (!action.delayexpr.is_empty()
+            || action.delay_ms > 0
+            || (!action.delay.is_empty() && action.delay != "0s" && action.delay != "0ms"))
+}
+
+/// Set [`SCXMLModel::has_delayed_host_send`] and
+/// [`SCXMLModel::delayed_host_send_max_params`] from the claimed sends.
+///
+/// Runs after [`claim_action`] rather than beside it, because until the
+/// declaration is applied every one of these sends is a refusal and a
+/// refusal has no delay to honour.
+fn record_delayed_host_sends(model: &mut SCXMLModel) {
+    let mut found = false;
+    let mut max_params = 0usize;
+    let mut visit = |action: &Action| {
+        if is_delayed_host_send(action) {
+            found = true;
+            max_params = max_params.max(action.params.len());
+        }
+    };
+    for state in model.states.values() {
+        for trans in &state.transitions {
+            walk_actions(&trans.actions, &mut visit);
+        }
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
+            walk_actions(block, &mut visit);
+        }
+        walk_actions(&state.initial_transition_actions, &mut visit);
+        walk_actions(&state.initial_history_default_actions, &mut visit);
+    }
+    model.has_delayed_host_send = found;
+    model.delayed_host_send_max_params = max_params;
+}
+
+/// Apply `visit` to every action in `actions` and to everything nested
+/// inside them.
+///
+/// The same recursion [`claim_action`] makes, for the same reason: a
+/// `<send>` inside `<if>` / `<foreach>` is as real as a top-level one, and
+/// a walk that missed it would leave the C11 entry without the storage
+/// that send needs.
+fn walk_actions(actions: &[Action], visit: &mut impl FnMut(&Action)) {
+    for action in actions {
+        visit(action);
+        walk_actions(&action.actions, visit);
+        walk_actions(&action.then_actions, visit);
+        walk_actions(&action.else_actions, visit);
+        for branch in &action.elseif_branches {
+            walk_actions(&branch.actions, visit);
+        }
+    }
 }
 
 /// Move one `<send>` from "refused" to "dispatched to the host", if the

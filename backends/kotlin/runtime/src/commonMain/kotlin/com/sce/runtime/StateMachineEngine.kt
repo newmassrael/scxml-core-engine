@@ -506,6 +506,75 @@ abstract class StateMachineEngine<S : State, E : Event>(
         return replies
     }
 
+    /**
+     * §scxml-6.2.4 + §scxml-6.2.5: arm a host-served `<send delay>`, to be
+     * performed when the delay elapses.
+     *
+     * The delayed twin of [performHostSend], called by the generated send site
+     * in its place when the document wrote a `delay`. §scxml-6.2.4 makes the
+     * wait a property of the send and not of the processor it named, so the two
+     * differ in WHEN the act happens and in nothing else — including the
+     * §scxml-6.2 report owed when nobody performs it, which the drain makes at
+     * the deadline.
+     *
+     * The act lands in the same queue [scheduleSend] uses, so [cancelSend]
+     * drops it (§scxml-6.3) and the next-deadline query counts it.
+     *
+     * A non-positive delay is performed at once, matching [scheduleSend]: a
+     * `delay="0s"` is not a deferral and the document must not need a tick to
+     * see it.
+     */
+    protected fun scheduleHostSend(sendId: String, delayMs: Long, request: HostSendRequest) {
+        if (delayMs <= 0) {
+            performDeferredHostSend(request)
+            return
+        }
+        cancelSend(sendId)
+        scheduledSends.add(
+            ScheduledSendEntry(
+                fireTimeMs = engineElapsedMs() + delayMs,
+                sequenceNum = schedulerSequence++,
+                sendId = sendId,
+                event = null,
+                metadata = EventMetadata.EMPTY,
+                hostSend = request
+            )
+        )
+        scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
+    }
+
+    /**
+     * §scxml-6.2 + §scxml-6.2.4: perform a host-served send whose delay has
+     * elapsed, and report it if nobody did.
+     *
+     * The immediate path raises `error.execution` at the send site, which knows
+     * the document's event enum. A deferred one cannot: that site returned when
+     * the send was armed, so the engine owes the report — and it can make it,
+     * because [resolveEventByName] is the same lookup [performHostSend] already
+     * uses to turn a handler's replies into events. A document that declares no
+     * `error.execution` transition resolves nothing and nothing is raised,
+     * which is what the generated site's own template guard does.
+     *
+     * Without this, a wiring mistake on a delayed send is perfect silence: the
+     * act never happens, nothing says so, and the document goes on waiting for
+     * a reply that has nobody left to come from.
+     */
+    private fun performDeferredHostSend(request: HostSendRequest) {
+        if (performHostSend(request) != null) return
+        if (hasEventProcessor(request.processorType)) return
+        val event = resolveEventByName("error.execution") ?: return
+        // The same sentence, queue and classification the immediate site uses.
+        // One wording for one fact: a consumer must not have to know whether
+        // the send it wrote carried a delay. §scxml-6.2.4 + §scxml-5.10 (test 332): the
+        // error event MUST carry the sendid, and a deferred send always has one
+        // — the scheduler needed it to be cancellable.
+        raisePlatformError(
+            event,
+            "<send type='${request.processorType}'> names a processor the host declared but never registered",
+            request.sendId
+        )
+    }
+
     // --- Sync Execution (C++ AOT StaticExecutionEngine pattern) ---
 
     private var syncMode = false
@@ -601,7 +670,22 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val metadata: EventMetadata,
         val isParentSend: Boolean = false,
         val parentEventName: String = "",
-        val parentEventData: String = ""
+        val parentEventData: String = "",
+        /**
+         * §scxml-6.2.5: the host-served send this entry PERFORMS when it comes
+         * due, instead of delivering [event]. Null for every other entry.
+         *
+         * §scxml-6.2.4 makes a `delay` a property of the SEND and not of the
+         * processor it named, so a host-served send carrying one is an ordinary
+         * delayed send whose delivery happens to be somebody else's. Keeping it
+         * in THIS queue is what makes that true in practice: one deadline order
+         * across every kind of delayed send, one `<cancel sendid>` path, one
+         * answer from the next-deadline query. The separate `scheduledHttpSends`
+         * list beside it is the shape this deliberately does not copy — it is
+         * drained in its own loop, so its entries neither interleave by deadline
+         * with these nor get a macrostep between them.
+         */
+        val hostSend: HostSendRequest? = null
     )
     private val scheduledSends = mutableListOf<ScheduledSendEntry>()
     private var schedulerSequence = 0L
@@ -1559,7 +1643,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
             return false
         }
         val entry = scheduledSends.removeAt(0)
-        if (entry.isParentSend) {
+        if (entry.hostSend != null) {
+            // §scxml-6.2.4: the wait is over, so now the act happens.
+            performDeferredHostSend(entry.hostSend)
+        } else if (entry.isParentSend) {
             onSendToParent?.invoke(entry.parentEventName, entry.parentEventData)
         } else {
             // Justification (UNCHECKED_CAST): scheduledSends erases the

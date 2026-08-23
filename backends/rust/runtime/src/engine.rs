@@ -188,19 +188,56 @@ pub struct PullScheduler<E, S = SceString> {
     next_auto_send_id: u64,
 }
 
+/// What one scheduled entry is to do when its deadline arrives.
+///
+/// §scxml-6.2.4 puts the wait before the dispatch and says nothing about which
+/// Event I/O Processor the send named, and §scxml-6.2.5 leaves that set open —
+/// so a delayed send addressed to a processor the host serves is an ordinary
+/// delayed send whose delivery happens to be somebody else's. Making that a
+/// second *act* on the one queue, rather than a second queue, is what keeps it
+/// ordinary: one deadline order across both kinds, one `<cancel sendid>` path,
+/// one answer from [`PullScheduler::next_ready_at`]. A parallel list would have
+/// every present and future query obliged to remember it existed.
+///
+/// Only under std. `crate::host_processor` is `!no_std` (its registry is a heap
+/// map of boxed closures), so a no_std entry has nothing to be but an event and
+/// the private `ScheduledEntry` holds one directly. Named without a link
+/// because that type is `pub(crate)`, and an intra-doc link from public
+/// documentation to a private item is what `rustdoc-links` refuses.
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug)]
+pub enum ScheduledAct<E> {
+    /// Raise `event` on the external queue, carrying `event_data` as
+    /// `_event.data` (§scxml-5.10.1).
+    Raise {
+        /// The event to raise.
+        event: E,
+        /// Delayed-send `_event.data` JSON payload, preserved across the wait.
+        event_data: SceString,
+    },
+    /// §scxml-6.2.5: perform a `<send>` a host-supplied processor serves.
+    ///
+    /// Boxed because a `HostSendRequest` is several strings and a map, and an
+    /// unboxed variant would make every ordinary delayed event pay its size.
+    HostSend(Box<crate::host_processor::HostSendRequest>),
+}
+
 #[derive(Debug)]
 struct ScheduledEntry<E, S> {
-    event: E,
-    /// Delayed-send `_event.data` JSON payload.
+    /// What to do when this entry comes due.
     ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: elided under `--features=no_std`. The no_std
-    /// build has no script engine, and the scheduler drain
-    /// ([`Engine::tick`] → [`Engine::raise_external`]) discards the data string
-    /// under no_std (`let _ = (event_data, origin)`), so storing it per entry is
-    /// pure dead weight (~264 B `heapless::String<256>` × `MAX_SCHEDULED_EVENTS`).
-    /// Mirrors the `EventMetadata.data` profile-level elision (B-γ2d-1).
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--features=no_std` there
+    /// is only one thing it can be, and the `_event.data` string it would carry
+    /// is elided too — the no_std build has no script engine, and the scheduler
+    /// drain ([`Engine::tick`] → [`Engine::raise_external`]) discards the data
+    /// string there anyway (`let _ = (event_data, origin)`), so storing it per
+    /// entry is pure dead weight (~264 B `heapless::String<256>` ×
+    /// `MAX_SCHEDULED_EVENTS`). Mirrors the `EventMetadata.data` profile-level
+    /// elision (B-γ2d-1).
     #[cfg(not(feature = "no_std"))]
-    event_data: SceString,
+    act: ScheduledAct<E>,
+    #[cfg(feature = "no_std")]
+    event: E,
     /// Cancel key for §scxml-6.3 `<cancel sendid>`. Read only by
     /// [`PullScheduler::cancel_event`]; the storage type `S` is
     /// [`ElidedSendId`](crate::ElidedSendId) (zero-size) for documents with no
@@ -250,13 +287,53 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         #[cfg(feature = "no_std")]
         let _ = event_data;
         let entry = ScheduledEntry {
-            event,
             #[cfg(not(feature = "no_std"))]
-            event_data: crate::sce_string_from_str(event_data),
+            act: ScheduledAct::Raise {
+                event,
+                event_data: crate::sce_string_from_str(event_data),
+            },
+            #[cfg(feature = "no_std")]
+            event,
             // `S::store` borrows the id; the load-bearing `SceString` impl
             // clones it, the zero-size `ElidedSendId` impl drops it. The id is
             // still returned below by move (callers may use it to `<cancel>`),
             // so cancel-free machines pay nothing for the discarded storage.
+            send_id: S::store(&effective_send_id),
+            ready_at,
+        };
+        self.push_scheduled(entry);
+        effective_send_id
+    }
+
+    /// §scxml-6.2.4 + §scxml-6.2.5: schedule a `<send>` a host-supplied
+    /// processor serves, to be performed once `ready_at` arrives.
+    ///
+    /// The delayed twin of the immediate dispatch the generated send site makes
+    /// through [`Engine::perform_host_send`]. It lands in the same queue as
+    /// [`schedule_event_at`](Self::schedule_event_at), which is the contract:
+    /// the deferred act is ordered against every other delayed send by
+    /// deadline, and [`cancel_event`](Self::cancel_event) drops it by send id
+    /// like any of them (§scxml-6.3). An act a document cancelled must not
+    /// reach the host at all — the side effect is the whole reason the document
+    /// named it, and there is no taking it back afterwards.
+    ///
+    /// Returns the id used, generated when `send_id` is empty, exactly as the
+    /// event form does.
+    #[cfg(not(feature = "no_std"))]
+    pub fn schedule_host_send_at(
+        &mut self,
+        request: crate::host_processor::HostSendRequest,
+        ready_at: SchedTimePoint,
+        send_id: &str,
+    ) -> SceString {
+        let effective_send_id: SceString = if send_id.is_empty() {
+            self.next_auto_send_id += 1;
+            format_auto_send_id(self.next_auto_send_id)
+        } else {
+            crate::sce_string_from_str(send_id)
+        };
+        let entry = ScheduledEntry {
+            act: ScheduledAct::HostSend(Box::new(request)),
             send_id: S::store(&effective_send_id),
             ready_at,
         };
@@ -340,25 +417,37 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         Some(self.entries.remove(idx))
     }
 
-    /// Pop the next ready event and its data. Returns `None` if nothing is ready.
+    /// Pop the act that came due first. Returns `None` if nothing is ready.
     ///
-    /// Caller supplies the current time. Matches C++
-    /// `PullScheduler::popReadyEvent(E&, string&) -> bool` (but returns
-    /// an `Option` tuple instead of bool+out-params, which is the idiomatic Rust shape).
+    /// Caller supplies the current time. Named for the act rather than for the
+    /// event because a std entry may be either (see [`ScheduledAct`]); the
+    /// no_std profile has only events and keeps `pop_ready_event_at` with the
+    /// narrower return type. Two names rather than one signature that changes
+    /// with a feature flag: a caller compiled for the wrong profile then fails
+    /// to resolve a name instead of silently getting a different shape.
+    ///
+    /// The sibling is named without a link, and cannot be linked: it does not
+    /// exist in this profile, so a link to it is unresolved exactly where the
+    /// documentation is built.
+    ///
+    /// Matches C++ `PullScheduler::popReadyAct(...) -> bool` (but returns an
+    /// `Option` instead of bool+out-params, which is the idiomatic Rust shape).
     #[cfg(not(feature = "no_std"))]
-    pub fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<(E, SceString)> {
-        self.pop_ready_entry(now)
-            .map(|entry| (entry.event, entry.event_data))
+    pub fn pop_ready_act_at(&mut self, now: SchedTimePoint) -> Option<ScheduledAct<E>> {
+        self.pop_ready_entry(now).map(|entry| entry.act)
     }
 
-    /// no_std variant of [`pop_ready_event_at`](Self::pop_ready_event_at).
+    /// no_std counterpart of `pop_ready_act_at`, named without a link for the
+    /// reason its own doc gives: the sibling does not exist in this profile.
     ///
-    /// The delayed-send data string is elided under no_std (see the private
-    /// `ScheduledEntry`'s field docs), so the popped event carries no data. The no_std
-    /// drain in [`Engine::tick`] passes `""` to
+    /// There is only one act a no_std entry can be — `crate::host_processor` is
+    /// `!no_std`, so nothing can defer a host send here — and the delayed-send
+    /// data string is elided too (see the private `ScheduledEntry`'s field
+    /// docs), so the popped event carries no data. The no_std drain in
+    /// [`Engine::tick`] passes `""` to
     /// [`raise_external`](Engine::raise_external), which discards it anyway —
-    /// returning `Option<E>` instead of `Option<(E, SceString)>` avoids moving
-    /// a 264 B empty `heapless::String` out on every timer fire.
+    /// returning `Option<E>` avoids both the act discriminant and moving a
+    /// 264 B empty `heapless::String` out on every timer fire.
     #[cfg(feature = "no_std")]
     pub fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<E> {
         self.pop_ready_entry(now).map(|entry| entry.event)
@@ -1141,18 +1230,34 @@ impl<P: StatePolicy> Engine<P> {
         // step size alone decided it.
         loop {
             let now = self.sched_now();
-            let Some(popped) = self.scheduler.pop_ready_event_at(now) else {
-                break;
-            };
             #[cfg(not(feature = "no_std"))]
             {
-                let (event, data) = popped;
-                self.raise_external(event, &data, "");
+                let Some(act) = self.scheduler.pop_ready_act_at(now) else {
+                    break;
+                };
+                match act {
+                    ScheduledAct::Raise { event, event_data } => {
+                        self.raise_external(event, &event_data, "");
+                    }
+                    // §scxml-6.2.4: the wait is over, so now the act happens.
+                    // Everything the immediate send site does happens here
+                    // instead — including reporting an act nobody performed,
+                    // which that site cannot do for a deferred send because it
+                    // returned long before the deadline.
+                    ScheduledAct::HostSend(request) => {
+                        self.perform_deferred_host_send(*request);
+                    }
+                }
             }
             // no_std: the data string is elided in the scheduler, and
             // `raise_external` discards it under no_std anyway.
             #[cfg(feature = "no_std")]
-            self.raise_external(popped, "", "");
+            {
+                let Some(popped) = self.scheduler.pop_ready_event_at(now) else {
+                    break;
+                };
+                self.raise_external(popped, "", "");
+            }
 
             // The macrostep this event drives may `<cancel>` a later one, so
             // the queue is re-consulted after it rather than before.
@@ -1834,6 +1939,74 @@ impl<P: StatePolicy> Engine<P> {
         let ready_at = self.sched_now_plus(delay);
         self.scheduler
             .schedule_event_at(event, ready_at, send_id, event_data)
+    }
+
+    /// §scxml-6.2.4 + §scxml-6.2.5: arm a `<send delay>` addressed to a
+    /// host-served processor, to be performed when the delay elapses.
+    ///
+    /// The delayed twin of [`perform_host_send`](Self::perform_host_send),
+    /// called from the generated send site in its place when the document wrote
+    /// a `delay`. §scxml-6.2.4 makes the wait a property of the send and not of
+    /// the processor, so the two differ in when the act happens and in nothing
+    /// else — including the report owed when nobody performs it, which
+    /// [`tick`](Self::tick) makes at the deadline.
+    ///
+    /// The act goes in the same queue as [`schedule_event`](Self::schedule_event),
+    /// so [`cancel_event`](Self::cancel_event) drops it (§scxml-6.3) and
+    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)
+    /// counts it. Returns the id used, generated when `send_id` is empty.
+    #[cfg(not(feature = "no_std"))]
+    pub fn schedule_host_send(
+        &mut self,
+        request: crate::host_processor::HostSendRequest,
+        delay: Duration,
+        send_id: &str,
+    ) -> SceString {
+        let ready_at = self.sched_now_plus(delay);
+        self.scheduler
+            .schedule_host_send_at(request, ready_at, send_id)
+    }
+
+    /// Perform a host-served send whose delay has now elapsed, and report it if
+    /// nobody did.
+    ///
+    /// The immediate path raises §scxml-6.2's `error.execution` at the send
+    /// site, which knows the document's event enum by name. A deferred one
+    /// cannot: that site returned when the send was armed, so the engine owes
+    /// the report — and it can make it, because
+    /// [`get_event_from_name`](StatePolicy::get_event_from_name) is the same
+    /// lookup [`perform_host_send`](Self::perform_host_send) already uses to
+    /// turn a handler's replies into events. A document that declares no
+    /// `error.execution` transition resolves nothing and nothing is raised,
+    /// which is what the generated site's own `{% if %}` guard does.
+    ///
+    /// Without this, a wiring mistake on a delayed send is perfect silence: the
+    /// act never happens, nothing says so, and the document waits for a reply
+    /// that has nobody left to come from.
+    #[cfg(not(feature = "no_std"))]
+    fn perform_deferred_host_send(&mut self, request: crate::host_processor::HostSendRequest) {
+        let processor_type = request.processor_type.clone();
+        let send_id = request.send_id.clone();
+        let served = self.perform_host_send(request);
+        if served.is_none() && !self.has_event_processor(&processor_type) {
+            if let Some(evt) = P::get_event_from_name("error.execution") {
+                let mut err = EventWithMetadata::platform_error(
+                    evt,
+                    // The same sentence the immediate site emits. One wording
+                    // for one fact: a consumer matching on the message must not
+                    // have to know whether the send it wrote carried a delay.
+                    &format!(
+                        "<send type='{processor_type}'> names a processor the host declared but never registered"
+                    ),
+                );
+                // §scxml-6.2.4 + §scxml-5.10 (test 332): the error event MUST carry the
+                // sendid. A deferred send always has one — the scheduler needed
+                // it to be cancellable — so unlike the immediate site this is
+                // not conditional on the document having a script engine.
+                err.metadata.send_id = crate::sce_string_from_str(&send_id);
+                self.raise(err);
+            }
+        }
     }
 
     /// Cancel a previously scheduled event by send ID.

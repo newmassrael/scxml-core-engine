@@ -149,7 +149,9 @@
    Lives in `types.h` (not `invoke.h`) so the delayed-send sites in
    `state_machine.c.jinja2` can call it without dragging the invoke
    types into invoke-free fixtures. */
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 SCE_C_UNUSED static inline void sce_copy_bounded_n(char *dst, const char *src, size_t cap) {
@@ -167,6 +169,78 @@ SCE_C_UNUSED static inline void sce_copy_bounded_n(char *dst, const char *src, s
 
 SCE_C_UNUSED static inline void sce_copy_bounded_id(char *dst, const char *src) {
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_ID_LEN);
+}
+
+/* §scxml-6.2.2: read a CSS2 time duration — "5s", "100ms", "2min",
+   "0.5s", or a bare number meaning seconds — as milliseconds.
+
+   The C11 twin of cpp `SendSchedulingHelper::parseDelayString`, Rust
+   `helpers::send::parse_delay_to_ms` and their Go / Python / Kotlin
+   siblings. It exists here because a `delayexpr` names its wait with a
+   value the document computes at run time: a literal `delay` is
+   converted once at generation time (`action.delay_ms`), and until this
+   parser there was nothing on this backend that could convert the other
+   kind at all.
+
+   Ill-formed input answers 0, which schedules an immediately-ready
+   entry — the same observable every sibling parser gives it, and the
+   same one the generation-time conversion gives an ill-formed literal.
+   Integer arithmetic throughout: `frac` accumulates the fractional part
+   in thousandths, so "0.5s" is exact without the freestanding profile
+   needing a floating-point unit. */
+SCE_C_UNUSED static inline uint64_t sce_parse_delay_ms(const char *text) {
+    const char *p = text;
+    uint64_t whole = 0u;
+    uint64_t frac = 0u; /* thousandths of one unit */
+    bool saw_digit = false;
+    uint64_t unit_ms;
+
+    if (p == NULL) {
+        return 0u;
+    }
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    while (*p >= '0' && *p <= '9') {
+        whole = whole * 10u + (uint64_t)(*p - '0');
+        saw_digit = true;
+        p++;
+    }
+    if (*p == '.') {
+        uint64_t scale = 100u;
+        p++;
+        while (*p >= '0' && *p <= '9') {
+            if (scale > 0u) {
+                frac += (uint64_t)(*p - '0') * scale;
+                scale /= 10u;
+            }
+            saw_digit = true;
+            p++;
+        }
+    }
+    if (!saw_digit) {
+        return 0u;
+    }
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+
+    if (*p == '\0' || strcmp(p, "s") == 0 || strcmp(p, "sec") == 0 || strcmp(p, "second") == 0 ||
+        strcmp(p, "seconds") == 0) {
+        unit_ms = 1000u;
+    } else if (strcmp(p, "ms") == 0) {
+        unit_ms = 1u;
+    } else if (strcmp(p, "min") == 0 || strcmp(p, "minute") == 0 || strcmp(p, "minutes") == 0) {
+        unit_ms = 60000u;
+    } else if (strcmp(p, "h") == 0 || strcmp(p, "hour") == 0 || strcmp(p, "hours") == 0) {
+        unit_ms = 3600000u;
+    } else {
+        /* A unit this processor does not implement is not a wait it can
+           honour, and guessing one would dispatch at a time the document
+           never asked for. */
+        return 0u;
+    }
+    return whole * unit_ms + (frac * unit_ms) / 1000u;
 }
 
 /* §scxml-5.10 `_event.data` payload buffer (SCE_MAX_DATA_LEN). Separate

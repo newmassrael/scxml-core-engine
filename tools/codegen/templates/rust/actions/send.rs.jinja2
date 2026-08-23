@@ -353,6 +353,16 @@
     break 'action_block;
 {% endif %}
 {% elif action.send_type_host_served %}
+{# §scxml-6.2.4: a `delay` is a property of the SEND, not of the processor it
+   named, so a host-served send with one waits exactly as an ordinary send
+   does. Chosen here rather than in the delay arms below because those are
+   reached only by a send this chain has not already claimed, and the host arm
+   claims every host-served send — which is how `delay` came to be discarded on
+   every backend at once. The scheduled form performs the same act from
+   `Engine::tick` when the deadline arrives, including the §scxml-6.2 report
+   for an act nobody performed. #}
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% set host_is_delayed = action.delayexpr or host_delay_ms > 0 %}
     // W3C SCXML 6.2.5: "{{ action.send_type }}" is served by the host,
     // which declared it to this build. Dispatch rather than refuse.
     {
@@ -367,14 +377,53 @@
 {% else %}
         let host_params = std::collections::HashMap::<String, Vec<String>>::new();
 {% endif %}
-        let __sce_served = engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+        let __sce_request = sce_rust_runtime::HostSendRequest {
             processor_type: "{{ action.send_type | escape_rust }}".to_string(),
             event_name: "{{ action.event | default('', true) }}".to_string(),
             target: {% if action.targetexpr %}_rt.to_string(){% else %}"{{ action.target | escape_rust }}".to_string(){% endif %},
             content: "{{ action.content | default('', true) | escape_rust }}".to_string(),
             params: host_params,
             send_id: send_id.to_string(),
-        });
+        };
+{% if host_is_delayed %}
+{% if action.delayexpr %}
+        // W3C SCXML 6.2: the wait is named by an expression evaluated now,
+        // at send time — the same reading the event-carrying arms take.
+        let __sce_delay_ms = {
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+            match se.evaluate_expression(&sid, "{{ action.delayexpr | to_lua_expr | escape_rust }}") {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or(0)
+                }
+                Err(e) => {
+                    ::sce_rust_runtime::sce_log_error!("delayexpr eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> delayexpr failed to evaluate"));
+{% endif %}
+                    0
+                }
+            }
+        };
+{% else %}
+        let __sce_delay_ms = {{ host_delay_ms }}_u64;
+{% endif %}
+        // W3C SCXML 6.2.4: arm it. The engine performs the act when the
+        // deadline arrives and reports it there if nobody does, so the
+        // unregistered-handler branch below belongs only to the immediate
+        // form — this site has returned long before the deadline.
+        // W3C SCXML 6.3: it lands in the delayed-send queue under `send_id`,
+        // so a `<cancel>` reaches it and the host never sees the act at all.
+        engine.schedule_host_send(
+            __sce_request,
+            core::time::Duration::from_millis(__sce_delay_ms),
+            &send_id,
+        );
+{% else %}
+        let __sce_served = engine.perform_host_send(__sce_request);
 {% if 'error.execution' in model.events %}
         // W3C SCXML 6.2: a declared type with no handler registered is,
         // from the document's side, a processor the platform does not
@@ -387,6 +436,7 @@
         }
 {% else %}
         let _ = __sce_served;
+{% endif %}
 {% endif %}
     }
 {% elif not action.targetexpr and action.target and action.target is startingwith('!') %}
