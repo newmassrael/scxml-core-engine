@@ -1475,9 +1475,22 @@ into unverified prose:
   token-prefix, or via a wildcard transition) rejects with
   `scxml/contradictory-unhandled-declaration`.
 - A state declaring an event that is not a gap under its parent —
-  no sibling handles it, the parent absorbs it, the siblings share
-  no common ground, or the state has no compound parent — rejects
-  with `scxml/stale-unhandled-declaration`.
+  no sibling handles it, the parent absorbs it, or the state has no
+  compound parent — rejects with
+  `scxml/stale-unhandled-declaration`.
+
+The common-ground precondition is **not** among those reasons, and
+that is deliberate. It decides what is worth *reporting*; whether a
+declaration is *true* is a fact about the document — a sibling
+handles the event, this child does not — and holds whatever shape
+the rest of the compound has. While the two shared one set, the one
+shape a document is quiet in was also the one shape its author could
+not write an intention down in: the declaration became sayable only
+in the round where a later edit gave the siblings an event in common
+and the report began demanding it. So the check could not be paid in
+advance, and every author met it first as a rejection. Declaring a
+gap under a protocol-stage compound is accepted now, and reports
+nothing either way.
 
 Repair guidance, in author preference order:
 
