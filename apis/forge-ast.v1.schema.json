@@ -1885,6 +1885,13 @@
               "type": "array",
               "uniqueItems": true
             },
+            "delayed_host_send_max_params": {
+              "default": 0,
+              "description": "The largest `<param>` count on any delayed host-served `<send>`.\n\nZero when [`Self::has_delayed_host_send`] is false, and zero also for a document whose delayed host sends carry no parameters. Only the C11 backend reads it: its deferred entry owns the evaluated values (§scxml-6.2 evaluates a `<param>` at SEND time, not at fire time — tests 176 and 186), and a fixed-size struct has to be told how many to make room for.",
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
             "document_rejected": {
               "type": "boolean"
             },
@@ -1950,6 +1957,11 @@
               "type": "boolean"
             },
             "has_child_communication": {
+              "type": "boolean"
+            },
+            "has_delayed_host_send": {
+              "default": false,
+              "description": "Whether any host-served `<send>` in this document carries a delay (§scxml-6.2.4 + §scxml-6.2.5).\n\nA delayed host-served send is performed from the scheduler drain rather than at the send site, so whatever holds the delayed-send queue must be able to hold the request itself. The backends with a heap say so in a variant and pay nothing when the document has none; the C11 backend's queue entry is a fixed-size struct, so it needs this answer at generation time to decide whether to emit the storage at all. Every backend can read it, so the decision is one fact rather than six re-derivations of it.\n\nDerived in [`crate::host_processor_analyzer::declare_host_surfaces`], from the same walk that marks each `<send>` ([`Action::send_type_host_served`]) — it cannot be known before the declaration is applied, because until then those sends are refusals.",
               "type": "boolean"
             },
             "has_dynamic_expressions": {

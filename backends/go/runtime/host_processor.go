@@ -153,3 +153,40 @@ func (e *Engine[S, E]) PerformHostSend(request HostSendRequest) ([]HostSendRespo
 	}
 	return replies, true
 }
+
+// performDeferredHostSend performs a host-served send whose delay has elapsed,
+// and reports it if nobody did (§scxml-6.2 + §scxml-6.2.4).
+//
+// The immediate path raises `error.execution` at the send site, which knows the
+// document's event enum by name. A deferred one cannot: that site returned when
+// the send was armed, so the engine owes the report — and it can make it,
+// because GetEventFromName is the same lookup PerformHostSend already uses to
+// turn a handler's replies into events. A document that declares no
+// `error.execution` transition resolves nothing and nothing is raised, which is
+// what the generated site's own template guard does.
+//
+// Without this, a wiring mistake on a delayed send is perfect silence: the act
+// never happens, nothing says so, and the document goes on waiting for a reply
+// that has nobody left to come from.
+func (e *Engine[S, E]) performDeferredHostSend(request HostSendRequest) {
+	if _, served := e.PerformHostSend(request); served {
+		return
+	}
+	if e.HasEventProcessor(request.ProcessorType) {
+		return
+	}
+	evt, known := e.policy.GetEventFromName("error.execution")
+	if !known {
+		return
+	}
+	// The same sentence the immediate site emits. One wording for one fact: a
+	// consumer matching on the message must not have to know whether the send
+	// it wrote carried a delay.
+	meta := NewPlatformError(evt,
+		"<send type='"+request.ProcessorType+"'> names a processor the host declared but never registered")
+	// §scxml-6.2.4 + §scxml-5.10 (test 332): the error event MUST carry the sendid, and
+	// a deferred send always has one — the scheduler needed it to be
+	// cancellable.
+	meta.Metadata.SendID = request.SendID
+	e.Raise(meta)
+}

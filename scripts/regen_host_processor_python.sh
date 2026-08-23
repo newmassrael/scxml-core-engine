@@ -48,6 +48,15 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$FIXTURE" -l python -o "$TMP/" \
     --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR"
 
+# The delay side of the same surface (W3C SCXML 6.2.4 + 6.3). A third document
+# rather than a `delay` added to the one above, because that one is driven with
+# `step()` and this one can only be driven with `advance_time()`: folding them
+# together would put a clock under every assertion the first one makes, and a
+# fixture measuring two things cannot say which of them broke.
+DELAYED_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml"
+"$CODEGEN" generate "$DELAYED_FIXTURE" -l python -o "$TMP/" \
+    --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR"
+
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
 for src in "$TMP"/*_sm.py; do
@@ -56,4 +65,6 @@ for src in "$TMP"/*_sm.py; do
 done
 cp "$TMP"/*_sm.py "$GENERATED_DIR/"
 
-echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "Regenerated: $GENERATED_DIR/ from"
+echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"

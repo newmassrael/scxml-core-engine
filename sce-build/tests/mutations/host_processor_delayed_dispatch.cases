@@ -1,0 +1,132 @@
+# Mutation cases for a DELAYED host-served Event I/O Processor send.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_delayed_dispatch.cases`.
+#
+# `host_processor_dispatch.cases` studies what happens when a declared `<send>`
+# reaches the engine. This one studies what happens when the document told the
+# engine to WAIT first — W3C SCXML 6.2.4 puts the delay before the dispatch and
+# says nothing about which processor the send named, and 6.2.5 makes that set
+# open, so a host-served send carrying a delay is an ordinary delayed send whose
+# delivery happens to be somebody else's.
+#
+# It was not. Every backend chose the host branch ahead of the delay branch in
+# one `elif` chain per language, so the act was performed at the instant the
+# block ran and `delay` was discarded — while the manifest went on answering
+# `needs_event_scheduler: true`, telling the host to drive with `tick` for a
+# wait the engine had already thrown away. The suite these cases attack is what
+# now says otherwise, and the mutations are the ways it could stop saying it:
+#
+#   * the wait is not honoured (the original defect, restored);
+#   * the wait is honoured somewhere `<cancel>` cannot reach, so a cancelled
+#     act still reaches the host — which no configuration assertion can undo,
+#     because the side effect is the point of the act;
+#   * the deferred act is dropped instead of performed;
+#   * nobody performed it and nothing said so;
+#   * the deadline query cannot see it, so a host sleeping on the answer sleeps
+#     straight past the act.
+#
+# Every case is a RUNTIME mutation, so no tree is regenerated: the committed
+# machine in `sce-rust-tests` calls into the engine, and what changes is what
+# the engine does with the entry.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test delayed_host_send
+mutation_targets backends/rust/runtime/src/engine.rs
+
+# ── The wait is not honoured ────────────────────────────────────────
+#
+# The defect itself, put back the only way the runtime can express it: the
+# entry is armed for an instant that has already passed, so the first tick
+# performs it. `a_host_served_send_waits_for_its_delay` is what catches it —
+# the 100 ms `probe` was supposed to arrive first.
+
+mutation_case "the deferred send is armed for a deadline already past" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        let ready_at = self.sched_now_plus(delay);
+        self.scheduler
+            .schedule_host_send_at(request, ready_at, send_id)""",
+     """        let _ = delay;
+        let ready_at = self.sched_now_plus(Duration::from_millis(0));
+        self.scheduler
+            .schedule_host_send_at(request, ready_at, send_id)""")
+PY
+
+# ── …or is honoured out of reach of `<cancel>` ──────────────────────
+#
+# W3C SCXML 6.3 drops a delayed send that has not been dispatched. An engine
+# that kept the deferred act anywhere else — a side list, a timer thread —
+# would still pass the case above and fail here, which is exactly why the
+# fixture measures both. The witness is host-side: the handler must never be
+# asked to perform the cancelled act at all.
+
+mutation_case "a cancel passes over a deferred host send" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        self.entries.retain(|e| !e.send_id.matches(send_id));",
+     """        self.entries
+            .retain(|e| !e.send_id.matches(send_id) || matches!(e.act, ScheduledAct::HostSend(_)));""")
+PY
+
+# ── The deferred act never happens ──────────────────────────────────
+#
+# The wait is honoured and then nothing is performed. From the document's side
+# this is the worst of the three: it waited, it was told nothing, and the reply
+# it is waiting for has nobody to come from.
+#
+# Aimed inside the dispatch rather than at the tick arm that calls it. Emptying
+# that arm leaves `perform_deferred_host_send` with no caller, and this
+# workspace's deny-warnings build rejects a private method nothing calls — the
+# tree stops compiling and the round reports INCONCLUSIVE instead of a verdict.
+# Measured 2026-08-24, not guessed. Refusing the dispatch its answer drops the
+# act just as completely and keeps every symbol referenced.
+
+mutation_case "the deferred act never reaches the host" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        let served = self.perform_host_send(request);
+        if served.is_none() && !self.has_event_processor(&processor_type) {""",
+     """        let _ = request;
+        let served: Option<Vec<crate::host_processor::HostSendResponse>> = None;
+        if served.is_none() && !self.has_event_processor(&processor_type) {""")
+PY
+
+# ── …or happens, unserved, in silence ───────────────────────────────
+#
+# The immediate site raises §scxml-6.2's `error.execution` for a declared type
+# nobody registered. The deferred one cannot — it returned when the send was
+# armed — so the engine owes the report at the deadline. Without it a wiring
+# mistake on a delayed send is perfect silence.
+#
+# Aimed at the NAME rather than at the `raise` call: the name is what the
+# engine has instead of the document's enum, and looking it up under a name no
+# machine declares drops the report as completely while keeping every type
+# inferred, so the tree still compiles and the round still returns a verdict.
+
+mutation_case "the report is looked up under a name no machine declares" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if let Some(evt) = P::get_event_from_name("error.execution") {""",
+     """            if let Some(evt) = P::get_event_from_name("") {""")
+PY
+
+mutation_case "an unregistered type reports as served at the deadline" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if served.is_none() && !self.has_event_processor(&processor_type) {""",
+     """        if served.is_none() && self.has_event_processor(&processor_type) {""")
+PY
+
+# ── The host is never told when to come back ────────────────────────
+#
+# A host driving on `time_until_next_scheduled_ms` sleeps on that answer. An
+# act the query cannot see is an act the host sleeps straight past — the
+# machine is correct and never gets a tick in which to prove it.
+
+mutation_case "the next-deadline query cannot see a deferred host send" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        self.entries.iter().map(|e| e.ready_at).min()",
+     """        self.entries
+            .iter()
+            .filter(|e| !matches!(e.act, ScheduledAct::HostSend(_)))
+            .map(|e| e.ready_at)
+            .min()""")
+PY

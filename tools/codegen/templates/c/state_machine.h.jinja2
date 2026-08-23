@@ -263,6 +263,40 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     bool to_parent;
     char to_parent_event[SCE_MAX_ID_LEN];
 {% endif %}
+{% if model.has_delayed_host_send %}
+    /* W3C SCXML 6.2.4 + 6.2.5: a `<send delay>` addressed to a processor
+       the HOST serves. The delay is a property of the SEND, not of the
+       processor it named, so this waits in the same queue as any other
+       delayed send — one deadline order, one `<cancel sendid>` path, one
+       answer from `_time_until_next_scheduled_ms`. The `host_send` flag
+       is what `_tick`'s promote loop reads to perform the act instead of
+       raising `event`, the same shape `to_parent` above uses.
+
+       The strings are OWNED rather than pointed at, and that is the
+       clause rather than a C11 habit: W3C SCXML 6.2 evaluates a `<send>`'s
+       fields at SEND time (tests 176 and 186 pin it), so what is stored
+       here is what the document computed when the block ran. Re-reading
+       any of it at fire time would deliver the values the machine holds
+       then, which is a different document.
+
+       Emitted only for a document that has one: these fields are the
+       bulk of the entry, and `has_delayed_host_send` is what keeps a
+       machine without a delayed host send paying nothing for it. */
+    bool host_send;
+    char host_processor_type[SCE_MAX_ID_LEN];
+    char host_event_name[SCE_MAX_ID_LEN];
+    char host_target[SCE_MAX_URI_LEN];
+    char host_content[SCE_MAX_DATA_LEN];
+{% if model.delayed_host_send_max_params > 0 %}
+    /* Sized by the widest delayed host-served `<send>` in this document
+       ({{ model.delayed_host_send_max_params }}), not by
+       SCE_MAX_HOST_SEND_PARAMS: a bound the document proves is a bound
+       nothing has to be tuned to. */
+    char host_param_names[{{ model.delayed_host_send_max_params }}][SCE_MAX_ID_LEN];
+    char host_param_values[{{ model.delayed_host_send_max_params }}][SCE_MAX_DATA_LEN];
+    uint8_t host_param_count;
+{% endif %}
+{% endif %}
 } {{ csym_prefix }}{{ model.name }}_scheduled_entry_t;
 
 typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_queue {
@@ -556,6 +590,23 @@ const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefi
    afterwards would arrive one act too late. */
 void {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_processor_registry_t *host_processors);
+{% if model.needs_event_scheduler %}
+
+/* W3C SCXML 6.2.2 + 6.2.5: both seams at once — the clock this machine
+   measures its `<send delay>` deadlines against AND the handlers that
+   perform its host-served acts.
+
+   Neither single-seam wrapper can stand in for this one. `_init` is
+   construction and initialisation in one call, so both values have to
+   arrive as arguments: `_init_with_clock` installs no registry, and
+   `_init_with_host_processors` installs the monotonic clock. A host that
+   owns time and serves a processor could therefore have one or the other
+   — and a `<send delay>` addressed to a host-served processor is exactly
+   the case that needs both. */
+void {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  sce_clock_t clock,
+                                  const sce_host_processor_registry_t *host_processors);
+{% endif %}
 
 /* Change what serves `processor_type` on a machine that is already
    initialised. `user_data` is handed back unchanged on each call — C's

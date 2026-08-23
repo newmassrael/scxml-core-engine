@@ -59,4 +59,30 @@ for src in "$TMP"/*Sm.kt; do
     cp "$src" "$GENERATED_DIR/"
 done
 
+# The delay side of the same surface (W3C SCXML 6.2.4 + 6.3). A third document
+# rather than a `delay` added to the one above, because that one is driven with
+# `step()` and this one can only be driven with `tick()`: folding them together
+# would put a clock under every assertion the first one makes, and a fixture
+# measuring two things cannot say which of them broke. Its own directory
+# because a Kotlin package is a directory, like the Go half of
+# scripts/regen_host_processor.sh.
+DELAYED_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml"
+DELAYED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_delayed_host_send"
+DELAYED_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$DELAYED_TMP"' EXIT
+
+"$CODEGEN" generate "$DELAYED_FIXTURE" -l kotlin -o "$DELAYED_TMP/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX" \
+    --host-processor "$HOST_PROCESSOR"
+
+mkdir -p "$DELAYED_DIR"
+find "$DELAYED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+for src in "$DELAYED_TMP"/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${DELAYED_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$DELAYED_DIR/"
+done
+
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "Regenerated: $DELAYED_DIR/ from $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"

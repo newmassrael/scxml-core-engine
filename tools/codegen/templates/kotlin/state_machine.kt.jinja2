@@ -206,7 +206,17 @@ class {{ machine_name }}StateMachine(
 {% endfor %}
     }
 
-{% if model.invokes or model.has_parent_communication or model.needs_script_engine or model.needs_http_send %}
+{# W3C SCXML 6.2.5 is in this list for a reason the others are not: a
+   host-served act answers with event NAMES, chosen while the machine runs, so
+   this map is the only thing that can turn a handler's report into events —
+   and the §scxml-6.2 report for an act nobody performed is resolved the same
+   way. Without it a machine that serves a host processor and has no datamodel
+   drops every reply silently: measured on
+   `statechart_delayed_host_send.scxml`, whose handler ran at its deadline and
+   whose `turn.done` reached nothing, because `needs_script_engine` had been
+   standing in for "this machine resolves events by name" and that fixture is
+   the first host-served one without one. #}
+{% if model.invokes or model.has_parent_communication or model.needs_script_engine or model.needs_http_send or model.host_processor_types %}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
 {% for event_name in leaf_events | sort %}

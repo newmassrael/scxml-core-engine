@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  W3C SCXML 6.2.4: a `<send>` carrying `delay` is dispatched AFTER the delay
+  elapses, and W3C SCXML 6.3: a `<cancel>` drops one that has not been
+  dispatched yet. Neither clause says anything about which Event I/O
+  Processor the send named, so both hold for a processor the HOST supplies
+  (W3C SCXML 6.2.5) exactly as they do for the two the specification names.
+
+  They did not. A host-served send was performed at the instant the block
+  ran, whatever `delay` said, on every backend that implements the surface —
+  because the host branch is chosen before the delay branch in one `elif`
+  chain per language. The manifest meanwhile answered
+  `needs_event_scheduler: true`, so a host was told to drive the machine with
+  `tick` for a delay the engine had already thrown away.
+
+  The two observable consequences are one fact — a delayed host-served send
+  lives in the delayed-send queue, keyed by its send id, like any other — so
+  this document measures both in sequence rather than splitting them across
+  two fixtures that could disagree about which queue that is:
+
+    armed        the `probe` that was scheduled for a SHORTER delay arrives
+                 first, so the host send was still pending when it did.
+    tooEarly     the handler's reply beat `probe`, i.e. the send was
+                 dispatched at block time and `delay` was discarded.
+    cancelLost   a second host-served send was `<cancel>`ed while pending
+                 and the handler answered anyway.
+    pass         both held.
+    unserved     the same binary driven with NO handler registered: the act
+                 was performed by nobody, and W3C SCXML 6.2 reports that as
+                 `error.execution`. Reached at the DEADLINE, which is what
+                 makes it a second measurement of the same axis rather than a
+                 restatement of the undeclared-type case — the send site has
+                 returned by then, so the report is owed by whatever holds the
+                 deferred act.
+
+  `probe` and `settle` are ordinary delayed sends in the same blocks, which
+  makes them the false-positive guard: a change that broke delayed delivery
+  outright leaves this document short of every final state instead of
+  reporting a pass. `finish` gives the verdict itself a scheduled arrival,
+  so a channel whose tick loop stopped working fails here rather than
+  passing by never leaving `waiting`.
+
+  Deliberately single-axis: no datamodel reads, no `<param>`, no `<invoke>`.
+  `statechart_host_processor.scxml` owns the dispatch and payload crossing;
+  this one owns only when that dispatch happens.
+
+  The generated machine is compiled with the host-processor declaration
+  `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
+  comment cannot spell a double hyphen). The handler each channel registers
+  answers `turn.done` and counts its calls, so a channel also asserts that
+  the cancelled send never reached the host at all.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="statechart_delayed_host_send"
+       initial="waiting">
+
+  <state id="waiting">
+    <onentry>
+      <!-- The host-served send is armed for the LONGER delay, so the only
+           order that reaches `armed` is the one that honoured it. -->
+      <send type="x-sce-host" event="watch.turn" delay="200ms"/>
+      <send event="probe" delay="100ms"/>
+    </onentry>
+    <transition event="turn.done" target="tooEarly"/>
+    <transition event="probe" target="armed"/>
+  </state>
+
+  <state id="armed">
+    <transition event="turn.done" target="cancelling"/>
+    <!-- W3C SCXML 6.2: nobody performed the act. Reached only when the same
+         binary is driven with no handler registered, and reached at the
+         deadline rather than at block time — which is the whole point: a
+         wiring mistake on a delayed send must still be reported, and reported
+         when the send was due, or the document waits forever for a reply that
+         has nobody to come from. -->
+    <transition event="error.execution" target="unserved"/>
+  </state>
+
+  <state id="cancelling">
+    <onentry>
+      <send type="x-sce-host" event="watch.turn" id="h2" delay="200ms"/>
+      <send event="settle" delay="100ms"/>
+    </onentry>
+    <transition event="settle" target="cancelPending"/>
+    <transition event="turn.done" target="cancelLost"/>
+  </state>
+
+  <state id="cancelPending">
+    <onentry>
+      <cancel sendid="h2"/>
+      <send event="finish" delay="200ms"/>
+    </onentry>
+    <transition event="turn.done" target="cancelLost"/>
+    <transition event="finish" target="pass"/>
+  </state>
+
+  <final id="pass"/>
+  <final id="tooEarly"/>
+  <final id="cancelLost"/>
+  <final id="unserved"/>
+</scxml>

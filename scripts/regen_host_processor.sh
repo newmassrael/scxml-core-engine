@@ -56,11 +56,22 @@ HOST_PROCESSOR="x-sce-host"
 INVOKER_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml"
 HOST_INVOKER="x-sce-host"
 
+# The delay-side fixture. A third document rather than a `delay` added to the
+# one above, because that one is driven with `step` and this one can only be
+# driven with `tick`: folding them together would put a clock under every
+# assertion the first one makes, and a fixture measuring two things cannot say
+# which of them broke. W3C SCXML 6.2.4 puts the wait before the dispatch
+# whatever processor the send named, and W3C SCXML 6.3 lets a `<cancel>` drop
+# one that is still waiting — two observations of the single fact that a
+# delayed host-served send is in the delayed-send queue like any other.
+DELAYED_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
 "$CODEGEN" generate "$INVOKER_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
+"$CODEGEN" generate "$DELAYED_FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
@@ -70,8 +81,10 @@ MODRS="$GENERATED_DIR/mod.rs"
 {
     echo "// GENERATED -- DO NOT EDIT (scripts/regen_host_processor.sh)"
     echo ""
+    echo "mod statechart_delayed_host_send_sm;"
     echo "mod statechart_host_invoker_sm;"
     echo "mod statechart_host_processor_sm;"
+    echo "pub use statechart_delayed_host_send_sm::*;"
     echo "pub use statechart_host_invoker_sm::*;"
     echo "pub use statechart_host_processor_sm::*;"
 } > "$MODRS"
@@ -105,8 +118,28 @@ for src in "$GO_TMP"/*_sm.go; do
 done
 cp "$GO_TMP"/*_sm.go "$GO_GENERATED_DIR/"
 
+# The delayed document gets its own Go directory for the reason stated above:
+# a Go package name comes from the emitted file, so two stems in one directory
+# is two package names in one directory.
+GO_DELAYED_DIR="backends/go/tests/integration/statechart_delayed_host_send"
+GO_DELAYED_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP"' EXIT
+
+"$CODEGEN" generate "$DELAYED_FIXTURE" -l go -o "$GO_DELAYED_TMP/" --host-processor "$HOST_PROCESSOR"
+
+mkdir -p "$GO_DELAYED_DIR"
+find "$GO_DELAYED_DIR" -maxdepth 1 -name '*_sm.go' -delete
+for src in "$GO_DELAYED_TMP"/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${GO_DELAYED_TMP}/|// From: $(dirname "$DELAYED_FIXTURE")/|g" "$src"
+done
+cp "$GO_DELAYED_TMP"/*_sm.go "$GO_DELAYED_DIR/"
+
 echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
+echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $GO_GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "Regenerated: $GO_DELAYED_DIR/ from"
+echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"

@@ -299,12 +299,17 @@ func (e *Engine[S, E]) Tick() {
 	// entries the host had not yet reached, in a loop the host cannot get
 	// between (see beginTurn).
 	for {
-		event, data, ok := e.scheduler.PopReadyEventAt(e.turnNowMs)
+		event, data, hostSend, ok := e.scheduler.PopReadyActAt(e.turnNowMs)
 		if !ok {
 			break
 		}
-		e.RaiseExternal(event, data, "")
-		// The macrostep this event drives may <cancel> a later one, so the
+		if hostSend != nil {
+			// §scxml-6.2.4: the wait is over, so now the act happens.
+			e.performDeferredHostSend(*hostSend)
+		} else {
+			e.RaiseExternal(event, data, "")
+		}
+		// The macrostep this act drives may <cancel> a later one, so the
 		// queue is re-consulted after it rather than before.
 		e.runMainEventLoop()
 		if !e.isRunning || e.isInFinalState() {
@@ -578,6 +583,22 @@ func (e *Engine[S, E]) DonedataAtFinal() string {
 func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, eventData string) string {
 	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
 	return e.scheduler.ScheduleEventAt(event, readyAtMs, sendID, eventData)
+}
+
+// ScheduleHostSend arms a host-served `<send delay>`, to be performed when the
+// delay elapses (§scxml-6.2.4 + §scxml-6.2.5). Returns the send ID.
+//
+// The delayed twin of PerformHostSend, called by the generated send site in its
+// place when the document wrote a delay. §scxml-6.2.4 makes the wait a property
+// of the send and not of the processor it named, so the two differ in WHEN the
+// act happens and in nothing else — including the §scxml-6.2 report owed when
+// nobody performs it, which Tick makes at the deadline.
+//
+// The act lands in the same queue as ScheduleEvent, so CancelEvent drops it
+// (§scxml-6.3) and TimeUntilNextScheduled counts it.
+func (e *Engine[S, E]) ScheduleHostSend(request HostSendRequest, delay time.Duration, sendID string) string {
+	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
+	return e.scheduler.ScheduleHostSendAt(request, readyAtMs, sendID)
 }
 
 // CancelEvent cancels a previously scheduled event by send ID.

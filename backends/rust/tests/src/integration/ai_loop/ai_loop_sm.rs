@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 65fdec330b81544755a6389817fab34d8e574b0a205089b7220c9bd9302bdd70
-// template-hash: 90a17b01a07fa6e2db248839e7823280de5374963642bfa559a2f033a153c586
+// template-hash: c96808b03e7b119d29792dbf258f9125c91be8c72d4823c8f9b56e0e05a3240b
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -1614,15 +1614,15 @@ impl StatePolicy for AiLoopPolicy {
                         // which declared it to this build. Dispatch rather than refuse.
                         {
                             let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                            let __sce_served =
-                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "prompt.end".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                });
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "x-sce-host".to_string(),
+                                event_name: "prompt.end".to_string(),
+                                target: "".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
                             // from the document's side, a processor the platform does not
                             // support — the act it asked for was performed by nobody. Same
@@ -1700,15 +1700,15 @@ impl StatePolicy for AiLoopPolicy {
                         // which declared it to this build. Dispatch rather than refuse.
                         {
                             let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                            let __sce_served =
-                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "judge.begin".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                });
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "x-sce-host".to_string(),
+                                event_name: "judge.begin".to_string(),
+                                target: "".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
                             // from the document's side, a processor the platform does not
                             // support — the act it asked for was performed by nobody. Same
@@ -1740,15 +1740,15 @@ impl StatePolicy for AiLoopPolicy {
                         {
                             let host_params =
                                 std::collections::HashMap::<String, Vec<String>>::new();
-                            let __sce_served =
-                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "notify.human".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                });
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "x-sce-host".to_string(),
+                                event_name: "notify.human".to_string(),
+                                target: "".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
                             // from the document's side, a processor the platform does not
                             // support — the act it asked for was performed by nobody. Same
@@ -1823,15 +1823,15 @@ impl StatePolicy for AiLoopPolicy {
                         // which declared it to this build. Dispatch rather than refuse.
                         {
                             let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                            let __sce_served =
-                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "prompt.start".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                });
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "x-sce-host".to_string(),
+                                event_name: "prompt.start".to_string(),
+                                target: "".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
                             // from the document's side, a processor the platform does not
                             // support — the act it asked for was performed by nobody. Same
@@ -1889,15 +1889,15 @@ impl StatePolicy for AiLoopPolicy {
                         {
                             let host_params =
                                 std::collections::HashMap::<String, Vec<String>>::new();
-                            let __sce_served =
-                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "reflect.begin".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                });
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "x-sce-host".to_string(),
+                                event_name: "reflect.begin".to_string(),
+                                target: "".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
                             // from the document's side, a processor the platform does not
                             // support — the act it asked for was performed by nobody. Same
@@ -1970,15 +1970,15 @@ impl StatePolicy for AiLoopPolicy {
                         {
                             let host_params =
                                 std::collections::HashMap::<String, Vec<String>>::new();
-                            let __sce_served =
-                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "session.replace".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                });
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "x-sce-host".to_string(),
+                                event_name: "session.replace".to_string(),
+                                target: "".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
                             // from the document's side, a processor the platform does not
                             // support — the act it asked for was performed by nobody. Same
@@ -2036,15 +2036,15 @@ impl StatePolicy for AiLoopPolicy {
                         {
                             let host_params =
                                 std::collections::HashMap::<String, Vec<String>>::new();
-                            let __sce_served =
-                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "screen.begin".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                });
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "x-sce-host".to_string(),
+                                event_name: "screen.begin".to_string(),
+                                target: "".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
                             // from the document's side, a processor the platform does not
                             // support — the act it asked for was performed by nobody. Same
@@ -2436,15 +2436,15 @@ impl StatePolicy for AiLoopPolicy {
                             // which declared it to this build. Dispatch rather than refuse.
                             {
                                 let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                let __sce_served =
-                                    engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                        processor_type: "x-sce-host".to_string(),
-                                        event_name: "prompt.turn".to_string(),
-                                        target: "".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                    });
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "prompt.turn".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
                                 // from the document's side, a processor the platform does not
                                 // support — the act it asked for was performed by nobody. Same
@@ -2629,15 +2629,15 @@ impl StatePolicy for AiLoopPolicy {
                             // which declared it to this build. Dispatch rather than refuse.
                             {
                                 let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                let __sce_served =
-                                    engine.perform_host_send(sce_rust_runtime::HostSendRequest {
-                                        processor_type: "x-sce-host".to_string(),
-                                        event_name: "prompt.turn".to_string(),
-                                        target: "".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                    });
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "prompt.turn".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
                                 // from the document's side, a processor the platform does not
                                 // support — the act it asked for was performed by nobody. Same
