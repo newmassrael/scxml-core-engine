@@ -1241,6 +1241,14 @@ const stop = () => {
 };
 process.on('SIGTERM', stop);
 process.on('SIGINT', stop);
+// ANY exit removes the marker, not just a signalled one. A stand-in that died
+// on its own — losing a bind, say — used to leave the file behind, and the
+// round after it then read "the service is still up": a true statement about
+// a process that was already gone, and a diagnosis that costs an hour.
+process.on('exit', () => { try { fs.unlinkSync(marker); } catch (err) { /* already gone */ } });
+// Loudly, so the gate's log says what happened instead of the next round
+// inheriting a mystery.
+process.on('uncaughtException', (err) => { console.error(`standin: ${err.message}`); process.exit(1); });
 // The marker BEFORE the listener, so a caller that waits for the port to
 // accept has thereby waited for the marker too. The gate waits on the socket
 // because that is the readiness the real server has; this file is what makes
@@ -1250,8 +1258,13 @@ fs.writeFileSync(marker, `${process.pid}\n`);
 // HTTP server without opening a port made "ready" mean two different things
 // on the two sides of this test, and the gate's fixed one-second settle was
 // what papered over the difference.
+// `'localhost'`, spelled exactly as the real server spells it: Node resolves
+// that verbatim, so binding `'127.0.0.1'` here while the gate's probe asks for
+// `localhost` would put the two on different address families on any host
+// whose `localhost` answers `::1` first — the failure this whole wait was
+// added to remove, reintroduced in the stand-in.
 http.createServer((req, res) => { res.writeHead(200); res.end('standin'); })
-    .listen(Number(process.argv[2] || 0), '127.0.0.1');
+    .listen(Number(process.argv[2] || 0), 'localhost');
 setTimeout(stop, 60000);
 "#;
 
@@ -1344,6 +1357,16 @@ fn rounds_observed(rounds: &[&str]) -> RoundsRun {
         .env("SCE_MUTATION_ROUNDS", rounds.join(","))
         .env("SCE_ROUND_SERVICE_MARKER", &marker)
         .env("SCE_ROUND_OBSERVED", &observed)
+        // A port of this test's OWN, because the endpoint header's default is
+        // already held when this runs: `workspace-tests` starts a gate-wide
+        // fixture server on it, and this test executes another gate inside
+        // that one. The stand-in then loses the bind, dies before anything
+        // signals it, and leaves its marker behind — which reads as "the
+        // service was still up for the round after", a true statement about
+        // the wrong thing. `sce_http_endpoint_port` honours this variable for
+        // exactly this reason: the header holds the default, and the variable
+        // is what moves the endpoint.
+        .env("SCE_W3C_HTTP_PORT", "18080")
         // The selection is settled by the variable above; a dry run would stop
         // the gate before the loop this test is about, and a change set left in
         // a developer's environment would choose a different set of rounds.
