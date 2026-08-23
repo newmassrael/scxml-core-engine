@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "core/EventMetadata.h"
+#include "core/HostProcessor.h"
 #include "scripting/JSEngine.h"
 #include "scripting/ScriptEngineProvider.h"
 
@@ -98,6 +99,18 @@ protected:
     /// `shared_ptr` is a non-owning view, the same idiom the example driver
     /// and the W3C AOT harness use.
     static void boot(Machine &sm) {
+        // §scxml-6.2.5: the document declares its acts as sends a host serves,
+        // so one has to be registered or the first act raises
+        // `error.execution` instead of reaching anybody. This one performs
+        // nothing and reports nothing, which is deliberate: what these
+        // scenarios measure is the TOPOLOGY, and each supplies the events a
+        // host would have produced at exactly the point it wants them. A
+        // handler that answered would deliver the same events a second time.
+        //
+        // `examples/ai_loop/ai_loop_example.cpp` registers the real one.
+        // Before `initialize()`, because `priming` performs its act on entry.
+        sm.registerEventProcessor("x-sce-host",
+                                  [](const SCE::HostSendRequest &) { return std::vector<SCE::HostSendResponse>{}; });
         sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                                [](SCE::IScriptEngine *) {}));
         sm.initialize();
@@ -736,6 +749,39 @@ TEST_F(AiLoopAotTest, ASessionReplacedPastItsBudgetReportsStuck) {
         << "the replacement past `max_restarts` reaches `stuck`, which reports the run as exhausted "
            "rather than failed; active: "
         << describe(sm);
+}
+
+// §scxml-6.2.5: the document tells a host what to do, in its own words.
+//
+// Every scenario above registers a handler that answers nothing, because what
+// they measure is the topology and each supplies its own events. That makes
+// them blind to the thing this scenario asserts: with a silent handler, a
+// `<send>` that LOST its `type="x-sce-host"` behaves exactly like one that kept
+// it — nothing is delivered either way — so the whole conversion could rot back
+// to targetless sends with both channels green.
+//
+// So this one records instead of ignoring. It pins that entering `priming` asks
+// the host to prompt, and that the prompt text rides ON the act: the host is
+// TOLD what to send rather than reaching into the datamodel behind the machine
+// to find out, which is the difference the conversion bought.
+TEST_F(AiLoopAotTest, TheDocumentDeclaresItsActsToTheHost) {
+    std::vector<std::pair<std::string, std::string>> seen;
+
+    Machine sm;
+    sm.registerEventProcessor("x-sce-host", [&seen](const SCE::HostSendRequest &req) {
+        const auto it = req.params.find("text");
+        seen.emplace_back(req.eventName,
+                          it == req.params.end() || it->second.empty() ? std::string{} : it->second.front());
+        return std::vector<SCE::HostSendResponse>{};
+    });
+    sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
+                                                           [](SCE::IScriptEngine *) {}));
+    sm.initialize();
+
+    ASSERT_FALSE(seen.empty()) << "entering `priming` asked the host for nothing at all";
+    EXPECT_EQ(seen.front().first, "prompt.start") << "entering `priming` did not ask the host to prompt";
+    EXPECT_NE(seen.front().second.find("North star:"), std::string::npos)
+        << "the act carried no prompt, so a host would have to reach past the machine for one: " << seen.front().second;
 }
 
 // The sibling of `OneCancelReachesEveryRegion`.

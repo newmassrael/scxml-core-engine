@@ -1394,6 +1394,7 @@ target_include_directories(integration_tests PRIVATE ${STATIC_INTEGRATION_OUTPUT
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/examples/ai_loop/ai_loop.scxml
+    HOST_PROCESSOR x-sce-host
 )
 
 # §scxml-6.2.5: the host-served Event I/O Processor, compiled for C++ with the

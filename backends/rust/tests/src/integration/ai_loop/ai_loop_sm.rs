@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 53cead9395e19c2d4d97547b53097f243e0a7af1b00bc6539b8e31a958f3e3e0
+// source-hash: 65fdec330b81544755a6389817fab34d8e574b0a205089b7220c9bd9302bdd70
 // template-hash: 1f4fc251a4bb4df71320b116cc055aa1687156c3a3402c346abf1bd3694d0437
 // generated-at: 0
 
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
-// SCE-MAP: ai_loop.scxml:91 :: _machine
+#![doc = "SCE-MAP: ai_loop.scxml:127 :: _machine"]
+// SCE-MAP: ai_loop.scxml:127 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -148,6 +148,7 @@ pub enum AiLoopEvent {
     Fail,
     Hold,
     Judge,
+    JudgeBegin,
     NotifyHuman,
     PromptEnd,
     PromptSent,
@@ -1284,6 +1285,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopEvent::Fail => "fail",
             AiLoopEvent::Hold => "hold",
             AiLoopEvent::Judge => "judge",
+            AiLoopEvent::JudgeBegin => "judge.begin",
             AiLoopEvent::NotifyHuman => "notify.human",
             AiLoopEvent::PromptEnd => "prompt.end",
             AiLoopEvent::PromptSent => "prompt.sent",
@@ -1320,6 +1322,7 @@ impl StatePolicy for AiLoopPolicy {
             "fail" => Some(AiLoopEvent::Fail),
             "hold" => Some(AiLoopEvent::Hold),
             "judge" => Some(AiLoopEvent::Judge),
+            "judge.begin" => Some(AiLoopEvent::JudgeBegin),
             "notify.human" => Some(AiLoopEvent::NotifyHuman),
             "prompt.end" => Some(AiLoopEvent::PromptEnd),
             "prompt.sent" => Some(AiLoopEvent::PromptSent),
@@ -1502,8 +1505,8 @@ impl StatePolicy for AiLoopPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
-    // SCE-MAP: ai_loop.scxml:91 :: _machine
+    #[doc = "SCE-MAP: ai_loop.scxml:127 :: _machine"]
+    // SCE-MAP: ai_loop.scxml:127 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1523,7 +1526,7 @@ impl StatePolicy for AiLoopPolicy {
         }
         match state {
             AiLoopState::Abandoned => {
-                // SCE-MAP: ai_loop.scxml:367 :: abandoned :: _state_body
+                // SCE-MAP: ai_loop.scxml:443 :: abandoned :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1554,26 +1557,167 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Closing => {
-                // SCE-MAP: ai_loop.scxml:290 :: closing :: _state_body
+                // SCE-MAP: ai_loop.scxml:355 :: closing :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
 
-                        let event_data: &str = "";
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        // While it was block-scoped they had to, and what they re-read was
+                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                        // posted zero form parameters, against §scxml-C-2.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        let event_data_string: String = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let wire_params = &mut _send_wire_params;
+                            match se.evaluate_expression(&sid, "end_prompt") {
+                                Ok(val) => {
+                                    wire_params.entry("text".to_string()).or_default().push(val);
+                                }
+                                Err(e) => {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "send param 'text' eval failed: {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<send> <param name='text'> expr failed to evaluate",
+                                        ),
+                                    );
+                                }
+                            }
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
                         {
-                            let mut meta =
-                                sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::PromptEnd);
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::SceString::new(),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_served =
+                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "prompt.end".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                });
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
+                }
+            }
+            AiLoopState::Judging => {
+                // SCE-MAP: ai_loop.scxml:294 :: judging :: _state_body
+                // W3C SCXML 3.8: onentry block 1/1
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        // While it was block-scoped they had to, and what they re-read was
+                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                        // posted zero form parameters, against §scxml-C-2.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        let event_data_string: String = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let wire_params = &mut _send_wire_params;
+                            match se.evaluate_expression(&sid, "done_marker") {
+                                Ok(val) => {
+                                    wire_params
+                                        .entry("marker".to_string())
+                                        .or_default()
+                                        .push(val);
+                                }
+                                Err(e) => {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "send param 'marker' eval failed: {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<send> <param name='marker'> expr failed to evaluate",
+                                        ),
+                                    );
+                                }
+                            }
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_served =
+                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "judge.begin".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                });
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                            }
                         }
 
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1582,26 +1726,38 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Paused => {
-                // SCE-MAP: ai_loop.scxml:334 :: paused :: _state_body
+                // SCE-MAP: ai_loop.scxml:401 :: paused :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_8");
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
                         {
-                            let mut meta =
-                                sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::NotifyHuman);
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::SceString::new(),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
+                            let host_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            let __sce_served =
+                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "notify.human".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                });
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                            }
                         }
 
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1610,26 +1766,81 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Priming => {
-                // SCE-MAP: ai_loop.scxml:205 :: priming :: _state_body
+                // SCE-MAP: ai_loop.scxml:241 :: priming :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        let event_data: &str = "";
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        // While it was block-scoped they had to, and what they re-read was
+                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                        // posted zero form parameters, against §scxml-C-2.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        let event_data_string: String = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let wire_params = &mut _send_wire_params;
+                            match se.evaluate_expression(&sid, "start_prompt") {
+                                Ok(val) => {
+                                    wire_params.entry("text".to_string()).or_default().push(val);
+                                }
+                                Err(e) => {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "send param 'text' eval failed: {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<send> <param name='text'> expr failed to evaluate",
+                                        ),
+                                    );
+                                }
+                            }
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
                         {
-                            let mut meta =
-                                sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::PromptStart);
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::SceString::new(),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_served =
+                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "prompt.start".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                });
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                            }
                         }
 
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1638,7 +1849,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Reflecting => {
-                // SCE-MAP: ai_loop.scxml:261 :: reflecting :: _state_body
+                // SCE-MAP: ai_loop.scxml:324 :: reflecting :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1669,21 +1880,33 @@ impl StatePolicy for AiLoopPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_5");
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
                         {
-                            let mut meta =
-                                sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ReflectBegin);
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::SceString::new(),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
+                            let host_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            let __sce_served =
+                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "reflect.begin".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                });
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                            }
                         }
 
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1692,7 +1915,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Reported => {
-                // SCE-MAP: ai_loop.scxml:309 :: reported :: _state_body
+                // SCE-MAP: ai_loop.scxml:376 :: reported :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1707,7 +1930,7 @@ impl StatePolicy for AiLoopPolicy {
                 ));
             }
             AiLoopState::Restarting => {
-                // SCE-MAP: ai_loop.scxml:279 :: restarting :: _state_body
+                // SCE-MAP: ai_loop.scxml:344 :: restarting :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1738,22 +1961,33 @@ impl StatePolicy for AiLoopPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_5");
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
                         {
-                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                AiLoopEvent::SessionReplace,
-                            );
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::SceString::new(),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
+                            let host_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            let __sce_served =
+                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "session.replace".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                });
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                            }
                         }
 
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1762,7 +1996,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Screening => {
-                // SCE-MAP: ai_loop.scxml:230 :: screening :: _state_body
+                // SCE-MAP: ai_loop.scxml:277 :: screening :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1797,17 +2031,29 @@ impl StatePolicy for AiLoopPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
                         {
-                            let mut meta =
-                                sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ScreenBegin);
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::SceString::new(),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
+                            let host_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            let __sce_served =
+                                engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "screen.begin".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                });
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                            }
                         }
 
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1816,7 +2062,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Spent => {
-                // SCE-MAP: ai_loop.scxml:403 :: spent :: _state_body
+                // SCE-MAP: ai_loop.scxml:479 :: spent :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1827,7 +2073,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Stuck => {
-                // SCE-MAP: ai_loop.scxml:317 :: stuck :: _state_body
+                // SCE-MAP: ai_loop.scxml:384 :: stuck :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1909,8 +2155,8 @@ impl StatePolicy for AiLoopPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
-    // SCE-MAP: ai_loop.scxml:91 :: _machine
+    #[doc = "SCE-MAP: ai_loop.scxml:127 :: _machine"]
+    // SCE-MAP: ai_loop.scxml:127 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1956,8 +2202,8 @@ impl StatePolicy for AiLoopPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
-    // SCE-MAP: ai_loop.scxml:91 :: _machine
+    #[doc = "SCE-MAP: ai_loop.scxml:127 :: _machine"]
+    // SCE-MAP: ai_loop.scxml:127 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -2126,8 +2372,8 @@ impl StatePolicy for AiLoopPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
-    // SCE-MAP: ai_loop.scxml:91 :: _machine
+    #[doc = "SCE-MAP: ai_loop.scxml:127 :: _machine"]
+    // SCE-MAP: ai_loop.scxml:127 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -2138,26 +2384,78 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Judging => {
                 match self.last_transition_index {
                     2 => {
-                        // SCE-MAP: ai_loop.scxml:251 :: judging :: _transition_2
+                        // SCE-MAP: ai_loop.scxml:312 :: judging :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
                             let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
 
-                            let event_data: &str = "";
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            // While it was block-scoped they had to, and what they re-read was
+                            // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                            // posted zero form parameters, against §scxml-C-2.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                            let event_data_string: String = {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let wire_params = &mut _send_wire_params;
+                                match se.evaluate_expression(&sid, "turn_prompt") {
+                                    Ok(val) => {
+                                        wire_params
+                                            .entry("text".to_string())
+                                            .or_default()
+                                            .push(val);
+                                    }
+                                    Err(e) => {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "send param 'text' eval failed: {}",
+                                            e
+                                        );
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send> <param name='text'> expr failed to evaluate"));
+                                    }
+                                }
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
 
-                            // W3C SCXML 6.2: Default send (no target = external event)
+                            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
                             {
-                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                    AiLoopEvent::PromptTurn,
-                                );
-                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                    send_id.clone(),
-                                    ::sce_rust_runtime::SceString::new(),
-                                );
-                                meta.set_event_data(event_data);
-                                engine.raise_external_with_meta(meta);
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_served =
+                                    engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                        processor_type: "x-sce-host".to_string(),
+                                        event_name: "prompt.turn".to_string(),
+                                        target: "".to_string(),
+                                        content: "".to_string(),
+                                        params: host_params,
+                                        send_id: send_id.to_string(),
+                                    });
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none()
+                                    && !engine.has_event_processor("x-sce-host")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                    err_meta.metadata.send_id = send_id.clone();
+                                    engine.raise(err_meta);
+                                }
                             }
 
                             let _ = send_id; // suppress unused warning when no send operation
@@ -2170,7 +2468,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Paused => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:342 :: paused :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:418 :: paused :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2203,7 +2501,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Reflecting => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:266 :: reflecting :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:329 :: reflecting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2279,26 +2577,78 @@ impl StatePolicy for AiLoopPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: ai_loop.scxml:272 :: reflecting :: _transition_1
+                        // SCE-MAP: ai_loop.scxml:335 :: reflecting :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
 
-                            let event_data: &str = "";
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            // While it was block-scoped they had to, and what they re-read was
+                            // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                            // posted zero form parameters, against §scxml-C-2.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                            let event_data_string: String = {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let wire_params = &mut _send_wire_params;
+                                match se.evaluate_expression(&sid, "turn_prompt") {
+                                    Ok(val) => {
+                                        wire_params
+                                            .entry("text".to_string())
+                                            .or_default()
+                                            .push(val);
+                                    }
+                                    Err(e) => {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "send param 'text' eval failed: {}",
+                                            e
+                                        );
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send> <param name='text'> expr failed to evaluate"));
+                                    }
+                                }
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
 
-                            // W3C SCXML 6.2: Default send (no target = external event)
+                            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
                             {
-                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                    AiLoopEvent::PromptTurn,
-                                );
-                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                    send_id.clone(),
-                                    ::sce_rust_runtime::SceString::new(),
-                                );
-                                meta.set_event_data(event_data);
-                                engine.raise_external_with_meta(meta);
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_served =
+                                    engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+                                        processor_type: "x-sce-host".to_string(),
+                                        event_name: "prompt.turn".to_string(),
+                                        target: "".to_string(),
+                                        content: "".to_string(),
+                                        params: host_params,
+                                        send_id: send_id.to_string(),
+                                    });
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none()
+                                    && !engine.has_event_processor("x-sce-host")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                    err_meta.metadata.send_id = send_id.clone();
+                                    engine.raise(err_meta);
+                                }
                             }
 
                             let _ = send_id; // suppress unused warning when no send operation
@@ -2311,7 +2661,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Within => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:396 :: within :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:472 :: within :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2339,7 +2689,7 @@ impl StatePolicy for AiLoopPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: ai_loop.scxml:399 :: within :: _transition_1
+                        // SCE-MAP: ai_loop.scxml:475 :: within :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -2372,7 +2722,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Working => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:214 :: working :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:261 :: working :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2596,8 +2946,8 @@ impl AiLoopPolicy {
             AiLoopState::Failed => false,
             AiLoopState::Judging => {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == AiLoopEvent::Judge {
+                // W3C SCXML 5.9.3: Precomputed prefix match for "judge"
+                if event == AiLoopEvent::Judge || event == AiLoopEvent::JudgeBegin {
                     // W3C SCXML 5.9: Script engine guard
                     if self.safe_evaluate_guard("_scxml_truthy(_event.data.done)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
@@ -2623,8 +2973,8 @@ impl AiLoopPolicy {
                         return true;
                     }
                 }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == AiLoopEvent::Judge {
+                // W3C SCXML 5.9.3: Precomputed prefix match for "judge"
+                if event == AiLoopEvent::Judge || event == AiLoopEvent::JudgeBegin {
                     // W3C SCXML 5.9: Script engine guard
                     if self.safe_evaluate_guard("(turns_since_reflect >= reflect_every)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
@@ -2650,8 +3000,8 @@ impl AiLoopPolicy {
                         return true;
                     }
                 }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == AiLoopEvent::Judge {
+                // W3C SCXML 5.9.3: Precomputed prefix match for "judge"
+                if event == AiLoopEvent::Judge || event == AiLoopEvent::JudgeBegin {
                     // W3C SCXML 3.4: Track transition metadata
                     self.last_transition_source_state = check_state;
                     self.last_transition_index = 2;

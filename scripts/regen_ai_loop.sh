@@ -39,7 +39,11 @@ STEM="ai_loop"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-"$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/"
+# §scxml-6.2.5: the document declares its acts as sends the HOST serves. The
+# same declaration is spelled in `examples/ai_loop/CMakeLists.txt` and
+# `tests/CMakeLists.txt`; without it here codegen emits the refusal and every
+# act in the Rust channel raises `error.execution` instead of reaching a host.
+"$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/" --host-processor x-sce-host
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
