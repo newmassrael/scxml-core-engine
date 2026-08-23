@@ -379,12 +379,19 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_parent({{ csym_prefix }}{{ mod
                                   const char *send_id);
 {% endif %}
 {% endif %}
-{% if model.needs_http_send %}
+{% if model.needs_http_send or model.host_processor_types %}
 
 /* W3C SCXML C.2: standalone server's response carries the receiving
    event's name as a JSON string (`{"event":"<name>",...}`). The generated
    per-fixture helper below maps that name to the SM's `Event` enum at
-   runtime. The mapping is the inverse of the codegen-time
+   runtime.
+
+   §scxml-6.2.5 gave it a second consumer: a host-served act answers with
+   event NAMES, chosen while the machine runs, so the same inverse mapping
+   is what turns the host's report into events. One helper for both,
+   because two would be two spellings of one document's event set.
+
+   The mapping is the inverse of the codegen-time
    `EVENT_<UPPER>` synthesis used everywhere else in the source — same
    set of names, same UPPER + dot/dash → underscore transform. Unknown
    names collapse to `EVENT_NONE` and the surrounding arm declines to
@@ -403,6 +410,78 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
     {% endfor %}
     return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
 }
+{% if model.host_processor_types %}
+
+/* §scxml-6.2.5: dispatch one host-served `<send>` and raise, in order,
+   every event the handler says the act produced.
+   §scxml-C-1: a reply from outside the machine arrives on the EXTERNAL
+   queue, like any event a host raises.
+
+   Emitted once per machine rather than inlined at each send site: an MCU
+   profile pays for every copy, and the eight sites `examples/ai_loop`
+   declares would otherwise be eight copies of this body.
+
+   With nothing registered the send raises `error.execution`, the same
+   outcome an undeclared type produces. That is the point: the document
+   asked for an act, and from its side "no processor implements this
+   type" and "the processor was never wired up" are one fact. Reporting
+   them differently would make a wiring mistake look like a document
+   error — or worse, look like success.
+
+   A reply naming an event this machine does not declare is dropped,
+   which is what the engine does with any such event. A report that did
+   not FIT is not dropped: `overflowed` says this build reserved less
+   room than the act produced, and an act that reported two events and
+   delivered one leaves the machine somewhere the document never
+   described. */
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_send_request_t *request) {
+    const sce_host_processor_entry_t *_entry =
+        sce_host_registry_find(&sm->host_processors, request->processor_type);
+    if (_entry == NULL) {
+{% if 'error.execution' in model.events %}
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<send> names a processor the host declared but never registered");
+{% endif %}
+        return;
+    }
+    sce_host_send_response_list_t _replies;
+    memset(&_replies, 0, sizeof(_replies));
+    _entry->handler(_entry->user_data, request, &_replies);
+    for (int _i = 0; _i < _replies.count; _i++) {
+        const char *_name = _replies.entries[_i].event_name;
+        const {{ csym_prefix }}{{ model.name }}_event_t _ev =
+            {{ csym_prefix }}{{ model.name }}_event_from_name(_name, strlen(_name));
+        if (_ev == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+            continue;
+        }
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _reply_evt;
+        memset(&_reply_evt, 0, sizeof(_reply_evt));
+        _reply_evt.event = _ev;
+        {
+            /* §scxml-B-2-8-1 reads this field as a host payload — XML to a
+               DOM, JSON to a value, anything else to a normalized string —
+               so it crosses as the bytes the handler wrote. Copied whole or
+               not at all: a truncated payload is one that parses to
+               something the host never said. */
+            const size_t _dn = strlen(_replies.entries[_i].event_data);
+            if (_dn < sizeof(_reply_evt.data)) {
+                memcpy(_reply_evt.data, _replies.entries[_i].event_data, _dn + 1u);
+            }
+        }
+        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_reply_evt);
+    }
+{% if 'error.execution' in model.events %}
+    if (_replies.overflowed) {
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<send> to a host-served processor reported more events than this "
+            "build reserved room for (SCE_MAX_HOST_RESPONSES)");
+    }
+{% endif %}
+}
+{% endif %}
 {% endif %}
 
 {# RFC §synth-5-J-1: recursive action emitter. Mirrors the C++ tree's
@@ -536,7 +615,83 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
 {% elif action.type == 'send' %}
         {
             /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr | escape_c }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
-{% if action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% if action.send_type_host_served %}
+            /* §scxml-6.2.5: "{{ action.send_type }}" is served by the HOST,
+               which declared it to this build. Dispatch rather than refuse.
+
+               One arm for every dimension, unlike its siblings below. Those
+               are narrow because the ENGINE has to interpret what the send
+               said — a target to route by, a delay to schedule, a payload to
+               shape for a queue. A host-served processor owns delivery, so
+               none of that is this engine's to interpret: every field
+               crosses as the text the author wrote and the handler decides
+               what it means. Splitting it per dimension would be six copies
+               of one hand-off.
+
+               Placed first in the chain for the reason the cpp and rust
+               templates place it first: the type decides the destination,
+               and falling through would ALSO enqueue the event locally, so
+               the document would see the act twice. */
+            {
+{% if action.eventexpr %}
+                char _host_event[SCE_MAX_ID_LEN];
+                bool _host_event_ok = false;
+{{ se.lua_eval_to_string(action.eventexpr, '_host_event', 'sizeof(_host_event)', '_host_event_ok') }}
+                (void)_host_event_ok;
+{% endif %}
+{% if action.targetexpr %}
+                char _host_target[SCE_MAX_URI_LEN];
+                bool _host_target_ok = false;
+{{ se.lua_eval_to_string(action.targetexpr, '_host_target', 'sizeof(_host_target)', '_host_target_ok') }}
+                (void)_host_target_ok;
+{% endif %}
+{% if action.params %}
+                sce_host_send_param_t _host_params[{{ action.params | length }}];
+                int _host_param_count = 0;
+{% for param in action.params %}
+{% if param.is_static_literal %}
+                static const char _host_param_value_{{ loop.index0 }}[] = "{{ param.static_value | escape_c }}";
+                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                _host_params[_host_param_count].value = _host_param_value_{{ loop.index0 }};
+                _host_param_count++;
+{% else %}
+                char _host_param_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
+                bool _host_param_ok_{{ loop.index0 }} = false;
+{{ se.lua_eval_to_wire_string(param.expr, '_host_param_value_' ~ loop.index0, 'sizeof(_host_param_value_' ~ loop.index0 ~ ')', '_host_param_ok_' ~ loop.index0) }}
+                if (_host_param_ok_{{ loop.index0 }}) {
+                    _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                    _host_params[_host_param_count].value = _host_param_value_{{ loop.index0 }};
+                    _host_param_count++;
+                } else {
+                    /* W3C SCXML 5.7.1: report the failure and omit the name
+                       and value — the act still happens, without a field the
+                       document could not produce. Same rule the cpp arm's
+                       `param_eval_failed` applies. */
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
+{% endif %}
+                }
+{% endif %}
+{% endfor %}
+{% endif %}
+                sce_host_send_request_t _host_req;
+                _host_req.processor_type = "{{ action.send_type | escape_c }}";
+                _host_req.event_name = {% if action.eventexpr %}_host_event{% else %}"{{ action.event | default('', true) | escape_c }}"{% endif %};
+                _host_req.target = {% if action.targetexpr %}_host_target{% else %}"{{ action.target | default('', true) | escape_c }}"{% endif %};
+                _host_req.content = "{{ action.content | default('', true) | escape_c }}";
+                _host_req.send_id = "{% if action.id %}{{ action.id | escape_c }}{% else %}{{ action.auto_send_id | default('', true) | escape_c }}{% endif %}";
+{% if action.params %}
+                _host_req.params = _host_params;
+                _host_req.param_count = _host_param_count;
+{% else %}
+                _host_req.params = NULL;
+                _host_req.param_count = 0;
+{% endif %}
+                {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_host_req);
+            }
+{% elif action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test172): dynamic event name via `eventexpr`,
                no target = internal queue. The event name string is matched
                against the codegen-time event enum; an unmatched name raises
@@ -4736,8 +4891,26 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
 {% if not model.has_parent_communication %}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
-                                                       const char *basic_http_access_uri{% endif %}) {
+                                                       const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+                                                       const sce_host_processor_registry_t *host_processors{% endif %}) {
     memset(sm, 0, sizeof(*sm));
+{% if model.host_processor_types %}
+    /* §scxml-6.2.5: the host's wiring is installed BEFORE the entry walk,
+       for the reason the BasicHTTP address above it is: the first
+       `<onentry>` body may already perform a host-served act, and a handler
+       registered afterwards would arrive one act too late — the document
+       would have met `error.execution` for an act the host was ready to
+       serve.
+
+       Its siblings have no such moment because construction and
+       `initialize()` are two calls there, and a registration made between
+       them survives. Here `_init` is both, so the registry comes in as an
+       argument rather than being written onto the struct first: a value
+       this call MEMSETS cannot be set before it. */
+    if (host_processors != NULL) {
+        sm->host_processors = *host_processors;
+    }
+{% endif %}
 {% if model.needs_event_scheduler %}
     /* §scxml-6.2.2: the clock is stamped before the entry walk, because that
        walk's `<onentry>` can already arm `<send delay>`s and a clock installed
@@ -4804,12 +4977,19 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix
 }
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %});
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %});
 }
 {% if model.needs_event_scheduler %}
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %});
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %});
+}
+{% endif %}
+{% if model.host_processor_types %}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_processor_registry_t *host_processors) {
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors);
 }
 {% endif %}
 
@@ -4820,6 +5000,23 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm) {
     return (sm == NULL) ? NULL : sm->scxml_location;
 }
+{% if model.host_processor_types %}
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_event_processor({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                                                          sce_host_send_handler_fn handler, void *user_data) {
+    if (sm == NULL) {
+        return false;
+    }
+    return sce_host_registry_register(&sm->host_processors, processor_type, handler, user_data);
+}
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_has_event_processor(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type) {
+    if (sm == NULL) {
+        return false;
+    }
+    return sce_host_registry_find(&sm->host_processors, processor_type) != NULL;
+}
+{% endif %}
 
 /* W3C SCXML 3.1.2: external events this machine discarded because nothing
    matched them. The count is the host's only way to tell that outcome from a
@@ -5063,7 +5260,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(co
    runs, and `_init` zeroes the struct so no setter called earlier survives. */
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                       const char *basic_http_access_uri) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri);
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri{% if model.host_processor_types %}, NULL{% endif %});
 }
 {% endif %}
 {% else %}

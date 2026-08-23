@@ -1,0 +1,208 @@
+# Mutation cases for the RUNTIME half of a host-served Event I/O Processor on
+# the C11 backend — the emitted dispatch, the bounded report it reads back,
+# and the registry it dispatches into.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_dispatch_c11.cases`.
+#
+# Sibling of `host_processor_dispatch.cases` (Rust) and
+# `host_processor_dispatch_cpp.cases`. The build half — the declaration, the
+# refusal, the manifest — is `host_processor_declaration.cases` and is not
+# repeated here.
+#
+# The targets are the TEMPLATE and the runtime header rather than a generated
+# file, and that is forced rather than chosen: the C11 backend commits no
+# generated tree. Every fixture is regenerated at CMake time, so the template
+# is what the built binary actually carries, and check 1 of the harness — did
+# the artifact move — is answerable against it.
+#
+# What this file asks that its two siblings cannot: their reply lists grow, so
+# a report cannot fail to fit. This one is bounded, because the profile this
+# backend exists for has no allocator. A bounded list that quietly shortened a
+# report would leave the machine mid-act with no trace — so both the count
+# arm and the too-large-entry arm are mutated here.
+
+mutation_ctest --test-dir build -R '^c11_integration_host_processor$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 \
+    backends/c/runtime/include/sce/host_processor.h
+# The one authored file in that test: everything else the target compiles is
+# generated at CMake time (`sce_generate_static_integration_c_test`), so every
+# assertion these cases red lives here.
+mutation_oracles backends/c/tests/integration/test_host_processor.c
+
+# ── The dispatch stops happening ────────────────────────────────────
+#
+# The feature's off switch. Without the arm the send falls through to a
+# sibling arm that knows nothing about the host, and the act reaches nobody.
+
+mutation_case "the template emits no host dispatch" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% if action.send_type_host_served %}\n            /* §scxml-6.2.5:",
+     "{% if false and action.send_type_host_served %}\n            /* §scxml-6.2.5:")
+PY
+
+# ── …or happens and reports nothing when nobody is wired ────────────
+#
+# The case that decides whether the round repaid its defect or moved it. A
+# document that asked for an act nobody performed must hear about it; silence
+# here is the exact failure this whole surface exists to remove.
+
+mutation_case "an unregistered processor is not reported" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (_entry == NULL) {
+{% if 'error.execution' in model.events %}
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<send> names a processor the host declared but never registered");
+{% endif %}
+        return;
+    }""",
+     """    if (_entry == NULL) {
+        return;
+    }""")
+PY
+
+# ── …or the request arrives stripped ────────────────────────────────
+#
+# A document that can name an act but not parameterise it has lost most of
+# the reason to move the act into the document.
+
+mutation_case "the param value does not cross" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                _host_params[_host_param_count].value = _host_param_value_{{ loop.index0 }};
+                _host_param_count++;
+{% else %}""",
+     """                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                _host_params[_host_param_count].value = "";
+                _host_param_count++;
+{% else %}""")
+PY
+
+# ── The host's wiring does not reach the machine ────────────────────
+#
+# `_init` zeroes the struct, so the registry has to be carried in as an
+# argument. Dropping the copy leaves a machine whose first `<onentry>` act
+# meets an empty registry — the wiring silently undone by the call that was
+# supposed to install it.
+
+mutation_case "the wiring does not survive init" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (host_processors != NULL) {
+        sm->host_processors = *host_processors;
+    }""",
+     "")
+PY
+
+# ── A reply is raised without being recognised ──────────────────────
+#
+# A name this machine does not declare is dropped, as any such event is.
+# Raising it anyway means raising whatever the enum's zero value happens to
+# be — a transition nobody asked for, keyed on a name nobody wrote.
+
+mutation_case "a reply naming an undeclared event is raised anyway" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        if (_ev == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+            continue;
+        }""",
+     "")
+PY
+
+# ── The bounded report is shortened instead of reported ─────────────
+#
+# The two arms are separate cases because they are separate branches: a list
+# that ran out of slots, and one entry too large for the slot it was given.
+# The corpus reaches both only because the C11 driver asks each on purpose.
+
+mutation_case "an overflowing report is not reported" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (_replies.overflowed) {
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<send> to a host-served processor reported more events than this "
+            "build reserved room for (SCE_MAX_HOST_RESPONSES)");
+    }""",
+     "")
+PY
+
+mutation_case "the list saturates silently when it is full" <<'PY'
+edit("backends/c/runtime/include/sce/host_processor.h",
+     """    if (out->count >= (int)SCE_MAX_HOST_RESPONSES) {
+        out->overflowed = true;
+        return false;
+    }""",
+     """    if (out->count >= (int)SCE_MAX_HOST_RESPONSES) {
+        return false;
+    }""")
+PY
+
+mutation_case "an entry too large for its slot is truncated" <<'PY'
+edit("backends/c/runtime/include/sce/host_processor.h",
+     """    if (strlen(event_name) >= sizeof(out->entries[0].event_name) ||
+        strlen(data) >= sizeof(out->entries[0].event_data)) {
+        out->overflowed = true;
+        return false;
+    }""",
+     """    if (strlen(event_name) >= sizeof(out->entries[0].event_name)) {
+        out->overflowed = true;
+        return false;
+    }""")
+PY
+
+# ── One type grows two servers ──────────────────────────────────────
+#
+# Appending rather than replacing makes dispatch depend on registration
+# order, and a host re-registering during a run means to CHANGE what serves
+# the act — not to add a second server whose turn may never come.
+
+mutation_case "registering a type twice appends instead of replacing" <<'PY'
+edit("backends/c/runtime/include/sce/host_processor.h",
+     """    for (int i = 0; i < registry->count; i++) {
+        if (strcmp(registry->entries[i].type, type) == 0) {
+            registry->entries[i].handler = handler;
+            registry->entries[i].user_data = user_data;
+            return true;
+        }
+    }""",
+     "")
+PY
+
+# ── …or the registry answers for a type it does not hold ────────────
+#
+# The keyed lookup is what keeps a document's acts from reaching a processor
+# it never named. Matching the first entry regardless would deliver every
+# act to whoever registered first.
+
+mutation_case "the registry serves any type once something is registered" <<'PY'
+edit("backends/c/runtime/include/sce/host_processor.h",
+     """    for (int i = 0; i < registry->count; i++) {
+        if (strcmp(registry->entries[i].type, type) == 0) {
+            return &registry->entries[i];
+        }
+    }
+    return NULL;""",
+     """    if (registry->count > 0) {
+        return &registry->entries[0];
+    }
+    return NULL;""")
+PY
+
+# ── A param lookup answers the wrong value ──────────────────────────
+#
+# `sce_host_send_param` is the read every handler makes. Returning the first
+# param regardless of name would answer a question nobody asked, and a
+# handler acting on it would act on the wrong field.
+
+mutation_case "the param lookup ignores the name it was given" <<'PY'
+edit("backends/c/runtime/include/sce/host_processor.h",
+     """    for (int i = 0; i < request->param_count; i++) {
+        if (strcmp(request->params[i].name, name) == 0) {
+            return request->params[i].value;
+        }
+    }
+    return NULL;""",
+     """    if (request->param_count > 0) {
+        return request->params[0].value;
+    }
+    return NULL;""")
+PY

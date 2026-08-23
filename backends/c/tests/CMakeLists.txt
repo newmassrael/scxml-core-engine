@@ -1305,6 +1305,45 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # §scxml-6.2.5: a `<send type>` the HOST serves. The fixture lives beside
+    # the build tests rather than under `integration_resources/` for the reason
+    # `tests/CMakeLists.txt` gives on the C++ side: a stem there is a
+    # seven-channel commitment, and the backends without a registry still
+    # refuse the declaration by name. Named through SCXML_FILE for that reason.
+    #
+    # HOST_PROCESSOR is load-bearing, not decoration: codegen decides at
+    # compile time whether a `<send type>` site dispatches or refuses, so the
+    # test would register a handler against a machine built to refuse and read
+    # as a feature that does not work.
+    sce_generate_static_integration_c_test(statechart_host_processor
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml"
+        HOST_PROCESSOR x-sce-host
+    )
+
+    add_executable(sce_c_integration_host_processor
+        integration/test_host_processor.c
+        ${INTEGRATION_C_TEST_statechart_host_processor_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_host_processor PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_host_processor PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_host_processor PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_host_processor
+        COMMAND sce_c_integration_host_processor
+    )
+    set_tests_properties(c11_integration_host_processor PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-6.4.3: an <invoke> <param> gives a declared <data> of the invoked
     # session the value the INVOKING session produced, and a name matching no
     # top-level <data> there is not added at all. This backend already answers
