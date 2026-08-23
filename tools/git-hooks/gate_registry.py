@@ -125,7 +125,8 @@ GATES: dict[str, dict] = {
         # Stays local however expensive it gets: `drop_ci_only` removes a
         # gate without rescuing its dependents, so a `ci_only` dependency
         # would leave the gates that execute its binary with nothing to run.
-        "cost_s": 62,
+        # 41s, pace-normalised from the 2026-08-23 push.
+        "cost_s": 41,
         "summary": "build target/debug/sce-codegen",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
@@ -270,7 +271,10 @@ GATES: dict[str, dict] = {
         "workflows": ["sce-rust-runtime-no-std.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 29,
+        # 16s, pace-normalised from the 2026-08-23 push — cheaper than the 29s
+        # it declared, so this one was making the table pessimistic rather than
+        # optimistic. Both directions are drift; both are worth correcting.
+        "cost_s": 16,
         "summary": "no_std MCU build + clippy + probes",
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
@@ -378,15 +382,6 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
-        "ci_only": "52s, and the budget stopped fitting when `w3c-c11` was "
-                   "re-measured at 95s on the contended machine this repository "
-                   "calibrates against (2026-08-23). Something had to move, and "
-                   "the choice is deliberate: this is the forge axis, which the "
-                   "engine rounds do not touch, while every gate kept local "
-                   "guards a backend a round actually edits. `forge-rust` is "
-                   "already here for its own reason, and this workflow's "
-                   "`paths:` already carries `backends/go/**` — the widening "
-                   "`ci-only-coverage` refuses to see missing.",
         "cost_s": 52,
         "summary": "Go forge conformance regenerate + test",
     },
@@ -622,13 +617,18 @@ GATES: dict[str, dict] = {
         "extra": ["backends/c/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        # 45s was a warm reading. Measured 2026-08-23 on the contended machine
-        # this repository calibrates against — the baseline its owner chose —
-        # the same 245 tests took 85s and then 95s in consecutive runs, and the
-        # gate's own order check refused the run because 45 no longer sorted it
-        # correctly. 95 is the higher of the two readings, for the same reason
-        # the baseline is the pressed machine rather than the idle one.
-        "cost_s": 95,
+        "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
+                   "is the point. The same 245 tests read 85s and 95s run on "
+                   "their own, 258s and 391s inside the push that also builds "
+                   "the generator and runs three other suites. Four readings "
+                   "spanning 4.6x is not a cost that can be declared, and no "
+                   "value fits a 300s ceiling that this gate alone can exceed. "
+                   "It kept its place through two re-prices before the numbers "
+                   "settled the argument; the owner's rule decides it — the "
+                   "slow ones go to CI so a push stays under five minutes. "
+                   "`w3c-tests.yml` has no `paths:` filter, so it runs on every "
+                   "push and nothing narrows what CI sees.",
+        "cost_s": 258,
         "summary": "W3C conformance, C11 MCU backend",
     },
     "w3c-go": {
@@ -639,7 +639,8 @@ GATES: dict[str, dict] = {
         "extra": ["backends/go/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 39,
+        # 52s, pace-normalised from the 2026-08-23 push.
+        "cost_s": 52,
         "summary": "W3C conformance, Go AOT",
     },
     "w3c-kotlin": {
@@ -651,12 +652,13 @@ GATES: dict[str, dict] = {
         "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        # 10s in a push where the generated tree was already current; the 34s
-        # first measurement included the generation this gate no longer has to
-        # do when an earlier gate already did it. The second JVM engine is a
-        # re-run of the test task against that tree, which is why covering it
-        # costs a fraction of the first.
-        "cost_s": 34,
+        # 69s, pace-normalised from a push on 2026-08-23 that ran at 1.51x the
+        # rate these numbers were first taken at. The earlier note said 10s in a
+        # push whose generated tree was already current and 34s when it was not;
+        # both readings were taken with fewer suites in the same run. The
+        # second JVM engine is a re-run of the test task against that tree, so
+        # covering it still costs a fraction of the first.
+        "cost_s": 69,
         "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS)",
     },
     "w3c-python": {
