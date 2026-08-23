@@ -105,24 +105,47 @@
 {% else %}
                 val hostEventName = "{{ action.event | default('', true) | escape_kotlin }}"
 {% endif %}
-                val hostServed = performHostSend(
-                    HostSendRequest(
-                        processorType = "{{ action.send_type | escape_kotlin }}",
-                        eventName = hostEventName,
-                        target = {% if action.targetexpr and model.needs_script_engine %}_rt{% else %}"{{ action.target | default('', true) | escape_kotlin }}"{% endif %},
-                        content = "{{ action.content | default('', true) | escape_kotlin }}",
-                        params = hostParams,
-                        sendId = "{{ action.auto_send_id }}"
-                    )
+                val hostRequest = HostSendRequest(
+                    processorType = "{{ action.send_type | escape_kotlin }}",
+                    eventName = hostEventName,
+                    target = {% if action.targetexpr and model.needs_script_engine %}_rt{% else %}"{{ action.target | default('', true) | escape_kotlin }}"{% endif %},
+                    content = "{{ action.content | default('', true) | escape_kotlin }}",
+                    params = hostParams,
+                    sendId = "{% if action.id %}{{ action.id | escape_kotlin }}{% else %}{{ action.auto_send_id }}{% endif %}"
                 )
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% if action.delayexpr or host_delay_ms > 0 %}
+{# W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the processor
+   it named, so a host-served send carrying one waits exactly as an ordinary
+   send does. Decided here rather than in the delay arms below, because this
+   branch claims every host-served send before they are reached — which is how
+   `delay` came to be discarded on every backend at once. The engine performs
+   the same act from its scheduler drain at the deadline, including the W3C
+   SCXML 6.2 report for an act nobody performed, so the unregistered-handler
+   branch belongs only to the immediate form. W3C SCXML 6.3: it lands in the
+   delayed-send queue under the send id, so a `<cancel>` reaches it and the
+   host never sees the act. #}
+{% if action.delayexpr and model.needs_script_engine %}
+                val hostDelayMs = try {
+                    parseDelay(evaluateExpr(scriptSessionId!!, "{{ action.delayexpr | escape_kotlin }}")?.toString() ?: "0")
+                } catch (_: Exception) {
+                    0L
+                }
+{% else %}
+                val hostDelayMs = {{ host_delay_ms }}L
+{% endif %}
+                scheduleHostSend("{% if action.id %}{{ action.id | escape_kotlin }}{% else %}{{ action.auto_send_id }}{% endif %}", hostDelayMs, hostRequest)
+{% else %}
+                val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
                 // from the document's side, a processor the platform does not
                 // support — the act it asked for was performed by nobody. Same
                 // event as an undeclared type, so a wiring mistake cannot read
                 // as success.
                 if (hostServed == null && !hasEventProcessor("{{ action.send_type | escape_kotlin }}")) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor the host declared but never registered", "{{ action.auto_send_id }}")
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor the host declared but never registered", "{% if action.id %}{{ action.id | escape_kotlin }}{% else %}{{ action.auto_send_id }}{% endif %}")
                 }
+{% endif %}
             }
 {% elif action.send_type_unsupported %}
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution

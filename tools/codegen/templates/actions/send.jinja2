@@ -400,7 +400,17 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 {# §scxml-6.2.5: the type is served by the HOST, which declared it to this
    build. Dispatch rather than refuse — and take the whole send, because a
    processor the host serves owns delivery; falling through would also
-   enqueue the event locally and the document would see the act twice. #}
+   enqueue the event locally and the document would see the act twice.
+
+   §scxml-6.2.4: a `delay` is a property of the SEND, not of the processor it
+   named, so a host-served send carrying one waits exactly as an ordinary send
+   does. Decided here rather than in the delay arms further down, because this
+   branch claims every host-served send before they are reached — which is how
+   `delay` came to be discarded on every backend at once. The scheduled form
+   performs the same act from `tick()` at the deadline, including the
+   §scxml-6.2 report for an act nobody performed. #}
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% set host_is_delayed = action.delayexpr or host_delay_ms > 0 %}
 // §scxml-6.2.5: "{{ action.send_type }}" is served by the host, which declared
 // it to this build. Dispatch rather than refuse.
 {
@@ -429,6 +439,30 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
     }
 {% endif %}
 {% endfor %}
+{% if host_is_delayed %}
+{% if action.delayexpr %}
+    // W3C SCXML 6.2: the wait is named by an expression evaluated now, at send
+    // time — the same reading the event-carrying arms take.
+    auto hostDelayMs = std::chrono::milliseconds{0};
+    {
+        auto hostDelayResult = getScriptEngine().evaluateExpression(sessionId_.value(), "{{ action.delayexpr | escape_cpp }}").get();
+        if (::SCE::ScriptResultUtils::isSuccess(hostDelayResult)) {
+            hostDelayMs = ::SCE::SendSchedulingHelper::parseDelayString(
+                ::SCE::ScriptResultUtils::resultToString(hostDelayResult));
+        } else {
+            SCE_LOG_ERROR("AOT: <send delayexpr> failed to evaluate for host-served type '{{ action.send_type | escape_cpp }}'");
+        }
+    }
+{% else %}
+    const auto hostDelayMs = std::chrono::milliseconds{ {{ host_delay_ms }} };
+{% endif %}
+    // §scxml-6.2.4: arm it. The engine performs the act when the deadline
+    // arrives and reports it there if nobody does, so the unregistered-handler
+    // branch belongs only to the immediate form — this site has returned long
+    // before the deadline. §scxml-6.3: it lands in the delayed-send queue under
+    // sendId, so a `<cancel>` reaches it and the host never sees the act.
+    engine.scheduleHostSend(hostRequest, hostDelayMs, sendId);
+{% else %}
     const auto hostServed = engine.performHostSend(hostRequest);
     // §scxml-6.2: a declared type with no handler registered is, from the
     // document's side, a processor the platform does not support — the act it
@@ -439,6 +473,7 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
             Event::Error_execution,
             "<send type='{{ action.send_type }}'> names a processor the host declared but never registered"));
     }
+{% endif %}
 }
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) %}
 {# W3C SCXML C.2: BasicHTTP send — dispatch via performHttpSend() callback (Zero Duplication) #}

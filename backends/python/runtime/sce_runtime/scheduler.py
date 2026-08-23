@@ -34,6 +34,17 @@ class ScheduledEvent(Generic[E]):
     sendid: str = field(compare=False)
     event: E = field(compare=False)
     data: Any = field(default="", compare=False)
+    #: §scxml-6.2.5 — the host-served send this entry performs instead
+    #: of delivering `event`, or ``None`` for an ordinary delayed send.
+    #:
+    #: §scxml-6.2.4 makes a delay a property of the SEND and not of the
+    #: processor it named, so a host-served send carrying one is an
+    #: ordinary delayed send whose delivery happens to be somebody else's.
+    #: Keeping it in THIS queue is what makes that true in practice: one
+    #: deadline order across both kinds, one ``<cancel sendid>`` path, one
+    #: ``peek_next_due_ms`` answer. A parallel list would oblige every
+    #: present and future query to remember it existed.
+    host_send: Any = field(default=None, compare=False)
 
 
 class Scheduler(Generic[E]):
@@ -48,12 +59,24 @@ class Scheduler(Generic[E]):
         self._cancelled: Set[str] = set()
         self._counter = itertools.count(1)
 
-    def schedule(self, due_ms: int, sendid: str, event: E, data: Any = "") -> None:
+    def schedule(
+        self,
+        due_ms: int,
+        sendid: str,
+        event: E,
+        data: Any = "",
+        host_send: Any = None,
+    ) -> None:
         """Queue `event` for delivery at `due_ms`. `sendid` identifies the
         entry for later `<cancel>` lookups; empty string ids cannot be
         cancelled (matches W3C SCXML 6.2.2 where `<cancel>` requires a
         sendid). `data` is the marshalled `<send>` payload preserved
-        across the delay."""
+        across the delay.
+
+        `host_send` makes the entry a W3C SCXML 6.2.5 host-served send to
+        be PERFORMED at `due_ms` rather than an event to be delivered —
+        the same queue, so it is ordered against every other delayed send
+        by deadline and cancelled by the same id."""
         heapq.heappush(
             self._heap,
             ScheduledEvent(
@@ -62,6 +85,7 @@ class Scheduler(Generic[E]):
                 sendid=sendid,
                 event=event,
                 data=data,
+                host_send=host_send,
             ),
         )
 

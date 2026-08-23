@@ -5340,6 +5340,31 @@
           "file": "backends/go/runtime/helpers.go",
           "symbol": "SetCurrentEventArgs",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_perform_deferred_host_send",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "performDeferredHostSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performDeferredHostSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "perform_deferred_host_send",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "performDeferredHostSend",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5609,6 +5634,11 @@
         },
         {
           "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "ScheduledAct",
           "kind": "references"
         }
       ],
@@ -8037,6 +8067,36 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "performHostSend",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performDeferredHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_perform_deferred_host_send",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "performDeferredHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleHostSend",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -8138,6 +8198,11 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "symbol": "sce_parse_delay_ms",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -8249,6 +8314,115 @@
           "file": "sce/include/core/HostProcessor.h",
           "symbol": "sendId",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Tick",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "performDeferredHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "PopReadyActAt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ScheduleHostSendAt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "scheduledEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "ScheduledSendEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performDeferredHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "promoteNextDueSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_perform_deferred_host_send",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "advance_time",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scheduler.py",
+          "symbol": "ScheduledEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "perform_deferred_host_send",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "tick_in_turn",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "hostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "popReadyAct",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "scheduleHostSendAt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "performDeferredHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "tick",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -8367,6 +8541,61 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "registerEventProcessor",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "PopReadyActAt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ScheduleHostSendAt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "scheduledEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "ScheduledSendEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scheduler.py",
+          "symbol": "ScheduledEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "hostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "popReadyAct",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "scheduleHostSendAt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleHostSend",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -8533,6 +8762,31 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "cancelSend",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleHostSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ScheduleHostSendAt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleHostSend",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "scheduleHostSendAt",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleHostSend",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

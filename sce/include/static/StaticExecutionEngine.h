@@ -2619,9 +2619,16 @@ public:
         {
             std::string eventData;
             Event event;
-            while (scheduler_.popReadyEvent(schedNowMs(), event, eventData)) {
-                raiseExternal(event, eventData);
-                // The macrostep this event drives may `<cancel>` a later one,
+            std::shared_ptr<const ::SCE::HostSendRequest> hostSend;
+            while (scheduler_.popReadyAct(schedNowMs(), event, eventData, hostSend)) {
+                if (hostSend) {
+                    // §scxml-6.2.4: the wait is over, so now the act happens.
+                    performDeferredHostSend(*hostSend);
+                    hostSend.reset();
+                } else {
+                    raiseExternal(event, eventData);
+                }
+                // The macrostep this act drives may `<cancel>` a later one,
                 // so the queue is re-consulted after it rather than before.
                 runMainEventLoop();
                 if (!isRunning_ || isInFinalState()) {
@@ -2747,6 +2754,29 @@ public:
             }
         }
         return replies;
+    }
+
+    /**
+     * @brief §scxml-6.2.4 + §scxml-6.2.5: arm a host-served `<send delay>`,
+     *        to be performed when the delay elapses
+     *
+     * The delayed twin of performHostSend(), called by the generated send site
+     * in its place when the document wrote a `delay`. §scxml-6.2.4 makes the
+     * wait a property of the send and not of the processor it named, so the two
+     * differ in WHEN the act happens and in nothing else — including the
+     * §scxml-6.2 report owed when nobody performs it, which tick() makes at the
+     * deadline.
+     *
+     * The act lands in the same queue as scheduleEvent(), so cancelEvent()
+     * drops it (§scxml-6.3) and timeUntilNextScheduled() counts it.
+     *
+     * @return The sendId used, generated when @p sendId is empty
+     */
+    std::string scheduleHostSend(const ::SCE::HostSendRequest &request, std::chrono::milliseconds delay,
+                                 const std::string &sendId = "") {
+        const uint64_t fireTimeMs = schedNowMs() + static_cast<uint64_t>(delay.count());
+        return scheduler_.scheduleHostSendAt(std::make_shared<const ::SCE::HostSendRequest>(request), fireTimeMs,
+                                             sendId);
     }
 
     /**
@@ -2992,6 +3022,44 @@ public:
      */
     StatePolicy &getPolicy() {
         return policy_;
+    }
+
+private:
+    /**
+     * @brief Perform a host-served send whose delay has elapsed, and report it
+     *        if nobody did (§scxml-6.2 + §scxml-6.2.4)
+     *
+     * The immediate path raises `error.execution` at the send site, which knows
+     * the document's event enum by name. A deferred one cannot: that site
+     * returned when the send was armed, so the engine owes the report — and it
+     * can make it, because `getEventFromName()` is the same lookup
+     * performHostSend() already uses to turn a handler's replies into events. A
+     * document that declares no `error.execution` transition resolves nothing
+     * and nothing is raised, which is what the generated site's own template
+     * guard does.
+     *
+     * Without this, a wiring mistake on a delayed send is perfect silence: the
+     * act never happens, nothing says so, and the document goes on waiting for
+     * a reply that has nobody left to come from.
+     */
+    void performDeferredHostSend(const ::SCE::HostSendRequest &request) {
+        const auto served = performHostSend(request);
+        if (served.has_value() || hasEventProcessor(request.processorType)) {
+            return;
+        }
+        if (auto event = policy_.getEventFromName("error.execution")) {
+            // The same sentence the immediate site emits. One wording for one
+            // fact: a consumer matching on the message must not have to know
+            // whether the send it wrote carried a delay.
+            //
+            // §scxml-6.2.4 + §scxml-5.10 (test 332): the error event MUST carry the
+            // sendid, and a deferred send always has one — the scheduler needed
+            // it to be cancellable.
+            raise(EventWithMetadata(*event,
+                                    "<send type='" + request.processorType +
+                                        "'> names a processor the host declared but never registered",
+                                    "", request.sendId));
+        }
     }
 };
 
