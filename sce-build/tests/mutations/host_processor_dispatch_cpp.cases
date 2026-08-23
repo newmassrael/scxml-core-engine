@@ -41,8 +41,8 @@ mutation_oracles tests/integration/HostProcessorAotTest.cpp
 
 mutation_case "the dispatch never calls the handler" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        auto response = it->second(request);""",
-     """        auto response = std::optional<::SCE::HostSendResponse>();""")
+     """        auto replies = it->second(request);""",
+     """        auto replies = std::vector<::SCE::HostSendResponse>();""")
 PY
 
 # ── A reply is accepted and dropped ─────────────────────────────────
@@ -56,12 +56,12 @@ PY
 
 mutation_case "the handler's reply never becomes an event" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        if (response.has_value() && !response->eventName.empty()) {
-            raiseExternal(response->eventName, response->eventData);
-        }""",
-     """        if (false && response.has_value() && !response->eventName.empty()) {
-            raiseExternal(response->eventName, response->eventData);
-        }""")
+     """            if (!reply.eventName.empty()) {
+                raiseExternal(reply.eventName, reply.eventData);
+            }""",
+     """            if (false && !reply.eventName.empty()) {
+                raiseExternal(reply.eventName, reply.eventData);
+            }""")
 PY
 
 # ── An empty registry reads as success ──────────────────────────────
