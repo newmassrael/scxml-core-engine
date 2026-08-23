@@ -43,6 +43,12 @@ use std::path::{Path, PathBuf};
 /// enumerated as globs — and it obliges the unfiltered workflow to run
 /// that target by name.
 const UNFILTERABLE_GATES: &[&str] = &[
+    // Sweeps every tracked file under `scripts/` for a second spelling of the
+    // parallel-jobs rule, so a script added anywhere under that tree changes
+    // what it reads — and a NEW script carrying its own copy is the case the
+    // gate exists for, which is exactly what a `paths:` filter written over
+    // today's script list would stop it seeing.
+    "build_jobs_has_one_owner",
     "cmake_option_guard_scope",
     "codegen_binary_resolution",
     "committed_sourcemap_drift",

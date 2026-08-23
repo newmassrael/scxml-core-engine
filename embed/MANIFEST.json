@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "5b8a685d84",
+  "embed_version": "0990b15589",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 252,
+  "symbol_count": 256,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -623,6 +623,24 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::ParallelTransitionHelper"
+    },
+    {
+      "header": "core/PayloadReading.h",
+      "kind": "enum",
+      "name": "SCE::PayloadReading",
+      "values": [
+        "Absent",
+        "Dom",
+        "Structured",
+        "Text",
+        "Undecodable"
+      ]
+    },
+    {
+      "header": "core/PayloadReading.h",
+      "kind": "function",
+      "name": "SCE::payloadReadingOfText",
+      "signature": "PayloadReading SCE::payloadReadingOfText(const std::string &)"
     },
     {
       "header": "core/StateEntryHelper.h",
@@ -1472,6 +1490,28 @@
       "kind": "class",
       "members": [],
       "name": "SCE::IScriptEngine"
+    },
+    {
+      "header": "scripting/IScriptEngine.h",
+      "kind": "struct",
+      "members": [
+        "field PayloadReading reading",
+        "field ScriptResult status",
+        "method void () SetCurrentEventResult",
+        "method void () noexcept ~SetCurrentEventResult",
+        "method void (SetCurrentEventResult &&) noexcept SetCurrentEventResult",
+        "method void (const SetCurrentEventResult &) SetCurrentEventResult"
+      ],
+      "name": "SCE::SetCurrentEventResult"
+    },
+    {
+      "header": "scripting/IScriptEngine.h",
+      "kind": "struct",
+      "members": [
+        "field PayloadReading reading",
+        "field ScriptResult status"
+      ],
+      "name": "SCE::SetCurrentEventResult"
     },
     {
       "header": "scripting/IScriptEngine.h",
