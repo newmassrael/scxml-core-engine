@@ -8028,6 +8028,10 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "performHostSend",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -8328,6 +8332,15 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
           "kind": "references"
         }
       ],
@@ -12023,6 +12036,10 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "performHostSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
           "kind": "references"
         }
       ],

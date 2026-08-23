@@ -15,10 +15,13 @@
 # the machine twice off one binary — once with a handler registered, once
 # without — so the pair measures the registration rather than the build.
 #
-# Rust-only. The other backends have no host-processor runtime registry, and
-# the generator refuses the declaration for them by name
+# Rust and Go, the two backends with a committed tree AND a host-processor
+# registry. C++ and C11 drive the same fixture from their own build-time
+# generation (`tests/CMakeLists.txt` and `backends/c/tests/CMakeLists.txt`),
+# so they need no tree here. Kotlin and Python have no registry yet, and the
+# generator refuses the declaration for them by name
 # (`reject_host_processors_in_unsupported_lang`) rather than emitting a
-# dispatch nothing can service. That refusal is what makes a Rust-only gate
+# dispatch nothing can service. That refusal is what keeps a partial roster
 # honest instead of a coverage gap: a declaration cannot silently compile on
 # a backend that would drop it. Called directly from
 # regen_all_committed_trees.sh rather than through the
@@ -76,6 +79,34 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
+# The Go half. Only the processor fixture: Go has a `<send>` registry and no
+# invoker one, so generating the invoker document here would meet the refusal
+# that is still correct for it.
+#
+# The `// From:` rewrite is the same one every `regen_*_go.sh` does — the
+# tracked artefact has to point at the canonical fixture rather than at the
+# temporary directory this run happened to use, or the tree stops reproducing
+# on another machine.
+# Named for the document's own stem rather than for the axis, unlike the Rust
+# tree above: a Go package name comes from the emitted file, so a directory
+# named anything else puts two package names in one directory and the module
+# stops building.
+GO_GENERATED_DIR="backends/go/tests/integration/statechart_host_processor"
+GO_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$GO_TMP"' EXIT
+
+"$CODEGEN" generate "$FIXTURE" -l go -o "$GO_TMP/" --host-processor "$HOST_PROCESSOR"
+
+mkdir -p "$GO_GENERATED_DIR"
+find "$GO_GENERATED_DIR" -maxdepth 1 -name '*_sm.go' -delete
+for src in "$GO_TMP"/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${GO_TMP}/|// From: $(dirname "$FIXTURE")/|g" "$src"
+done
+cp "$GO_TMP"/*_sm.go "$GO_GENERATED_DIR/"
+
 echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
+echo "Regenerated: $GO_GENERATED_DIR/ from"
+echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
