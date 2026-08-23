@@ -689,8 +689,9 @@ fn an_uninitialised_machine_says_it_cannot_answer() {
 /// on nineteen clauses about a loop that had never been seen finishing.
 ///
 /// `closing` is asserted separately from the terminal because it is the whole
-/// reason the document does not send `judge` straight to a final: the agent is
-/// asked for a closing report, and only the turn that answers it ends the run.
+/// reason the document does not send `judge` straight to a final: the session
+/// is asked for a closing report, and only the turn that answers it ends the
+/// run.
 /// A machine that jumped from the verdict to `converged` would satisfy a
 /// terminal-only check and lose the report.
 #[test]
@@ -723,7 +724,7 @@ fn the_run_converges_through_a_closing_report() {
 /// what a `done:false` verdict would do and heads into another turn. The two
 /// deliveries are indistinguishable from the configuration, from the datamodel
 /// and from the outcome: a loop driven this way never converges, however
-/// finished the agent says it is, and nothing says why.
+/// finished the session reports itself to be, and nothing says why.
 ///
 /// What tells them apart is the engine's own count. This is the same shape as
 /// `unhandled_error_is_observable` and `undecodable_payload_is_reported`: the

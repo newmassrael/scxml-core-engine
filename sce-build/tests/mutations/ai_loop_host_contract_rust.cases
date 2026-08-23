@@ -34,8 +34,8 @@ mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
 # false. Delete the raise and only the false survives: a host that forgot the
 # verdict still gets a loop that works another turn, and now nothing anywhere
 # counted it. That is the state both channels were actually in — the run never
-# converges however finished the agent says it is, and the only difference from
-# a legitimately unfinished run is a number nobody was reading.
+# converges however finished the session reports itself to be, and the only
+# difference from a legitimately unfinished run is a number nobody was reading.
 #
 # `a_verdict_without_its_payload_is_reported` is the assertion written for this
 # one; `a_correctly_driven_run_reports_no_errors` is its floor, so an engine
