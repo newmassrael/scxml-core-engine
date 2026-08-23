@@ -99,3 +99,43 @@ edit("sce-build/src/parser.rs",
             )?;""",
      "")
 PY_CASE
+
+# ── The two questions collapse back into one set ────────────────────
+#
+# The common-ground precondition decides what is worth REPORTING. Whether
+# a declaration is TRUE is a fact about the document. They shared one set
+# until 2026-08-23, and the cost was that a true declaration under a
+# protocol-stage compound was refused with "that state has no
+# inconsistently-handled events at all" — so the check could not be paid
+# in advance, and every author met it first as a rejection.
+#
+# Both directions of the collapse are cases, because they fail in
+# opposite ways and only one of them looks like a regression: judging
+# declarations against the filtered set refuses true ones, and reporting
+# from the unfiltered set floods every sequential protocol machine in the
+# W3C corpus.
+
+mutation_case "declarations are judged against the reportable subset again" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     "    check_declarations(model, &found.inconsistent, source)?;",
+     "    check_declarations(model, &found.reportable, source)?;")
+PY
+
+mutation_case "the report fires wherever an inconsistency exists" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     "    report_uncovered_gaps(model, &found.reportable, source)",
+     "    report_uncovered_gaps(model, &found.inconsistent, source)")
+PY
+
+# `common_ground` is bound rather than dropped: with the `if` gone the
+# variable is unused and the tree stops compiling, which the harness reports
+# INCONCLUSIVE — a case that cannot run reads as coverage and measures
+# nothing.
+mutation_case "the common-ground precondition stops filtering anything" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     """            if common_ground {
+                out.reportable.insert(parent.id.clone(), gaps.clone());
+            }""",
+     """            let _ = common_ground;
+            out.reportable.insert(parent.id.clone(), gaps.clone());""")
+PY

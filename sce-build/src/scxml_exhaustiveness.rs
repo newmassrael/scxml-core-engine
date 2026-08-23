@@ -37,6 +37,14 @@
 // an entry from — the AI-generated SCXML failure mode this phase
 // targets.
 //
+// It guards the REPORT, and only the report. Condition 1 above is not
+// part of what makes an `sce:unhandled` declaration true: a sibling
+// handles the event, this child does not, and that is so whatever the
+// rest of the compound looks like. Judging declarations against the
+// filtered set refused true declarations in every compound the filter
+// excluded, which is what made this check impossible to pay in advance
+// — see `Inconsistencies`.
+//
 // Event matching follows §scxml-5.10 / §scxml-3.12.1 semantics:
 //
 //   * A transition `event="*"` matches every event.
@@ -81,17 +89,52 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
         return Ok(());
     }
 
-    let gaps_by_parent = collect_gaps(model);
-    check_declarations(model, &gaps_by_parent, source)?;
-    report_uncovered_gaps(model, &gaps_by_parent, source)
+    let found = collect_gaps(model);
+    check_declarations(model, &found.inconsistent, source)?;
+    report_uncovered_gaps(model, &found.reportable, source)
 }
 
 /// Every gap in the document, keyed by compound parent id and then by
 /// event, valued by the child ids that leave that event unhandled.
-///
-/// Computed once and shared by both passes so the declaration check and
-/// the gap report can never disagree about what a gap is.
 type GapsByParent = BTreeMap<String, GapSet>;
+
+/// The two questions this walk answers, kept apart because they are two
+/// questions.
+///
+/// They were one map, shared by both passes so that "the declaration
+/// check and the gap report can never disagree about what a gap is".
+/// The agreement was real and the cost was too: the common-ground
+/// precondition is a REPORTING heuristic, and a map filtered by it
+/// cannot state a fact about a compound the heuristic excludes.
+/// Measured on `examples/ai_loop/ai_loop.scxml`, whose `watch` region is
+/// exactly the excluded shape — `alive` handles `session.lost`,
+/// `rebuilding` handles `session.ready`, no event in common. Declaring
+/// `sce:unhandled="session.ready"` on `alive` — a true statement about
+/// that document — was refused with "that state has no
+/// inconsistently-handled events at all". So an author could not pay
+/// this check in advance: the declaration became sayable only in the
+/// round where the shape acquired common ground and the lint started
+/// demanding it.
+///
+/// The agreement that has to hold is one-directional, and it still
+/// does: `reportable` is a subset of `inconsistent`, so a declaration
+/// covering a reported gap is always valid and always silences it. What
+/// is no longer true is the converse — a declaration may be valid about
+/// a compound nothing is reported for, which is precisely the
+/// pre-payment the shared map made impossible.
+struct Inconsistencies {
+    /// The FACT: every (parent, event) where some transition-carrying
+    /// sibling handles the event and another does not, with no
+    /// heuristic applied. What a `sce:unhandled` declaration is checked
+    /// against, because the declaration is a claim about the document
+    /// rather than about what this validator chooses to report.
+    inconsistent: GapsByParent,
+    /// The HEURISTIC: the subset whose parent passed the common-ground
+    /// precondition. What is reported, because a compound whose
+    /// children dispatch disjoint event families is the sequential
+    /// protocol-stage pattern rather than a dispatch table with a hole.
+    reportable: GapsByParent,
+}
 
 /// One parent's gaps: event → the child ids not handling it, both in
 /// the order the validator found them (`BTreeMap` over the event
@@ -99,8 +142,11 @@ type GapsByParent = BTreeMap<String, GapSet>;
 type GapSet = BTreeMap<String, Vec<String>>;
 
 /// Walk every compound parent and collect its gaps.
-fn collect_gaps(model: &SCXMLModel) -> GapsByParent {
-    let mut out: GapsByParent = BTreeMap::new();
+fn collect_gaps(model: &SCXMLModel) -> Inconsistencies {
+    let mut out = Inconsistencies {
+        inconsistent: BTreeMap::new(),
+        reportable: BTreeMap::new(),
+    };
 
     // Walk parents in document order so the first-fired diagnostic is
     // deterministic across re-runs.
@@ -154,16 +200,21 @@ fn collect_gaps(model: &SCXMLModel) -> GapsByParent {
         // Common-ground precondition: there must exist at least one
         // event that every transition-carrying sibling matches. If
         // none exists, the siblings are dispatching disjoint event
-        // families — this is the protocol-stage pattern, not a gap.
+        // families — this is the protocol-stage pattern, and an
+        // inconsistency there is not worth REPORTING.
+        //
+        // No longer a `continue`. The walk below still runs, and what
+        // it finds still lands in `inconsistent` — the facts about this
+        // compound do not change with the shape of its neighbours. Only
+        // `reportable` is gated, which is the half the precondition was
+        // ever about. See `Inconsistencies` for the measurement that
+        // separated them.
         let mut common_ground = false;
         for event in &universe {
             if children.iter().all(|c| state_handles_event(c, event)) {
                 common_ground = true;
                 break;
             }
-        }
-        if !common_ground {
-            continue;
         }
 
         // Walk each candidate event. Skip those the parent already
@@ -201,7 +252,10 @@ fn collect_gaps(model: &SCXMLModel) -> GapsByParent {
             }
         }
         if !gaps.is_empty() {
-            out.insert(parent.id.clone(), gaps);
+            if common_ground {
+                out.reportable.insert(parent.id.clone(), gaps.clone());
+            }
+            out.inconsistent.insert(parent.id.clone(), gaps);
         }
     }
 
@@ -209,7 +263,12 @@ fn collect_gaps(model: &SCXMLModel) -> GapsByParent {
 }
 
 /// Check every `sce:unhandled` declaration in the document against the
-/// gap set, rejecting the first that is untrue.
+/// inconsistency FACTS, rejecting the first that is untrue.
+///
+/// `gaps_by_parent` here is `Inconsistencies::inconsistent`, not the
+/// reportable subset: a declaration is the author stating something
+/// about their own document, and whether this validator would have
+/// reported it is not part of whether it is so.
 ///
 /// Walks all states, not just the children the gap walk considered: a
 /// declaration on a `<final>`, on a transition-less state, or on a

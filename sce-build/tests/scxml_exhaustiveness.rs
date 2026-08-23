@@ -467,6 +467,131 @@ fn disjoint_protocol_stages_accepted() {
     compile_positive(dir.path(), "disjoint_protocol.scxml");
 }
 
+/// The same protocol-stage shape, with the author declaring a gap in
+/// advance.
+///
+/// `ready` handles `disconnect` and `connecting` does not — true of the
+/// document whatever the heuristic thinks of the compound. Until the
+/// declaration check was given its own set this was REFUSED, with "that
+/// state has no inconsistently-handled events at all", because the
+/// common-ground filter had emptied the map the claim was checked
+/// against. So the one shape where a document is quiet today was also
+/// the one shape where its author could not write down what they meant:
+/// the declaration became sayable only in the round where some later
+/// edit gave the siblings an event in common and the report started
+/// demanding it.
+///
+/// Measured on `examples/ai_loop/ai_loop.scxml`, whose `watch` region is
+/// this shape exactly — which is why the fixture below is that region's
+/// two states under their own parent.
+#[test]
+fn a_gap_can_be_declared_before_the_report_asks_for_it() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "predeclared.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="predeclared" initial="watch">
+  <state id="watch" initial="alive">
+    <state id="alive" sce:unhandled="session.ready">
+      <transition event="session.lost" target="rebuilding"/>
+    </state>
+    <state id="rebuilding">
+      <transition event="session.ready" target="alive"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    compile_positive(dir.path(), "predeclared.scxml");
+}
+
+/// …and the widening stops exactly there: a declaration naming an event
+/// NO sibling handles is still stale, in the same shape.
+///
+/// Without this, the repair above could have been "accept every
+/// declaration under a compound the heuristic skipped", which is not a
+/// wider truth but an abandoned check.
+#[test]
+fn a_declaration_no_sibling_backs_is_still_stale_in_that_shape() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "predeclared_false.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="predeclared_false" initial="watch">
+  <state id="watch" initial="alive">
+    <state id="alive" sce:unhandled="session.never">
+      <transition event="session.lost" target="rebuilding"/>
+    </state>
+    <state id="rebuilding">
+      <transition event="session.ready" target="alive"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    let err = compile_expect_err(dir.path(), "predeclared_false.scxml");
+    match &err.error {
+        ForgeError::Scxml(boxed) => match boxed.as_ref() {
+            ScxmlSemanticError::StaleUnhandledDeclaration {
+                state,
+                parent,
+                event,
+                gaps,
+            } => {
+                assert_eq!(state, "alive");
+                assert_eq!(parent, "watch");
+                assert_eq!(event, "session.never");
+                // The clause that tells the author what IS true of this
+                // state now has something to say in this shape, where it
+                // used to be forced to say "no gaps at all".
+                assert_eq!(
+                    gaps,
+                    &vec!["session.ready".to_string()],
+                    "the refusal did not name the gap `alive` actually has: {gaps:?}",
+                );
+            }
+            other => panic!("expected StaleUnhandledDeclaration, got {other:?}"),
+        },
+        other => panic!("expected ForgeError::Scxml, got {other:?}"),
+    }
+}
+
+/// The heuristic itself is unchanged: the same compound, with no
+/// declaration at all, is still not reported.
+///
+/// `disjoint_protocol_stages_accepted` above says this for a four-stage
+/// machine. This says it for the two-state shape the two tests above
+/// use, so a repair that widened the REPORT instead of the fact set
+/// fails here rather than passing three tests and breaking the corpus.
+#[test]
+fn the_report_still_skips_a_compound_with_no_common_ground() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "undeclared_disjoint.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="undeclared_disjoint" initial="watch">
+  <state id="watch" initial="alive">
+    <state id="alive">
+      <transition event="session.lost" target="rebuilding"/>
+    </state>
+    <state id="rebuilding">
+      <transition event="session.ready" target="alive"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    compile_positive(dir.path(), "undeclared_disjoint.scxml");
+}
+
 /// Attribute-shape rejections, all `validation/invalid-attribute`.
 ///
 /// The withdrawn `sce:exhaustive` is in this table for a reason that
