@@ -61,6 +61,11 @@ type Engine[S comparable, E comparable] struct {
 	// Returns *HttpSendResponse when real HTTP is used; nil for fire-and-forget.
 	onHTTPSend func(HttpSendRequest) *HttpSendResponse
 
+	// hostProcessors holds what serves each §scxml-6.2.5 Event I/O Processor
+	// type the host declared to this build. Keyed by the `type` string, which
+	// is what a `<send>` names; see host_processor.go.
+	hostProcessors map[string]HostSendHandler
+
 	// scheduler is the §scxml-6.2 delayed event scheduler.
 	scheduler *PullScheduler[E]
 

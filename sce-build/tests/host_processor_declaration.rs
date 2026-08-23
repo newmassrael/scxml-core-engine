@@ -346,12 +346,12 @@ fn a_send_declaration_does_not_claim_the_invoke_of_the_same_name() {
 /// dispatch path and forgot its registry would otherwise be the one nobody
 /// asked.
 ///
-/// C++ and C11 are absent from the `--host-processor` half and present in
+/// C++, C11 and Go are absent from the `--host-processor` half and present in
 /// the `--host-invoker` half, and that asymmetry is the point rather than an
 /// omission: each grew a `<send>` dispatch registry —
-/// `StaticExecutionEngine::registerEventProcessor` and
-/// `sce_host_processor_registry_t` respectively — and neither has an invoker
-/// registry. While the two flags were one refusal a backend either had both
+/// `StaticExecutionEngine::registerEventProcessor`,
+/// `sce_host_processor_registry_t` and `Engine.RegisterEventProcessor`
+/// respectively — and none has an invoker registry. While the two flags were one refusal a backend either had both
 /// or neither, and this loop could ask them together; a single answer now
 /// would either accept an invoker declaration they cannot service or refuse a
 /// processor declaration they can.
@@ -366,11 +366,12 @@ fn a_backend_without_a_registry_refuses_the_declaration() {
     // so a build declaring only an invoker would have compiled on a
     // backend that cannot service it.
     let mut cases: Vec<(&str, &str)> = Vec::new();
-    for lang in ["kotlin", "go", "python"] {
+    for lang in ["kotlin", "python"] {
         cases.push((lang, "--host-processor"));
         cases.push((lang, "--host-invoker"));
     }
     cases.push(("cpp", "--host-invoker"));
+    cases.push(("go", "--host-invoker"));
     cases.push(("c11", "--host-invoker"));
 
     for (lang, flag) in cases {
@@ -510,6 +511,55 @@ fn an_undeclared_machine_carries_no_registry_for_c11() {
     assert!(
         !header.contains("host_processor.h"),
         "a machine that declared no host processor still includes the runtime header",
+    );
+}
+
+/// The Go half of the same claim.
+///
+/// Same shape and same reason as the C++ and C11 ones: dropping a backend
+/// from the refusal list is a claim made by DELETING something, so the
+/// deletion is paid for by asking what the backend now emits.
+///
+/// Asserted on the emitted text rather than by running the machine because
+/// this is the build's half.
+/// `backends/go/tests/integration/statechart_host_processor/` compiles and
+/// runs that same machine, with a handler and without one.
+#[test]
+fn a_declared_type_emits_a_dispatch_for_go() {
+    let out = out_dir("go-dispatch");
+    let r = run(&[
+        "generate",
+        fixture().to_str().unwrap(),
+        "-l",
+        "go",
+        "-o",
+        out.to_str().unwrap(),
+        "--host-processor",
+        "x-sce-host",
+    ]);
+    assert_eq!(
+        r.exit,
+        Some(0),
+        "go refused a declaration it can service: {}",
+        r.stderr
+    );
+
+    let emitted = std::fs::read_to_string(out.join("statechart_host_processor_sm.go"))
+        .expect("the generator wrote the machine");
+    assert!(
+        emitted.contains("engine.PerformHostSend(sce.HostSendRequest{"),
+        "no dispatch was emitted for a declared type",
+    );
+    assert!(
+        !emitted.contains("names a processor this platform does not support"),
+        "a declared type still emitted the unsupported-type refusal",
+    );
+    // The request has to carry what the author wrote, or the document can
+    // name an act but not parameterise it. The fixture's `<param>` is the
+    // one field that proves the crossing rather than the call.
+    assert!(
+        emitted.contains(r#"{Name: "within", Value: "2500"}"#),
+        "the emitted dispatch dropped the <param> the fixture declares",
     );
 }
 
