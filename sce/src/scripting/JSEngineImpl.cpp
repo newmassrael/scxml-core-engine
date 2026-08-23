@@ -435,7 +435,7 @@ SetCurrentEventResult JSEngine::setCurrentEventInternal(const std::string &sessi
         return {ScriptResult::createError("Session not found: " + sessionId), PayloadReading::Absent};
     }
 
-    // Which rung of W3C SCXML B.2.8.1 the payload ended up on. Recorded as the
+    // Which rung of §scxml-B-2-8-1 the payload ended up on. Recorded as the
     // ladder walks rather than re-derived afterwards: a caller can tell a
     // string from an object, but not a string chosen because the content was
     // prose from one chosen because a structured read failed.

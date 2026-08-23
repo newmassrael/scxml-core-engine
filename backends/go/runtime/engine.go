@@ -92,7 +92,7 @@ type Engine[S comparable, E comparable] struct {
 	hasUnseen            bool
 
 	// undecodablePayloads counts deliveries whose payload announced structure
-	// and that the datamodel could not read as one (W3C SCXML B.2.8.1) — see
+	// and that the datamodel could not read as one (§scxml-B-2-8-1) — see
 	// UndecodablePayloads. hasUndecodable says whether lastUndecodablePayload
 	// holds one, because the zero value of E is a real event.
 	undecodablePayloads    uint32
@@ -767,7 +767,7 @@ func (e *Engine[S, E]) LastDiscardedEvent() (E, bool) {
 	return e.lastDiscardedEvent, e.hasDiscarded
 }
 
-// NotePayloadReading records which W3C SCXML B.2.8.1 rung the payload just bound
+// NotePayloadReading records which §scxml-B-2-8-1 rung the payload just bound
 // got.
 //
 // Called by generated code immediately after it binds _event, because that is
@@ -785,7 +785,7 @@ func (e *Engine[S, E]) NotePayloadReading(event E, reading PayloadReading) {
 // UndecodablePayloads reports how many events arrived carrying a payload that
 // announced itself as structure and that the datamodel could not read as one.
 //
-// W3C SCXML B.2.8.1 requires the fallback: content the processor cannot interpret
+// §scxml-B-2-8-1 requires the fallback: content the processor cannot interpret
 // becomes a space-normalized string. What it does not require — and what
 // nothing here used to provide — is any way for the host that SENT that
 // payload to learn its fields have stopped existing. The document reads
@@ -838,7 +838,7 @@ func (e *Engine[S, E]) recordUnseenExternalEvents() {
 // machine that it never looked at, because it had already stopped.
 //
 // W3C SCXML Appendix D's main event loop exits when the machine reaches a top-level final
-// state, and W3C SCXML 3.13 is explicit that the interpreter is then done.
+// state, and §scxml-3.13 is explicit that the interpreter is then done.
 // Refusing the event is therefore correct — and, exactly as with
 // DiscardedExternalEvents and UndecodablePayloads, being unable to SAY it
 // happened is not part of the clause.
