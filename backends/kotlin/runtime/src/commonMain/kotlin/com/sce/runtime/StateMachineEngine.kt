@@ -515,7 +515,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var lastDiscarded: E? = null
 
     /**
-     * W3C SCXML B.2.8.1: deliveries whose payload announced structure and that
+     * §scxml-B-2-8-1: deliveries whose payload announced structure and that
      * the datamodel could not read as one, and the most recent of them. See
      * [undecodablePayloads] and [lastUndecodablePayload].
      */
@@ -523,7 +523,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var lastUndecodable: E? = null
 
     /**
-     * W3C SCXML 3.13: external events this machine never looked at, because it
+     * §scxml-3.13: external events this machine never looked at, because it
      * had already reached a top-level final state, and the most recent of
      * them. See [unseenExternalEvents] and [lastUnseenEvent].
      */
@@ -1163,7 +1163,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     fun lastDiscardedEvent(): E? = lastDiscarded
 
     /**
-     * Record which W3C SCXML B.2.8.1 rung the payload just bound got.
+     * Record which §scxml-B-2-8-1 rung the payload just bound got.
      *
      * Called by generated code immediately after it binds `_event`, because
      * that is the only moment the rung is known. Four of the five readings are
@@ -1178,7 +1178,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * W3C SCXML B.2.8.1: how many events arrived carrying a payload that
+     * §scxml-B-2-8-1: how many events arrived carrying a payload that
      * announced itself as structure and that the datamodel could not read as
      * one.
      *
@@ -1236,7 +1236,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * W3C SCXML 3.13: how many external events the host handed this machine
+     * §scxml-3.13: how many external events the host handed this machine
      * that it never looked at, because it had already stopped.
      *
      * Appendix D's main event loop exits when the machine reaches a top-level

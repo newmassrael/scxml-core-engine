@@ -413,7 +413,7 @@ class IScriptEngine(ABC):
         C++ `SCE::SetCurrentEventArgs` struct and the Rust
         `SetCurrentEventArgs<'a>` parameter object.
 
-        Returns which rung of §scxml-B-2-8-1 the payload got. The
+        Returns which rung of W3C SCXML B.2.8.1 the payload got. The
         implementation is walking that ladder either way, and the rung
         is the one fact about a delivered event that nothing else can
         recover afterwards — see [PayloadReading]. An implementation

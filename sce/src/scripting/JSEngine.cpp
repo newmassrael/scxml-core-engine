@@ -336,7 +336,7 @@ std::future<SetCurrentEventResult> JSEngine::setCurrentEvent(const std::string &
                                                              const std::shared_ptr<Event> &event) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper.
     // `executeAsyncReturning` rather than `executeAsync` because this call
-    // answers with the W3C SCXML B.2.8.1 rung as well as success.
+    // answers with the §scxml-B-2-8-1 rung as well as success.
     return platformExecutor_->executeAsyncReturning<SetCurrentEventResult>(
         [this, sessionId, event]() { return setCurrentEventInternal(sessionId, event); },
         // A shut-down executor refuses rather than runs, and this says what

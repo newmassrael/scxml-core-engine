@@ -146,7 +146,7 @@ interface ScxmlScriptEngine {
      *
      * @param sessionId Active session
      * @param args [SetCurrentEventArgs] bundling event name + 6 metadata fields
-     * @return which rung of W3C SCXML B.2.8.1 the payload got. The implementation
+     * @return which rung of §scxml-B-2-8-1 the payload got. The implementation
      *   is walking that ladder either way, and the rung is the one fact about
      *   a delivered event that nothing else can recover afterwards — see
      *   [PayloadReading]. An implementation that binds no payload returns
@@ -248,7 +248,7 @@ data class SetCurrentEventArgs(
 )
 
 /**
- * Which reading of W3C SCXML B.2.8.1 a payload actually got.
+ * Which reading of §scxml-B-2-8-1 a payload actually got.
  *
  * The clause gives `_event.data` three readings and no fourth: content the
  * processor can interpret as XML becomes a DOM, content it can interpret as a

@@ -8,7 +8,7 @@
 namespace SCE {
 
 /**
- * @brief Which reading of W3C SCXML B.2.8.1 a payload actually got.
+ * @brief Which reading of §scxml-B-2-8-1 a payload actually got.
  *
  * The clause gives `_event.data` three readings and no fourth: content the
  * processor can interpret as XML becomes a DOM, content it can interpret as a

@@ -159,12 +159,12 @@ class Engine(Generic[S, E]):
         # `discarded_external_events`.
         self._discarded_external_events: int = 0
         self._last_discarded_event: Optional[E] = None
-        # W3C SCXML 3.13 — external events this machine never dequeued because it
+        # §scxml-3.13 — external events this machine never dequeued because it
         # had already stopped, and the most recent of them. See
         # `unseen_external_events`.
         self._unseen_external_events: int = 0
         self._last_unseen_event: Optional[E] = None
-        # W3C SCXML B.2.8.1 — deliveries whose payload announced structure and
+        # §scxml-B-2-8-1 — deliveries whose payload announced structure and
         # that the datamodel could not read as one, and the most recent of
         # them. See `undecodable_payloads`.
         self._undecodable_payloads: int = 0

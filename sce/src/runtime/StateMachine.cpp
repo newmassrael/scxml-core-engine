@@ -591,7 +591,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     // §scxml-5.10: RAII guard to protect _event during nested event processing (Test 230)
     struct EventContextGuard {
         ActionExecutorImpl *actionExecutorImpl_;  // Cached pointer to avoid dynamic_pointer_cast overhead
-        // W3C SCXML B.2.8.1: where the payload-reading tally lives. The guard is
+        // §scxml-B-2-8-1: where the payload-reading tally lives. The guard is
         // the only frame that sees a binding and the event it belonged to at
         // the same moment — its own destructor rebinds the SAVED event, so a
         // reading taken any later describes a different delivery.
@@ -615,7 +615,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
                 // Set new event for this processing level
                 actionExecutorImpl_->setCurrentEvent(newEvent);
-                // W3C SCXML B.2.8.1: the binding just chose a rung, and this is
+                // §scxml-B-2-8-1: the binding just chose a rung, and this is
                 // the only frame that knows which event it belonged to. Read
                 // immediately rather than later — the guard's destructor binds
                 // the SAVED event on the way out, which would overwrite it.
@@ -2216,13 +2216,13 @@ StateMachine::Statistics StateMachine::getStatistics() const {
     // configuration from one this engine stopped walking.
     stats.truncatedMacrosteps = truncatedMacrosteps_;
     stats.lastTruncatedMacrostepState = lastTruncatedMacrostepState_;
-    // W3C SCXML B.2.8.1: counted here rather than in the executor because the
+    // §scxml-B-2-8-1: counted here rather than in the executor because the
     // executor binds one event at a time and has nowhere to keep a tally,
     // while this is the object a host holds. The executor answers which rung
     // the LAST binding took; `setCurrentEvent` below turns that into a count.
     stats.undecodablePayloads = undecodablePayloads_;
     stats.lastUndecodablePayloadEvent = lastUndecodablePayloadEvent_;
-    // W3C SCXML 3.13: events handed to a machine that had already stopped. This
+    // §scxml-3.13: events handed to a machine that had already stopped. This
     // engine also refuses them through `TransitionResult::success`; the count
     // is what the generated engines can offer, and parity is what makes a
     // document portable between them.

@@ -33,7 +33,7 @@
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/LogMacros.h"
-// W3C SCXML B.2.8.1: the rung a delivered payload got, which this engine counts.
+// §scxml-B-2-8-1: the rung a delivered payload got, which this engine counts.
 // A `core/` header on purpose — this engine includes nothing from `scripting/`
 // because the policy owns the script-engine handle, and the reading is a fact
 // about the event rather than about that interface.
@@ -770,13 +770,13 @@ private:
     uint32_t unhandledErrorEvents_ = 0;
     Event lastUnhandledError_{};
     bool hasUnhandledError_ = false;
-    // W3C SCXML B.2.8.1: deliveries whose payload announced structure and that the
+    // §scxml-B-2-8-1: deliveries whose payload announced structure and that the
     // datamodel could not read as one, and the most recent of them.
     // `hasUndecodablePayload_` is separate for the same reason as above.
     uint32_t undecodablePayloads_ = 0;
     Event lastUndecodablePayload_{};
     bool hasUndecodablePayload_ = false;
-    // W3C SCXML 3.13: external events this machine never looked at, because it
+    // §scxml-3.13: external events this machine never looked at, because it
     // had already stopped, and the most recent of them. `hasUnseenEvent_` is
     // separate for the same reason as above.
     uint32_t unseenExternalEvents_ = 0;
@@ -1313,7 +1313,7 @@ public:
     }
 
     /**
-     * @brief Record which W3C SCXML B.2.8.1 rung the payload just bound got.
+     * @brief Record which §scxml-B-2-8-1 rung the payload just bound got.
      *
      * Called by generated code immediately after it binds `_event`, because
      * that is the only moment the rung is known. Four of the five readings are
@@ -1393,7 +1393,7 @@ public:
      * @brief External events the host sent that this machine never looked at
      *
      * W3C SCXML Appendix D's main event loop exits when the machine reaches a top-level final
-     * state, and W3C SCXML 3.13 is explicit that the interpreter is then done.
+     * state, and §scxml-3.13 is explicit that the interpreter is then done.
      * Refusing the event is therefore correct — and, exactly as with
      * `discardedExternalEvents()` and `undecodablePayloads()`, being unable to
      * SAY it happened is not part of the clause.

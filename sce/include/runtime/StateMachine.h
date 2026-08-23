@@ -434,7 +434,7 @@ public:
         /// count is zero. One state on the eventless cycle that could not
         /// settle, which is where an author looks first.
         std::string lastTruncatedMacrostepState;
-        /// W3C SCXML B.2.8.1: events delivered with a payload that announced
+        /// §scxml-B-2-8-1: events delivered with a payload that announced
         /// itself as structure and that the datamodel could not read as one.
         ///
         /// The clause requires the fallback — content the processor cannot
@@ -454,7 +454,7 @@ public:
         /// empty while it is zero. A count says something was lost; this says
         /// which delivery lost it.
         std::string lastUndecodablePayloadEvent;
-        /// W3C SCXML 3.13: external events handed to this machine after it had
+        /// §scxml-3.13: external events handed to this machine after it had
         /// stopped, which it therefore never looked at.
         ///
         /// Appendix D's main event loop exits when the machine reaches a
@@ -796,14 +796,14 @@ private:
     uint32_t truncatedMacrosteps_ = 0;
     std::string lastTruncatedMacrostepState_;
     bool macrostepTruncated_ = false;
-    /// W3C SCXML B.2.8.1: deliveries whose payload announced structure and could
+    /// §scxml-B-2-8-1: deliveries whose payload announced structure and could
     /// not be read as one, and the name of the last such event. Reported
     /// through `Statistics::undecodablePayloads` — the count lives here
     /// because the executor binds one event at a time and this is the object a
     /// host holds.
     uint32_t undecodablePayloads_ = 0;
     std::string lastUndecodablePayloadEvent_;
-    /// W3C SCXML 3.13: external events refused because this machine had stopped,
+    /// §scxml-3.13: external events refused because this machine had stopped,
     /// and the name of the last one. Reported through
     /// `Statistics::unseenExternalEvents`.
     uint32_t unseenExternalEvents_ = 0;

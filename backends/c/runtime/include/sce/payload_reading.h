@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE C11 runtime — which reading W3C SCXML B.2.8.1 gave an event payload.
+// SCE C11 runtime — which reading §scxml-B-2-8-1 gave an event payload.
 //
 // The clause hands a payload three readings: interpretable as an XML document
 // becomes a DOM, interpretable as structured data becomes the corresponding
@@ -28,7 +28,7 @@
 
 #include "sce/types.h"
 
-/* The rungs of W3C SCXML B.2.8.1, plus the distinction the clause does not draw.
+/* The rungs of §scxml-B-2-8-1, plus the distinction the clause does not draw.
    `SCE_PAYLOAD_TEXT` and `SCE_PAYLOAD_UNDECODABLE` are the SAME rung of the
    clause — both are the space-normalized string — separated by whether the
    payload looked like it wanted a different one. */

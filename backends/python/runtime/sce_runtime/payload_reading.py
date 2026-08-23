@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
-"""Which reading of §scxml-B-2-8-1 a payload actually got.
+"""Which reading of W3C SCXML B.2.8.1 a payload actually got.
 
 The clause gives ``_event.data`` three readings and no fourth: content the
 processor can interpret as XML becomes a DOM, content it can interpret as a
@@ -35,7 +35,7 @@ from enum import Enum
 
 
 class PayloadReading(Enum):
-    """The rung §scxml-B-2-8-1 gave a delivered payload."""
+    """The rung W3C SCXML B.2.8.1 gave a delivered payload."""
 
     #: The event carried no payload, so no rung applies.
     ABSENT = "absent"
@@ -70,6 +70,9 @@ def payload_reading_of_text(payload: str) -> PayloadReading:
     prose" would report the ladder working as a defect, which is the failure
     that gets a diagnostic ignored.
     """
+    # §scxml-B-2-8-1 — the third rung is "otherwise", so the clause draws no
+    # line inside it; this is where SCE draws one, and the binding axis reads
+    # it here rather than in the docstring above, where it cannot.
     stripped = payload.lstrip(" \t\n\r\f\v")
     if stripped.startswith("{") or stripped.startswith("["):
         return PayloadReading.UNDECODABLE

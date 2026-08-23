@@ -107,7 +107,7 @@ pub type NativeMethod = Box<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>
 /// signature passed to `setStateQueryCallback`.
 pub type StateQueryCallback = Box<dyn Fn(&str) -> bool + Send + Sync>;
 
-/// Which reading W3C SCXML B.2.8.1 gave a delivered payload.
+/// Which reading §scxml-B-2-8-1 gave a delivered payload.
 ///
 /// Defined in [`crate::payload_reading`] and re-exported here, where it is
 /// PRODUCED. It cannot be defined here: this module is gated out of `no_std`
@@ -226,7 +226,7 @@ pub trait IScriptEngine: Send + Sync {
     /// the C++ `IScriptEngine::setCurrentEvent(sessionId, const SetCurrentEventArgs&)`
     /// overload (the seven W3C 5.10 metadata fields bundled into one struct).
     ///
-    /// Returns which rung of W3C SCXML B.2.8.1 the payload got. The implementation
+    /// Returns which rung of §scxml-B-2-8-1 the payload got. The implementation
     /// is walking that ladder either way, and the rung is the one fact about a
     /// delivered event that nothing else can recover afterwards — see
     /// [`PayloadReading`]. An implementation that binds no payload returns
