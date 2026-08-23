@@ -32,6 +32,11 @@
 #include "core/EventQueueManager.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
+// §scxml-6.2.5: the request/reply shape a host-declared Event I/O Processor is
+// dispatched with. A `core/` header for the same reason `PayloadReading.h` is
+// one — it is a fact about a `<send>`, not about any engine's interface, and
+// the Interpreter can grow the same door without moving the types.
+#include "core/HostProcessor.h"
 #include "core/LogMacros.h"
 // §scxml-B-2-8-1: the rung a delivered payload got, which this engine counts.
 // A `core/` header on purpose — this engine includes nothing from `scripting/`
@@ -809,7 +814,12 @@ private:
     uint32_t macrostepMicrostepsTaken_ = 0;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
-    MeshSendCallback onMeshSend_;                              // SCE Mesh: cross-machine <send> callback
+    // §scxml-6.2.5: handlers for the Event I/O Processor types this host
+    // declared it serves, keyed by the `type` a `<send>` names. A map rather
+    // than one callback because the identifier set is open and a host may
+    // serve several — which is also why the request carries its own type.
+    std::map<std::string, ::SCE::HostSendHandler> hostProcessors_;
+    MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §mesh-9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §mesh-9.5: mesh-rpc exit / cancel hook
     ScxmlInvokeStartCallback
@@ -2670,6 +2680,58 @@ public:
         if (onHttpSend_) {
             onHttpSend_(HttpSendRequest{target, eventName, content, params, sendId});
         }
+    }
+
+    /**
+     * @brief §scxml-6.2.5: serve `<send type="processorType">` from the host.
+     *
+     * The build must also have been told about the type
+     * (`sce-codegen --host-processor <type>`): codegen decides at compile time
+     * whether a site dispatches or refuses, and a registration alone cannot
+     * change emitted code. Registering an already-registered type replaces its
+     * handler, which is what a host re-wiring one expects.
+     */
+    void registerEventProcessor(const std::string &processorType, ::SCE::HostSendHandler handler) {
+        hostProcessors_[processorType] = std::move(handler);
+    }
+
+    /**
+     * @brief Whether a handler is registered for `processorType`.
+     *
+     * Two things can go wrong with a host-served send — no handler, or a
+     * handler that answered nothing — and only the first is an error. The
+     * generated site reads this to tell them apart, which is why it is public.
+     */
+    bool hasEventProcessor(const std::string &processorType) const {
+        return hostProcessors_.find(processorType) != hostProcessors_.end();
+    }
+
+    /**
+     * @brief §scxml-6.2: dispatch a host-served `<send>`, and raise the
+     *        handler's reply if it gave one.
+     *
+     * With no handler registered the send raises `error.execution` at the
+     * generated site, the same outcome an undeclared type produces. That is
+     * the point: the document asked for an act, and from its side "no
+     * processor implements this type" and "the processor was never wired up"
+     * are one fact. Reporting them differently would make a wiring mistake
+     * look like a document error, or worse, look like success.
+     *
+     * §scxml-C-1: a reply from outside the machine arrives on the EXTERNAL
+     * queue, like any event the host raises — `raiseExternal` by name, so a
+     * reply naming an event this machine does not declare is dropped exactly
+     * as any such event is rather than crashing the run.
+     */
+    std::optional<::SCE::HostSendResponse> performHostSend(const ::SCE::HostSendRequest &request) {
+        const auto it = hostProcessors_.find(request.processorType);
+        if (it == hostProcessors_.end()) {
+            return std::nullopt;
+        }
+        auto response = it->second(request);
+        if (response.has_value() && !response->eventName.empty()) {
+            raiseExternal(response->eventName, response->eventData);
+        }
+        return response;
     }
 
     /**

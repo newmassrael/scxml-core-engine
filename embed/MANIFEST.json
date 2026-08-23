@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "0990b15589",
+  "embed_version": "c72dc642d7",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 256,
+  "symbol_count": 260,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -581,6 +581,59 @@
       "kind": "function",
       "name": "SCE::Core::HistoryHelper::recordHistory<T>",
       "signature": "std::vector<StateType> SCE::Core::HistoryHelper::recordHistory<T>(const std::vector<StateType> &, StateType, HistoryType, GetParentFunc)"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::map<std::string, std::vector<std::string>> params",
+        "field std::string content",
+        "field std::string eventName",
+        "field std::string processorType",
+        "field std::string sendId",
+        "field std::string target",
+        "method HostSendRequest &(HostSendRequest &&) operator=",
+        "method HostSendRequest &(const HostSendRequest &) operator=",
+        "method void () ~HostSendRequest",
+        "method void (HostSendRequest &&) HostSendRequest",
+        "method void (const HostSendRequest &) HostSendRequest"
+      ],
+      "name": "SCE::HostSendRequest"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::string eventData",
+        "field std::string eventName",
+        "method HostSendResponse &(HostSendResponse &&) noexcept operator=",
+        "method HostSendResponse &(const HostSendResponse &) noexcept(false) operator=",
+        "method void () noexcept HostSendResponse",
+        "method void () noexcept ~HostSendResponse",
+        "method void (HostSendResponse &&) noexcept HostSendResponse",
+        "method void (const HostSendResponse &) noexcept(false) HostSendResponse"
+      ],
+      "name": "SCE::HostSendResponse"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::string eventData",
+        "field std::string eventName",
+        "method HostSendResponse &(HostSendResponse &&) operator=",
+        "method HostSendResponse &(const HostSendResponse &) operator=",
+        "method void () ~HostSendResponse",
+        "method void (HostSendResponse &&) HostSendResponse",
+        "method void (const HostSendResponse &) HostSendResponse"
+      ],
+      "name": "SCE::HostSendResponse"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "typedef",
+      "name": "SCE::HostSendHandler",
+      "type": "std::function<std::optional<HostSendResponse> (const HostSendRequest &)>"
     },
     {
       "header": "core/InvokeHelper.h",

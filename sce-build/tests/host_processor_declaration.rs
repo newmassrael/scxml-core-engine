@@ -168,6 +168,56 @@ fn a_declaration_removes_the_cause_and_echoes_itself() {
     );
 }
 
+/// The C++ half of the same claim.
+///
+/// Dropping a backend from `a_backend_without_a_registry_refuses_the_
+/// declaration` is a claim that it now HAS a path, and a list is the one
+/// shape in which that claim can be made by deleting something. So the
+/// deletion has to be paid for here: the machine C++ emits for a declared
+/// type dispatches, and carries no refusal for it.
+///
+/// Asserted on the emitted text rather than by running the machine because
+/// this is the build's half. `tests/integration/HostProcessorAotTest.cpp`
+/// compiles and runs that same machine, with a handler and without one.
+#[test]
+fn a_declared_type_emits_a_dispatch_for_cpp() {
+    let out = out_dir("cpp-dispatch");
+    let r = run(&[
+        "generate",
+        fixture().to_str().unwrap(),
+        "-l",
+        "cpp",
+        "-o",
+        out.to_str().unwrap(),
+        "--host-processor",
+        "x-sce-host",
+    ]);
+    assert_eq!(
+        r.exit,
+        Some(0),
+        "cpp refused a declaration it can service: {}",
+        r.stderr
+    );
+
+    let emitted = std::fs::read_to_string(out.join("statechart_host_processor_sm.inl"))
+        .expect("the generator wrote the machine");
+    assert!(
+        emitted.contains("performHostSend"),
+        "no dispatch was emitted for a declared type",
+    );
+    assert!(
+        !emitted.contains("names a processor this platform does not support"),
+        "a declared type still emitted the unsupported-type refusal",
+    );
+    // The request has to carry what the author wrote, or the document can
+    // name an act but not parameterise it. The fixture's `<param>` is the
+    // one field that proves the crossing rather than the call.
+    assert!(
+        emitted.contains(r#"hostRequest.params["within"]"#),
+        "the emitted dispatch dropped the <param> the fixture declares",
+    );
+}
+
 /// Declaring a type SCE already implements is not an error — it names
 /// something already true. Refusing it would make a host's declaration
 /// list order-sensitive against SCE's own version.
@@ -295,6 +345,16 @@ fn a_send_declaration_does_not_claim_the_invoke_of_the_same_name() {
 /// Iterated rather than spot-checked: a seventh backend that gained a
 /// dispatch path and forgot its registry would otherwise be the one nobody
 /// asked.
+///
+/// C++ is absent from the `--host-processor` half and present in the
+/// `--host-invoker` half, and that asymmetry is the point rather than an
+/// omission: it grew `StaticExecutionEngine::registerEventProcessor` and a
+/// `<send>` dispatch, and has no invoker registry. While the two flags were
+/// one refusal a backend either had both or neither, and this loop could ask
+/// them together; a single answer now would either accept an invoker
+/// declaration C++ cannot service or refuse a processor declaration it can.
+/// `a_declared_type_emits_a_dispatch_for_cpp` is the other side of the same
+/// claim — without it, dropping C++ from a refusal list would read as a pass.
 #[test]
 fn a_backend_without_a_registry_refuses_the_declaration() {
     // BOTH flags, because they are two lists feeding one check. Sweeping
@@ -302,11 +362,20 @@ fn a_backend_without_a_registry_refuses_the_declaration() {
     // that dropped `host_invoker_types` from the check reddened nothing,
     // so a build declaring only an invoker would have compiled on a
     // backend that cannot service it.
-    for lang in ["cpp", "c11", "kotlin", "go", "python"] {
-        for (flag, doc) in [
-            ("--host-processor", fixture()),
-            ("--host-invoker", invoker_fixture()),
-        ] {
+    let mut cases: Vec<(&str, &str)> = Vec::new();
+    for lang in ["c11", "kotlin", "go", "python"] {
+        cases.push((lang, "--host-processor"));
+        cases.push((lang, "--host-invoker"));
+    }
+    cases.push(("cpp", "--host-invoker"));
+
+    for (lang, flag) in cases {
+        {
+            let doc = if flag == "--host-processor" {
+                fixture()
+            } else {
+                invoker_fixture()
+            };
             let tag = flag.trim_start_matches("--");
             let out = out_dir(&format!("refuse-{lang}-{tag}"));
             let r = run(&[

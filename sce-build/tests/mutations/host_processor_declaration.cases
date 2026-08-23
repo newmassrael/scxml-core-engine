@@ -174,12 +174,23 @@ PY
 
 # The invoke half of the same refusal. Declaring only an invoker, on a
 # backend with no registry, must refuse exactly as declaring only a
-# processor does — the two lists feed one check, and a check reading only
-# one of them would let the other through silently.
+# processor does — a check reading only the processor list would let the
+# other through silently.
+#
+# The two lists used to feed ONE check and this case emptied the chained
+# iterator. C++ ended that: it grew a `<send>` registry and no invoker one,
+# so the halves are separate functions now and the invoker list is read in
+# exactly one place. Emptying it there is the same mutation, aimed at where
+# the answer moved to — and it now also covers C++, which is the backend the
+# split made able to get this wrong.
 mutation_case "the refusal ignores the invoke declaration" <<'PY'
 edit("sce-build/src/generator.rs",
-     "        .chain(model.host_invoker_types.iter())",
-     "        .chain([].iter())")
+     """    reject_declaration_in_unsupported_lang(
+        &model.host_invoker_types,
+        "--host-invoker",""",
+     """    reject_declaration_in_unsupported_lang(
+        &[],
+        "--host-invoker",""")
 PY
 
 # ── …or start refusing documents that declared nothing ─────────────
