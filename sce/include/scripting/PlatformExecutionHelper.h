@@ -79,7 +79,7 @@ public:
      * when it was written.
      *
      * `setCurrentEvent` now answers with more than success: it also reports
-     * which rung of W3C SCXML B.2.8.1 the payload got, which is the one fact
+     * which rung of §scxml-B-2-8-1 the payload got, which is the one fact
      * about a delivered event that nothing can recover afterwards (see
      * `SetCurrentEventResult`). Rather than widen every caller of the virtual,
      * the result travels in a promise this wrapper owns while the virtual goes

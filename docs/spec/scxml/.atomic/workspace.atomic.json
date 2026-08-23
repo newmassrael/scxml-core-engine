@@ -2020,6 +2020,51 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "tick",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "UnseenExternalEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "unseenExternalEventCount",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "unseenExternalEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "unseenExternalEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "unseenExternalEvents_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "unseenExternalEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "unseenExternalEvents_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::getStatistics",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5284,6 +5329,16 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "processDispatchedEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "IScriptEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "SetCurrentEventArgs",
           "kind": "references"
         }
       ],
@@ -10915,6 +10970,11 @@
           "file": "backends/rust/runtime/src/helpers/event_data.rs",
           "symbol": "script_value_to_wire_string",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "IScriptEngine",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -11311,6 +11371,150 @@
         {
           "file": "sce-build/src/model.rs",
           "symbol": "SCXMLModel",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/payload_reading.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "NotePayloadReading",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "UndecodablePayloads",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "IScriptEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "PayloadReading",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "setCurrentEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "notePayloadReading",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "undecodablePayloadCount",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "undecodablePayloads",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "note_payload_reading",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "IScriptEngine",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/PayloadReading.h",
+          "symbol": "PayloadReading",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "undecodablePayloads",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "undecodablePayloads_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/IScriptEngine.h",
+          "symbol": "setCurrentEvent",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/PlatformExecutionHelper.h",
+          "symbol": "PlatformExecutionHelper",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "notePayloadReading",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "undecodablePayloads_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::ensureCurrentEventSet",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.h",
+          "symbol": "lastPayloadReading",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.h",
+          "symbol": "lastPayloadReading_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "EventContextGuard",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::getStatistics",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "owner_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/JSEngine.cpp",
+          "symbol": "JSEngine::setCurrentEvent",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::setCurrentEventInternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/payload_reading.py",
+          "symbol": "payload_reading_of_text",
           "kind": "references"
         }
       ],

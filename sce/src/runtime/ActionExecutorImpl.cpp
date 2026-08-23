@@ -495,7 +495,7 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
         );
 
         auto result = scriptEngine_.setCurrentEvent(sessionId_, event).get();
-        // W3C SCXML B.2.8.1: the Interpreter records which rung the payload got,
+        // §scxml-B-2-8-1: the Interpreter records which rung the payload got,
         // so a host driving it can ask the same question the AOT engines
         // answer — see `IActionExecutor::lastPayloadReading`.
         lastPayloadReading_ = result.reading;

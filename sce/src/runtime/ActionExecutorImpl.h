@@ -88,7 +88,7 @@ public:
     void setCurrentEvent(const EventMetadata &metadata);
 
     /**
-     * @brief Which W3C SCXML B.2.8.1 rung the payload of the last bound event got.
+     * @brief Which §scxml-B-2-8-1 rung the payload of the last bound event got.
      *
      * The ladder decides between a DOM, a value and a space-normalized string,
      * and that decision used to end at the script engine. It is kept here so
@@ -127,7 +127,7 @@ public:
 
 private:
     IScriptEngine &scriptEngine_;
-    /// W3C SCXML B.2.8.1: which rung the last bound payload got — see
+    /// §scxml-B-2-8-1: which rung the last bound payload got — see
     /// `lastPayloadReading()`. Written where the binding returns, so it cannot
     /// describe a different event than the one just delivered.
     PayloadReading lastPayloadReading_ = PayloadReading::Absent;

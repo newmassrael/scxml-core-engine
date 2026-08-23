@@ -1241,7 +1241,7 @@ impl<P: StatePolicy> Engine<P> {
         self.last_discarded_event
     }
 
-    /// Record which reading W3C SCXML B.2.8.1 gave the payload just bound.
+    /// Record which reading §scxml-B-2-8-1 gave the payload just bound.
     ///
     /// Called by generated code immediately after it binds `_event`, because
     /// that is the only moment the rung is known — see
@@ -1249,7 +1249,7 @@ impl<P: StatePolicy> Engine<P> {
     /// the ladder working and are recorded by being ignored; the fifth is the
     /// one a host is wrong about.
     pub fn note_payload_reading(&mut self, event: P::Event, reading: crate::PayloadReading) {
-        // W3C SCXML B.2.8.1 is the clause the reading comes from, named in
+        // §scxml-B-2-8-1 is the clause the reading comes from, named in
         // prose rather than as a `§` citation: this method REPORTS the rung a
         // script engine chose, and a bound citation here would claim it
         // implements the clause. The ladder itself is where that claim belongs.
@@ -1319,7 +1319,7 @@ impl<P: StatePolicy> Engine<P> {
     /// looked at, because it had already stopped.
     ///
     /// §scxml-D-mainEventLoop exits when the machine reaches a top-level final
-    /// state, and W3C SCXML 3.13 is explicit that the interpreter is then
+    /// state, and §scxml-3.13 is explicit that the interpreter is then
     /// done. Refusing the event is therefore correct — and, exactly as with
     /// [`discarded_external_events`](Self::discarded_external_events) and
     /// [`undecodable_payloads`](Self::undecodable_payloads), being unable to
