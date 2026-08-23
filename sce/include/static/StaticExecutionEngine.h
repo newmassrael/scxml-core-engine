@@ -2701,14 +2701,20 @@ public:
      * Two things can go wrong with a host-served send — no handler, or a
      * handler that answered nothing — and only the first is an error. The
      * generated site reads this to tell them apart, which is why it is public.
+     *
+     * `performHostSend`'s own answer now separates them too: `std::nullopt` is
+     * "no handler" and an empty list is "ran, reported nothing". The generated
+     * guard still asks both, and that redundancy is deliberate — the two are
+     * one fact from the document's side, so a future shape that blurs them
+     * again has to get past a site that checks each.
      */
     bool hasEventProcessor(const std::string &processorType) const {
         return hostProcessors_.find(processorType) != hostProcessors_.end();
     }
 
     /**
-     * @brief §scxml-6.2: dispatch a host-served `<send>`, and raise the
-     *        handler's reply if it gave one.
+     * @brief §scxml-6.2: dispatch a host-served `<send>` and raise, in order,
+     *        every event the handler says the act produced.
      *
      * With no handler registered the send raises `error.execution` at the
      * generated site, the same outcome an undeclared type produces. That is
@@ -2717,21 +2723,30 @@ public:
      * are one fact. Reporting them differently would make a wiring mistake
      * look like a document error, or worse, look like success.
      *
+     * The two answers are therefore "no handler" (`std::nullopt`) and "the
+     * handler ran and produced these" (a list, possibly empty). An empty list
+     * is a success: plenty of acts report nothing, and real work answers later
+     * through the host's own loop.
+     *
      * §scxml-C-1: a reply from outside the machine arrives on the EXTERNAL
      * queue, like any event the host raises — `raiseExternal` by name, so a
      * reply naming an event this machine does not declare is dropped exactly
-     * as any such event is rather than crashing the run.
+     * as any such event is rather than crashing the run. Raised in list order,
+     * because a handler reporting two observations is reporting a sequence:
+     * see HostSendHandler for the case that decided the shape.
      */
-    std::optional<::SCE::HostSendResponse> performHostSend(const ::SCE::HostSendRequest &request) {
+    std::optional<std::vector<::SCE::HostSendResponse>> performHostSend(const ::SCE::HostSendRequest &request) {
         const auto it = hostProcessors_.find(request.processorType);
         if (it == hostProcessors_.end()) {
             return std::nullopt;
         }
-        auto response = it->second(request);
-        if (response.has_value() && !response->eventName.empty()) {
-            raiseExternal(response->eventName, response->eventData);
+        auto replies = it->second(request);
+        for (const auto &reply : replies) {
+            if (!reply.eventName.empty()) {
+                raiseExternal(reply.eventName, reply.eventData);
+            }
         }
-        return response;
+        return replies;
     }
 
     /**

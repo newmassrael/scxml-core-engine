@@ -210,7 +210,7 @@ fn a_declared_type_with_no_invoker_still_raises_error_execution() {
 fn neither_another_type_nor_a_send_processor_serves_this_invoke() {
     let (mut engine, script_engine) = started();
     engine.register_invoker("x-some-other-host", |_ev: HostInvokeEvent| None);
-    engine.register_event_processor(DECLARED_TYPE, |_req| None);
+    engine.register_event_processor(DECLARED_TYPE, |_req| Vec::new());
     engine.initialize();
     engine.step();
 

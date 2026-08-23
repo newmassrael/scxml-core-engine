@@ -2040,7 +2040,7 @@ impl<P: StatePolicy> Engine<P> {
     where
         F: FnMut(
                 crate::host_processor::HostSendRequest,
-            ) -> Option<crate::host_processor::HostSendResponse>
+            ) -> Vec<crate::host_processor::HostSendResponse>
             + Send
             + 'static,
     {
@@ -2148,7 +2148,8 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// §scxml-6.2: dispatch a `<send>` addressed to a host-served
-    /// processor, and raise the handler's reply if it gave one.
+    /// processor and raise, in order, every event the handler says the
+    /// act produced.
     ///
     /// With no handler registered the send raises `error.execution`,
     /// the same outcome an undeclared type produces. That is the point:
@@ -2157,26 +2158,41 @@ impl<P: StatePolicy> Engine<P> {
     /// one fact. Reporting them differently would make a wiring mistake
     /// look like a document error, or worse, look like success.
     ///
+    /// The two answers are therefore `None` ("no handler") and a list
+    /// ("the handler ran and produced these"). An empty list is a
+    /// success: plenty of acts report nothing, and real work answers
+    /// later through the host's own loop.
+    ///
+    /// Raised in list order, because a handler reporting two
+    /// observations is reporting a sequence — see `HostSendHandler` for
+    /// the case that decided the shape. Named without a link for the
+    /// reason `register_event_processor` names its sibling that way: the
+    /// type is `pub(crate)`, and an intra-doc link from public
+    /// documentation to a private item is what `rustdoc-links` refuses.
+    /// The handler's borrow ends before the first
+    /// raise, which is what lets one call do both without the handler
+    /// needing the engine.
+    ///
     /// Called from the generated send site, which is why it is public.
     #[cfg(not(feature = "no_std"))]
     pub fn perform_host_send(
         &mut self,
         request: crate::host_processor::HostSendRequest,
-    ) -> Option<crate::host_processor::HostSendResponse> {
+    ) -> Option<Vec<crate::host_processor::HostSendResponse>> {
         let processor_type = request.processor_type.clone();
         let handler = self.host_processors.handler_for(&processor_type)?;
-        let response = handler(request);
-        if let Some(resp) = response.as_ref() {
-            if let Some(evt) = P::get_event_from_name(&resp.event_name) {
+        let replies = handler(request);
+        for reply in &replies {
+            if let Some(evt) = P::get_event_from_name(&reply.event_name) {
                 let mut meta = EventWithMetadata::new(evt);
                 // §scxml-C-1: a reply from outside the machine arrives on
                 // the external queue, like any event the host raises.
                 meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
-                meta.metadata.data = resp.event_data.clone();
+                meta.metadata.data = reply.event_data.clone();
                 self.external_queue.raise(meta);
             }
         }
-        response
+        Some(replies)
     }
 
     // ════════════════════════════════════════

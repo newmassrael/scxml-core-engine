@@ -71,10 +71,10 @@ fn a_registered_handler_receives_the_send_and_its_reply_arrives() {
         // The request/reply shape: the reply becomes an event the document
         // was already waiting for, which is what lets a state DECLARE an
         // act instead of a host-side table performing it.
-        Some(HostSendResponse {
+        vec![HostSendResponse {
             event_name: "turn.done".to_string(),
             event_data: String::new(),
-        })
+        }]
     });
     engine.initialize();
     engine.step();
@@ -128,7 +128,7 @@ fn a_registered_handler_receives_the_send_and_its_reply_arrives() {
 #[test]
 fn a_handler_that_answers_nothing_is_not_an_error() {
     let (mut engine, script_engine) = started();
-    engine.register_event_processor(DECLARED_TYPE, |_req: HostSendRequest| None);
+    engine.register_event_processor(DECLARED_TYPE, |_req: HostSendRequest| Vec::new());
     engine.initialize();
     engine.step();
 
@@ -173,10 +173,10 @@ fn a_declared_type_with_no_handler_still_raises_error_execution() {
 fn a_handler_registered_for_another_type_does_not_serve_this_one() {
     let (mut engine, script_engine) = started();
     engine.register_event_processor("x-some-other-host", |_req: HostSendRequest| {
-        Some(HostSendResponse {
+        vec![HostSendResponse {
             event_name: "turn.done".to_string(),
             event_data: String::new(),
-        })
+        }]
     });
     engine.initialize();
     engine.step();
@@ -197,7 +197,7 @@ fn a_handler_registered_for_another_type_does_not_serve_this_one() {
 fn the_registry_reports_what_it_holds() {
     let (mut engine, _script_engine) = started();
     assert!(!engine.has_event_processor(DECLARED_TYPE));
-    engine.register_event_processor(DECLARED_TYPE, |_req: HostSendRequest| None);
+    engine.register_event_processor(DECLARED_TYPE, |_req: HostSendRequest| Vec::new());
     assert!(engine.has_event_processor(DECLARED_TYPE));
     assert!(!engine.has_event_processor("x-never-registered"));
 }
