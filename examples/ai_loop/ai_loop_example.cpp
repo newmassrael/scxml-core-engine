@@ -592,6 +592,14 @@ void scenario(const std::string &title, std::vector<TurnResult> script, const st
     }
     std::cout << "   => " << outcome << (ok ? "   OK" : "   UNEXPECTED, wanted " + expected)
               << "   (sessions started: " << session.starts() << ")\n";
+    // The outcome cannot see this. `judge` and `reflect.applied` are the two
+    // events this document reads a value out of, and a host that sends either
+    // bare gets a `cond` that raises `error.execution` and is treated as
+    // false — so the run still ends somewhere enumerated while the machine
+    // was answering a question it could not read. Both test channels drove
+    // `judge` that way until 2026-08-23 and stayed green, which is what makes
+    // this worth asserting in the file a reader copies from.
+    expect("the machine raised no error this host left unhandled", machine.unhandledErrorEvents() == 0);
     if (after) {
         after(session);
     }

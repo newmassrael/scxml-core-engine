@@ -68,11 +68,29 @@ protected:
         return std::find(states.begin(), states.end(), state) != states.end();
     }
 
+    /// The verdict a completed turn is judged on.
+    ///
+    /// `judging` branches on `_event.data.done`, so `judge` is one of the two
+    /// events this document requires a payload from — the host in
+    /// `examples/ai_loop/ai_loop_example.cpp` composes exactly this JSON.
+    /// Sending the event bare is not a shortcut with the same meaning:
+    /// `_event.data` is then nil, indexing it raises `error.execution`
+    /// (§scxml-5.9.1 has a failed `cond` raise and be treated as false), and
+    /// the run takes the same third transition it would have taken on
+    /// `done:false` while quietly counting an error per turn. Both channels
+    /// drove it bare until 2026-08-23 and every scenario stayed green, which
+    /// is why `ACorrectlyDrivenRunReportsNoErrors` now measures the count
+    /// instead of trusting the outcome.
+    static void verdict(Machine &sm, bool done) {
+        sm.processEvent(Machine::Event::Judge,
+                        SCE::Core::EventMetadata("judge", done ? R"({"done":true})" : R"({"done":false})"));
+    }
+
     /// One completed turn: the session finished its work, and the loop decides
     /// what next.
     static void turn(Machine &sm) {
         sm.processEvent(Machine::Event::Turn_done);
-        sm.processEvent(Machine::Event::Judge);
+        verdict(sm, false);
     }
 
     /// A machine whose datamodel can evaluate. Aliasing constructor with a
@@ -584,6 +602,161 @@ TEST_F(AiLoopAotTest, AnUninitialisedMachineSaysItCannotAnswer) {
     EXPECT_EQ(sm.getPolicy().max_turns(), std::nullopt)
         << "before initialize() there is no session holding a datamodel, and answering 40 would be "
            "a claim about a run that has not started";
+}
+
+// The outcome the loop exists to reach, and the report it asks for first.
+//
+// The document's opening comment claims the outcomes are enumerated, and five
+// finals spell them. Measured 2026-08-23: `converged` — the one a successful
+// run ends in — was reached by no scenario in either channel, and neither was
+// the `closing` state on the way to it. Both suites were green on nineteen
+// clauses about a loop that had never been seen finishing.
+//
+// `closing` is asserted separately from the terminal because it is the whole
+// reason the document does not send `judge` straight to a final: the agent is
+// asked for a closing report, and only the turn that answers it ends the run.
+// A machine that jumped from the verdict to `converged` would satisfy a
+// terminal-only check and lose the report.
+TEST_F(AiLoopAotTest, TheRunConvergesThroughAClosingReport) {
+    Machine sm;
+    start(sm);
+
+    sm.processEvent(Machine::Event::Turn_done);
+    verdict(sm, true);
+
+    ASSERT_TRUE(holds(sm, Machine::State::Closing))
+        << "a `done` verdict asks for the closing report before ending the run; active: " << describe(sm);
+
+    sm.processEvent(Machine::Event::Turn_done);
+
+    EXPECT_TRUE(holds(sm, Machine::State::Converged))
+        << "the turn that answers the closing report reaches `reported`, whose `<raise>` is what "
+           "takes all three regions out at once; active: "
+        << describe(sm);
+}
+
+// §scxml-5.9.1: a host that forgets the verdict can find out.
+//
+// `judging` reads `_event.data.done`. A `judge` that carries nothing leaves
+// `_event.data` nil, indexing it fails, and the clause says a failed `cond`
+// raises `error.execution` and is treated as false — so the run does exactly
+// what a `done:false` verdict would do and heads into another turn. The two
+// deliveries are indistinguishable from the configuration, from the datamodel
+// and from the outcome: a loop driven this way never converges, however
+// finished the agent says it is, and nothing says why.
+//
+// What tells them apart is the engine's own count. This is the same shape as
+// `unhandled_error_is_observable` and `undecodable_payload_is_reported`: the
+// behaviour is correct per the spec, and the defect would be that it is
+// unobservable.
+TEST_F(AiLoopAotTest, AVerdictWithoutItsPayloadIsReported) {
+    Machine sm;
+    start(sm);
+
+    sm.processEvent(Machine::Event::Turn_done);
+    sm.processEvent(Machine::Event::Judge);
+
+    EXPECT_TRUE(holds(sm, Machine::State::Working))
+        << "a `cond` that could not be evaluated is treated as false, so the cycle takes the "
+           "unconditional third transition and works another turn; active: "
+        << describe(sm);
+    EXPECT_EQ(sm.unhandledErrorEvents(), 1u)
+        << "the payload-less verdict raised no error a host could count, so a run that will never "
+           "converge looks exactly like one that has not converged yet";
+    EXPECT_EQ(sm.lastUnhandledError(), std::optional<Machine::Event>(Machine::Event::Error_execution))
+        << "the count has to name what it counted; a host reading only a number cannot tell a "
+           "failed `cond` from a failed action";
+}
+
+// The floor that makes the count above a measurement.
+//
+// A counter asserted only where it is expected to move measures half of what
+// it claims: `AVerdictWithoutItsPayloadIsReported` would pass just as well
+// against an engine that raised `error.execution` on every event. So the same
+// run, driven the way `ai_loop_example.cpp` drives it, has to raise nothing at
+// all — through the reflection and the restart it pays for, which is where the
+// document's other payload-carrying event lands.
+TEST_F(AiLoopAotTest, ACorrectlyDrivenRunReportsNoErrors) {
+    Machine sm;
+    start(sm);
+
+    for (int n = 1; n <= 8; ++n) {
+        turn(sm);
+    }
+    ASSERT_TRUE(holds(sm, Machine::State::Reflecting))
+        << "the eighth completed turn reflects; active: " << describe(sm);
+
+    sm.processEvent(Machine::Event::Reflect_applied,
+                    SCE::Core::EventMetadata("reflect.applied", R"({"start_prompt":"Resuming. Milestone: refined",)"
+                                                                R"("turn_prompt":"Continue toward: refined",)"
+                                                                R"("milestone":"refined"})"));
+    sm.processEvent(Machine::Event::Session_ready);
+    sm.processEvent(Machine::Event::Prompt_sent);
+    turn(sm);
+
+    EXPECT_EQ(sm.unhandledErrorEvents(), 0u)
+        << "a run driven the way the document's own host drives it raises nothing; an error here "
+           "means the two are not asking the machine the same thing, and the channel would be "
+           "asserting clauses about a path no deployment takes";
+}
+
+// Rebuilding more often than the author allowed is a spent budget, not a
+// broken document.
+//
+// `max_restarts` bounds how many times a session may be replaced. Measured
+// 2026-08-23: neither channel named it, so `stuck` — one of the two states
+// that reach `exhausted` — was reachable only in prose. The budget region's
+// `max_turns` had a witness; this one had none, and the two are different
+// mechanisms that happen to share a terminal.
+//
+// A lost session is the cheap way in: `drive` answers `session.lost` with a
+// restart from wherever the cycle is, which is the same door reflection uses
+// and the one a real deployment hits when a process dies.
+TEST_F(AiLoopAotTest, ASessionReplacedPastItsBudgetReportsStuck) {
+    Machine sm;
+    start(sm);
+
+    const auto allowed = sm.getPolicy().max_restarts();
+    ASSERT_TRUE(allowed.has_value()) << "the document declares a restart budget";
+
+    for (int64_t n = 1; n <= *allowed; ++n) {
+        sm.processEvent(Machine::Event::Session_lost);
+        sm.processEvent(Machine::Event::Session_ready);
+        ASSERT_TRUE(holds(sm, Machine::State::Priming))
+            << "replacement " << n << " of " << *allowed
+            << " is within the budget, so the fresh session is primed with whatever the loop has "
+               "written by now; active: "
+            << describe(sm);
+    }
+
+    sm.processEvent(Machine::Event::Session_lost);
+    sm.processEvent(Machine::Event::Session_ready);
+
+    EXPECT_TRUE(holds(sm, Machine::State::Exhausted))
+        << "the replacement past `max_restarts` reaches `stuck`, which reports the run as exhausted "
+           "rather than failed; active: "
+        << describe(sm);
+}
+
+// The sibling of `OneCancelReachesEveryRegion`.
+//
+// The document writes `fail` and `cancel` once each on the `<parallel>` and
+// says so in a comment — one transition rather than one per region, because a
+// run ends as a whole. Only `cancel` was asserted, and the two are not the
+// same claim: they are separate transitions to separate terminals, and a
+// consumer distinguishing "the run broke" from "somebody stopped it" reads
+// which final it ended in.
+TEST_F(AiLoopAotTest, AFailureEndsTheWholeRun) {
+    Machine sm;
+    start(sm);
+
+    sm.processEvent(Machine::Event::Fail);
+
+    EXPECT_TRUE(holds(sm, Machine::State::Failed))
+        << "`fail` is written on the `<parallel>` itself, so one event takes all three regions to "
+           "`failed` — a different outcome from `cancelled`, which is what tells a broken run from "
+           "a stopped one; active: "
+        << describe(sm);
 }
 
 }  // namespace SCE::Tests
