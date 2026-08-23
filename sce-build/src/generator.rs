@@ -419,25 +419,22 @@ fn reject_declaration_in_unsupported_lang(
     )))
 }
 
-/// Refuse `--host-processor` on a backend with no `<send>` dispatch registry.
-fn reject_host_processors_in_unsupported_lang(
-    model: &SCXMLModel,
-    language: &'static str,
-) -> Result<(), GenerateError> {
-    reject_declaration_in_unsupported_lang(
-        &model.host_processor_types,
-        "--host-processor",
-        "host-served Event I/O Processor",
-        model,
-        language,
-    )
-}
+// §scxml-6.2.5 host-served Event I/O Processor: every backend (Rust, C++,
+// C11, Go, Python, Kotlin) now lowers a `<send type>` the host declared to a
+// dispatch into a runtime registry, so the former
+// `reject_host_processors_in_unsupported_lang` fail-fast gate is retired.
+// Its removal is the claim that a path exists, and a claim made by deleting
+// something has to be paid for elsewhere — the per-backend
+// `a_declared_type_emits_a_dispatch_for_*` tests and the five runtime
+// channels are where. The invoker half below is NOT retired: no backend but
+// Rust has an `<invoke>` entry registry, and a single refusal covering both
+// would accept declarations five backends cannot service.
 
 /// Refuse `--host-invoker` on a backend with no `<invoke>` entry registry.
 ///
 /// Separate from the processor half since C++ grew one registry and not the
-/// other: a single refusal would now either accept an invoker declaration C++
-/// cannot service, or refuse a processor declaration it can.
+/// other; that asymmetry has since become the whole story, the processor half
+/// having reached every backend while this one reached none but Rust.
 fn reject_host_invokers_in_unsupported_lang(
     model: &SCXMLModel,
     language: &'static str,
@@ -1378,7 +1375,11 @@ pub fn generate_kotlin(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
-    reject_host_processors_in_unsupported_lang(model, "Kotlin")?;
+    // No `reject_host_processors_in_unsupported_lang` here: the Kotlin
+    // runtime carries `StateMachineEngine.registerEventProcessor` and the
+    // template emits the `<send>` dispatch into it. The invoker half is still
+    // absent, which is why the call below stays — the same split every other
+    // backend forced.
     reject_host_invokers_in_unsupported_lang(model, "Kotlin")?;
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
@@ -1399,7 +1400,8 @@ pub fn generate_kotlin_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
-    reject_host_processors_in_unsupported_lang(model, "Kotlin")?;
+    // See `generate_kotlin` above: the Kotlin backend has a `<send>` registry
+    // and no invoker one.
     reject_host_invokers_in_unsupported_lang(model, "Kotlin")?;
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
