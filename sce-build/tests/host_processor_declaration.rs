@@ -346,15 +346,18 @@ fn a_send_declaration_does_not_claim_the_invoke_of_the_same_name() {
 /// dispatch path and forgot its registry would otherwise be the one nobody
 /// asked.
 ///
-/// C++ is absent from the `--host-processor` half and present in the
-/// `--host-invoker` half, and that asymmetry is the point rather than an
-/// omission: it grew `StaticExecutionEngine::registerEventProcessor` and a
-/// `<send>` dispatch, and has no invoker registry. While the two flags were
-/// one refusal a backend either had both or neither, and this loop could ask
-/// them together; a single answer now would either accept an invoker
-/// declaration C++ cannot service or refuse a processor declaration it can.
-/// `a_declared_type_emits_a_dispatch_for_cpp` is the other side of the same
-/// claim — without it, dropping C++ from a refusal list would read as a pass.
+/// C++ and C11 are absent from the `--host-processor` half and present in
+/// the `--host-invoker` half, and that asymmetry is the point rather than an
+/// omission: each grew a `<send>` dispatch registry —
+/// `StaticExecutionEngine::registerEventProcessor` and
+/// `sce_host_processor_registry_t` respectively — and neither has an invoker
+/// registry. While the two flags were one refusal a backend either had both
+/// or neither, and this loop could ask them together; a single answer now
+/// would either accept an invoker declaration they cannot service or refuse a
+/// processor declaration they can.
+/// `a_declared_type_emits_a_dispatch_for_cpp` and its C11 sibling are the
+/// other side of the same claim — without them, dropping a backend from a
+/// refusal list would read as a pass.
 #[test]
 fn a_backend_without_a_registry_refuses_the_declaration() {
     // BOTH flags, because they are two lists feeding one check. Sweeping
@@ -363,11 +366,12 @@ fn a_backend_without_a_registry_refuses_the_declaration() {
     // so a build declaring only an invoker would have compiled on a
     // backend that cannot service it.
     let mut cases: Vec<(&str, &str)> = Vec::new();
-    for lang in ["c11", "kotlin", "go", "python"] {
+    for lang in ["kotlin", "go", "python"] {
         cases.push((lang, "--host-processor"));
         cases.push((lang, "--host-invoker"));
     }
     cases.push(("cpp", "--host-invoker"));
+    cases.push(("c11", "--host-invoker"));
 
     for (lang, flag) in cases {
         {
@@ -408,6 +412,105 @@ fn a_backend_without_a_registry_refuses_the_declaration() {
             );
         }
     }
+}
+
+/// The C11 half of the same claim.
+///
+/// Same shape as the C++ one above and for the same reason: dropping a
+/// backend from the refusal list is a claim made by DELETING something, so
+/// the deletion is paid for by asking what the backend now emits.
+///
+/// Three assertions rather than the C++ two, because C11's registry lives
+/// on the generated struct rather than in a hand-written runtime class:
+/// the dispatch, the storage it dispatches into, and the entry point a
+/// host wires through. A machine emitting the call without the field, or
+/// the field without the init variant, would compile in this test's
+/// absence and leave the host with no way to register before the first
+/// `<onentry>` act.
+///
+/// Asserted on the emitted text rather than by running the machine because
+/// this is the build's half. `backends/c/tests/integration/test_host_processor.c`
+/// compiles and runs that same machine, with a handler and without one.
+#[test]
+fn a_declared_type_emits_a_dispatch_for_c11() {
+    let out = out_dir("c11-dispatch");
+    let r = run(&[
+        "generate",
+        fixture().to_str().unwrap(),
+        "-l",
+        "c11",
+        "-o",
+        out.to_str().unwrap(),
+        "--host-processor",
+        "x-sce-host",
+    ]);
+    assert_eq!(
+        r.exit,
+        Some(0),
+        "c11 refused a declaration it can service: {}",
+        r.stderr
+    );
+
+    let source = std::fs::read_to_string(out.join("statechart_host_processor_sm.c"))
+        .expect("the generator wrote the machine");
+    assert!(
+        source.contains("statechart_host_processor_perform_host_send(sm, &_host_req)"),
+        "no dispatch was emitted for a declared type",
+    );
+    assert!(
+        !source.contains("names a processor this platform does not support"),
+        "a declared type still emitted the unsupported-type refusal",
+    );
+    // The request has to carry what the author wrote, or the document can
+    // name an act but not parameterise it. The fixture's `<param>` is the
+    // one field that proves the crossing rather than the call.
+    assert!(
+        source.contains(r#"_host_params[_host_param_count].name = "within""#),
+        "the emitted dispatch dropped the <param> the fixture declares",
+    );
+
+    let header = std::fs::read_to_string(out.join("statechart_host_processor_sm.h"))
+        .expect("the generator wrote the header");
+    assert!(
+        header.contains("sce_host_processor_registry_t host_processors;"),
+        "the machine dispatches into a registry it does not carry",
+    );
+    assert!(
+        header.contains("statechart_host_processor_init_with_host_processors"),
+        "no entry point for wiring a host before the first <onentry> act",
+    );
+}
+
+/// A machine that declares nothing carries no registry.
+///
+/// The footprint half of the gate, and the reason the emission is keyed on
+/// the declaration at all: this backend exists for deployments where a
+/// per-struct array of handler slots is a real cost. Without this, the
+/// cheapest way to make the test above pass would be to emit the registry
+/// unconditionally and every machine in the corpus would grow.
+#[test]
+fn an_undeclared_machine_carries_no_registry_for_c11() {
+    let out = out_dir("c11-no-registry");
+    let r = run(&[
+        "generate",
+        fixture().to_str().unwrap(),
+        "-l",
+        "c11",
+        "-o",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(r.exit, Some(0), "generation must succeed: {}", r.stderr);
+
+    let header = std::fs::read_to_string(out.join("statechart_host_processor_sm.h"))
+        .expect("the generator wrote the header");
+    assert!(
+        !header.contains("sce_host_processor_registry_t"),
+        "a machine that declared no host processor still carries the registry",
+    );
+    assert!(
+        !header.contains("host_processor.h"),
+        "a machine that declared no host processor still includes the runtime header",
+    );
 }
 
 /// The same document, same backends, no declaration: accepted. Without

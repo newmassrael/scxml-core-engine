@@ -1261,7 +1261,10 @@ fn render_c11(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_native_actions_in_unsupported_lang(model, "C11")?;
-    reject_host_processors_in_unsupported_lang(model, "C11")?;
+    // No `reject_host_processors_in_unsupported_lang` here: the C11 backend
+    // carries `sce_host_processor_registry_t` on the generated struct and
+    // emits the `<send>` dispatch into it. The invoker half is still absent,
+    // which is why the call below stays — the same split C++ forced.
     reject_host_invokers_in_unsupported_lang(model, "C11")?;
     reject_native_conditions_in_unsupported_lang(model, "C11")?;
     reject_native_scripts_in_unsupported_lang(model, "C11")?;
