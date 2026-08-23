@@ -1233,6 +1233,7 @@ fn a_casefile_whose_suite_needs_the_http_fixture_declares_it() {
 /// into.
 const STANDIN_SERVICE: &str = r#"
 const fs = require('fs');
+const http = require('http');
 const marker = process.env.SCE_ROUND_SERVICE_MARKER;
 const stop = () => {
     try { fs.unlinkSync(marker); } catch (err) { /* already stopped */ }
@@ -1240,7 +1241,17 @@ const stop = () => {
 };
 process.on('SIGTERM', stop);
 process.on('SIGINT', stop);
+// The marker BEFORE the listener, so a caller that waits for the port to
+// accept has thereby waited for the marker too. The gate waits on the socket
+// because that is the readiness the real server has; this file is what makes
+// the two the same question.
 fs.writeFileSync(marker, `${process.pid}\n`);
+// A listener at all, because the gate now waits for one. Standing in for an
+// HTTP server without opening a port made "ready" mean two different things
+// on the two sides of this test, and the gate's fixed one-second settle was
+// what papered over the difference.
+http.createServer((req, res) => { res.writeHead(200); res.end('standin'); })
+    .listen(Number(process.argv[2] || 0), '127.0.0.1');
 setTimeout(stop, 60000);
 "#;
 

@@ -243,12 +243,37 @@ _sce_gate_http_fixture_start() {
     node "$SCE_REPO_ROOT/tests/w3c/standalone_http_server.js" "$port" "$path" >"$log" 2>&1 &
     SCE_GATE_HTTP_FIXTURE_PID=$!
     _sce_gate_http_fixture_arm_cleanup
-    # Match the CI workflows' settle window before issuing requests.
-    sleep 1
-    if ! kill -0 "$SCE_GATE_HTTP_FIXTURE_PID" 2>/dev/null; then
-        cat "$log" >&2
-        sce_gate_fail "W3C HTTP fixture server failed to start (port $port already in use?)"
-    fi
+
+    # Wait for the listener to ACCEPT, not for a timer to expire.
+    #
+    # This was `sleep 1` followed by `kill -0`, which asks whether the process
+    # exists — a question node answers yes to long before it has bound the
+    # port. On an idle machine the second is plenty and the gate looked
+    # correct; under load it is not, and the gate then announces "server up"
+    # and hands the round a socket nobody is listening on. Measured through
+    # `the_gate_starts_the_declared_service_for_that_round_and_no_other`:
+    # green locally and on a doc-only push, RED on the two pushes that ran a
+    # full workflow set beside it. A fixed settle window is a guess about
+    # someone else's machine.
+    #
+    # `/dev/tcp` rather than curl: this runs before any round, on whatever a
+    # CI image happens to carry, and bash's own redirect needs nothing
+    # installed. The liveness check stays inside the loop so a server that
+    # dies during startup still fails with its log rather than at the
+    # deadline.
+    local deadline=$(( SECONDS + 30 ))
+    until (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; do
+        if ! kill -0 "$SCE_GATE_HTTP_FIXTURE_PID" 2>/dev/null; then
+            cat "$log" >&2
+            sce_gate_fail "W3C HTTP fixture server failed to start (port $port already in use?)"
+        fi
+        if (( SECONDS >= deadline )); then
+            cat "$log" >&2
+            sce_gate_fail "W3C HTTP fixture server never accepted on localhost:${port} within 30s"
+        fi
+        sleep 0.1
+    done
+    exec 3>&- 2>/dev/null || true
     sce_gate_step "W3C HTTP fixture server up on localhost:${port}${path}"
 }
 
