@@ -64,6 +64,21 @@ struct HostSendRequest {
  * `std::nullopt` and raises the reply later through its own handle to the
  * engine's queue. That is not a second mechanism: the engine does not
  * distinguish an event a handler raised from one it was handed.
+ *
+ * ONE reply per send, and that is the portable shape rather than a limit of
+ * this engine. A C++ handler happens to be able to re-enter the engine and
+ * enqueue more, because it is called through a `std::function` while only the
+ * queue is being mutated. Its Rust sibling cannot: `handler_for` hands out a
+ * `&mut` borrowed from the engine, so the engine is not reachable while the
+ * handler runs. A host written against the C++ freedom therefore does not
+ * port, and a document relying on it would be served by one engine and not the
+ * other — the single-engine door this whole surface exists to remove.
+ *
+ * So an act whose outcome is two events belongs to the host's own loop: return
+ * the first, deliver the second on the next step. Note the order if you do
+ * re-enter on C++ anyway — what the handler raises is enqueued while it runs
+ * and what it returns is enqueued after, so the RETURNED event arrives last,
+ * which is the opposite of how the pair reads.
  */
 struct HostSendResponse {
     /// Event to raise. A name the generated machine does not declare is
