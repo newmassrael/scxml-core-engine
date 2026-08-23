@@ -55,10 +55,36 @@ fn step(e: &mut Engine<AiLoopPolicy>, ev: AiLoopEvent) {
     e.step();
 }
 
+/// The verdict a completed turn is judged on.
+///
+/// `judging` branches on `_event.data.done`, so `judge` is one of the two
+/// events this document requires a payload from — the host in
+/// `examples/ai_loop/ai_loop_example.cpp` composes exactly this JSON. Sending
+/// the event bare is not a shortcut with the same meaning: `_event.data` is
+/// then nil, indexing it raises `error.execution` (W3C SCXML 5.9.1 has a
+/// failed `cond` raise and be treated as false), and the run takes the same
+/// third transition it would have taken on `done:false` while quietly
+/// counting an error per turn. Both channels drove it bare until 2026-08-23
+/// and every scenario stayed green, which is why
+/// `a_correctly_driven_run_reports_no_errors` now measures the count instead
+/// of trusting the outcome.
+fn verdict(e: &mut Engine<AiLoopPolicy>, done: bool) {
+    e.raise_external(
+        AiLoopEvent::Judge,
+        if done {
+            r#"{"done":true}"#
+        } else {
+            r#"{"done":false}"#
+        },
+        "",
+    );
+    e.step();
+}
+
 /// One completed turn: the work finished, and the loop decides what next.
 fn turn(e: &mut Engine<AiLoopPolicy>) {
     step(e, AiLoopEvent::TurnDone);
-    step(e, AiLoopEvent::Judge);
+    verdict(e, false);
 }
 
 /// A run whose first prompt has been sent — the state every scenario below
@@ -651,5 +677,185 @@ fn an_uninitialised_machine_says_it_cannot_answer() {
         None,
         "before initialize() there is no session holding a datamodel, and answering \
          40 would be a claim about a run that has not started"
+    );
+}
+
+/// The outcome the loop exists to reach, and the report it asks for first.
+///
+/// The document's opening comment claims the outcomes are enumerated, and
+/// five finals spell them. Measured 2026-08-23: `converged` — the one a
+/// successful run ends in — was reached by no scenario in either channel, and
+/// neither was the `closing` state on the way to it. Both suites were green
+/// on nineteen clauses about a loop that had never been seen finishing.
+///
+/// `closing` is asserted separately from the terminal because it is the whole
+/// reason the document does not send `judge` straight to a final: the agent is
+/// asked for a closing report, and only the turn that answers it ends the run.
+/// A machine that jumped from the verdict to `converged` would satisfy a
+/// terminal-only check and lose the report.
+#[test]
+fn the_run_converges_through_a_closing_report() {
+    let mut e = started();
+    step(&mut e, AiLoopEvent::TurnDone);
+    verdict(&mut e, true);
+
+    assert!(
+        holds(&e, AiLoopState::Closing),
+        "a `done` verdict asks for the closing report before ending the run; active: {:?}",
+        active(&e)
+    );
+
+    step(&mut e, AiLoopEvent::TurnDone);
+
+    assert!(
+        holds(&e, AiLoopState::Converged),
+        "the turn that answers the closing report reaches `reported`, whose `<raise>` is \
+         what takes all three regions out at once; active: {:?}",
+        active(&e)
+    );
+}
+
+/// §scxml-5.9.1: a host that forgets the verdict can find out.
+///
+/// `judging` reads `_event.data.done`. A `judge` that carries nothing leaves
+/// `_event.data` nil, indexing it fails, and the clause says a failed `cond`
+/// raises `error.execution` and is treated as false — so the run does exactly
+/// what a `done:false` verdict would do and heads into another turn. The two
+/// deliveries are indistinguishable from the configuration, from the datamodel
+/// and from the outcome: a loop driven this way never converges, however
+/// finished the agent says it is, and nothing says why.
+///
+/// What tells them apart is the engine's own count. This is the same shape as
+/// `unhandled_error_is_observable` and `undecodable_payload_is_reported`: the
+/// behaviour is correct per the spec, and the defect would be that it is
+/// unobservable.
+#[test]
+fn a_verdict_without_its_payload_is_reported() {
+    let mut e = started();
+    step(&mut e, AiLoopEvent::TurnDone);
+
+    step(&mut e, AiLoopEvent::Judge);
+
+    assert!(
+        holds(&e, AiLoopState::Working),
+        "a `cond` that could not be evaluated is treated as false, so the cycle takes the \
+         unconditional third transition and works another turn; active: {:?}",
+        active(&e)
+    );
+    assert_eq!(
+        e.unhandled_error_events(),
+        1,
+        "the payload-less verdict raised no error a host could count, so a run that will \
+         never converge looks exactly like one that has not converged yet"
+    );
+    assert_eq!(
+        e.last_unhandled_error(),
+        Some(AiLoopEvent::ErrorExecution),
+        "the count has to name what it counted; a host reading only a number cannot tell a \
+         failed `cond` from a failed action"
+    );
+}
+
+/// The floor that makes the count above a measurement.
+///
+/// A counter asserted only where it is expected to move measures half of what
+/// it claims: `a_verdict_without_its_payload_is_reported` would pass just as
+/// well against an engine that raised `error.execution` on every event. So the
+/// same run, driven the way `ai_loop_example.cpp` drives it, has to raise
+/// nothing at all — through the reflection and the restart it pays for, which
+/// is where the document's other payload-carrying event lands.
+#[test]
+fn a_correctly_driven_run_reports_no_errors() {
+    let mut e = started();
+    for _ in 1..=8 {
+        turn(&mut e);
+    }
+    assert!(
+        holds(&e, AiLoopState::Reflecting),
+        "the eighth completed turn reflects; active: {:?}",
+        active(&e)
+    );
+
+    e.raise_external(
+        AiLoopEvent::ReflectApplied,
+        r#"{"start_prompt":"Resuming. Milestone: refined","turn_prompt":"Continue toward: refined","milestone":"refined"}"#,
+        "",
+    );
+    e.step();
+    step(&mut e, AiLoopEvent::SessionReady);
+    step(&mut e, AiLoopEvent::PromptSent);
+    turn(&mut e);
+
+    assert_eq!(
+        e.unhandled_error_events(),
+        0,
+        "a run driven the way the document's own host drives it raises nothing; an error \
+         here means the two are not asking the machine the same thing, and the channel \
+         would be asserting clauses about a path no deployment takes"
+    );
+}
+
+/// Rebuilding more often than the author allowed is a spent budget, not a
+/// broken document.
+///
+/// `max_restarts` bounds how many times a session may be replaced. Measured
+/// 2026-08-23: neither channel named it, so `stuck` — one of the two states
+/// that reach `exhausted` — was reachable only in prose. The budget region's
+/// `max_turns` had a witness; this one had none, and the two are different
+/// mechanisms that happen to share a terminal.
+///
+/// A lost session is the cheap way in: `drive` answers `session.lost` with a
+/// restart from wherever the cycle is, which is the same door reflection uses
+/// and the one a real deployment hits when a process dies.
+#[test]
+fn a_session_replaced_past_its_budget_reports_stuck() {
+    let mut e = started();
+    let allowed = e
+        .policy()
+        .max_restarts()
+        .expect("the document declares a restart budget");
+
+    for n in 1..=allowed {
+        step(&mut e, AiLoopEvent::SessionLost);
+        step(&mut e, AiLoopEvent::SessionReady);
+        assert!(
+            holds(&e, AiLoopState::Priming),
+            "replacement {n} of {allowed} is within the budget, so the fresh session is \
+             primed with whatever the loop has written by now; active: {:?}",
+            active(&e)
+        );
+    }
+
+    step(&mut e, AiLoopEvent::SessionLost);
+    step(&mut e, AiLoopEvent::SessionReady);
+
+    assert!(
+        holds(&e, AiLoopState::Exhausted),
+        "the replacement past `max_restarts` reaches `stuck`, which reports the run as \
+         exhausted rather than failed; active: {:?}",
+        active(&e)
+    );
+}
+
+/// The sibling of `one_cancel_reaches_every_region`.
+///
+/// The document writes `fail` and `cancel` once each on the `<parallel>` and
+/// says so in a comment — one transition rather than one per region, because a
+/// run ends as a whole. Only `cancel` was asserted, and the two are not the
+/// same claim: they are separate transitions to separate terminals, and a
+/// consumer distinguishing "the run broke" from "somebody stopped it" reads
+/// which final it ended in.
+#[test]
+fn a_failure_ends_the_whole_run() {
+    let mut e = started();
+
+    step(&mut e, AiLoopEvent::Fail);
+
+    assert!(
+        holds(&e, AiLoopState::Failed),
+        "`fail` is written on the `<parallel>` itself, so one event takes all three regions \
+         to `failed` — a different outcome from `cancelled`, which is what tells a broken \
+         run from a stopped one; active: {:?}",
+        active(&e)
     );
 }

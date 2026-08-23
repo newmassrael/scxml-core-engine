@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 195556f7381b7d98e015a576c984a3d37618cbcc845bd17300f1f7caca179032
+// source-hash: 53cead9395e19c2d4d97547b53097f243e0a7af1b00bc6539b8e31a958f3e3e0
 // template-hash: 35c8283af859855fefb53b36dbcc38c1c549511d8a5bf7a3250f4215fef24b75
 // generated-at: 0
 
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: ai_loop.scxml:67 :: _machine"]
-// SCE-MAP: ai_loop.scxml:67 :: _machine
+#![doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
+// SCE-MAP: ai_loop.scxml:91 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -1502,8 +1502,8 @@ impl StatePolicy for AiLoopPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: ai_loop.scxml:67 :: _machine"]
-    // SCE-MAP: ai_loop.scxml:67 :: _machine
+    #[doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
+    // SCE-MAP: ai_loop.scxml:91 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1523,7 +1523,7 @@ impl StatePolicy for AiLoopPolicy {
         }
         match state {
             AiLoopState::Abandoned => {
-                // SCE-MAP: ai_loop.scxml:343 :: abandoned :: _state_body
+                // SCE-MAP: ai_loop.scxml:367 :: abandoned :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1554,7 +1554,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Closing => {
-                // SCE-MAP: ai_loop.scxml:266 :: closing :: _state_body
+                // SCE-MAP: ai_loop.scxml:290 :: closing :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1582,7 +1582,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Paused => {
-                // SCE-MAP: ai_loop.scxml:310 :: paused :: _state_body
+                // SCE-MAP: ai_loop.scxml:334 :: paused :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1610,7 +1610,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Priming => {
-                // SCE-MAP: ai_loop.scxml:181 :: priming :: _state_body
+                // SCE-MAP: ai_loop.scxml:205 :: priming :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1638,7 +1638,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Reflecting => {
-                // SCE-MAP: ai_loop.scxml:237 :: reflecting :: _state_body
+                // SCE-MAP: ai_loop.scxml:261 :: reflecting :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1692,7 +1692,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Reported => {
-                // SCE-MAP: ai_loop.scxml:285 :: reported :: _state_body
+                // SCE-MAP: ai_loop.scxml:309 :: reported :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1707,7 +1707,7 @@ impl StatePolicy for AiLoopPolicy {
                 ));
             }
             AiLoopState::Restarting => {
-                // SCE-MAP: ai_loop.scxml:255 :: restarting :: _state_body
+                // SCE-MAP: ai_loop.scxml:279 :: restarting :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1762,7 +1762,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Screening => {
-                // SCE-MAP: ai_loop.scxml:206 :: screening :: _state_body
+                // SCE-MAP: ai_loop.scxml:230 :: screening :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1816,7 +1816,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Spent => {
-                // SCE-MAP: ai_loop.scxml:379 :: spent :: _state_body
+                // SCE-MAP: ai_loop.scxml:403 :: spent :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1827,7 +1827,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Stuck => {
-                // SCE-MAP: ai_loop.scxml:293 :: stuck :: _state_body
+                // SCE-MAP: ai_loop.scxml:317 :: stuck :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1909,8 +1909,8 @@ impl StatePolicy for AiLoopPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: ai_loop.scxml:67 :: _machine"]
-    // SCE-MAP: ai_loop.scxml:67 :: _machine
+    #[doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
+    // SCE-MAP: ai_loop.scxml:91 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1956,8 +1956,8 @@ impl StatePolicy for AiLoopPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: ai_loop.scxml:67 :: _machine"]
-    // SCE-MAP: ai_loop.scxml:67 :: _machine
+    #[doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
+    // SCE-MAP: ai_loop.scxml:91 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -2126,8 +2126,8 @@ impl StatePolicy for AiLoopPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: ai_loop.scxml:67 :: _machine"]
-    // SCE-MAP: ai_loop.scxml:67 :: _machine
+    #[doc = "SCE-MAP: ai_loop.scxml:91 :: _machine"]
+    // SCE-MAP: ai_loop.scxml:91 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -2138,7 +2138,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Judging => {
                 match self.last_transition_index {
                     2 => {
-                        // SCE-MAP: ai_loop.scxml:227 :: judging :: _transition_2
+                        // SCE-MAP: ai_loop.scxml:251 :: judging :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -2170,7 +2170,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Paused => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:318 :: paused :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:342 :: paused :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2203,7 +2203,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Reflecting => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:242 :: reflecting :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:266 :: reflecting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2279,7 +2279,7 @@ impl StatePolicy for AiLoopPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: ai_loop.scxml:248 :: reflecting :: _transition_1
+                        // SCE-MAP: ai_loop.scxml:272 :: reflecting :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -2311,7 +2311,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Within => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:372 :: within :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:396 :: within :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2339,7 +2339,7 @@ impl StatePolicy for AiLoopPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: ai_loop.scxml:375 :: within :: _transition_1
+                        // SCE-MAP: ai_loop.scxml:399 :: within :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -2372,7 +2372,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Working => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:190 :: working :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:214 :: working :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
