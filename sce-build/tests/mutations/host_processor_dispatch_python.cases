@@ -1,0 +1,107 @@
+# Mutation cases for the Python half of a host-served Event I/O Processor.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_dispatch_python.cases`.
+#
+# Sibling of `host_processor_dispatch.cases` (Rust),
+# `host_processor_dispatch_cpp.cases`, `host_processor_dispatch_c11.cases` and
+# `host_processor_dispatch_go.cases`. The declaration half — the flag, the
+# refusal, the manifest — is `host_processor_declaration.cases` and is not
+# repeated here.
+#
+# ⚠ WHAT THIS FILE CANNOT REACH, said out loud rather than left to be
+# discovered. The harness has two runners, `mutation_tests` (cargo) and
+# `mutation_ctest`, and the Python suite is neither: `scripts/gates/w3c-python.sh`
+# drives it with `pytest`. So the oracle below is the cargo-side channel test,
+# and what it can judge is the EMITTED TEXT — that the dispatch is there, that
+# the import it needs is there, that the author's `<param>` rides along, and
+# that a machine declaring nothing carries neither.
+#
+# The runtime half — a registered handler being reached, an unregistered one
+# raising `error.execution`, a reply becoming an event — is covered by
+# `backends/python/tests/integration/host_processor/` and runs in the
+# `w3c-python` gate, but no mutation round asks whether those tests could
+# fail. A pytest runner for this harness is the repair, and it is the same
+# one the Go casefile asks for; until it exists this file measures half the
+# surface, and reading it as the whole one would be the same mistake the
+# gates it mirrors exist to prevent.
+
+mutation_tests -p sce-build --features cli --test host_processor_declaration
+# `backends/python/runtime/` is deliberately NOT a target: a mutation there
+# leaves every cargo test binary byte-identical, so the harness would report
+# INCONCLUSIVE — a case that cannot run reads as coverage and measures
+# nothing.
+#
+# Read at generation time rather than linked into the test binary, which is
+# how the harness detects that a mutation arrived. `sce_codegen` is here
+# because the CLI suite SPAWNS the binary, so mutating it changes
+# `sce-codegen` and leaves every test binary identical.
+mutation_runtime_targets tools/codegen/templates/python/actions/send.py.jinja2 \
+    tools/codegen/templates/python/state_machine.py.jinja2 \
+    sce-build/src/generator.rs
+mutation_oracles sce-build/tests/host_processor_declaration.rs
+
+# ── The dispatch stops being emitted ────────────────────────────────
+#
+# The feature's off switch. Without the arm the send falls through to a
+# target arm that knows nothing about the host, and the act reaches nobody.
+
+mutation_case "the python template emits no host dispatch" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{% if action.send_type_host_served %}",
+     "{% if false and action.send_type_host_served %}")
+PY
+
+# ── …or is emitted without what it needs to run ─────────────────────
+#
+# Python resolves names at call time, so a dispatch emitted without its
+# import is a `NameError` at the first act — invisible to any build-time
+# check and to every text assertion that only looks for the call.
+
+mutation_case "the request type is not imported" <<'PY'
+edit("tools/codegen/templates/python/state_machine.py.jinja2",
+     "{% if model.host_processor_types %}\n# §scxml-6.2.5: imported only when this build was told the host serves a",
+     "{% if false %}\n# §scxml-6.2.5: imported only when this build was told the host serves a")
+PY
+
+# ── …or is imported into every machine in the corpus ────────────────
+#
+# The other direction, and the cheapest way to make the case above pass.
+
+mutation_case "the request type is imported unconditionally" <<'PY'
+edit("tools/codegen/templates/python/state_machine.py.jinja2",
+     "{% if model.host_processor_types %}\n# §scxml-6.2.5: imported only when this build was told the host serves a",
+     "{% if true %}\n# §scxml-6.2.5: imported only when this build was told the host serves a")
+PY
+
+# ── …or arrives stripped ────────────────────────────────────────────
+#
+# A document that can name an act but not parameterise it has lost most of
+# the reason to move the act into the document.
+
+mutation_case "the params do not reach the request" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     """{{ indent }}_host_params = self._build_http_params(engine, [
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.namelist | py_string_literal }})""",
+     "{{ indent }}_host_params = {}")
+PY
+
+# ── The refusal list stops naming Python's missing half ─────────────
+#
+# Python grew a `<send>` registry and no invoker one. Dropping the invoker
+# refusal too would have the build accept a declaration it cannot service —
+# the defect the whole surface exists to remove, one flag over.
+
+mutation_case "python accepts an invoker declaration it cannot service" <<'PY'
+edit("sce-build/src/generator.rs",
+     """    // No `reject_host_processors_in_unsupported_lang` here: the Python
+    // runtime carries `Engine.register_event_processor` and the template
+    // emits the `<send>` dispatch into it. The invoker half is still absent,
+    // which is why the call below stays — the same split C++, C11 and Go
+    // forced.
+    reject_host_invokers_in_unsupported_lang(model, "Python")?;""",
+     "")
+PY

@@ -33,6 +33,7 @@ from collections import deque
 from typing import Any, Callable, Dict, Generic, List, Optional, Set, TypeVar
 
 from .event import EventMetadata, EventWithMetadata, is_error_event
+from .host_processor import HostSendHandler, HostSendRequest, HostSendResponse
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
 from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
@@ -255,6 +256,10 @@ class Engine(Generic[S, E]):
         self._http_send_callback: Optional[
             Callable[[HttpSendRequest], Optional[HttpSendResponse]]
         ] = None
+        # §scxml-6.2.5 — what serves each Event I/O Processor type the host
+        # declared to this build. Keyed by the `type` string, which is what
+        # a `<send>` names; see `host_processor.py`.
+        self._host_processors: Dict[str, HostSendHandler] = {}
         # §scxml-5.5 + 6.3.1 — donedata stashed when a top-level
         # `<final>` is entered. The invoking parent's `ScxmlInvoke`
         # reads this via `getattr(child, "done_data", None)` so it can
@@ -739,6 +744,67 @@ class Engine(Generic[S, E]):
             data=response.event_data,
             sendid=send_id,
         )
+
+    # ── Host-served Event I/O Processors (§scxml-6.2.5) ────────
+
+    def register_event_processor(
+        self, processor_type: str, handler: HostSendHandler
+    ) -> None:
+        """W3C SCXML 6.2.5 — register what performs every
+        `<send type="<t>">` this machine executes.
+
+        The build's half of the contract is the `--host-processor`
+        declaration that made codegen emit a dispatch here instead of a
+        refusal. A type declared to the build and never registered raises
+        `error.execution` at the send, because from the document's side an
+        act nobody performed is the same either way.
+
+        Registering twice for one type replaces the handler: two handlers
+        for one type would make dispatch depend on registration order, and
+        a host re-registering during a run means to change what serves the
+        act. Mirrors `sce_rust_runtime::Engine::register_event_processor`."""
+        self._host_processors[processor_type] = handler
+
+    def has_event_processor(self, processor_type: str) -> bool:
+        """Whether a handler is registered for `processor_type`.
+
+        Two things can go wrong with a host-served send — no handler, or a
+        handler that answered nothing — and only the first is an error. The
+        generated site reads this to tell them apart."""
+        return processor_type in self._host_processors
+
+    def perform_host_send(
+        self, request: HostSendRequest
+    ) -> Optional[List[HostSendResponse]]:
+        """W3C SCXML 6.2 — dispatch a host-served `<send>` and raise, in
+        order, every event the handler says the act produced.
+
+        With no handler registered this answers `None` and the generated
+        site raises `error.execution`, the same outcome an undeclared type
+        produces. That is the point: the document asked for an act, and
+        from its side "no processor implements this type" and "the
+        processor was never wired up" are one fact. Reporting them
+        differently would make a wiring mistake look like a document error,
+        or worse, look like success. An empty list is a success.
+
+        W3C SCXML C.1: a reply from outside the machine arrives on the
+        external queue, like any event the host raises — resolved by name,
+        so a reply naming an event this machine does not declare is dropped
+        exactly as any such event is. Raised in list order, because a
+        handler reporting two observations is reporting a sequence."""
+        handler = self._host_processors.get(request.processor_type)
+        if handler is None:
+            return None
+        replies = handler(request) or []
+        for reply in replies:
+            if not reply.event_name:
+                continue
+            self.send_external_by_name(
+                reply.event_name,
+                data=reply.event_data,
+                sendid=request.send_id,
+            )
+        return replies
 
     # ── <send> / <cancel> / scheduler API (§scxml-6.2) ─────────
 

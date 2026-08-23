@@ -52,6 +52,13 @@ sce_gate_step "generating the Python W3C and integration suites"
 # tree where the script had been run by hand at some point.
 "$SCE_REPO_ROOT/scripts/regen_event_schema_native_python.sh" >/dev/null \
     || sce_gate_fail "Python event_schema_native generation"
+# §scxml-6.2.5, and here for the same reason: the host-served fixture lives
+# beside the build tests rather than under `integration_resources/`, and it
+# needs a per-stem `--host-processor` flag the fan-out has no way to pass.
+# Its test is tracked while its module is gitignored, so a checkout running
+# only the commands above has a test importing a module nothing produced.
+"$SCE_REPO_ROOT/scripts/regen_host_processor_python.sh" >/dev/null \
+    || sce_gate_fail "Python host_processor generation"
 
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
