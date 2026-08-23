@@ -417,6 +417,38 @@ pub fn lint_statechart(model: &model::SCXMLModel, source: &str) -> Result<(), Co
     Ok(())
 }
 
+/// Reject a `sce:unhandled` declaration the document contradicts.
+///
+/// NOT a lint, and separated from one for the reason the lints are opt-in in
+/// the first place: they reject LEGAL SCXML, asserting design intent that a
+/// W3C corpus document is entitled to violate. This asserts nothing about
+/// intent. `sce:unhandled` is an SCE attribute whose whole content is a claim
+/// about the document — "a sibling handles this event and I do not" — and a
+/// claim that is false is false whether or not the operator asked for design
+/// advice.
+///
+/// The inconsistency this closes was visible in one place: the attribute's
+/// SHAPE is already judged unconditionally (`parse_sce_unhandled` refuses a
+/// wildcard, a repeat, an empty value — `validation/invalid-attribute`, no
+/// flag involved) while its TRUTH was judged only under `--lint`. One
+/// attribute, two regimes, and the half that could rot silently was the half
+/// that says something.
+///
+/// The gap REPORT stays where it was. "Which of these compounds should an
+/// author be told about" is exactly the design-intent question `--lint`
+/// exists for, and turning it on for every build would refuse the W3C corpus.
+///
+/// Library callers reach this through [`lint_statechart`] as before —
+/// `scxml_exhaustiveness::validate` runs the declaration check first — so
+/// this entry point exists for the CLI, whose lints are opt-in and whose
+/// always-on stage had no way to ask the question.
+pub fn validate_unhandled_declarations(
+    model: &model::SCXMLModel,
+    source: &str,
+) -> Result<(), CompileError> {
+    scxml_exhaustiveness::validate_declarations(model, source)
+}
+
 /// Promote the `analyzer::can_generate_static` precondition into a
 /// `Located<ForgeError>` for the wire layer. §wire-W5 D3 refit:
 /// `can_generate_static` itself now returns the correctly-classified
