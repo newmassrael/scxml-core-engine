@@ -39,6 +39,7 @@ edit("backends/rust/lua/src/lib.rs",
      """                match json_to_lua_value(&session.lua, event_data) {
                     Some(val) => {
                         event_table.set("data", val).map_err(map_lua_err)?;
+                        reading = PayloadReading::Structured;
                     }""",
      """                if let Ok(val) = session
                     .lua
@@ -46,11 +47,13 @@ edit("backends/rust/lua/src/lib.rs",
                     .eval::<LuaValue>()
                 {
                     event_table.set("data", val).map_err(map_lua_err)?;
-                    return Ok(());
+                    reading = PayloadReading::Structured;
+                    return Ok(reading);
                 }
                 match json_to_lua_value(&session.lua, event_data) {
                     Some(val) => {
                         event_table.set("data", val).map_err(map_lua_err)?;
+                        reading = PayloadReading::Structured;
                     }""")
 PY
 

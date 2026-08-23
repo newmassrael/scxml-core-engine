@@ -27,6 +27,12 @@ mutation_tests -p sce-rust-tests --test undecodable_payload_is_reported
 mutation_targets backends/rust/runtime/src/engine.rs
 mutation_targets backends/rust/lua/src/lib.rs
 mutation_targets backends/rust/runtime/src/scripting/i_script_engine.rs
+# The third-rung classifier lives in its own module, not on the trait that
+# re-exports the type. Two cases pointed at the re-export from the day this
+# file was written and matched nothing; `mutation-cases` says so, and said so
+# to nobody for a week because the lane it runs in was already red on an
+# earlier target. Both are re-aimed here.
+mutation_targets backends/rust/runtime/src/payload_reading.rs
 mutation_targets tools/codegen/templates/rust/process_transition.rs.jinja2
 mutation_targets backends/rust/tests/src/integration/undecodable_payload_is_reported/undecodable_payload_is_reported_sm.rs
 mutation_regen scripts/regen_undecodable_payload_is_reported.sh
@@ -82,7 +88,7 @@ PY
 # plumbing intact — the count exists, is wired, and never fires.
 
 mutation_case "content that announces an object is read as prose" <<'PY'
-edit("backends/rust/runtime/src/scripting/i_script_engine.rs",
+edit("backends/rust/runtime/src/payload_reading.rs",
      """        match payload.trim_start().as_bytes().first() {
             Some(b'{' | b'[') => Self::Undecodable,
             _ => Self::Text,
@@ -100,7 +106,7 @@ PY
 # that turns the statistic into noise rather than into silence.
 
 mutation_case "prose is reported as a payload that failed to parse" <<'PY'
-edit("backends/rust/runtime/src/scripting/i_script_engine.rs",
+edit("backends/rust/runtime/src/payload_reading.rs",
      """        match payload.trim_start().as_bytes().first() {
             Some(b'{' | b'[') => Self::Undecodable,
             _ => Self::Text,
