@@ -383,7 +383,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     )
     private val scheduledHttpSends = mutableListOf<ScheduledHttpSendEntry>()
 
-    // --- Host-served Event I/O Processors (W3C SCXML 6.2.5) ---
+    // --- Host-served Event I/O Processors (§scxml-6.2.5) ---
 
     /**
      * What a `<send>` addressed to a host-served processor said.
@@ -420,7 +420,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * One event a host-served act produced.
      *
      * The engine raises each on the external queue, which is where a reply
-     * from outside the machine belongs (W3C SCXML C.1). A name the generated
+     * from outside the machine belongs (§scxml-C-1). A name the generated
      * machine does not declare is dropped, matching what the engine does with
      * any such event.
      */
@@ -449,7 +449,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private val hostProcessors = mutableMapOf<String, (HostSendRequest) -> List<HostSendResponse>>()
 
     /**
-     * W3C SCXML 6.2.5: register what performs every `<send type="<t>">` this
+     * §scxml-6.2.5: register what performs every `<send type="<t>">` this
      * machine executes.
      *
      * The build's half of the contract is the `--host-processor` declaration
@@ -480,7 +480,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         hostProcessors.containsKey(processorType)
 
     /**
-     * W3C SCXML 6.2: dispatch a host-served `<send>` and raise, in order,
+     * §scxml-6.2: dispatch a host-served `<send>` and raise, in order,
      * every event the handler says the act produced.
      *
      * With no handler registered this answers `null` and the generated site
@@ -491,7 +491,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * look like a document error, or worse, look like success. An empty list
      * is a success.
      *
-     * W3C SCXML C.1: a reply from outside the machine arrives on the external
+     * §scxml-C-1: a reply from outside the machine arrives on the external
      * queue, like any event the host raises — resolved by name, so a reply
      * naming an event this machine does not declare is dropped exactly as any
      * such event is.
