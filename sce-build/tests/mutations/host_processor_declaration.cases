@@ -29,7 +29,8 @@
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-build --features cli --lib --test host_processor_declaration
+mutation_tests -p sce-build --features cli --lib --test host_processor_declaration \
+    --test cli_check_generate_parity
 mutation_targets sce-build/src/host_processor_analyzer.rs sce-build/src/generator.rs
 # Both entries here are read by the tests at RUN time rather than linked into
 # them, which is how the harness detects that a mutation arrived.
@@ -47,7 +48,8 @@ mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 \
 # name, and because the analyzer file is also a mutation target — nothing else
 # would notice a case that reds by weakening a test rather than breaking code.
 mutation_oracles sce-build/src/host_processor_analyzer.rs \
-    sce-build/tests/host_processor_declaration.rs
+    sce-build/tests/host_processor_declaration.rs \
+    sce-build/tests/cli_check_generate_parity.rs
 
 # ── The declaration stops being applied ─────────────────────────────
 #
@@ -217,4 +219,54 @@ mutation_case "the refusal does not name the declared type" <<'PY'
 edit("sce-build/src/generator.rs",
      "        declared.join(\", \"),",
      "        String::new(),")
+PY
+
+# ── `check` stops being able to predict the build ───────────────────
+#
+# The declaration is read by the backends, so a command that cannot be told
+# it cannot reach the verdict it claims to predict. Measured on
+# `examples/ai_loop/ai_loop.scxml`: `check` reported all six backends `ok`
+# for a document `generate --host-processor` refuses on four of them.
+#
+# These three are the ways that comes back — the flag unspellable, the
+# declaration accepted and dropped, or accepted and not published.
+
+mutation_case "check cannot be told about a declared processor" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """    #[arg(
+        long = "host-processor",
+        value_name = "TYPE",
+        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+    )]
+    host_processor: Vec<String>,""",
+     """    #[arg(
+        long = "host-processor-unspellable",
+        value_name = "TYPE",
+        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+    )]
+    host_processor: Vec<String>,""")
+PY
+
+# Replaced by a binding of the two lists rather than deleted outright: with
+# the call gone they are unused and the tree stops compiling, which the
+# harness reports INCONCLUSIVE — a case that cannot run is worth less than
+# no case, since it reads as coverage and measures nothing. Measured: the
+# form below compiles and turns `check_and_generate_agree_about_a_host_declaration`
+# red, which the deleting form never got far enough to do.
+mutation_case "check accepts the declaration and never applies it" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """            sce_build::host_processor_analyzer::declare_host_surfaces(
+                &mut model,
+                &host_processor,
+                &host_invoker,
+            );""",
+     "            let _ = (&host_processor, &host_invoker);")
+PY
+
+mutation_case "check does not publish what it was told" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """            report
+                .host_processor_types
+                .clone_from(&model.host_processor_types);""",
+     "")
 PY
