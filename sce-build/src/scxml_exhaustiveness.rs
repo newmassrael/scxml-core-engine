@@ -94,6 +94,30 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
     report_uncovered_gaps(model, &found.reportable, source)
 }
 
+/// Pass 1 alone: every `sce:unhandled` declaration checked against the
+/// facts, with no gap reported.
+///
+/// The two passes are one call for a library consumer and two entry points
+/// for the CLI, because only one of them is a lint. See
+/// [`crate::validate_unhandled_declarations`] for why a declaration's truth
+/// is not design advice — and note that running this and then [`validate`]
+/// re-checks the declarations, which is a pure walk over the same model and
+/// yields the same first error, so the order of the two is not a decision
+/// anyone has to get right.
+pub fn validate_declarations(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeError>> {
+    if model.states.is_empty() {
+        return Ok(());
+    }
+    // Short-circuit before the walk when the document declares nothing. The
+    // walk is O(parents x events x children) and every document in the W3C
+    // corpus would pay it on every build for an attribute none of them use.
+    if model.states.values().all(|s| s.unhandled.is_empty()) {
+        return Ok(());
+    }
+    let found = collect_gaps(model);
+    check_declarations(model, &found.inconsistent, source)
+}
+
 /// Every gap in the document, keyed by compound parent id and then by
 /// event, valued by the child ids that leave that event unhandled.
 type GapsByParent = BTreeMap<String, GapSet>;

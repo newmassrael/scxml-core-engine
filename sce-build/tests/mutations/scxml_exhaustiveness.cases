@@ -12,8 +12,16 @@
 # quoted, never as a pass — re-anchor the case against the current source
 # rather than reading the run as evidence.
 
-mutation_tests -p sce-build --features cli --test scxml_exhaustiveness --lib
+mutation_tests -p sce-build --features cli --test scxml_exhaustiveness --lib \
+    --test cli_lint_parity
 mutation_targets sce-build/src/scxml_exhaustiveness.rs sce-build/src/parser.rs
+# The CLI is where the declaration check stopped being a lint, and the suite
+# that judges that SPAWNS `sce-codegen` — so mutating this file changes the
+# binary and leaves every test binary byte-identical. Listed as a compiled
+# target it would report INCONCLUSIVE while in fact reaching the code under
+# test, which is the lesson `host_processor_declaration.cases` paid for.
+mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/tests/cli_lint_parity.rs
 
 # ── The grain of the exemption ─────────────────────────────────────
 
@@ -138,4 +146,45 @@ edit("sce-build/src/scxml_exhaustiveness.rs",
             }""",
      """            let _ = common_ground;
             out.reportable.insert(parent.id.clone(), gaps.clone());""")
+PY
+
+# ── The declaration check goes back behind the flag ─────────────────
+#
+# A `sce:unhandled` declaration the document contradicts is a false
+# statement, not design advice — the parser already refuses the attribute's
+# SHAPE unconditionally, and only its TRUTH was behind `--lint`. These two
+# put it back, at each of the two call sites, which is also what would
+# happen if someone added the check to one command and forgot the other.
+
+mutation_case "check stops judging declarations without the flag" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """            if let Err(e) = sce_build::validate_unhandled_declarations(&model, scxml_path) {
+                error_format.emit_and_exit(&e, "");
+            }""",
+     "")
+PY
+
+mutation_case "the always-on entry point reports nothing" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     """    if model.states.values().all(|s| s.unhandled.is_empty()) {
+        return Ok(());
+    }""",
+     "    return Ok(());")
+PY
+
+# ── …or starts reporting gaps on every build ────────────────────────
+#
+# The other direction, and the one that would refuse the W3C corpus: the
+# always-on entry must run pass 1 ONLY. Widening it to the full walk turns
+# every sequential protocol machine into a build failure.
+
+mutation_case "the always-on entry runs the gap report too" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     """    let found = collect_gaps(model);
+    check_declarations(model, &found.inconsistent, source)
+}""",
+     """    let found = collect_gaps(model);
+    check_declarations(model, &found.inconsistent, source)?;
+    report_uncovered_gaps(model, &found.reportable, source)
+}""")
 PY

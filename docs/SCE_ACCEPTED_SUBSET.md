@@ -1479,6 +1479,16 @@ into unverified prose:
   compound parent — rejects with
   `scxml/stale-unhandled-declaration`.
 
+Both directions are judged on **every** build, not only under
+`--lint`. A declaration is a claim about the document, and a false
+claim is false whether or not the operator asked for design advice —
+the same reason the attribute's *shape* (wildcards, repeats, an empty
+value) has always been refused unconditionally. The gap **report**
+stays opt-in: "which of these compounds should an author be told
+about" is the design-intent question `--lint` exists for, and
+default-on would refuse the W3C IRP corpus. The two therefore sit on
+opposite sides of the flag.
+
 The common-ground precondition is **not** among those reasons, and
 that is deliberate. It decides what is worth *reporting*; whether a
 declaration is *true* is a fact about the document — a sibling

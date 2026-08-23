@@ -2975,6 +2975,16 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 error_format.emit_forge_and_exit(&e);
             }
 
+            // Also not a lint, and here for the same reason: a
+            // `sce:unhandled` declaration the document contradicts is a
+            // false statement, not design advice. Its SHAPE is already
+            // refused unconditionally by the parser; only its TRUTH was
+            // behind `--lint`, so the half that could rot silently was the
+            // half that says something.
+            if let Err(e) = sce_build::validate_unhandled_declarations(&model, scxml_path) {
+                error_format.emit_and_exit(&e, "");
+            }
+
             if no_std && langs.contains(&Language::Rust) {
                 if let Err(err) =
                     sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path))
@@ -3632,6 +3642,13 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // marker-emitting templates, matching `lib.rs::compile_model`.
     if let Err(e) = sce_build::forge::provenance::validate_emission_provenance(&model, scxml_path) {
         error_format.emit_forge_and_exit(&e);
+    }
+
+    // Not a lint — see the `check` call site. Placed beside its sibling so
+    // the two commands cannot acquire the check at different points and
+    // start disagreeing about a document again.
+    if let Err(e) = sce_build::validate_unhandled_declarations(&model, scxml_path) {
+        error_format.emit_and_exit(&e, "");
     }
 
     resolve_source_path(&mut model, Path::new(scxml_path));
