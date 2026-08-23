@@ -8032,6 +8032,11 @@
         {
           "file": "backends/go/runtime/host_processor.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performHostSend",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -8351,6 +8356,16 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "registerEventProcessor",
           "kind": "references"
         }
       ],
@@ -12050,6 +12065,16 @@
         },
         {
           "file": "backends/go/runtime/host_processor.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "HostSendResponse",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performHostSend",
           "kind": "references"
         }
       ],
