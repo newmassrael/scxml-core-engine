@@ -36,6 +36,7 @@
 
 #include "ai_loop_sm.h"
 #include "common/EventDataHelper.h"
+#include "core/HostProcessor.h"
 #include "scripting/JSEngine.h"
 #include "scripting/ScriptEngineProvider.h"
 
@@ -168,9 +169,22 @@ public:
 
     /// Run until the machine reaches one of the outcomes the document
     /// enumerates. Returns its name.
+    ///
+    /// The loop below is a PUMP, not a dispatch table. Every act is performed
+    /// by the handler registered here, because the document declares each one
+    /// as a `<send>` this host serves (§scxml-6.2.5) — so what drives the run
+    /// is the machine reaching a state, not this function noticing that it
+    /// did. `step()` drains the events the acts produced; reaching a terminal
+    /// is the only thing still read off the configuration, and a terminal is
+    /// an OUTCOME the document enumerates rather than an internal it happens
+    /// to be in.
+    ///
+    /// The session starts before `initialize()`: entering `priming` performs
+    /// the first act immediately, and there has to be something to prompt.
     std::string run(int max_steps = 400) {
-        boot(m_);
+        m_.registerEventProcessor("x-sce-host", [this](const SCE::HostSendRequest &req) { return serve(req); });
         s_.start();
+        boot(m_);
         for (int i = 0; i < max_steps; ++i) {
             if (const char *outcome = terminal()) {
                 return outcome;
@@ -178,9 +192,7 @@ public:
             if (trace_) {
                 std::cout << "        [where]   " << describe() << "\n";
             }
-            if (!stepOnce()) {
-                return "stalled in " + describe();
-            }
+            m_.step();
         }
         return "step budget exhausted in " + describe();
     }
@@ -259,93 +271,102 @@ private:
         return value.has_value() ? *value : "<" + std::string(name) + " unreadable>";
     }
 
-    /// One turn of the host's own loop: look at where the machine is, do the
-    /// thing that state implies, report the result back as an event.
-    bool stepOnce() {
-        if (active(State::Priming)) {
+    /// Perform one act the document declared, and say what came of it.
+    ///
+    /// One arm per DECLARED ACT. This used to be one arm per internal STATE —
+    /// eight `active(State::X)` tests deciding what to do — which made the
+    /// host depend on the machine's topology rather than on its interface: a
+    /// state renamed out from under it broke a host the document had told
+    /// nothing. What it reads now are the events the document says it sends,
+    /// and those are the contract.
+    ///
+    /// Each arm answers with the events the act produced, in order. Two arms
+    /// produce two — see `HostSendHandler` for why a list rather than a reply
+    /// and a host-side pending slot.
+    std::vector<SCE::HostSendResponse> serve(const SCE::HostSendRequest &req) {
+        if (req.eventName == "prompt.start") {
             // Two events, in this order. `priming` leaves on `prompt.sent` —
             // "the session has been told what it is here for" — and only then
             // is the machine in `working`, where a turn result means anything.
             // Reporting the turn first would deliver it to a state that does
             // not handle it, and the run would sit in `priming` forever.
-            const TurnResult r = s_.prompt(readable(m_.getPolicy().start_prompt(), "start_prompt"));
-            fire(Event::Prompt_sent, "prompt.sent");
-            report(r);
-            return true;
+            const TurnResult r = s_.prompt(param(req, "text"));
+            return {{"prompt.sent", ""}, outcome(r)};
         }
-        if (active(State::Working)) {
-            report(s_.prompt(readable(m_.getPolicy().turn_prompt(), "turn_prompt")));
-            return true;
+        if (req.eventName == "prompt.turn" || req.eventName == "prompt.end") {
+            return {outcome(s_.prompt(param(req, "text")))};
         }
-        if (active(State::Closing)) {
-            report(s_.prompt(readable(m_.getPolicy().end_prompt(), "end_prompt")));
-            return true;
+        if (req.eventName == "judge.begin") {
+            return {judge(param(req, "marker"))};
         }
-        if (active(State::Screening)) {
-            screen();
-            return true;
+        if (req.eventName == "screen.begin") {
+            return screen();
         }
-        if (active(State::Judging)) {
-            judge();
-            return true;
+        if (req.eventName == "reflect.begin") {
+            return {reflect()};
         }
-        if (active(State::Reflecting)) {
-            reflect();
-            return true;
-        }
-        if (active(State::Restarting)) {
+        if (req.eventName == "session.replace") {
             // The session is replaced, not reconfigured: everything reflection
             // wrote is read on the way up.
             s_.stop();
             s_.start();
-            fire(Event::Session_ready, "session.ready");
-            return true;
+            return {{"session.ready", ""}};
         }
-        if (active(State::Paused)) {
+        if (req.eventName == "notify.human") {
             s_.notify();
-            // A real host waits here — for a keypress, a timeout, a message.
-            // The example answers at once so its output stays deterministic.
+            // A real host answers `{}` here and lets the person's reply arrive
+            // later through its own loop — waiting inside a handler would stop
+            // the machine from hearing `cancel`. The example answers at once so
+            // its output stays deterministic.
             std::cout << "        [person]  answers\n";
-            fire(Event::Turn_done, "turn.done");
-            return true;
+            return {{"turn.done", ""}};
         }
-        return false;
+        // An act the document declared and this host does not implement. Saying
+        // so is the point of the seam: silence here is a loop that stops for a
+        // reason nobody can see. Counted per run rather than globally, because
+        // it is a fact about THIS host against THIS document — `scenario()`
+        // turns it into a failure.
+        std::cout << "        [host]    no arm for '" << req.eventName << "'\n";
+        ++unserved_;
+        return {};
     }
 
-    /// Deliver one event, and under trace say where it left the machine. Every
-    /// event the host sends goes through here so a trace can never miss one.
+    /// The first value the document sent under `name`, or a phrase saying it
+    /// sent none.
     ///
-    /// `raiseExternal` only enqueues — the machine does not move until the
-    /// queue is run — so the payload spelling needs its own `step()`. Both
-    /// spellings go through this one place, which is what makes the sentence
-    /// above true of an event that carries data as well as one that does not.
-    void fire(Event e, const char *name, const std::string &data = "") {
-        m_.raiseExternal(e, data);
-        m_.step();
-        if (trace_) {
-            std::cout << "        [event]   " << name << " -> " << describe() << "\n";
+    /// The prompts ride on the act now rather than being fetched from the
+    /// datamodel behind it. That is the difference between a host that is told
+    /// what to do and one that reaches into the machine to find out — and it
+    /// is what lets `<param name="text" expr="turn_prompt"/>` be the one place
+    /// the document decides which prompt an act carries.
+    static std::string param(const SCE::HostSendRequest &req, const char *name) {
+        const auto it = req.params.find(name);
+        if (it == req.params.end() || it->second.empty()) {
+            return "<" + std::string(name) + " missing from the act>";
         }
+        return it->second.front();
     }
 
-    /// Report what a turn produced. One place, so every path that runs the
-    /// agent tells the machine the same four things.
-    void report(const TurnResult &r) {
+    /// What a turn produced, as the event the document waits for. One place,
+    /// so every act that runs the session reports the same four things.
+    ///
+    /// There is no `fire()` any more, and its absence is the change: the host
+    /// no longer pushes events into the machine at moments it chose. It
+    /// answers acts, and the engine raises what it answered.
+    SCE::HostSendResponse outcome(const TurnResult &r) {
         switch (r.kind) {
         case TurnResult::Kind::Done:
             last_text_ = r.text;
-            fire(Event::Turn_done, "turn.done");
-            break;
+            return {"turn.done", ""};
         case TurnResult::Kind::Blocked:
             last_question_ = r.question;
-            fire(Event::Turn_blocked, "turn.blocked");
-            break;
+            return {"turn.blocked", ""};
         case TurnResult::Kind::Interrupted:
-            fire(Event::Turn_interrupted, "turn.interrupted");
-            break;
+            return {"turn.interrupted", ""};
         case TurnResult::Kind::Lost:
-            fire(Event::Session_lost, "session.lost");
             break;
         }
+        return {"session.lost", ""};
     }
 
     /// Does a standing instruction cover the question that is up?
@@ -358,26 +379,25 @@ private:
     /// permission grants an agent the ability to act — and a host that
     /// consulted only the rules would hand out the second along with the
     /// first.
-    void screen() {
+    std::vector<SCE::HostSendResponse> screen() {
         if (isPermission(last_question_) && !m_.getPolicy().screen_permissions().value_or(false)) {
             std::cout << "        [rule]    '" << last_question_
                       << "' asks for permission to act, and the document does not screen those\n";
-            fire(Event::Screen_none, "screen.none");
-            return;
+            return {{"screen.none", ""}};
         }
         for (const auto &rule : standingInstructions()) {
             if (rule.question == last_question_) {
                 std::cout << "        [rule]    '" << rule.question << "' was decided in advance\n";
                 const TurnResult r = s_.answer(rule.keys, rule.text);
-                fire(Event::Screen_matched, "screen.matched");
-                // The reply produced a turn of its own; report it after the
-                // machine is back in `working` so it lands where it belongs.
-                report(r);
-                return;
+                // The reply produced a turn of its own, and it has to arrive
+                // AFTER `screen.matched` — that is what puts the machine back
+                // in `working`, where a turn result means something. Second in
+                // the list, second on the queue.
+                return {{"screen.matched", ""}, outcome(r)};
             }
         }
         std::cout << "        [rule]    nothing covers '" << last_question_ << "'\n";
-        fire(Event::Screen_none, "screen.none");
+        return {{"screen.none", ""}};
     }
 
     /// Whether a raised dialog is asking for permission to act rather than
@@ -387,14 +407,14 @@ private:
         return question.rfind("permission", 0) == 0;
     }
 
-    /// Did the agent say it is finished? The marker comes out of the document,
-    /// so the host never hard-codes a phrase.
-    void judge() {
-        const std::string marker = m_.getPolicy().done_marker().value_or(std::string{});
+    /// Did the session say it is finished? The marker comes out of the
+    /// document — carried ON the act now, rather than fetched from the
+    /// datamodel behind it — so the host never hard-codes a phrase.
+    SCE::HostSendResponse judge(const std::string &marker) {
         const bool done = !marker.empty() && last_text_.find(marker) != std::string::npos;
         // `judging` branches on `_event.data.done`, so the verdict rides the
         // event rather than a host-side flag the document cannot see.
-        fire(Event::Judge, "judge", done ? R"({"done":true})" : R"({"done":false})");
+        return {"judge", done ? R"({"done":true})" : R"({"done":false})"};
     }
 
     /// Improve the run's own setup, then let the machine restart into it.
@@ -413,18 +433,18 @@ private:
     /// improved prompts. Every run still converged, because an outcome cannot
     /// tell an empty prompt from an authored one. `main()` now reads what was
     /// actually sent.
-    void reflect() {
+    SCE::HostSendResponse reflect() {
         ++reflections_;
         const std::string milestone =
             "the smallest verifiable step toward " + readable(m_.getPolicy().north_star(), "north_star");
         std::cout << "        [reflect] rewriting the milestone from the record\n";
-        fire(Event::Reflect_applied, "reflect.applied",
-             R"({"start_prompt":")" +
-                 jsonEscape("Resuming. Milestone: " + milestone + "\nReport what you did and what is left.") +
-                 R"(","turn_prompt":")" +
-                 jsonEscape("Continue toward: " + milestone +
-                            "\nDo the next smallest thing that is verifiable, then report.") +
-                 R"(","milestone":")" + jsonEscape(milestone) + R"("})");
+        return {"reflect.applied",
+                R"({"start_prompt":")" +
+                    jsonEscape("Resuming. Milestone: " + milestone + "\nReport what you did and what is left.") +
+                    R"(","turn_prompt":")" +
+                    jsonEscape("Continue toward: " + milestone +
+                               "\nDo the next smallest thing that is verifiable, then report.") +
+                    R"(","milestone":")" + jsonEscape(milestone) + R"("})"};
     }
 
     /// The two characters a prompt can carry that JSON cannot hold raw.
@@ -492,6 +512,15 @@ public:
         trace_ = on;
     }
 
+    /// Acts this document declared that this host has no arm for.
+    ///
+    /// Asserted rather than printed: an act nobody performs leaves the machine
+    /// waiting in a state whose outcome may still be one the document
+    /// enumerates, so a run can end "correctly" having silently skipped a step.
+    int unserved() const {
+        return unserved_;
+    }
+
 private:
     bool trace_ = false;
 
@@ -499,6 +528,7 @@ private:
     AgentSession &s_;
     std::string last_text_, last_question_;
     int reflections_ = 0;
+    int unserved_ = 0;
 };
 
 TurnResult done(std::string text) {
@@ -536,6 +566,15 @@ void expect(const char *what, bool held) {
 void readback() {
     std::cout << "\n-- the document a host edits is the document it can read back\n";
     Machine machine;
+    // Reading the document is not running it — but `initialize()` enters
+    // `priming`, and `priming` performs an act. Without a handler that act is
+    // an unsupported processor and the machine raises `error.execution`, which
+    // nothing here would notice and nobody reading the output would see. So
+    // this registers one that performs nothing: the acts are not what this
+    // section is about, and a worked example should not leave an error behind
+    // where a reader cannot find it.
+    machine.registerEventProcessor("x-sce-host",
+                                   [](const SCE::HostSendRequest &) { return std::vector<SCE::HostSendResponse>{}; });
     boot(machine);
     ScriptedSession idle({});
     const LoopHost host(machine, idle);
@@ -562,6 +601,13 @@ void readback() {
     // Separate from the rules on purpose, and read separately for the same
     // reason: a standing yes to acting is a different promise.
     expect("screen_permissions reads back", p.screen_permissions() == std::optional<bool>(false));
+
+    // Reading the document left nothing behind. Asserted rather than assumed:
+    // entering `priming` performs an act, and an act nobody serves raises
+    // `error.execution` — silently, as far as every assertion above is
+    // concerned. Without this line, dropping the handler registered at the top
+    // of this function would cost the reader an invisible error.
+    expect("reading the document raised no error", machine.unhandledErrorEvents() == 0);
 }
 
 /// Run one scripted transcript against a fresh machine.
@@ -600,6 +646,10 @@ void scenario(const std::string &title, std::vector<TurnResult> script, const st
     // `judge` that way until 2026-08-23 and stayed green, which is what makes
     // this worth asserting in the file a reader copies from.
     expect("the machine raised no error this host left unhandled", machine.unhandledErrorEvents() == 0);
+    // Every act the document declared reached an arm. An unserved act is not
+    // visible in the outcome — the machine simply waits, and a run can still
+    // end somewhere enumerated with a step silently skipped.
+    expect("every act the document declared was served", host.unserved() == 0);
     if (after) {
         after(session);
     }

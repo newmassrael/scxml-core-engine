@@ -6,9 +6,16 @@
 
 add_executable(ai_loop_example ai_loop_example.cpp)
 
+# §scxml-6.2.5: the document declares its acts as sends this HOST serves, so
+# the build has to be told the type or codegen emits the refusal instead of the
+# dispatch. The same declaration appears in `tests/CMakeLists.txt` and
+# `scripts/regen_ai_loop.sh` — three builds of one document, and a channel that
+# forgets it meets `error.execution` at the first act rather than a compile
+# error, which is why `ai_loop_channel_parity` checks they name one file.
 sce_add_state_machine(
     TARGET ai_loop_example
     SCXML_FILE ai_loop.scxml
+    HOST_PROCESSOR x-sce-host
 )
 
 target_link_libraries(ai_loop_example PRIVATE sce_runtime sce_scripting)
