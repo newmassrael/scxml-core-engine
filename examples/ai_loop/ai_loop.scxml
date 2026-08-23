@@ -19,6 +19,42 @@
   which is what lets the example ship with a scripted host and a real
   deployment use a terminal one.
 
+  ## How the machine answers: eight declared acts
+
+  Every act this machine wants performed is a `<send type="x-sce-host">`, an
+  Event I/O Processor the host serves (W3C SCXML 6.2.5). Eight of them:
+
+    prompt.start     prompt a fresh session      carries `text`
+    prompt.turn      prompt again                carries `text`
+    prompt.end       ask for the closing report  carries `text`
+    judge.begin      did the session finish?     carries `marker`
+    screen.begin     does a standing rule cover the dialog that is up?
+    reflect.begin    improve the run's own setup
+    session.replace  end the session and start a fresh one
+    notify.human     raise whatever attention signal this environment offers
+
+  The host answers each with the events the act produced, IN ORDER — a list,
+  because two of them produce two. `prompt.start` answers `prompt.sent` and
+  then the turn result: leaving `priming` on `prompt.sent` is what puts the
+  machine somewhere a turn result means anything, and reporting the turn first
+  would deliver it to a state that does not handle it. `screen.begin` answers
+  the same shape when a rule fires.
+
+  Until 2026-08-23 these were targetless `<send>`s. W3C SCXML 6.2.4 puts those
+  on the machine's OWN external queue, where no transition takes them, so all
+  eight were discarded — one per turn, measured — and the host worked out what
+  to do by watching which state was active. That made the host depend on this
+  document's internals rather than on what it declares: renaming a state broke
+  a host the document had told nothing. The prompts rode the same way, fetched
+  out of the datamodel behind the machine; now they ride ON the act, which is
+  why `<param name="text" expr="turn_prompt"/>` is the one place a prompt is
+  chosen.
+
+  A host that registers no handler is refused, loudly: an undeclared act
+  raises `error.execution` rather than doing nothing. That is deliberate — the
+  document is stating what it needs, and silence is the failure this seam
+  exists to remove.
+
   ## The two events that must carry something
 
   Most of what a host reports is the event's own name — `turn.done` says all
@@ -204,7 +240,18 @@
         -->
         <state id="priming">
           <onentry>
-            <send event="prompt.start"/>
+            <!--
+              Two events come back from this one act, in this order:
+              `prompt.sent` then whatever the turn produced. Leaving on
+              `prompt.sent` is what puts the machine somewhere a turn result
+              means anything; reporting the turn first would deliver it to a
+              state that does not handle it and the run would sit here forever.
+              A host answers a declared act with a LIST for exactly this
+              reason — see `HostSendHandler`.
+            -->
+            <send event="prompt.start" type="x-sce-host">
+              <param name="text" expr="start_prompt"/>
+            </send>
           </onentry>
           <transition event="prompt.sent" target="working"/>
         </state>
@@ -230,7 +277,7 @@
         <state id="screening">
           <onentry>
             <assign location="screened" expr="screened + 1"/>
-            <send event="screen.begin"/>
+            <send event="screen.begin" type="x-sce-host"/>
           </onentry>
           <!-- A rule claimed it; the host sent the keys and the reply. -->
           <transition event="screen.matched" target="working"/>
@@ -245,11 +292,27 @@
           run from wherever the cycle happens to be.
         -->
         <state id="judging">
+          <onentry>
+            <!--
+              Ask for the verdict rather than wait for one. Every other state
+              that needs the host to act says so — `screening` and `reflecting`
+              each announce theirs — and this one did not, so a host had to
+              notice it was here by watching the configuration. That is the one
+              place the host still read the machine's INTERNALS instead of its
+              declared acts, and a state renamed out from under it would have
+              broken a host this document never told anything.
+            -->
+            <send event="judge.begin" type="x-sce-host">
+              <param name="marker" expr="done_marker"/>
+            </send>
+          </onentry>
           <transition event="judge" cond="_event.data.done" target="closing"/>
           <transition event="judge" cond="turns_since_reflect &gt;= reflect_every"
                       target="reflecting"/>
           <transition event="judge" target="working">
-            <send event="prompt.turn"/>
+            <send event="prompt.turn" type="x-sce-host">
+              <param name="text" expr="turn_prompt"/>
+            </send>
           </transition>
         </state>
 
@@ -261,7 +324,7 @@
         <state id="reflecting">
           <onentry>
             <assign location="turns_since_reflect" expr="0"/>
-            <send event="reflect.begin"/>
+            <send event="reflect.begin" type="x-sce-host"/>
           </onentry>
           <transition event="reflect.applied" target="restarting">
             <assign location="start_prompt" expr="_event.data.start_prompt"/>
@@ -270,7 +333,9 @@
           </transition>
           <!-- Nothing worth changing: carry on without paying for a restart. -->
           <transition event="reflect.none" target="working">
-            <send event="prompt.turn"/>
+            <send event="prompt.turn" type="x-sce-host">
+              <param name="text" expr="turn_prompt"/>
+            </send>
           </transition>
         </state>
 
@@ -279,7 +344,7 @@
         <state id="restarting">
           <onentry>
             <assign location="restarts" expr="restarts + 1"/>
-            <send event="session.replace"/>
+            <send event="session.replace" type="x-sce-host"/>
           </onentry>
           <transition event="session.ready" cond="restarts &gt; max_restarts"
                       target="stuck"/>
@@ -289,7 +354,9 @@
         <!-- The goal was met; ask for the closing report before ending. -->
         <state id="closing">
           <onentry>
-            <send event="prompt.end"/>
+            <send event="prompt.end" type="x-sce-host">
+              <param name="text" expr="end_prompt"/>
+            </send>
           </onentry>
           <transition event="turn.done" target="reported"/>
           <transition event="turn.blocked" target="screening"/>
@@ -336,7 +403,16 @@
           <!-- The loop's own channel to a person: the host raises whatever
                attention signal its environment offers, so a waiting run is
                visible without anybody watching the screen for it. -->
-          <send event="notify.human"/>
+          <!--
+            The one act whose answer legitimately never comes back from the
+            handler: a real host raises an attention signal and then waits for
+            a person, which is minutes or hours away. It answers with an EMPTY
+            list — performed, nothing to report yet — and the person's answer
+            arrives later through the host's own loop. The scripted example
+            answers at once so its output stays deterministic, which is the
+            same shape with the waiting removed.
+          -->
+          <send event="notify.human" type="x-sce-host"/>
         </onentry>
         <!-- The person answered (or typed a turn themselves) and it completed. -->
         <transition event="turn.done" target="judging">

@@ -49,8 +49,11 @@ const CPP_DRIVER: &str = "tests/integration/AiLoopAotTest.cpp";
 /// counting which of the document's five enumerated outcomes any channel
 /// actually reached found `converged` and `failed` at none, `stuck` — one of
 /// the two ways into `exhausted` — at none, and both channels driving `judge`
-/// without the payload its `cond` reads.
-const SCENARIO_FLOOR: usize = 24;
+/// without the payload its `cond` reads; 25 when the document's sends became
+/// acts a host serves (§scxml-6.2.5) and needed a scenario that RECORDS them,
+/// since the silent handler every other scenario registers cannot tell a
+/// declared act from a targetless send that lost its `type`.
+const SCENARIO_FLOOR: usize = 25;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

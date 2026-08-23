@@ -37,6 +37,17 @@ fn engine() -> Engine<AiLoopPolicy> {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = Engine::new(AiLoopPolicy::new(script_engine));
+    // §scxml-6.2.5: the document declares its acts as sends a host serves, so
+    // one has to be registered or the first act raises `error.execution`
+    // instead of reaching anybody. This one performs nothing and reports
+    // nothing, which is deliberate: what these scenarios measure is the
+    // TOPOLOGY, and each supplies the events a host would have produced at
+    // exactly the point it wants them. A handler that answered would deliver
+    // the same events a second time.
+    //
+    // `examples/ai_loop/ai_loop_example.cpp` registers the real one. Before
+    // `initialize()`, because `priming` performs its act on entry.
+    e.register_event_processor("x-sce-host", |_req| Vec::new());
     e.initialize();
     e
 }
@@ -835,6 +846,59 @@ fn a_session_replaced_past_its_budget_reports_stuck() {
         "the replacement past `max_restarts` reaches `stuck`, which reports the run as \
          exhausted rather than failed; active: {:?}",
         active(&e)
+    );
+}
+
+/// §scxml-6.2.5: the document tells a host what to do, in its own words.
+///
+/// Every scenario above registers a handler that answers nothing, because what
+/// they measure is the topology and each supplies its own events. That makes
+/// them blind to the thing this scenario asserts: with a silent handler, a
+/// `<send>` that LOST its `type="x-sce-host"` behaves exactly like one that
+/// kept it — nothing is delivered either way — so the whole conversion could
+/// rot back to targetless sends with both channels green.
+///
+/// So this one records instead of ignoring. It pins that entering `priming`
+/// asks the host to prompt, and that the prompt text rides ON the act: the
+/// host is TOLD what to send rather than reaching into the datamodel behind
+/// the machine to find out, which is the difference the conversion bought.
+#[test]
+fn the_document_declares_its_acts_to_the_host() {
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = std::sync::Arc::clone(&seen);
+
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let mut e = Engine::new(AiLoopPolicy::new(script_engine));
+    e.register_event_processor(
+        "x-sce-host",
+        move |req: sce_rust_runtime::HostSendRequest| {
+            let text = req
+                .params
+                .get("text")
+                .and_then(|v| v.first())
+                .cloned()
+                .unwrap_or_default();
+            recorder
+                .lock()
+                .expect("handler log")
+                .push((req.event_name.clone(), text));
+            Vec::new()
+        },
+    );
+    e.initialize();
+
+    let acts = seen.lock().expect("handler log");
+    assert_eq!(
+        acts.first().map(|(name, _)| name.as_str()),
+        Some("prompt.start"),
+        "entering `priming` did not ask the host to prompt; the acts seen were {acts:?}"
+    );
+    assert!(
+        acts[0].1.contains("North star:"),
+        "the act carried no prompt, so a host would have to reach past the machine for one: {:?}",
+        acts[0].1
     );
 }
 
