@@ -8342,6 +8342,16 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "Engine",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

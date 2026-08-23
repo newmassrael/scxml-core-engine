@@ -13,7 +13,57 @@
    silently dropped, matching the W3C 6.2 "if the sending session
    terminates first" clause. #}
 {%- macro emit_send(action, indent, machine_name, model) -%}
-{% if action.target == '#_parent' %}
+{% if action.send_type_host_served %}
+{# §scxml-6.2.5 — the `type` is served by the HOST, which declared it to
+   this build. Dispatch rather than refuse, and take the whole send: a
+   processor the host serves owns delivery, so falling through would also
+   enqueue the event locally and the document would see the act twice.
+
+   First in the chain, ahead of every target arm, for that reason — the
+   type decides the destination, not the target. One arm for every
+   dimension, unlike its siblings below: those are narrow because the
+   ENGINE has to interpret what the send said, and here it does not. Every
+   field crosses as the text the author wrote and the handler decides what
+   it means. #}
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}_host_params = self._build_http_params(engine, [
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.namelist | py_string_literal }})
+{% if action.eventexpr -%}
+{{ indent }}try:
+{{ indent }}    _host_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
+{{ indent }}except _ScriptError:
+{{ indent }}    _host_evt_name = ""
+{% else -%}
+{{ indent }}_host_evt_name = {{ action.event | py_string_literal }}
+{% endif -%}
+{% if action.targetexpr -%}
+{{ indent }}try:
+{{ indent }}    _host_target = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.targetexpr | to_lua_expr | py_string_literal }}).to_python())
+{{ indent }}except _ScriptError:
+{{ indent }}    _host_target = ""
+{% else -%}
+{{ indent }}_host_target = {{ action.target | py_string_literal }}
+{% endif -%}
+{{ indent }}_host_served = engine.perform_host_send(_HostSendRequest(
+{{ indent }}    processor_type={{ action.send_type | py_string_literal }},
+{{ indent }}    event_name=_host_evt_name,
+{{ indent }}    target=_host_target,
+{{ indent }}    content={{ action.content | py_string_literal }},
+{{ indent }}    params=_host_params,
+{{ indent }}    send_id=_sid,
+{{ indent }}))
+{% if 'error.execution' in model.events %}
+{# W3C SCXML 6.2 — a declared type with no handler registered is, from the
+   document's side, a processor the platform does not support: the act it
+   asked for was performed by nobody. Same event as an undeclared type, so
+   a wiring mistake cannot read as success. #}
+{{ indent }}if _host_served is None and not engine.has_event_processor({{ action.send_type | py_string_literal }}):
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{% elif action.target == '#_parent' %}
 {% if action.delay_ms > 0 %}
 {{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
 {% else %}

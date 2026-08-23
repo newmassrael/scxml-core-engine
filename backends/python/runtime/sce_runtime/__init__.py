@@ -12,6 +12,7 @@ through the C++ Interpreter via pybind11, not through this AOT runtime.
 from . import scripting
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
+from .host_processor import HostSendHandler, HostSendRequest, HostSendResponse
 from .http import HttpSendRequest, HttpSendResponse
 from .io_processors import published_origin, session_id_from_scxml_location
 from .invoke import (
@@ -37,6 +38,9 @@ __all__ = [
     "Event",
     "EventMetadata",
     "EventWithMetadata",
+    "HostSendHandler",
+    "HostSendRequest",
+    "HostSendResponse",
     "HttpSendRequest",
     "HttpSendResponse",
     "IScriptEngine",

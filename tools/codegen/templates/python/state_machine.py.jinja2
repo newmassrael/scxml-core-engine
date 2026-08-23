@@ -41,6 +41,13 @@ from sce_runtime import (
     published_origin as _published_origin,
     session_id_from_scxml_location as _session_id_from_scxml_location,
 )
+{% if model.host_processor_types %}
+# §scxml-6.2.5: imported only when this build was told the host serves a
+# processor type, so a machine that serves none carries no unused name — the
+# same gate the C11 backend puts on its registry, for the smaller reason that
+# an unused import is noise in a generated file a consumer reads.
+from sce_runtime import HostSendRequest as _HostSendRequest
+{% endif %}
 from sce_runtime.scripting import (
     LuaScriptEngine as _LuaScriptEngine,
     ScriptError as _ScriptError,

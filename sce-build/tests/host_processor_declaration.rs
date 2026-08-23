@@ -346,12 +346,13 @@ fn a_send_declaration_does_not_claim_the_invoke_of_the_same_name() {
 /// dispatch path and forgot its registry would otherwise be the one nobody
 /// asked.
 ///
-/// C++, C11 and Go are absent from the `--host-processor` half and present in
-/// the `--host-invoker` half, and that asymmetry is the point rather than an
-/// omission: each grew a `<send>` dispatch registry —
-/// `StaticExecutionEngine::registerEventProcessor`,
-/// `sce_host_processor_registry_t` and `Engine.RegisterEventProcessor`
-/// respectively — and none has an invoker registry. While the two flags were one refusal a backend either had both
+/// Only Kotlin is now in the `--host-processor` half. C++, C11, Go and
+/// Python are absent from it and present in the `--host-invoker` half, and
+/// that asymmetry is the point rather than an omission: each grew a `<send>`
+/// dispatch registry — `StaticExecutionEngine::registerEventProcessor`,
+/// `sce_host_processor_registry_t`, `Engine.RegisterEventProcessor` and
+/// `Engine.register_event_processor` respectively — and none has an invoker
+/// registry. While the two flags were one refusal a backend either had both
 /// or neither, and this loop could ask them together; a single answer now
 /// would either accept an invoker declaration they cannot service or refuse a
 /// processor declaration they can.
@@ -366,13 +367,14 @@ fn a_backend_without_a_registry_refuses_the_declaration() {
     // so a build declaring only an invoker would have compiled on a
     // backend that cannot service it.
     let mut cases: Vec<(&str, &str)> = Vec::new();
-    for lang in ["kotlin", "python"] {
+    for lang in ["kotlin"] {
         cases.push((lang, "--host-processor"));
         cases.push((lang, "--host-invoker"));
     }
     cases.push(("cpp", "--host-invoker"));
     cases.push(("go", "--host-invoker"));
     cases.push(("c11", "--host-invoker"));
+    cases.push(("python", "--host-invoker"));
 
     for (lang, flag) in cases {
         {
@@ -560,6 +562,90 @@ fn a_declared_type_emits_a_dispatch_for_go() {
     assert!(
         emitted.contains(r#"{Name: "within", Value: "2500"}"#),
         "the emitted dispatch dropped the <param> the fixture declares",
+    );
+}
+
+/// The Python half of the same claim.
+///
+/// Same shape and same reason as its siblings: dropping a backend from the
+/// refusal list is a claim made by DELETING something, so the deletion is
+/// paid for by asking what the backend now emits.
+///
+/// Two assertions beyond the dispatch, because Python's dependency on the
+/// runtime type is an import: a machine emitting the call without the import
+/// raises `NameError` at the first act, which no build-time check would see.
+///
+/// Asserted on the emitted text rather than by running the machine because
+/// this is the build's half.
+/// `backends/python/tests/integration/host_processor/` imports and runs that
+/// same machine, with a handler and without one.
+#[test]
+fn a_declared_type_emits_a_dispatch_for_python() {
+    let out = out_dir("python-dispatch");
+    let r = run(&[
+        "generate",
+        fixture().to_str().unwrap(),
+        "-l",
+        "python",
+        "-o",
+        out.to_str().unwrap(),
+        "--host-processor",
+        "x-sce-host",
+    ]);
+    assert_eq!(
+        r.exit,
+        Some(0),
+        "python refused a declaration it can service: {}",
+        r.stderr
+    );
+
+    let emitted = std::fs::read_to_string(out.join("statechart_host_processor_sm.py"))
+        .expect("the generator wrote the machine");
+    assert!(
+        emitted.contains("engine.perform_host_send(_HostSendRequest("),
+        "no dispatch was emitted for a declared type",
+    );
+    assert!(
+        emitted.contains("from sce_runtime import HostSendRequest as _HostSendRequest"),
+        "the dispatch was emitted without the import it needs",
+    );
+    assert!(
+        !emitted.contains("names a processor this platform does not support"),
+        "a declared type still emitted the unsupported-type refusal",
+    );
+    // The request has to carry what the author wrote, or the document can
+    // name an act but not parameterise it. The fixture's `<param>` is the
+    // one field that proves the crossing rather than the call.
+    assert!(
+        emitted.contains(r#"("within", "\"2500\""),"#),
+        "the emitted dispatch dropped the <param> the fixture declares",
+    );
+}
+
+/// …and a machine that declares nothing carries no import for it.
+///
+/// The counterpart of `an_undeclared_machine_carries_no_registry_for_c11`:
+/// the cheapest way to make the test above pass is to import
+/// unconditionally, and an unused import in a generated file a consumer
+/// reads is noise this backend does not have to carry.
+#[test]
+fn an_undeclared_machine_carries_no_host_import_for_python() {
+    let out = out_dir("python-no-import");
+    let r = run(&[
+        "generate",
+        fixture().to_str().unwrap(),
+        "-l",
+        "python",
+        "-o",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(r.exit, Some(0), "generation must succeed: {}", r.stderr);
+
+    let emitted = std::fs::read_to_string(out.join("statechart_host_processor_sm.py"))
+        .expect("the generator wrote the machine");
+    assert!(
+        !emitted.contains("HostSendRequest"),
+        "a machine that declared no host processor still imports the request type",
     );
 }
 
