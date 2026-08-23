@@ -65,7 +65,66 @@
 {% if action.targetexpr and model.needs_script_engine %}
             _resolvedTarget?.let { _rt ->
 {% endif %}
-{% if action.send_type_unsupported %}
+{% if action.send_type_host_served %}
+            // W3C SCXML 6.2.5: "{{ action.send_type }}" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            run {
+{% set host_needs_script = (action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) or action.eventexpr %}
+{% if host_needs_script and model.needs_script_engine %}
+                ensureScriptEngine()
+                val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+{% endif %}
+                val hostParams = mutableMapOf<String, List<String>>()
+{% for param in action.params %}
+{% if param.is_static_literal %}
+                hostParams["{{ param.name | escape_kotlin }}"] = listOf("{{ param.static_value | escape_kotlin }}")
+{% elif param.expr %}
+                try {
+                    val v = hostEngine.evaluateExpr(hostSid, "{{ param.expr | escape_kotlin }}")
+                    // The param crosses as text, and `toString()` is the
+                    // platform's spelling of the value; this is the document's.
+                    hostParams["{{ param.name | escape_kotlin }}"] = listOf(valueToWireString(v))
+                } catch (_: Exception) {
+                    // W3C SCXML 5.7.1: report the failure and omit the name and
+                    // the value — the act still happens, without a field the
+                    // document could not produce.
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+                }
+{% endif %}
+{% endfor %}
+{% if action.eventexpr and model.needs_script_engine %}
+                val hostEventName = try {
+                    hostEngine.evaluateExpr(hostSid, "{{ action.eventexpr | escape_kotlin }}")?.toString() ?: ""
+                } catch (_: Exception) {
+                    ""
+                }
+{% else %}
+                val hostEventName = "{{ action.event | default('', true) | escape_kotlin }}"
+{% endif %}
+                val hostServed = performHostSend(
+                    HostSendRequest(
+                        processorType = "{{ action.send_type | escape_kotlin }}",
+                        eventName = hostEventName,
+                        target = {% if action.targetexpr and model.needs_script_engine %}_rt{% else %}"{{ action.target | default('', true) | escape_kotlin }}"{% endif %},
+                        content = "{{ action.content | default('', true) | escape_kotlin }}",
+                        params = hostParams,
+                        sendId = "{{ action.auto_send_id }}"
+                    )
+                )
+                // W3C SCXML 6.2: a declared type with no handler registered is,
+                // from the document's side, a processor the platform does not
+                // support — the act it asked for was performed by nobody. Same
+                // event as an undeclared type, so a wiring mistake cannot read
+                // as success.
+                if (hostServed == null && !hasEventProcessor("{{ action.send_type | escape_kotlin }}")) {
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor the host declared but never registered", "{{ action.auto_send_id }}")
+                }
+            }
+{% elif action.send_type_unsupported %}
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor this platform does not support", "{{ action.auto_send_id }}")
 {% if in_run_block is defined and in_run_block %}
