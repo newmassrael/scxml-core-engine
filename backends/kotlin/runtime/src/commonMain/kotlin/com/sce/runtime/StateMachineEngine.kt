@@ -383,6 +383,129 @@ abstract class StateMachineEngine<S : State, E : Event>(
     )
     private val scheduledHttpSends = mutableListOf<ScheduledHttpSendEntry>()
 
+    // --- Host-served Event I/O Processors (W3C SCXML 6.2.5) ---
+
+    /**
+     * What a `<send>` addressed to a host-served processor said.
+     *
+     * The clause makes the Event I/O Processor identifier extensible, so the
+     * set is open by design. SCE implements two of them; anything else was
+     * refused with `error.execution` and no platform could widen the set — a
+     * consumer could name a processor and be refused, but not name one and be
+     * served. A host declares the types it serves at build time (so codegen
+     * emits a dispatch instead of a refusal) and registers a handler for each
+     * at run time.
+     *
+     * The Kotlin port of `sce_rust_runtime::HostSendRequest`, field for field,
+     * for the reason [HttpSendRequest] beside it matches its siblings: one
+     * host described once, ported rather than redesigned.
+     *
+     * Every field is what the document wrote, not an interpretation of it.
+     * [processorType] is present even though the handler was looked up by it,
+     * because one handler may serve several types. [target] is passed through
+     * uninterpreted — the specification leaves a target's meaning to the
+     * processor that serves it. [params] is a multi-map because `<param>` may
+     * repeat and every value must be delivered.
+     */
+    data class HostSendRequest(
+        val processorType: String,
+        val eventName: String = "",
+        val target: String = "",
+        val content: String = "",
+        val params: Map<String, List<String>> = emptyMap(),
+        val sendId: String = ""
+    )
+
+    /**
+     * One event a host-served act produced.
+     *
+     * The engine raises each on the external queue, which is where a reply
+     * from outside the machine belongs (W3C SCXML C.1). A name the generated
+     * machine does not declare is dropped, matching what the engine does with
+     * any such event.
+     */
+    data class HostSendResponse(
+        val eventName: String,
+        val eventData: String = ""
+    )
+
+    /**
+     * What a host registers for one declared processor type.
+     *
+     * Answers with the events the act produced, IN ORDER. A list rather than a
+     * single reply, for one reason: an act can produce two observations that
+     * the document must see in a particular order, and every other way of
+     * expressing that costs portability or hides state.
+     *
+     * `examples/ai_loop/` is the case. Its `priming` state leaves on
+     * `prompt.sent` — "the session has been told what it is here for" — and
+     * only then is the machine somewhere a turn result means anything;
+     * reporting the turn first leaves the run sitting in `priming` forever.
+     *
+     * An empty list is "performed, nothing to report", the common case for a
+     * fire-and-forget act and for real work that will answer later through the
+     * host's own loop. It is NOT an error.
+     */
+    private val hostProcessors = mutableMapOf<String, (HostSendRequest) -> List<HostSendResponse>>()
+
+    /**
+     * W3C SCXML 6.2.5: register what performs every `<send type="<t>">` this
+     * machine executes.
+     *
+     * The build's half of the contract is the `--host-processor` declaration
+     * that made codegen emit a dispatch here instead of a refusal. A type
+     * declared to the build and never registered raises `error.execution` at
+     * the send, because from the document's side an act nobody performed is
+     * the same either way.
+     *
+     * Registering twice for one type replaces the handler: two handlers for
+     * one type would make dispatch depend on registration order, and a host
+     * re-registering during a run means to change what serves the act.
+     */
+    fun registerEventProcessor(
+        processorType: String,
+        handler: (HostSendRequest) -> List<HostSendResponse>
+    ) {
+        hostProcessors[processorType] = handler
+    }
+
+    /**
+     * Whether a handler is registered for [processorType].
+     *
+     * Two things can go wrong with a host-served send — no handler, or a
+     * handler that answered nothing — and only the first is an error. The
+     * generated site reads this to tell them apart, which is why it is public.
+     */
+    fun hasEventProcessor(processorType: String): Boolean =
+        hostProcessors.containsKey(processorType)
+
+    /**
+     * W3C SCXML 6.2: dispatch a host-served `<send>` and raise, in order,
+     * every event the handler says the act produced.
+     *
+     * With no handler registered this answers `null` and the generated site
+     * raises `error.execution`, the same outcome an undeclared type produces.
+     * That is the point: the document asked for an act, and from its side "no
+     * processor implements this type" and "the processor was never wired up"
+     * are one fact. Reporting them differently would make a wiring mistake
+     * look like a document error, or worse, look like success. An empty list
+     * is a success.
+     *
+     * W3C SCXML C.1: a reply from outside the machine arrives on the external
+     * queue, like any event the host raises — resolved by name, so a reply
+     * naming an event this machine does not declare is dropped exactly as any
+     * such event is.
+     */
+    protected fun performHostSend(request: HostSendRequest): List<HostSendResponse>? {
+        val handler = hostProcessors[request.processorType] ?: return null
+        val replies = handler(request)
+        for (reply in replies) {
+            if (reply.eventName.isEmpty()) continue
+            sendByNameWithData(reply.eventName, reply.eventData)
+        }
+        return replies
+    }
+
     // --- Sync Execution (C++ AOT StaticExecutionEngine pattern) ---
 
     private var syncMode = false

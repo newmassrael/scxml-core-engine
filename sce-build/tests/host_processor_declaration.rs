@@ -346,16 +346,22 @@ fn a_send_declaration_does_not_claim_the_invoke_of_the_same_name() {
 /// dispatch path and forgot its registry would otherwise be the one nobody
 /// asked.
 ///
-/// Only Kotlin is now in the `--host-processor` half. C++, C11, Go and
-/// Python are absent from it and present in the `--host-invoker` half, and
-/// that asymmetry is the point rather than an omission: each grew a `<send>`
+/// The `--host-processor` half is EMPTY now, and its absence is the shape of
+/// the repair rather than a hole in this test: every backend grew a `<send>`
 /// dispatch registry — `StaticExecutionEngine::registerEventProcessor`,
-/// `sce_host_processor_registry_t`, `Engine.RegisterEventProcessor` and
-/// `Engine.register_event_processor` respectively — and none has an invoker
-/// registry. While the two flags were one refusal a backend either had both
-/// or neither, and this loop could ask them together; a single answer now
-/// would either accept an invoker declaration they cannot service or refuse a
-/// processor declaration they can.
+/// `sce_host_processor_registry_t`, `Engine.RegisterEventProcessor`,
+/// `Engine.register_event_processor`,
+/// `StateMachineEngine.registerEventProcessor` — so
+/// `reject_host_processors_in_unsupported_lang` has no callers and is
+/// retired. What each of them emits instead is asked by the per-backend
+/// `a_declared_type_emits_a_dispatch_for_*` tests, which is where the claim
+/// that deletion makes now has to be paid.
+///
+/// The invoker half is untouched and covers all five: none has an
+/// `<invoke>` entry registry. While the two flags were one refusal a backend
+/// either had both or neither, and this loop could ask them together; a
+/// single answer now would accept an invoker declaration none of them can
+/// service.
 /// `a_declared_type_emits_a_dispatch_for_cpp` and its C11 sibling are the
 /// other side of the same claim — without them, dropping a backend from a
 /// refusal list would read as a pass.
@@ -367,14 +373,9 @@ fn a_backend_without_a_registry_refuses_the_declaration() {
     // so a build declaring only an invoker would have compiled on a
     // backend that cannot service it.
     let mut cases: Vec<(&str, &str)> = Vec::new();
-    for lang in ["kotlin"] {
-        cases.push((lang, "--host-processor"));
+    for lang in ["cpp", "c11", "go", "python", "kotlin"] {
         cases.push((lang, "--host-invoker"));
     }
-    cases.push(("cpp", "--host-invoker"));
-    cases.push(("go", "--host-invoker"));
-    cases.push(("c11", "--host-invoker"));
-    cases.push(("python", "--host-invoker"));
 
     for (lang, flag) in cases {
         {
@@ -646,6 +647,59 @@ fn an_undeclared_machine_carries_no_host_import_for_python() {
     assert!(
         !emitted.contains("HostSendRequest"),
         "a machine that declared no host processor still imports the request type",
+    );
+}
+
+/// The Kotlin half of the same claim, and the one that emptied the refusal
+/// list.
+///
+/// Same shape and same reason as its four siblings: dropping a backend from
+/// the refusal list is a claim made by DELETING something, so the deletion is
+/// paid for by asking what the backend now emits. With this one there is
+/// nothing left to drop, which is why
+/// `a_backend_without_a_registry_refuses_the_declaration` no longer has a
+/// processor half — these five tests are what stands in its place.
+///
+/// Asserted on the emitted text rather than by running the machine because
+/// this is the build's half.
+/// `backends/kotlin/tests/.../HostProcessorTest.kt` compiles and runs that
+/// same machine, with a handler and without one.
+#[test]
+fn a_declared_type_emits_a_dispatch_for_kotlin() {
+    let out = out_dir("kotlin-dispatch");
+    let r = run(&[
+        "generate",
+        fixture().to_str().unwrap(),
+        "-l",
+        "kotlin",
+        "-o",
+        out.to_str().unwrap(),
+        "--host-processor",
+        "x-sce-host",
+    ]);
+    assert_eq!(
+        r.exit,
+        Some(0),
+        "kotlin refused a declaration it can service: {}",
+        r.stderr
+    );
+
+    let emitted = std::fs::read_to_string(out.join("statechart_host_processorSm.kt"))
+        .expect("the generator wrote the machine");
+    assert!(
+        emitted.contains("performHostSend("),
+        "no dispatch was emitted for a declared type",
+    );
+    assert!(
+        !emitted.contains("names a processor this platform does not support"),
+        "a declared type still emitted the unsupported-type refusal",
+    );
+    // The request has to carry what the author wrote, or the document can
+    // name an act but not parameterise it. The fixture's `<param>` is the
+    // one field that proves the crossing rather than the call.
+    assert!(
+        emitted.contains(r#"hostParams["within"] = listOf("2500")"#),
+        "the emitted dispatch dropped the <param> the fixture declares",
     );
 }
 
