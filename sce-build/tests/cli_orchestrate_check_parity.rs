@@ -408,3 +408,137 @@ fn a_forge_only_document_set_is_nameable_to_check() {
         deploy_only.stderr
     );
 }
+
+/// The §scxml-6.4.1 invoker fixture. Chosen over the §scxml-6.2.5
+/// processor one deliberately: the processor surface reaches every
+/// backend now, so a declaration changes no verdict there and a test
+/// built on it would pass whether or not the flag was honoured. The
+/// invoker surface is Rust-only, so the declaration is the difference
+/// between one `ok` and five refusals — an observable this route did not
+/// have before and cannot lose silently.
+const HOST_INVOKER_DOC: &str =
+    "sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml";
+
+/// §scxml-6.2.5 + §scxml-6.4.1 — the host declarations reach the producer
+/// `check`'s document-set route claims to predict.
+///
+/// They were single-document-only, and the reason given was sound at the
+/// time: `orchestrate` carried no host declaration, so a `check` that
+/// could be told about a processor its producer could not be told about
+/// would predict a build nobody could run. The flags conflicted with the
+/// document-set route, excluded themselves from the parity sweep above,
+/// and the gate stayed green.
+///
+/// Green for the wrong reason. The two commands agreed because neither
+/// could be asked — which is not the same as agreeing about an answer,
+/// and it left a document set unable to declare a host act at all. A mesh
+/// deployment of `examples/ai_loop/` is exactly such a set.
+#[test]
+fn the_host_declarations_reach_the_producer_that_check_predicts() {
+    let out = ScratchDir::new("orch-host-decl");
+    let out_path = out.path().to_str().expect("utf-8");
+
+    // Control: with no declaration the document lowers for every backend,
+    // because an `<invoke>` naming an unimplemented type is valid SCXML
+    // whose refusal happens at run time. The five refusals below are
+    // therefore the flag's doing and not the document's.
+    let bare = run(&[
+        "orchestrate",
+        "--scxml",
+        HOST_INVOKER_DOC,
+        "-l",
+        "cpp",
+        "-o",
+        out_path,
+    ]);
+    assert_eq!(
+        bare.code, 0,
+        "orchestrate refused the invoker document with no declaration at all; \
+         the control no longer reaches the condition: {}",
+        bare.stderr
+    );
+
+    // The producer honours the declaration: C++ has no invoker registry,
+    // so it refuses rather than emit a dispatch nothing can service.
+    let refused = run(&[
+        "orchestrate",
+        "--scxml",
+        HOST_INVOKER_DOC,
+        "-l",
+        "cpp",
+        "-o",
+        out_path,
+        "--host-invoker",
+        "x-sce-host",
+    ]);
+    assert_ne!(
+        refused.code, 0,
+        "orchestrate accepted --host-invoker for C++, which has no registry \
+         to dispatch into — the declaration was accepted and dropped"
+    );
+    assert!(
+        refused.stderr.contains("--host-invoker"),
+        "refusal was not the invoker one: {}",
+        refused.stderr
+    );
+
+    // …and accepts it for the backend that does have one.
+    let built = run(&[
+        "orchestrate",
+        "--scxml",
+        HOST_INVOKER_DOC,
+        "-l",
+        "rust",
+        "-o",
+        out_path,
+        "--host-invoker",
+        "x-sce-host",
+    ]);
+    assert_eq!(
+        built.code, 0,
+        "orchestrate refused --host-invoker for Rust, which implements it: {}",
+        built.stderr
+    );
+
+    // And `check`, on the same set, reaches the same verdict — per
+    // backend, not merely in aggregate.
+    let checked = run(&[
+        "check",
+        "--scxml",
+        HOST_INVOKER_DOC,
+        "--host-invoker",
+        "x-sce-host",
+    ]);
+    assert_eq!(
+        checked.code, 0,
+        "check refused the document-set route the declaration: {}",
+        checked.stderr
+    );
+    assert!(
+        checked
+            .stdout
+            .contains(r#""language":"rust","status":"ok""#),
+        "check did not clear Rust, which implements the invoker: {}",
+        checked.stdout
+    );
+    assert!(
+        checked
+            .stdout
+            .contains(r#""language":"cpp","status":"rejected""#),
+        "check cleared C++ under a declaration `orchestrate` refuses for it — \
+         the verdict this route reached is one its producer cannot reach: {}",
+        checked.stdout
+    );
+
+    // The declaration is the build's half of a two-place contract, so the
+    // manifest has to carry it on this route as it does on the single-
+    // document one. A consumer diffing the two to confirm its host
+    // registers what the build promised reads exactly this field.
+    assert!(
+        checked
+            .stdout
+            .contains(r#""host_invoker_types":["x-sce-host"]"#),
+        "the document-set manifest did not echo the declaration it was given: {}",
+        checked.stdout
+    );
+}
