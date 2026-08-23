@@ -73,7 +73,7 @@ Example:
   target_link_libraries(my_app PRIVATE SCE::sce_base)
 #]=============================================================================]
 function(sce_add_state_machine)
-    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE;CPP_NAMESPACE_PREFIX" "" ${ARGN})
+    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE;CPP_NAMESPACE_PREFIX" "HOST_PROCESSOR" ${ARGN})
 
     # Validate required arguments
     if(NOT SCE_TARGET)
@@ -134,6 +134,15 @@ function(sce_add_state_machine)
     if(SCE_CPP_NAMESPACE_PREFIX AND SCE_LANGUAGE STREQUAL "cpp")
         list(APPEND _SCE_CODEGEN_CMD --cpp-namespace-prefix "${SCE_CPP_NAMESPACE_PREFIX}")
     endif()
+    # §scxml-6.2.5: the Event I/O Processor types this build's HOST serves.
+    # Multi-valued because the identifier set is open and a host may serve
+    # several. Codegen decides at compile time whether a `<send type>` site
+    # dispatches or refuses, so a host that registers a handler without
+    # declaring the type here still meets the refusal — which is the point:
+    # the two halves have to agree, and only one of them is in the build.
+    foreach(_sce_host_processor IN LISTS SCE_HOST_PROCESSOR)
+        list(APPEND _SCE_CODEGEN_CMD --host-processor "${_sce_host_processor}")
+    endforeach()
     if(SCE_TEMPLATE_DIR)
         set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
     endif()

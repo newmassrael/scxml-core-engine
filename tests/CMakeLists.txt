@@ -766,6 +766,7 @@ add_executable(integration_tests
     integration/XmlDataIsADomTreeTest.cpp
     integration/XmlDataIsADomTreeAotTest.cpp
     integration/AiLoopAotTest.cpp
+    integration/HostProcessorAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp
@@ -1393,6 +1394,25 @@ target_include_directories(integration_tests PRIVATE ${STATIC_INTEGRATION_OUTPUT
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/examples/ai_loop/ai_loop.scxml
+)
+
+# §scxml-6.2.5: the host-served Event I/O Processor, compiled for C++ with the
+# same declaration `scripts/regen_host_processor.sh` passes for Rust. The
+# fixture lives beside the build tests rather than under
+# `integration_resources/` for the reason `ai_loop` does: a stem there is a
+# seven-channel commitment (19 sites, enforced by
+# `integration_stem_registration.rs`), and five of those backends have no
+# registry to dispatch into — `reject_host_processors_in_unsupported_lang`
+# still refuses the declaration for each of them by name.
+#
+# The declaration has to be spelled HERE and not only in the driver: codegen
+# decides at compile time whether a `<send type>` site dispatches or refuses,
+# so a test registering a handler against a machine built without the flag
+# would meet the refusal and read as a feature that does not work.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml
+    HOST_PROCESSOR x-sce-host
 )
 
 # W3C SCXML 3.4: `getCurrentState()` names an atomic state in a parallel

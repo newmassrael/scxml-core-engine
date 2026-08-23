@@ -37,10 +37,14 @@ std::string sendId = ::SCE::SendHelper::generateSendId();
 // `<send>` or the script engine reached it first.
 ensureSessionId();
 {% endif %}
-{% if action.send_type and not action.typeexpr %}
-// W3C SCXML 6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
-if (!::SCE::SendHelper::isSupportedSendType("{{ action.send_type }}")) {
-    // W3C SCXML 6.2: Unsupported send type raises error.execution on internal queue
+{% if action.send_type_unsupported and not action.typeexpr %}
+// §scxml-6.2 (test 199): the accepted set is decided at build time and read
+// here, not re-spelled. `Action::send_type_unsupported` is the one answer
+// every backend renders from — and it is also what a `--host-processor`
+// declaration MOVES, so a runtime re-derivation would refuse a type the
+// build had already promised to dispatch.
+{
+    // §scxml-6.2: Unsupported send type raises error.execution on internal queue
     engine.raise(typename Engine::EventWithMetadata(
         Event::Error_execution,
         "<send type='{{ action.send_type }}'> names a processor this platform does not support"));
@@ -392,7 +396,51 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 
 {# W3C SCXML 6.4: Skip fallback queue routing for child invoke targets (already handled above) #}
 {% if action.target != '#_parent' and action.target != '#_child' and not (action.target.startswith('#_') and action.target not in ['#_parent', '#_internal', '#_child']) %}
-{% if action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) %}
+{% if action.send_type_host_served %}
+{# §scxml-6.2.5: the type is served by the HOST, which declared it to this
+   build. Dispatch rather than refuse — and take the whole send, because a
+   processor the host serves owns delivery; falling through would also
+   enqueue the event locally and the document would see the act twice. #}
+// §scxml-6.2.5: "{{ action.send_type }}" is served by the host, which declared
+// it to this build. Dispatch rather than refuse.
+{
+    ::SCE::HostSendRequest hostRequest;
+    hostRequest.processorType = "{{ action.send_type | escape_cpp }}";
+    hostRequest.eventName = "{{ action.event | escape_cpp }}";
+    hostRequest.target = {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target | escape_cpp }}"{% endif %};
+    hostRequest.content = "{{ action.content | escape_cpp }}";
+    hostRequest.sendId = sendId;
+{% set host_needs_script = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
+{% if host_needs_script and (model.needs_script_engine or model.needs_event_origin) %}
+    this->ensureScriptEngine();
+    auto& scriptEngine = getScriptEngine();
+{% endif %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+    hostRequest.params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+{% else %}
+    {
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
+        if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+            hostRequest.params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+        } else {
+{{ param_eval_failed(param, '            ') }}
+        }
+    }
+{% endif %}
+{% endfor %}
+    const auto hostServed = engine.performHostSend(hostRequest);
+    // §scxml-6.2: a declared type with no handler registered is, from the
+    // document's side, a processor the platform does not support — the act it
+    // asked for was performed by nobody. Same event as an undeclared type, so
+    // a wiring mistake cannot read as success.
+    if (!hostServed.has_value() && !engine.hasEventProcessor("{{ action.send_type | escape_cpp }}")) {
+        engine.raise(typename Engine::EventWithMetadata(
+            Event::Error_execution,
+            "<send type='{{ action.send_type }}'> names a processor the host declared but never registered"));
+    }
+}
+{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) %}
 {# W3C SCXML C.2: BasicHTTP send — dispatch via performHttpSend() callback (Zero Duplication) #}
 {% if action.targetexpr %}
 // W3C SCXML C.2: Validate dynamic target is HTTP URL (error.communication if not)

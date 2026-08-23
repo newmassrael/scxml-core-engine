@@ -1,0 +1,97 @@
+# Mutation cases for the C++ half of a host-served Event I/O Processor.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_dispatch_cpp.cases`.
+#
+# Sibling of `host_processor_dispatch.cases`, which studies the same contract
+# on the Rust runtime. The two backends do not share this code — Rust keeps a
+# `HostProcessorRegistry` in its own module, C++ keeps the map on
+# `StaticExecutionEngine` — so the clause needs a case on each side. A mutation
+# of the Rust registry says nothing about what the C++ engine does.
+#
+# The contract has two halves that fail in opposite directions:
+#
+#   * a registered handler must RECEIVE the send, with the payload the author
+#     wrote, and its reply must arrive as an event;
+#   * a declared type with NOTHING registered must raise `error.execution`,
+#     because from the document's side an act nobody performed is one fact
+#     however the wiring failed.
+#
+# A dispatch that silently succeeded into an empty registry would satisfy the
+# first and destroy the second — it is the original defect wearing the new
+# feature's clothes — so the cases below attack both.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/static/StaticExecutionEngine.h tools/codegen/templates/actions/send.jinja2
+# The file whose assertions produce every verdict below, measured rather than
+# guessed. A ctest entry names a binary of twenty-odd sources; naming that
+# whole list here would put a long round on half of all pushes.
+mutation_oracles tests/integration/HostProcessorAotTest.cpp
+
+# ── The handler stops being reached ─────────────────────────────────
+#
+# The dispatch finds the handler and then does not call it. Every counter the
+# fixture keeps reads as it would for a handler that answered nothing, which is
+# a legitimate outcome — so nothing but the recorded request tells the two
+# apart, and that is exactly what `ARegisteredHandlerReceivesTheSendAndItsReply
+# Arrives` asserts on.
+
+mutation_case "the dispatch never calls the handler" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        auto response = it->second(request);""",
+     """        auto response = std::optional<::SCE::HostSendResponse>();""")
+PY
+
+# ── A reply is accepted and dropped ─────────────────────────────────
+#
+# The handler runs, answers, and the answer never becomes an event. The send
+# still counts as served — `performHostSend` returned a value, so the generated
+# site raises no `error.execution` — and the document simply waits forever for
+# a reply that was produced and discarded. This is the request/reply half of
+# the feature, and losing it is invisible to any check that only asks whether
+# the handler ran.
+
+mutation_case "the handler's reply never becomes an event" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (response.has_value() && !response->eventName.empty()) {
+            raiseExternal(response->eventName, response->eventData);
+        }""",
+     """        if (false && response.has_value() && !response->eventName.empty()) {
+            raiseExternal(response->eventName, response->eventData);
+        }""")
+PY
+
+# ── An empty registry reads as success ──────────────────────────────
+#
+# The other direction, and the one that matters most: a declared type with
+# nothing registered must raise `error.execution`. Remove the emitted guard and
+# the document proceeds as though its act had been carried out — the build
+# promising delivery it never performed, which is the defect the whole feature
+# was written to avoid rather than relocate.
+#
+# Mutating the TEMPLATE rather than the engine because the guard is emitted per
+# send site. No `mutation_regen` is declared and none is needed: the ctest
+# runner's `cmake --build` runs the generation step, so a template edit reaches
+# the binary the round measures — which is why `mutation_check_template_bridge`
+# exempts this runner rather than this casefile.
+
+mutation_case "an unregistered processor is treated as served" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     """    if (!hostServed.has_value() && !engine.hasEventProcessor("{{ action.send_type | escape_cpp }}")) {""",
+     """    if (false && !hostServed.has_value() && !engine.hasEventProcessor("{{ action.send_type | escape_cpp }}")) {""")
+PY
+
+# ── The registry stops being keyed ──────────────────────────────────
+#
+# A lookup that served any registered handler would deliver a document's acts
+# to a processor it never named. §scxml-6.2.5 makes the identifier the whole
+# address, so a registry that ignores it is not a registry.
+
+mutation_case "any registered handler serves any type" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        const auto it = hostProcessors_.find(request.processorType);""",
+     """        const auto it = hostProcessors_.begin();""")
+PY
