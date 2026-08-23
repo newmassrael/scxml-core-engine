@@ -187,11 +187,36 @@ endfunction()
 #   - Sets `INTEGRATION_C_TEST_${STEM}_SOURCES` (PARENT_SCOPE) to the
 #     parent _sm.c plus every child _sm.c — caller links these into
 #     the per-fixture executable target.
+# Keyword args beyond the stem contract:
+#   SCXML_FILE <path>        Generate this document instead of the
+#                            `integration_resources/<stem>/<stem>.scxml`
+#                            the stem names. For a fixture that is
+#                            deliberately NOT a seven-channel stem — the
+#                            §scxml-6.2.5 host-served document is asked of
+#                            the backends that have a registry, and the
+#                            others still refuse the declaration by name.
+#   HOST_PROCESSOR <type>... Pass `--host-processor <type>` to codegen.
+#                            Load-bearing rather than cosmetic: codegen
+#                            decides at compile time whether a `<send
+#                            type>` site dispatches or refuses, so a test
+#                            registering a handler against a machine built
+#                            without the flag meets the refusal and reads
+#                            as a feature that does not work.
 function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
-    cmake_parse_arguments(_INT "" "" "SYNTH_INVOKE_CHILDREN" ${ARGN})
+    cmake_parse_arguments(_INT "" "SCXML_FILE" "SYNTH_INVOKE_CHILDREN;HOST_PROCESSOR" ${ARGN})
 
-    set(FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/integration_resources/${STEM}")
-    set(FIXTURE "${FIXTURE_ROOT}/${STEM}.scxml")
+    if(_INT_SCXML_FILE)
+        get_filename_component(FIXTURE_ROOT "${_INT_SCXML_FILE}" DIRECTORY)
+        set(FIXTURE "${_INT_SCXML_FILE}")
+    else()
+        set(FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/integration_resources/${STEM}")
+        set(FIXTURE "${FIXTURE_ROOT}/${STEM}.scxml")
+    endif()
+
+    set(_HOST_PROCESSOR_ARGS "")
+    foreach(_TYPE ${_INT_HOST_PROCESSOR})
+        list(APPEND _HOST_PROCESSOR_ARGS --host-processor "${_TYPE}")
+    endforeach()
 
     if(NOT EXISTS "${FIXTURE}")
         message(WARNING
@@ -229,6 +254,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l c11 -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
+                ${_HOST_PROCESSOR_ARGS}
                 --write-deps "${_PARENT_DEPFILE}"
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
         DEPFILE "${_PARENT_DEPFILE}"

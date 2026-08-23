@@ -55,6 +55,18 @@
 #include "sce/sample.h"
 {% endif %}
 
+{% if model.host_processor_types %}
+/* §scxml-6.2.5: host-served Event I/O Processor types + the bounded
+   registry this machine dispatches through
+   (backends/c/runtime/include/sce/host_processor.h). Header-only, the
+   same INTERFACE-only contract `sce/invoke.h` carries; the per-machine
+   dispatch is emitted into the generated `_sm.c`. cpp's
+   `core/HostProcessor.h` plus `StaticExecutionEngine`'s map is the
+   equivalent shape, translated to a fixed-capacity array because the
+   MCU profile has no allocator. */
+#include "sce/host_processor.h"
+{% endif %}
+
 {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
 /* W3C SCXML 6.4: invoke types + helpers (backends/c/runtime/include/sce/invoke.h).
    Header-only — types and `static inline` helpers (jinja2-inline
@@ -492,6 +504,16 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     void (*parent_dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data);
     char invoke_id[SCE_MAX_ID_LEN];
     {% endif %}
+    {% if model.host_processor_types %}
+    /* §scxml-6.2.5: handlers for the Event I/O Processor types this build
+       was told the host serves. Emitted only when a type was declared, so
+       a machine that serves none pays no bytes for the ceiling — which is
+       why the gate is the DECLARATION and not the per-send flag: the host
+       registers against a type, and a build told about a type it never
+       uses must still offer the registration or the host cannot compile
+       against its own contract. */
+    sce_host_processor_registry_t host_processors;
+    {% endif %}
 } {{ csym_prefix }}{{ model.name }}_t;
 
 /* ── Public API ───────────────────────────────────────────────────── */
@@ -508,6 +530,53 @@ const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym_prefix }}
    event processor — the same string its `_ioprocessors` entry publishes and
    the one a `<send target>` must carry to be delivered here. */
 const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+{% if model.host_processor_types %}
+/* ── §scxml-6.2.5: the host's half of a declared processor ────────── */
+/*
+   This build was told the host serves:
+{% for t in model.host_processor_types %}
+     "{{ t }}"
+{% endfor %}
+   Every `<send>` naming one of those dispatches into the registry below.
+   A send reaching a type with no handler raises `error.execution` — the
+   same outcome the document sees for a type the platform does not
+   implement at all, because from its side nobody performed the act
+   either way.
+
+   Wire the host BEFORE running, with `_init_with_host_processors`:
+
+     sce_host_processor_registry_t wiring = {0};
+     sce_host_registry_register(&wiring, "<type>", my_handler, &my_host);
+     {{ csym_prefix }}{{ model.name }}_init_with_host_processors(&sm, &wiring);
+
+   The registry is passed INTO `_init` rather than written onto the
+   machine first because `_init` zeroes the struct, and the first
+   `<onentry>` body may already perform an act — a handler installed
+   afterwards would arrive one act too late. */
+void {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_processor_registry_t *host_processors);
+
+/* Change what serves `processor_type` on a machine that is already
+   initialised. `user_data` is handed back unchanged on each call — C's
+   answer to the closure the other engines capture — and registering twice
+   for one type replaces the handler.
+
+   For the acts a machine performs while entering its initial
+   configuration, this is too late: use `_init_with_host_processors`.
+
+   Returns false when the registry is full or the type does not fit its
+   slot, because a registration that did not happen must not read as one
+   that did. */
+bool {{ csym_prefix }}{{ model.name }}_register_event_processor({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                                                sce_host_send_handler_fn handler, void *user_data);
+
+/* Whether a handler is registered for `processor_type`. Two things can go
+   wrong with a host-served send — no handler, or a handler that reported
+   nothing — and only the first is an error; this is how a host tells them
+   apart from outside. */
+bool {{ csym_prefix }}{{ model.name }}_has_event_processor(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type);
+{% endif %}
 
 {% if model.readable_variables %}
 
