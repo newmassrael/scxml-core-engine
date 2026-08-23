@@ -270,3 +270,106 @@ fn lints_are_off_by_default() {
         );
     }
 }
+
+/// …and the one check that is NOT off by default, because it is not a lint.
+///
+/// A `sce:unhandled` declaration the document contradicts is a false
+/// statement about the document, not design advice. The distinction is
+/// visible in the parser: the attribute's SHAPE is already refused
+/// unconditionally — a wildcard, a repeat, an empty value all reject with
+/// `validation/invalid-attribute` and no flag involved — while its TRUTH
+/// used to be judged only under `--lint`. One attribute, two regimes, and
+/// the half that could rot silently was the half that says something.
+///
+/// The `non_exhaustive` case above stays in the off-by-default set and must:
+/// "which of these compounds should an author be told about" IS the
+/// design-intent question, and turning it on by default refuses the W3C
+/// corpus. So the two live on opposite sides of the same flag, which is the
+/// whole point of separating them.
+#[test]
+fn a_false_declaration_is_refused_without_the_flag() {
+    let scratch = ScratchDir::new("declaration-always-on");
+
+    // `active` names an event NO sibling handles, so the declaration exempts
+    // nothing. `tick` gives the compound its common ground, so the report
+    // would fire here too — the point is that the DECLARATION check is what
+    // rejects without the flag.
+    let stale = scratch.write(
+        "stale.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="stale" initial="dispatch">
+  <state id="dispatch" initial="active">
+    <state id="active" sce:unhandled="cmd.nobody.handles">
+      <transition event="cmd.stop" target="idle"/>
+      <transition event="tick" target="active"/>
+    </state>
+    <state id="idle">
+      <transition event="cmd.start" target="active"/>
+      <transition event="tick" target="idle"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    let (code, stderr) = cli_check(&stale, false);
+    assert_ne!(
+        code, 0,
+        "a declaration the document contradicts built clean without --lint"
+    );
+    assert!(
+        stderr.contains("cmd.nobody.handles"),
+        "the refusal does not name the declared event: {stderr}"
+    );
+
+    // The other direction, and the reason this is safe to run on every
+    // build: a TRUE declaration is accepted without the flag, including in
+    // the protocol-stage shape where nothing is reported at all.
+    let true_declaration = scratch.write(
+        "true_declaration.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="true_declaration" initial="watch">
+  <state id="watch" initial="alive">
+    <state id="alive" sce:unhandled="session.ready">
+      <transition event="session.lost" target="rebuilding"/>
+    </state>
+    <state id="rebuilding">
+      <transition event="session.ready" target="alive"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    let (ok_code, ok_stderr) = cli_check(&true_declaration, false);
+    assert_eq!(
+        ok_code, 0,
+        "a true declaration was refused without --lint: {ok_stderr}"
+    );
+
+    // And a document declaring nothing is untouched, which is what keeps
+    // this off the W3C corpus's back entirely.
+    let none = scratch.write(
+        "no_declaration.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="no_declaration" initial="watch">
+  <state id="watch" initial="alive">
+    <state id="alive">
+      <transition event="session.lost" target="rebuilding"/>
+    </state>
+    <state id="rebuilding">
+      <transition event="session.ready" target="alive"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    let (none_code, none_stderr) = cli_check(&none, false);
+    assert_eq!(
+        none_code, 0,
+        "a document with no declaration was refused: {none_stderr}"
+    );
+}
