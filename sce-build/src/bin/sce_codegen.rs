@@ -1418,14 +1418,19 @@ struct CheckArgs {
     /// on a document `generate --host-processor` refuses on four of them
     /// — a verdict its own contract says it cannot reach.
     ///
-    /// Single-document runs only, for the reason `--no-std` is:
-    /// `orchestrate` carries no host declaration, and a `check` that
-    /// could be told something its producer cannot be told would predict
-    /// a build nobody can run.
+    /// Accepted on the document-set route too, since `orchestrate` grew
+    /// the same flag. It was single-document-only while `orchestrate`
+    /// carried no host declaration — a `check` that could be told
+    /// something its producer cannot be told would predict a build nobody
+    /// can run. Now both can be told, so both are.
+    ///
+    /// Still refused with `--forge` alone: a forge document has no
+    /// `<send>` for a processor to serve, so the declaration would have
+    /// nothing to change and accepting it would claim otherwise.
     #[arg(
         long = "host-processor",
         value_name = "TYPE",
-        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+        conflicts_with_all = ["forge"]
     )]
     host_processor: Vec<String>,
     /// Declare an `<invoke type="...">` this build's host can run,
@@ -1436,11 +1441,11 @@ struct CheckArgs {
     /// a process with a lifecycle. Kept separate here so a `check` cannot
     /// clear a declaration the build will be refused for.
     ///
-    /// Single-document runs only — see `--host-processor`.
+    /// Document sets too — see `--host-processor`.
     #[arg(
         long = "host-invoker",
         value_name = "TYPE",
-        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+        conflicts_with_all = ["forge"]
     )]
     host_invoker: Vec<String>,
 }
@@ -1915,6 +1920,28 @@ struct OrchestrateArgs {
     /// RFC §synth-5-F default of 1_000_000.
     #[arg(long)]
     const_fold_budget: Option<u64>,
+    /// Declare an Event I/O Processor `type` this build's host serves,
+    /// mirroring `generate --host-processor`. Repeatable.
+    ///
+    /// Here for the reason `--go-module-prefix` is: `check`'s
+    /// document-set route names this subcommand as the producer whose
+    /// verdict it mirrors, and a flag that changes how a document is READ
+    /// must exist on the command whose conclusion it claims to predict.
+    /// Until it did, a document set could not be told what its host
+    /// serves at all — every `<send type>` naming a host processor stayed
+    /// the §scxml-6.2 refusal — and the parity gate stayed green because
+    /// `check` refused the flag on that route rather than because the two
+    /// commands agreed. Agreement is not the same as capability.
+    #[arg(long = "host-processor", value_name = "TYPE")]
+    host_processor: Vec<String>,
+    /// Declare an `<invoke type="...">` this build's host can run,
+    /// mirroring `generate --host-invoker`. Repeatable.
+    ///
+    /// Separate from `--host-processor` on every command carrying both,
+    /// and for the same reason: delivering an event is not the same
+    /// capability as running a process with a lifecycle.
+    #[arg(long = "host-invoker", value_name = "TYPE")]
+    host_invoker: Vec<String>,
 }
 
 /// Recover `--error-format` from the raw argument vector.
@@ -2110,6 +2137,8 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         emit_ast_dir: emit_ast_dir_arg,
         go_module_prefix,
         const_fold_budget,
+        host_processor,
+        host_invoker,
     } = args;
     let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
     let scxml_paths: &[String] = &scxml;
@@ -2151,6 +2180,8 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         include_dirs: include_dirs.clone(),
+        host_processor_types: host_processor,
+        host_invoker_types: host_invoker,
         ..Default::default()
     };
 
@@ -2223,6 +2254,14 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         deploy_facts: deploy_cfg.as_ref().map(|cfg| sce_build::DeployFacts {
             static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
         }),
+        // Echoed for the reason the single-document routes echo it: the
+        // declaration is the build's half of a two-place contract, and a
+        // consumer diffing the two manifests to confirm its host registers
+        // what the build promised must see the same field from both. Read
+        // off the options rather than off a model, because a document set
+        // has no single model to read — the declaration is the SET's.
+        host_processor_types: options.host_processor_types.clone(),
+        host_invoker_types: options.host_invoker_types.clone(),
         ..GenerateReport::default()
     };
     accumulate_host_requirements(&mut report, &scxml_path_bufs);
@@ -2670,12 +2709,14 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         no_std: _,
-        host_processor: _,
-        host_invoker: _,
-        // The five flags this route cannot honour are declared to
-        // conflict with every argument that reaches it, so clap refuses
-        // the combination before dispatch rather than this function
-        // accepting and ignoring them.
+        host_processor,
+        host_invoker,
+        // The flags this route cannot honour are declared to conflict
+        // with every argument that reaches it, so clap refuses the
+        // combination before dispatch rather than this function accepting
+        // and ignoring them. The two host declarations are NOT among them
+        // any more: `orchestrate` carries both, so this route can be told
+        // what the producer can be told and is bound to honour it below.
     } = args;
 
     let (explicit, langs) = requested_backends(&language, error_format);
@@ -2702,6 +2743,11 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         deploy_facts: deploy_cfg.as_ref().map(|cfg| sce_build::DeployFacts {
             static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
         }),
+        // Echoed for the reason the single-document route echoes it, and
+        // read off the same values the compile below is given — so a
+        // consumer cannot be shown a declaration this run did not use.
+        host_processor_types: host_processor.clone(),
+        host_invoker_types: host_invoker.clone(),
         ..GenerateReport::default()
     };
     accumulate_host_requirements(&mut report, &scxml_paths);
@@ -2710,6 +2756,13 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         include_dirs: include_dir.iter().map(PathBuf::from).collect(),
+        // §scxml-6.2.5 + §scxml-6.4.1: the same declaration `orchestrate`
+        // takes, read the same way. Without it here this route would
+        // answer for an interpretation the producer can be given and this
+        // check was not — the mirror image of the defect that made these
+        // flags single-document-only in the first place.
+        host_processor_types: host_processor,
+        host_invoker_types: host_invoker,
         ..Default::default()
     };
 

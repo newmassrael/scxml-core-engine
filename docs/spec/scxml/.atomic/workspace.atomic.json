@@ -8097,6 +8097,16 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "scheduleHostSend",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "ForgeCompileOptions",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_scxml_with_imports",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

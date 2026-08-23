@@ -2084,6 +2084,28 @@ pub type ElementFieldSchema = Vec<(String, forge::model::SceType, Option<String>
 /// itself never grows a second parameter.
 #[derive(Default, Clone, Debug)]
 pub struct ForgeCompileOptions {
+    /// §scxml-6.2.5: Event I/O Processor `type` values this build's host
+    /// serves, mirroring `generate --host-processor`.
+    ///
+    /// It lives here for the reason [`Self::include_dirs`] does: the
+    /// declaration has to reach a pass INSIDE
+    /// [`compile_scxml_with_imports`] — the per-document analyze step —
+    /// and a caller holding only paths cannot reach it.
+    ///
+    /// Empty (the default) leaves every `<send type>` naming a
+    /// non-standard processor as the §scxml-6.2 refusal, which is what a
+    /// document set compiled before this field existed always got: a mesh
+    /// deployment could not declare a host act at all, because the only
+    /// commands that took the declaration were the single-document ones.
+    pub host_processor_types: Vec<String>,
+    /// §scxml-6.4.1: `<invoke type="...">` values this build's host can
+    /// run, mirroring `generate --host-invoker`.
+    ///
+    /// A separate list from [`Self::host_processor_types`] for the reason
+    /// the two flags are separate: delivering an event is not the same
+    /// capability as running an invoked process with a lifecycle, and one
+    /// list would make declaring either silently claim both.
+    pub host_invoker_types: Vec<String>,
     /// Go module path under which the generated package directories live
     /// (e.g. `github.com/newmassrael/sce-forge-runtime/conformance/generated`).
     /// When set, every `<sce:import>` emits `import "{prefix}/{snake}"` in
@@ -3302,7 +3324,21 @@ pub fn compile_scxml_with_imports(
             // Deploy orchestration injects no extra enum derives; the
             // statechart State/Event derive extras are a downstream
             // library-consumer concern (see `compile_scxml_with_derives`).
-            &generator::StatechartCodegenOptions::default(),
+            //
+            // §scxml-6.2.5 + §scxml-6.4.1: the host declarations DO travel,
+            // and this line is where they used to stop. `Default::default()`
+            // here meant a document set could not be told what its host
+            // serves — every `<send type>` naming a host processor stayed the
+            // §scxml-6.2 refusal, however the caller was invoked. The single-
+            // document route had carried the declaration since the surface
+            // existed, so the two commands read the same document through
+            // different eyes, and `check`'s document-set route hid it by
+            // refusing the flag rather than by lacking the capability.
+            &generator::StatechartCodegenOptions {
+                host_processor_types: options.host_processor_types.clone(),
+                host_invoker_types: options.host_invoker_types.clone(),
+                ..Default::default()
+            },
         )?;
         outputs.push((basename.to_string(), out));
     }
