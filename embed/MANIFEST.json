@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "c72dc642d7",
+  "embed_version": "ba7e1e5bc2",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 260,
@@ -606,12 +606,11 @@
       "members": [
         "field std::string eventData",
         "field std::string eventName",
-        "method HostSendResponse &(HostSendResponse &&) noexcept operator=",
-        "method HostSendResponse &(const HostSendResponse &) noexcept(false) operator=",
-        "method void () noexcept HostSendResponse",
+        "method HostSendResponse &(HostSendResponse &&) operator=",
+        "method HostSendResponse &(const HostSendResponse &) operator=",
         "method void () noexcept ~HostSendResponse",
-        "method void (HostSendResponse &&) noexcept HostSendResponse",
-        "method void (const HostSendResponse &) noexcept(false) HostSendResponse"
+        "method void (HostSendResponse &&) HostSendResponse",
+        "method void (const HostSendResponse &) HostSendResponse"
       ],
       "name": "SCE::HostSendResponse"
     },
@@ -633,7 +632,7 @@
       "header": "core/HostProcessor.h",
       "kind": "typedef",
       "name": "SCE::HostSendHandler",
-      "type": "std::function<std::optional<HostSendResponse> (const HostSendRequest &)>"
+      "type": "std::function<std::vector<HostSendResponse> (const HostSendRequest &)>"
     },
     {
       "header": "core/InvokeHelper.h",
