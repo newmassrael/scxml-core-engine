@@ -19,6 +19,30 @@
   which is what lets the example ship with a scripted host and a real
   deployment use a terminal one.
 
+  ## The two events that must carry something
+
+  Most of what a host reports is the event's own name — `turn.done` says all
+  of it. Two are different, because the machine has to read a value out of
+  them:
+
+    judge            {"done": <bool>}
+                     Did the agent say it is finished? `judging` branches on
+                     `_event.data.done`.
+    reflect.applied  {"start_prompt": <text>, "turn_prompt": <text>,
+                      "milestone": <text>}
+                     What the reflection rewrote. `reflecting` assigns all
+                     three before paying for a restart.
+
+  Sending either bare is not the same as sending a negative answer. W3C SCXML
+  5.9.1 has a `cond` that could not be evaluated raise `error.execution` and
+  count as false, so a `judge` with no payload looks exactly like `done:false`
+  from the configuration, from the datamodel and from the outcome — a loop
+  driven that way never converges however finished the agent says it is. What
+  separates the two is the engine's own `unhandledErrorEvents()`, and the
+  drivers assert both halves: `AVerdictWithoutItsPayloadIsReported` that the
+  mistake is counted, `ACorrectlyDrivenRunReportsNoErrors` that a correct run
+  counts nothing.
+
   ## Three regions, because three things are true at once
 
   A single-region draft of this machine repeated `fail` on eight states and

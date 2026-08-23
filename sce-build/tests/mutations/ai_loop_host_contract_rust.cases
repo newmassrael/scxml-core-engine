@@ -1,0 +1,70 @@
+# Mutation cases for the half of `ai_loop` a HOST has to get right, on the
+# Rust AOT path.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/ai_loop_host_contract_rust.cases`.
+#
+# `examples/ai_loop/ai_loop.scxml` reads a value out of two of the events its
+# host sends — `judge` carries `{"done":…}` and `reflect.applied` carries the
+# three strings a reflection rewrote — and it bounds how many times a session
+# may be replaced. Measured 2026-08-23, both channels drove `judge` BARE:
+# `_event.data` was nil, indexing it failed, §scxml-5.9.1 had the `cond` count
+# as false, and the run took the same third transition a `done:false` verdict
+# takes. Nineteen scenarios stayed green over a loop that was answering a
+# question it could not read, and `max_restarts` was named by neither channel.
+#
+# So the two cases below attack the two things that were then added: that a
+# guard which could not be evaluated is REPORTED, and that the restart budget
+# is spent where the document says it is. Both are engine behaviour inlined
+# into the generated policy, which is why the committed tree is the target —
+# the template is not compiled into this binary, so an edit there would leave
+# every artifact hash unchanged and the round INCONCLUSIVE. Its sibling
+# `ai_loop_history_rust.cases` targets the same file for the same reason.
+#
+# Anchors are literal slices of the generated source. `scripts/regen_ai_loop.sh`
+# rewrites that file from the example, so an anchor moved by a document edit is
+# reported INCONCLUSIVE with the anchor quoted rather than as a pass.
+
+mutation_tests -p sce-rust-tests --test ai_loop
+mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
+
+# ── A guard that could not be evaluated says nothing ────────────────
+#
+# §scxml-5.9.1 has a failed `cond` raise `error.execution` and be treated as
+# false. Delete the raise and only the false survives: a host that forgot the
+# verdict still gets a loop that works another turn, and now nothing anywhere
+# counted it. That is the state both channels were actually in — the run never
+# converges however finished the agent says it is, and the only difference from
+# a legitimately unfinished run is a number nobody was reading.
+#
+# `a_verdict_without_its_payload_is_reported` is the assertion written for this
+# one; `a_correctly_driven_run_reports_no_errors` is its floor, so an engine
+# that answered by raising on every guard fails too.
+
+mutation_case "a guard that could not be evaluated is swallowed" <<'PY'
+edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+     """                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AiLoopEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
+                ));
+                false""",
+     """                false""")
+PY
+
+# ── The restart budget is spent one replacement early ───────────────
+#
+# `restarting` lets `session.ready` through to `priming` while `restarts` is
+# within `max_restarts`, and sends it to `stuck` past it. Off by one and the
+# run is called stuck on the replacement the author allowed — an `exhausted`
+# outcome for a loop that had one more rebuild coming, which no outcome check
+# can see because `exhausted` is where a spent budget legitimately ends.
+#
+# `a_session_replaced_past_its_budget_reports_stuck` walks every replacement
+# up to the bound and asserts each one primes, which is what makes the
+# boundary itself the claim rather than the terminal.
+
+mutation_case "the restart budget is spent one replacement early" <<'PY'
+edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+     'self.safe_evaluate_guard("(restarts > max_restarts)", engine)',
+     'self.safe_evaluate_guard("(restarts >= max_restarts)", engine)')
+PY

@@ -44,7 +44,13 @@ const CPP_DRIVER: &str = "tests/integration/AiLoopAotTest.cpp";
 /// pair perfectly — the floor is what makes a broken pattern fail instead
 /// of pass. It is a ratchet: raise it when the suite grows, never lower it
 /// to accommodate a deletion.
-const SCENARIO_FLOOR: usize = 19;
+///
+/// 19 when the pairing landed (2026-08-22); 24 since 2026-08-23, when
+/// counting which of the document's five enumerated outcomes any channel
+/// actually reached found `converged` and `failed` at none, `stuck` — one of
+/// the two ways into `exhausted` — at none, and both channels driving `judge`
+/// without the payload its `cond` reads.
+const SCENARIO_FLOOR: usize = 24;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
