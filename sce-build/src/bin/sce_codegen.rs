@@ -1407,6 +1407,42 @@ struct CheckArgs {
     /// to render, so the flag has no producer to agree with there.
     #[arg(long, conflicts_with_all = ["scxml_set", "forge", "deploy"])]
     no_std: bool,
+    /// Declare an Event I/O Processor `type` this build's host serves,
+    /// mirroring `generate --host-processor`. Repeatable.
+    ///
+    /// The declaration is read by the backend, not only by the manifest:
+    /// a backend with no host-processor registry refuses the document
+    /// rather than emit a dispatch it cannot service. Without this flag
+    /// `check` could not be asked for the interpretation the build
+    /// actually uses, so it answered `"status":"ok"` for every backend
+    /// on a document `generate --host-processor` refuses on four of them
+    /// — a verdict its own contract says it cannot reach.
+    ///
+    /// Single-document runs only, for the reason `--no-std` is:
+    /// `orchestrate` carries no host declaration, and a `check` that
+    /// could be told something its producer cannot be told would predict
+    /// a build nobody can run.
+    #[arg(
+        long = "host-processor",
+        value_name = "TYPE",
+        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+    )]
+    host_processor: Vec<String>,
+    /// Declare an `<invoke type="...">` this build's host can run,
+    /// mirroring `generate --host-invoker`. Repeatable.
+    ///
+    /// Separate from `--host-processor` on both commands and for the same
+    /// reason: delivering an event is not the same capability as running
+    /// a process with a lifecycle. Kept separate here so a `check` cannot
+    /// clear a declaration the build will be refused for.
+    ///
+    /// Single-document runs only — see `--host-processor`.
+    #[arg(
+        long = "host-invoker",
+        value_name = "TYPE",
+        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+    )]
+    host_invoker: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -2634,7 +2670,9 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         no_std: _,
-        // The three flags this route cannot honour are declared to
+        host_processor: _,
+        host_invoker: _,
+        // The five flags this route cannot honour are declared to
         // conflict with every argument that reaches it, so clap refuses
         // the combination before dispatch rather than this function
         // accepting and ignoring them.
@@ -2748,6 +2786,8 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         no_std,
+        host_processor,
+        host_invoker,
     } = args;
     // The router above leaves only the single-document shape here, and
     // clap's `required_unless_present` guarantees the positional is the
@@ -2869,6 +2909,20 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 
             analyzer::analyze(&mut model, scxml_path);
 
+            // §scxml-6.2.5: apply the host's declaration here, at the
+            // point `generate` applies it, so the model every backend
+            // below renders is the model the build would render. Before
+            // this call the two commands read the same document through
+            // different eyes: `generate --host-processor x` turned the
+            // `<send type="x">` sites into dispatches and refused the
+            // backends with no registry, while `check` had no way to be
+            // told about `x` at all and reported every backend `ok`.
+            sce_build::host_processor_analyzer::declare_host_surfaces(
+                &mut model,
+                &host_processor,
+                &host_invoker,
+            );
+
             // §scxml-5.8: a rejected document is a successful run that
             // produced stubs. `check` reports the rejection the same way
             // `generate` does — the difference is only that no stub was
@@ -2951,6 +3005,17 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 .iter()
                 .map(|c| c.to_wire())
                 .collect();
+            // Echoed for the same reason `generate` echoes them: the
+            // declaration is the build's half of a two-place contract,
+            // and a consumer diffing the two manifests to confirm its
+            // host registers what the build promised must see the same
+            // field from both.
+            report
+                .host_processor_types
+                .clone_from(&model.host_processor_types);
+            report
+                .host_invoker_types
+                .clone_from(&model.host_invoker_types);
 
             for lang in &langs {
                 let template_dir = sce_build::find_template_dir_for(*lang);
