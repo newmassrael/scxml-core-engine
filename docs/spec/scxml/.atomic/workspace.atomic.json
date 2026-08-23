@@ -8013,6 +8013,21 @@
           "file": "backends/go/runtime/scheduler.go",
           "symbol": "ScheduleEventAt",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "target",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "params",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "performHostSend",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -8220,6 +8235,11 @@
         {
           "file": "backends/rust/runtime/src/host_processor.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "sendId",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -8289,6 +8309,25 @@
         },
         {
           "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "HostSendRequest",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "registerEventProcessor",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "hostProcessors_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
           "kind": "references"
         }
       ],
@@ -11974,6 +12013,16 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "valueToWireString",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "HostSendResponse",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "performHostSend",
           "kind": "references"
         }
       ],
