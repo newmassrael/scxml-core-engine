@@ -1633,3 +1633,118 @@ fn every_job_that_runs_the_pinned_validator_installs_it() {
         unprovisioned.join("\n")
     );
 }
+
+/// Whether a source asks whether tools are required.
+///
+/// Assembled at compile time for the same reason the pin's needles are: a
+/// predicate that matches its own file measures nothing.
+fn consults_the_require_tools_switch(text: &str) -> bool {
+    let needle = concat!("tools_are", "_required");
+    code_lines(text).any(|l| l.contains(needle))
+}
+
+/// Test targets that answer a missing tool with a note instead of a failure.
+///
+/// The signature is the predicate itself. A suite that consults
+/// [`sce_build::toolchain::tools_are_required`] is one that has TWO answers
+/// for an absent tool, and the lenient one returns `ok` while measuring
+/// nothing — invisible from outside the process.
+fn targets_that_degrade_without_their_tool() -> Vec<String> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let mut out: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("rs"))
+        .filter(|p| {
+            let text = std::fs::read_to_string(p)
+                .unwrap_or_else(|e| panic!("read {}: {}", p.display(), e));
+            consults_the_require_tools_switch(&text)
+        })
+        .map(|p| {
+            p.file_stem()
+                .expect("a .rs file has a stem")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn a_suite_that_can_skip_is_run_by_a_job_that_forbids_skipping() {
+    // The shell half of this pairing already exists: `hook_ci_parity` holds
+    // that a lane running a gate script which can skip must set
+    // `SCE_REQUIRE_TOOLS` and install the package. The Rust half had no
+    // equivalent, and `ledger_symbol_axis_reach` is what it costs — its gap
+    // check returns early with a note on stderr when the rev-pinned validator
+    // is absent, and a runner that lost the binary would have reported `ok`
+    // for a suite that compared its whole UNREACHED list against nothing.
+    //
+    // Not "every job that runs it", deliberately. A round in the mutation
+    // corpus runs the suite too, and its `env:` is held to exactly one key by
+    // `the_selection_narrows_and_the_round_only_obeys` — a second narrowing
+    // channel is what that invariant exists to refuse, and a strictness switch
+    // smuggled in beside it would be the same edit. One lane that forbids
+    // skipping is what makes the check measured; the rest may stay lenient.
+    let root = repo_root();
+    let degrading = targets_that_degrade_without_their_tool();
+    assert!(
+        !degrading.is_empty(),
+        "no suite was found to consult the require-tools switch. Either the \
+         predicate was renamed — in which case this gate is now measuring \
+         nothing — or the last skip-capable suite became unconditional, in \
+         which case delete this test rather than leaving it green over an \
+         empty set."
+    );
+
+    let mut unmeasured: Vec<String> = Vec::new();
+    for target in &degrading {
+        let mut strict_lanes: Vec<String> = Vec::new();
+        let mut lenient_lanes: Vec<String> = Vec::new();
+        for (file, text) in workflow_texts(&root) {
+            let (_, jobs) = split_workflow(&text);
+            for job in &jobs {
+                let body = job_text(job);
+                if !reach_of(&body, &root, 0).runs(target) {
+                    continue;
+                }
+                let lane = format!("{file}:{}", job.id);
+                // The key, not the word: a comment naming the variable is how
+                // the neighbouring shell-side rule was first written and how
+                // it first passed on a mutation that deleted the `env:` entry.
+                if body
+                    .lines()
+                    .map(str::trim)
+                    .any(|l| l.starts_with("SCE_REQUIRE_TOOLS:"))
+                {
+                    strict_lanes.push(lane);
+                } else {
+                    lenient_lanes.push(lane);
+                }
+            }
+        }
+        if strict_lanes.is_empty() {
+            unmeasured.push(format!(
+                "  {target}: run by {} lane(s), none setting SCE_REQUIRE_TOOLS ({})",
+                lenient_lanes.len(),
+                if lenient_lanes.is_empty() {
+                    "no lane runs it at all".to_string()
+                } else {
+                    lenient_lanes.join(", ")
+                }
+            ));
+        }
+    }
+
+    assert!(
+        unmeasured.is_empty(),
+        "suite(s) that answer a missing tool with a note are run by no CI job \
+         that promotes that note into a failure:\n{}\n\
+         Such a suite reports `ok` on a runner that lost the tool, so the \
+         checks it is named for silently stop running. Set \
+         SCE_REQUIRE_TOOLS on one lane that also installs the tool.",
+        unmeasured.join("\n")
+    );
+}
