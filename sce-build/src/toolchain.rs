@@ -78,6 +78,21 @@ pub const REQUIRE_TOOLS_VAR: &str = "SCE_REQUIRE_TOOLS";
 /// Prefix for per-tool path overrides. See [`override_var_for`].
 pub const OVERRIDE_VAR_PREFIX: &str = "SCE_TOOL_";
 
+/// Whether the environment demands that every check actually run.
+///
+/// [`ToolLocator`] answers this for the tools it discovers on `PATH`, but the
+/// variable is a claim about the LANE, not about one discovery strategy: a
+/// suite that reaches for something `PATH` cannot describe — a binary under a
+/// revision-keyed install root, say — is making the same promise and needs the
+/// same answer. Exported so it is asked once and spelled once; two readings of
+/// one variable are two answers waiting to disagree.
+#[must_use]
+pub fn tools_are_required() -> bool {
+    std::env::var(REQUIRE_TOOLS_VAR)
+        .map(|raw| !matches!(raw.trim(), "" | "0" | "false" | "FALSE" | "False"))
+        .unwrap_or(false)
+}
+
 /// Directories where a distribution may install a versioned toolchain
 /// that is deliberately absent from `PATH`, as
 /// `(parent, family, bin_subdir)`.
@@ -358,9 +373,7 @@ impl ToolLocator {
     }
 
     fn require_tools_from_env() -> bool {
-        std::env::var(REQUIRE_TOOLS_VAR)
-            .map(|raw| !matches!(raw.trim(), "" | "0" | "false" | "FALSE" | "False"))
-            .unwrap_or(false)
+        tools_are_required()
     }
 
     /// Expand the `(parent, prefix, bin_subdir)` specs into concrete
