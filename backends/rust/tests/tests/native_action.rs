@@ -121,3 +121,27 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
         "on_idle_entry must fire again on re-entry to idle (entry effect, not per-transition)"
     );
 }
+
+/// An event raised by NAME carries no typed payload. The transition still
+/// fires — the guard is the event name — but the arg-bearing action has
+/// nothing to read, and handing the host a value it would take for data is the
+/// one outcome this seam must never produce.
+///
+/// Asserted on the host's record rather than on the configuration, because the
+/// machine reaches `assembling` either way. Every other channel asks this same
+/// question against the same document; on this backend the release build
+/// compiles the `debug_assert!` away, so what is measured here is the arm the
+/// call site takes rather than the assertion firing.
+#[test]
+#[should_panic(expected = "requires the typed payload of its triggering event")]
+fn native_action_refuses_to_fire_without_its_typed_payload() {
+    let log = Rc::new(RefCell::new(Log::default()));
+    let mut engine =
+        sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(log.clone())));
+    engine.initialize();
+
+    // No typed inject: the payload variant stays `None`, which is exactly what
+    // a host that reached for `raise_external_by_name` would produce.
+    engine.raise_external_by_name("fragment.received", "");
+    engine.step();
+}

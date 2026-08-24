@@ -1321,6 +1321,54 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         HOST_PROCESSOR x-sce-host
     )
 
+    # §scxml-G-7: `<sce:action>` native host dispatch, from the same document
+    # the Rust, C++, Go, Kotlin and Python channels drive.
+    #
+    # No declaration flag here, unlike the host-processor registration above,
+    # and that is the difference between the two seams rather than an omission:
+    # a host-served `<send type>` is a build-time DECLARATION because the
+    # document names a processor the platform may not have, while
+    # `<sce:action>` names an operation the document itself declares — codegen
+    # reads it from the element and emits the function-pointer vtable a host
+    # must fill for `_init_with_actions` to accept it at all.
+    #
+    # Linked WITHOUT `sce_c_scripting` and `lua54` on purpose: this document's
+    # every effect is a native action, so the machine has no `lua_State` and
+    # the link is the proof. If the emit ever reached for the script engine,
+    # this target would stop linking — which is a better gate than a comment.
+    sce_generate_static_integration_c_test(statechart_native_action
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/event_schema/statechart_native_action.scxml"
+        # The arg-bearing action's types come from the EventSchema this
+        # document imports; the staging copies one file, so without the
+        # sibling the import resolves to nothing and codegen refuses the
+        # arguments it can no longer type.
+        STAGE_ALSO schema_fragment.scxml
+    )
+
+    add_executable(sce_c_integration_native_action
+        integration/test_native_action.c
+        ${INTEGRATION_C_TEST_statechart_native_action_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_native_action PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_native_action PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_native_action PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_native_action
+        COMMAND sce_c_integration_native_action
+    )
+    set_tests_properties(c11_integration_native_action PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     add_executable(sce_c_integration_host_processor
         integration/test_host_processor.c
         ${INTEGRATION_C_TEST_statechart_host_processor_SOURCES}

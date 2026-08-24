@@ -1156,12 +1156,40 @@ host supplies the behaviour by implementing a generated trait.
 </transition>
 ```
 
-The Rust backend emits a `<Machine>Actions` trait (one method per
-distinct `name`, parameter types derived from the schema field
-types — `bytes → &[u8]`, `uint32 → u32`, …) and a `Policy<A: …>`
-generic over the host implementation; the constructor takes the
-`actions` value and carries **no `IScriptEngine`**, so a statechart
-whose only effects are `<sce:action>`s compiles under `#![no_std]`.
+**Every backend** lowers it, each to its own language's expression of
+an interface. One lowering serves all six — the SCXML names the
+operation symbolically and the emitter spells it the way a host author
+in that language would write it, so the six cannot drift into six
+lowerings:
+
+| backend | interface | how the host arrives |
+|---|---|---|
+| Rust | `pub trait <Machine>Actions` | `Policy<A: …Actions>` type parameter |
+| C++ | `struct <Machine>Actions` (abstract) | the machine's only constructor |
+| Kotlin | `interface <Machine>Actions` | first constructor parameter |
+| Go | `type <Machine>Actions interface` | `New<Machine>Policy(actions)` |
+| Python | `class <Machine>Actions(Protocol)` | `__init__(self, actions)` / `create_engine(actions)` |
+| C11 | `<machine>_actions_t` (function-pointer vtable + `user_data`) | `<machine>_init_with_actions(sm, &vtable)` |
+
+Parameter types come from the schema field types — Rust `bytes → &[u8]`
+and `uint32 → u32`, Go `[]byte` / `uint32`, Kotlin `ByteArray` / `UInt`,
+C++ `const std::vector<uint8_t>&`, Python `bytes` / `int`, C11 a
+`const uint8_t *` plus its `size_t` length sibling.
+
+The host arrives where the machine is CONSTRUCTED on every backend, not
+through a setter, and that is a requirement rather than a style: an
+`<onentry>` in the initial state performs its act during
+initialisation, so a host installed afterwards arrives one act too
+late. Five backends make "the host was supplied" a compile-time fact;
+C has no way to require a filled function pointer, so
+`_init_with_actions` refuses a vtable with a NULL member and returns
+`false`, leaving the machine uninitialised rather than running it into
+a null call.
+
+No backend's emitted machine carries a script engine for this
+construct, so a statechart whose only effects are `<sce:action>`s
+compiles under `#![no_std]` on Rust and links without Lua at all on
+C11.
 
 v1 acceptance contract (enforced at the validation stage):
 
@@ -1194,15 +1222,25 @@ v1 acceptance contract (enforced at the validation stage):
 
 An arg-bearing action reads its values from the event's typed
 payload, so the triggering event must be raised via its generated
-typed inject; an event raised by name carries no payload and a
-debug build `debug_assert!`s rather than silently skipping the
-effect (release builds compile the check away).
+typed inject. An event raised by NAME carries no payload and cannot
+supply the arguments; the emitted call is wrapped in that backend's
+typed-payload tag check, so the operation does not fire rather than
+receiving a zero value the host would take for data. Rust says so as
+well as skipping — a debug build `debug_assert!`s, and a release build
+compiles the check away so an MCU pays nothing for it.
 
-Only the Rust backend lowers `<sce:action>` natively today; the
-other backends reject the construct
-(`generate/unsupported-feature`) rather than silently routing it
-through a script engine. The construct is engine-free by
-definition — it never degrades to a runtime fallback.
+The construct is engine-free **by definition** — it never degrades to a
+runtime fallback. That is why an ineligible argument is rejected at the
+validation stage instead: there is no script-engine path to fall back
+to, unlike the typed-guard channel one node over.
+
+Until 2026-08-24 only the Rust backend lowered `<sce:action>` and the
+other five refused it (`generate/unsupported-feature`). That refusal
+was backend coverage rather than a design constraint — validation had
+always been language-neutral — and it is retired. What replaced it is
+`sce-build/tests/native_action_backend_parity.rs`, which asks all six
+emitters the same questions from one place, plus six runtime channels
+driving a real host implementation of the same document.
 
 ### §2.12 Unsupported `<invoke type>` (W3C SCXML 6.4.1)
 

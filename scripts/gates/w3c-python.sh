@@ -59,6 +59,11 @@ sce_gate_step "generating the Python W3C and integration suites"
 # only the commands above has a test importing a module nothing produced.
 "$SCE_REPO_ROOT/scripts/regen_host_processor_python.sh" >/dev/null \
     || sce_gate_fail "Python host_processor generation"
+# §scxml-G-7, and here for the same reason again: the `<sce:action>` fixture
+# lives beside the build tests, its test is tracked while its module is
+# gitignored, and `generate-integration` does not reach it.
+"$SCE_REPO_ROOT/scripts/regen_native_action_python.sh" >/dev/null \
+    || sce_gate_fail "Python native_action generation"
 
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"

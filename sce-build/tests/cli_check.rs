@@ -398,19 +398,25 @@ fn check_manifest_validates_against_the_wire_schema() {
 /// The two refusal axes split on `--language`, and the sweep manifest
 /// names the backend axis rather than collapsing it into an exit code.
 ///
-/// `statechart_native_action.scxml` is the fixture that separates them:
-/// the document is well-formed, and only the Rust backend lowers
-/// `<sce:action>`.
+/// `smart_light.scxml` is the document that separates them: it is
+/// well-formed, and its `cond="cpp:…"` guard is C++ SOURCE — so only the
+/// C++ backend can lower it, and that is a property of the construct
+/// rather than of how much has been written yet.
+///
+/// It used to be `statechart_native_action.scxml`, whose `<sce:action>`
+/// only Rust lowered. That stopped discriminating on 2026-08-24 when
+/// every backend grew a native-action path: a test built on a coverage
+/// gap retires itself the day the gap closes, while still reading as a
+/// pass. The re-aim is at a discriminator that cannot close.
 #[test]
 fn backend_axis_refusal_is_fatal_only_when_the_backend_was_named() {
-    let doc =
-        repo_root().join("sce-build/tests/fixtures/event_schema/statechart_native_action.scxml");
+    let doc = repo_root().join("examples/smart_light/smart_light.scxml");
     assert!(doc.exists(), "fixture missing: {}", doc.display());
     let cwd = repo_root();
     let doc_str = doc.to_str().unwrap();
 
-    // Named backend that refuses → fatal, mirroring `generate -l cpp`.
-    let (named, _) = run(&["check", doc_str, "-l", "cpp"], &cwd);
+    // Named backend that refuses → fatal, mirroring `generate -l rust`.
+    let (named, _) = run(&["check", doc_str, "-l", "rust"], &cwd);
     assert_ne!(
         named.exit,
         Some(0),
@@ -419,8 +425,8 @@ fn backend_axis_refusal_is_fatal_only_when_the_backend_was_named() {
     assert_eq!(named.code.as_deref(), Some("generate/unsupported-feature"));
 
     // Named backend that accepts → clean.
-    let (rust, _) = run(&["check", doc_str, "-l", "rust"], &cwd);
-    assert_eq!(rust.exit, Some(0), "rust lowers <sce:action>");
+    let (cpp, _) = run(&["check", doc_str, "-l", "cpp"], &cwd);
+    assert_eq!(cpp.exit, Some(0), "C++ owns `cpp:` and must lower it");
 
     // No backend named → sweep, exit 0, per-backend verdicts on the wire.
     let (swept, stdout) = run(&["check", doc_str], &cwd);
@@ -448,12 +454,13 @@ fn backend_axis_refusal_is_fatal_only_when_the_backend_was_named() {
         BACKENDS.len(),
         "sweep must report every backend: {verdicts:?}",
     );
-    assert_eq!(verdicts.get("rust").map(String::as_str), Some("ok"));
-    for backend in BACKENDS.iter().filter(|b| **b != "rust") {
+    assert_eq!(verdicts.get("cpp").map(String::as_str), Some("ok"));
+    for backend in BACKENDS.iter().filter(|b| **b != "cpp") {
         assert_eq!(
             verdicts.get(*backend).map(String::as_str),
             Some("rejected"),
-            "{backend} has no <sce:action> lowering and must report rejected",
+            "{backend} cannot lower a `cpp:` guard — it is C++ source — and must \
+             report rejected",
         );
     }
 }

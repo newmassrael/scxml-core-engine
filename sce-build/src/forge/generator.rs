@@ -755,6 +755,20 @@ pub(crate) fn rust_param_type(ty: &SceType) -> String {
     }
 }
 
+/// The parameter type a generated HOST interface method takes for `ty`, on
+/// `lang`.
+///
+/// A thin `pub(crate)` door onto [`LangCtx::param_type`], which is the SSOT
+/// every other per-language signature already resolves through (algorithms,
+/// bounded collections, filters). §scxml-G-7's `<sce:action>` interface is one
+/// more signature, so it resolves the same way rather than growing a seventh
+/// per-language type table beside the six that exist. The one shape it cannot
+/// express is C11's `bytes`, which is a pointer plus a length — two parameters
+/// from one field — and `native_action::params_for` owns that expansion.
+pub(crate) fn host_param_type(lang: crate::generator::Language, ty: &SceType) -> String {
+    LangCtx::new(lang).param_type(ty)
+}
+
 // ── Per-language literal formatters ───────────────────────────
 //
 // Convert a raw value text from SCXML (e.g. `"100"`, `"0.25"`, `"true"`) into
@@ -1873,7 +1887,10 @@ fn c11_payload_field_decl(l: &LangCtx, f: &ForgeField) -> String {
 /// [`build_rust_event_payload`] for the shared design; this emits the C11
 /// tagged-union form. `model.name` is the C identifier stem (already
 /// snake-case; the C11 templates use it verbatim as the type prefix).
-pub fn build_c11_event_payload(model: &crate::model::SCXMLModel) -> C11EventPayload {
+pub fn build_c11_event_payload(
+    model: &crate::model::SCXMLModel,
+    extra_payload_events: &std::collections::BTreeSet<String>,
+) -> C11EventPayload {
     let inactive = || C11EventPayload {
         defs: String::new(),
         type_name: String::new(),
@@ -1914,7 +1931,14 @@ pub fn build_c11_event_payload(model: &crate::model::SCXMLModel) -> C11EventPayl
         });
         guarded_events.insert(g.event);
     }
-    if guard_writes.is_empty() {
+    // Union with the events a §scxml-G-7 `<sce:action>` reads a typed field
+    // from — see [`build_rust_event_payload`], whose contract this mirrors.
+    let guarded_events: std::collections::BTreeSet<String> = guarded_events
+        .iter()
+        .chain(extra_payload_events.iter())
+        .cloned()
+        .collect();
+    if guarded_events.is_empty() {
         return inactive();
     }
 
@@ -2027,7 +2051,15 @@ pub struct GoEventPayload {
 /// Build the [`GoEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust and C11 builders, so all
 /// three backends agree on which guards are native.
-pub fn build_go_event_payload(model: &crate::model::SCXMLModel) -> GoEventPayload {
+///
+/// `extra_payload_events` carries the events a §scxml-G-7 `<sce:action>` reads
+/// a typed field from — see [`build_rust_event_payload`], whose contract this
+/// mirrors. A native action can activate the channel with no guard present, so
+/// the union is what gates activation.
+pub fn build_go_event_payload(
+    model: &crate::model::SCXMLModel,
+    extra_payload_events: &std::collections::BTreeSet<String>,
+) -> GoEventPayload {
     let inactive = || GoEventPayload {
         defs: String::new(),
         active: false,
@@ -2067,7 +2099,16 @@ pub fn build_go_event_payload(model: &crate::model::SCXMLModel) -> GoEventPayloa
         });
         guarded_events.insert(g.event);
     }
-    if guard_writes.is_empty() {
+    // The channel carries every event that needs a typed payload: those whose
+    // guard lowered natively PLUS those a native `<sce:action>` reads a typed
+    // field from (§scxml-G-7). The union — not `guarded_events` alone — gates
+    // activation and struct emission.
+    let guarded_events: std::collections::BTreeSet<String> = guarded_events
+        .iter()
+        .chain(extra_payload_events.iter())
+        .cloned()
+        .collect();
+    if guarded_events.is_empty() {
         return inactive();
     }
 
@@ -2200,7 +2241,10 @@ fn cpp_event_enum_value(event: &str) -> String {
 
 /// Build the [`CppEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust / Go / C11 builders.
-pub fn build_cpp_event_payload(model: &crate::model::SCXMLModel) -> CppEventPayload {
+pub fn build_cpp_event_payload(
+    model: &crate::model::SCXMLModel,
+    extra_payload_events: &std::collections::BTreeSet<String>,
+) -> CppEventPayload {
     let inactive = || CppEventPayload {
         defs: String::new(),
         active: false,
@@ -2236,7 +2280,14 @@ pub fn build_cpp_event_payload(model: &crate::model::SCXMLModel) -> CppEventPayl
         });
         guarded_events.insert(g.event);
     }
-    if guard_writes.is_empty() {
+    // Union with the events a §scxml-G-7 `<sce:action>` reads a typed field
+    // from — see [`build_rust_event_payload`], whose contract this mirrors.
+    let guarded_events: std::collections::BTreeSet<String> = guarded_events
+        .iter()
+        .chain(extra_payload_events.iter())
+        .cloned()
+        .collect();
+    if guarded_events.is_empty() {
         return inactive();
     }
 
@@ -2349,7 +2400,10 @@ pub struct KotlinEventPayload {
 
 /// Build the [`KotlinEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust / Go / C11 / C++ builders.
-pub fn build_kotlin_event_payload(model: &crate::model::SCXMLModel) -> KotlinEventPayload {
+pub fn build_kotlin_event_payload(
+    model: &crate::model::SCXMLModel,
+    extra_payload_events: &std::collections::BTreeSet<String>,
+) -> KotlinEventPayload {
     let inactive = || KotlinEventPayload {
         defs: String::new(),
         active: false,
@@ -2398,7 +2452,14 @@ pub fn build_kotlin_event_payload(model: &crate::model::SCXMLModel) -> KotlinEve
         });
         guarded_events.insert(g.event);
     }
-    if guard_writes.is_empty() {
+    // Union with the events a §scxml-G-7 `<sce:action>` reads a typed field
+    // from — see [`build_rust_event_payload`], whose contract this mirrors.
+    let guarded_events: std::collections::BTreeSet<String> = guarded_events
+        .iter()
+        .chain(extra_payload_events.iter())
+        .cloned()
+        .collect();
+    if guarded_events.is_empty() {
         return inactive();
     }
 
@@ -2525,7 +2586,10 @@ pub struct PythonEventPayload {
 /// Build the [`PythonEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust / Go / C11 / C++ / Kotlin
 /// builders.
-pub fn build_python_event_payload(model: &crate::model::SCXMLModel) -> PythonEventPayload {
+pub fn build_python_event_payload(
+    model: &crate::model::SCXMLModel,
+    extra_payload_events: &std::collections::BTreeSet<String>,
+) -> PythonEventPayload {
     let inactive = || PythonEventPayload {
         defs: String::new(),
         active: false,
@@ -2562,7 +2626,14 @@ pub fn build_python_event_payload(model: &crate::model::SCXMLModel) -> PythonEve
         });
         guarded_events.insert(g.event);
     }
-    if guard_writes.is_empty() {
+    // Union with the events a §scxml-G-7 `<sce:action>` reads a typed field
+    // from — see [`build_rust_event_payload`], whose contract this mirrors.
+    let guarded_events: std::collections::BTreeSet<String> = guarded_events
+        .iter()
+        .chain(extra_payload_events.iter())
+        .cloned()
+        .collect();
+    if guarded_events.is_empty() {
         return inactive();
     }
 

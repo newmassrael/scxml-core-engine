@@ -33,6 +33,7 @@
 {%- from 'actions/log.py.jinja2' import emit as emit_log -%}
 {%- from 'actions/cancel.py.jinja2' import emit as emit_cancel -%}
 {%- from 'actions/send.py.jinja2' import emit_send -%}
+{%- from 'actions/native_action.py.jinja2' import emit as emit_native_action -%}
 
 {%- macro emit(action, indent, machine_name, model) -%}
 {%- if action.type == 'script' -%}{{ emit_script(action, indent, machine_name, model) }}
@@ -43,6 +44,7 @@
 {%- elif action.type == 'send' -%}{{ emit_send(action, indent, machine_name, model) }}
 {%- elif action.type == 'if' -%}{{ emit_if(action, indent, machine_name, model) }}
 {%- elif action.type == 'foreach' -%}{{ emit_foreach(action, indent, machine_name, model) }}
+{%- elif action.type == 'native_action' -%}{{ emit_native_action(action, indent, machine_name, model) }}
 {%- else -%}
 {{ indent }}raise NotImplementedError({{ ('Python codegen: action <' ~ action.type ~ '> not yet supported') | py_string_literal }})
 {% endif -%}

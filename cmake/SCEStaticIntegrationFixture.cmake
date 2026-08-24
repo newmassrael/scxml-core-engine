@@ -202,8 +202,19 @@ endfunction()
 #                            registering a handler against a machine built
 #                            without the flag meets the refusal and reads
 #                            as a feature that does not work.
+#   STAGE_ALSO <file>...     Sibling documents to copy beside the staged
+#                            fixture, named relative to its directory.
+#                            The staging copies ONE file, so a fixture
+#                            that `<sce:import src="…">`s a sibling
+#                            resolves it against a directory the sibling
+#                            is not in — and the import is not an error,
+#                            so what reaches codegen is a document whose
+#                            schema silently went missing. Naming them
+#                            here rather than scanning the fixture keeps
+#                            the answer explicit: a name that is wrong
+#                            fails at the copy, where it can be read.
 function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
-    cmake_parse_arguments(_INT "" "SCXML_FILE" "SYNTH_INVOKE_CHILDREN;HOST_PROCESSOR" ${ARGN})
+    cmake_parse_arguments(_INT "" "SCXML_FILE" "SYNTH_INVOKE_CHILDREN;HOST_PROCESSOR;STAGE_ALSO" ${ARGN})
 
     if(_INT_SCXML_FILE)
         get_filename_component(FIXTURE_ROOT "${_INT_SCXML_FILE}" DIRECTORY)
@@ -231,10 +242,27 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
     set(PARENT_HEADER "${OUTPUT_DIR}/${STEM}_sm.h")
     set(PARENT_SOURCE "${OUTPUT_DIR}/${STEM}_sm.c")
 
+    set(_STAGE_ALSO_SRC "")
+    set(_STAGE_ALSO_DST "")
+    set(_STAGE_ALSO_COMMANDS "")
+    foreach(_SIBLING ${_INT_STAGE_ALSO})
+        if(NOT EXISTS "${FIXTURE_ROOT}/${_SIBLING}")
+            message(FATAL_ERROR
+                "sce_generate_static_integration_c_test(${STEM}): STAGE_ALSO names "
+                "${_SIBLING}, which is not beside the fixture at ${FIXTURE_ROOT}")
+        endif()
+        list(APPEND _STAGE_ALSO_SRC "${FIXTURE_ROOT}/${_SIBLING}")
+        list(APPEND _STAGE_ALSO_DST "${OUTPUT_DIR}/${_SIBLING}")
+        list(APPEND _STAGE_ALSO_COMMANDS
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${FIXTURE_ROOT}/${_SIBLING}" "${OUTPUT_DIR}/${_SIBLING}")
+    endforeach()
+
     add_custom_command(
-        OUTPUT "${STAGED_SCXML}"
+        OUTPUT "${STAGED_SCXML}" ${_STAGE_ALSO_DST}
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FIXTURE}" "${STAGED_SCXML}"
-        DEPENDS "${FIXTURE}"
+        ${_STAGE_ALSO_COMMANDS}
+        DEPENDS "${FIXTURE}" ${_STAGE_ALSO_SRC}
         COMMENT "Staging integration fixture (c11): ${STEM}.scxml"
         VERBATIM
     )

@@ -1,0 +1,18 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML G.7: <sce:action> native host dispatch.
+
+   The call site is lowered ahead of the template by
+   `forge::native_action::render` and stored on
+   `action.native_action_rendered`, so this macro only places it at the
+   caller's indent. It is deliberately ONE line: this backend's dispatcher
+   hands each action the literal whitespace prefix its context needs, and a
+   multi-line body would carry that prefix only on its first line. The
+   arg-bearing form therefore binds the typed payload with `:=` inside the
+   `if` that checks it is there — the same tag check the other five spell as
+   a block. #}
+{%- macro emit(action, indent, machine_name, model) -%}
+{{ indent }}# W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}">
+{{ indent }}{{ action.native_action_rendered }}
+{%- endmacro -%}

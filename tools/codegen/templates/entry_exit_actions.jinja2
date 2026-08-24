@@ -657,7 +657,17 @@
    form. The Rust template records the measurement behind naming the narrow
    filter here — a document that emitted no exit chain left the host told to
    start and never told to stop. #}
-{% if not model.needs_script_engine and not model.invokes | scxml and not model.invokes | scxml_remote and not model.invokes | unsupported and not model.invokes | host_invoker and not model.needs_parent_template and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects and not model.has_history_states %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{# `executeExitActions` must be non-static whenever its body reaches `this`.
+   Named here rather than spelled inline at the `{% if %}`, so a new
+   `this`-bearing feature adds ONE clause to a named answer instead of another
+   negation to a ten-clause conditional — the shape `executeEntryActions`
+   already moved out of the template for the same reason. The clauses stay
+   template-side (unlike the entry twin's, which the analyzer derives) because
+   several of them are the `invokes | …` filters, and re-deriving those in Rust
+   would be a second definition of "is this a local scxml invoke" that could
+   drift from the one the rest of this file uses. #}
+{% set exit_actions_needs_this = model.needs_script_engine or model.invokes | scxml or model.invokes | scxml_remote or model.invokes | unsupported or model.invokes | host_invoker or model.needs_parent_template or model.needs_event_scheduler or model.has_parallel_states or model.context_objects or model.has_history_states or has_native_actions %}
+{% if not exit_actions_needs_this %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 

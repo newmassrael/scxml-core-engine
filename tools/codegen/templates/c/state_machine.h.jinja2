@@ -12,6 +12,11 @@
 
 {% include 'license_header.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# W3C SCXML G.7: a machine whose document declares `<sce:action>`s cannot
+   start without a host, so every initialiser returns whether it accepted one.
+   `void` for every other document shape, byte-identical to the pre-feature
+   emit. Kept in step with the same `set` in `state_machine.c.jinja2`. #}
+{%- set init_rc = 'bool' if has_native_actions else 'void' %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 header. Module-level form is a comment, not the
    `#line` directive — `#line` in a header would propagate into
@@ -156,6 +161,10 @@ typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model
 {% if event_payload_active %}
 /* ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────── */
 {{ event_payload_defs }}
+{% endif %}
+{% if has_native_actions %}
+/* ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────── */
+{{ native_actions_defs }}
 {% endif %}
 /* ── W3C SCXML 5.10: Event with metadata ──────────────────────────── */
 {# Mirrors `StaticExecutionEngine<P>::EventWithMetadata` (sce/include/static).
@@ -374,6 +383,16 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        state count below the bitmap width (32 today, multi-word array
        lands when a fixture forces it). */
     uint32_t active;
+{% if has_native_actions %}
+    /* W3C SCXML G.7: the host implementation every `<sce:action>` in this
+       document calls directly (`sm->actions.<op>(sm->actions.user_data, …)`)
+       instead of the Lua state — which a machine built for this construct may
+       not even have. Installed by `_init_with_actions`, which is the only
+       initialiser this machine has: the initial state's `<onentry>` may
+       already perform an act, so a vtable written after `_init` would arrive
+       one act too late (and `_init` zeroes the struct anyway). */
+    {{ native_actions_interface }} actions;
+{% endif %}
 {% if event_payload_active %}
     /* NL→IR Item C1 Path A: the current event's typed `_event.data`
        payload, copied from the dequeued event by `process_event_queues`
@@ -598,8 +617,9 @@ const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefi
    machine first because `_init` zeroes the struct, and the first
    `<onentry>` body may already perform an act — a handler installed
    afterwards would arrive one act too late. */
-void {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
-                                  const sce_host_processor_registry_t *host_processors);
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %});
 {% if model.needs_event_scheduler %}
 
 /* W3C SCXML 6.2.2 + 6.2.5: both seams at once — the clock this machine
@@ -613,9 +633,10 @@ void {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix 
    owns time and serves a processor could therefore have one or the other
    — and a `<send delay>` addressed to a host-served processor is exactly
    the case that needs both. */
-void {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   sce_clock_t clock,
-                                  const sce_host_processor_registry_t *host_processors);
+                                  const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %});
 {% endif %}
 
 /* Change what serves `processor_type` on a machine that is already
@@ -713,9 +734,40 @@ bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csy
 {% endif %}
 
 {% if not model.has_parent_communication %}
+{% if has_native_actions %}
+/* W3C SCXML G.7: initialize SM to its initial state with the host that serves
+   every `<sce:action>` this document declares.
+
+   The five other backends get "the host supplied it" from their type systems —
+   an unimplemented interface method does not compile. C has no such check, so
+   the guarantee moves here: this refuses a vtable with a NULL member and
+   returns false, leaving the machine UNINITIALISED rather than running it into
+   a null call at the first act. The operations it requires are:
+{% for op in native_action_ops %}
+     {{ op }}
+{% endfor %}
+
+   Usage:
+
+     {{ native_actions_interface }} host = {
+{% for op in native_action_ops %}
+         .{{ op }} = my_{{ op }},
+{% endfor %}
+         .user_data = &my_state,
+     };
+     if (!{{ csym_prefix }}{{ model.name }}_init_with_actions(&sm, &host)) {
+         return;   // a member was NULL: the machine was NOT initialised
+     }
+
+   `actions` is copied into the machine, so the struct itself need not outlive
+   this call; whatever `user_data` points at must. */
+bool {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                          const {{ native_actions_interface }} *actions);
+{% else %}
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
    Must be called once before {{ csym_prefix }}{{ model.name }}_step / {{ csym_prefix }}{{ model.name }}_run. */
 void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm);
+{% endif %}
 {% if model.needs_script_engine %}
 
 /* W3C SCXML C.2.3: initialize with the deployment's inbound BasicHTTP
@@ -724,8 +776,9 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
    `_ioprocessors['basichttp'].location` need this instead of `_init`; a
    machine initialised without it publishes no BasicHTTP entry, because no
    listener serves it. */
-void {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
-                                                            const char *basic_http_access_uri);
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                            const char *basic_http_access_uri{% if has_native_actions %},
+                                                            const {{ native_actions_interface }} *actions{% endif %});
 {% endif %}
 {% else %}
 /* W3C SCXML 6.4: Initialize an invoked-child SM with parent-routing
@@ -785,7 +838,7 @@ int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms(const {{ 
    bases that do not compare. `sce_clock_monotonic()` is what plain `_init`
    installs; `sce_clock_manual(0)` hands time to the host, which then drives the
    machine with `_advance_time_ms` instead of `_tick`. */
-void {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock);
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock{% if has_native_actions %}, const {{ native_actions_interface }} *actions{% endif %});
 
 /* §scxml-6.2: Move this machine's clock forward by `ms` and run whatever that
    made due.
