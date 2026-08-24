@@ -714,6 +714,103 @@ fn a_green_run_names_nothing() {
     .is_empty());
 }
 
+/// Feed a captured build log to the refusal parser.
+fn build_refusal(captured: &str) -> Vec<String> {
+    let dir = tempdir().expect("temp dir");
+    let sample = dir.path().join("build.log");
+    fs::write(&sample, captured).expect("write the sample");
+
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "source scripts/lib/mutation_build_refusal.sh; \
+             mutation_build_refusal < {}",
+            sample.display()
+        ))
+        .current_dir(repo_root())
+        .output()
+        .expect("run the parser");
+    assert!(
+        out.status.success(),
+        "mutation_build_refusal exited {}: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn a_refused_rust_build_is_quoted_from_the_compilers_first_line() {
+    // The shape this parser exists for, taken verbatim from the round of
+    // `f81cc8e500`: `warnings = "deny"` turns an unused binding into a hard
+    // error, and the mutation that caused it is inexpressible as written.
+    // `tail` would have returned the "could not compile" line, which names no
+    // file, no line and no rule — the reason three cases sat INCONCLUSIVE for
+    // a week with nothing to act on.
+    let lines = build_refusal(
+        "   Compiling thiserror v2.0.18\n\
+         warning: unused import: `core::fmt`\n\
+         error: unused variable: `reading`\n  \
+           --> backends/rust/runtime/src/engine.rs:1356:61\n  \
+           = help: if this is intentional, prefix it with an underscore\n\
+         error: could not compile `sce-rust-runtime` (lib) due to 1 previous error\n",
+    );
+    assert_eq!(
+        lines.first().map(String::as_str),
+        Some("error: unused variable: `reading`"),
+        "the excerpt must open on the compiler's FIRST diagnostic, not on the \
+         summary line at the end and not on a preceding warning; got {lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("engine.rs:1356")),
+        "the excerpt must carry far enough to name the site; got {lines:?}"
+    );
+}
+
+#[test]
+fn a_refused_c_build_is_quoted_though_its_error_is_mid_line() {
+    // The ctest runner's compilers write `path:line:col: error:` rather than
+    // starting the line with the word, so a parser anchored to the start of a
+    // line would report nothing for every C and C++ casefile in the corpus —
+    // and reporting nothing is exactly the silence this replaced.
+    let lines = build_refusal(
+        "[42/91] Building CXX object tests/CMakeFiles/x.dir/Test.cpp.o\n\
+         FAILED: tests/CMakeFiles/x.dir/Test.cpp.o\n\
+         /home/coin/scxml-core-engine/sce/src/Engine.cpp:88:5: error: \
+         'noteReading' was not declared in this scope\n\
+             88 |     noteReading(event);\n\
+         ninja: build stopped: subcommand failed.\n",
+    );
+    assert!(
+        lines
+            .first()
+            .is_some_and(|l| l.contains("Engine.cpp:88:5: error:")),
+        "the excerpt must open on the compiler's diagnostic even when the \
+         word `error` is not at the start of the line; got {lines:?}"
+    );
+}
+
+#[test]
+fn a_build_that_failed_without_a_diagnostic_still_says_something() {
+    // A build can refuse for a reason no compiler printed — a missing
+    // toolchain, a full disk, a linker killed by the OOM killer — and those
+    // arrive at the END. An excerpt that went empty whenever the parser did
+    // not recognise the failure would be indistinguishable from the silence
+    // this file's subject replaced, so the tail is the fallback.
+    let lines = build_refusal(
+        "   Compiling sce-rust-runtime v0.1.0\n\
+         rustc: /usr/bin/ld: final link failed: No space left on device\n\
+         collect2: fatal, exiting\n",
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("No space left on device")),
+        "a failure with no `error:` line must still be quoted; got {lines:?}"
+    );
+}
+
 #[test]
 fn a_library_selector_resolves_against_the_crate_type_cargo_reports() {
     // `--lib` in `LIVE_SELECTOR` is the point of this test: cargo reports
