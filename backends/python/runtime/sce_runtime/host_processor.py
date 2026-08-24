@@ -92,7 +92,7 @@ class HostSendResponse:
 HostSendHandler = Callable[[HostSendRequest], List[HostSendResponse]]
 
 
-# ── W3C SCXML 6.4.1: `<invoke>` the HOST runs ────────────────────────────
+# ── §scxml-6.4.1: `<invoke>` the HOST runs ───────────────────────────────
 #
 # The clause leaves the invokable set to the platform in the same words 6.2.5
 # uses for `<send>`, so a host may implement its own `type` here too — but an
@@ -110,7 +110,7 @@ class HostInvokeRequest:
 
     #: The `type` this ``<invoke>`` named.
     processor_type: str = ""
-    #: The invoke's id (W3C SCXML 6.4.1), auto-derived when the author
+    #: The invoke's id (§scxml-6.4.1), auto-derived when the author
     #: declared none. This is the name the DOCUMENT waits on: a completion
     #: is ``done.invoke.<invoke_id>``, so a host that finishes
     #: asynchronously must keep it.
@@ -146,10 +146,10 @@ class HostInvokeEvent:
     working invoker — and two registrations make that state reachable. One
     handler means the pair is registered together or not at all."""
 
-    #: W3C SCXML 6.4: the state was entered and the macrostep has settled.
+    #: §scxml-6.4: the state was entered and the macrostep has settled.
     #: Begin the invoked process.
     start: Optional[HostInvokeRequest] = None
-    #: W3C SCXML 6.4: the state exited. Stop it.
+    #: §scxml-6.4: the state exited. Stop it.
     #:
     #: Delivered only for an invocation that actually started: a state that
     #: exits before the macrostep ends never runs its invoke, and cancelling
@@ -170,7 +170,7 @@ class HostInvokeResponse:
     #: case: the work outlives the call and the host raises the completion
     #: itself when it finishes. SCE does not synthesise a completion the
     #: host did not report — an invoked process that never terminates never
-    #: fires ``done.invoke``, which is what W3C SCXML 6.4 says.
+    #: fires ``done.invoke``, which is what §scxml-6.4 says.
     done_data: Optional[str] = None
 
 

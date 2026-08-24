@@ -14,10 +14,15 @@
 //!    dispatch.** The cause disappears because there is no longer anything
 //!    to report, and `host_processor_types` echoes the build's half of the
 //!    contract so a consumer can check it against its registrations.
-//! 3. **A backend with no registry refuses the declaration.** Honouring it
-//!    there would emit a dispatch nothing can service — the build would
-//!    then actively promise a delivery that never happens, which is worse
-//!    than the silence this whole round removes.
+//! 3. **The declaration is what makes the difference, on every backend.**
+//!    The same document generated with the flag and without it emits a
+//!    different machine: with, the start site; without, the
+//!    unsupported-type refusal and nothing else. Asserting a REFUSAL by a
+//!    backend that lacks a registry was the earlier form of this claim, and
+//!    it retired itself twice — once when every backend grew a `<send>`
+//!    registry and again when every backend grew an `<invoke>` one. A test
+//!    whose subject is a coverage gap stops asserting anything the day the
+//!    gap closes, while still reading as a pass.
 //!
 //! The manifest is read as JSON rather than grepped: a field that moved
 //! from present-and-false to absent would pass a substring check and change
@@ -78,8 +83,13 @@ fn manifest(run: &Run) -> serde_json::Value {
 
 /// Scratch output directory, per test, so two tests cannot read each
 /// other's artifacts.
+///
+/// Emptied first. The path is derived from the tag rather than randomised,
+/// so a previous run's artifacts are sitting in it — and a test that asserts
+/// a file was NOT written reads yesterday's answer if they are left there.
 fn out_dir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("sce-host-processor-{tag}"));
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch output directory");
     dir
 }
@@ -339,83 +349,175 @@ fn a_send_declaration_does_not_claim_the_invoke_of_the_same_name() {
     );
 }
 
-/// Every backend without a host-processor registry refuses the
-/// declaration, by name.
+/// What every backend emits for a declared `<invoke>` type, per language:
+/// the machine file the start site lands in, and the call that hands the
+/// invocation to the host.
 ///
-/// Iterated rather than spot-checked: a seventh backend that gained a
-/// dispatch path and forgot its registry would otherwise be the one nobody
-/// asked.
-///
-/// The `--host-processor` half is EMPTY now, and its absence is the shape of
-/// the repair rather than a hole in this test: every backend grew a `<send>`
-/// dispatch registry — `StaticExecutionEngine::registerEventProcessor`,
-/// `sce_host_processor_registry_t`, `Engine.RegisterEventProcessor`,
-/// `Engine.register_event_processor`,
-/// `StateMachineEngine.registerEventProcessor` — so
-/// `reject_host_processors_in_unsupported_lang` has no callers and is
-/// retired. What each of them emits instead is asked by the per-backend
-/// `a_declared_type_emits_a_dispatch_for_*` tests, which is where the claim
-/// that deletion makes now has to be paid.
-///
-/// The invoker half is untouched and covers all five: none has an
-/// `<invoke>` entry registry. While the two flags were one refusal a backend
-/// either had both or neither, and this loop could ask them together; a
-/// single answer now would accept an invoker declaration none of them can
-/// service.
-/// `a_declared_type_emits_a_dispatch_for_cpp` and its C11 sibling are the
-/// other side of the same claim — without them, dropping a backend from a
-/// refusal list would read as a pass.
-#[test]
-fn a_backend_without_a_registry_refuses_the_declaration() {
-    // BOTH flags, because they are two lists feeding one check. Sweeping
-    // only `--host-processor` left the invoke half untested: a mutation
-    // that dropped `host_invoker_types` from the check reddened nothing,
-    // so a build declaring only an invoker would have compiled on a
-    // backend that cannot service it.
-    let mut cases: Vec<(&str, &str)> = Vec::new();
-    for lang in ["cpp", "c11", "go", "python", "kotlin"] {
-        cases.push((lang, "--host-invoker"));
-    }
+/// Read off the emitted text rather than named in a template, because the
+/// question this table answers is what a CONSUMER compiles. A row per
+/// backend and the arity asserted below: a row deleted rather than fixed
+/// is how a sweep quietly stops covering what it names.
+const INVOKER_EMISSION: [(&str, &str, &str); 6] = [
+    (
+        "rust",
+        "statechart_host_invoker_sm.rs",
+        "perform_host_invoke(",
+    ),
+    (
+        "cpp",
+        "statechart_host_invoker_sm.inl",
+        "performHostInvoke(",
+    ),
+    // C11's registry lookup IS the dispatch — there is no wrapper call to
+    // name. `_host_inv_entry` is the start site's own local; the exit site
+    // uses `_host_cancel_entry`, so the two cannot be confused.
+    (
+        "c11",
+        "statechart_host_invoker_sm.c",
+        "_host_inv_entry->handler(",
+    ),
+    ("go", "statechart_host_invoker_sm.go", "PerformHostInvoke("),
+    (
+        "python",
+        "statechart_host_invoker_sm.py",
+        "perform_host_invoke(",
+    ),
+    (
+        "kotlin",
+        "statechart_host_invokerSm.kt",
+        "performHostInvoke(",
+    ),
+];
 
-    for (lang, flag) in cases {
-        {
-            let doc = if flag == "--host-processor" {
-                fixture()
-            } else {
-                invoker_fixture()
-            };
-            let tag = flag.trim_start_matches("--");
-            let out = out_dir(&format!("refuse-{lang}-{tag}"));
-            let r = run(&[
-                "generate",
-                doc.to_str().unwrap(),
-                "-l",
-                lang,
-                "-o",
-                out.to_str().unwrap(),
-                flag,
-                "x-sce-host",
-                "--error-format=json",
-            ]);
-            assert_ne!(
-                r.exit,
-                Some(0),
-                "{lang} accepted a {flag} declaration it cannot service",
-            );
-            assert!(
-                r.stderr.contains("generate/unsupported-feature"),
-                "{lang} refused {flag} with the wrong diagnostic: {}",
-                r.stderr,
-            );
-            // The message must name the backend AND the type, or an author
-            // reading it cannot tell which of several declarations to drop.
-            assert!(
-                r.stderr.contains("x-sce-host"),
-                "{lang}'s {flag} refusal does not name the declared type: {}",
-                r.stderr,
-            );
-        }
+/// Every backend honours an `<invoke>` declaration, and the declaration is
+/// what makes the difference.
+///
+/// This is what `a_backend_without_a_registry_refuses_the_declaration`
+/// became, and the reason it had to change is worth stating: that test
+/// asserted a REFUSAL, and a refusal is a coverage gap wearing a test's
+/// clothes. It evaporates the day the gap closes. It did so twice — the
+/// `--host-processor` half emptied when every backend grew a `<send>`
+/// registry, and the `--host-invoker` half emptied when every backend grew
+/// an `<invoke>` one. An empty sweep asserts nothing while still reading
+/// as a pass.
+///
+/// So the sweep survives with its subject changed. What is asked now is the
+/// DECLARATION's own effect: the same document, generated with the flag and
+/// without it, emits a different machine. That observable cannot be retired
+/// by coverage — it is the feature, not the absence of one.
+///
+/// Both directions are asserted per backend, because either alone is
+/// satisfiable by a machine that is wrong:
+///
+/// * declared -> the start site is present and the unsupported-type refusal
+///   is gone. Emitting both would start the invocation AND raise
+///   `error.execution` for it.
+/// * undeclared -> the start site is absent. Without this, a backend that
+///   dispatched unconditionally would pass, and a host that never declared
+///   the type would be handed an invocation it never agreed to run.
+///
+/// Asserted on the emitted text because this is the build's half; the six
+/// runtime channels named on the fixture compile and run the same machine.
+#[test]
+fn a_declared_invoker_changes_the_machine_on_every_backend() {
+    // The floor is the language set itself: a backend dropped from the
+    // table would otherwise shrink this sweep silently.
+    assert_eq!(
+        INVOKER_EMISSION.len(),
+        6,
+        "the emission table no longer covers every backend SCE generates",
+    );
+
+    for (lang, file, start_site) in INVOKER_EMISSION {
+        let declared_dir = out_dir(&format!("invoker-declared-{lang}"));
+        let declared = run(&[
+            "generate",
+            invoker_fixture().to_str().unwrap(),
+            "-l",
+            lang,
+            "-o",
+            declared_dir.to_str().unwrap(),
+            "--host-invoker",
+            "x-sce-host",
+            "--error-format=json",
+        ]);
+        assert_eq!(
+            declared.exit,
+            Some(0),
+            "{lang} refused an invoker declaration it can service: {}",
+            declared.stderr,
+        );
+        let emitted = std::fs::read_to_string(declared_dir.join(file))
+            .unwrap_or_else(|e| panic!("{lang} did not write {file}: {e}"));
+        assert!(
+            emitted.contains(start_site),
+            "{lang} emitted no start site (`{start_site}`) for a declared invoker",
+        );
+        assert!(
+            !emitted.contains(UNSUPPORTED_INVOKE_REFUSAL[lang_index(lang)]),
+            "{lang} still emitted the unsupported-type refusal for a declared \
+             invoker, so the machine both starts it and raises for it",
+        );
+
+        // The control. Same document, same backend, no declaration: the
+        // start site must not appear, or the flag is not what put it there.
+        let bare_dir = out_dir(&format!("invoker-bare-{lang}"));
+        let bare = run(&[
+            "generate",
+            invoker_fixture().to_str().unwrap(),
+            "-l",
+            lang,
+            "-o",
+            bare_dir.to_str().unwrap(),
+            "--error-format=json",
+        ]);
+        assert_eq!(
+            bare.exit,
+            Some(0),
+            "{lang} refused the undeclared document; an `<invoke>` naming an \
+             unimplemented type is valid SCXML: {}",
+            bare.stderr,
+        );
+        let undeclared = std::fs::read_to_string(bare_dir.join(file))
+            .unwrap_or_else(|e| panic!("{lang} did not write {file}: {e}"));
+        assert!(
+            !undeclared.contains(start_site),
+            "{lang} emitted the start site (`{start_site}`) with no declaration \
+             at all — the host would be handed an invocation it never declared",
+        );
+        assert!(
+            undeclared.contains(UNSUPPORTED_INVOKE_REFUSAL[lang_index(lang)]),
+            "{lang} emitted neither a start nor the unsupported-type refusal, \
+             so an undeclared `<invoke>` is silently doing nothing",
+        );
     }
+}
+
+/// The `error.execution` text an undeclared `<invoke type>` raises, indexed
+/// by [`INVOKER_EMISSION`]'s row order.
+///
+/// ⚠ C++ is the odd row and its wording is NOT a typo here. It matches the
+/// C++ Interpreter (`sce/src/runtime/InvokeExecutor.cpp`), which predates
+/// the five newer backends; the five agreed on the other wording among
+/// themselves. Two spellings of one W3C fact is a parity defect on this
+/// seam, not a per-backend contract — repaying it edits a template, which
+/// re-pins every committed tree, so it is done in the round that owns the
+/// regeneration rather than smuggled into this one. When it lands, these
+/// six entries collapse to one constant.
+const UNSUPPORTED_INVOKE_REFUSAL: [&str; 6] = [
+    "<invoke> declares a type this processor does not support",
+    "Unsupported <invoke> type: x-sce-host",
+    "<invoke> declares a type this processor does not support",
+    "<invoke> declares a type this processor does not support",
+    "<invoke> declares a type this processor does not support",
+    "<invoke> declares a type this processor does not support",
+];
+
+fn lang_index(lang: &str) -> usize {
+    INVOKER_EMISSION
+        .iter()
+        .position(|(l, _, _)| *l == lang)
+        .expect("the language came from the table")
 }
 
 /// The C11 half of the same claim.
@@ -549,9 +651,18 @@ fn a_declared_type_emits_a_dispatch_for_go() {
 
     let emitted = std::fs::read_to_string(out.join("statechart_host_processor_sm.go"))
         .expect("the generator wrote the machine");
+    // Both halves, because they stopped being one expression. The request
+    // was an inline literal until a host-served `<send delay>` had to be
+    // QUEUED rather than performed, which needs the request as a value the
+    // emitted code can name. Asserting only the literal reads a machine
+    // that builds a request and never hands it over as a pass.
     assert!(
-        emitted.contains("engine.PerformHostSend(sce.HostSendRequest{"),
+        emitted.contains("hostRequest := sce.HostSendRequest{"),
         "no dispatch was emitted for a declared type",
+    );
+    assert!(
+        emitted.contains("engine.PerformHostSend(hostRequest)"),
+        "the request was built and never handed to the engine",
     );
     assert!(
         !emitted.contains("names a processor this platform does not support"),
@@ -602,9 +713,16 @@ fn a_declared_type_emits_a_dispatch_for_python() {
 
     let emitted = std::fs::read_to_string(out.join("statechart_host_processor_sm.py"))
         .expect("the generator wrote the machine");
+    // Both halves, for the same reason as the Go sibling: the request
+    // became a named value when a host-served `<send delay>` had to be
+    // queued instead of performed.
     assert!(
-        emitted.contains("engine.perform_host_send(_HostSendRequest("),
+        emitted.contains("_host_request = _HostSendRequest("),
         "no dispatch was emitted for a declared type",
+    );
+    assert!(
+        emitted.contains("engine.perform_host_send(_host_request)"),
+        "the request was built and never handed to the engine",
     );
     assert!(
         emitted.contains("from sce_runtime import HostSendRequest as _HostSendRequest"),

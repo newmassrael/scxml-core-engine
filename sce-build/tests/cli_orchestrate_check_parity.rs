@@ -409,15 +409,29 @@ fn a_forge_only_document_set_is_nameable_to_check() {
     );
 }
 
-/// The §scxml-6.4.1 invoker fixture. Chosen over the §scxml-6.2.5
-/// processor one deliberately: the processor surface reaches every
-/// backend now, so a declaration changes no verdict there and a test
-/// built on it would pass whether or not the flag was honoured. The
-/// invoker surface is Rust-only, so the declaration is the difference
-/// between one `ok` and five refusals — an observable this route did not
-/// have before and cannot lose silently.
+/// The §scxml-6.4.1 invoker fixture.
+///
+/// It was chosen when the invoker surface was Rust-only, so that a
+/// declaration was the difference between one `ok` and five refusals. That
+/// observable is gone — every backend lowers the invoker now — and its
+/// going is why the test below no longer asks for a refusal. What it asks
+/// for instead is the difference the declaration makes to the EMITTED
+/// machine, which is the same shape
+/// `the_go_module_prefix_reaches_the_producer_that_check_predicts` uses and
+/// is not a coverage gap in disguise.
 const HOST_INVOKER_DOC: &str =
     "sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml";
+
+/// The C++ start site, read off the machine `orchestrate` writes. C++
+/// rather than Rust because it is the backend the earlier form of this
+/// test used to prove the flag was honoured, and keeping it here keeps the
+/// two comparable across the change.
+const CPP_HOST_INVOKE_START: &str = "performHostInvoke(";
+
+/// Every backend SCE generates. The parity claim is per backend, not in
+/// aggregate: two commands that disagree about one language while agreeing
+/// about the other five agree about nothing that matters.
+const EVERY_BACKEND: [&str; 6] = ["rust", "cpp", "c11", "go", "python", "kotlin"];
 
 /// §scxml-6.2.5 + §scxml-6.4.1 — the host declarations reach the producer
 /// `check`'s document-set route claims to predict.
@@ -433,15 +447,20 @@ const HOST_INVOKER_DOC: &str =
 /// could be asked — which is not the same as agreeing about an answer,
 /// and it left a document set unable to declare a host act at all. A mesh
 /// deployment of `examples/ai_loop/` is exactly such a set.
+///
+/// The first form of this test read the declaration off a REFUSAL: C++ had
+/// no invoker registry, so declaring one for it had to fail. Every backend
+/// has one now, and that observable went with the gap it depended on. What
+/// replaces it is the difference the flag makes to the machine the producer
+/// WRITES, which is the shape the sibling `--go-module-prefix` case already
+/// uses here and which no amount of backend coverage can retire.
 #[test]
 fn the_host_declarations_reach_the_producer_that_check_predicts() {
-    let out = ScratchDir::new("orch-host-decl");
-    let out_path = out.path().to_str().expect("utf-8");
-
-    // Control: with no declaration the document lowers for every backend,
-    // because an `<invoke>` naming an unimplemented type is valid SCXML
-    // whose refusal happens at run time. The five refusals below are
-    // therefore the flag's doing and not the document's.
+    // Control: same document, same backend, no declaration. An `<invoke>`
+    // naming an unimplemented type is valid SCXML whose refusal happens at
+    // run time, so the producer accepts it — and emits no start site. The
+    // start site below is therefore the flag's doing, not the document's.
+    let bare_out = ScratchDir::new("orch-host-bare");
     let bare = run(&[
         "orchestrate",
         "--scxml",
@@ -449,7 +468,7 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
         "-l",
         "cpp",
         "-o",
-        out_path,
+        bare_out.path().to_str().expect("utf-8"),
     ]);
     assert_eq!(
         bare.code, 0,
@@ -457,47 +476,34 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
          the control no longer reaches the condition: {}",
         bare.stderr
     );
+    assert!(
+        !emits(bare_out.path(), CPP_HOST_INVOKE_START),
+        "orchestrate emitted a host-invoke start with no declaration at all — \
+         the host would be handed an invocation it never agreed to run"
+    );
 
-    // The producer honours the declaration: C++ has no invoker registry,
-    // so it refuses rather than emit a dispatch nothing can service.
-    let refused = run(&[
+    // The flag has to reach the emitter, not merely be accepted.
+    let declared_out = ScratchDir::new("orch-host-declared");
+    let declared = run(&[
         "orchestrate",
         "--scxml",
         HOST_INVOKER_DOC,
         "-l",
         "cpp",
         "-o",
-        out_path,
-        "--host-invoker",
-        "x-sce-host",
-    ]);
-    assert_ne!(
-        refused.code, 0,
-        "orchestrate accepted --host-invoker for C++, which has no registry \
-         to dispatch into — the declaration was accepted and dropped"
-    );
-    assert!(
-        refused.stderr.contains("--host-invoker"),
-        "refusal was not the invoker one: {}",
-        refused.stderr
-    );
-
-    // …and accepts it for the backend that does have one.
-    let built = run(&[
-        "orchestrate",
-        "--scxml",
-        HOST_INVOKER_DOC,
-        "-l",
-        "rust",
-        "-o",
-        out_path,
+        declared_out.path().to_str().expect("utf-8"),
         "--host-invoker",
         "x-sce-host",
     ]);
     assert_eq!(
-        built.code, 0,
-        "orchestrate refused --host-invoker for Rust, which implements it: {}",
-        built.stderr
+        declared.code, 0,
+        "orchestrate refused --host-invoker for a backend that implements it: {}",
+        declared.stderr
+    );
+    assert!(
+        emits(declared_out.path(), CPP_HOST_INVOKE_START),
+        "no generated file carries `{CPP_HOST_INVOKE_START}`; the declaration \
+         was accepted on the document-set route and dropped"
     );
 
     // And `check`, on the same set, reaches the same verdict — per
@@ -514,21 +520,49 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
         "check refused the document-set route the declaration: {}",
         checked.stderr
     );
-    assert!(
-        checked
+
+    // Every backend must appear in the answer. Without this floor a
+    // `check` that quietly stopped reporting a language would satisfy the
+    // agreement loop below by having nothing to disagree about.
+    for lang in EVERY_BACKEND {
+        assert!(
+            checked.stdout.contains(&format!(r#""language":"{lang}""#)),
+            "check reported no verdict at all for {lang}: {}",
+            checked.stdout
+        );
+    }
+
+    // The agreement itself. Today every backend clears, so this loop is a
+    // tripwire rather than a discriminator — and it is written as one on
+    // purpose: the property that must hold is "check's verdict is one its
+    // producer can reach", and the day one backend stops clearing is
+    // exactly the day nobody would think to re-derive it by hand.
+    for lang in EVERY_BACKEND {
+        let out = ScratchDir::new(&format!("orch-host-{lang}"));
+        let produced = run(&[
+            "orchestrate",
+            "--scxml",
+            HOST_INVOKER_DOC,
+            "-l",
+            lang,
+            "-o",
+            out.path().to_str().expect("utf-8"),
+            "--host-invoker",
+            "x-sce-host",
+        ]);
+        let predicted_ok = checked
             .stdout
-            .contains(r#""language":"rust","status":"ok""#),
-        "check did not clear Rust, which implements the invoker: {}",
-        checked.stdout
-    );
-    assert!(
-        checked
-            .stdout
-            .contains(r#""language":"cpp","status":"rejected""#),
-        "check cleared C++ under a declaration `orchestrate` refuses for it — \
-         the verdict this route reached is one its producer cannot reach: {}",
-        checked.stdout
-    );
+            .contains(&format!(r#""language":"{lang}","status":"ok""#));
+        assert_eq!(
+            produced.code == 0,
+            predicted_ok,
+            "check and orchestrate disagree about {lang} under the same \
+             declaration: check said ok={predicted_ok}, the producer exited {} \
+             ({})",
+            produced.code,
+            produced.stderr
+        );
+    }
 
     // The declaration is the build's half of a two-place contract, so the
     // manifest has to carry it on this route as it does on the single-
@@ -541,4 +575,20 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
         "the document-set manifest did not echo the declaration it was given: {}",
         checked.stdout
     );
+}
+
+/// `true` iff any file `orchestrate` wrote into `dir` contains `needle`.
+///
+/// Reads the directory rather than a named file because `orchestrate`'s
+/// output layout is its own business — a test that named the file would
+/// fail on a layout change with a message about the wrong thing.
+fn emits(dir: &Path, needle: &str) -> bool {
+    std::fs::read_dir(dir)
+        .expect("read output dir")
+        .filter_map(|e| e.ok())
+        .any(|e| {
+            std::fs::read_to_string(e.path())
+                .unwrap_or_default()
+                .contains(needle)
+        })
 }

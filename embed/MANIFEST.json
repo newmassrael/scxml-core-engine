@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "ba7e1e5bc2",
+  "embed_version": "baee920f0b",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 260,
+  "symbol_count": 267,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -604,6 +604,68 @@
       "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
+        "field std::map<std::string, std::vector<std::string>> params",
+        "field std::string content",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field std::string src",
+        "method HostInvokeRequest &(HostInvokeRequest &&) noexcept operator=",
+        "method HostInvokeRequest &(const HostInvokeRequest &) noexcept(false) operator=",
+        "method void () noexcept HostInvokeRequest",
+        "method void () noexcept ~HostInvokeRequest",
+        "method void (HostInvokeRequest &&) noexcept HostInvokeRequest",
+        "method void (const HostInvokeRequest &) noexcept(false) HostInvokeRequest"
+      ],
+      "name": "SCE::HostInvokeRequest"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<HostInvokeCancel> cancel",
+        "field std::optional<HostInvokeRequest> start",
+        "method void () noexcept HostInvokeEvent",
+        "method void () noexcept ~HostInvokeEvent",
+        "method void (HostInvokeEvent &&) HostInvokeEvent",
+        "method void (const HostInvokeEvent &) HostInvokeEvent"
+      ],
+      "name": "SCE::HostInvokeEvent"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<HostInvokeCancel> cancel",
+        "field std::optional<HostInvokeRequest> start"
+      ],
+      "name": "SCE::HostInvokeEvent"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<std::string> doneData",
+        "method HostInvokeResponse &(HostInvokeResponse &&) noexcept operator=",
+        "method HostInvokeResponse &(const HostInvokeResponse &) noexcept(false) operator=",
+        "method void () noexcept HostInvokeResponse",
+        "method void () noexcept ~HostInvokeResponse",
+        "method void (HostInvokeResponse &&) noexcept HostInvokeResponse",
+        "method void (const HostInvokeResponse &) noexcept(false) HostInvokeResponse"
+      ],
+      "name": "SCE::HostInvokeResponse"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<std::string> doneData"
+      ],
+      "name": "SCE::HostInvokeResponse"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
         "field std::string eventData",
         "field std::string eventName",
         "method HostSendResponse &(HostSendResponse &&) operator=",
@@ -627,6 +689,27 @@
         "method void (const HostSendResponse &) HostSendResponse"
       ],
       "name": "SCE::HostSendResponse"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::string invokeId",
+        "field std::string processorType",
+        "method HostInvokeCancel &(HostInvokeCancel &&) noexcept operator=",
+        "method HostInvokeCancel &(const HostInvokeCancel &) noexcept(false) operator=",
+        "method void () noexcept HostInvokeCancel",
+        "method void () noexcept ~HostInvokeCancel",
+        "method void (HostInvokeCancel &&) noexcept HostInvokeCancel",
+        "method void (const HostInvokeCancel &) noexcept(false) HostInvokeCancel"
+      ],
+      "name": "SCE::HostInvokeCancel"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "typedef",
+      "name": "SCE::HostInvokeHandler",
+      "type": "std::function<std::optional<HostInvokeResponse> (const HostInvokeEvent &)>"
     },
     {
       "header": "core/HostProcessor.h",

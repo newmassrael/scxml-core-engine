@@ -38,6 +38,7 @@ mutation_tests -p sce-build --features cli --test host_processor_declaration
 # `sce-codegen` and leaves every test binary identical.
 mutation_runtime_targets tools/codegen/templates/python/actions/send.py.jinja2 \
     tools/codegen/templates/python/state_machine.py.jinja2 \
+    tools/codegen/templates/python/invoke_methods.py.jinja2 \
     sce-build/src/generator.rs
 mutation_oracles sce-build/tests/host_processor_declaration.rs
 
@@ -89,19 +90,26 @@ edit("tools/codegen/templates/python/actions/send.py.jinja2",
      "{{ indent }}_host_params = {}")
 PY
 
-# ── The refusal list stops naming Python's missing half ─────────────
+# ── The declared `<invoke>` stops being started ─────────────────────
 #
-# Python grew a `<send>` registry and no invoker one. Dropping the invoker
-# refusal too would have the build accept a declaration it cannot service —
-# the defect the whole surface exists to remove, one flag over.
+# ⚠ THIS SECTION USED TO MUTATE A REFUSAL — `python accepts an invoker
+# declaration it cannot service`, which deleted Python's
+# `reject_host_invokers_in_unsupported_lang` call. Python grew an invoker
+# registry, the whole fail-fast was retired, and the case had nothing left to
+# delete. Not re-aimed: the site was removed on purpose and the claim it
+# guarded ("Python cannot service this") is now false, so the case could only
+# ever pass. What replaces it is the claim the retirement makes instead —
+# Python DOES start what the host declared — in the same two directions the
+# send half above is measured in.
 
-mutation_case "python accepts an invoker declaration it cannot service" <<'PY'
-edit("sce-build/src/generator.rs",
-     """    // No `reject_host_processors_in_unsupported_lang` here: the Python
-    // runtime carries `Engine.register_event_processor` and the template
-    // emits the `<send>` dispatch into it. The invoker half is still absent,
-    // which is why the call below stays — the same split C++, C11 and Go
-    // forced.
-    reject_host_invokers_in_unsupported_lang(model, "Python")?;""",
-     "")
+mutation_case "the python template emits no host invoke start" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "{% for inv in state.invokes | host_invoker %}",
+     "{% for inv in [] %}")
+PY
+
+mutation_case "a declared invoke also takes the refusal arm" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "{% for inv in state.invokes | unsupported_refused %}",
+     "{% for inv in (state.invokes | unsupported_refused | list) + (state.invokes | host_invoker | list) %}")
 PY
