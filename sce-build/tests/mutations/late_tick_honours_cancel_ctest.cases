@@ -23,16 +23,29 @@ mutation_oracles tests/integration/LateTickHonoursCancelAotTest.cpp tests/integr
 
 # ── C++: dispatch order ────────────────────────────────────────────
 
+# ⚠ The anchor was re-aimed on 2026-08-24. It used to open on
+# `raiseExternal(event, eventData);` alone, which was the loop body; a
+# host-served `<send delay>` then gave the loop a second arm
+# (`performDeferredHostSend`), so the raise sits under an `else` and the
+# comment says "act" where it used to say "event". The site MOVED — unlike the
+# retired refusal cases in `host_processor_declaration.cases`, the claim here
+# is untouched — so re-aiming is what the anchor needed, widened with the
+# `} else {` above it so it cannot match the other `raiseExternal` in this
+# header.
 mutation_case "the cpp tick raises every ready entry before running a macrostep" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                raiseExternal(event, eventData);
-                // The macrostep this event drives may `<cancel>` a later one,
+     """                } else {
+                    raiseExternal(event, eventData);
+                }
+                // The macrostep this act drives may `<cancel>` a later one,
                 // so the queue is re-consulted after it rather than before.
                 runMainEventLoop();
                 if (!isRunning_ || isInFinalState()) {
                     break;
                 }""",
-     """                raiseExternal(event, eventData);""")
+     """                } else {
+                    raiseExternal(event, eventData);
+                }""")
 PY
 
 # ── C++: the deadline query ────────────────────────────────────────

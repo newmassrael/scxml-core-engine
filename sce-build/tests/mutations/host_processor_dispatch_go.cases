@@ -36,6 +36,7 @@ mutation_tests -p sce-build --features cli --test host_processor_declaration
 # the reason the sibling casefile records: the CLI suite SPAWNS the binary, so
 # mutating it changes `sce-codegen` and leaves every test binary identical.
 mutation_runtime_targets tools/codegen/templates/go/actions/send.go.jinja2 \
+    tools/codegen/templates/go/invoke_methods.go.jinja2 \
     sce-build/src/generator.rs
 mutation_oracles sce-build/tests/host_processor_declaration.rs
 
@@ -76,16 +77,26 @@ edit("tools/codegen/templates/go/actions/send.go.jinja2",
      "		hostParams := map[string][]string{}")
 PY
 
-# ── The refusal list stops naming Go's missing half ─────────────────
+# ── The declared `<invoke>` stops being started ─────────────────────
 #
-# Go grew a `<send>` registry and no invoker one. Dropping the invoker
-# refusal too would have the build accept a declaration it cannot service —
-# the defect the whole surface exists to remove, one flag over.
+# ⚠ THIS SECTION USED TO MUTATE A REFUSAL — `go accepts an invoker
+# declaration it cannot service`, which deleted Go's
+# `reject_host_invokers_in_unsupported_lang` call. Go grew an invoker
+# registry, the whole fail-fast was retired, and the case had nothing left to
+# delete. Not re-aimed: the site was removed on purpose and the claim it
+# guarded ("Go cannot service this") is now false, so the case could only
+# ever pass. What replaces it is the claim the retirement makes instead —
+# Go DOES start what the host declared — in the same two directions the send
+# half above is measured in.
 
-mutation_case "go accepts an invoker declaration it cannot service" <<'PY'
-edit("sce-build/src/generator.rs",
-     """    // See `generate_go` above: the Go backend has a `<send>` registry and no
-    // invoker one.
-    reject_host_invokers_in_unsupported_lang(model, "Go")?;""",
-     "")
+mutation_case "the go template emits no host invoke start" <<'PY'
+edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
+     "{% if state.invokes | host_invoker %}",
+     "{% if false and state.invokes | host_invoker %}")
+PY
+
+mutation_case "a declared invoke also takes the refusal arm" <<'PY'
+edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
+     "{% if state.invokes | unsupported_refused %}",
+     "{% if state.invokes | unsupported_refused or state.invokes | host_invoker %}")
 PY
