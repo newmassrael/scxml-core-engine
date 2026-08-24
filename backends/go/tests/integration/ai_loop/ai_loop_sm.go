@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fdec330b81544755a6389817fab34d8e574b0a205089b7220c9bd9302bdd70
+// source-hash: 9e85e11997494073a40bf661d9f24e2bc472fad7b57e93e3c87932bf8615ff0f
 // template-hash: 6d29ccd65cc69c7036210e21d4c9d2a46b7717262dc7e045f86a45620f80383f
 // generated-at: 0
 
@@ -1397,7 +1397,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	p.activeStates = append(p.activeStates, state)
 	switch state {
 	case AiLoopStateAbandoned:
-		//line ai_loop.scxml:443
+		//line ai_loop.scxml:465
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1429,7 +1429,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			}
 		}
 	case AiLoopStateClosing:
-		//line ai_loop.scxml:355
+		//line ai_loop.scxml:377
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1481,7 +1481,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}
 	case AiLoopStateJudging:
-		//line ai_loop.scxml:294
+		//line ai_loop.scxml:316
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1533,7 +1533,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}
 	case AiLoopStatePaused:
-		//line ai_loop.scxml:401
+		//line ai_loop.scxml:423
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1572,7 +1572,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}
 	case AiLoopStatePriming:
-		//line ai_loop.scxml:241
+		//line ai_loop.scxml:263
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1624,7 +1624,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}
 	case AiLoopStateReflecting:
-		//line ai_loop.scxml:324
+		//line ai_loop.scxml:346
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1670,7 +1670,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}
 	case AiLoopStateReported:
-		//line ai_loop.scxml:376
+		//line ai_loop.scxml:398
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1681,7 +1681,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// W3C SCXML 3.7: Final state reached — raise done.state.running
 		engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateRunning))
 	case AiLoopStateRestarting:
-		//line ai_loop.scxml:344
+		//line ai_loop.scxml:366
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1727,7 +1727,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}
 	case AiLoopStateScreening:
-		//line ai_loop.scxml:277
+		//line ai_loop.scxml:299
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1773,7 +1773,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}
 	case AiLoopStateSpent:
-		//line ai_loop.scxml:479
+		//line ai_loop.scxml:501
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1782,7 +1782,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}
 	case AiLoopStateStuck:
-		//line ai_loop.scxml:384
+		//line ai_loop.scxml:406
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -2700,7 +2700,7 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == AiLoopStateJudging && idx == 2 {
-		//line ai_loop.scxml:312
+		//line ai_loop.scxml:334
 
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -2750,7 +2750,7 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 		return
 	}
 	if source == AiLoopStatePaused && idx == 0 {
-		//line ai_loop.scxml:418
+		//line ai_loop.scxml:440
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="turns_since_reflect + 1">
 	if err := p.assignVariable(`turns_since_reflect`, `_scxml_add(turns_since_reflect, 1)`); err != nil {
@@ -2760,7 +2760,7 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 		return
 	}
 	if source == AiLoopStateReflecting && idx == 0 {
-		//line ai_loop.scxml:329
+		//line ai_loop.scxml:351
 
 	// W3C SCXML 5.3: <assign location="start_prompt" expr="_event.data.start_prompt">
 	if err := p.assignVariable(`start_prompt`, `_event.data.start_prompt`); err != nil {
@@ -2782,7 +2782,7 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 		return
 	}
 	if source == AiLoopStateReflecting && idx == 1 {
-		//line ai_loop.scxml:335
+		//line ai_loop.scxml:357
 
 	// W3C SCXML 6.2: send id="__send_4"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -2832,7 +2832,7 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 		return
 	}
 	if source == AiLoopStateWithin && idx == 0 {
-		//line ai_loop.scxml:472
+		//line ai_loop.scxml:494
 
 	// W3C SCXML 5.3: <assign location="turns" expr="turns + 1">
 	if err := p.assignVariable(`turns`, `_scxml_add(turns, 1)`); err != nil {
@@ -2842,7 +2842,7 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 		return
 	}
 	if source == AiLoopStateWithin && idx == 1 {
-		//line ai_loop.scxml:475
+		//line ai_loop.scxml:497
 
 	// W3C SCXML 5.3: <assign location="turns" expr="turns + 1">
 	if err := p.assignVariable(`turns`, `_scxml_add(turns, 1)`); err != nil {
@@ -2852,7 +2852,7 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 		return
 	}
 	if source == AiLoopStateWorking && idx == 0 {
-		//line ai_loop.scxml:261
+		//line ai_loop.scxml:283
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="turns_since_reflect + 1">
 	if err := p.assignVariable(`turns_since_reflect`, `_scxml_add(turns_since_reflect, 1)`); err != nil {
