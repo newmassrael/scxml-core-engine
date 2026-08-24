@@ -100,6 +100,13 @@ struct Channel {
 /// leaves `_event.data` unbound for a payload-less event (the Go defect), keeps
 /// the terminal in the configuration (where Kotlin follows `exitInterpreter` and
 /// empties it), and takes both regions' transitions on the corrected document.
+///
+/// The C11 entry closed the set the same day, also 27 of 27 on its first run.
+/// Its door differs from the other five and the difference is published rather
+/// than papered over: `_init_at` takes the configuration ALONE, because this
+/// engine keeps no current-state shadow — single-leaf semantics break for
+/// `<parallel>`, and its header says so. The resume scenario therefore asserts
+/// what this engine publishes, which is what pairing BY NAME is for.
 const CHANNELS: &[Channel] = &[
     Channel {
         engine: "Rust AOT",
@@ -136,6 +143,21 @@ const CHANNELS: &[Channel] = &[
         generator: "scripts/regen_ai_loop_python.sh",
         names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
     },
+    Channel {
+        engine: "C11 AOT",
+        driver: "backends/c/tests/integration/test_ai_loop.c",
+        // Every scenario in that file is a `static int <name>(void)` and
+        // nothing else there has that shape — its own header says so, because
+        // this pattern is what pairs it with the other five. The reporting
+        // helpers beside them take arguments.
+        scenario: r"static\s+int\s+(\w+)\(void\)",
+        // This backend generates into the CMake build tree rather than into a
+        // committed one, so its generator is the registration itself — the
+        // same shape as the C++ channel above, and the reason neither has a
+        // `scripts/regen_ai_loop_*.sh`.
+        generator: "backends/c/tests/CMakeLists.txt",
+        names_document: "${CMAKE_SOURCE_DIR}/examples/ai_loop/ai_loop.scxml",
+    },
 ];
 
 /// What every channel asserted when the pairing was last raised. A scanner
@@ -158,10 +180,10 @@ const SCENARIO_FLOOR: usize = 27;
 
 /// A registry holding one channel pairs with itself, and a registry holding
 /// none pairs vacuously — both would report agreement about a document nobody
-/// drives. Five is what the claim is worth today, and like `SCENARIO_FLOOR`
-/// it is a ratchet: raise it when a channel lands, never lower it to
-/// accommodate one being dropped.
-const CHANNEL_FLOOR: usize = 5;
+/// drives. Six is every backend SCE generates for, which is what this document
+/// is now worth; like `SCENARIO_FLOOR` it is a ratchet: raise it if a seventh
+/// backend lands, never lower it to accommodate one being dropped.
+const CHANNEL_FLOOR: usize = 6;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
