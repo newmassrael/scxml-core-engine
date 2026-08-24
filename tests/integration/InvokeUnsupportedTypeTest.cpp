@@ -144,5 +144,74 @@ TEST_F(InvokeUnsupportedTypeTest, UnsupportedTypeRaisesErrorExecutionOnTheIntern
         << "author's handler unreachable and the unsupported type indistinguishable from a working one.";
 }
 
+// §scxml-3.12.2 lets a platform "include additional information about the
+// nature of the error in the 'data' field", and this engine does. What that
+// field SAYS had no executing witness anywhere: every channel asserted the
+// raise and the handler, none read the message — which is exactly how the same
+// W3C fact came to be spelled three ways. This Interpreter named the offending
+// type and nothing else, the six AOT backends named everything but the type,
+// and the `<send type=…>` sibling one construct over already had the shape both
+// were missing. `host_processor_declaration.rs` reads the six emitters' text
+// from one place; this reads the seventh's at runtime, which is the only way to
+// reach a literal that is compiled rather than generated.
+//
+// The document is built here rather than added to the canonical fixture: it
+// needs a datamodel to capture `_event.data` into, and the shared fixture is
+// deliberately single-axis (see its header) and is driven by six other channels
+// that would then all carry a datamodel they have no use for.
+TEST_F(InvokeUnsupportedTypeTest, TheRaisedErrorNamesTheTypeInTheOneSharedWording) {
+    const std::string scxml = std::string(R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
+       initial="probe" name="invoke_unsupported_type_message">
+    <datamodel><data id="seen" expr="''"/></datamodel>
+    <state id="probe">
+        <invoke type=")") + UNSUPPORTED_TYPE +
+                              R"("/>
+        <transition event="error.execution" target="pass">
+            <assign location="seen" expr="_event.data"/>
+        </transition>
+    </state>
+    <final id="pass"/>
+</scxml>)";
+
+    auto sm = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
+
+    auto scheduler = std::make_shared<EventSchedulerImpl>(
+        [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
+            try {
+                return target->send(event).get().isSuccess;
+            } catch (...) {
+                return false;
+            }
+        });
+    auto eventRaiser = std::make_shared<EventRaiserImpl>();
+    eventRaiser->setScheduler(scheduler);
+    eventRaiser->setImmediateMode(false);
+    sm->setEventRaiser(eventRaiser);
+    sm->setEventDispatcher(
+        std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(eventRaiser)));
+
+    ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
+    ASSERT_TRUE(sm->start());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (!sm->isRunning()) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_EQ(sm->getCurrentState(), "pass") << "the handler never fired, so there is no message to read";
+
+    const std::string expected = std::string("<invoke type='") + UNSUPPORTED_TYPE +
+                                 "'> names an external service this platform does not support";
+    const auto seen = engine_->evaluateExpression(sm->getSessionId(), "seen").get();
+    ASSERT_TRUE(seen.isSuccess()) << "could not read the captured `_event.data`";
+    EXPECT_EQ(seen.getValue<std::string>(), expected)
+        << "the Interpreter's §6.4.1 refusal drifted from the wording the six AOT backends emit. "
+           "One W3C fact, one wording — a per-engine phrasing is what this round collapsed a "
+           "six-row table to remove.";
+}
+
 }  // namespace Tests
 }  // namespace SCE

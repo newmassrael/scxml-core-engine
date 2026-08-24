@@ -836,7 +836,16 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
                       invokeType, sessionId);
         auto eventRaiser = EventRaiserService::getInstance().getEventRaiser(sessionId);
         if (eventRaiser) {
-            eventRaiser->raiseEvent("error.execution", "Unsupported <invoke> type: " + invokeType);
+            // One wording for all seven emitters (this Interpreter plus the six
+            // AOT backends), shaped like the `<send type=…>` sibling's refusal
+            // and using §scxml-6.4's own noun for what `type` names: "an
+            // instance of an external service". Until 2026-08-24 there were
+            // three spellings of this one fact — this site named the offending
+            // type but nothing else, and the five newer backends named
+            // everything but the type.
+            eventRaiser->raiseEvent("error.execution",
+                                    "<invoke type='" + invokeType +
+                                        "'> names an external service this platform does not support");
         } else {
             SCE_LOG_ERROR("InvokeExecutor: No EventRaiser for session '{}' - error.execution dropped", sessionId);
         }

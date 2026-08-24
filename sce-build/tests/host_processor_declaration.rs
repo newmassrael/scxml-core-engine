@@ -313,7 +313,7 @@ fn the_invoke_half_is_reported_and_then_claimed() {
         "no cancel was emitted for a declared invoker",
     );
     assert!(
-        !emitted.contains("<invoke> declares a type this processor does not support"),
+        !emitted.contains(&unsupported_invoke_refusal(FIXTURE_INVOKE_TYPE)),
         "a declared invoker still emitted the unsupported-type refusal",
     );
 }
@@ -453,8 +453,9 @@ fn a_declared_invoker_changes_the_machine_on_every_backend() {
             emitted.contains(start_site),
             "{lang} emitted no start site (`{start_site}`) for a declared invoker",
         );
+        let refusal = unsupported_invoke_refusal(FIXTURE_INVOKE_TYPE);
         assert!(
-            !emitted.contains(UNSUPPORTED_INVOKE_REFUSAL[lang_index(lang)]),
+            !emitted.contains(&refusal),
             "{lang} still emitted the unsupported-type refusal for a declared \
              invoker, so the machine both starts it and raises for it",
         );
@@ -486,39 +487,40 @@ fn a_declared_invoker_changes_the_machine_on_every_backend() {
              at all — the host would be handed an invocation it never declared",
         );
         assert!(
-            undeclared.contains(UNSUPPORTED_INVOKE_REFUSAL[lang_index(lang)]),
+            undeclared.contains(&refusal),
             "{lang} emitted neither a start nor the unsupported-type refusal, \
-             so an undeclared `<invoke>` is silently doing nothing",
+             so an undeclared `<invoke>` is silently doing nothing. The text is \
+             the same on every backend now, so a {lang}-shaped variant of it is \
+             a regression rather than a dialect. Expected to find:\n  {refusal}",
         );
     }
 }
 
-/// The `error.execution` text an undeclared `<invoke type>` raises, indexed
-/// by [`INVOKER_EMISSION`]'s row order.
+/// The `error.execution` text an undeclared `<invoke type>` raises.
 ///
-/// ⚠ C++ is the odd row and its wording is NOT a typo here. It matches the
-/// C++ Interpreter (`sce/src/runtime/InvokeExecutor.cpp`), which predates
-/// the five newer backends; the five agreed on the other wording among
-/// themselves. Two spellings of one W3C fact is a parity defect on this
-/// seam, not a per-backend contract — repaying it edits a template, which
-/// re-pins every committed tree, so it is done in the round that owns the
-/// regeneration rather than smuggled into this one. When it lands, these
-/// six entries collapse to one constant.
-const UNSUPPORTED_INVOKE_REFUSAL: [&str; 6] = [
-    "<invoke> declares a type this processor does not support",
-    "Unsupported <invoke> type: x-sce-host",
-    "<invoke> declares a type this processor does not support",
-    "<invoke> declares a type this processor does not support",
-    "<invoke> declares a type this processor does not support",
-    "<invoke> declares a type this processor does not support",
-];
-
-fn lang_index(lang: &str) -> usize {
-    INVOKER_EMISSION
-        .iter()
-        .position(|(l, _, _)| *l == lang)
-        .expect("the language came from the table")
+/// ONE wording, and there is no per-language index any more. Until 2026-08-24
+/// this was a six-row table because the same W3C fact had three spellings:
+/// C++ (AOT and Interpreter alike) named the offending type and nothing else,
+/// the five newer backends named everything but the type, and the `<send
+/// type=…>` sibling — the same "this platform has no such processor" fact one
+/// construct over — already had the shape both were missing. The row that made
+/// this a table is gone rather than corrected, which is the point: a per-
+/// backend wording is not a contract a table should be able to express.
+///
+/// Shaped after that sibling, with §scxml-6.4's own noun for what `<invoke>`
+/// `type` names — "an instance of an external service" — rather than `<send>`'s
+/// "processor". Naming the type is what a reader needs and what five backends
+/// could not tell them.
+fn unsupported_invoke_refusal(invoke_type: &str) -> String {
+    format!(
+        "<invoke type='{invoke_type}'> names an external service this platform \
+         does not support"
+    )
 }
+
+/// The `type` the invoker fixture declares — the one that appears in the
+/// refusal text above.
+const FIXTURE_INVOKE_TYPE: &str = "x-sce-host";
 
 /// The C11 half of the same claim.
 ///

@@ -1411,12 +1411,18 @@ struct CheckArgs {
     /// mirroring `generate --host-processor`. Repeatable.
     ///
     /// The declaration is read by the backend, not only by the manifest:
-    /// a backend with no host-processor registry refuses the document
-    /// rather than emit a dispatch it cannot service. Without this flag
-    /// `check` could not be asked for the interpretation the build
-    /// actually uses, so it answered `"status":"ok"` for every backend
-    /// on a document `generate --host-processor` refuses on four of them
-    /// — a verdict its own contract says it cannot reach.
+    /// it moves what the machine EMITS, from a §scxml-6.2
+    /// `error.execution` refusal to a dispatch into the host's registry.
+    /// Without this flag `check` could not be asked for the
+    /// interpretation the build actually uses, so it answered about a
+    /// document `generate --host-processor` lowers differently — a
+    /// verdict its own contract says it cannot reach.
+    ///
+    /// Until 2026-08-24 this text said a backend with no registry REFUSES
+    /// the document. All six grew one and
+    /// `reject_host_processors_in_unsupported_lang` retired, so the
+    /// sentence outlived its own subject — and this one reaches users
+    /// through `--help`.
     ///
     /// Accepted on the document-set route too, since `orchestrate` grew
     /// the same flag. It was single-document-only while `orchestrate`

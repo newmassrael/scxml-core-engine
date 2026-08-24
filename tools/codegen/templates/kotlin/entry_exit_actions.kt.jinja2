@@ -151,7 +151,7 @@
                 run {
                     val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
                     deferInvoke(state, generatedInvokeId) {
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> declares a type this processor does not support")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke type='{{ inv.invoke_type | escape_kotlin }}'> names an external service this platform does not support")
                     }
                 }
 {% elif inv.is_hybrid is defined and inv.is_hybrid %}
