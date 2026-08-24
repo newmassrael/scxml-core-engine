@@ -77,6 +77,16 @@ sce_gate_step "generating the Python W3C and integration suites"
 "$SCE_REPO_ROOT/scripts/regen_ai_loop_python.sh" >/dev/null \
     || sce_gate_fail "Python ai_loop generation"
 
+# The transition-domain witness, for the same reason and one more: its document
+# is not under `integration_resources/` either — a stem there is a seven-channel
+# contract and the C11 engine has not been repaired for this clause — so
+# `generate-integration` never sees it. Its `_sm.py` is gitignored like every
+# module in this tree, which means without this line the tracked test imports a
+# module nothing produced and the gate reports a collection error rather than
+# an engine answer.
+"$SCE_REPO_ROOT/scripts/regen_parallel_region_root_external_domain_python.sh" >/dev/null \
+    || sce_gate_fail "Python transition-domain witness generation"
+
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 
