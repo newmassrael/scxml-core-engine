@@ -133,6 +133,14 @@ scripts/regen_ai_loop.sh
 echo "==> AI loop example Go tree"
 scripts/regen_ai_loop_go.sh
 
+# The Kotlin third. Same reason as the Go one above, and the same reason
+# `regen_host_processor_kotlin.sh` is named here rather than left to the
+# `w3c-kotlin` gate: that gate regenerates only the W3C and
+# `generate-integration` trees, so a committed Kotlin tree this script does not
+# know about could drift with nothing to say so.
+echo "==> AI loop example Kotlin tree"
+scripts/regen_ai_loop_kotlin.sh
+
 # The committed Rust trees are generator output *as rustfmt leaves it*, not
 # as the emitter writes it. `backends/rust/tests` is a workspace member, so
 # `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —
