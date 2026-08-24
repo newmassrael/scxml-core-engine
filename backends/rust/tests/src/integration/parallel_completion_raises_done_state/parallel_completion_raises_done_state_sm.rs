@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 280975c88158c1a2612c8726a71e4ae581a1e42f8ef6d030924e99800aff8d10
-// template-hash: 6d29ccd65cc69c7036210e21d4c9d2a46b7717262dc7e045f86a45620f80383f
+// template-hash: 401d2ad22cf222caeef0633edc48b3c3fd2090ab46bb9a2c354f5be833096227
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -926,6 +926,26 @@ impl ParallelCompletionRaisesDoneStatePolicy {
                 let t2_exits =
                     Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
 
+                // Appendix D removeConflictingTransitions: two transitions conflict
+                // when their EXIT SETS intersect. A transition that exits nothing
+                // therefore conflicts with nothing and can never be preempted --
+                // which is exactly a targetless transition, whose
+                // Appendix D computeExitSet contribution the appendix defines as
+                // empty.
+                //
+                // The heuristics below stand in for an exit set this generator
+                // could not always compute, and every one of them reads a
+                // targetless transition as a self-transition on its own source.
+                // Left ungated, a targetless `<transition event="*">` in one region
+                // is preempted the moment a sibling region's transition exits the
+                // enclosing `<parallel>` -- which is what the domain filter above
+                // now makes a region-root external transition do, and what W3C test
+                // 403c marks "this transition never gets preempted, should fire
+                // twice".
+                if t1_exits.is_empty() || t2_exits.is_empty() {
+                    continue;
+                }
+
                 let mut has_conflict = t1_exits.iter().any(|s1| t2_exits.contains(s1));
 
                 // Appendix D removeConflictingTransitions: Target/source conflict — t1 enters a state that t2 leaves
@@ -1013,16 +1033,28 @@ impl ParallelCompletionRaisesDoneStatePolicy {
             return ::sce_rust_runtime::helpers::hierarchy::new_chain();
         }
 
-        // W3C SCXML 3.12: Find LCA of source and target by walking up from source
-        // and checking if target is a descendant of each ancestor. If no LCA exists
-        // (both states are top-level siblings), `lca` stays `None` and we walk to root.
+        // Appendix D findLCCA: walk up from source for the lowest CANDIDATE
+        // ancestor that contains target. The candidates are the ones
+        // `isCompoundStateOrScxmlElement` admits, so a `<parallel>` is skipped --
+        // the same filter `execute_microstep` applies, and it has to be the same
+        // one: this exit set is what conflict resolution intersects, so answering
+        // a `<parallel>` here made a region-root transition look non-conflicting
+        // with the sibling region's transition on the same event.
+        //
+        // If no candidate contains target (top-level siblings, or a region root's
+        // external transition whose only non-candidate ancestor is the
+        // `<parallel>`), `lca` stays `None` and the walk runs to the root.
         let lca: Option<ParallelCompletionRaisesDoneStateState> = {
             let mut current = source;
             let mut result = None;
             loop {
                 match Self::get_parent(current) {
                     Some(parent) => {
-                        if Self::is_descendant_of(target, parent) || target == parent {
+                        let is_domain_candidate =
+                            Self::is_compound_state(parent) && !Self::is_parallel_state(parent);
+                        if is_domain_candidate
+                            && (Self::is_descendant_of(target, parent) || target == parent)
+                        {
                             result = Some(parent);
                             break;
                         }
@@ -1089,11 +1121,27 @@ impl ParallelCompletionRaisesDoneStatePolicy {
                 if is_internal_to_descendant {
                     Some(trans.source)
                 } else {
-                    // Find the lowest ancestor of `source` that also contains `target`.
+                    // Appendix D findLCCA: the lowest ancestor of `source` that also
+                    // contains `target` -- among the CANDIDATES, which the procedure
+                    // filters with `isCompoundStateOrScxmlElement`. A `<parallel>` is
+                    // neither a compound `<state>` nor the `<scxml>` element, so it is
+                    // never a transition domain.
+                    //
+                    // Taking the first common ancestor whatever its kind is `findLCA`,
+                    // which the appendix distinguishes from this, and the difference is
+                    // invisible until a `<parallel>` sits between the source and the
+                    // first compound `<state>` above it -- exactly a transition written
+                    // on a REGION ROOT. Answering the `<parallel>` there left the other
+                    // regions unexited: measured 2026-08-25 as a configuration holding
+                    // BOTH children of the sibling region at once.
                     let mut anc_opt = Self::get_parent(trans.source);
                     let mut result = None;
                     while let Some(anc) = anc_opt {
-                        if Self::is_descendant_of(trans.target, anc) || trans.target == anc {
+                        let is_domain_candidate =
+                            Self::is_compound_state(anc) && !Self::is_parallel_state(anc);
+                        if is_domain_candidate
+                            && (Self::is_descendant_of(trans.target, anc) || trans.target == anc)
+                        {
                             result = Some(anc);
                             break;
                         }
