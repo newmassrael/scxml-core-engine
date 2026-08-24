@@ -115,6 +115,22 @@ if (( ${#ORDER[@]} == 0 )); then
     exit 0
 fi
 
+# ── Submodule parity: a gate cannot mirror a checkout it does not have ──
+#
+# `git worktree add` does not populate submodules, and neither does a plain
+# `git clone`. Measured 2026-08-24: a push from a fresh worktree spent every
+# gate ahead of `w3c-kotlin` and then died 27 seconds into a Gradle task with
+# "CMake Generate step failed", which names neither `third_party/quickjs` nor
+# the one command that fixes it — so the gates ahead of it ran again from the
+# start on the next push.
+#
+# Here rather than in each gate script, for the same reason the toolchain sync
+# below is here: a gate run by hand must get the same preconditions the hook
+# gives it. WHICH gates need submodules is derived from the workflows they
+# mirror, never typed — `tree-hygiene` checks out without them on purpose, so
+# a blanket refusal would be wrong. See the script's header.
+"$REPO_ROOT/scripts/lib/require_submodules.sh" "${ORDER[@]}"
+
 # ── Toolchain parity: mirror CI's dtolnay/rust-toolchain@stable ────
 # Every Rust CI job installs the LATEST stable. rustup does NOT auto-update
 # a developer's local `stable`, so it can silently lag the runner — and the
