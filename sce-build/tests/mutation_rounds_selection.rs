@@ -883,11 +883,14 @@ fn the_selection_narrows_and_the_round_only_obeys() {
     );
     assert_eq!(
         select.get("SCE_MUTATION_ROUNDS").map(String::as_str),
-        Some("${{ github.event_name == 'schedule' && 'all' || inputs.casefiles }}"),
+        Some(
+            "${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') \
+             && (inputs.casefiles != '' && inputs.casefiles || 'all') || '' }}"
+        ),
         "⚠ the selection must be handed the dispatch's subset, or asking for one \
-         casefile runs all of them — and a scheduled run must be handed `all`, \
-         or the weekly sweep selects nothing. See \
-         `a_scheduled_run_is_handed_the_whole_corpus`."
+         casefile runs all of them — and an event that means everything must be \
+         handed `all`, or the sweep selects nothing. See \
+         `an_event_that_means_everything_is_handed_the_whole_corpus`."
     );
 
     let run = step_env(&workflow, "Run the round");
@@ -931,30 +934,37 @@ fn selection_named(subset: &str) -> (bool, BTreeMap<String, String>, String) {
     )
 }
 
-/// The weekly trigger reaches every casefile, and reaches them because it says
-/// so rather than by falling through.
+/// The two events that mean "everything" reach every casefile, and reach them
+/// because they say so rather than by falling through.
 ///
 /// Three things have to hold together, and the middle one is the one that is
-/// easy to get wrong:
+/// easy to get wrong — twice, as it turned out:
 ///
 ///   1. the workflow actually has a `schedule:` trigger — routing without a
 ///      trigger is dead code;
-///   2. that event is handed `all` EXPLICITLY. The tempting reading is that
-///      `schedule` carries no range, so the gate runs the corpus by itself.
-///      It does not. Handed no change file the gate derives a range from the
-///      tracking ref, and at the tip of `main` that range is empty: measured
-///      on this repository, `0 of 84 casefile(s)`. A weekly lane that ran
-///      nothing would PASS, which is the same absent-verdict-reading-as-green
-///      the trigger exists to end;
-///   3. the value it is handed really does select the whole corpus, asked of
-///      the gate rather than assumed of it.
+///   2. `schedule` AND a `workflow_dispatch` with an empty input are handed
+///      `all` EXPLICITLY. The tempting reading is that neither carries a
+///      range, so the gate runs the corpus by itself. It does not. Handed no
+///      change file the gate derives a range from the tracking ref, and at the
+///      tip of `main` that range is empty: measured on this repository,
+///      `0 of 84 casefile(s)` for both. A weekly lane that ran nothing would
+///      PASS, which is the same absent-verdict-reading-as-green the trigger
+///      exists to end — and the dispatch had been promising "Empty runs the
+///      corpus" in its own input description while doing exactly that;
+///   3. the value they are handed really does select the whole corpus, asked
+///      of the gate rather than assumed of it.
 ///
 /// The floor on (3) is the whole corpus and not a constant, so a casefile
 /// added tomorrow is covered without editing this test — and the separate
 /// assertion that the corpus is non-trivial is what stops an empty
 /// `git ls-files` from making the comparison hold vacuously.
+///
+/// What is deliberately NOT asserted: what an EMPTY value selects. It reaches
+/// the gate's tracking-ref derivation, whose answer depends on the checkout —
+/// `0 of 84` here, the whole corpus on a clone with no upstream — so pinning
+/// it would be pinning the environment rather than the routing.
 #[test]
-fn a_scheduled_run_is_handed_the_whole_corpus() {
+fn an_event_that_means_everything_is_handed_the_whole_corpus() {
     let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
         .expect("read the mutation-rounds workflow");
 
@@ -975,19 +985,36 @@ fn a_scheduled_run_is_handed_the_whole_corpus() {
         "⚠ `schedule:` must carry a cron entry; a trigger with no schedule never fires"
     );
 
-    // (2) The routing names the corpus for that event.
+    // (2) The routing names the corpus for BOTH events that mean "everything",
+    // and turns an empty subset into `all` rather than into silence.
+    //
+    // Three needles rather than one exact string, because the property is what
+    // the expression decides and not how it is spelled: each names one event
+    // that must be routed, and the third is the fallback an empty
+    // `inputs.casefiles` lands on. A cosmetic rewrite keeps them; deleting a
+    // branch does not.
     let select = step_env(&workflow, "Which casefiles does this change reach");
     let routed = select
         .get("SCE_MUTATION_ROUNDS")
         .map(String::as_str)
         .expect("the selection step must set SCE_MUTATION_ROUNDS");
-    assert!(
-        routed.contains("github.event_name == 'schedule' && 'all'"),
-        "⚠ a scheduled run must be handed `all` by name. Relying on the absent \
-         change set is the trap: the gate answers an empty tracking-ref range \
-         with `0 of 84`, and the lane would pass having measured nothing. Got: \
-         {routed:?}"
-    );
+    for needle in [
+        "github.event_name == 'schedule'",
+        "github.event_name == 'workflow_dispatch'",
+        "|| 'all'",
+    ] {
+        assert!(
+            routed.contains(needle),
+            "⚠ an event that means the whole corpus must be handed `all` by \
+             name, and {needle:?} is missing. Relying on the absent change set \
+             is the trap both of these fell into: the gate reads an empty \
+             `SCE_MUTATION_ROUNDS` as the ABSENCE of a request, derives a range \
+             from the tracking ref instead, and answers `0 of 84`. Measured for \
+             a scheduled run and for a dispatch with an empty input — the \
+             second having promised \"Empty runs the corpus\" in its own \
+             description the whole time. Got: {routed:?}"
+        );
+    }
 
     // (3) That value really does reach every casefile — asked, not assumed.
     let corpus = casefiles();
