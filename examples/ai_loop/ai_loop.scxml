@@ -211,15 +211,37 @@
         Written once here rather than on each child. A person can hold the loop
         and an agent can be interrupted at any point in the cycle, so these
         belong to the cycle as a whole.
+
+        `type="internal"` on all three, and it is load-bearing rather than
+        decorative. A transition written on a region root is the one place the
+        default `external` type means something the author almost never wants:
+        W3C SCXML Appendix D resolves an external transition's domain through
+        `findLCCA`, which filters ancestors to `<state>` and `<scxml>` — a
+        `<parallel>` is neither, so the domain of `drive -> paused` is the
+        DOCUMENT ROOT. Every region then exits and re-enters, `watch` and
+        `budget` are restarted at their defaults, and any transition another
+        region has on the same event is preempted as conflicting.
+
+        That is exactly wrong for what these three mean. `session.lost` is the
+        sharpest case, because `watch` answers the same event: as an external
+        transition this one silently cancelled the liveness watch's own
+        response, and a rebuild would then be driven by a region that had been
+        reset rather than by the one that noticed. `internal` gives the
+        transition the domain its comment claims — the cycle, and nothing else.
+
+        Measured 2026-08-25: the Kotlin channel, being the first to implement
+        the domain rule strictly, ended `session.lost` in `[alive, restarting]`
+        where the C++, Rust and Go channels ended in `[rebuilding, restarting]`.
+        The document was ambiguous; the engines were reading it differently.
       -->
-      <transition event="hold" target="paused"/>
-      <transition event="turn.interrupted" target="paused"/>
+      <transition event="hold" type="internal" target="paused"/>
+      <transition event="turn.interrupted" type="internal" target="paused"/>
       <!--
         The session went away under us — `watch` saw it. Rebuild rather than
         fail: a lost session is the case `restarting` already knows how to
         answer.
       -->
-      <transition event="session.lost" target="restarting"/>
+      <transition event="session.lost" type="internal" target="restarting"/>
 
       <state id="running" initial="priming">
 
