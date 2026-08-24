@@ -345,6 +345,34 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y pkg-config libxml2-dev
 
+    # The same repair `rust-workspace-tests.yml` already carries, and for the
+    # same two tests. `gate_registry_contract` is the ORACLE of three casefiles
+    # in this corpus, and it drives the staged citation stage as a subprocess;
+    # that stage refuses — exit 3, "the gate could not run, its own tooling is
+    # missing" — without the rev-pinned binary. This job never installed it, so
+    # every round on that oracle stopped at `baseline is not green (2 failing)`
+    # before mutating anything.
+    #
+    # Measured 2026-08-25: the first whole-corpus sweep reported that for
+    # `ci_lane_gate_selection` and `ledger_citations_gate`, while the same
+    # binary passed 21/21 locally and `cargo test --workspace` passed on a
+    # runner — because THAT lane installs this and this one did not. Reproduced
+    # by running the built binary with `HOME` pointed at an empty directory:
+    # `the_commit_stage_rejects_a_fabricated_citation_in_staged_content` and
+    # `the_staged_stage_scope_is_not_bounded_by_path_or_extension` fail, and
+    # nothing else does.
+    #
+    # A red baseline is not a mutation verdict, so this cost two casefiles
+    # their rounds and said nothing about either one's cases.
+    - name: Cache mnemosyne-cli (rev-pinned)
+      uses: actions/cache@v5
+      with:
+        path: ~/.local/share/mnemosyne-rev
+        key: mnemosyne-rev-${{ hashFiles('.github/workflows/spec-citations.yml') }}
+
+    - name: Install the rev-pinned mnemosyne-cli
+      run: scripts/install_mnemosyne_cli.sh
+
     - name: Cache Cargo
       uses: actions/cache@v5
       with:
