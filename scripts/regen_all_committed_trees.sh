@@ -126,6 +126,13 @@ scripts/regen_host_processor_kotlin.sh
 echo "==> AI loop example Rust tree"
 scripts/regen_ai_loop.sh
 
+# The Go half of the same example, for the same reason and with one more: the
+# channels are held to a single scenario set by `ai_loop_channel_parity`, so a
+# tree that went stale here would make one engine's answers about a document
+# the others no longer generate from.
+echo "==> AI loop example Go tree"
+scripts/regen_ai_loop_go.sh
+
 # The committed Rust trees are generator output *as rustfmt leaves it*, not
 # as the emitter writes it. `backends/rust/tests` is a workspace member, so
 # `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —
