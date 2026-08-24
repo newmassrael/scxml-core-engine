@@ -204,9 +204,14 @@ PY
 # makes the lane prepare for one set and judge another — the asymmetry this
 # lane already paid for, and the reason a round is handed exactly one thing.
 
+# Re-aimed 2026-08-25: the weekly-clock commit replaced the bare
+# `${{ inputs.casefiles }}` with the expression that also answers for a
+# scheduled run, and this anchor kept naming the old spelling. It matched
+# nothing for five pushes, which `mutation-cases` reports as stale rather
+# than as a pass — the case's site moved, it was not deleted.
 mutation_case "the dispatch narrows nothing because the selection stops reading it" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
+     """        SCE_MUTATION_ROUNDS: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (inputs.casefiles != '' && inputs.casefiles || 'all') || '' }}
       run: |
         set -euo pipefail""",
      """      run: |
