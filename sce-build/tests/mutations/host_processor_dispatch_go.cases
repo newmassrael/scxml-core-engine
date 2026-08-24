@@ -95,8 +95,29 @@ edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
      "{% if false and state.invokes | host_invoker %}")
 PY
 
+# ⚠ TWO edits, and the second is the one that does anything.
+#
+# This case SURVIVED from the round that wrote it until 2026-08-24, and the
+# reason is worth keeping: the refusal block's GUARD and its LOOP read the same
+# filter. Widening the guard alone opens a block whose loop then iterates the
+# same empty list, so the emitted machine is byte-identical and no oracle can
+# fail. Measured, not reasoned: generating the invoker fixture with the guard
+# widened differed from the baseline in the `template-hash` header and in
+# nothing else.
+#
+# So the loop is widened too, which is what actually puts a host-served invoke
+# through the refusal body. Verified the same way: the emitted Go then carries
+# `<invoke type='x-sce-host'> names an external service this platform does not
+# support`, which is the exact string
+# `a_declared_invoker_changes_the_machine_on_every_backend` asserts is absent.
+#
+# ▶ The lesson generalises past this file: a mutation aimed at a Jinja `{% if %}`
+# whose body re-applies the same filter is a no-op. Aim at the loop.
 mutation_case "a declared invoke also takes the refusal arm" <<'PY'
 edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
      "{% if state.invokes | unsupported_refused %}",
      "{% if state.invokes | unsupported_refused or state.invokes | host_invoker %}")
+edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
+     "{% for invoke_info in state.invokes | unsupported_refused %}",
+     "{% for invoke_info in (state.invokes | unsupported_refused) + (state.invokes | host_invoker) %}")
 PY
