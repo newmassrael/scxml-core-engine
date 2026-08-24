@@ -58,10 +58,23 @@ PY
 # Half three. `$crate::log` is only a path if the runtime actually carries
 # the re-export; drop it and every consumer's build fails on a path into a
 # crate that no longer exposes it.
+#
+# ⚠ `pub(crate)` and not `use log as _;`, which is what this case said until
+# 2026-08-25 and why it was INCONCLUSIVE on every round that ever reached it.
+# The anonymous import links the crate without NAMING it, so `$crate::log`
+# stops resolving for the runtime's OWN macros too: measured, `E0433` ×36 out
+# of `sce_log_debug`, and rustc refuses the tree before a single test runs. A
+# mutation the compiler rejects says nothing about the gate — the comment
+# fifteen lines below says exactly that about a sibling case, which is how
+# this one slipped through.
+#
+# `pub(crate)` keeps the path resolvable inside the crate and removes it from
+# the public surface, which is the claim being made: a consumer naming
+# `sce_rust_runtime::log` no longer finds it.
 mutation_case "the runtime stops re-exporting log" <<'PY'
 edit("backends/rust/runtime/src/lib.rs",
      "pub use log;",
-     "use log as _;")
+     "pub(crate) use log;")
 PY
 
 # The gate reads emitted source; a scan of an empty string finds no bad
