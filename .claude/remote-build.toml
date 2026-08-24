@@ -56,7 +56,14 @@ exclude = ["/target", "/build", "/embed"]
 #   * `scripts/gates/w3c-python.sh` — it regenerates Python modules that are
 #     gitignored. Nothing local reads them except a local pytest run, and the
 #     gate runs its own.
-writes = ["scripts/regen_", "scripts/mutate"]
+#
+# `emit_embed_manifest.sh` and `package_embed.sh` joined the day after the key
+# did, and finding them is the argument for the key: `embed/MANIFEST.json` is
+# TRACKED — the gate calls it "the tracked snapshot of the embeddable public
+# API" — so a header added under `sce/include/` leaves it stale until one of
+# these re-emits it. Sent to a build machine, they re-emit the far side's copy
+# and the drift stays here.
+writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", "scripts/package_embed.sh"]
 
 # `node` is not optional: every BasicHTTP fixture in the Rust workspace
 # posts to localhost:8080, and without the echo server they route to their
