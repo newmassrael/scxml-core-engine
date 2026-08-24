@@ -104,7 +104,16 @@ jobs:
     # list. The list lived in two files and had to be edited in both;
     # `hook_ci_parity` compared them, which caught a divergence but only
     # after one had already been written. One spelling cannot diverge.
+    #
+    # `SCE_REQUIRE_TOOLS` because two of these targets reach for tooling that
+    # is not on `PATH` and degrade to a printed note without it. A note on a
+    # runner is invisible: the suite returns `ok` and the lane is green while
+    # the check it is named for never ran. The variable is this repository's
+    # word for "this lane claims its checks ran", and the job installs the
+    # binary directly above, so the claim is one it can keep.
     - name: Tree-wide hygiene gates
+      env:
+        SCE_REQUIRE_TOOLS: "1"
       run: scripts/gate tree-hygiene
 
     # Same arrangement, different alphabet. `sce-build/tests/mutations/*.cases`

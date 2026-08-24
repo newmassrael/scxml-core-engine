@@ -233,10 +233,29 @@ fn every_backend_runtime_citing_the_spec_is_inside_the_scan() {
 /// looking for a defect in their own tree — measured on this repository when a
 /// build machine lacked the binary and two contract tests reported that the
 /// gate "rejected a real citation".
+///
+/// That courtesy is for a developer's machine and stops at a lane that claims
+/// its checks ran. `SCE_REQUIRE_TOOLS` is this repository's word for that
+/// claim, and under it the absence is a hard failure: a skip is an unrun
+/// check, not a passing one, and this suite is invisible from the outside
+/// either way — it prints its note to stderr and returns `ok`.
 #[test]
 fn each_named_gap_still_has_the_cause_it_names() {
     let root = repo_root();
     let Some(bin) = pinned_mnemosyne_cli(&root) else {
+        assert!(
+            !sce_build::toolchain::tools_are_required(),
+            "SCE_REQUIRE_TOOLS is set, so this lane claims its checks ran — but \
+             no rev-pinned mnemosyne-cli is installed for the revision \
+             `.github/workflows/spec-citations.yml` names. Without it neither \
+             half runs: nothing reads which languages this build resolves and \
+             nothing reads which ones these ledgers bind, so the UNREACHED \
+             list ({} entr(ies)) is compared against nothing — including when \
+             it is empty, which is the claim that every runtime is reached. \
+             Run scripts/install_mnemosyne_cli.sh in this job, or point \
+             MNEMOSYNE_BIN at the binary.",
+            UNREACHED.len()
+        );
         eprintln!(
             "unmeasured: no rev-pinned mnemosyne-cli for the revision \
              `.github/workflows/spec-citations.yml` names. Install it, or point \
