@@ -1,0 +1,76 @@
+# Mutation cases for the reverse of the state-name table on the Rust AOT path.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/state_name_reads_back_rust.cases`.
+#
+# `StatePolicy::get_state_name` has published a state's id since the trait
+# existed; `get_state_from_name` is the inverse, and it is what lets a
+# configuration cross a process. A host records NAMES — a journal, a wire, a
+# file — while `Engine::enter_at` takes a `StateChain<Self::State>`. Measured
+# 2026-08-24 on `baee920f0b`: the reverse did not exist, so the door could be
+# called and its argument could not be built, and a supervisor coming back had
+# to `initialize()` instead — which re-runs `<onentry>` and re-sends the prompt
+# `priming` performs.
+#
+# The three cases attack the three ways a reverse table can be wrong while
+# still compiling: a name that is missing, a name answered with the wrong
+# state, and an unknown name guessed at rather than refused. The third is the
+# one with no other witness — a table that guesses turns "this run has no
+# history" into "this run was somewhere else", and a resume is the one
+# operation where being nearly right is worse than failing outright.
+#
+# The committed tree is the target rather than the template, for the reason
+# `ai_loop_host_contract_rust.cases` records: the template is not compiled into
+# this binary, so an edit there leaves every artifact hash unchanged and the
+# round is reported INCONCLUSIVE. `scripts/regen_ai_loop.sh` rewrites that file
+# from `examples/ai_loop/ai_loop.scxml`, so an anchor moved by a document edit
+# is reported INCONCLUSIVE with the anchor quoted rather than as a pass.
+
+mutation_tests -p sce-rust-tests --test ai_loop
+mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
+
+# ── A state the document has drops out of the reverse table ─────────
+#
+# The arm the run's own configuration needs. `working` is where the cycle sits
+# for most of a run, so a journal taken mid-run names it and the read back
+# answers `None`: the host holds a record it cannot use, and the only honest
+# thing left is to start over. That is the whole gap, expressed as one line.
+#
+# `a_run_journalled_as_names_resumes_where_it_stopped` is the assertion written
+# for this one, and it names the state in its panic rather than unwrapping.
+
+mutation_case "a state the document has drops out of the reverse table" <<'PY'
+edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+     '            "working" => Some(AiLoopState::Working),\n',
+     '')
+PY
+
+# ── …or is in it, pointing at a different state ─────────────────────
+#
+# Both directions still answer and the round trip stops being an identity. A
+# resume then lands in a configuration the run was never in, which `enter_at`
+# accepts because it IS a configuration of this document — the rejection that
+# door offers cannot see this one.
+#
+# `every_state_a_run_reaches_reads_back_from_its_own_name` walks the states the
+# scenarios actually stand in, so `paused` is reached rather than assumed.
+
+mutation_case "a name reads back as a different state" <<'PY'
+edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+     '            "paused" => Some(AiLoopState::Paused),',
+     '            "paused" => Some(AiLoopState::Working),')
+PY
+
+# ── …or an unknown name is guessed at instead of refused ────────────
+#
+# The fallback is the contract's other half: a name the document does not carry
+# is `None` rather than a state. A table that answers anyway turns a stale or
+# corrupt journal into a plausible-looking resume, and nothing downstream can
+# tell it from a real one. The anchor carries the last arm so it names the
+# state table's fallback rather than the event table's.
+
+mutation_case "an unknown name is guessed at rather than refused" <<'PY'
+edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+     '            "working" => Some(AiLoopState::Working),\n            _ => None,',
+     '            "working" => Some(AiLoopState::Working),\n            _ => Some(AiLoopState::Run),')
+PY

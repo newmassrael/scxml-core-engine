@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 082e347ab97b9b491598f98d263b24d185e7e030b1c1600c8a0939850d86f8db
+// template-hash: 2a328c6a2c55f2d381ea947b66337ce444ad937a90838cfa9cbdecc92a89b987
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -304,6 +304,17 @@ impl StatePolicy for Test192SceSynthInvokeInvokedChildPolicy {
         match state {
             Test192SceSynthInvokeInvokedChildState::Sub0 => "sub0",
             Test192SceSynthInvokeInvokedChildState::SubFinal => "subFinal",
+        }
+    }
+
+    // The inverse of the table above, emitted from the same loop over the
+    // document's states so the two age together. It is what lets a host turn a
+    // recorded configuration back into the `StateChain` `enter_at` takes.
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "sub0" => Some(Test192SceSynthInvokeInvokedChildState::Sub0),
+            "subFinal" => Some(Test192SceSynthInvokeInvokedChildState::SubFinal),
+            _ => None,
         }
     }
 

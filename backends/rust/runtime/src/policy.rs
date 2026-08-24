@@ -271,6 +271,33 @@ pub trait StatePolicy: Sized + 'static {
     /// C++ `StateNamingPolicy` concept in `sce/include/core/StatePolicyConcepts.h`.
     fn get_state_name(state: Self::State) -> &'static str;
 
+    /// Reverse lookup: `Some(state)` if `name` matches a known state, else `None`.
+    ///
+    /// Required (no default) for the reason `get_state_name` is: the mapping is
+    /// structural, and a default could only ever answer `None`. A policy that
+    /// had not emitted the table would then report every recorded configuration
+    /// as unknown — which a caller reads as "this run has no history" rather
+    /// than as a policy that is incomplete. Mirrors `get_event_from_name`,
+    /// which is required for the same reason on the event side.
+    ///
+    /// This is what lets a configuration cross a process. A host can only
+    /// record state *names* — a journal, a wire, a file — while
+    /// [`Engine::enter_at`](crate::Engine::enter_at) takes a
+    /// [`StateChain`] of `Self::State`. (Bare label: `StateChain` is imported
+    /// above, so an explicit target is redundant and `rustdoc-links` rejects
+    /// it — the sibling link on `get_initial_children` carries generics in its
+    /// label, which is why that one still names its path.)
+    /// Without the reverse, a recorded configuration cannot be turned back into
+    /// the argument that door asks for and resuming degrades to replaying from
+    /// the initial state. A consumer-side table would age silently the moment
+    /// the document gained a state; only the generator writes one that ages
+    /// with the document.
+    ///
+    /// The round trip is an identity: `get_state_from_name(get_state_name(s))`
+    /// is `Some(s)` for every state of the document, and a name the document
+    /// does not carry is `None` rather than a guess.
+    fn get_state_from_name(name: &str) -> Option<Self::State>;
+
     /// Sentinel event value for eventless transition dispatch (§scxml-3.13).
     ///
     /// Generated code produces an `Event::Null` variant. The engine passes this

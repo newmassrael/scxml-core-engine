@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 082e347ab97b9b491598f98d263b24d185e7e030b1c1600c8a0939850d86f8db
+// template-hash: 2a328c6a2c55f2d381ea947b66337ce444ad937a90838cfa9cbdecc92a89b987
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -384,6 +384,25 @@ impl StatePolicy for Test404Policy {
             Test404State::S03 => "s03",
             Test404State::S04 => "s04",
             Test404State::S05 => "s05",
+        }
+    }
+
+    // The inverse of the table above, emitted from the same loop over the
+    // document's states so the two age together. It is what lets a host turn a
+    // recorded configuration back into the `StateChain` `enter_at` takes.
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "fail" => Some(Test404State::Fail),
+            "pass" => Some(Test404State::Pass),
+            "s0" => Some(Test404State::S0),
+            "s01p" => Some(Test404State::S01p),
+            "s01p1" => Some(Test404State::S01p1),
+            "s01p2" => Some(Test404State::S01p2),
+            "s02" => Some(Test404State::S02),
+            "s03" => Some(Test404State::S03),
+            "s04" => Some(Test404State::S04),
+            "s05" => Some(Test404State::S05),
+            _ => None,
         }
     }
 

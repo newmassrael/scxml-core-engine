@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 082e347ab97b9b491598f98d263b24d185e7e030b1c1600c8a0939850d86f8db
+// template-hash: 2a328c6a2c55f2d381ea947b66337ce444ad937a90838cfa9cbdecc92a89b987
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -465,6 +465,44 @@ impl StatePolicy for Test364Policy {
             Test364State::S3112 => "s3112",
             Test364State::S312 => "s312",
             Test364State::S32 => "s32",
+        }
+    }
+
+    // The inverse of the table above, emitted from the same loop over the
+    // document's states so the two age together. It is what lets a host turn a
+    // recorded configuration back into the `StateChain` `enter_at` takes.
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "fail" => Some(Test364State::Fail),
+            "pass" => Some(Test364State::Pass),
+            "s1" => Some(Test364State::S1),
+            "s11" => Some(Test364State::S11),
+            "s111" => Some(Test364State::S111),
+            "s11p1" => Some(Test364State::S11p1),
+            "s11p11" => Some(Test364State::S11p11),
+            "s11p111" => Some(Test364State::S11p111),
+            "s11p112" => Some(Test364State::S11p112),
+            "s11p12" => Some(Test364State::S11p12),
+            "s11p121" => Some(Test364State::S11p121),
+            "s11p122" => Some(Test364State::S11p122),
+            "s2" => Some(Test364State::S2),
+            "s21" => Some(Test364State::S21),
+            "s211" => Some(Test364State::S211),
+            "s21p1" => Some(Test364State::S21p1),
+            "s21p11" => Some(Test364State::S21p11),
+            "s21p111" => Some(Test364State::S21p111),
+            "s21p112" => Some(Test364State::S21p112),
+            "s21p12" => Some(Test364State::S21p12),
+            "s21p121" => Some(Test364State::S21p121),
+            "s21p122" => Some(Test364State::S21p122),
+            "s3" => Some(Test364State::S3),
+            "s31" => Some(Test364State::S31),
+            "s311" => Some(Test364State::S311),
+            "s3111" => Some(Test364State::S3111),
+            "s3112" => Some(Test364State::S3112),
+            "s312" => Some(Test364State::S312),
+            "s32" => Some(Test364State::S32),
+            _ => None,
         }
     }
 

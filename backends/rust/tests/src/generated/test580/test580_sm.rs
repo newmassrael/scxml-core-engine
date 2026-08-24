@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 082e347ab97b9b491598f98d263b24d185e7e030b1c1600c8a0939850d86f8db
+// template-hash: 2a328c6a2c55f2d381ea947b66337ce444ad937a90838cfa9cbdecc92a89b987
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -646,6 +646,22 @@ impl StatePolicy for Test580Policy {
             Test580State::S1 => "s1",
             Test580State::S11 => "s11",
             Test580State::S12 => "s12",
+        }
+    }
+
+    // The inverse of the table above, emitted from the same loop over the
+    // document's states so the two age together. It is what lets a host turn a
+    // recorded configuration back into the `StateChain` `enter_at` takes.
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "fail" => Some(Test580State::Fail),
+            "p1" => Some(Test580State::P1),
+            "pass" => Some(Test580State::Pass),
+            "s0" => Some(Test580State::S0),
+            "s1" => Some(Test580State::S1),
+            "s11" => Some(Test580State::S11),
+            "s12" => Some(Test580State::S12),
+            _ => None,
         }
     }
 

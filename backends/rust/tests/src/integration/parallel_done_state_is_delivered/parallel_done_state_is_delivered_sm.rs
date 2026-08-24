@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4f209294ba851e9f433a2fd839fc088f718569422204e93318892b83dc408fac
-// template-hash: 082e347ab97b9b491598f98d263b24d185e7e030b1c1600c8a0939850d86f8db
+// template-hash: 2a328c6a2c55f2d381ea947b66337ce444ad937a90838cfa9cbdecc92a89b987
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -379,6 +379,23 @@ impl StatePolicy for ParallelDoneStateIsDeliveredPolicy {
             ParallelDoneStateIsDeliveredState::B2 => "b2",
             ParallelDoneStateIsDeliveredState::Run => "run",
             ParallelDoneStateIsDeliveredState::Settled => "settled",
+        }
+    }
+
+    // The inverse of the table above, emitted from the same loop over the
+    // document's states so the two age together. It is what lets a host turn a
+    // recorded configuration back into the `StateChain` `enter_at` takes.
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "a" => Some(ParallelDoneStateIsDeliveredState::A),
+            "a1" => Some(ParallelDoneStateIsDeliveredState::A1),
+            "a2" => Some(ParallelDoneStateIsDeliveredState::A2),
+            "b" => Some(ParallelDoneStateIsDeliveredState::B),
+            "b1" => Some(ParallelDoneStateIsDeliveredState::B1),
+            "b2" => Some(ParallelDoneStateIsDeliveredState::B2),
+            "run" => Some(ParallelDoneStateIsDeliveredState::Run),
+            "settled" => Some(ParallelDoneStateIsDeliveredState::Settled),
+            _ => None,
         }
     }
 

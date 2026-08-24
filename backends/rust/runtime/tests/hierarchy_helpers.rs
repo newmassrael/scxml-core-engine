@@ -130,6 +130,18 @@ impl StatePolicy for FakePolicy {
         }
     }
 
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "root" => Some(FakeState::Root),
+            "a" => Some(FakeState::A),
+            "a1" => Some(FakeState::A1),
+            "a2" => Some(FakeState::A2),
+            "b" => Some(FakeState::B),
+            "b1" => Some(FakeState::B1),
+            _ => None,
+        }
+    }
+
     fn null_event() -> Self::Event {
         FakeEvent::Null
     }

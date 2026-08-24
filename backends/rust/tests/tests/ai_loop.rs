@@ -27,7 +27,8 @@
 // Regeneration (after example or template edit):
 //   scripts/regen_ai_loop.sh
 
-use sce_rust_runtime::Engine;
+use sce_rust_runtime::helpers::hierarchy::{new_chain, push_chain, StateChain};
+use sce_rust_runtime::{Engine, StatePolicy};
 use sce_rust_tests::integration::ai_loop::{AiLoopEvent, AiLoopPolicy, AiLoopState};
 
 /// Engine DI Parity RFC (Path B+): the document's prompts and standing rules
@@ -922,5 +923,204 @@ fn a_failure_ends_the_whole_run() {
          to `failed` — a different outcome from `cancelled`, which is what tells a broken \
          run from a stopped one; active: {:?}",
         active(&e)
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// A run that outlived its process
+//
+// `Engine::enter_at` takes a `StateChain<AiLoopState>`, and nothing that
+// crosses a process boundary can carry one: a journal, a wire and a file all
+// carry STRINGS. `get_state_name` writes that record and `get_state_from_name`
+// reads it back, and until the second existed the door could be called and its
+// argument could not be built — a supervisor coming back had to `initialize()`
+// instead, which is a replay rather than a resume: `priming` performs its
+// prompt on entry, so the restored loop typed the first prompt again.
+//
+// A consumer-side table mapping the names it knows to variants would compile
+// and would age silently — the document gains a state, the table does not, the
+// name reads back as `None`, and the resume quietly becomes a fresh start.
+// Only the generator writes the half that ages with the document, which is why
+// these two scenarios drive a GENERATED policy rather than a hand-written one.
+// ══════════════════════════════════════════════════════════════════
+
+/// A machine wired the way [`engine`] wires one but NOT initialised, whose host
+/// handler records every act it is asked to perform.
+///
+/// `enter_at` is the other door, and driving both is exactly the replay these
+/// scenarios assert against — so the recorder is what turns "entry actions did
+/// not run" into something observable from outside the engine, the same way
+/// `the_document_declares_its_acts_to_the_host` reads them.
+fn recording_but_not_initialised(
+    acts: &std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) -> Engine<AiLoopPolicy> {
+    let recorder = std::sync::Arc::clone(acts);
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let mut e = Engine::new(AiLoopPolicy::new(script_engine));
+    e.register_event_processor(
+        "x-sce-host",
+        move |req: sce_rust_runtime::HostSendRequest| {
+            recorder
+                .lock()
+                .expect("handler log")
+                .push(req.event_name.clone());
+            Vec::new()
+        },
+    );
+    e
+}
+
+#[test]
+fn a_run_journalled_as_names_resumes_where_it_stopped() {
+    let mut ran = started();
+    turn(&mut ran);
+    turn(&mut ran);
+
+    // Everything a host can persist. Not a `StateChain`, not an enum: text.
+    let journal: Vec<String> = ran
+        .get_active_states()
+        .iter()
+        .map(|s| AiLoopPolicy::get_state_name(*s).to_string())
+        .collect();
+    let journalled_current = AiLoopPolicy::get_state_name(ran.get_current_state()).to_string();
+    assert!(
+        journal.contains(&"working".to_string()),
+        "the journal is meant to be taken mid-run, with the cycle at work; it reads {journal:?}"
+    );
+    drop(ran);
+
+    // A new process, holding nothing but those strings.
+    let mut configuration: StateChain<AiLoopState> = new_chain();
+    for name in &journal {
+        push_chain(
+            &mut configuration,
+            AiLoopPolicy::get_state_from_name(name).unwrap_or_else(|| {
+                panic!(
+                    "`{name}` is a name this policy published through `get_state_name` and it \
+                     did not read back, so a configuration cannot survive its own record"
+                )
+            }),
+        );
+    }
+    let current = AiLoopPolicy::get_state_from_name(&journalled_current).unwrap_or_else(|| {
+        panic!("the current state's own name `{journalled_current}` did not read back")
+    });
+
+    let acts = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut resumed = recording_but_not_initialised(&acts);
+    resumed
+        .enter_at(&configuration, current)
+        .expect("a configuration this document published is one it can be put back into");
+
+    assert_eq!(
+        resumed.get_active_states(),
+        configuration,
+        "the machine came back somewhere other than where the journal said it was"
+    );
+    assert_eq!(resumed.get_current_state(), current);
+    assert!(resumed.is_running());
+    let performed = acts.lock().expect("handler log");
+    assert!(
+        performed.is_empty(),
+        "resuming performed acts, which is the replay `enter_at` exists to avoid — a host \
+         would see the run's earlier prompts sent a second time; performed {performed:?}"
+    );
+}
+
+#[test]
+fn every_state_a_run_reaches_reads_back_from_its_own_name() {
+    let mut seen: Vec<AiLoopState> = Vec::new();
+    let mut record = |e: &Engine<AiLoopPolicy>| {
+        for s in e.get_active_states().iter() {
+            if !seen.contains(s) {
+                seen.push(*s);
+            }
+        }
+    };
+
+    // Every outcome the document names, walked rather than listed: a state is
+    // recorded here only because a run actually stood in it, and a written-out
+    // list of variants is the thing this method exists to replace.
+    let mut e = started();
+    record(&e);
+    for _ in 1..=60 {
+        if holds(&e, AiLoopState::Reflecting) {
+            record(&e);
+            step(&mut e, AiLoopEvent::ReflectApplied);
+            record(&e);
+            step(&mut e, AiLoopEvent::SessionReady);
+        }
+        if holds(&e, AiLoopState::Exhausted) {
+            break;
+        }
+        turn(&mut e);
+        record(&e);
+    }
+    record(&e);
+
+    let mut e = started();
+    step(&mut e, AiLoopEvent::TurnDone);
+    verdict(&mut e, true);
+    record(&e);
+    step(&mut e, AiLoopEvent::TurnDone);
+    record(&e);
+
+    let mut e = started();
+    step(&mut e, AiLoopEvent::TurnBlocked);
+    record(&e);
+    step(&mut e, AiLoopEvent::ScreenNone);
+    record(&e);
+    step(&mut e, AiLoopEvent::Unattended);
+    record(&e);
+
+    let mut e = started();
+    step(&mut e, AiLoopEvent::Hold);
+    record(&e);
+    step(&mut e, AiLoopEvent::Resume);
+    record(&e);
+
+    let mut e = started();
+    step(&mut e, AiLoopEvent::SessionLost);
+    record(&e);
+    step(&mut e, AiLoopEvent::SessionReady);
+    record(&e);
+
+    let mut e = started();
+    step(&mut e, AiLoopEvent::Cancel);
+    record(&e);
+
+    let mut e = started();
+    step(&mut e, AiLoopEvent::Fail);
+    record(&e);
+
+    // A floor, not a target: without one, a table that had lost every arm but
+    // the first would pass this by being asked about a single state.
+    assert!(
+        seen.len() >= 20,
+        "these scenarios are meant to stand in most of the document; they reached {} \
+         states: {seen:?}",
+        seen.len()
+    );
+
+    for state in &seen {
+        assert_eq!(
+            AiLoopPolicy::get_state_from_name(AiLoopPolicy::get_state_name(*state)),
+            Some(*state),
+            "`{}` did not read back as the state that published it",
+            AiLoopPolicy::get_state_name(*state)
+        );
+    }
+
+    // The other half of the contract: a name the document does not carry is
+    // refused rather than guessed at. A table that answers anyway turns a stale
+    // journal into a plausible-looking resume, which is the one outcome a host
+    // has no way to detect afterwards.
+    assert_eq!(AiLoopPolicy::get_state_from_name("no-such-state"), None);
+    assert_eq!(AiLoopPolicy::get_state_from_name(""), None);
+    assert_eq!(
+        AiLoopPolicy::get_state_from_name("turn.done"),
+        None,
+        "an event name is not a state name; the two tables are separate on purpose"
     );
 }
