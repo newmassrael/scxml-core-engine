@@ -141,6 +141,12 @@ scripts/regen_ai_loop_go.sh
 echo "==> AI loop example Kotlin tree"
 scripts/regen_ai_loop_kotlin.sh
 
+# The Python fourth. Same reason as the two above; named here because the
+# `generate-integration` fan-out enumerates `integration_resources/` stems and
+# this input is an example.
+echo "==> AI loop example Python tree"
+scripts/regen_ai_loop_python.sh
+
 # The committed Rust trees are generator output *as rustfmt leaves it*, not
 # as the emitter writes it. `backends/rust/tests` is a workspace member, so
 # `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —
