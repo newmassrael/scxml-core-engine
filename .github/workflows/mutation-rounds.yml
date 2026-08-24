@@ -78,8 +78,15 @@ on:
   # gate's own channel for a named subset, so this hands the dispatch to the
   # gate rather than adding a second way to select.
   #
-  # Empty means what a dispatch has always meant here: no range resolves, so
-  # the corpus runs whole.
+  # Empty means the whole corpus — and it is routed there BY NAME below, not
+  # left to fall through. This comment used to say "no range resolves, so the
+  # corpus runs whole", and that was measured false on 2026-08-24: an empty
+  # input reaches the gate as an empty `SCE_MUTATION_ROUNDS`, which is not a
+  # request for the corpus but the absence of one, and the gate answers it by
+  # deriving a range from the tracking ref — `0 of 84` at the tip of `main`.
+  # The promise in the input's own description was therefore a lie for as long
+  # as it had been written down, and a dispatch asking for everything quietly
+  # measured nothing.
   workflow_dispatch:
     inputs:
       casefiles:
@@ -208,17 +215,29 @@ jobs:
         # a string bash never expands, and the test that executes this step
         # would then be running something other than what CI runs.
         #
-        # ⚠ A scheduled run says `all` EXPLICITLY, and the reason is that the
-        # obvious shortcut is wrong. `schedule` is not `push`, so the step
-        # above leaves `base` empty and reports "no resolvable range" — from
-        # which it looks as though the gate would fall through to the whole
-        # corpus on its own. It does not: handed no change file, the gate
-        # derives a range from the tracking ref instead, and at the tip of
-        # `main` that range is empty. Measured on this repository, that path
-        # selects `0 of 84 casefile(s)`. A weekly lane that ran nothing and
-        # passed is precisely the absent verdict this trigger exists to end,
-        # so the corpus is asked for by name.
-        SCE_MUTATION_ROUNDS: ${{ github.event_name == 'schedule' && 'all' || inputs.casefiles }}
+        # ⚠ The two events that mean "everything" say `all` EXPLICITLY, and the
+        # reason is that the obvious shortcut is wrong. Neither `schedule` nor
+        # `workflow_dispatch` is `push`, so the step above leaves `base` empty
+        # and reports "no resolvable range" — from which it looks as though the
+        # gate would fall through to the whole corpus on its own. It does not:
+        # handed no change file, the gate derives a range from the tracking ref
+        # instead, and at the tip of `main` that range is empty. Measured on
+        # this repository, BOTH of those paths select `0 of 84 casefile(s)`. A
+        # weekly lane that ran nothing and passed is precisely the absent
+        # verdict the schedule exists to end, and a dispatch that ran nothing
+        # broke the promise its own input description makes.
+        #
+        # Reading the expression: a push or a pull request gets `''` and is
+        # selected by change set, as before. Otherwise a named subset wins, and
+        # an empty one becomes `all`. `inputs` is null on a scheduled run, and
+        # that is safe either way — `true && null` is falsy, so it falls to
+        # `'all'` exactly as an empty string does.
+        #
+        # One line, deliberately: `step_env` in `mutation_rounds_selection.rs`
+        # reads this mapping by splitting on the first `": "`, so a folded
+        # scalar would hand the test `>-` and it would be asserting about
+        # nothing.
+        SCE_MUTATION_ROUNDS: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (inputs.casefiles != '' && inputs.casefiles || 'all') || '' }}
       run: |
         set -euo pipefail
         # Through the runner, like the run step below: one spelling for the
