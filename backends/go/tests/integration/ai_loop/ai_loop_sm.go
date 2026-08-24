@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9e85e11997494073a40bf661d9f24e2bc472fad7b57e93e3c87932bf8615ff0f
-// template-hash: 401d2ad22cf222caeef0633edc48b3c3fd2090ab46bb9a2c354f5be833096227
+// template-hash: 580f12cd61336d7449660775c4fcc4f615ee3c32bffa0e9792363e260aed93e2
 // generated-at: 0
 
 
@@ -2048,7 +2048,7 @@ func (p *AiLoopPolicy) tryCollectTransition(checkState AiLoopState, event AiLoop
 				target:          AiLoopStatePaused,
 				transitionIndex: 0,
 				hasActions:      false,
-				isInternal:      false,
+				isInternal:      true,
 				isTargetless:    false,
 			}
 		}
@@ -2059,7 +2059,7 @@ func (p *AiLoopPolicy) tryCollectTransition(checkState AiLoopState, event AiLoop
 				target:          AiLoopStatePaused,
 				transitionIndex: 1,
 				hasActions:      false,
-				isInternal:      false,
+				isInternal:      true,
 				isTargetless:    false,
 			}
 		}
@@ -2070,7 +2070,7 @@ func (p *AiLoopPolicy) tryCollectTransition(checkState AiLoopState, event AiLoop
 				target:          AiLoopStateRestarting,
 				transitionIndex: 2,
 				hasActions:      false,
-				isInternal:      false,
+				isInternal:      true,
 				isTargetless:    false,
 			}
 		}
@@ -2400,7 +2400,7 @@ func (p *AiLoopPolicy) tryTransitionInState(checkState AiLoopState, event AiLoop
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventHold {
 			*currentState = AiLoopStatePaused
-			p.lastTransitionIsInternal = false
+			p.lastTransitionIsInternal = true
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = AiLoopStateDrive
 			p.lastTransitionIndex = 0
@@ -2410,7 +2410,7 @@ func (p *AiLoopPolicy) tryTransitionInState(checkState AiLoopState, event AiLoop
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnInterrupted {
 			*currentState = AiLoopStatePaused
-			p.lastTransitionIsInternal = false
+			p.lastTransitionIsInternal = true
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = AiLoopStateDrive
 			p.lastTransitionIndex = 1
@@ -2420,7 +2420,7 @@ func (p *AiLoopPolicy) tryTransitionInState(checkState AiLoopState, event AiLoop
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventSessionLost {
 			*currentState = AiLoopStateRestarting
-			p.lastTransitionIsInternal = false
+			p.lastTransitionIsInternal = true
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = AiLoopStateDrive
 			p.lastTransitionIndex = 2
@@ -2890,6 +2890,18 @@ func (p *AiLoopPolicy) selectOptimalTransitions(transitions []transitionInfo) []
 			t1Exits := p.computeExitSetForConflict(t1)
 			t2Exits := p.computeExitSetForConflict(t2)
 
+			// Appendix D removeConflictingTransitions: two transitions conflict
+			// when their EXIT SETS intersect, so a transition that exits nothing
+			// conflicts with nothing and can never be preempted. The two
+			// isTargetless guards below say this for the parallel-ancestor
+			// heuristics; stated once here it also covers the target/source
+			// heuristic, which reads a targetless transition as a self-transition
+			// on its own source and would otherwise preempt a live transition
+			// that merely shares that state.
+			if len(t1Exits) == 0 || len(t2Exits) == 0 {
+				continue
+			}
+
 			hasConflict := false
 			for _, s1 := range t1Exits {
 				for _, s2 := range t2Exits {
@@ -2973,7 +2985,17 @@ func (p *AiLoopPolicy) computeExitSetForConflict(t transitionInfo) []AiLoopState
 		return nil
 	}
 
-	// W3C SCXML 3.12: Find LCA of source and target by walking up from source
+	// Appendix D findLCCA: walk up from source for the lowest CANDIDATE ancestor
+	// that contains target. The candidates are the ones
+	// isCompoundStateOrScxmlElement admits, so a <parallel> is skipped — the same
+	// filter executeMicrostep applies, and it has to be the same one: this exit
+	// set is what conflict resolution intersects, so answering a <parallel> here
+	// made a region-root transition look non-conflicting with the sibling
+	// region's transition on the same event.
+	//
+	// If no candidate contains target (top-level siblings, or a region root's
+	// external transition whose only non-candidate ancestor is the <parallel>),
+	// lca stays nil and the walk runs to the root.
 	var lca *AiLoopState
 	current := t.source
 	for {
@@ -2981,7 +3003,8 @@ func (p *AiLoopPolicy) computeExitSetForConflict(t transitionInfo) []AiLoopState
 		if !hasParent {
 			break
 		}
-		if p.IsDescendantOf(t.target, parent) || t.target == parent {
+		isDomainCandidate := p.IsCompoundState(parent) && !p.IsParallelState(parent)
+		if isDomainCandidate && (p.IsDescendantOf(t.target, parent) || t.target == parent) {
 			lca = &parent
 			break
 		}
@@ -3028,9 +3051,23 @@ func (p *AiLoopPolicy) executeMicrostep(transitions []transitionInfo, currentSta
 			d := trans.source
 			domain = &d
 		} else {
+			// Appendix D findLCCA: the lowest ancestor of source that also
+			// contains target — among the CANDIDATES, which the procedure filters
+			// with isCompoundStateOrScxmlElement. A <parallel> is neither a
+			// compound <state> nor the <scxml> element, so it is never a
+			// transition domain.
+			//
+			// Taking the first common ancestor whatever its kind is findLCA, which
+			// the appendix distinguishes from this, and the difference is
+			// invisible until a <parallel> sits between the source and the first
+			// compound <state> above it — exactly a transition written on a REGION
+			// ROOT. Answering the <parallel> there left the other regions
+			// unexited: measured 2026-08-25 as a configuration holding BOTH
+			// children of the sibling region at once.
 			anc, hasAnc := p.GetParent(trans.source)
 			for hasAnc {
-				if p.IsDescendantOf(trans.target, anc) || trans.target == anc {
+				isDomainCandidate := p.IsCompoundState(anc) && !p.IsParallelState(anc)
+				if isDomainCandidate && (p.IsDescendantOf(trans.target, anc) || trans.target == anc) {
 					domain = &anc
 					break
 				}
