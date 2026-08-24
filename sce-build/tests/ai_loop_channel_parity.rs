@@ -93,6 +93,13 @@ struct Channel {
 /// document fixed, the Kotlin engine's own `InternalToTarget` branch turned out
 /// not to snapshot the configuration before exiting, so `<history>` recorded
 /// the run's position from one transition earlier.
+///
+/// The Python entry landed the same day and is the first that needed no repair:
+/// 27 of 27 on its first run. That is worth recording rather than passing over,
+/// because it is what the other four make measurable — this engine already
+/// leaves `_event.data` unbound for a payload-less event (the Go defect), keeps
+/// the terminal in the configuration (where Kotlin follows `exitInterpreter` and
+/// empties it), and takes both regions' transitions on the corrected document.
 const CHANNELS: &[Channel] = &[
     Channel {
         engine: "Rust AOT",
@@ -122,6 +129,13 @@ const CHANNELS: &[Channel] = &[
         generator: "scripts/regen_ai_loop_kotlin.sh",
         names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
     },
+    Channel {
+        engine: "Python AOT",
+        driver: "backends/python/tests/integration/ai_loop/test_ai_loop_aot.py",
+        scenario: r"def\s+test_(\w+)\s*\(",
+        generator: "scripts/regen_ai_loop_python.sh",
+        names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
+    },
 ];
 
 /// What every channel asserted when the pairing was last raised. A scanner
@@ -144,10 +158,10 @@ const SCENARIO_FLOOR: usize = 27;
 
 /// A registry holding one channel pairs with itself, and a registry holding
 /// none pairs vacuously — both would report agreement about a document nobody
-/// drives. Four is what the claim is worth today, and like `SCENARIO_FLOOR`
+/// drives. Five is what the claim is worth today, and like `SCENARIO_FLOOR`
 /// it is a ratchet: raise it when a channel lands, never lower it to
 /// accommodate one being dropped.
-const CHANNEL_FLOOR: usize = 4;
+const CHANNEL_FLOOR: usize = 5;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

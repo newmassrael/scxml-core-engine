@@ -64,6 +64,18 @@ sce_gate_step "generating the Python W3C and integration suites"
 # gitignored, and `generate-integration` does not reach it.
 "$SCE_REPO_ROOT/scripts/regen_native_action_python.sh" >/dev/null \
     || sce_gate_fail "Python native_action generation"
+# The AI supervision loop, and here for the same reason a fourth time: its input
+# is `examples/ai_loop/ai_loop.scxml`, a worked EXAMPLE rather than a stem under
+# `integration_resources/`, so the fan-out does not enumerate it and it needs a
+# per-stem `--host-processor` flag besides. Its test is tracked while its module
+# is gitignored, so a checkout running only the commands above has a test
+# importing a module nothing produced.
+#
+# `sce-build/tests/ai_loop_channel_parity.rs` holds this channel to the same 27
+# scenarios as the C++, Rust, Go and Kotlin ones, so a missing module here is
+# not a quiet gap: it is the one channel of five that could not answer.
+"$SCE_REPO_ROOT/scripts/regen_ai_loop_python.sh" >/dev/null \
+    || sce_gate_fail "Python ai_loop generation"
 
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
