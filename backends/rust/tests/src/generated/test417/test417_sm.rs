@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 082e347ab97b9b491598f98d263b24d185e7e030b1c1600c8a0939850d86f8db
+// template-hash: 2a328c6a2c55f2d381ea947b66337ce444ad937a90838cfa9cbdecc92a89b987
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -386,6 +386,25 @@ impl StatePolicy for Test417Policy {
             Test417State::S1p12 => "s1p12",
             Test417State::S1p121 => "s1p121",
             Test417State::S1p12final => "s1p12final",
+        }
+    }
+
+    // The inverse of the table above, emitted from the same loop over the
+    // document's states so the two age together. It is what lets a host turn a
+    // recorded configuration back into the `StateChain` `enter_at` takes.
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "fail" => Some(Test417State::Fail),
+            "pass" => Some(Test417State::Pass),
+            "s1" => Some(Test417State::S1),
+            "s1p1" => Some(Test417State::S1p1),
+            "s1p11" => Some(Test417State::S1p11),
+            "s1p111" => Some(Test417State::S1p111),
+            "s1p11final" => Some(Test417State::S1p11final),
+            "s1p12" => Some(Test417State::S1p12),
+            "s1p121" => Some(Test417State::S1p121),
+            "s1p12final" => Some(Test417State::S1p12final),
+            _ => None,
         }
     }
 

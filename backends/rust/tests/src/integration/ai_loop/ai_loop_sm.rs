@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 65fdec330b81544755a6389817fab34d8e574b0a205089b7220c9bd9302bdd70
-// template-hash: 082e347ab97b9b491598f98d263b24d185e7e030b1c1600c8a0939850d86f8db
+// template-hash: 2a328c6a2c55f2d381ea947b66337ce444ad937a90838cfa9cbdecc92a89b987
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -1376,6 +1376,40 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Watch => "watch",
             AiLoopState::Within => "within",
             AiLoopState::Working => "working",
+        }
+    }
+
+    // The inverse of the table above, emitted from the same loop over the
+    // document's states so the two age together. It is what lets a host turn a
+    // recorded configuration back into the `StateChain` `enter_at` takes.
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "abandoned" => Some(AiLoopState::Abandoned),
+            "alive" => Some(AiLoopState::Alive),
+            "blocked" => Some(AiLoopState::Blocked),
+            "budget" => Some(AiLoopState::Budget),
+            "cancelled" => Some(AiLoopState::Cancelled),
+            "closing" => Some(AiLoopState::Closing),
+            "converged" => Some(AiLoopState::Converged),
+            "drive" => Some(AiLoopState::Drive),
+            "exhausted" => Some(AiLoopState::Exhausted),
+            "failed" => Some(AiLoopState::Failed),
+            "judging" => Some(AiLoopState::Judging),
+            "paused" => Some(AiLoopState::Paused),
+            "priming" => Some(AiLoopState::Priming),
+            "rebuilding" => Some(AiLoopState::Rebuilding),
+            "reflecting" => Some(AiLoopState::Reflecting),
+            "reported" => Some(AiLoopState::Reported),
+            "restarting" => Some(AiLoopState::Restarting),
+            "run" => Some(AiLoopState::Run),
+            "running" => Some(AiLoopState::Running),
+            "screening" => Some(AiLoopState::Screening),
+            "spent" => Some(AiLoopState::Spent),
+            "stuck" => Some(AiLoopState::Stuck),
+            "watch" => Some(AiLoopState::Watch),
+            "within" => Some(AiLoopState::Within),
+            "working" => Some(AiLoopState::Working),
+            _ => None,
         }
     }
 
