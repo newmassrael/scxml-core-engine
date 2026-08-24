@@ -134,7 +134,16 @@ struct FlagFacts {
     flag: &'static str,
     reach: Reach,
     /// Arguments that exercise this flag, for the `Emission` probe.
-    /// `None` skips the probe and must say why in `why`.
+    ///
+    /// Two tokens are substituted by the probe, so a flag that needs a path
+    /// can be exercised without a static one that would write into the tree:
+    /// `{probe_dir}` becomes the run's scratch directory (which exists), and
+    /// `{probe_file}` a path inside it. A flag needing a file to READ names a
+    /// real one instead — `run` works from the repo root.
+    ///
+    /// `None` skips the probe and must say why in `why`. Only `--help` may
+    /// do so, and `an_emission_flag_does_not_move_a_verdict` pins that list
+    /// to exactly `--help` so a later flag cannot join it silently.
     probe: Option<&'static [&'static str]>,
     /// Backend the probe runs against — a prefix flag only reaches its
     /// own language's emitter.
@@ -207,10 +216,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
     f(
         "--emit-ast",
         Reach::Emission,
-        None,
+        Some(&["--emit-ast", "{probe_file}"]),
         "rust",
-        "writes the analyzed model to a path; probing it would assert a file \
-         appears, which is what `codegen_ast_envelope` already measures",
+        "writes the analyzed model to a FILE — `{probe_file}`, not \
+         `{probe_dir}`, and the first draft of this probe got that wrong. \
+         Handed a directory the command exits 20 (\"Is a directory\"), which \
+         the probe reported as the flag moving a verdict. The binding is \
+         called `emit_ast_dir` in `sce_codegen.rs`, so the name is what misled \
+         it. `codegen_ast_envelope` measures what lands there; this measures \
+         that asking for the emit does not move the verdict",
     ),
     f(
         "--error-format",
@@ -224,11 +238,12 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
     f(
         "--format-style",
         Reach::Emission,
-        None,
+        Some(&["--format-style", ".clang-format"]),
         "cpp",
-        "points at a `.clang-format` file for the C++ post-pass; probing needs \
-         a real style file on disk, and `--no-format` switches the same pass \
-         and is probed",
+        "points at a style file for the C++ post-pass. The probe names this \
+         repository's own `.clang-format` — `run` sets the working directory \
+         to the repo root, so a real style file is already on disk and the \
+         probe needs no fixture of its own",
     ),
     f(
         "--go-module-prefix",
@@ -316,10 +331,14 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
     f(
         "--output-dir",
         Reach::Emission,
-        None,
+        Some(&[]),
         "rust",
         "where artifacts are written; `check` writes nothing, which is its \
-         contract rather than a gap",
+         contract rather than a gap. The probe adds no argument BECAUSE the \
+         comparison already varies exactly this flag: the harness spells \
+         `--output-dir` for both runs and hands them different directories, \
+         so equal exit codes are the Emission claim for this flag and nothing \
+         else",
     ),
     f(
         "--parent-stem",
@@ -367,9 +386,11 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
     f(
         "--write-deps",
         Reach::Emission,
-        None,
+        Some(&["--write-deps", "{probe_file}"]),
         "rust",
-        "writes a CMake depfile; `codegen_depfile_content` measures it",
+        "writes a CMake depfile. `codegen_depfile_content` measures the \
+         file's content; this measures that asking for it does not move the \
+         verdict",
     ),
 ];
 
@@ -457,6 +478,24 @@ fn check_carries_every_verdict_bearing_generate_flag() {
 /// verdict. Every flag making it is asked to prove it.
 #[test]
 fn an_emission_flag_does_not_move_a_verdict() {
+    // The one Emission flag allowed to skip this probe, pinned as a list so a
+    // new `None` is a failure rather than a quiet subtraction from coverage.
+    // `--help` is clap's own: it prints and exits without reading a document,
+    // so there is no verdict to hold still. It gets its own probe instead —
+    // `the_help_flag_reads_no_document_and_writes_nothing`.
+    let unprobed: Vec<&str> = GENERATE_FLAGS
+        .iter()
+        .filter(|f| f.reach == Reach::Emission && f.probe.is_none())
+        .map(|f| f.flag)
+        .collect();
+    assert_eq!(
+        unprobed,
+        ["--help"],
+        "⚠ every Emission flag but `--help` must carry a probe. An Emission \
+         classification is a CLAIM that the flag cannot move a verdict, and an \
+         unprobed claim is the gap this test exists to close."
+    );
+
     let mut probed = 0;
     for facts in GENERATE_FLAGS.iter().filter(|f| f.reach == Reach::Emission) {
         let Some(extra) = facts.probe else { continue };
@@ -464,13 +503,27 @@ fn an_emission_flag_does_not_move_a_verdict() {
         let flag_out = ScratchDir::new("emit-flag");
         let base_dir = base_out.path();
         let flag_dir = flag_out.path();
+        // Substituted rather than static: a flag that must be handed a path
+        // would otherwise have to name one in the tree, and writing into the
+        // tree to measure it is what kept these five unprobed.
+        let probe_file = format!("{flag_dir}/probe.out");
+        let substituted: Vec<String> = extra
+            .iter()
+            .map(|arg| {
+                arg.replace("{probe_dir}", &flag_dir)
+                    .replace("{probe_file}", &probe_file)
+            })
+            .collect();
 
+        // The long form on purpose: spelling `-o` here would leave
+        // `--output-dir` — an Emission flag in its own right — exercised by
+        // nothing, which is how it came to be classified on trust.
         let baseline = run(&[
             "generate",
             HOST_FIXTURE,
             "-l",
             facts.probe_lang,
-            "-o",
+            "--output-dir",
             &base_dir,
         ]);
         let mut with: Vec<&str> = vec![
@@ -478,10 +531,10 @@ fn an_emission_flag_does_not_move_a_verdict() {
             HOST_FIXTURE,
             "-l",
             facts.probe_lang,
-            "-o",
+            "--output-dir",
             &flag_dir,
         ];
-        with.extend_from_slice(extra);
+        with.extend(substituted.iter().map(String::as_str));
         let flagged = run(&with);
 
         assert_eq!(
@@ -499,10 +552,74 @@ fn an_emission_flag_does_not_move_a_verdict() {
         );
         probed += 1;
     }
+    // Tied to the table rather than to a constant. A floor of "at least five"
+    // was what let five more sit unprobed underneath it: the number was
+    // satisfied while the coverage was not. Every Emission flag but the one
+    // pinned exception must have been probed by the loop above.
+    let emission = GENERATE_FLAGS
+        .iter()
+        .filter(|f| f.reach == Reach::Emission)
+        .count();
+    assert_eq!(
+        probed,
+        emission - 1,
+        "{probed} of {emission} emission flag(s) were probed (one exception is \
+         allowed, and it is `--help`); the rest are being taken on trust"
+    );
     assert!(
-        probed >= 5,
-        "only {probed} emission flag(s) were probed; the classification is \
-         being taken on trust"
+        emission > 1,
+        "the flag table came back with {emission} emission flag(s); the \
+         comparison above would hold vacuously"
+    );
+}
+
+/// `--help` is the one Emission flag with no verdict to hold still, so its
+/// claim is measured differently rather than not at all.
+///
+/// The claim an `Emission` classification makes is "changes only what is
+/// WRITTEN". For `--help` the honest reading is stronger — it writes nothing
+/// and reads nothing — and both halves are checkable:
+///
+///   * it succeeds with NO document argument, which every other `generate`
+///     invocation requires. That is what "reads no document" means
+///     operationally, and it is why the verdict comparison cannot be used
+///     here: there is no document for a verdict to be about.
+///   * handed an output directory as well, it leaves it empty.
+///
+/// The second half is the one that would catch a real regression: a `--help`
+/// that fell through to the codegen path would still exit 0 and still print
+/// usage, and only the untouched directory says it stopped.
+#[test]
+fn the_help_flag_reads_no_document_and_writes_nothing() {
+    let out_dir = ScratchDir::new("help-probe");
+    let dir = out_dir.path();
+
+    let helped = run(&["generate", "--help", "--output-dir", &dir]);
+    assert_eq!(
+        helped.code, 0,
+        "`generate --help` must succeed with no document argument — that is \
+         what makes it the one Emission flag no verdict comparison can reach: \
+         {}",
+        helped.stderr
+    );
+    assert!(
+        helped.stdout.contains("--output-dir"),
+        "`generate --help` did not render its own flag list, so this probe is \
+         measuring something other than help output:\n{}",
+        helped.stdout
+    );
+
+    let written: Vec<String> = std::fs::read_dir(&dir)
+        .expect("read the scratch dir")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        written.is_empty(),
+        "⚠ `generate --help` wrote {} entr(ies) into the output directory: \
+         {written:?}. Help is classified Emission on the grounds that it \
+         prints and exits; writing artifacts means it reached the codegen \
+         path, and the classification is wrong.",
+        written.len()
     );
 }
 
