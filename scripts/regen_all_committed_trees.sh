@@ -147,6 +147,15 @@ scripts/regen_ai_loop_kotlin.sh
 echo "==> AI loop example Python tree"
 scripts/regen_ai_loop_python.sh
 
+# Named here for the same reason the four above are, with a different cause:
+# the transition-domain witness document is not under `integration_resources/`
+# because a stem there is a seven-channel contract and the Go engine does not
+# yet meet this one. The `generate-integration` fan-out therefore never sees
+# it, and a tree this script does not know about is exactly the stale-artifact
+# shape the AI-loop entries were added to prevent.
+echo "==> Transition-domain witness Rust tree"
+scripts/regen_parallel_region_root_external_domain.sh
+
 # The committed Rust trees are generator output *as rustfmt leaves it*, not
 # as the emitter writes it. `backends/rust/tests` is a workspace member, so
 # `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —

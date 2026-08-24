@@ -14,13 +14,21 @@
 //! never touches it and adding or dropping an integration fixture is
 //! a single-line edit here.
 //!
-//! One entry does not come from there. `ai_loop` is generated from the
+//! Two entries do not come from there. `ai_loop` is generated from the
 //! worked example at `examples/ai_loop/ai_loop.scxml`, so that a document
 //! shipped as an example is asserted by two engines rather than one: the
 //! C++ driver next to it and `tests/ai_loop.rs` here.
 //! `integration_stem_registration` enumerates `integration_resources/` and
 //! so does not reach it — the example is not on the seven-channel contract,
 //! and its regen script says why.
+//!
+//! `parallel_region_root_external_domain` is the other, and it is outside for
+//! the opposite reason: it is a document the seven-channel contract would be
+//! premature for. It pins the Appendix D rule that a `<parallel>` is never a
+//! transition domain, and the Go, Python and C11 engines still resolve a
+//! region root's external transition to the enclosing `<parallel>`. Promoting
+//! the stem would register coverage this repository does not have; it moves
+//! under `integration_resources/` when those engines are repaired.
 
 pub mod ai_loop;
 pub mod ancestor_entry_is_not_default_entry;
@@ -50,6 +58,7 @@ pub mod native_action;
 pub mod nested_final_not_terminal;
 pub mod parallel_completion_raises_done_state;
 pub mod parallel_done_state_is_delivered;
+pub mod parallel_region_root_external_domain;
 pub mod parallel_regions_take_own_transitions;
 pub mod parallel_self_transition_keeps_its_leaf;
 pub mod send_namelist_over_http;
