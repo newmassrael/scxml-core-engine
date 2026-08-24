@@ -128,20 +128,102 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
 /// one outcome this seam must never produce.
 ///
 /// Asserted on the host's record rather than on the configuration, because the
-/// machine reaches `assembling` either way. Every other channel asks this same
-/// question against the same document; on this backend the release build
-/// compiles the `debug_assert!` away, so what is measured here is the arm the
-/// call site takes rather than the assertion firing.
+/// machine reaches `assembling` either way — the record is the half a
+/// configuration assertion cannot see. That record is also the ONE observable
+/// contract all six channels share: each of the other five asserts exactly it
+/// against this same document, because five of the six lower the untyped arm
+/// to a branch that simply is not taken.
+///
+/// The refusal and the proof that the site is live are asserted on ONE engine:
+/// the untyped delivery leaves the host untouched, then the SAME machine takes
+/// the SAME transition with a typed inject and does call it. An empty record
+/// is therefore the effect of the missing payload rather than the effect of a
+/// machine that never reached the call site — a check whose only discriminator
+/// is an absence reads a broken machine as a pass.
+///
+/// Compiled only where the record is reachable. This backend is the one of the
+/// six whose untyped arm is a `debug_assert!`, so a development build stops at
+/// the panic before any of this can be observed; there the same delivery is
+/// witnessed by `native_action_debug_build_asserts_on_a_missing_typed_payload`
+/// instead. The two are a partition, not a pair — each profile builds exactly
+/// one of them, and neither profile is left without a witness.
+#[cfg(not(debug_assertions))]
 #[test]
-#[should_panic(expected = "requires the typed payload of its triggering event")]
-fn native_action_refuses_to_fire_without_its_typed_payload() {
+fn native_action_does_not_fire_without_its_typed_payload() {
     let log = Rc::new(RefCell::new(Log::default()));
     let mut engine =
         sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(log.clone())));
     engine.initialize();
 
-    // No typed inject: the payload variant stays `None`, which is exactly what
+    // No typed inject: the payload variant stays unset, which is exactly what
     // a host that reached for `raise_external_by_name` would produce.
+    engine.raise_external_by_name("fragment.received", "");
+    engine.step();
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartNativeActionState::Assembling,
+        "an untyped fragment.received still takes the transition - its guard is the event name"
+    );
+    assert!(
+        log.borrow().appended.is_empty(),
+        "append_fragment_payload fired without a typed payload to read: {:?}",
+        log.borrow().appended
+    );
+    assert_eq!(
+        log.borrow().idle_entries,
+        1,
+        "the no-argument entry effect is unaffected by the missing payload"
+    );
+
+    // Lower bound, on the same engine: return to `idle` and deliver the event
+    // through its generated typed inject. The call site the untyped delivery
+    // skipped is now reached and fires, so the empty record above measures the
+    // missing payload and not an inert machine.
+    engine.raise_external_by_name("reset", "");
+    engine.step();
+    engine.raise_fragment_received(StatechartNativeActionFragmentReceivedPayload {
+        payload: ::sce_rust_runtime::SceBytes::from_slice(b"abc").unwrap(),
+        offset: 7,
+    });
+    engine.step();
+
+    assert_eq!(
+        log.borrow().appended,
+        vec![(b"abc".to_vec(), 7)],
+        "the same action site must fire once the typed payload is present"
+    );
+}
+
+/// Rust is the only one of the six backends that also says so LOUDLY: the arm
+/// an untyped delivery takes is a generated `debug_assert!`, so a development
+/// build turns the contract violation into a panic while a release build
+/// compiles it out and costs an MCU target nothing.
+///
+/// Gated on `debug_assertions` so it is ABSENT from a release sweep rather
+/// than silently passing there. Ungated, it asserts a panic the profile has
+/// already removed — a check built on a deficiency, which is why the release
+/// lane reported `test did not panic as expected` while the refusal itself was
+/// working. It still executes in CI: `rust-workspace-tests.yml` runs
+/// `cargo test --workspace` on the default profile precisely so assertions
+/// like this one are compiled in, and `hook_ci_parity` fails if either that
+/// lane or the hook stage it mirrors moves onto `--release`.
+///
+/// The expected message is what makes this a witness and not a smoke test: it
+/// pins the arm taken to the refusal arm rather than to any other panic on the
+/// path. Paired with `native_action_dispatches_typed_payload_to_host_trait`,
+/// which is compiled into both profiles, a development build still gets both
+/// halves of the seam — typed delivery reaches the host, untyped delivery
+/// takes the arm nobody wrote.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "requires the typed payload of its triggering event")]
+fn native_action_debug_build_asserts_on_a_missing_typed_payload() {
+    let log = Rc::new(RefCell::new(Log::default()));
+    let mut engine =
+        sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(log.clone())));
+    engine.initialize();
+
     engine.raise_external_by_name("fragment.received", "");
     engine.step();
 }
