@@ -2596,64 +2596,81 @@ mod tests {
         }
     }
 
-    // §scxml-G-7 `<sce:action>` lowers natively only on the Rust backend.
-    // Every other backend MUST refuse the construct with a clear
-    // `generate/unsupported-feature` diagnostic — silently dropping the effect
-    // (or crashing on a missing per-language action template) is exactly the
-    // failure these gates forbid. A no-argument action needs no schema, so the
-    // document parses without an `<sce:import>`.
+    // §scxml-G-7 `<sce:action>` is lowered by EVERY backend. A no-argument
+    // action needs no schema, so the document parses without an
+    // `<sce:import>`.
     const NATIVE_ACTION_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
   <state id="s"><transition event="e" target="s"><sce:action name="do_effect"/></transition></state>
 </scxml>"##;
 
-    fn assert_rejects_native_action(err: GenerateError, lang: &str) {
+    /// The five tests below asserted the OPPOSITE until 2026-08-24: that C++,
+    /// Kotlin, Go, Python and C11 each refused this document with
+    /// `generate/unsupported-feature`. That refusal was backend coverage
+    /// rather than a design constraint, and retiring it left five tests whose
+    /// whole subject was the gap — the shape that keeps reading as a pass
+    /// while measuring nothing.
+    ///
+    /// So they are re-aimed at what is still true at THIS layer. These
+    /// entry points are handed an EMPTY template list, so the furthest they
+    /// can get is template loading — and that is exactly the assertion: the
+    /// document reaches each backend's emitter, and whatever stops it there
+    /// is about a missing template, never about the construct. The positive
+    /// half, with real templates, is
+    /// `sce-build/tests/native_action_backend_parity.rs`.
+    fn assert_reaches_the_emitter(err: GenerateError, lang: &str) {
         match err {
-            GenerateError::UnsupportedFeature(msg) => {
-                assert!(msg.contains("sce:action"), "msg names the feature: {msg}");
-                assert!(msg.contains(lang), "msg names the language: {msg}");
-            }
-            other => panic!("expected UnsupportedFeature, got {other:?}"),
+            // Template loading is as far as an empty template list goes.
+            GenerateError::TemplateLoad(_) | GenerateError::TemplateRender(_) => {}
+            GenerateError::UnsupportedFeature(msg) if msg.contains("sce:action") => panic!(
+                "{lang} still refuses <sce:action> as an unsupported feature. That \
+                 backend-coverage refusal was retired when every backend grew a \
+                 native-action path; a refusal here means one of them lost it: {msg}"
+            ),
+            other => panic!(
+                "{lang}: expected to reach template loading, got {other:?} — the \
+                 document stopped somewhere before the emitter"
+            ),
         }
     }
 
     #[test]
-    fn cpp_generate_rejects_native_action() {
+    fn cpp_generate_reaches_the_emitter_for_a_native_action() {
         let model = parse(NATIVE_ACTION_SCXML);
         // `GeneratedOutput` is not `Debug`, so match rather than `unwrap_err`.
         match generate_cpp_with_templates(&model, &[], "fixture") {
-            Ok(_) => panic!("expected UnsupportedFeature, got Ok"),
-            Err(e) => assert_rejects_native_action(e, "C++"),
+            Ok(_) => panic!("an empty template list cannot produce output"),
+            Err(e) => assert_reaches_the_emitter(e, "C++"),
         }
     }
 
     #[test]
-    fn kotlin_generate_rejects_native_action() {
+    fn kotlin_generate_reaches_the_emitter_for_a_native_action() {
         let model = parse(NATIVE_ACTION_SCXML);
         let err = generate_kotlin_with_templates(&model, &[], None).unwrap_err();
-        assert_rejects_native_action(err, "Kotlin");
+        assert_reaches_the_emitter(err, "Kotlin");
     }
 
     #[test]
-    fn go_generate_rejects_native_action() {
+    fn go_generate_reaches_the_emitter_for_a_native_action() {
         let model = parse(NATIVE_ACTION_SCXML);
         let err = generate_go_with_templates(&model, &[]).unwrap_err();
-        assert_rejects_native_action(err, "Go");
+        assert_reaches_the_emitter(err, "Go");
     }
 
     #[test]
-    fn python_generate_rejects_native_action() {
+    fn python_generate_reaches_the_emitter_for_a_native_action() {
         let model = parse(NATIVE_ACTION_SCXML);
         let err = generate_python_with_templates(&model, &[]).unwrap_err();
-        assert_rejects_native_action(err, "Python");
+        assert_reaches_the_emitter(err, "Python");
     }
 
     #[test]
-    fn c11_generate_rejects_native_action() {
+    fn c11_generate_reaches_the_emitter_for_a_native_action() {
         let model = parse(NATIVE_ACTION_SCXML);
         match generate_c11_with_templates(&model, &[], "fixture") {
-            Ok(_) => panic!("expected UnsupportedFeature, got Ok"),
-            Err(e) => assert_rejects_native_action(e, "C11"),
+            Ok(_) => panic!("an empty template list cannot produce output"),
+            Err(e) => assert_reaches_the_emitter(e, "C11"),
         }
     }
 

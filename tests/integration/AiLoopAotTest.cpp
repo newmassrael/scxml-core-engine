@@ -807,10 +807,11 @@ TEST_F(AiLoopAotTest, AFailureEndsTheWholeRun) {
 
 // The sibling of `a_run_journalled_as_names_resumes_where_it_stopped`.
 //
-// A supervision loop outlives the process that runs it: the agent's session is
-// hours long and the thing driving it gets deployed, restarted and moved. So
-// the question this asks is the one a host actually has — can where the
-// machine WAS be written down as text, and can that text put it back?
+// A supervision loop outlives the process that runs it: the session it
+// supervises is hours long and the thing driving it gets deployed, restarted
+// and moved. So the question this asks is the one a host actually has — can
+// where the machine WAS be written down as text, and can that text put it
+// back?
 //
 // Text is the whole point. An enumerator is a build artefact of one binary and
 // the process that resumes is a different one, so the journal here is

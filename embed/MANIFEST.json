@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "baee920f0b",
+  "embed_version": "d6c90b7772",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 267,
+  "symbol_count": 271,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -440,6 +440,42 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::AOTEventQueue<T>"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "enum",
+      "name": "SCE::Core::ConfigurationRejection",
+      "values": [
+        "None",
+        "Empty",
+        "Duplicate",
+        "AncestorMissing",
+        "RootCount",
+        "CompoundChildCount",
+        "ParallelRegionMissing",
+        "ParallelChildCount",
+        "AtomicHasChildren",
+        "CurrentNotActive",
+        "CurrentNotAtomic"
+      ]
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::configurationRejectionText",
+      "signature": "const char * SCE::Core::configurationRejectionText(ConfigurationRejection) noexcept"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::constexprStrEq",
+      "signature": "bool SCE::Core::constexprStrEq(const char *, const char *) noexcept"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::validateConfiguration<T>",
+      "signature": "ConfigurationRejection SCE::Core::validateConfiguration<T>(const std::vector<typename Policy::State> &, typename Policy::State)"
     },
     {
       "header": "core/ConflictResolutionHelper.h",
