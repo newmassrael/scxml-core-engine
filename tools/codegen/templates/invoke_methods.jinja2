@@ -443,7 +443,7 @@
                         // failure would arrive.
                         engine.raise(typename Engine::EventWithMetadata(
                             Event::Error_execution,
-                            "Unsupported <invoke> type: {{ invoke_info.invoke_type }}"));
+                            "<invoke type='{{ invoke_info.invoke_type }}'> names an external service this platform does not support"));
                         return;
                     }
                     {% endfor %}

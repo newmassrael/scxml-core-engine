@@ -107,13 +107,19 @@
 {% endif %}
 {% if state.invokes | unsupported %}
                 // ============================================================
-                // W3C SCXML 6.4.1: UNSUPPORTED INVOKE TYPE
-                // The `type` names no processor this platform implements, so
-                // the spec's whole observable is one error.execution at
-                // invoke time. It still rides the defer queue rather than
-                // firing from onentry: §scxml-6.4 runs invokes after the
-                // macrostep settles, and skipping the queue would surface the
-                // error one microstep early. Cancellation needs no handling —
+                // W3C SCXML 6.4.1: INVOKE TYPE SCE DOES NOT IMPLEMENT NATIVELY
+                // `unsupported` is BOTH arms, not just the refused one, and
+                // saying otherwise here was wrong from the day host invokers
+                // landed: a type the host DECLARED dispatches to that host at
+                // macrostep end and starts real work, while a type nobody
+                // declared raises one error.execution and starts nothing.
+                // `unsupported_refused` / `host_invoker` partition this loop,
+                // and `execute_pending_invoke` is where they diverge.
+                //
+                // Both ride the defer queue rather than firing from onentry:
+                // §scxml-6.4 runs invokes after the macrostep settles, and
+                // skipping the queue would surface either outcome one
+                // microstep early. Cancellation needs no handling —
                 // `cancelInvokesForState` drops the pending entry if the
                 // state exits before the macrostep ends, which is exactly the
                 // W3C outcome (an invoke that never ran raises nothing).
@@ -122,7 +128,7 @@
                 std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
                 ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
                     PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
-                AOT_DEBUG("Deferred unsupported-type invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                AOT_DEBUG("Deferred {{ 'host-served' if invoke_info.host_served is defined and invoke_info.host_served else 'unsupported-type' }} invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
 {% endif %}
 {% if state.invokes | scxml %}

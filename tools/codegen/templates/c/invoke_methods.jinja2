@@ -207,7 +207,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                the internal queue and start nothing. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke> declares a type this processor does not support");
+                "<invoke type='{{ invoke_info.invoke_type | escape_c }}'> names an external service this platform does not support");
 {% endif %}
             continue;
         }

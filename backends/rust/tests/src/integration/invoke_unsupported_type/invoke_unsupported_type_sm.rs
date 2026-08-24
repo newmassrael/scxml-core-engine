@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: 18f91ed61fbcea991ce606d44d6910fe1df7095e74ca3c5a78065a37d763c7a4
+// template-hash: 4cbf0ce468f2db0011b4fa010e6c117357964548e492f95e76a21755c70778e3
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -191,10 +191,7 @@ impl InvokeUnsupportedTypePolicy {
                 // W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 // on the internal queue and start nothing. No child session,
                 // so no done.invoke follows and nothing is left to cancel.
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                    InvokeUnsupportedTypeEvent::ErrorExecution,
-                    "<invoke> declares a type this processor does not support",
-                ));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(InvokeUnsupportedTypeEvent::ErrorExecution, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support"));
                 continue;
             }
         }

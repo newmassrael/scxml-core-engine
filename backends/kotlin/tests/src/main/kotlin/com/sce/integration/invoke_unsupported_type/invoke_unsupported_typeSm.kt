@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: 18f91ed61fbcea991ce606d44d6910fe1df7095e74ca3c5a78065a37d763c7a4
+// template-hash: 4cbf0ce468f2db0011b4fa010e6c117357964548e492f95e76a21755c70778e3
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -125,7 +125,7 @@ class InvokeUnsupportedTypeStateMachine(
                 run {
                     val generatedInvokeId = "probe.${System.identityHashCode(this)}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
-                        raisePlatformError(InvokeUnsupportedTypeEvent.Error.Execution, "<invoke> declares a type this processor does not support")
+                        raisePlatformError(InvokeUnsupportedTypeEvent.Error.Execution, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support")
                     }
                 }
             }
