@@ -303,6 +303,10 @@ struct TransitionInfo {
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
 {{ event_payload_defs }}
 {% endif %}
+{% if has_native_actions %}
+// ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
+{{ native_actions_defs }}
+{% endif %}
 {# Policy class #}
 // State policy for {{ model.name }}
 {% if _has_tpl %}
@@ -459,6 +463,19 @@ struct {{ model.name }}Policy {
     // and read by the native transition guards (`pending<Event>Payload_.<field>`).
     // Mirrors the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 {{ event_payload_policy_members }}
+    {% endif %}
+    {% if has_native_actions %}
+    // W3C SCXML G.7: the host implementation every `<sce:action>` in this
+    // document calls directly (`actions_-><op>(…)`) instead of a script
+    // engine. A raw pointer to a host-owned object: the machine does not own
+    // the host, and the host outlives it. Set through the machine's
+    // constructor, which is the only way to build one — the initial state's
+    // `<onentry>` can already perform an act, so a setter would let a host
+    // arrive one act too late.
+    //
+    // `mutable` for the same reason the `pendingEvent*_` members are: the
+    // transition matcher reads the policy from a const method.
+    mutable {{ native_actions_interface }} *actions_ = nullptr;
     {% endif %}
     {% if model.needs_external_flag %}
     // W3C SCXML 6.2: Flag to mark next event as external (from send)
@@ -710,11 +727,21 @@ public:
     // zenoh MCU consumer is C11/Rust; this is the AP-side C++ parity.
 {{ event_payload_inject_methods }}
 {% endif %}
+{# W3C SCXML G.7: a document that declares `<sce:action>`s cannot run without
+   a host, and the initial state's `<onentry>` may already perform one — so the
+   host leads every constructor this class has rather than arriving through a
+   setter that could be called one act too late. Emitted into each of the three
+   branches below, which is what makes "no host" a compile error instead of a
+   null dereference at the first act. #}
 {% if model.context_objects or model.needs_parent_template %}
     explicit {{ model.name }}(
+        {%- if has_native_actions %}{{ native_actions_interface }}& actions, {% endif -%}
         {%- for ctx in model.context_objects %}{% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}& {{ ctx.id }}{{ ', ' if not loop.last or model.needs_parent_template }}{% endfor %}
         {%- if model.needs_parent_template %}ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = ""{% endif -%}
     ) {
+        {% if has_native_actions %}
+        this->policy_.actions_ = &actions;
+        {% endif %}
         {% for ctx in model.context_objects %}
         this->policy_.{{ ctx.id }}_ = &{{ ctx.id }};
         {% endfor %}
@@ -728,7 +755,12 @@ public:
         {% endif %}
     }
 {% elif model.invokes | scxml or model.invokes | hybrid or model.partition_parallel_roles %}
+    {% if has_native_actions %}
+    explicit {{ model.name }}({{ native_actions_interface }}& actions) {
+        this->policy_.actions_ = &actions;
+    {% else %}
     {{ model.name }}() {
+    {% endif %}
         {% if model.invokes | scxml or model.invokes | hybrid %}
         this->policy_.self_ = this;
         {% endif %}
@@ -767,6 +799,10 @@ public:
                 this->sendParallelRegionDone(parallel_id, region_id, donedata);
             });
 {% endif %}
+    }
+{% elif has_native_actions %}
+    explicit {{ model.name }}({{ native_actions_interface }}& actions) {
+        this->policy_.actions_ = &actions;
     }
 {% else %}
     {{ model.name }}() = default;

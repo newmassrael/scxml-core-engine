@@ -43,8 +43,9 @@
 use crate::filters;
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::event_schema_check::schema_is_native_payload_eligible;
-use crate::forge::generator::rust_param_type;
+use crate::forge::generator::host_param_type;
 use crate::forge::model::{EventSchemaModel, ForgeKind, SceType};
+use crate::generator::Language;
 use crate::model::{Action, SCXMLModel};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -388,37 +389,182 @@ fn validate_args(
     Ok(sig)
 }
 
-/// Rust-backend artifacts produced by [`render_rust`].
-pub struct RustNativeActions {
-    /// The full `pub trait <Machine>Actions { … }` definition, or empty
-    /// when the document declares no native actions.
-    pub trait_def: String,
-    /// `<Machine>Actions`, or empty when there are no native actions.
-    pub trait_name: String,
+/// Per-backend artifacts produced by [`render`].
+pub struct NativeActions {
+    /// The full host-interface definition — a Rust `trait`, a Go or Kotlin
+    /// `interface`, a C++ abstract struct, a Python `Protocol`, or a C11
+    /// function-pointer vtable — or empty when the document declares no
+    /// native actions.
+    pub interface_def: String,
+    /// The interface's name (`<Machine>Actions`, or `<machine>_actions_t` in
+    /// C11), or empty when there are no native actions.
+    pub interface_name: String,
     /// Events whose payload variant must exist because a native action reads
     /// one of their typed fields. Unioned into the payload-channel event set
-    /// by [`crate::forge::generator::build_rust_event_payload`].
+    /// by every `build_*_event_payload` in [`crate::forge::generator`].
     pub payload_events: BTreeSet<String>,
-    /// Whether any native action exists (drives the generic `Policy<A>`).
+    /// Whether any native action exists. Drives the host seam each backend
+    /// opens for it: Rust's generic `Policy<A>`, the constructor parameter the
+    /// other hosted backends take, the C11 `_init_with_actions` entry.
     pub any: bool,
+    /// Every operation the interface declares, in the target language's
+    /// spelling and sorted.
+    ///
+    /// The five hosted backends get their "the host supplied it" guarantee
+    /// from the type system — an unimplemented interface method does not
+    /// compile. C has no such check, so `_init_with_actions` walks this list
+    /// and refuses a vtable with a NULL member, which is the same guarantee
+    /// moved to the one call a C host has to make. Emitted rather than
+    /// re-derived in the template so the names cannot drift from the ones
+    /// [`build_interface`] declared.
+    pub operation_names: Vec<String>,
 }
+
+/// One host operation's signature: the ordered `(parameter name, declared
+/// type)` pairs its generated interface method takes.
+///
+/// The declared [`SceType`] is kept rather than a rendered per-language type
+/// string, because one `SceType` does not always map to one parameter — C11
+/// lowers `bytes` to a `const uint8_t *` plus its `size_t` length sibling, a
+/// pair no single type string can express. The per-language expansion happens
+/// once, at emit, in [`params_for`] and [`args_for`], which is also the one
+/// place their arities are kept equal.
+type Signature = Vec<(String, SceType)>;
 
 /// Per-transition payload context for lowering an arg-bearing `<sce:action>`.
 struct PayloadBinding<'a> {
-    /// Triggering event name (added to the payload-event union when the action
-    /// reads a typed field).
+    /// Triggering event name. Added to the payload-event union when the action
+    /// reads a typed field, and spelled per backend at emit — the payload
+    /// channel calls the same event `FragmentReceived` in Rust, Go, C++ and
+    /// Kotlin and `fragment_received` in C11 and Python.
     event: &'a str,
-    /// `to_event_variant(event)` — the payload-enum variant carrying the typed
-    /// fields the action reads.
-    variant: &'a str,
     /// The triggering event's imported EventSchema (guaranteed present for an
     /// arg-bearing action by [`validate`]).
     schema: Option<&'a EventSchemaModel>,
 }
 
-/// Lower every `<sce:action>` on `model` to its Rust call site, storing the
-/// rendered code on `Action::native_action_rendered`, and return the trait
-/// definition + payload-event union.
+/// The host-facing spelling of an operation name, in the target language's own
+/// convention.
+///
+/// `<sce:action name="…">` keeps the operation SYMBOLIC and language-neutral —
+/// that is the whole point of the construct — so each backend spells the same
+/// symbol the way a host author writing in that language would. Go's arm is
+/// not a style preference: a method the consumer package implements has to be
+/// EXPORTED, so the identifier must be upper-camel there or the interface
+/// cannot be implemented from outside the generated package at all.
+fn method_name(lang: Language, name: &str) -> String {
+    match lang {
+        Language::Rust | Language::Python | Language::C11 => {
+            filters::to_snake_case(name.to_string())
+        }
+        Language::Go => filters::to_pascal_case(name.to_string()),
+        Language::Cpp | Language::Kotlin => filters::to_camel_case(name.to_string()),
+    }
+}
+
+/// A parameter's identifier, in the target language's convention.
+fn param_ident(lang: Language, name: &str) -> String {
+    match lang {
+        Language::Rust | Language::Python | Language::C11 => {
+            filters::to_snake_case(name.to_string())
+        }
+        Language::Go | Language::Kotlin | Language::Cpp => filters::to_camel_case(name.to_string()),
+    }
+}
+
+/// How the emitted code reaches the host object carrying the operations.
+///
+/// Every backend already runs its executable content from ONE scope — a policy
+/// method in five of them, an `sm`-taking function in C11 — so this is that
+/// scope's spelling of the interface member rather than a new concept. The C11
+/// form is the struct member; its `user_data` companion is threaded separately
+/// by [`call`], because a function pointer has no receiver to bind it to.
+fn receiver(lang: Language) -> &'static str {
+    match lang {
+        Language::Rust => "self.actions.",
+        Language::Go => "p.actions.",
+        Language::Cpp => "actions_->",
+        Language::Kotlin => "actions.",
+        Language::Python => "self._actions.",
+        Language::C11 => "sm->actions.",
+    }
+}
+
+/// The statement calling host operation `name` with `args`, terminated the way
+/// the target language terminates a statement.
+///
+/// C11 passes `user_data` first: a function pointer carries no receiver, so the
+/// vtable hands the host its own state back on every call — C's answer to the
+/// `&mut self` the other five bind for free.
+fn call(lang: Language, name: &str, args: &[String]) -> String {
+    let method = method_name(lang, name);
+    let recv = receiver(lang);
+    let mut all: Vec<String> = Vec::new();
+    if matches!(lang, Language::C11) {
+        all.push("sm->actions.user_data".to_string());
+    }
+    all.extend(args.iter().cloned());
+    let joined = all.join(", ");
+    match lang {
+        Language::Rust | Language::Cpp | Language::C11 => format!("{recv}{method}({joined});"),
+        Language::Go | Language::Kotlin | Language::Python => format!("{recv}{method}({joined})"),
+    }
+}
+
+/// The parameter declarations one schema field contributes to a generated
+/// interface method.
+///
+/// Usually one; C11's `bytes` contributes TWO — the pointer and the length that
+/// make a byte run readable at all in C. Keeping that expansion here (and its
+/// mirror in [`args_for`]) is what lets the signature table stay in declared
+/// `SceType`s while each backend spells them its own way.
+fn params_for(lang: Language, pname: &str, ty: &SceType) -> Vec<String> {
+    let ident = param_ident(lang, pname);
+    match (lang, ty) {
+        (Language::C11, SceType::Bytes) => vec![
+            format!("const uint8_t *{ident}"),
+            format!("size_t {ident}_len"),
+        ],
+        (Language::Rust | Language::Kotlin | Language::Python, _) => {
+            vec![format!("{ident}: {}", host_param_type(lang, ty))]
+        }
+        (Language::Go, _) => vec![format!("{ident} {}", host_param_type(lang, ty))],
+        (Language::Cpp | Language::C11, _) => {
+            vec![format!("{} {ident}", host_param_type(lang, ty))]
+        }
+    }
+}
+
+/// The call arguments one schema field contributes, read off `accessor` — the
+/// backend's spelling of the bound typed payload. Mirrors [`params_for`]: the
+/// two must expand each `SceType` to the same arity, or the emitted call does
+/// not compile.
+fn args_for(lang: Language, accessor: &str, field: &str, ty: &SceType) -> Vec<String> {
+    match (lang, ty) {
+        (Language::C11, SceType::Bytes) => vec![
+            format!("{accessor}.{field}"),
+            format!("{accessor}.{field}_len"),
+        ],
+        // Rust's owned payload fields (`SceBytes<CAP>` / `SceString`) deref to
+        // `[u8]` / `str`, so a borrow is what the `&[u8]` / `&str` parameter
+        // takes.
+        (Language::Rust, SceType::String | SceType::Bytes) => vec![format!("&{accessor}.{field}")],
+        _ => vec![format!("{accessor}.{field}")],
+    }
+}
+
+/// The generated host interface's name: `<Machine>Actions` wherever a type is
+/// PascalCase, the `_t`-suffixed snake form C uses for a typedef.
+pub fn interface_name(lang: Language, machine_name: &str) -> String {
+    match lang {
+        Language::C11 => format!("{machine_name}_actions_t"),
+        _ => format!("{machine_name}Actions"),
+    }
+}
+
+/// Lower every `<sce:action>` on `model` to its `lang` call site, storing the
+/// rendered code on `Action::native_action_rendered`, and return the host
+/// interface definition + payload-event union.
 ///
 /// Visits both `<transition>` actions and eventless executable content
 /// (`<onentry>`/`<onexit>`/initial). Assumes [`validate`] already passed, so an
@@ -426,23 +572,25 @@ struct PayloadBinding<'a> {
 /// payload-eligible `_event.data.<field>` schema (the `expect`s in
 /// [`lower_native_call`] are therefore total). `model` is the per-backend
 /// codegen clone, never the parsed model.
-pub fn render_rust(model: &mut SCXMLModel, machine_name: &str) -> RustNativeActions {
-    let enum_name = format!("{machine_name}Payload");
-    let trait_name = format!("{machine_name}Actions");
+///
+/// `machine_name` is the caller's per-language machine token: the PascalCase
+/// stem for the five hosted backends (matching what their
+/// `build_*_event_payload` twins already use), the raw snake stem for C11.
+pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> NativeActions {
     let schemas = model.imported_event_schemas.clone();
 
     let mut payload_events: BTreeSet<String> = BTreeSet::new();
-    // Method signatures keyed by action name; the first occurrence defines the
-    // signature and `validate` has already proven every later occurrence agrees,
-    // so a single trait method serves every call site. A no-argument action (the
-    // only kind admissible in an eventless position) registers an empty
-    // signature, which still emits its `fn <name>(&mut self);` method.
-    let mut sigs: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    // Signatures keyed by action name; the first occurrence defines the
+    // signature and `validate` has already proven every later occurrence
+    // agrees, so a single interface method serves every call site. A
+    // no-argument action (the only kind admissible in an eventless position)
+    // registers an empty signature, which still emits its method.
+    let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
     let mut any = false;
 
     for state in model.states.values_mut() {
         // Eventless positions: every native action here is no-argument
-        // (enforced by `validate`), so it lowers to a bare host-trait call.
+        // (enforced by `validate`), so it lowers to a bare host call.
         let eventless = state
             .on_entry_blocks
             .iter_mut()
@@ -454,16 +602,21 @@ pub fn render_rust(model: &mut SCXMLModel, machine_name: &str) -> RustNativeActi
             if !is_native(action) {
                 continue;
             }
-            lower_native_call(action, None, &enum_name, &mut sigs, &mut payload_events);
+            lower_native_call(
+                action,
+                None,
+                machine_name,
+                lang,
+                &mut sigs,
+                &mut payload_events,
+            );
             any = true;
         }
 
         for transition in &mut state.transitions {
             let event = transition.event.clone();
-            let variant = filters::to_event_variant(event.clone());
             let binding = PayloadBinding {
                 event: &event,
-                variant: &variant,
                 schema: schemas.get(&event),
             };
             for action in &mut transition.actions {
@@ -473,7 +626,8 @@ pub fn render_rust(model: &mut SCXMLModel, machine_name: &str) -> RustNativeActi
                 lower_native_call(
                     action,
                     Some(&binding),
-                    &enum_name,
+                    machine_name,
+                    lang,
                     &mut sigs,
                     &mut payload_events,
                 );
@@ -482,41 +636,45 @@ pub fn render_rust(model: &mut SCXMLModel, machine_name: &str) -> RustNativeActi
         }
     }
 
-    let (trait_def, trait_name) = if any {
-        (build_trait(&trait_name, &sigs), trait_name)
+    let name = interface_name(lang, machine_name);
+    let operation_names: Vec<String> = sigs.keys().map(|n| method_name(lang, n)).collect();
+    let (interface_def, interface_name) = if any {
+        (build_interface(lang, &name, &sigs), name)
     } else {
         (String::new(), String::new())
     };
 
-    RustNativeActions {
-        trait_def,
-        trait_name,
+    NativeActions {
+        interface_def,
+        interface_name,
         payload_events,
         any,
+        operation_names,
     }
 }
 
-/// Lower one `<sce:action>` to its Rust call site (stored on
+/// Lower one `<sce:action>` to its `lang` call site (stored on
 /// `action.native_action_rendered`) and fold its signature into `sigs`.
 ///
 /// `binding` is `Some` only for a `<transition>` child, where the triggering
 /// event's typed payload is in scope; `None` for an eventless position
 /// (`<onentry>`/`<onexit>`/initial), where the action is necessarily
-/// no-argument. A no-argument action lowers to a bare `self.actions.<name>();`
-/// in either case; an arg-bearing one reads its values from the event's payload
-/// variant and is wrapped in a payload-match arm.
+/// no-argument. A no-argument action lowers to a bare host call in either
+/// case; an arg-bearing one reads its values from the event's typed payload
+/// and is wrapped in that backend's tag check.
 fn lower_native_call(
     action: &mut Action,
     binding: Option<&PayloadBinding>,
-    enum_name: &str,
-    sigs: &mut BTreeMap<String, Vec<(String, String)>>,
+    machine_name: &str,
+    lang: Language,
+    sigs: &mut BTreeMap<String, Signature>,
     payload_events: &mut BTreeSet<String>,
 ) {
     let name = action.native_action_name.clone();
 
     if action.params.is_empty() {
         sigs.entry(name.clone()).or_default();
-        action.native_action_rendered = format!("self.actions.{name}();");
+        action.native_action_rendered = call(lang, &name, &[]);
         return;
     }
 
@@ -527,8 +685,9 @@ fn lower_native_call(
         .schema
         .expect("validated: arg-bearing native action has a schema");
 
+    let accessor = payload_accessor(lang, binding.event);
     let mut call_args: Vec<String> = Vec::new();
-    let mut params: Vec<(String, String)> = Vec::new();
+    let mut params: Signature = Vec::new();
     for arg in &action.params {
         let field = arg_field(&arg.expr).expect("validated: bare _event.data field");
         let f = schema
@@ -536,55 +695,225 @@ fn lower_native_call(
             .iter()
             .find(|f| f.id == field)
             .expect("validated: field exists on schema");
-        let by_ref = matches!(f.sce_type, SceType::String | SceType::Bytes);
         let pname = if arg.name.is_empty() {
             field.to_string()
         } else {
             arg.name.clone()
         };
-        call_args.push(if by_ref {
-            format!("&ev.{field}")
-        } else {
-            format!("ev.{field}")
-        });
-        params.push((pname, rust_param_type(&f.sce_type)));
+        call_args.extend(args_for(lang, &accessor, field, &f.sce_type));
+        params.push((pname, f.sce_type.clone()));
     }
 
     payload_events.insert(binding.event.to_string());
     sigs.entry(name.clone()).or_insert(params);
 
-    // The typed arguments are read from the event's payload variant. An event
-    // raised by name (not via the generated typed inject) carries no payload
-    // variant and cannot supply them — a contract violation, NOT a silent skip:
-    // the `_` arm `debug_assert!`s so a debug/test build fails loudly, while a
-    // release build compiles it away (no MCU cost). This mirrors the typed-guard
-    // channel's documented default-payload contract.
-    let call = format!("self.actions.{}({});", name, call_args.join(", "));
-    let msg = format!(
-        "native action '{name}' requires the typed payload of its \
-         triggering event; raise the event via its generated typed inject"
-    );
-    let variant = binding.variant;
-    action.native_action_rendered = format!(
-        "match &self.pending_payload {{\n            \
-         {enum_name}::{variant}(ev) => {{ {call} }}\n            \
-         _ => debug_assert!(false, {msg:?}),\n        }}"
-    );
+    let stmt = call(lang, &name, &call_args);
+    action.native_action_rendered = guard_payload(lang, machine_name, binding.event, &name, &stmt);
 }
 
-fn build_trait(trait_name: &str, sigs: &BTreeMap<String, Vec<(String, String)>>) -> String {
-    let mut methods = String::new();
-    for (name, params) in sigs {
-        let plist: String = params.iter().map(|(n, t)| format!(", {n}: {t}")).collect();
-        methods.push_str(&format!("    fn {name}(&mut self{plist});\n"));
+/// The backend's spelling of the bound typed payload a native action reads its
+/// arguments from.
+///
+/// Each one is the SAME field the backend's `build_*_event_payload` twin
+/// already fills on the populate seam and reads in a native transition guard.
+/// The two channels read one payload, so a native action can never see a value
+/// a guard on the same event could not.
+fn payload_accessor(lang: Language, event: &str) -> String {
+    let variant = filters::to_event_variant(event.to_string());
+    match lang {
+        // Bound by the payload-sum `match` arm emitted around the call.
+        Language::Rust => "ev".to_string(),
+        Language::Go => format!("p.pending{variant}Payload"),
+        Language::Cpp => format!("pending{variant}Payload_"),
+        // Bound by the `?.let` / walrus binding emitted around the call.
+        Language::Kotlin => "it".to_string(),
+        Language::Python => "_p".to_string(),
+        Language::C11 => format!(
+            "sm->pending_payload.as.{}",
+            event.replace(['.', '-'], "_").to_lowercase()
+        ),
     }
-    format!(
-        "/// W3C SCXML G.7: host operations dispatched by `<sce:action>`.\n\
-         /// The generated `Policy` is generic over an implementation of this\n\
-         /// trait; the host supplies the side effects while the statechart keeps\n\
-         /// each operation symbolic. No runtime script engine is involved.\n\
-         pub trait {trait_name} {{\n{methods}}}\n"
-    )
+}
+
+/// Wrap `stmt` in the check that proves the bound typed payload is the one
+/// this action reads from.
+///
+/// An event raised by NAME (not through the generated typed inject) carries no
+/// payload and cannot supply the arguments — a contract violation, NOT a silent
+/// skip. Rust says so with a `debug_assert!` that a release build compiles away
+/// (no MCU cost); every other backend checks the same tag its own native guards
+/// check, so an untyped delivery takes the branch nobody wrote and the host is
+/// not handed a zeroed argument it would take for data. The per-backend
+/// channels assert both halves.
+fn guard_payload(
+    lang: Language,
+    machine_name: &str,
+    event: &str,
+    action_name: &str,
+    stmt: &str,
+) -> String {
+    let variant = filters::to_event_variant(event.to_string());
+    match lang {
+        Language::Rust => {
+            let enum_name = format!("{machine_name}Payload");
+            let msg = format!(
+                "native action '{action_name}' requires the typed payload of its \
+                 triggering event; raise the event via its generated typed inject"
+            );
+            format!(
+                "match &self.pending_payload {{\n            \
+                 {enum_name}::{variant}(ev) => {{ {stmt} }}\n            \
+                 _ => debug_assert!(false, {msg:?}),\n        }}"
+            )
+        }
+        Language::Go => format!(
+            "if p.pendingPayloadTag == {machine_name}PayloadTag{variant} {{\n\t\t{stmt}\n\t}}"
+        ),
+        Language::Cpp => format!(
+            "if (pendingPayloadTag_ == {machine_name}PayloadTag::{variant}) {{\n    {stmt}\n}}"
+        ),
+        Language::Kotlin => format!("pending{variant}Payload?.let {{ {stmt} }}"),
+        Language::Python => {
+            let snake = filters::to_snake_case(event.to_string());
+            format!("if (_p := self._pending_{snake}_payload) is not None: {stmt}")
+        }
+        Language::C11 => {
+            let upper = machine_name.to_uppercase();
+            let token = event.replace(['.', '-'], "_").to_uppercase();
+            format!("if (sm->pending_payload.tag == {upper}_PAYLOAD_{token}) {{\n    {stmt}\n}}")
+        }
+    }
+}
+
+/// Emit the host interface every `<sce:action>` in the document dispatches
+/// through, in the target language's own expression of "an interface".
+///
+/// The construct is engine-free BY DEFINITION, so each of these is a direct
+/// call surface rather than a registry lookup: a Rust trait bound on the
+/// policy, a Go or Kotlin interface, a C++ abstract base, a Python `Protocol`,
+/// a C11 struct of function pointers. Rust's is the only one that makes "the
+/// host supplied it" a compile-time fact for free; the other five take the
+/// interface where the machine is constructed, which puts the same guarantee
+/// at the one call every host has to make anyway.
+fn build_interface(
+    lang: Language,
+    interface_name: &str,
+    sigs: &BTreeMap<String, Signature>,
+) -> String {
+    const DOC: [&str; 3] = [
+        "W3C SCXML G.7: host operations dispatched by `<sce:action>`.",
+        "The host supplies the side effects while the statechart keeps each",
+        "operation symbolic. No runtime script engine is involved.",
+    ];
+    let doc = |prefix: &str| -> String {
+        DOC.iter()
+            .map(|l| format!("{prefix}{l}\n"))
+            .collect::<Vec<_>>()
+            .join("")
+    };
+    let plist = |sig: &Signature| -> Vec<String> {
+        sig.iter()
+            .flat_map(|(n, t)| params_for(lang, n, t))
+            .collect()
+    };
+
+    let mut methods = String::new();
+    match lang {
+        Language::Rust => {
+            for (name, sig) in sigs {
+                let params = plist(sig).join(", ");
+                let sep = if params.is_empty() { "" } else { ", " };
+                methods.push_str(&format!(
+                    "    fn {}(&mut self{sep}{params});\n",
+                    method_name(lang, name)
+                ));
+            }
+            format!(
+                "{}pub trait {interface_name} {{\n{methods}}}\n",
+                doc("/// ")
+            )
+        }
+        Language::Go => {
+            for (name, sig) in sigs {
+                methods.push_str(&format!(
+                    "\t{}({})\n",
+                    method_name(lang, name),
+                    plist(sig).join(", ")
+                ));
+            }
+            format!(
+                "{}type {interface_name} interface {{\n{methods}}}\n",
+                doc("// ")
+            )
+        }
+        Language::Kotlin => {
+            for (name, sig) in sigs {
+                methods.push_str(&format!(
+                    "    fun {}({})\n",
+                    method_name(lang, name),
+                    plist(sig).join(", ")
+                ));
+            }
+            format!(
+                "/**\n{} */\ninterface {interface_name} {{\n{methods}}}\n",
+                doc(" * ")
+            )
+        }
+        Language::Python => {
+            for (name, sig) in sigs {
+                let params = plist(sig).join(", ");
+                let sep = if params.is_empty() { "" } else { ", " };
+                methods.push_str(&format!(
+                    "    def {}(self{sep}{params}) -> None:\n        ...\n\n",
+                    method_name(lang, name)
+                ));
+            }
+            format!(
+                "class {interface_name}(Protocol):\n    \"\"\"\n{}    \"\"\"\n\n{methods}",
+                doc("    ")
+            )
+        }
+        Language::Cpp => {
+            for (name, sig) in sigs {
+                methods.push_str(&format!(
+                    "    virtual void {}({}) = 0;\n",
+                    method_name(lang, name),
+                    plist(sig).join(", ")
+                ));
+            }
+            format!(
+                "{}struct {interface_name} {{\n    virtual ~{interface_name}() = default;\n\
+                 {methods}}};\n",
+                doc("// ")
+            )
+        }
+        Language::C11 => {
+            // A struct of function pointers plus the `user_data` C needs to
+            // hand a host its own state back — the same shape the runtime's
+            // host-processor registry already uses, so a C host meets one
+            // convention rather than two.
+            for (name, sig) in sigs {
+                let mut params = vec!["void *user_data".to_string()];
+                params.extend(plist(sig));
+                methods.push_str(&format!(
+                    "    void (*{})({});\n",
+                    method_name(lang, name),
+                    params.join(", ")
+                ));
+            }
+            let tag = interface_name.trim_end_matches("_t");
+            format!(
+                "/*\n{}\n   Every member must be non-NULL before the machine runs: an unset\n   \
+                 operation is an act the document declared and nobody performs,\n   \
+                 which `_init_with_actions` refuses rather than discovers at the\n   \
+                 first entry action. */\ntypedef struct {tag} {{\n{methods}    \
+                 /* Handed back unchanged on every call — C's answer to the\n       \
+                 receiver the other backends bind. */\n    void *user_data;\n}} \
+                 {interface_name};\n",
+                doc("   ")
+            )
+        }
+    }
 }
 
 #[cfg(test)]

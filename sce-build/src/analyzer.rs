@@ -42,7 +42,11 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
         || model.has_parent_communication
         || model.has_parallel_states
         || model.uses_in_predicate
-        || !model.context_objects.is_empty();
+        || !model.context_objects.is_empty()
+        // §scxml-G-7: a native `<sce:action>` calls through the policy's own
+        // `actions_` member, so the C++ entry/exit block lambdas have to
+        // capture `this` to reach it.
+        || crate::forge::native_action::document_has_native_actions(model);
 
     // `executeEntryActions` must be non-static whenever its switch body
     // emits a reference to `this` or requires engine-bound state that the
@@ -53,6 +57,12 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     model.execute_entry_actions_needs_this = model.needs_script_engine
         || model.has_scxml_invoke()
         || model.has_mesh_rpc_invoke()
+        // §scxml-G-7: a native `<sce:action>` in an `<onentry>` block calls
+        // through the policy's own `actions_` member, which a static method
+        // cannot reach. This is exactly the clause this derivation exists for
+        // — the alternative is another negation threaded into the template's
+        // conditional, where the next feature would forget it.
+        || crate::forge::native_action::document_has_native_actions(model)
         // §scxml-6.4.1: the unsupported-type entry chain defers into
         // `pendingInvokes_` and stamps the invoke id from `this`.
         || model.has_unsupported_invoke()

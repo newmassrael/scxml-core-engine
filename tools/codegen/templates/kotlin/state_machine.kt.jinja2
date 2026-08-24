@@ -43,7 +43,25 @@ import com.sce.interpreter.ScxmlRuntimeInterpreter
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if has_native_actions %}
+// ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
+{{ native_actions_defs }}
+{% endif %}
 class {{ machine_name }}StateMachine(
+{% if has_native_actions %}
+    /**
+     * W3C SCXML G.7: the host implementation every `<sce:action>` in this
+     * document calls directly (`actions.<op>(…)`) instead of the script
+     * engine.
+     *
+     * A constructor parameter rather than a setter, because the initial
+     * state's `<onentry>` can already perform an act — a host installed
+     * afterwards would arrive one act too late. It leads the parameter list
+     * so it stays in the same position whether or not this machine also
+     * takes a script engine.
+     */
+    private val actions: {{ native_actions_interface }},
+{% endif %}
 {% for ctx in model.context_objects %}
     val {{ ctx.id | to_camel_case }}: {{ ctx.kt_type if ctx.kt_type else 'Any' }},
 {% endfor %}

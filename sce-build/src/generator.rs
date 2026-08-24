@@ -350,29 +350,29 @@ fn reject_mesh_rpc_in_unsupported_lang(
     )))
 }
 
-// §scxml-G-7 `<sce:action>`: native host-trait dispatch is currently
-// lowered only by the Rust backend. The other backends refuse the construct
-// here with an explicit `generate/unsupported-feature` diagnostic rather than
-// failing on a missing per-language action template (which would surface as an
-// opaque template-render error) or — worse — silently ignoring the effect.
-// The shared validation stage has already confirmed every native action sits
-// in a supported position (a <transition> child, or a no-argument action in
-// <onentry>/<onexit>/initial content), so this is purely a backend-coverage
-// refusal. `document_has_native_actions` scans those positions too.
-fn reject_native_actions_in_unsupported_lang(
-    model: &SCXMLModel,
-    language: &'static str,
-) -> Result<(), GenerateError> {
-    if !crate::forge::native_action::document_has_native_actions(model) {
-        return Ok(());
-    }
-    Err(GenerateError::UnsupportedFeature(format!(
-        "<sce:action> (W3C SCXML G.7 native host dispatch) in '{}' has no {} \
-         codegen path — native host-action lowering is currently Rust-only. \
-         Generate this machine for `--lang rust`.",
-        model.name, language
-    )))
-}
+// §scxml-G-7 `<sce:action>`: every backend (Rust, C++, C11, Kotlin, Go,
+// Python) now lowers a native host action to a direct call on a generated host
+// interface, so the former `reject_native_actions_in_unsupported_lang`
+// fail-fast gate is retired — no backend can reach codegen with an
+// un-lowerable `<sce:action>`.
+//
+// The refusal was never a design constraint. Validation had always been
+// language-neutral (placement, argument shape and cross-call-site signature
+// consistency are facts about the document), so the only thing missing was the
+// per-language emit — which is why the refusal's own comment called it "purely
+// a backend-coverage refusal". The typed-guard channel one node over had
+// already walked the same path from Rust-only to six backends and retired its
+// gate the same way.
+//
+// Removing it is the claim that a path exists, and a claim made by deleting
+// something has to be paid for elsewhere. Here that is
+// `sce-build/tests/native_action_backend_parity.rs` — which asserts that every
+// backend emits an interface, a host seam and a call site for the same
+// document, and that the arg-bearing call is guarded by that backend's typed
+// payload tag — plus the six runtime channels named on
+// `sce-build/tests/fixtures/event_schema/statechart_native_action.scxml`, each
+// driving a real host implementation and asserting the effects fired with the
+// typed arguments the event carried.
 
 // §scxml-6.2.5: a host-declared Event I/O Processor lowers to a
 // dispatch into a runtime registry, and a backend without one has
@@ -950,14 +950,15 @@ fn render_rust(
     // the document has no native actions every output below collapses to the
     // empty string, so the emitted code is byte-identical to the pre-feature
     // baseline (the generic `Policy<A>` never appears).
-    let native = crate::forge::native_action::render_rust(&mut model_lowered, &machine_name);
+    let native =
+        crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Rust);
     // `Engine<P: StatePolicy>` requires `P: 'static` (the runtime stores the
     // policy and erases lifetimes through it), so the host `Actions` type
     // parameter carries the same bound. A host impl is a plain owned type, so
     // `'static` is the expected, non-restrictive shape.
     let (policy_generics_decl, policy_generics_use) = if native.any {
         (
-            format!("<A: {} + 'static>", native.trait_name),
+            format!("<A: {} + 'static>", native.interface_name),
             "<A>".to_string(),
         )
     } else {
@@ -1026,7 +1027,8 @@ fn render_rust(
         event_payload_type => &payload.type_name,
         event_payload_entries => &payload.entries,
         has_native_actions => native.any,
-        native_actions_defs => &native.trait_def,
+        native_actions_defs => &native.interface_def,
+        native_actions_interface => &native.interface_name,
         policy_generics_decl => &policy_generics_decl,
         policy_generics_use => &policy_generics_use,
     };
@@ -1068,7 +1070,6 @@ fn render_cpp(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
-    reject_native_actions_in_unsupported_lang(model, "C++")?;
     // Neither host refusal here: the C++ AOT engine carries both registries
     // (`StaticExecutionEngine::registerEventProcessor` for §scxml-6.2.5 and
     // `registerInvoker` for §scxml-6.4.1), and the templates emit the `<send>`
@@ -1107,12 +1108,20 @@ fn render_cpp(
     // per-transition guards ride home on the transition's
     // `native_payload_guard` via a single-language clone (same SSOT guard
     // selection as every backend).
-    let payload = crate::forge::generator::build_cpp_event_payload(model);
     let mut model_lowered = model.clone();
     // Stamp each transition with the
     // symbol identity the sourcemap keys off, before any analysis pass
     // clones or serialises the transitions.
     symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
+    // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
+    // dispatch (engine-free) — same call every backend makes.
+    let native_machine_name = filters::to_pascal_case(model.name.clone());
+    let native = crate::forge::native_action::render(
+        &mut model_lowered,
+        &native_machine_name,
+        Language::Cpp,
+    );
+    let payload = crate::forge::generator::build_cpp_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let header_tmpl = env
@@ -1149,12 +1158,17 @@ fn render_cpp(
         event_payload_active => payload.active,
         event_payload_policy_members => &payload.policy_members,
         event_payload_inject_methods => &payload.inject_methods,
+        has_native_actions => native.any,
+        native_actions_defs => &native.interface_def,
+        native_actions_interface => &native.interface_name,
         cpp_ns_prefix => &cpp_ns_prefix,
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
+        has_native_actions => native.any,
+        native_actions_interface => &native.interface_name,
         // Mirrored from the .h context: the `.inl` carries no namespace of
         // its own, but its invoke/child-send bodies reference sibling
         // machines via `::SCE::Generated::<child>` and must carry the same
@@ -1219,7 +1233,6 @@ fn render_c11(
     c_symbol_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
-    reject_native_actions_in_unsupported_lang(model, "C11")?;
     // Neither host refusal here: the C11 backend carries
     // `sce_host_processor_registry_t` for §scxml-6.2.5 and
     // `sce_host_invoker_registry_t` + `sce_host_invocation_set_t` for
@@ -1260,12 +1273,18 @@ fn render_c11(
     // context; the per-transition guards ride home on the transition's
     // `native_payload_guard` via a single-language clone (same SSOT guard
     // selection as every backend).
-    let payload = crate::forge::generator::build_c11_event_payload(model);
     let mut model_lowered = model.clone();
     // Stamp each transition with the
     // symbol identity the sourcemap keys off, before any analysis pass
     // clones or serialises the transitions.
     symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
+    // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
+    // dispatch (engine-free). The C11 token is the raw snake stem — the same
+    // one `build_c11_event_payload` names its types after — not the PascalCase
+    // machine name the hosted backends use.
+    let native =
+        crate::forge::native_action::render(&mut model_lowered, &model.name, Language::C11);
+    let payload = crate::forge::generator::build_c11_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let header_tmpl = env
@@ -1300,6 +1319,10 @@ fn render_c11(
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
         event_payload_entry_decls => &payload.entry_decls,
+        has_native_actions => native.any,
+        native_actions_defs => &native.interface_def,
+        native_actions_interface => &native.interface_name,
+        native_action_ops => &native.operation_names,
         csym_prefix => &csym_prefix,
     };
     let source_ctx = minijinja::context! {
@@ -1309,6 +1332,9 @@ fn render_c11(
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
         event_payload_entry_defs => &payload.entry_defs,
+        has_native_actions => native.any,
+        native_actions_interface => &native.interface_name,
+        native_action_ops => &native.operation_names,
         csym_prefix => &csym_prefix,
     };
 
@@ -1338,7 +1364,6 @@ pub fn generate_kotlin(
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
-    reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
     // Neither host refusal here: the Kotlin runtime carries
     // `StateMachineEngine.registerEventProcessor` for §scxml-6.2.5 and
     // `registerInvoker` for §scxml-6.4.1, and the templates emit the `<send>`
@@ -1361,7 +1386,6 @@ pub fn generate_kotlin_with_templates(
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
-    reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
     // See `generate_kotlin` above: the Kotlin backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
@@ -1417,12 +1441,21 @@ fn render_kotlin(
     // per-transition guards ride home on the transition's
     // `native_payload_guard` via a single-language clone (same SSOT guard
     // selection as every backend).
-    let payload = crate::forge::generator::build_kotlin_event_payload(model);
     let mut model_lowered = model.clone();
     // Stamp each transition with the
     // symbol identity the sourcemap keys off, before any analysis pass
     // clones or serialises the transitions.
     symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
+    // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
+    // dispatch (engine-free) — same call every backend makes.
+    let native_machine_name = filters::to_pascal_case(model.name.clone());
+    let native = crate::forge::native_action::render(
+        &mut model_lowered,
+        &native_machine_name,
+        Language::Kotlin,
+    );
+    let payload =
+        crate::forge::generator::build_kotlin_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
     let model = &model_lowered;
 
@@ -1506,6 +1539,9 @@ fn render_kotlin(
         event_payload_policy_fields => &payload.policy_fields,
         event_payload_populate => &payload.populate,
         event_payload_inject => &payload.inject_methods,
+        has_native_actions => native.any,
+        native_actions_defs => &native.interface_def,
+        native_actions_interface => &native.interface_name,
     };
 
     let output = tmpl.render(ctx).map_err(render_error)?;
@@ -1518,7 +1554,6 @@ fn render_kotlin(
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
-    reject_native_actions_in_unsupported_lang(model, "Go")?;
     // Neither host refusal here any more: the Go runtime carries
     // `Engine.RegisterEventProcessor` for §scxml-6.2.5 and
     // `Engine.RegisterInvoker` for §scxml-6.4.1, and the templates emit the
@@ -1539,7 +1574,6 @@ pub fn generate_go_with_templates(
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
-    reject_native_actions_in_unsupported_lang(model, "Go")?;
     // See `generate_go` above: the Go backend carries both host registries.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
@@ -1564,7 +1598,6 @@ pub fn generate_go_with_templates(
 /// Generate Python code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
-    reject_native_actions_in_unsupported_lang(model, "Python")?;
     // Neither host refusal here: the Python runtime carries
     // `Engine.register_event_processor` for §scxml-6.2.5 and
     // `Engine.register_invoker` for §scxml-6.4.1, and the templates emit the
@@ -1584,7 +1617,6 @@ pub fn generate_python_with_templates(
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
-    reject_native_actions_in_unsupported_lang(model, "Python")?;
     // See `generate_python` above: the Python backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
@@ -1649,8 +1681,23 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
     // values outside the supported transport set (`#_…`, the `!`
     // sentinel, `http(s)://…`) are reject-walled below.
     fn check_actions(actions: &[crate::model::Action], context: &str) -> Result<(), GenerateError> {
+        // §scxml-G-7 `native_action` is on this list because the Python
+        // backend now lowers `<sce:action>` to a direct call on the generated
+        // `<Machine>Actions` Protocol — see `_actions.py.jinja2`'s dispatch
+        // arm. It is listed here rather than special-cased ahead of the walk
+        // because this list is what the walk consults, and a construct the
+        // emitter handles but the list omits is refused for a reason that
+        // stopped being true.
         const SUPPORTED_ACTIONS: &[&str] = &[
-            "script", "assign", "raise", "log", "if", "foreach", "send", "cancel",
+            "script",
+            "assign",
+            "raise",
+            "log",
+            "if",
+            "foreach",
+            "send",
+            "cancel",
+            "native_action",
         ];
         for action in actions {
             if !SUPPORTED_ACTIONS.contains(&action.action_type.as_str()) {
@@ -1756,12 +1803,17 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     // context; the per-transition guards ride home on the transition's
     // `native_payload_guard` via a single-language clone (same SSOT selection
     // as every backend).
-    let payload = crate::forge::generator::build_python_event_payload(model);
     let mut model_lowered = model.clone();
     // Stamp each transition with the
     // symbol identity the sourcemap keys off, before any analysis pass
     // clones or serialises the transitions.
     symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
+    // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
+    // dispatch (engine-free) — same call every backend makes.
+    let native =
+        crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Python);
+    let payload =
+        crate::forge::generator::build_python_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
     let model = &model_lowered;
 
@@ -1777,6 +1829,9 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         event_payload_init => &payload.init,
         event_payload_populate => &payload.populate,
         event_payload_inject => &payload.inject,
+        has_native_actions => native.any,
+        native_actions_defs => &native.interface_def,
+        native_actions_interface => &native.interface_name,
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -1807,12 +1862,20 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
     // per-machine defs ride in the render context; the per-transition guards
     // ride home on the transition's `native_payload_guard` via a
     // single-language clone (same SSOT guard selection as every backend).
-    let payload = crate::forge::generator::build_go_event_payload(model);
     let mut model_lowered = model.clone();
     // Stamp each transition with the
     // symbol identity the sourcemap keys off, before any analysis pass
     // clones or serialises the transitions.
     symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
+    // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
+    // dispatch (engine-free). Same call as every other backend makes — the
+    // rendered call site lands on each action, the interface and the
+    // payload-event union come back. Empty everywhere when the document has no
+    // native actions, so the emitted code is byte-identical to the
+    // pre-feature baseline.
+    let native =
+        crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Go);
+    let payload = crate::forge::generator::build_go_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
     let model = &model_lowered;
 
@@ -1830,6 +1893,9 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         event_payload_policy_fields => &payload.policy_fields,
         event_payload_populate => &payload.populate,
         event_payload_clear => &payload.clear,
+        has_native_actions => native.any,
+        native_actions_defs => &native.interface_def,
+        native_actions_interface => &native.interface_name,
     };
     tmpl.render(ctx).map_err(render_error)
 }

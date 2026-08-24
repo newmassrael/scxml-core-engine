@@ -106,11 +106,23 @@ func (e {{ machine_name }}Event) String() string {
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
 {{ event_payload_defs }}
 {% endif %}
+{% if has_native_actions %}
+// ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
+{{ native_actions_defs }}
+{% endif %}
 // ======================================================================
 // Policy struct
 // ======================================================================
 
 type {{ machine_name }}Policy struct {
+{% if has_native_actions %}
+	// W3C SCXML G.7: the host implementation every `<sce:action>` in the
+	// document calls directly (`p.actions.<Op>(…)`) instead of a runtime
+	// script engine. Taken at construction, because the initial state's
+	// `<onentry>` may already perform an act — a host installed afterwards
+	// would arrive one act too late.
+	actions {{ native_actions_interface }}
+{% endif %}
 {% if event_payload_active %}
 	// NL→IR Item C1 Path A: the current event's typed `_event.data` payload,
 	// lifted from the dequeued event by PopulateEventMetadata and read by the
@@ -208,9 +220,21 @@ type {{ machine_name }}Policy struct {
 }
 
 // New{{ machine_name }}Policy creates a new policy with default values.
+{% if has_native_actions %}
+//
+// W3C SCXML G.7: `actions` is the host implementation of every `<sce:action>`
+// this document declares. It is a parameter rather than a setter because the
+// initial state's `<onentry>` can already perform an act — this is the one
+// call every host has to make, so it is where the requirement belongs.
+func New{{ machine_name }}Policy(actions {{ native_actions_interface }}) {{ machine_name }}Policy {
+	return {{ machine_name }}Policy{
+		actions: actions,
+		lastTransitionSourceState: {{ machine_name }}State{{ model.initial_leaf | default(model.initial) | to_state_variant }},
+{% else %}
 func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 	return {{ machine_name }}Policy{
 		lastTransitionSourceState: {{ machine_name }}State{{ model.initial_leaf | default(model.initial) | to_state_variant }},
+{% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
 		activeStates: make([]{{ machine_name }}State, 0),
 {% endif %}

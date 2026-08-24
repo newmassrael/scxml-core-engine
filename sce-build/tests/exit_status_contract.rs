@@ -552,16 +552,25 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
         None,
     );
     // ── a backend that does not lower a construct the document uses ──
+    //
+    // The discriminator is a native `cond="cpp:…"`, which names the language
+    // it is written in and so can only ever be lowered by that one backend.
+    // It used to be `<sce:action>` on `-l cpp`, and that stopped discriminating
+    // the day every backend grew a native-action path (2026-08-24) — a test
+    // built on a gap retires itself when the gap closes, while still reading as
+    // a pass. This one cannot close the same way: a `cpp:` guard is C++ source,
+    // so "the other backends refuse it" is a property of the construct rather
+    // than of how much has been written yet.
     add(
         "generate/backend-cannot-lower",
         vec![
             s("check"),
             repo_root()
-                .join("sce-build/tests/fixtures/event_schema/statechart_native_action.scxml")
+                .join("examples/smart_light/smart_light.scxml")
                 .display()
                 .to_string(),
             s("-l"),
-            s("cpp"),
+            s("rust"),
         ],
         None,
     );
