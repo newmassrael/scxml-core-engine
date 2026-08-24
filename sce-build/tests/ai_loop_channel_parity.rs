@@ -80,6 +80,19 @@ struct Channel {
 /// `error.execution` — a supervising host could not tell "the verdict said no"
 /// from "the verdict never carried one". That is what a third channel is for,
 /// and it is why the registry exists rather than a pair of constants.
+///
+/// The Kotlin entry landed the same day and did it again, twice over. It was
+/// the first channel to resolve an external transition's domain the way
+/// §scxml-D-getTransitionDomain does — `findLCCA` filters ancestors to `<state>`
+/// and `<scxml>`, so a `<parallel>` is never a domain — and under that rule the
+/// document's own `<transition event="session.lost">`, written on a region root
+/// and left at the default `external` type, exited every region and preempted
+/// the liveness watch's answer to the same event. The document was ambiguous
+/// and the four engines had been reading it two ways; it now says
+/// `type="internal"`, which is what its comment always claimed. Then, with the
+/// document fixed, the Kotlin engine's own `InternalToTarget` branch turned out
+/// not to snapshot the configuration before exiting, so `<history>` recorded
+/// the run's position from one transition earlier.
 const CHANNELS: &[Channel] = &[
     Channel {
         engine: "Rust AOT",
@@ -100,6 +113,13 @@ const CHANNELS: &[Channel] = &[
         driver: "backends/go/tests/integration/ai_loop/ai_loop_test.go",
         scenario: r"func\s+Test(\w+)\(t \*testing\.T\)",
         generator: "scripts/regen_ai_loop_go.sh",
+        names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
+    },
+    Channel {
+        engine: "Kotlin AOT",
+        driver: "backends/kotlin/tests/src/test/kotlin/com/sce/integration/AiLoopTest.kt",
+        scenario: r"@Test\s+fun\s+(\w+)\s*\(",
+        generator: "scripts/regen_ai_loop_kotlin.sh",
         names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
     },
 ];
@@ -124,10 +144,10 @@ const SCENARIO_FLOOR: usize = 27;
 
 /// A registry holding one channel pairs with itself, and a registry holding
 /// none pairs vacuously — both would report agreement about a document nobody
-/// drives. Three is what the claim is worth today, and like `SCENARIO_FLOOR`
+/// drives. Four is what the claim is worth today, and like `SCENARIO_FLOOR`
 /// it is a ratchet: raise it when a channel lands, never lower it to
 /// accommodate one being dropped.
-const CHANNEL_FLOOR: usize = 3;
+const CHANNEL_FLOOR: usize = 4;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
