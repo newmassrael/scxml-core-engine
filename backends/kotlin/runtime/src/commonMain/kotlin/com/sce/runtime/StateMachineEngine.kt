@@ -3502,6 +3502,26 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 val target = result.target
                 val txSource = result.transitionSource
 
+                // §scxml-3.11: Capture active states before exit for history recording.
+                //
+                // The External branch above does this and this one did not, which
+                // is not a difference the clause makes: a `<history>` inside the
+                // exit set records what was active WHEN IT WAS EXITED, and an
+                // internal transition exits states exactly as an external one
+                // does. Generated `onExit` reads this field, so without the
+                // capture it read whatever the last EXTERNAL transition left
+                // there — the configuration from one transition ago, or nothing
+                // at all when no external transition had run yet.
+                //
+                // Measured 2026-08-25 on `examples/ai_loop/ai_loop.scxml`, whose
+                // `<history id="where">` restores the cycle after a hold: a hold
+                // taken in `working` resumed into `judging` (where the run had
+                // been one transition earlier) and a hold taken before the first
+                // prompt resumed into the history's DEFAULT, which is what a
+                // history that recorded nothing looks like. Both are silent —
+                // the machine comes back somewhere plausible.
+                preTransitionActiveStates = activeStateIds.toSet()
+
                 // §scxml-3.13: Exit active descendants of transitionSource (unified C++ pattern)
                 // Target is included in exit set (will be re-entered)
                 val statesToExit = mutableListOf<Pair<S, Int>>()
