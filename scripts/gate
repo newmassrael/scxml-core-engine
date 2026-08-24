@@ -129,7 +129,18 @@ fi
 # gives it. WHICH gates need submodules is derived from the workflows they
 # mirror, never typed — `tree-hygiene` checks out without them on purpose, so
 # a blanket refusal would be wrong. See the script's header.
-"$REPO_ROOT/scripts/lib/require_submodules.sh" "${ORDER[@]}"
+#
+# A DRY RUN is exempt, and that is the preflight's own logic rather than an
+# escape hatch: `SCE_MUTATION_ROUNDS_DRY_RUN=1` stops the gate once it has
+# CHOSEN which casefiles a change reaches. Choosing reads the registry and
+# builds nothing, so the checkout it has to mirror is the registry's, not the
+# toolchain's. Measured 2026-08-24: `mutation_rounds_selection.rs` runs that
+# selection step from inside the `tree-hygiene` job, which checks out without
+# submodules on purpose — so the preflight refused a step that would not have
+# touched `third_party/` either way.
+if [[ -z "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
+    "$REPO_ROOT/scripts/lib/require_submodules.sh" "${ORDER[@]}"
+fi
 
 # ── Toolchain parity: mirror CI's dtolnay/rust-toolchain@stable ────
 # Every Rust CI job installs the LATEST stable. rustup does NOT auto-update
