@@ -686,6 +686,18 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         }
     }
 
+    // The inverse of the table above, emitted from the same loop over the
+    // document's states so the two age together. It is what lets a host turn a
+    // recorded configuration back into the `StateChain` `enter_at` takes.
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+{% for state_id in model.states | sort %}
+            "{{ state_id }}" => Some({{ machine_name }}State::{{ state_id | to_state_variant }}),
+{% endfor %}
+            _ => None,
+        }
+    }
+
     fn null_event() -> Self::Event {
         {{ machine_name }}Event::Null
     }

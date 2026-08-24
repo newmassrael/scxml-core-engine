@@ -166,6 +166,18 @@ impl StatePolicy for ParallelPolicy {
         }
     }
 
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "p" => Some(PState::P),
+            "ra" => Some(PState::Ra),
+            "a1" => Some(PState::A1),
+            "a2" => Some(PState::A2),
+            "rb" => Some(PState::Rb),
+            "b1" => Some(PState::B1),
+            _ => None,
+        }
+    }
+
     fn null_event() -> Self::Event {
         PEvent::None
     }
@@ -371,6 +383,15 @@ impl StatePolicy for LinearPolicy {
             LState::Root => "root",
             LState::X1 => "x1",
             LState::X2 => "x2",
+        }
+    }
+
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "root" => Some(LState::Root),
+            "x1" => Some(LState::X1),
+            "x2" => Some(LState::X2),
+            _ => None,
         }
     }
 

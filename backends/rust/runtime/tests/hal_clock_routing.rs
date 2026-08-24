@@ -146,6 +146,12 @@ impl StatePolicy for MockPolicy {
     fn get_state_name(_s: Self::State) -> &'static str {
         "s0"
     }
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "s0" => Some(St::S0),
+            _ => None,
+        }
+    }
 
     fn last_transition_is_internal(&self) -> bool {
         self.last_internal

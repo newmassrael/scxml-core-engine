@@ -141,6 +141,16 @@ impl StatePolicy for Test144Policy {
         }
     }
 
+    fn get_state_from_name(name: &str) -> Option<Self::State> {
+        match name {
+            "fail" => Some(Test144State::Fail),
+            "pass" => Some(Test144State::Pass),
+            "s0" => Some(Test144State::S0),
+            "s1" => Some(Test144State::S1),
+            _ => None,
+        }
+    }
+
     fn null_event() -> Self::Event {
         Test144Event::None
     }
