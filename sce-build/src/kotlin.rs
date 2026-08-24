@@ -381,7 +381,19 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "invoke_id": ui.base.invoke_id.as_str(),
                     "state_id": state_id,
                     "is_unsupported": true,
+                    // §scxml-6.4.1: whether the host declared this `type`, so
+                    // the entry template starts the invocation instead of
+                    // refusing it. Carried per entry rather than derived from
+                    // the model's declaration list for the reason
+                    // `Action::send_type_host_served` is: the templates read
+                    // the DECISION, not the list it was made from, so one
+                    // backend cannot re-derive it differently from another.
+                    "host_served": ui.host_served,
                     "invoke_type": ui.invoke_type.as_str(),
+                    // Only meaningful for a host-served entry: what the
+                    // document said to invoke, and with what.
+                    "src": ui.src.as_str(),
+                    "params": serde_json::to_value(&ui.base.params).unwrap_or_default(),
                 }));
             }
         }

@@ -48,6 +48,12 @@ from sce_runtime import (
 # an unused import is noise in a generated file a consumer reads.
 from sce_runtime import HostSendRequest as _HostSendRequest
 {% endif %}
+{% if model.host_invoker_types %}
+# §scxml-6.4.1: the invoke half, gated on its own declaration for the same
+# reason — a machine the host serves sends for but runs no invokes for carries
+# no unused name.
+from sce_runtime import HostInvokeRequest as _HostInvokeRequest
+{% endif %}
 from sce_runtime.scripting import (
     LuaScriptEngine as _LuaScriptEngine,
     ScriptError as _ScriptError,

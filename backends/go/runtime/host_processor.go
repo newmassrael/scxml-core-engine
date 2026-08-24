@@ -190,3 +190,171 @@ func (e *Engine[S, E]) performDeferredHostSend(request HostSendRequest) {
 	meta.Metadata.SendID = request.SendID
 	e.Raise(meta)
 }
+
+// ── §scxml-6.4.1: `<invoke>` the HOST runs ────────────────────────────
+//
+// The clause leaves the invokable set to the platform in the same words
+// §scxml-6.2.5 uses for `<send>`, so a host may implement its own `type` here
+// too — but an invoke is not a send. It has a LIFETIME: it starts when the
+// state is entered, it is cancelled if the state exits, and the document may
+// be waiting on `done.invoke.<id>`. That is why the handler receives an event
+// rather than a bare request, and why this is a second registry rather than a
+// second use of the first one: a host that can deliver an event is not thereby
+// able to run a process it must also be able to stop.
+//
+// The Go port of `sce_rust_runtime::host_processor`'s invoker half, field for
+// field, for the reason the send half is a port: one host described once and
+// ported is the whole point of keeping the shapes identical.
+
+// HostInvokeRequest is an `<invoke>` the host runs, at the point the state was
+// entered.
+type HostInvokeRequest struct {
+	// ProcessorType is the `type` this `<invoke>` named.
+	ProcessorType string
+	// InvokeID is the invoke's id (§scxml-6.4.1), auto-derived when the author
+	// declared none. This is the name the DOCUMENT waits on: a completion is
+	// `done.invoke.<InvokeID>`, so a host that finishes asynchronously must
+	// keep it.
+	InvokeID string
+	// Src is `<invoke src="...">`, empty when the document named none. SCE does
+	// not interpret it — what a src means is the invoked processor's business.
+	Src string
+	// Params are `<param>` values keyed by name; a repeated name keeps every
+	// value in document order.
+	Params map[string][]string
+	// Content is inline `<content>`, empty when the document carried none.
+	Content string
+}
+
+// HostInvokeCancel is an `<invoke>` the host was running, at the point its
+// state exited.
+type HostInvokeCancel struct {
+	// ProcessorType is the `type` the `<invoke>` named.
+	ProcessorType string
+	// InvokeID is the invocation being cancelled — the same id its Start
+	// carried.
+	InvokeID string
+}
+
+// HostInvokeEvent is one turn of a host-run invoke's lifecycle. Exactly one of
+// Start and Cancel is non-nil.
+//
+// Both arms go to ONE registered handler rather than to two separately
+// registered callbacks, because a host that can start an invocation and cannot
+// stop it is not a working invoker — and two registrations make that state
+// reachable. One handler means the pair is registered together or not at all.
+type HostInvokeEvent struct {
+	// Start is §scxml-6.4: the state was entered and the macrostep has
+	// settled. Begin the invoked process.
+	Start *HostInvokeRequest
+	// Cancel is §scxml-6.4: the state exited. Stop it.
+	//
+	// Delivered only for an invocation that actually started: a state that
+	// exits before the macrostep ends never runs its invoke, and cancelling
+	// something that never began would have the host tearing down state it
+	// never built.
+	Cancel *HostInvokeCancel
+}
+
+// HostInvokeResponse is a host invoker's answer to a Start.
+//
+// Read only for Start; an answer to a Cancel is ignored, because there is
+// nothing left for it to mean.
+type HostInvokeResponse struct {
+	// DoneData is the payload for an immediate `done.invoke.<InvokeID>`, for an
+	// invocation that completed before returning. Nil is the ordinary case: the
+	// work outlives the call and the host raises the completion itself when it
+	// finishes. SCE does not synthesise a completion the host did not report —
+	// an invoked process that never terminates never fires `done.invoke`, which
+	// is what §scxml-6.4 says.
+	DoneData *string
+}
+
+// HostInvokeHandler is a registered invoke-lifecycle handler.
+type HostInvokeHandler func(HostInvokeEvent) *HostInvokeResponse
+
+// RegisterInvoker registers what runs every `<invoke type="<t>">` this machine
+// executes (§scxml-6.4.1).
+//
+// Separate from RegisterEventProcessor because they are separate contracts.
+// Registering twice for one type replaces the handler, for the reason the send
+// half does.
+func (e *Engine[S, E]) RegisterInvoker(processorType string, handler HostInvokeHandler) {
+	if e.hostInvokers == nil {
+		e.hostInvokers = make(map[string]HostInvokeHandler)
+	}
+	e.hostInvokers[processorType] = handler
+}
+
+// HasInvoker reports whether an invoker is registered for processorType.
+func (e *Engine[S, E]) HasInvoker(processorType string) bool {
+	_, ok := e.hostInvokers[processorType]
+	return ok
+}
+
+// PerformHostInvoke starts a host-run invocation and reports whether anything
+// ran (§scxml-6.4.1).
+//
+// `false` means no invoker was registered, which the generated site turns into
+// `error.execution` — an invoke nobody ran is the same fact whether the type
+// was undeclared or the handler was never wired up.
+//
+// A started invocation is RECORDED here rather than in the generated machine,
+// because "did this one start?" is the question the cancel path has to answer,
+// and answering it in each backend's template would be the same bookkeeping
+// written once per language.
+func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
+	handler, ok := e.hostInvokers[request.ProcessorType]
+	if !ok {
+		return false
+	}
+	key := hostInvokeKey{request.ProcessorType, request.InvokeID}
+	response := handler(HostInvokeEvent{Start: &request})
+	if e.startedHostInvokes == nil {
+		e.startedHostInvokes = make(map[hostInvokeKey]struct{})
+	}
+	e.startedHostInvokes[key] = struct{}{}
+	if response != nil && response.DoneData != nil {
+		// §scxml-6.4: a completion the host reported NOW. One it reports later
+		// arrives the same way, by raising the event itself — the engine does
+		// not distinguish the two, and it never synthesises a completion the
+		// host did not report. The id is the DOCUMENT's, because
+		// `done.invoke.<id>` is the name the author wrote a transition for.
+		if evt, known := e.policy.GetEventFromName(CreateDoneInvokeEventName(request.InvokeID)); known {
+			meta := NewEventWithMetadata(evt)
+			meta.Metadata = ExternalMetadata("", "")
+			meta.Metadata.Data = *response.DoneData
+			e.externalQueue.Raise(meta)
+		}
+	}
+	return true
+}
+
+// CancelHostInvoke stops a host-run invocation, if it started (§scxml-6.4).
+//
+// Unconditional at the call site: the engine knows whether this one ever
+// started and stays silent when it did not, so the emitted exit chain does not
+// need its own bookkeeping.
+func (e *Engine[S, E]) CancelHostInvoke(processorType, invokeID string) bool {
+	key := hostInvokeKey{processorType, invokeID}
+	if _, started := e.startedHostInvokes[key]; !started {
+		return false
+	}
+	delete(e.startedHostInvokes, key)
+	handler, ok := e.hostInvokers[processorType]
+	if !ok {
+		return false
+	}
+	handler(HostInvokeEvent{Cancel: &HostInvokeCancel{
+		ProcessorType: processorType,
+		InvokeID:      invokeID,
+	}})
+	return true
+}
+
+// hostInvokeKey identifies one invocation the host was told to start and has
+// not been told to stop.
+type hostInvokeKey struct {
+	processorType string
+	invokeID      string
+}

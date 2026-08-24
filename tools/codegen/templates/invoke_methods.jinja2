@@ -393,9 +393,44 @@
                     {% endfor %}
                 }
                 {% endif %}
-                {% if state.invokes | unsupported %}
+                {% if state.invokes | host_invoker %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
-                    {% for invoke_info in state.invokes | unsupported %}
+                    {% for invoke_info in state.invokes | host_invoker %}
+                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                        // W3C SCXML 6.4.1: the host declared this `type`, so
+                        // START the invocation rather than refusing it. The id
+                        // handed over is the DOCUMENT's, not the per-instance
+                        // one the pending queue carries: `done.invoke.<id>` is
+                        // the name the author wrote a transition for, so it is
+                        // the name the host must answer on.
+                        ::SCE::HostInvokeRequest hostInvoke;
+                        hostInvoke.processorType = "{{ invoke_info.invoke_type | escape_cpp }}";
+                        hostInvoke.invokeId = "{{ invoke_info.invoke_id }}";
+                        hostInvoke.src = "{{ invoke_info.src | default('', true) | escape_cpp }}";
+                        hostInvoke.content = "{{ invoke_info.content | default('', true) | escape_cpp }}";
+                        {% for param in invoke_info.params %}
+                        {% if param.is_static_literal %}
+                        hostInvoke.params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+                        {% endif %}
+                        {% endfor %}
+                        if (!engine.performHostInvoke(hostInvoke)) {
+                            // W3C SCXML 6.4.1: declared but no invoker
+                            // registered. The document asked for a process to
+                            // be run and none was, which is the same fact as
+                            // an unsupported type — so the same event, rather
+                            // than a silence that reads as started.
+                            engine.raise(typename Engine::EventWithMetadata(
+                                Event::Error_execution,
+                                "<invoke> names an invoker the host declared but never registered"));
+                        }
+                        return;
+                    }
+                    {% endfor %}
+                }
+                {% endif %}
+                {% if state.invokes | unsupported_refused %}
+                if (pending.state == State::{{ state_id | capitalize }}) {
+                    {% for invoke_info in state.invokes | unsupported_refused %}
                     if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
                         // W3C SCXML 6.4.1: the `type` names no processor this
                         // platform supports. Place error.execution on the

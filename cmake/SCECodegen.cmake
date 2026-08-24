@@ -73,7 +73,7 @@ Example:
   target_link_libraries(my_app PRIVATE SCE::sce_base)
 #]=============================================================================]
 function(sce_add_state_machine)
-    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE;CPP_NAMESPACE_PREFIX" "HOST_PROCESSOR" ${ARGN})
+    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE;CPP_NAMESPACE_PREFIX" "HOST_PROCESSOR;HOST_INVOKER" ${ARGN})
 
     # Validate required arguments
     if(NOT SCE_TARGET)
@@ -142,6 +142,13 @@ function(sce_add_state_machine)
     # the two halves have to agree, and only one of them is in the build.
     foreach(_sce_host_processor IN LISTS SCE_HOST_PROCESSOR)
         list(APPEND _SCE_CODEGEN_CMD --host-processor "${_sce_host_processor}")
+    endforeach()
+    # §scxml-6.4.1: the invoke half, declared separately for the reason the
+    # flags are separate — delivering an event is not the same capability as
+    # running a process with a lifetime, and one list would make declaring
+    # either silently claim both.
+    foreach(_sce_host_invoker IN LISTS SCE_HOST_INVOKER)
+        list(APPEND _SCE_CODEGEN_CMD --host-invoker "${_sce_host_invoker}")
     endforeach()
     if(SCE_TEMPLATE_DIR)
         set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
