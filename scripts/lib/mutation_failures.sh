@@ -39,3 +39,37 @@ mutation_failures_from_gtest() {
 mutation_failures_from_cargo() {
     sed -n 's/^test \(.*\) \.\.\. FAILED$/\1/p'
 }
+
+# How many failing baseline tests to list under the refusal.
+MUTATION_BASELINE_FAILURE_LINES="${MUTATION_BASELINE_FAILURE_LINES:-20}"
+
+# The lines a red BASELINE is reported with, read from the names the run
+# already collected.
+#
+# The same silence this file exists to end, one branch further up. A round
+# whose baseline is red stops with `baseline is not green (2 failing)` — a
+# COUNT, and a count names no test, so the reader's next question ("which
+# two") had no answer in the output. Measured 2026-08-24: the first
+# whole-corpus sweep reported exactly that for `ci_lane_gate_selection.cases`
+# and the log carried nothing else to act on, while the same suite passed
+# locally. Attribution then costs a round-trip through CI, which is the
+# workaround `mutation_failures_from_*` was written to remove for the CAUGHT
+# path and which the baseline path never got.
+#
+# Capped, because a baseline that broke wholesale can name hundreds and the
+# refusal above it is what the reader must not lose. An empty input says so
+# out loud rather than printing nothing: a parser that has drifted off the
+# runner's format would otherwise restore the exact silence being repaired,
+# and "the runner named none" is a different fact from "there were none".
+mutation_baseline_failures() {
+    awk -v limit="$MUTATION_BASELINE_FAILURE_LINES" '
+        NF { n++; if (n <= limit) print }
+        END {
+            if (n == 0) {
+                print "(the run named no failing test — the parser may have drifted)"
+            } else if (n > limit) {
+                printf "(+%d more)\n", n - limit
+            }
+        }
+    '
+}
