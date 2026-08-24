@@ -2251,6 +2251,16 @@
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "forge_golden_entries",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "validateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "ConfigurationRejection",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2637,6 +2647,16 @@
         {
           "file": "backends/rust/runtime/src/helpers/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "validateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "ConfigurationRejection",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2962,6 +2982,21 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/mod.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "validateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "enterAt",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "ConfigurationRejection",
           "kind": "references"
         }
       ],
@@ -3598,6 +3633,11 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "enter_at",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "enterAt",
           "kind": "references"
         }
       ],
@@ -6123,6 +6163,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "enter_at",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "enterAt",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -15810,6 +15855,12 @@
       "target_kind": "section",
       "target_id": "scxml-5.10",
       "reason": "in-class declarations resolve unqualified in this header; re-added as processDispatchedEvent"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "probe artefact: --symbol was passed a placeholder while discovering the flag's shape; the real bindings follow"
     }
   ],
   "frames": {},
