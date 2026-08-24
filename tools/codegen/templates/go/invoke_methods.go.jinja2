@@ -194,7 +194,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> declares a type this processor does not support"))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke type='{{ invoke_info.invoke_type | escape_go }}'> names an external service this platform does not support"))
 			continue
 		}
 {% endfor %}

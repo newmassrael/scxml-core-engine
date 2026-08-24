@@ -764,11 +764,14 @@ pub struct StatechartCodegenOptions {
     /// behaviour, which is why the default reproduces every existing
     /// caller byte-for-byte.
     ///
-    /// Rust-only, and refused by name for the other backends
-    /// (`reject_host_processors_in_unsupported_lang`): a declaration
-    /// honoured on a backend with no registry would have the build
-    /// promise a delivery nothing performs, which is the defect this
-    /// option exists to remove rather than relocate.
+    /// Honoured by every backend. It was Rust-only, with
+    /// `reject_host_processors_in_unsupported_lang` refusing the other
+    /// five by name so a declaration could not have the build promise a
+    /// delivery nothing performs; all six grew a registry and that gate
+    /// retired — see the note above, which this line contradicted until
+    /// 2026-08-24. What pays for the deletion is the per-backend
+    /// `a_declared_type_emits_a_dispatch_for_*` tests and the six runtime
+    /// channels.
     pub host_processor_types: Vec<String>,
     /// `<invoke type="...">` values the calling host can run
     /// (§scxml-6.4.1 leaves the invokable set to the platform). The
@@ -2359,8 +2362,12 @@ mod tests {
             Ok(out) => {
                 let joined: String = out.files.iter().map(|(_, c)| c.as_str()).collect();
                 assert!(
-                    joined.contains("Unsupported <invoke> type: urn:sce:test:no-such-processor"),
-                    "generated C++ must raise error.execution naming the refused type"
+                    joined.contains(
+                        "<invoke type='urn:sce:test:no-such-processor'> names an \
+                         external service this platform does not support"
+                    ),
+                    "generated C++ must raise error.execution naming the refused type, \
+                     in the one wording all seven emitters share"
                 );
                 assert!(
                     joined.contains("deferInvoke"),

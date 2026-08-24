@@ -263,7 +263,7 @@
                 # on the internal queue and start nothing.
                 self._raise_error_execution(
                     engine,
-                    "<invoke> declares a type this processor does not support",
+                    {{ ("<invoke type='" ~ inv.invoke_type ~ "'> names an external service this platform does not support") | py_string_literal }},
                 )
                 continue
 {% endfor %}
