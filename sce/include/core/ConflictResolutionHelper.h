@@ -104,11 +104,49 @@ struct ConflictResolutionAlgorithms {
                       enabledTransitions.size());
 
         for (const auto &t1 : enabledTransitions) {
+            // §scxml-D-selectTransitions: the enabled set is an ORDERED SET, and
+            // the same transition reached from two different atomic states is one
+            // element of it, not two. A transition written on a `<parallel>` is
+            // selected once per region by the ancestor walk, so this is the
+            // ordinary case, not an edge one -- W3C test 403b turns on a
+            // `<parallel>`-level `<assign>` running exactly once.
+            //
+            // Selection stops at the first enabled transition of a state, so
+            // within one microstep a source contributes at most one transition
+            // and (source, target) identifies it. `transitionIndex` deliberately
+            // takes no part: each region numbers its own walk, so two regions
+            // reporting the same ancestor transition disagree about it.
+            const bool alreadySelected = std::any_of(filteredTransitions.begin(), filteredTransitions.end(),
+                                                     [&t1](const TransitionDescriptor<StateType> &seen) {
+                                                         return seen.source == t1.source && seen.target == t1.target;
+                                                     });
+            if (alreadySelected) {
+                continue;
+            }
+
             bool t1Preempted = false;
             std::vector<size_t> transitionsToRemove;
 
             for (size_t i = 0; i < filteredTransitions.size(); ++i) {
                 const auto &t2 = filteredTransitions[i];
+
+                // §scxml-D-removeConflictingTransitions: two transitions conflict
+                // when their EXIT SETS intersect. A transition that exits nothing
+                // therefore conflicts with nothing and can never be preempted --
+                // which is exactly a targetless transition, whose
+                // §scxml-D-computeExitSet contribution the appendix defines as
+                // empty.
+                //
+                // The heuristics below stand in for an exit set this engine could
+                // not always compute, and every one of them reads a targetless
+                // transition as a self-transition on its own source. Left
+                // ungated, a targetless `<transition event="*">` sitting in one
+                // region was preempted whenever a sibling region's transition
+                // exited the enclosing `<parallel>` -- the case W3C test 403c
+                // marks "this transition never gets preempted, should fire twice".
+                if (t1.exitSet.empty() || t2.exitSet.empty()) {
+                    continue;
+                }
 
                 bool hasConflict = false;
 

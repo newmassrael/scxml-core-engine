@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The domain of a transition written on a <parallel> REGION ROOT.
+
+  W3C SCXML Appendix D resolves an external transition's domain through
+  `getTransitionDomain` -> `findLCCA`, and `findLCCA` filters the proper
+  ancestors with `isCompoundStateOrScxmlElement`. A <parallel> is neither a
+  compound <state> nor the <scxml> element, so it is NOT a candidate. The
+  domain of `drive -> restarting` is therefore the DOCUMENT ROOT, not `run`
+  and not `drive`: every region exits and re-enters, `watch` restarts at its
+  default, and `watch`'s own transition on the same event is preempted as
+  conflicting.
+
+  The same transition written `type="internal"` has domain `drive` — the
+  source is compound and the target is its descendant — so only `drive`'s
+  region moves and `watch` answers the event itself.
+
+  Both events are here on purpose. The two answers differ in BOTH halves
+  (which region moved, and whether `watch` was reset), so a failure names
+  which of the two rules broke rather than reporting "a configuration".
+
+  Measured 2026-08-25 on examples/ai_loop/ai_loop.scxml, whose region roots
+  carried exactly this shape: the Kotlin engine ended `session.lost` in
+  [alive, restarting] while C++, Rust and Go ended in [rebuilding, restarting].
+  That document was repaired by spelling `type="internal"`, which is what its
+  three transitions meant, and repairing the document left the engines'
+  domain calculation unmeasured, which is what this fixture exists to measure.
+
+  Fixture lives beside its test rather than under `integration_resources/`,
+  following `parallel_current_state.scxml`: a stem there is a seven-channel
+  commitment enforced by `integration_stem_registration.rs`, and the Rust and
+  Go engines have not been repaired yet.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="parallel_region_root_external_domain" datamodel="null" initial="run">
+
+  <parallel id="run">
+
+    <!--
+      The region whose ROOT carries the transitions. `drive` precedes `watch`
+      in document order, which is what makes it the winner of the conflict the
+      external form creates: `watch`'s source is not a descendant of
+      `drive`'s, so document order decides.
+    -->
+    <state id="drive" initial="working">
+
+      <!-- External by omission: the case under test. Domain = <scxml>. -->
+      <transition event="restart" target="restarting"/>
+
+      <!-- The contrast. Source compound, target its descendant: domain = drive. -->
+      <transition event="hold" type="internal" target="paused"/>
+
+      <state id="working"/>
+      <state id="restarting"/>
+      <state id="paused"/>
+    </state>
+
+    <!--
+      Answers both events itself. Without a sibling region that responds to the
+      same event, the external form's preemption cannot be observed at all:
+      the configuration after "exit everything and re-enter" would look the
+      same as after "exit only this region".
+    -->
+    <state id="watch" initial="alive">
+      <state id="alive">
+        <transition event="restart" target="rebuilding"/>
+        <transition event="hold" target="rebuilding"/>
+      </state>
+      <state id="rebuilding"/>
+    </state>
+
+  </parallel>
+</scxml>

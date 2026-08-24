@@ -102,16 +102,42 @@ public:
         }
 
         // External transition (or internal transition that behaves as external)
-        // Find LCA of source and all targets
+        // §scxml-D-getTransitionDomain: the domain is findLCCA over the source
+        // and every target — the candidates are compound `<state>`s and the
+        // `<scxml>` element, never a `<parallel>`. This set is what conflict
+        // resolution intersects, so answering a `<parallel>` here made a
+        // region-root transition look non-conflicting with the sibling
+        // region's transition on the same event.
+        // The appendix takes findLCCA over the whole list at once — the first
+        // legal candidate that contains EVERY target — rather than combining
+        // pairwise answers, which can only widen the domain.
         std::optional<StateType> lca = std::nullopt;
-        for (const auto &target : transition.targets) {
-            auto currentLca = SCE::Core::HierarchicalStateHelper<PolicyType>::findLCA(transition.source, target);
+        {
+            using Hierarchy = SCE::Core::HierarchicalStateHelper<PolicyType>;
+            StateType current = transition.source;
+            while (true) {
+                auto parent = PolicyType::getParent(current);
+                if (!parent.has_value()) {
+                    break;  // Out of ancestors: the domain is the <scxml> element.
+                }
+                current = parent.value();
 
-            if (!lca.has_value()) {
-                lca = currentLca;
-            } else if (currentLca.has_value()) {
-                // If we have multiple LCAs, find their common ancestor
-                lca = SCE::Core::HierarchicalStateHelper<PolicyType>::findLCA(lca.value(), currentLca.value());
+                if (!Hierarchy::isTransitionDomainCandidate(current)) {
+                    continue;  // A <parallel> is not a domain.
+                }
+
+                bool containsEveryTarget = true;
+                for (const auto &target : transition.targets) {
+                    if (!Hierarchy::isDescendantOf(target, current)) {
+                        containsEveryTarget = false;
+                        break;
+                    }
+                }
+
+                if (containsEveryTarget) {
+                    lca = current;
+                    break;
+                }
             }
         }
 
@@ -317,24 +343,24 @@ public:
                 auto lca = computeEffectiveLCA<StateType, PolicyType>(trans.source, target, trans.isInternal);
 
                 if (!lca.has_value()) {
-                    // No LCA found - exit from source up to root
-                    auto current = trans.source;
-                    while (true) {
-                        // Add to exit set if active and not already present
-                        bool isActive =
-                            std::find(activeStates.begin(), activeStates.end(), current) != activeStates.end();
+                    // §scxml-D-computeExitSet: the domain is the <scxml>
+                    // element, and EVERY active state is a descendant of it —
+                    // so the whole configuration exits and the target's entry
+                    // chain is walked fresh.
+                    //
+                    // Walking only the source's own ancestor chain, which is
+                    // what stood here, is the same set in a machine whose
+                    // configuration is a single chain — and silently wrong the
+                    // moment a `<parallel>` is active, because the sibling
+                    // regions are descendants of the domain too. That is the
+                    // half of a region-root external transition the domain fix
+                    // above cannot supply on its own.
+                    for (const auto &activeState : activeStates) {
                         bool alreadyInSet =
-                            std::find(statesToExit.begin(), statesToExit.end(), current) != statesToExit.end();
-
-                        if (isActive && !alreadyInSet) {
-                            statesToExit.push_back(current);
+                            std::find(statesToExit.begin(), statesToExit.end(), activeState) != statesToExit.end();
+                        if (!alreadyInSet) {
+                            statesToExit.push_back(activeState);
                         }
-
-                        auto parent = PolicyType::getParent(current);
-                        if (!parent.has_value()) {
-                            break;
-                        }
-                        current = parent.value();
                     }
                 } else {
                     // §scxml-D-computeExitSet: exit every active descendant of
@@ -555,7 +581,15 @@ private:
         if (isInternal && isInternalToDescendant<StateType, PolicyType>(source, target)) {
             return source;  // Source is the LCA - don't exit it
         }
-        return SCE::Core::HierarchicalStateHelper<PolicyType>::findLCA(source, target);
+        // §scxml-D-getTransitionDomain: findLCCA, not findLCA. The appendix
+        // filters the candidate ancestors with `isCompoundStateOrScxmlElement`,
+        // so a `<parallel>` is never a domain — and a transition written on a
+        // REGION ROOT is precisely the case where the two procedures differ.
+        // Asking for a plain LCA answered the enclosing `<parallel>`, which
+        // left the sibling regions unexited and their own transitions on the
+        // same event unpreempted: measured 2026-08-25 as a configuration
+        // holding BOTH children of the sibling region at once.
+        return SCE::Core::HierarchicalStateHelper<PolicyType>::findLCCA(source, target);
     }
 };
 
