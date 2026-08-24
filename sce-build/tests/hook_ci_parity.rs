@@ -1064,3 +1064,189 @@ fn lane_running_a_skip_capable_gate_requires_its_tools() {
         violations.join("\n  "),
     );
 }
+
+// ── A gate that builds against third_party/ says so BEFORE it builds ──
+
+/// Every gate slug the registry knows, taken from the runner's own listing
+/// rather than a list here.
+fn all_gate_slugs() -> Vec<String> {
+    let registry = repo_root().join("tools/git-hooks/gate_registry.py");
+    let out = std::process::Command::new("python3")
+        .arg(&registry)
+        .arg("--list")
+        .arg("--repo-root")
+        .arg(repo_root())
+        .output()
+        .unwrap_or_else(|e| panic!("spawn {}: {e}", registry.display()));
+    assert!(
+        out.status.success(),
+        "gate_registry.py --list failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // `    0.0s  slug  description` — the slug is the second field.
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.split_whitespace().nth(1).map(str::to_string))
+        .collect()
+}
+
+/// `slug -> workflow file`, one pair per line, straight from the registry.
+fn gate_workflow_pairs() -> Vec<(String, String)> {
+    let registry = repo_root().join("tools/git-hooks/gate_registry.py");
+    let program = format!(
+        "import runpy\n\
+         mod = runpy.run_path({})\n\
+         for slug, entry in mod['GATES'].items():\n\
+         \x20   for wf in entry.get('workflows', []):\n\
+         \x20       print(slug + '\\t' + wf)\n",
+        serde_json_string(&registry.display().to_string())
+    );
+    let out = std::process::Command::new("python3")
+        .arg("-c")
+        .arg(&program)
+        .current_dir(repo_root())
+        .output()
+        .expect("python3 reads the registry");
+    assert!(
+        out.status.success(),
+        "reading GATES failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (slug, wf) = line.split_once('\t')?;
+            Some((slug.to_string(), wf.to_string()))
+        })
+        .collect()
+}
+
+/// Does this workflow really ask `actions/checkout` for submodules?
+///
+/// Comment lines are stripped FIRST, and that is the whole subtlety:
+/// `tree-hygiene.yml` explains its own exemption in the words it is exempt
+/// from — "No `submodules: recursive`: the gate skips third_party/" — so a
+/// substring search reads that comment as the opposite of what it says.
+fn workflow_asks_for_submodules(name: &str) -> bool {
+    let path = repo_root().join(".github/workflows").join(name);
+    let Ok(text) = fs::read_to_string(&path) else {
+        return false;
+    };
+    text.lines().any(|line| {
+        let stripped = line.trim();
+        if stripped.starts_with('#') {
+            return false;
+        }
+        let code = stripped.split('#').next().unwrap_or("");
+        code.starts_with("submodules:") && code.contains("recursive")
+    })
+}
+
+/// The same answer, re-derived here from the same two inputs.
+fn expected_gates_needing_submodules() -> BTreeSet<String> {
+    gate_workflow_pairs()
+        .into_iter()
+        .filter(|(_, wf)| workflow_asks_for_submodules(wf))
+        .map(|(slug, _)| slug)
+        .collect()
+}
+
+/// What the preflight answers for those slugs.
+fn gates_needing_submodules(slugs: &[String]) -> BTreeSet<String> {
+    let script = repo_root().join("scripts/lib/require_submodules.sh");
+    let out = std::process::Command::new("bash")
+        .arg(&script)
+        .arg("--which")
+        .args(slugs)
+        .current_dir(repo_root())
+        .output()
+        .unwrap_or_else(|e| panic!("spawn {}: {e}", script.display()));
+    assert!(
+        out.status.success(),
+        "`--which` reports, it never refuses: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// `git worktree add` does not populate submodules, and neither does a plain
+/// clone. Measured 2026-08-24: a push from a fresh worktree spent every gate
+/// ahead of `w3c-kotlin` and then died 27 seconds into a Gradle CMake
+/// configure whose message named no submodule and no repair; the gates ahead
+/// of it had to run again from the start on the next push.
+///
+/// What this pins is not "submodules exist" — the machine running the test
+/// may legitimately have them — but that the preflight DERIVES which gates
+/// need them from the workflows those gates mirror. The derivation is the
+/// part that can silently rot: `tree-hygiene.yml` explains its own exemption
+/// in the very words it is exempt from, so a substring search puts the two
+/// gates mirroring it on exactly the wrong side.
+#[test]
+fn a_gate_that_builds_against_third_party_is_preflighted_for_submodules() {
+    let gate = read("scripts/gate");
+    assert!(
+        gate.contains("require_submodules.sh"),
+        "scripts/gate does not run the submodule preflight, so a tree missing \
+         third_party/ still fails deep inside a build instead of at the top"
+    );
+
+    let slugs = all_gate_slugs();
+    assert!(
+        slugs.len() >= 25,
+        "only {} gate slug(s) parsed out of the registry listing — the sweep is \
+         not reaching the corpus, and an empty sweep reads as a pass",
+        slugs.len()
+    );
+    let needing = gates_needing_submodules(&slugs);
+
+    // The claim, in the only form that cannot be faked by a typed list: the
+    // script's answer is what the registry and the workflow files say, for
+    // EVERY gate. Re-derived here from the same two inputs rather than
+    // compared against a list written down in either place — the moment a
+    // workflow changes its mind, a hardcoded preflight and this test disagree.
+    assert_eq!(
+        needing,
+        expected_gates_needing_submodules(),
+        "the preflight's answer is not the one the workflows give; it has stopped \
+         deriving and is carrying a list of its own"
+    );
+
+    // Measured against the push that produced this test: these reached a
+    // verdict in a tree with no submodules, and `w3c-kotlin` was the one that
+    // could not.
+    for exempt in ["ledger-citations", "rustdoc-links", "rust-modrs-drift"] {
+        assert!(
+            !needing.contains(exempt),
+            "`{exempt}` was reported as needing submodules, but it reached a verdict \
+             without them; refusing it would block work that CI itself does not gate \
+             on third_party/"
+        );
+    }
+    for exempt in ["tree-hygiene", "mutation-cases"] {
+        assert!(
+            !needing.contains(exempt),
+            "`{exempt}` mirrors tree-hygiene.yml, which checks out WITHOUT submodules \
+             on purpose and says so in a comment — reading that comment as the \
+             declaration is the trap this assertion exists for"
+        );
+    }
+    for needed in ["w3c-kotlin", "cpp-suite", "workspace-tests"] {
+        assert!(
+            needing.contains(needed),
+            "`{needed}` mirrors a workflow that asks CI for submodules, so a local \
+             run without them cannot mirror it; the preflight did not say so"
+        );
+    }
+
+    // A floor, not a target: a derivation that suddenly finds nothing would
+    // pass every assertion above that is phrased as an absence.
+    assert!(
+        needing.len() >= 15,
+        "the derivation found only {} gate(s) needing submodules, against 18 when it \
+         was written; it has stopped reading the workflows: {needing:?}",
+        needing.len()
+    );
+}
