@@ -22,6 +22,35 @@
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
+#
+# ── A mutation has to COMPILE to be evidence ───────────────────────
+#
+# Three of the eight cases below were rewritten on 2026-08-24, after the round
+# of `f81cc8e500` reported them INCONCLUSIVE — "mutated tree does not compile;
+# the tests never ran" — while the other five came back CAUGHT. Not one of the
+# three had moved off its anchor, and not one was a no-op: all three applied
+# cleanly and then failed to build, for three different reasons, and the
+# harness printed none of them. Recovering them cost a hand-written script that
+# re-applied each case and re-ran `cargo check`. `scripts/mutate` now quotes the
+# compiler's first line under the verdict, so the next one is a read rather
+# than an investigation.
+#
+# The three reasons, because two of them are properties of this workspace and
+# will catch the next case written here:
+#
+#   * `warnings = "deny"` is set workspace-wide (`Cargo.toml`). A mutation that
+#     removes the LAST use of a binding therefore does not warn, it fails —
+#     `if false {` left `reading` unused, and `= None` left `event` unused.
+#     Both are now spelled so the binding is still consumed and dropped, which
+#     is the shape the real defect had anyway (`let _ =`, named in the prose
+#     above).
+#   * `engine.rs` never imports `PayloadReading`; it names the type through
+#     `crate::` at the one place it needs it. A case that spelled the variant
+#     bare got E0433. It is now spelled the way the file does.
+#
+# The general rule, stated once: a mutation is a claim about BEHAVIOUR, so it
+# has to be a program. One the compiler refuses proves nothing at all, and
+# reads as present in the corpus while doing it.
 
 mutation_tests -p sce-rust-tests --test undecodable_payload_is_reported
 mutation_targets backends/rust/runtime/src/engine.rs
@@ -43,6 +72,10 @@ mutation_oracles backends/rust/tests/tests/undecodable_payload_is_reported.rs
 #
 # The engine goes back to knowing and not saying. Every driver's first
 # assertion is this one.
+#
+# Spelled as the drop rather than as `if false`, because the drop is what the
+# defect actually looked like everywhere else on this axis, and because a dead
+# branch leaves `reading` unused and the workspace denies that.
 
 mutation_case "the engine stops recording the reading it was told" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
@@ -50,10 +83,7 @@ edit("backends/rust/runtime/src/engine.rs",
             self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
             self.last_undecodable_payload = Some(event);
         }""",
-     """        if false {
-            self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
-            self.last_undecodable_payload = Some(event);
-        }""")
+     """        let _ = (event, reading);""")
 PY
 
 # ── An always-true count ───────────────────────────────────────────
@@ -66,7 +96,7 @@ PY
 mutation_case "every delivery with a payload is counted" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        if reading.is_undecodable() {""",
-     """        if reading != PayloadReading::Absent {""")
+     """        if reading != crate::PayloadReading::Absent {""")
 PY
 
 # ── The generated call site drops the value again ──────────────────
@@ -134,11 +164,16 @@ PY
 # The count says a payload was lost; a host debugging a stalled supervisor
 # needs to know which delivery lost it. Leaving it at `None` still counts
 # correctly.
+#
+# The dropped `event` is not decoration: without it the parameter has no
+# remaining use and the workspace's denied `unused_variables` refuses the
+# mutation before any test can see it.
 
 mutation_case "the lost payload is counted but its delivery never named" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """            self.last_undecodable_payload = Some(event);""",
-     """            self.last_undecodable_payload = None;""")
+     """            let _ = event;
+            self.last_undecodable_payload = None;""")
 PY
 
 # ── Naming the wrong delivery ──────────────────────────────────────
