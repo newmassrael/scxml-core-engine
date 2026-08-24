@@ -167,6 +167,10 @@ source "$SCE_REPO_ROOT/scripts/lib/mutation_artifact_hash.sh"
 # side effects — which is what the duplicate's own comment was waiting for.
 # shellcheck source=scripts/lib/sce_build_jobs.sh
 source "$SCE_REPO_ROOT/scripts/lib/sce_build_jobs.sh"
+# And the parser that reads a refused build for what refused it, which is the
+# half of an INCONCLUSIVE verdict this harness used to throw away.
+# shellcheck source=scripts/lib/mutation_build_refusal.sh
+source "$SCE_REPO_ROOT/scripts/lib/mutation_build_refusal.sh"
 MUTATION_OBJCOPY="$(command -v objcopy || true)"
 
 WORK="$(mktemp -d)"
@@ -174,6 +178,11 @@ trap 'mutation_restore_quiet; rm -rf "$WORK"' EXIT
 # Where the artifact hash writes its normalised copy, so the temporary lands
 # beside the round's other scratch rather than in the caller's TMPDIR.
 MUTATION_HASH_SCRATCH="$WORK"
+# Where every build writes its output. Kept rather than silenced, so a build
+# that refuses can be explained by the run that refused instead of by a second
+# run of the same command — see `scripts/lib/mutation_build_refusal.sh`.
+MUTATION_BUILD_LOG="$WORK/build.log"
+: >"$MUTATION_BUILD_LOG"
 
 MUTATION_RUNNER=""
 MUTATION_RUNNER_ARGS=()
@@ -607,22 +616,28 @@ mutation_regenerate() {
                  awk 'NF && !seen[$0]++')
 }
 
-# The same build again, this time with its output, for the one place a build
-# failure is terminal rather than a verdict.
+# What the last build printed, for the one place a build failure is terminal
+# rather than a verdict.
 #
-# Both `_build_and_hash` implementations silence the build, and during a case
-# that is right: a mutated tree that does not compile is INCONCLUSIVE, the
-# harness says so in those words, and the compiler's complaint about
-# deliberately broken code is noise. At the BASELINE it is the opposite. The
-# round stops, and "baseline build failed" on its own names no file, no
-# target and no reason — which is how a sweep of this corpus reported two
-# casefiles as failing to build with nothing to act on, and left the cause
-# unattributable after the fact.
+# This used to run the whole build a SECOND time to recover output the first
+# run had sent to `/dev/null`, on the argument that during a case the
+# compiler's complaint about deliberately broken code is noise. Both halves of
+# that were wrong, and the second one measurably so. Re-running a build to read
+# what it said is a workaround for discarding it, and it is not even reliable:
+# the second run compiles against whatever the first left in the target
+# directory. And a mutation the compiler REFUSES is not a fact about broken
+# code — it is a fact about the CASE, which is inexpressible as written and
+# therefore proves nothing while reading as present in the corpus.
 #
-# `mutation_cargo_resolve` already did this for the resolve step; the build
-# step had the same shape and not the same treatment, which is the kind of
-# gap a sibling block is supposed to make visible.
-mutation_build_diagnostics() { "mutation_${MUTATION_RUNNER}_build_verbose"; }
+# Measured 2026-08-24: three cases of `undecodable_payload_is_reported.cases`
+# sat INCONCLUSIVE, and splitting them took a hand-written script that
+# re-applied each case and re-ran the build — recovering, one at a time, three
+# different reasons the compiler had already printed here.
+#
+# So both runners now keep their output and this reads it. The per-case verdict
+# quotes the refusal through `mutation_build_refusal`; this prints the tail,
+# because a terminal failure has room for it.
+mutation_build_diagnostics() { tail -40 "$MUTATION_BUILD_LOG" 2>/dev/null || true; }
 
 # Resolve the test executables the selector names. Doing this once, and
 # then running the binaries directly, is what removes the shared-filter
@@ -658,12 +673,8 @@ for line in sys.stdin:
 # mtime, cargo's fingerprint log, and the source on disk are all merely
 # proxies for.
 mutation_cargo_build_and_hash() {
-    cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" >/dev/null 2>&1 || return 1
+    cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" >"$MUTATION_BUILD_LOG" 2>&1 || return 1
     mutation_hash_artifacts
-}
-
-mutation_cargo_build_verbose() {
-    cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" 2>&1 | tail -40 || true
 }
 
 # "<sha> <path>" per resolved artifact, in resolution order. Shared by the
@@ -841,12 +852,9 @@ for test in json.load(sys.stdin).get("tests", []):
 # already carrying thirteen concurrent sessions.
 
 mutation_ctest_build_and_hash() {
-    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" >/dev/null 2>&1 || return 1
+    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" \
+        >"$MUTATION_BUILD_LOG" 2>&1 || return 1
     mutation_hash_artifacts
-}
-
-mutation_ctest_build_verbose() {
-    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" 2>&1 | tail -40 || true
 }
 
 # One ctest run over the declared selector; "<tests_run> <failed>" read from
@@ -1496,8 +1504,20 @@ PY
         # A mutation that does not compile is a legitimate outcome — the
         # type system refused it — but it is not evidence about the tests,
         # so it is never reported as CAUGHT.
+        #
+        # The refusal is quoted because the verdict alone does not say what to
+        # do next. "Does not compile" has at least three fixes in this corpus
+        # — the case names a type the file does not import, or it deletes the
+        # last use of a binding under `warnings = "deny"`, or the site it edits
+        # has genuinely moved — and they are told apart by the compiler's first
+        # line, which the harness is holding.
         red "INCONCLUSIVE  $label"
         red "              mutated tree does not compile; the tests never ran"
+        local refusal_line
+        while IFS= read -r refusal_line; do
+            [[ -n "$refusal_line" ]] || continue
+            red "              $refusal_line"
+        done < <(mutation_build_refusal <"$MUTATION_BUILD_LOG")
         MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
         mutation_restore
         return
