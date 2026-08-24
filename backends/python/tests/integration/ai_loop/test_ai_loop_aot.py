@@ -910,6 +910,12 @@ def test_every_state_a_run_reaches_reads_back_from_its_own_name() -> None:
 
     engine = _started()
     _step(engine, Event.TURN_DONE)
+    # Recorded here, before the verdict, because `judging` is where a completed
+    # turn WAITS — the only state in the cycle a host reaches by sending
+    # nothing. Every other branch of this walk records after driving the machine
+    # on, and that is exactly how `judging` stayed unvisited while the floor
+    # below read as satisfied.
+    record(engine)
     _verdict(engine, True)
     record(engine)
     _step(engine, Event.TURN_DONE)
@@ -945,10 +951,34 @@ def test_every_state_a_run_reaches_reads_back_from_its_own_name() -> None:
 
     # A floor, not a target: without one, a table that had lost every arm but the
     # first would pass this by being asked about a single state.
-    assert len(seen) >= 20, (
-        "these scenarios are meant to stand in most of the document; they reached "
-        f"{len(seen)} states: {[engine.policy.get_state_name(s) for s in seen]}"
+    #
+    # 21 is measured rather than chosen. The document declares 25 states and the
+    # four below are unreachable to any reader of the configuration, so a floor
+    # of 25 would retire this test and the 20 it used to hold understated the
+    # walk by one.
+    assert len(seen) >= 21, (
+        "these scenarios are meant to stand in every state a reader can observe; they "
+        f"reached {len(seen)} states: {[engine.policy.get_state_name(s) for s in seen]}"
     )
+
+    # The other side of that ratchet, and the reason the number above is a
+    # measurement: these four are inner ``<final>``s whose ``<onentry>`` is a
+    # ``<raise>`` that ends the run in the SAME macrostep — ``reported`` raises
+    # ``run.converged``, ``stuck`` and ``spent`` raise ``run.exhausted``,
+    # ``abandoned`` raises ``run.blocked`` — so a configuration read taken
+    # between macrosteps can never stand in one. Nothing else in the document is
+    # like that.
+    #
+    # Asserting their ABSENCE is what keeps 21 honest from above: make one of
+    # them observable, or extend the walk to reach it, and this fails until the
+    # floor is raised with it.
+    for unobservable in ("abandoned", "reported", "spent", "stuck"):
+        state = engine.policy.get_state_from_name(unobservable)
+        assert state is not None, f"`{unobservable}` is a state this document declares"
+        assert state not in seen, (
+            f"`{unobservable}` was reached, so the ceiling this test documents has moved: "
+            "raise the floor above to match what the walk now stands in"
+        )
 
     for state in seen:
         name = engine.policy.get_state_name(state)

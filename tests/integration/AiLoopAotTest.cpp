@@ -924,6 +924,12 @@ TEST_F(AiLoopAotTest, EveryStateARunReachesReadsBackFromItsOwnName) {
         Machine sm;
         start(sm);
         sm.processEvent(Machine::Event::Turn_done);
+        // Recorded here, before the verdict, because `judging` is where a
+        // completed turn WAITS — the only state in the cycle a host reaches by
+        // sending nothing. Every other branch of this walk records after driving
+        // the machine on, and that is exactly how `judging` stayed unvisited
+        // while the floor below read as satisfied.
+        record(sm);
         verdict(sm, true);
         record(sm);
         sm.processEvent(Machine::Event::Turn_done);
@@ -970,8 +976,31 @@ TEST_F(AiLoopAotTest, EveryStateARunReachesReadsBackFromItsOwnName) {
 
     // A floor, not a target: a walk that stopped reaching states would
     // round-trip an empty list perfectly and read as a pass.
-    ASSERT_GE(seen.size(), 20u) << "the walk reached only " << seen.size()
+    //
+    // 21 is measured rather than chosen. The document declares 25 states and
+    // the four below are unreachable to any reader of the configuration, so a
+    // floor of 25 would retire this test and the 20 it used to hold understated
+    // the walk by one.
+    ASSERT_GE(seen.size(), 21u) << "the walk reached only " << seen.size()
                                 << " state(s); the branches below it are not being driven";
+
+    // The other side of that ratchet, and the reason the number above is a
+    // measurement: these four are inner `<final>`s whose `<onentry>` is a
+    // `<raise>` that ends the run in the SAME macrostep — `reported` raises
+    // `run.converged`, `stuck` and `spent` raise `run.exhausted`, `abandoned`
+    // raises `run.blocked` — so a configuration read taken between macrosteps
+    // can never stand in one. Nothing else in the document is like that.
+    //
+    // Asserting their ABSENCE is what keeps 21 honest from above: make one of
+    // them observable, or extend the walk to reach it, and this fails until the
+    // floor is raised with it.
+    for (const char *unobservable : {"abandoned", "reported", "spent", "stuck"}) {
+        const auto state = Machine::PolicyType::getStateFromName(unobservable);
+        ASSERT_TRUE(state.has_value()) << "`" << unobservable << "` is a state this document declares";
+        EXPECT_EQ(std::find(seen.begin(), seen.end(), *state), seen.end())
+            << "`" << unobservable << "` was reached, so the ceiling this test documents has moved: "
+            << "raise the floor above to match what the walk now stands in";
+    }
 
     for (const auto state : seen) {
         const char *name = Machine::PolicyType::getStateName(state);
