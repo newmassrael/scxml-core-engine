@@ -13697,6 +13697,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::enterState",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13810,6 +13815,26 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "applySimultaneousTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "removeConflictingTransitions",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/states/ConcurrentRegion.h",
+          "symbol": "computeExitSet",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::processEvent",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::computeExitSet",
           "kind": "implements"
         }
       ],
@@ -13951,6 +13976,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::executeTransitionMicrostep",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateHierarchyManager.cpp",
+          "symbol": "StateHierarchyManager::exitHierarchicalState",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13978,6 +14008,26 @@
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "findLCA",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "findLCCA",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "isTransitionDomainCandidate",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::processEvent",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::computeTransitionDomain",
           "kind": "implements"
         }
       ],
@@ -14106,6 +14156,26 @@
           "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
           "symbol": "TransitionDomainCalculator::computeExitSet",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "computeExitSet",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "computeEffectiveLCA",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/states/ConcurrentRegion.h",
+          "symbol": "computeTransitionDomain",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::computeTransitionDomain",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14165,6 +14235,11 @@
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "HierarchicalAlgorithms",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "containsProperDescendant",
           "kind": "implements"
         }
       ],
@@ -14536,6 +14611,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "processOneEvent",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "removeConflictingTransitions",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

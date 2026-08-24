@@ -331,12 +331,34 @@ private:
      * @return true if target is descendant of root (including root itself)
      */
     /**
-     * @brief Compute exit set for transition from source to target state
-     * @param source Source state ID
+     * @brief §scxml-D-getTransitionDomain: the domain of a transition
+     *
+     * @details
+     * The compound state every exited and entered state descends from.
+     * `findLCCA` filters the proper ancestors with
+     * `isCompoundStateOrScxmlElement`, so a `<parallel>` is NEVER a domain —
+     * which is the whole difference for a transition written on a region root.
+     *
+     * @param sourceNode Source state of the transition
      * @param target Target state ID
+     * @param isInternal Whether the transition is spelled `type="internal"`
+     * @return The domain, or nullptr when it is the `<scxml>` element itself
+     */
+    IStateNode *computeTransitionDomain(IStateNode *sourceNode, const std::string &target, bool isInternal) const;
+
+    /**
+     * @brief §scxml-D-computeExitSet: the active states a transition exits
+     *
+     * The proper descendants of the domain that are currently active. Within a
+     * region that is the chain from the region's active leaf up to the domain,
+     * plus the enclosing `<parallel>` when the domain lies above it.
+     *
+     * @param sourceNode Source state of the transition
+     * @param target Target state ID
+     * @param isInternal Whether the transition is spelled `type="internal"`
      * @return Exit set (state IDs to be exited)
      */
-    std::vector<std::string> computeExitSet(const std::string &source, const std::string &target) const;
+    std::vector<std::string> computeExitSet(IStateNode *sourceNode, const std::string &target, bool isInternal) const;
 
     /**
      * @brief Recursively check if target state is a descendant of root state

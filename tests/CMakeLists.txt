@@ -772,6 +772,8 @@ add_executable(integration_tests
     integration/NativeActionAotTest.cpp
     integration/ConfigurationEntryAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
+    integration/ParallelRegionRootExternalDomainTest.cpp
+    integration/ParallelRegionRootExternalDomainAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp
     integration/ParallelDoneStateIsDeliveredTest.cpp
@@ -1471,6 +1473,24 @@ sce_add_state_machine(
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/parallel_current_state.scxml
+)
+
+# W3C SCXML Appendix D: `findLCCA` filters the proper ancestors with
+# `isCompoundStateOrScxmlElement`, so a `<parallel>` is never a transition
+# domain and an external transition on a REGION ROOT resolves to the document
+# root. Its fixture sits beside its test for the reason the one above does —
+# a stem under `integration_resources/` is a seven-channel commitment, and the
+# Rust and Go engines still answer this the old way, so committing generated
+# trees for them would register a contract they do not yet meet.
+#
+# It also cannot be asked of `examples/ai_loop/ai_loop.scxml`, the other
+# parallel machine questioned per-clause here: that document is exactly where
+# the divergence was found and it was repaired by spelling `type="internal"`,
+# which is what its region-root transitions meant. The repair left no
+# committed document reaching the external form.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/parallel_region_root_external_domain.scxml
 )
 
 # ── W3C test registrations, derived from the conformance registry ──

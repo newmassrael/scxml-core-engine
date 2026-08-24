@@ -122,6 +122,58 @@ struct HierarchicalAlgorithms {
     }
 
     /**
+     * @brief Least Common COMPOUND Ancestor of a transition
+     *
+     * @details
+     * This is the procedure `getTransitionDomain` calls, and it differs from
+     * findLCA above in the one way the appendix is explicit about: the
+     * candidates are the proper ancestors **filtered by
+     * `isCompoundStateOrScxmlElement`**. A `<parallel>` is neither a compound
+     * `<state>` nor the `<scxml>` element, so it is never a transition domain.
+     *
+     * The difference is invisible until a `<parallel>` sits between the source
+     * and the first compound `<state>` above it — which is exactly a
+     * transition written on a REGION ROOT. findLCA answers the `<parallel>`
+     * there; findLCCA walks past it, and the domain becomes the document root,
+     * so every region exits and re-enters and a sibling region's transition on
+     * the same event is preempted as conflicting.
+     *
+     * The descendant test is STRICT, which settles the other case the two
+     * procedures disagree on: when the target is itself an ancestor of the
+     * source, findLCA collapses the domain onto the target and the target's
+     * `onexit` never runs. A state is not its own descendant, so this walks one
+     * level higher instead.
+     *
+     * @param isDomainCandidate Predicate selecting legal domains (a compound
+     *        `<state>`; `<parallel>` must answer false)
+     * @return The domain, or std::nullopt when it is the `<scxml>` element
+     *         itself — which has no state identifier in either engine, and
+     *         which callers read as "exit the whole configuration"
+     */
+    template <typename StateType, typename GetParentFn, typename IsDomainCandidateFn>
+    [[nodiscard]] static std::optional<StateType> findLCCA(const StateType &source, const StateType &target,
+                                                           GetParentFn getParent,
+                                                           IsDomainCandidateFn isDomainCandidate) {
+        // §scxml-D-findLCCA: walk the source's PROPER ancestors, keep only the
+        // candidates the procedure's filter admits, and answer the first that
+        // contains the target.
+        StateType current = source;
+        while (true) {
+            auto parent = getParent(current);
+            if (!parent.has_value()) {
+                // Ran out of proper ancestors: the domain is the <scxml>
+                // element, and every active state is a descendant of it.
+                return std::nullopt;
+            }
+            current = parent.value();
+
+            if (isDomainCandidate(current) && isDescendantOf(target, current, getParent)) {
+                return current;
+            }
+        }
+    }
+
+    /**
      * @brief Build exit chain from state up to ancestor (§scxml-3.13)
      *
      * @return Exit chain in child → parent order (excluding stopBeforeState)
@@ -594,6 +646,48 @@ public:
      */
     static std::optional<State> findLCA(State state1, State state2) {
         return HierarchicalAlgorithms::findLCA(state1, state2, [](State s) { return StatePolicy::getParent(s); });
+    }
+
+    /**
+     * @brief §scxml-D-findLCCA: may this state be a domain?
+     *
+     * The `isCompoundStateOrScxmlElement` filter that procedure applies to the
+     * candidate ancestors, spelled over a StatePolicy.
+     *
+     * A `<parallel>` answers false. Every policy reports it as compound —
+     * `isInternalToDescendant` subtracts it the same way — so the two questions
+     * have to be asked together rather than one standing in for the other.
+     *
+     * The `<scxml>` element is the other legal answer in the appendix and has
+     * no State here, which is why findLCCA returns nullopt for it rather than
+     * naming it.
+     */
+    static bool isTransitionDomainCandidate(State state) {
+        if constexpr (IsParallelStatePolicy<StatePolicy>) {
+            if (StatePolicy::isParallelState(state)) {
+                return false;
+            }
+        }
+        return StatePolicy::isCompoundState(state);
+    }
+
+    /**
+     * @brief §scxml-D-findLCCA: the domain of a transition (source → target)
+     *
+     * @details
+     * What `getTransitionDomain` calls for every transition that is not an
+     * internal one to a descendant. Differs from findLCA by filtering the
+     * candidates: a `<parallel>` is not a domain, so an external transition on
+     * a region root resolves past it — to the enclosing compound `<state>` if
+     * there is one, otherwise to the document root.
+     *
+     * @return The domain, or std::nullopt when the domain is the `<scxml>`
+     *         element (exit the whole configuration)
+     */
+    static std::optional<State> findLCCA(State source, State target) {
+        return HierarchicalAlgorithms::findLCCA(
+            source, target, [](State s) { return StatePolicy::getParent(s); },
+            [](State s) { return isTransitionDomainCandidate(s); });
     }
 
     static std::optional<State> getParent(State state) {

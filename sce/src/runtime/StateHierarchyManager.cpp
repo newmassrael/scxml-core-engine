@@ -595,17 +595,20 @@ void StateHierarchyManager::exitHierarchicalState(const std::string &stateId) {
         }
         SCE_LOG_DEBUG("exitHierarchicalState - Current active states: [{}]", activeStatesStr);
         SCE_LOG_DEBUG("exitHierarchicalState - Requested to exit state: {}", stateId);
-
-        bool foundState = false;
-        for (auto it = activeStates_.begin(); it != activeStates_.end(); ++it) {
-            if (*it == stateId) {
-                foundState = true;
-            }
-            if (foundState) {
-                statesToRemove.push_back(*it);
-            }
-        }
     }
+
+    // §scxml-D-exitStates: exiting a state exits the states BELOW it in the
+    // tree.
+    //
+    // What stood here removed the configuration vector's SUFFIX instead -- every
+    // entry from `stateId` onwards. In a machine whose configuration is a single
+    // chain those are the same states, which is why it survived. Under a
+    // `<parallel>` they are not: the regions are interleaved in that vector, so
+    // exiting one region's leaf also dropped every region recorded after it.
+    // Measured 2026-08-25: a sibling region that had taken no transition at all
+    // vanished from the configuration because its root sat behind the exiting
+    // state in the vector.
+    collectDescendantStates(stateId, statesToRemove);
 
     // Log what will be removed
     std::string toRemoveStr;
@@ -659,19 +662,6 @@ void StateHierarchyManager::collectDescendantStates(const std::string &parentId,
         }
     } else {
         SCE_LOG_WARN("collectDescendantStates - No model available");
-    }
-
-    // Find and add all child states recursively
-    if (model_) {
-        auto parentNode = model_->findStateById(parentId);
-        if (parentNode) {
-            const auto &children = parentNode->getChildren();
-            for (const auto &child : children) {
-                if (child) {
-                    collectDescendantStates(child->getId(), collector);
-                }
-            }
-        }
     }
 }
 
