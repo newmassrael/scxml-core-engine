@@ -299,7 +299,28 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 			}
 		}
 	} else {
-		sess.l.PushString("")
+		// W3C SCXML 5.10.1: an event carrying no data leaves this field
+		// undefined, which in a Lua session is nil. It used to be pushed as the
+		// empty STRING, and the difference is not cosmetic: Lua gives strings a
+		// metatable, so `_event.data.done` on a string answers nil instead of
+		// failing, and a `cond` reading a field off a payload that never arrived
+		// evaluates to false rather than raising `error.execution`.
+		//
+		// W3C SCXML 5.9.1 has a failed `cond` raise and be treated as false, so
+		// on every other engine — the C++ Lua one pushes nil here, the C++
+		// ECMAScript one JS_UNDEFINED and the Rust one leaves the field unset —
+		// a host can COUNT the difference between "the verdict said no" and "the
+		// verdict never carried one". Answering "" made those two identical from
+		// the configuration, from the datamodel and from the counters, which is
+		// the shape a supervising loop cannot recover from: it never converges
+		// and nothing says why. Measured 2026-08-25 by the Go channel of
+		// `examples/ai_loop/ai_loop.scxml`, whose Rust and C++ channels both
+		// counted the error this one silently swallowed.
+		//
+		// The origin/origintype fields below are deliberately the other way
+		// round — see their own comment — because `targetexpr="_event.origin"`
+		// has to evaluate to a string. Nothing evaluates `_event.data` as one.
+		sess.l.PushNil()
 		sess.l.SetField(-2, "data")
 	}
 

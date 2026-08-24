@@ -103,6 +103,75 @@ func TestEventDataReadsEveryPayloadTheClauseNames(t *testing.T) {
 	}
 }
 
+// W3C SCXML 5.10.1: an event that carries no data leaves `_event.data`
+// undefined, and a document reading a field off it must FAIL rather than be
+// answered.
+//
+// The shared table cannot ask this — every case in it has a payload — and the
+// absence is where this binding differed from every other engine. It bound the
+// empty STRING here; Lua gives strings a metatable, so `_event.data.done`
+// answered nil instead of failing, and a `cond` reading a field off a payload
+// that never arrived evaluated to false. W3C SCXML 5.9.1 has a failed `cond`
+// raise `error.execution` and be treated as false, so the two deliveries were
+// indistinguishable from the configuration, from the datamodel and from the
+// engine's counters: a document branching on `_event.data.done` took the same
+// path whether the verdict said no or never carried one, and nothing could say
+// which. Measured 2026-08-25 through the Go channel of
+// `examples/ai_loop/ai_loop.scxml`, whose C++ and Rust channels counted the
+// error this binding swallowed.
+//
+// The two halves are asserted together because the failing read alone would be
+// satisfied by a binding that never delivers a payload at all.
+func TestAnEventWithNoDataRefusesTheFieldReadItsPayloadWouldHaveAnswered(t *testing.T) {
+	engine := NewLuaEngine()
+	if err := engine.CreateSession("absent"); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer engine.DestroySession("absent")
+
+	if _, err := engine.SetCurrentEvent("absent", sce.SetCurrentEventArgs{
+		Name: "judge",
+		Type: "external",
+	}); err != nil {
+		t.Fatalf("SetCurrentEvent: %v", err)
+	}
+
+	data, err := engine.EvaluateExpression("absent", "_event.data")
+	if err != nil {
+		t.Fatalf("`_event.data` must be readable and answer that there is none: %v", err)
+	}
+	if data != nil {
+		t.Errorf("an event carrying no data bound `_event.data` to %#v (%T); the clause "+
+			"leaves the field undefined, which is nil in a Lua session", data, data)
+	}
+
+	if value, err := engine.EvaluateExpression("absent", "_event.data.done"); err == nil {
+		t.Errorf("reading a field off a payload that never arrived answered %#v instead of "+
+			"failing; a `cond` doing this evaluates to false with no error raised, and a "+
+			"host cannot tell a negative answer from an absent one", value)
+	}
+
+	// The positive control: the same read against the same session, once a
+	// payload has arrived. Without it this test would pass against a binding
+	// that refused every field read, which is a different defect with the same
+	// symptom here.
+	if _, err := engine.SetCurrentEvent("absent", sce.SetCurrentEventArgs{
+		Name: "judge",
+		Data: `{"done":true}`,
+		Type: "external",
+	}); err != nil {
+		t.Fatalf("SetCurrentEvent: %v", err)
+	}
+	done, err := engine.EvaluateExpression("absent", "_event.data.done")
+	if err != nil {
+		t.Fatalf("a payload that did arrive must answer its own fields: %v", err)
+	}
+	if done != true {
+		t.Errorf("`_event.data.done` answered %#v (%T) for a payload declaring it true",
+			done, done)
+	}
+}
+
 // TestAPayloadThatIsACallLeavesTheSessionAlone is the sharper half of the
 // expression case, which the shared table cannot ask because the side effect
 // is spelled in the receiver's own language.
