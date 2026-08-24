@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0c53513bedc7a89c1f25c346bee5d167d30d4c794497283b17bfc7211b2b267d
+// source-hash: d8762291f8adee4223c5af3de347a3acefddf00a392ed861e70d8d9802dc3abb
 // template-hash: 18f91ed61fbcea991ce606d44d6910fe1df7095e74ca3c5a78065a37d763c7a4
 // generated-at: 0
 
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_native_action.scxml:21 :: _machine"]
-// SCE-MAP: statechart_native_action.scxml:21 :: _machine
+#![doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
+// SCE-MAP: statechart_native_action.scxml:31 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -83,6 +83,7 @@ use sce_rust_runtime::{Engine, StatePolicy};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum StatechartNativeActionState {
     Assembling,
+    Faulted,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
     Idle,
@@ -94,8 +95,10 @@ pub enum StatechartNativeActionState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatechartNativeActionEvent {
+    ErrorExecution,
     FragmentReceived,
     Reset,
+    Selftest,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -117,8 +120,8 @@ impl StatechartNativeActionEvent {
     /// several machines glob-re-exported into one module never collide
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StatechartNativeActionEvent] = &[
-        StatechartNativeActionEvent::FragmentReceived,
         StatechartNativeActionEvent::Reset,
+        StatechartNativeActionEvent::Selftest,
     ];
 }
 
@@ -322,22 +325,27 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     fn get_document_order(state: Self::State) -> u32 {
         match state {
             StatechartNativeActionState::Assembling => 1,
+            StatechartNativeActionState::Faulted => 2,
             StatechartNativeActionState::Idle => 0,
         }
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            StatechartNativeActionEvent::ErrorExecution => "error.execution",
             StatechartNativeActionEvent::FragmentReceived => "fragment.received",
             StatechartNativeActionEvent::Reset => "reset",
+            StatechartNativeActionEvent::Selftest => "selftest",
             StatechartNativeActionEvent::Null => "",
         }
     }
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.execution" => Some(StatechartNativeActionEvent::ErrorExecution),
             "fragment.received" => Some(StatechartNativeActionEvent::FragmentReceived),
             "reset" => Some(StatechartNativeActionEvent::Reset),
+            "selftest" => Some(StatechartNativeActionEvent::Selftest),
             _ => None,
         }
     }
@@ -345,6 +353,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
             StatechartNativeActionState::Assembling => "assembling",
+            StatechartNativeActionState::Faulted => "faulted",
             StatechartNativeActionState::Idle => "idle",
         }
     }
@@ -355,6 +364,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
             "assembling" => Some(StatechartNativeActionState::Assembling),
+            "faulted" => Some(StatechartNativeActionState::Faulted),
             "idle" => Some(StatechartNativeActionState::Idle),
             _ => None,
         }
@@ -427,8 +437,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_native_action.scxml:21 :: _machine"]
-    // SCE-MAP: statechart_native_action.scxml:21 :: _machine
+    #[doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
+    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -441,7 +451,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
         let _ = path_child;
         match state {
             StatechartNativeActionState::Idle => {
-                // SCE-MAP: statechart_native_action.scxml:28 :: idle :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:38 :: idle :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -454,8 +464,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_native_action.scxml:21 :: _machine"]
-    // SCE-MAP: statechart_native_action.scxml:21 :: _machine
+    #[doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
+    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -464,7 +474,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     ) {
         match state {
             StatechartNativeActionState::Assembling => {
-                // SCE-MAP: statechart_native_action.scxml:39 :: assembling :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:52 :: assembling :: _state_body
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
@@ -477,8 +487,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: statechart_native_action.scxml:21 :: _machine"]
-    // SCE-MAP: statechart_native_action.scxml:21 :: _machine
+    #[doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
+    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -500,8 +510,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: statechart_native_action.scxml:21 :: _machine"]
-    // SCE-MAP: statechart_native_action.scxml:21 :: _machine
+    #[doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
+    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -512,7 +522,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
             StatechartNativeActionState::Assembling => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: statechart_native_action.scxml:43 :: assembling :: _transition_0
+                        // SCE-MAP: statechart_native_action.scxml:56 :: assembling :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         // W3C SCXML G.7: <sce:action name="reset_slot">
@@ -524,14 +534,27 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
             StatechartNativeActionState::Idle => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: statechart_native_action.scxml:32 :: idle :: _transition_0
+                        // SCE-MAP: statechart_native_action.scxml:42 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         // W3C SCXML G.7: <sce:action name="append_fragment_payload">
                         match &self.pending_payload {
-            StatechartNativeActionPayload::FragmentReceived(ev) => { self.actions.append_fragment_payload(&ev.payload, ev.offset); }
-            _ => debug_assert!(false, "native action 'append_fragment_payload' requires the typed payload of its triggering event; raise the event via its generated typed inject"),
-        }
+                            StatechartNativeActionPayload::FragmentReceived(ev) => {
+                                self.actions.append_fragment_payload(&ev.payload, ev.offset);
+                            }
+                            _ => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartNativeActionEvent::ErrorExecution, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"));
+                            }
+                        }
+                    }
+                    1 => {
+                        // SCE-MAP: statechart_native_action.scxml:48 :: idle :: _transition_1
+                        // W3C SCXML 3.13: Transition 1 actions
+
+                        // W3C SCXML 3.8.1: <raise event="fragment.received">
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            StatechartNativeActionEvent::FragmentReceived,
+                        ));
                     }
                     _ => {}
                 }
@@ -574,6 +597,36 @@ impl<A: StatechartNativeActionActions + 'static> StatechartNativeActionPolicy<A>
                     *transition_taken = true;
                     return true;
                 }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == StatechartNativeActionEvent::ErrorExecution {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = StatechartNativeActionState::Faulted;
+                    *transition_taken = true;
+                    return true;
+                }
+                false
+            }
+            StatechartNativeActionState::Faulted => {
+                // W3C SCXML 3.12: Event-triggered transitions (document order)
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == StatechartNativeActionEvent::Reset {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = StatechartNativeActionState::Idle;
+                    *transition_taken = true;
+                    return true;
+                }
                 false
             }
             StatechartNativeActionState::Idle => {
@@ -588,6 +641,19 @@ impl<A: StatechartNativeActionActions + 'static> StatechartNativeActionPolicy<A>
                     self.last_transition_is_targetless = false;
 
                     *current_state = StatechartNativeActionState::Assembling;
+                    *transition_taken = true;
+                    return true;
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == StatechartNativeActionEvent::Selftest {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = true;
+                    self.last_transition_is_targetless = true;
+
+                    // W3C SCXML 5.9.2: Targetless internal transition
                     *transition_taken = true;
                     return true;
                 }

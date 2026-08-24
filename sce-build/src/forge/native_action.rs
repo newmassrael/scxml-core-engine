@@ -578,6 +578,11 @@ pub fn interface_name(lang: Language, machine_name: &str) -> String {
 /// `build_*_event_payload` twins already use), the raw snake stem for C11.
 pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> NativeActions {
     let schemas = model.imported_event_schemas.clone();
+    // Read once, before the walk borrows `model` mutably. Every other raise
+    // site in this generator is written under the same condition — a document
+    // that declares no `error.execution` has no enum variant to name, and an
+    // event nothing can match would be discarded on arrival anyway.
+    let raises_error = model.events.contains("error.execution");
 
     let mut payload_events: BTreeSet<String> = BTreeSet::new();
     // Signatures keyed by action name; the first occurrence defines the
@@ -607,6 +612,7 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
                 None,
                 machine_name,
                 lang,
+                raises_error,
                 &mut sigs,
                 &mut payload_events,
             );
@@ -628,6 +634,7 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
                     Some(&binding),
                     machine_name,
                     lang,
+                    raises_error,
                     &mut sigs,
                     &mut payload_events,
                 );
@@ -662,11 +669,15 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
 /// no-argument. A no-argument action lowers to a bare host call in either
 /// case; an arg-bearing one reads its values from the event's typed payload
 /// and is wrapped in that backend's tag check.
+///
+/// `raises_error` reaches [`guard_payload`] unchanged — it decides whether the
+/// arm an untyped delivery takes says so with `error.execution` or stays empty.
 fn lower_native_call(
     action: &mut Action,
     binding: Option<&PayloadBinding>,
     machine_name: &str,
     lang: Language,
+    raises_error: bool,
     sigs: &mut BTreeMap<String, Signature>,
     payload_events: &mut BTreeSet<String>,
 ) {
@@ -708,7 +719,14 @@ fn lower_native_call(
     sigs.entry(name.clone()).or_insert(params);
 
     let stmt = call(lang, &name, &call_args);
-    action.native_action_rendered = guard_payload(lang, machine_name, binding.event, &name, &stmt);
+    action.native_action_rendered = guard_payload(
+        lang,
+        machine_name,
+        binding.event,
+        &name,
+        &stmt,
+        raises_error,
+    );
 }
 
 /// The backend's spelling of the bound typed payload a native action reads its
@@ -736,51 +754,149 @@ fn payload_accessor(lang: Language, event: &str) -> String {
 }
 
 /// Wrap `stmt` in the check that proves the bound typed payload is the one
-/// this action reads from.
+/// this action reads from, and say so when it is not there.
 ///
-/// An event raised by NAME (not through the generated typed inject) carries no
-/// payload and cannot supply the arguments — a contract violation, NOT a silent
-/// skip. Rust says so with a `debug_assert!` that a release build compiles away
-/// (no MCU cost); every other backend checks the same tag its own native guards
-/// check, so an untyped delivery takes the branch nobody wrote and the host is
-/// not handed a zeroed argument it would take for data. The per-backend
-/// channels assert both halves.
+/// An event that arrives without its typed payload cannot supply the
+/// arguments. Two things can produce one, and only one of them is a host
+/// mistake: a host reaching for `raise_<event>_by_name` instead of the
+/// generated typed inject, and the DOCUMENT'S OWN `<raise event="…"/>` of a
+/// payload-typed event — legal SCXML that this generator accepts. So the
+/// answer cannot be "blame the caller". The spec already names one, cited in
+/// the body below: the failure is signalled as `error.execution` on the
+/// internal event queue, which the document can answer with a transition of
+/// its own.
+///
+/// That is what every backend emits here, in its own convention — one
+/// behaviour rather than six. It replaces two wrong answers measured on
+/// 2026-08-24 against one document: five backends skipped in silence, and Rust
+/// alone aborted the process through a `debug_assert!` that a release build
+/// compiled away, so the same legal document either killed a development build
+/// or did nothing at all depending on the profile.
+///
+/// `raises_error` is `false` for a document that declares no `error.execution`
+/// event; there is then no enum variant to name and nothing could match the
+/// event anyway, so the arm stays empty. That is the same
+/// `'error.execution' in model.events` condition every other raise site in
+/// this generator is written under.
 fn guard_payload(
     lang: Language,
     machine_name: &str,
     event: &str,
     action_name: &str,
     stmt: &str,
+    raises_error: bool,
 ) -> String {
     let variant = filters::to_event_variant(event.to_string());
+    // §scxml-3.12.2: `error.execution` is the processor's own signal for errors
+    // "internal to the execution of the document, such as those arising from
+    // expression evaluation", and it MUST go on the internal event queue — where
+    // a transition can answer it, or nothing can and it is discarded. An
+    // argument the delivery cannot supply is exactly such an error, which is why
+    // neither silence nor a process abort is available here. Cited in the body
+    // rather than the doc comment because the ledger's Rust resolver binds a
+    // citation to the symbol enclosing it, and a `///` line encloses nothing.
+    //
+    // One message for all six. A per-backend wording is how a single contract
+    // turns back into six, which is the drift this lowering exists to prevent.
+    let msg = format!(
+        "<sce:action name='{action_name}'> needs the typed payload of \
+         '{event}', which this delivery did not carry"
+    );
     match lang {
         Language::Rust => {
             let enum_name = format!("{machine_name}Payload");
-            let msg = format!(
-                "native action '{action_name}' requires the typed payload of its \
-                 triggering event; raise the event via its generated typed inject"
-            );
+            let otherwise = if raises_error {
+                format!(
+                    "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(\
+                     {machine_name}Event::ErrorExecution, {msg:?}));"
+                )
+            } else {
+                String::new()
+            };
             format!(
                 "match &self.pending_payload {{\n            \
                  {enum_name}::{variant}(ev) => {{ {stmt} }}\n            \
-                 _ => debug_assert!(false, {msg:?}),\n        }}"
+                 _ => {{ {otherwise} }}\n        }}"
             )
         }
-        Language::Go => format!(
-            "if p.pendingPayloadTag == {machine_name}PayloadTag{variant} {{\n\t\t{stmt}\n\t}}"
-        ),
-        Language::Cpp => format!(
-            "if (pendingPayloadTag_ == {machine_name}PayloadTag::{variant}) {{\n    {stmt}\n}}"
-        ),
-        Language::Kotlin => format!("pending{variant}Payload?.let {{ {stmt} }}"),
+        Language::Go => {
+            let otherwise = if raises_error {
+                format!(
+                    " else {{\n\t\tengine.Raise(sce.NewPlatformError(\
+                     {machine_name}EventErrorExecution, \"{msg}\"))\n\t}}"
+                )
+            } else {
+                String::new()
+            };
+            format!(
+                "if p.pendingPayloadTag == {machine_name}PayloadTag{variant} \
+                 {{\n\t\t{stmt}\n\t}}{otherwise}"
+            )
+        }
+        Language::Cpp => {
+            let otherwise = if raises_error {
+                format!(
+                    " else {{\n    engine.raise(typename Engine::EventWithMetadata(\
+                     Event::Error_execution, \"{msg}\"));\n}}"
+                )
+            } else {
+                String::new()
+            };
+            format!(
+                "if (pendingPayloadTag_ == {machine_name}PayloadTag::{variant}) \
+                 {{\n    {stmt}\n}}{otherwise}"
+            )
+        }
+        Language::Kotlin => {
+            let otherwise = if raises_error {
+                format!(
+                    " ?: run {{ raiseInternal({machine_name}Event.Error.Execution, \
+                     EventMetadata(data = \"{msg}\", type = \"platform\")) }}"
+                )
+            } else {
+                String::new()
+            };
+            format!("pending{variant}Payload?.let {{ {stmt} }}{otherwise}")
+        }
         Language::Python => {
             let snake = filters::to_snake_case(event.to_string());
-            format!("if (_p := self._pending_{snake}_payload) is not None: {stmt}")
+            // ONE line, because this backend's dispatcher hands the call site a
+            // literal indent prefix that only reaches the first one. The
+            // conditional EXPRESSION keeps both arms on it, and evaluates its
+            // condition first, so the walrus still binds before `stmt` runs.
+            if raises_error {
+                // `_raise_error_execution` is this backend's single raise site
+                // (emitted unconditionally); calling it is what keeps
+                // `_event.type` and `_event.data` filled the same way here as
+                // everywhere else Python signals a platform error.
+                format!(
+                    "{stmt} if (_p := self._pending_{snake}_payload) is not None \
+                     else self._raise_error_execution(engine, \"{msg}\")"
+                )
+            } else {
+                format!("if (_p := self._pending_{snake}_payload) is not None: {stmt}")
+            }
         }
         Language::C11 => {
             let upper = machine_name.to_uppercase();
             let token = event.replace(['.', '-'], "_").to_uppercase();
-            format!("if (sm->pending_payload.tag == {upper}_PAYLOAD_{token}) {{\n    {stmt}\n}}")
+            // `_raise_platform_error` is emitted unconditionally by this
+            // backend's header and its own comment calls itself "the single way
+            // generated code raises a platform error" — hand-rolling the
+            // carrier here is exactly the drift it exists to absorb, and would
+            // leave `_event.type` and `_event.data` empty.
+            let otherwise = if raises_error {
+                format!(
+                    " else {{\n    {machine_name}_raise_platform_error(\
+                     sm, {upper}_EVENT_ERROR_EXECUTION, \"{msg}\");\n}}"
+                )
+            } else {
+                String::new()
+            };
+            format!(
+                "if (sm->pending_payload.tag == {upper}_PAYLOAD_{token}) \
+                 {{\n    {stmt}\n}}{otherwise}"
+            )
         }
     }
 }

@@ -108,18 +108,44 @@ def test_native_action_does_not_fire_without_its_typed_payload():
     The transition still fires — the guard is the event name — but the
     arg-bearing action has nothing to read, and handing the host a zeroed
     buffer it would take for data is the one outcome this seam must never
-    produce. Asserted on the host's record rather than on the configuration,
-    because the machine reaches ``assembling`` either way.
+    produce. Asserted on the host's record AND on the configuration: the
+    record says the host was not handed a value it would take for data, and
+    ``faulted`` says the machine reported it rather than swallowing it.
+    §scxml-3.12.2 makes the second half a contract — ``error.execution``
+    covers errors "arising from expression evaluation", and the processor
+    MUST place it on the internal event queue.
     """
     host = Recorder()
     engine = _started(host)
 
     engine.send_event(_sm.StatechartNativeActionEvent.FRAGMENT_RECEIVED)
 
-    assert engine.current_state == _sm.StatechartNativeActionState.ASSEMBLING
     assert host.appended == [], (
         "append_fragment_payload fired without a typed payload to read"
     )
+    assert engine.current_state == _sm.StatechartNativeActionState.FAULTED
     # The eventless effects still ran: they read no payload, so nothing about
     # this delivery should have stopped them.
+    assert host.idle_entries == 1
+    assert host.assembling_exits == 1
+
+
+def test_native_action_answers_a_document_raised_event_with_error_execution():
+    """The same arm, reached with NO host mistake at all.
+
+    ``<raise event="fragment.received"/>`` is legal SCXML this generator
+    accepts, and a raise carries no typed payload. The host's only act here
+    is delivering ``selftest``; everything after it is the document's own
+    doing, so a generator answering it by aborting would be blaming the
+    author for a document it compiled.
+    """
+    host = Recorder()
+    engine = _started(host)
+
+    engine.send_event(_sm.StatechartNativeActionEvent.SELFTEST)
+
+    assert host.appended == [], (
+        "a document-raised fragment.received has no payload to hand the host"
+    )
+    assert engine.current_state == _sm.StatechartNativeActionState.FAULTED
     assert host.idle_entries == 1

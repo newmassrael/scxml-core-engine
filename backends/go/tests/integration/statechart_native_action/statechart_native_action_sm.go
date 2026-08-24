@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0c53513bedc7a89c1f25c346bee5d167d30d4c794497283b17bfc7211b2b267d
+// source-hash: d8762291f8adee4223c5af3de347a3acefddf00a392ed861e70d8d9802dc3abb
 // template-hash: 18f91ed61fbcea991ce606d44d6910fe1df7095e74ca3c5a78065a37d763c7a4
 // generated-at: 0
 
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_native_action.scxml:21 :: _machine
+// SCE-MAP: statechart_native_action.scxml:31 :: _machine
 
 package statechart_native_action
 
@@ -49,13 +49,16 @@ type StatechartNativeActionState int
 
 const (
 	StatechartNativeActionStateAssembling StatechartNativeActionState = 0
-	StatechartNativeActionStateIdle StatechartNativeActionState = 1
+	StatechartNativeActionStateFaulted StatechartNativeActionState = 1
+	StatechartNativeActionStateIdle StatechartNativeActionState = 2
 )
 
 func (s StatechartNativeActionState) String() string {
 	switch s {
 	case StatechartNativeActionStateAssembling:
 		return "assembling"
+	case StatechartNativeActionStateFaulted:
+		return "faulted"
 	case StatechartNativeActionStateIdle:
 		return "idle"
 	}
@@ -69,18 +72,24 @@ func (s StatechartNativeActionState) String() string {
 type StatechartNativeActionEvent int
 
 const (
-	StatechartNativeActionEventFragmentReceived StatechartNativeActionEvent = 0
-	StatechartNativeActionEventReset StatechartNativeActionEvent = 1
+	StatechartNativeActionEventErrorExecution StatechartNativeActionEvent = 0
+	StatechartNativeActionEventFragmentReceived StatechartNativeActionEvent = 1
+	StatechartNativeActionEventReset StatechartNativeActionEvent = 2
+	StatechartNativeActionEventSelftest StatechartNativeActionEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StatechartNativeActionEventNull StatechartNativeActionEvent = 2
+	StatechartNativeActionEventNull StatechartNativeActionEvent = 4
 )
 
 func (e StatechartNativeActionEvent) String() string {
 	switch e {
+	case StatechartNativeActionEventErrorExecution:
+		return "error.execution"
 	case StatechartNativeActionEventFragmentReceived:
 		return "fragment.received"
 	case StatechartNativeActionEventReset:
 		return "reset"
+	case StatechartNativeActionEventSelftest:
+		return "selftest"
 	case StatechartNativeActionEventNull:
 		return ""
 	}
@@ -249,6 +258,8 @@ func (p *StatechartNativeActionPolicy) GetDocumentOrder(state StatechartNativeAc
 	switch state {
 	case StatechartNativeActionStateAssembling:
 		return 1
+	case StatechartNativeActionStateFaulted:
+		return 2
 	case StatechartNativeActionStateIdle:
 		return 0
 	}
@@ -263,10 +274,14 @@ func (p *StatechartNativeActionPolicy) GetEventName(event StatechartNativeAction
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *StatechartNativeActionPolicy) GetEventFromName(name string) (StatechartNativeActionEvent, bool) {
 	switch name {
+	case "error.execution":
+		return StatechartNativeActionEventErrorExecution, true
 	case "fragment.received":
 		return StatechartNativeActionEventFragmentReceived, true
 	case "reset":
 		return StatechartNativeActionEventReset, true
+	case "selftest":
+		return StatechartNativeActionEventSelftest, true
 	}
 	return StatechartNativeActionEventNull, false
 }
@@ -395,14 +410,14 @@ func (p *StatechartNativeActionPolicy) ClearEventMetadata() {
 
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
-//line statechart_native_action.scxml:21
+//line statechart_native_action.scxml:31
 func (p *StatechartNativeActionPolicy) ExecuteEntryActions(state StatechartNativeActionState, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], pathChild *StatechartNativeActionState) {
 	// Only a `<parallel>` machine descends into defaults here, so a machine
 	// without one has nothing to tell an ancestor entry from a target entry.
 	_ = pathChild
 	switch state {
 	case StatechartNativeActionStateIdle:
-		//line statechart_native_action.scxml:28
+		//line statechart_native_action.scxml:38
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -416,11 +431,11 @@ func (p *StatechartNativeActionPolicy) ExecuteEntryActions(state StatechartNativ
 }
 
 // ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
-//line statechart_native_action.scxml:21
+//line statechart_native_action.scxml:31
 func (p *StatechartNativeActionPolicy) ExecuteExitActions(state StatechartNativeActionState, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], preTransitionActive []StatechartNativeActionState) {
 	switch state {
 	case StatechartNativeActionStateAssembling:
-		//line statechart_native_action.scxml:39
+		//line statechart_native_action.scxml:52
 		// W3C SCXML 3.9: onexit block 0
 		for exitBlock0 := 0; exitBlock0 < 1; exitBlock0++ {
 			_ = exitBlock0
@@ -435,7 +450,7 @@ func (p *StatechartNativeActionPolicy) ExecuteExitActions(state StatechartNative
 
 // ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
 // Returns true if a transition was taken.
-//line statechart_native_action.scxml:21
+//line statechart_native_action.scxml:31
 func (p *StatechartNativeActionPolicy) ProcessTransition(currentState *StatechartNativeActionState, event StatechartNativeActionEvent, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) bool {
 
 	// W3C SCXML 3.12: Try transitions in current state first
@@ -449,7 +464,7 @@ func (p *StatechartNativeActionPolicy) ProcessTransition(currentState *Statechar
 
 
 // tryTransitionInState checks transitions for a single state.
-//line statechart_native_action.scxml:21
+//line statechart_native_action.scxml:31
 func (p *StatechartNativeActionPolicy) tryTransitionInState(checkState StatechartNativeActionState, event StatechartNativeActionEvent, currentState *StatechartNativeActionState, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) bool {
 	switch checkState {
 	case StatechartNativeActionStateAssembling:
@@ -463,6 +478,27 @@ func (p *StatechartNativeActionPolicy) tryTransitionInState(checkState Statechar
 			p.hasTransitionActions = true
 			return true
 		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == StatechartNativeActionEventErrorExecution {
+			*currentState = StatechartNativeActionStateFaulted
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = StatechartNativeActionStateAssembling
+			p.lastTransitionIndex = 1
+			p.hasTransitionActions = false
+			return true
+		}
+	case StatechartNativeActionStateFaulted:
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == StatechartNativeActionEventReset {
+			*currentState = StatechartNativeActionStateIdle
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = StatechartNativeActionStateFaulted
+			p.lastTransitionIndex = 0
+			p.hasTransitionActions = false
+			return true
+		}
 	case StatechartNativeActionStateIdle:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartNativeActionEventFragmentReceived {
@@ -474,12 +510,21 @@ func (p *StatechartNativeActionPolicy) tryTransitionInState(checkState Statechar
 			p.hasTransitionActions = true
 			return true
 		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == StatechartNativeActionEventSelftest {
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = true
+			p.lastTransitionSourceState = StatechartNativeActionStateIdle
+			p.lastTransitionIndex = 1
+			p.hasTransitionActions = true
+			return true
+		}
 	}
 	return false
 }
 
 // ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
-//line statechart_native_action.scxml:21
+//line statechart_native_action.scxml:31
 func (p *StatechartNativeActionPolicy) ExecuteTransitionActions(engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) {
 	if !p.hasTransitionActions {
 		return
@@ -487,19 +532,28 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionActions(engine *sce.Engi
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == StatechartNativeActionStateAssembling && idx == 0 {
-		//line statechart_native_action.scxml:43
+		//line statechart_native_action.scxml:56
 
 		// W3C SCXML G.7: <sce:action name="reset_slot">
 		p.actions.ResetSlot()
 		return
 	}
 	if source == StatechartNativeActionStateIdle && idx == 0 {
-		//line statechart_native_action.scxml:32
+		//line statechart_native_action.scxml:42
 
 		// W3C SCXML G.7: <sce:action name="append_fragment_payload">
 		if p.pendingPayloadTag == StatechartNativeActionPayloadTagFragmentReceived {
 		p.actions.AppendFragmentPayload(p.pendingFragmentReceivedPayload.payload, p.pendingFragmentReceivedPayload.offset)
+	} else {
+		engine.Raise(sce.NewPlatformError(StatechartNativeActionEventErrorExecution, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"))
 	}
+		return
+	}
+	if source == StatechartNativeActionStateIdle && idx == 1 {
+		//line statechart_native_action.scxml:48
+
+	engine.Raise(sce.NewEventWithMetadata(StatechartNativeActionEventFragmentReceived))
+
 		return
 	}
 }

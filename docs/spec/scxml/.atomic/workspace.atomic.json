@@ -1135,6 +1135,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/native_action.rs",
+          "symbol": "guard_payload",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

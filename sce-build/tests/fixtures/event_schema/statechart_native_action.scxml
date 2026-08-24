@@ -17,6 +17,16 @@
   trait, so the machine needs no IScriptEngine and compiles under `#![no_std]`.
   `on_idle_entry` / `on_assembling_exit` appear in no transition, so they also
   prove eventless-only actions still get a generated trait method.
+
+  `selftest` and `faulted` carry the other half of the contract. A document may
+  legally `<raise>` a payload-typed event itself, and such a raise carries no
+  typed payload — so `append_fragment_payload` reaches a delivery it cannot
+  read arguments from WITHOUT any host mistake. §scxml-3.12.2 names the answer:
+  an error "arising from expression evaluation" is signalled as
+  `error.execution` on the internal event queue, and `assembling` answers it. Every backend must show the same three facts on this
+  path — the host is not called, the machine does not die, and the document's
+  own handler runs — which is why the fixture drives it rather than leaving it
+  to each channel to invent.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -35,6 +45,9 @@
         <sce:arg expr="_event.data.offset"/>
       </sce:action>
     </transition>
+    <transition event="selftest">
+      <raise event="fragment.received"/>
+    </transition>
   </state>
   <state id="assembling">
     <onexit>
@@ -43,5 +56,12 @@
     <transition event="reset" target="idle">
       <sce:action name="reset_slot"/>
     </transition>
+    <transition event="error.execution" target="faulted"/>
+  </state>
+  <!-- Not a trap. `error.execution` is a condition a host recovers from, and a
+       terminal state would also stop any channel from re-proving on the SAME
+       machine that the action site it just skipped is live. -->
+  <state id="faulted">
+    <transition event="reset" target="idle"/>
   </state>
 </scxml>
