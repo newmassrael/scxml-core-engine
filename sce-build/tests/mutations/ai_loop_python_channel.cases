@@ -1,0 +1,74 @@
+# Mutation cases for "the Python channel of the AI loop can still fail".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/ai_loop_python_channel.cases`.
+#
+# The pytest half of what `ai_loop_go_channel.cases` is for the Go one. Between
+# them they are why `scripts/mutate` grew two runners: it knew cargo and ctest,
+# so every clause this repository proves only in Go or only in Python sat
+# outside the reach of the one tool that asks whether a test can fail at all.
+#
+# Python compiles nothing, so its sources are its artifacts and every edit here
+# is a `mutation_runtime_targets` — the same treatment a gate script gets, and
+# for the same reason: the file is read fresh on every run, so the evidence
+# that a mutation reached the code is that the file on disk differed while the
+# tests ran.
+#
+# The machine this suite imports is GENERATED and gitignored, which is why the
+# regeneration below is declared: without it a clean tree collects nothing and
+# every case would read as a collection error rather than as a verdict.
+
+mutation_pytest backends/python/tests integration/ai_loop/
+mutation_regen scripts/regen_ai_loop_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/scripting/lua_engine.py
+mutation_runtime_targets backends/python/runtime/sce_runtime/datamodel_read.py
+mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py
+mutation_oracles backends/python/tests/integration/ai_loop/test_ai_loop_aot.py
+
+# ── The payload that never arrived answers instead of failing ──────
+#
+# W3C SCXML 5.10.1 leaves `_event.data` undefined for an event carrying no
+# data, and this binding already does that — the field is simply never set. Set
+# it to the empty string and Lua's string metatable makes `_event.data.done`
+# answer nil rather than fail: the `cond` evaluates to false, no
+# `error.execution` is raised, and a supervising host cannot tell "the verdict
+# said no" from "the verdict never carried one".
+#
+# The Go binding shipped exactly this defect until 2026-08-25 and no suite in
+# the repository noticed. This is the case that would have.
+
+mutation_case "a payload-less event answers with the empty string again" <<'PY'
+edit("backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+     '        reading = PayloadReading.ABSENT\n        if args.event_data:',
+     '        reading = PayloadReading.ABSENT\n        event_table["data"] = ""\n        if args.event_data:')
+PY
+
+# ── A structured reader forwards whatever the serialiser produced ──
+#
+# `screen_rules` is declared as an array and the document's own comment calls
+# it the standing instructions a host must be able to list. The reader answers
+# "cannot" for a variable now holding a scalar, and the test of that is the
+# first character of the engine's own JSON: `[` opens an array and `{` an
+# object, and nothing else stringifies to either.
+#
+# Drop the check and `5` reads back as valid JSON for a shape the document no
+# longer has.
+
+mutation_case "the structured reader stops checking what shape came back" <<'PY'
+edit("backends/python/runtime/sce_runtime/datamodel_read.py",
+     '    if not json or json[0] not in "[{":\n        return None',
+     '    if not json:\n        return None')
+PY
+
+# ── The count stops naming what it counted ─────────────────────────
+#
+# A host reading only a number cannot tell a failed `cond` from a failed
+# action, which is why the count and the name are asserted together. This
+# leaves the count intact and takes the name away — the half of that pair a
+# test asserting only the number would never miss.
+
+mutation_case "the error count stops naming the event it counted" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        and a count alone separates neither.\n        \"\"\"\n        return self._last_unhandled_error",
+     "        and a count alone separates neither.\n        \"\"\"\n        return None")
+PY

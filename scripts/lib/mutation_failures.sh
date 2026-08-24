@@ -40,6 +40,29 @@ mutation_failures_from_cargo() {
     sed -n 's/^test \(.*\) \.\.\. FAILED$/\1/p'
 }
 
+# Go's verdict lines out of a compiled `go test -c` binary run with `-test.v`.
+#
+# Anchored at the start of the line, which is what separates a test from a
+# SUBTEST: Go indents a subtest's verdict by four spaces per level, and a
+# parent whose subtest failed prints its own `--- FAIL` too. Counting both
+# would report two red where the runner reports one, and the count is what the
+# harness compares against its baseline.
+mutation_failures_from_go() {
+    sed -n 's/^--- FAIL: \([^ ]*\).*/\1/p'
+}
+
+# pytest's short summary, which it prints for a failing run under `-q`.
+#
+# The node id alone — `path::test_name` — because the reason follows it after
+# a dash and is one line of an assertion that may be many. `ERROR` lines are
+# read as well: a fixture or an import that refused is a test that did not
+# run, and a mutation that breaks collection is exactly the shape a Python
+# round has to be able to name (the machine this suite imports is generated,
+# so a mutation upstream of it fails at import rather than at an assertion).
+mutation_failures_from_pytest() {
+    sed -n -e 's/^FAILED \([^ ]*\).*/\1/p' -e 's/^ERROR \([^ ]*\).*/\1/p'
+}
+
 # How many failing baseline tests to list under the refusal.
 MUTATION_BASELINE_FAILURE_LINES="${MUTATION_BASELINE_FAILURE_LINES:-20}"
 

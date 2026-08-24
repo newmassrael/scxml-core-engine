@@ -345,6 +345,42 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y pkg-config libxml2-dev
 
+    # A round whose oracle is a Go suite compiles it with `go test -c`, so the
+    # toolchain has to be here and has to be the one `w3c-tests.yml` pins —
+    # a round judging a backend on a different Go than the lane that gates it
+    # would be answering about a build nobody ships.
+    #
+    # Installed under the runner condition rather than always, because these
+    # jobs are one per casefile and most of them are cargo rounds that would
+    # pay for a toolchain they never call.
+    - name: Setup Go
+      if: matrix.runner == 'go'
+      uses: actions/setup-go@v7
+      with:
+        go-version: '1.22'
+        cache-dependency-path: |
+          backends/go/runtime/go.sum
+          backends/go/lua/go.sum
+          backends/go/tests/go.sum
+
+    # The same for a pytest round, and here the install is load-bearing in a
+    # way the Go one is not: `lupa` is the Lua binding the Python runtime's
+    # script engine is, and `pytest` is the runner itself. Without them the
+    # round's baseline fails to collect and reports a red tree — which is the
+    # exact shape this job already paid for once with the rev-pinned validator
+    # below, a true sentence about a missing tool phrased as a defect.
+    - name: Setup Python
+      if: matrix.runner == 'pytest'
+      uses: actions/setup-python@v7
+      with:
+        python-version: '3.11'
+
+    - name: Install the Python runtime's dependencies
+      if: matrix.runner == 'pytest'
+      run: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install lupa pytest
+
     # The same repair `rust-workspace-tests.yml` already carries, and for the
     # same two tests. `gate_registry_contract` is the ORACLE of three casefiles
     # in this corpus, and it drives the staged citation stage as a subprocess;

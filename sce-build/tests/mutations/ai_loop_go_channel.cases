@@ -1,0 +1,73 @@
+# Mutation cases for "the Go channel of the AI loop can still fail".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/ai_loop_go_channel.cases`.
+#
+# This is the first casefile whose oracle is a GO suite, and it exists as much
+# for the harness as for the backend: `scripts/mutate` knew cargo and ctest, so
+# every clause this repository proves only in Go or only in Python was outside
+# the reach of the one tool that asks whether a test can fail at all. A green
+# suite is not evidence until something has watched it turn red.
+#
+# The oracle is the Go channel of `examples/ai_loop/ai_loop.scxml` — 27
+# scenarios that `sce-build/tests/ai_loop_channel_parity.rs` holds to the same
+# set as the other five channels. The targets below are the two places that
+# channel reads the engine through, and both were chosen because a defect has
+# actually lived in one of them: the `_event.data` binding shipped as the empty
+# string until 2026-08-25, and no suite in the repository noticed.
+
+mutation_go backends/go/tests ./integration/ai_loop/
+mutation_runtime_targets backends/go/lua/lua_engine.go
+mutation_runtime_targets backends/go/runtime/datamodel_read.go
+mutation_runtime_targets backends/go/runtime/engine.go
+mutation_oracles backends/go/tests/integration/ai_loop/ai_loop_test.go
+
+# ── The payload that never arrived answers instead of failing ──────
+#
+# The defect this repository actually shipped, put back. W3C SCXML 5.10.1
+# leaves `_event.data` undefined for an event carrying no data, and Lua gives
+# strings a metatable — so binding the empty string here makes
+# `_event.data.done` answer nil rather than fail, a `cond` reading it evaluate
+# to false rather than raise `error.execution`, and a supervising host unable
+# to tell "the verdict said no" from "the verdict never carried one".
+#
+# Every other channel counted that error while this one did not, which is what
+# a fourth, fifth and sixth channel are for. The scenario that must go red is
+# `TestAVerdictWithoutItsPayloadIsReported`.
+
+mutation_case "a payload-less event answers with the empty string again" <<'PY'
+edit("backends/go/lua/lua_engine.go",
+     "\t\tsess.l.PushNil()\n\t\tsess.l.SetField(-2, \"data\")",
+     "\t\tsess.l.PushString(\"\")\n\t\tsess.l.SetField(-2, \"data\")")
+PY
+
+# ── A structured reader forwards whatever the serialiser produced ──
+#
+# `screen_rules` is declared as an array and the document's own comment calls
+# it the standing instructions a host must be able to list. The reader answers
+# "cannot" for a variable now holding a scalar, and the test of that is the
+# first character of the engine's own JSON: `[` opens an array and `{` an
+# object, and nothing else stringifies to either.
+#
+# Drop the check and `5` reads back as valid JSON for a shape the document no
+# longer has — which is the difference between a host showing three screened
+# questions and a host showing a number.
+
+mutation_case "the structured reader stops checking what shape came back" <<'PY'
+edit("backends/go/runtime/datamodel_read.go",
+     "\tif json[0] != '[' && json[0] != '{' {\n\t\treturn \"\", false\n\t}",
+     "\tif false {\n\t\treturn \"\", false\n\t}")
+PY
+
+# ── The count stops naming what it counted ─────────────────────────
+#
+# A host reading only a number cannot tell a failed `cond` from a failed
+# action, which is why the count and the name are asserted together. This
+# leaves the count intact and takes the name away — the half of that pair a
+# test asserting only the number would never miss.
+
+mutation_case "the error count stops naming the event it counted" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "func (e *Engine[S, E]) LastUnhandledError() (E, bool) {\n\treturn e.lastUnhandledError, e.hasUnhandledError\n}",
+     "func (e *Engine[S, E]) LastUnhandledError() (E, bool) {\n\tvar none E\n\treturn none, false\n}")
+PY
