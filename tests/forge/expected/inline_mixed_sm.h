@@ -11,6 +11,7 @@
 // SCE-MAP: inline_mixed.scxml:3 :: _machine
 
 #pragma once
+#include "core/ConfigurationHelper.h"
 #include "static/StaticExecutionEngine.h"
 #include <cstdint>
 #include <memory>
@@ -290,5 +291,21 @@ static_assert(::SCE::Core::EventNamingPolicy<inline_mixedPolicy>,
 static_assert(::SCE::Core::StateNamingPolicy<inline_mixedPolicy>,
     "Generated inline_mixedPolicy must satisfy StateNamingPolicy concept");
 #endif
+
+// §scxml-3.3: `getStateName` and `getStateFromName` are a round trip, or they
+// are two independent maps that happen to agree today.
+//
+// Emitting both halves from one list is not enough on its own: an edit that
+// touches one loop and not the other still compiles, and the defect is then a
+// name that does not read back — which only a host attempting a restore would
+// ever meet, in another process, hours later. A per-state assertion moves that
+// to the build.
+//
+// Here rather than inside the policy, because a constexpr member function is
+// not usable in a constant expression until its class is complete.
+static_assert(inline_mixedPolicy::getStateFromName(inline_mixedPolicy::getStateName(inline_mixedPolicy::State::Active)) == inline_mixedPolicy::State::Active,
+    "getStateName / getStateFromName disagree about `active`");
+static_assert(inline_mixedPolicy::getStateFromName(inline_mixedPolicy::getStateName(inline_mixedPolicy::State::Idle)) == inline_mixedPolicy::State::Idle,
+    "getStateName / getStateFromName disagree about `idle`");
 
 }  // namespace SCE::Generated::inline_mixed

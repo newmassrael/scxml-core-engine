@@ -805,4 +805,179 @@ TEST_F(AiLoopAotTest, AFailureEndsTheWholeRun) {
         << describe(sm);
 }
 
+// The sibling of `a_run_journalled_as_names_resumes_where_it_stopped`.
+//
+// A supervision loop outlives the process that runs it: the agent's session is
+// hours long and the thing driving it gets deployed, restarted and moved. So
+// the question this asks is the one a host actually has — can where the
+// machine WAS be written down as text, and can that text put it back?
+//
+// Text is the whole point. An enumerator is a build artefact of one binary and
+// the process that resumes is a different one, so the journal here is
+// `std::string`, exactly what a host would put in a file. `getStateName`
+// publishes it and `getStateFromName` reads it back.
+//
+// And the resume must perform NOTHING. Every act this document declares is a
+// `<send type="x-sce-host">` in an `<onentry>`, so an entry replay would post
+// the run's earlier prompts a second time to a peer that already answered
+// them. That is what the recording handler below measures, and it is invisible
+// to any assertion about the configuration — the machine looks right either
+// way.
+TEST_F(AiLoopAotTest, ARunJournalledAsNamesResumesWhereItStopped) {
+    std::vector<std::string> journal;
+    std::string journalledCurrent;
+    {
+        Machine ran;
+        start(ran);
+        turn(ran);
+        turn(ran);
+
+        for (const auto state : active(ran)) {
+            journal.emplace_back(ran.getPolicy().getStateName(state));
+        }
+        journalledCurrent = ran.getPolicy().getStateName(ran.getCurrentState());
+        ASSERT_NE(std::find(journal.begin(), journal.end(), std::string{"working"}), journal.end())
+            << "the journal is meant to be taken mid-run, with the cycle at work; it reads " << describe(ran);
+    }
+
+    // A new machine, holding nothing but those strings.
+    std::vector<Machine::State> configuration;
+    for (const auto &name : journal) {
+        const auto state = Machine::PolicyType::getStateFromName(name.c_str());
+        ASSERT_TRUE(state.has_value())
+            << "`" << name
+            << "` is a name this policy published through getStateName and it did not read back, "
+               "so a configuration cannot survive its own record";
+        configuration.push_back(*state);
+    }
+    const auto current = Machine::PolicyType::getStateFromName(journalledCurrent.c_str());
+    ASSERT_TRUE(current.has_value()) << "the current state's own name `" << journalledCurrent << "` did not read back";
+
+    std::vector<std::string> performed;
+    Machine resumed;
+    resumed.registerEventProcessor("x-sce-host", [&performed](const SCE::HostSendRequest &req) {
+        performed.push_back(req.eventName);
+        return std::vector<SCE::HostSendResponse>{};
+    });
+    resumed.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                [](SCE::IScriptEngine *) {}));
+    // Deliberately NOT initialize(): that is the other door, and it would run
+    // the entry actions this one exists to skip.
+    const auto verdict = resumed.enterAt(configuration, *current);
+    ASSERT_EQ(verdict, SCE::Core::ConfigurationRejection::None)
+        << "a configuration this document published is one it can be put back into, but enterAt "
+           "refused: "
+        << SCE::Core::configurationRejectionText(verdict);
+
+    EXPECT_EQ(active(resumed), configuration)
+        << "the machine came back somewhere other than where the journal said it was: " << describe(resumed);
+    EXPECT_EQ(resumed.getCurrentState(), *current);
+    EXPECT_TRUE(resumed.isRunning());
+    EXPECT_TRUE(performed.empty())
+        << "resuming performed " << performed.size()
+        << " act(s), which is the replay enterAt exists to avoid — a host would see the run's "
+           "earlier prompts sent a second time";
+}
+
+// The sibling of `every_state_a_run_reaches_reads_back_from_its_own_name`.
+//
+// A name that does not read back is a state a resume cannot reach, and the
+// only way to find one is to walk the document rather than to list its states:
+// a written-out list is exactly what this method exists to replace, and it
+// ages the moment a state is added.
+//
+// So the states are collected by RUNNING the loop down its branches, and every
+// one a run actually stood in has to survive the round trip. The floor is what
+// keeps a broken walk from reading as a pass — an empty sweep round-trips
+// perfectly.
+TEST_F(AiLoopAotTest, EveryStateARunReachesReadsBackFromItsOwnName) {
+    std::vector<Machine::State> seen;
+    const auto record = [&seen](Machine &sm) {
+        for (const auto state : sm.getPolicy().getActiveStates()) {
+            if (std::find(seen.begin(), seen.end(), state) == seen.end()) {
+                seen.push_back(state);
+            }
+        }
+    };
+
+    {
+        Machine sm;
+        start(sm);
+        record(sm);
+        for (int i = 0; i < 60; ++i) {
+            if (holds(sm, Machine::State::Reflecting)) {
+                record(sm);
+                sm.processEvent(Machine::Event::Reflect_applied);
+                record(sm);
+                sm.processEvent(Machine::Event::Session_ready);
+            }
+            if (holds(sm, Machine::State::Exhausted)) {
+                break;
+            }
+            turn(sm);
+            record(sm);
+        }
+        record(sm);
+    }
+    {
+        Machine sm;
+        start(sm);
+        sm.processEvent(Machine::Event::Turn_done);
+        verdict(sm, true);
+        record(sm);
+        sm.processEvent(Machine::Event::Turn_done);
+        record(sm);
+    }
+    {
+        Machine sm;
+        start(sm);
+        sm.processEvent(Machine::Event::Turn_blocked);
+        record(sm);
+        sm.processEvent(Machine::Event::Screen_none);
+        record(sm);
+        sm.processEvent(Machine::Event::Unattended);
+        record(sm);
+    }
+    {
+        Machine sm;
+        start(sm);
+        sm.processEvent(Machine::Event::Hold);
+        record(sm);
+        sm.processEvent(Machine::Event::Resume);
+        record(sm);
+    }
+    {
+        Machine sm;
+        start(sm);
+        sm.processEvent(Machine::Event::Session_lost);
+        record(sm);
+        sm.processEvent(Machine::Event::Session_ready);
+        record(sm);
+    }
+    {
+        Machine sm;
+        start(sm);
+        sm.processEvent(Machine::Event::Cancel);
+        record(sm);
+    }
+    {
+        Machine sm;
+        start(sm);
+        sm.processEvent(Machine::Event::Fail);
+        record(sm);
+    }
+
+    // A floor, not a target: a walk that stopped reaching states would
+    // round-trip an empty list perfectly and read as a pass.
+    ASSERT_GE(seen.size(), 20u) << "the walk reached only " << seen.size()
+                                << " state(s); the branches below it are not being driven";
+
+    for (const auto state : seen) {
+        const char *name = Machine::PolicyType::getStateName(state);
+        const auto back = Machine::PolicyType::getStateFromName(name);
+        ASSERT_TRUE(back.has_value()) << "`" << name << "` is a name this policy published and it did not read back";
+        EXPECT_EQ(*back, state) << "`" << name << "` read back as a different state";
+    }
+}
+
 }  // namespace SCE::Tests
