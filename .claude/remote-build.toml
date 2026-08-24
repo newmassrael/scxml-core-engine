@@ -5,9 +5,20 @@
 # The verify set is a decision, not something to detect: this tree carries
 # cargo, cmake and gradle side by side, so any auto-detection picks one of
 # three and calls it the answer. Named here: the Rust workspace and the C++
-# ctest suite, which are the two heaviest lanes and the two the build
-# machine has toolchains for. The Go, Python and Kotlin lanes stay local —
-# `go` is absent on the machine, and the other two run in seconds.
+# ctest suite, which are the two heaviest lanes.
+#
+# ⚠ THIS COMMENT USED TO CLAIM `go` WAS ABSENT FROM THE BUILD MACHINE, and
+# that the Go, Python and Kotlin lanes therefore had to stay local. Measured
+# 2026-08-24 across all three registered hosts: every one carries go 1.22,
+# openjdk 21, python3 3.12 and pytest. The claim had been false for long
+# enough that nobody knew when it stopped being true — which is the trouble
+# with a comment that states a fact about ANOTHER machine. A statement like
+# that goes stale in silence, reads exactly like a true one, and sent every
+# Go/Python/Kotlin gate to this host for no reason.
+#
+# So the rule this file follows now: state what THIS repository needs, in
+# `needs`, where bx checks it against the machine and excludes a host that
+# cannot answer. Do not describe the machines in prose.
 
 # `.git` and the four submodule worktrees travel too. Sending only
 # `git ls-files` output would deliver empty submodule directories, and the
@@ -18,6 +29,34 @@ send    = "tracked+submodules"
 # `target` is a symlink into ~/.buildcache and would arrive broken.
 # `build` and `embed` are generated locally and are rebuilt there anyway.
 exclude = ["/target", "/build", "/embed"]
+
+# THE COMMANDS OF THIS REPOSITORY WHOSE POINT IS TO CHANGE THIS TREE.
+#
+# bx sends anything it does not recognise, and that is the right default —
+# almost everything it is handed is a build or a suite. Its built-in
+# vocabulary knows the TOOLS that write whoever runs them (git, `cargo fmt`,
+# `cargo fix`, the mnemosyne mutate API) but it cannot know a repository's
+# own scripts. Undeclared, they are sent, they change the far side's throwaway
+# copy, and they exit 0: THE FAILURE IS SILENT AND WEARS A GREEN EXIT CODE.
+# Mnemosyne lost a formatting run to exactly this shape.
+#
+# Matched as substrings against the flattened command line, so the prefix
+# `scripts/regen_` covers all 147 per-stem scripts and the aggregate at once —
+# a list of names would go stale the next time a fixture is added.
+#
+# What is deliberately NOT here, and why, because an absence in a list like
+# this is otherwise indistinguishable from an oversight:
+#
+#   * `scripts/gate mutation-rounds` — it drives `scripts/mutate`, but a ROUND
+#     is edit → build → run → restore, and what it produces is a verdict, not
+#     a changed tree. Running it on the far side answers the same question.
+#   * `./gradlew … test` — it does write, releasing the `generated-at` pin on
+#     the committed Kotlin trees. That is an unwanted side effect rather than
+#     the point, so sending it is BETTER: the local tree stays clean.
+#   * `scripts/gates/w3c-python.sh` — it regenerates Python modules that are
+#     gitignored. Nothing local reads them except a local pytest run, and the
+#     gate runs its own.
+writes = ["scripts/regen_", "scripts/mutate"]
 
 # `node` is not optional: every BasicHTTP fixture in the Rust workspace
 # posts to localhost:8080, and without the echo server they route to their
@@ -40,7 +79,23 @@ exclude = ["/target", "/build", "/embed"]
 # repository's own gates were fixed for: a tool that cannot run must say so
 # instead of blaming what it was pointed at. Invisible on a machine that
 # happens to have git, which is why it went undeclared.
-needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli"]
+# `go`, `java`, `python3` and `wasm-pack` joined on 2026-08-24, when the
+# gates stopped being a local-only set. `scripts/gate w3c-go`,
+# `w3c-python`, `w3c-kotlin`, `forge-go`, `forge-python` and
+# `visualizer-wasm` each name their toolchain and fail loudly without it, so
+# a host that lacks one produces a red that reads like a code defect — the
+# same misattribution `mnemosyne-cli` is listed for above. Listing them keeps
+# such a host out of the candidate set instead.
+#
+# `gradle` is deliberately NOT here: the Kotlin lanes run `./gradlew`, which
+# fetches its own distribution, so the machine needs a JDK and nothing more.
+#
+# ⚠ ONE LINE. bx reads this key with a single `sed` that anchors on `[` and
+# `]` in the same line, unlike `writes`/`packages` which are read across
+# lines — so a wrapped list parses as EMPTY and every host becomes eligible
+# for everything. Measured 2026-08-24, thirty seconds after wrapping it:
+# `--explain-declaration` printed `decl needs` with nothing after it.
+needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli", "go", "java", "python3", "wasm-pack"]
 
 # The C++ tree is the constraint: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.
