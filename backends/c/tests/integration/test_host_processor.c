@@ -317,6 +317,16 @@ static int a_reply_naming_an_undeclared_event_is_dropped(void) {
     // The ordinary send in the same block still delivered, so the machine
     // kept running rather than being derailed by the unknown name.
     bad |= check("undeclared-reply", "plain", counter(&sm, "plain"), 1);
+    // ⚠ The three counters above cannot tell "dropped" from "queued and then
+    // ignored", and that gap is not hypothetical: the mutation that deletes
+    // the name check in the dispatch loop SURVIVED this test until this line
+    // existed. Raising a name the machine does not declare resolves to the
+    // enum's zero value, which matches no transition — so the document's
+    // counters are identical either way, and only the engine's own tally
+    // separates them. A reply refused at the door never reaches the queue,
+    // so nothing is dequeued and discarded; one that was raised anyway is
+    // counted here.
+    bad |= check("undeclared-reply", "discarded", (int64_t)statechart_host_processor_discarded_external_events(&sm), 0);
     statechart_host_processor_destroy(&sm);
     return bad;
 }
