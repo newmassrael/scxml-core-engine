@@ -1365,6 +1365,16 @@ mutation_init() {
     if [[ "$BASELINE_FAILED" != "0" ]]; then
         red "baseline is not green ($BASELINE_FAILED failing) — fix that before mutating,"
         red "or every case below will read as CAUGHT for the wrong reason"
+        # Which ones. The run already collected the names for the CAUGHT
+        # path's `red:` line; stopping here without them sends the reader
+        # back to CI to ask a question this process just answered.
+        local baseline_src=/dev/null
+        [[ -f "$MUTATION_FAILING" ]] && baseline_src="$MUTATION_FAILING"
+        local failing_line
+        while IFS= read -r failing_line; do
+            [[ -n "$failing_line" ]] || continue
+            red "              $failing_line"
+        done < <(mutation_baseline_failures <"$baseline_src")
         exit 2
     fi
     if [[ "$BASELINE_RUN" == "0" ]]; then

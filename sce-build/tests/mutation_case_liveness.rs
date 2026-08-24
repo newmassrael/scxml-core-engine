@@ -714,6 +714,67 @@ fn a_green_run_names_nothing() {
     .is_empty());
 }
 
+#[test]
+fn a_red_baseline_names_the_tests_it_is_made_of() {
+    // The refusal above this list is a COUNT, and a count sends the reader
+    // back to CI to ask which. Measured 2026-08-24: the first whole-corpus
+    // sweep stopped `ci_lane_gate_selection.cases` with `baseline is not
+    // green (2 failing)` and the job log carried nothing else to act on.
+    let lines = failure_names(
+        "mutation_baseline_failures",
+        "the_push_hook_delegates_rather_than_carrying_gates\n\
+         every_gate_script_is_executable\n",
+    );
+    assert_eq!(
+        lines,
+        vec![
+            "the_push_hook_delegates_rather_than_carrying_gates".to_string(),
+            "every_gate_script_is_executable".to_string(),
+        ],
+        "a red baseline must name every test it is made of"
+    );
+}
+
+#[test]
+fn a_wholesale_baseline_break_is_capped_and_says_how_many_it_hid() {
+    // A baseline that broke wholesale can name hundreds, and the refusal is
+    // what the reader must not lose off the top of the screen. Truncating
+    // silently would be the same defect one size down, so the count of what
+    // was hidden is part of the output.
+    let many: String = (0..25)
+        .map(|i| format!("some_test_{i}\n"))
+        .collect::<Vec<_>>()
+        .join("");
+    let lines = failure_names("mutation_baseline_failures", &many);
+    assert_eq!(
+        lines.len(),
+        21,
+        "expected 20 names plus one overflow line; got {lines:?}"
+    );
+    assert_eq!(lines[0], "some_test_0");
+    assert_eq!(
+        lines[20], "(+5 more)",
+        "the excerpt must say how many it did not print; got {:?}",
+        lines[20]
+    );
+}
+
+#[test]
+fn a_baseline_the_parser_could_not_read_says_so_rather_than_nothing() {
+    // The failure mode this whole file guards: a parser that stopped matching
+    // the runner's format emits nothing, and nothing is indistinguishable
+    // from the silence being repaired. "The run named none" and "there were
+    // none" are different facts and the output has to separate them — the
+    // caller only reaches this path when the count was non-zero.
+    let lines = failure_names("mutation_baseline_failures", "");
+    assert_eq!(lines.len(), 1, "expected exactly one line; got {lines:?}");
+    assert!(
+        lines[0].contains("named no failing test"),
+        "an unreadable baseline must say so out loud; got {:?}",
+        lines[0]
+    );
+}
+
 /// Feed a captured build log to the refusal parser.
 fn build_refusal(captured: &str) -> Vec<String> {
     let dir = tempdir().expect("temp dir");
