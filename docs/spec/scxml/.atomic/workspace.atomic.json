@@ -8606,6 +8606,15 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "scheduleHostSend",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9837,6 +9846,81 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "applyExternalEventPreamble",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "has_done_data",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "sce_host_invoke_phase_e",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "CancelHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "HostInvokeEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "HostInvokeResponse",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "PerformHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "HostInvokeResponse",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "cancelHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "cancel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "doneData",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "start",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "cancelHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "performHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "startedHostInvokes_",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -10034,6 +10118,106 @@
           "file": "sce-build/src/generator.rs",
           "symbol": "StatechartCodegenOptions",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "invoke_id",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "PerformHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "RegisterInvoker",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "registerInvoker",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "Engine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "generate_go",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "generate_kotlin",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "generate_python",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "render_c11",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "render_cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "invokeId",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "hostInvokers_",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "performHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "registerInvoker",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

@@ -110,4 +110,93 @@ struct HostSendResponse {
  */
 using HostSendHandler = std::function<std::vector<HostSendResponse>(const HostSendRequest &)>;
 
+/**
+ * @brief An `<invoke>` the host runs, at the point the state was entered
+ *
+ * §scxml-6.4.1 leaves the invokable set to the platform in the same words
+ * §scxml-6.2.5 uses for `<send>`, so a host may implement its own `type` here
+ * too — but an invoke is not a send. It has a LIFETIME: it starts when the
+ * state is entered, it is cancelled if the state exits, and the document may
+ * be waiting on `done.invoke.<id>`. That is why the handler receives an event
+ * rather than a bare request, and why this is a second registry rather than a
+ * second use of the first: a host that can deliver an event is not thereby
+ * able to run a process it must also be able to stop.
+ *
+ * The C++ port of `sce_rust_runtime::host_processor`'s invoker half, field for
+ * field, for the reason the send half is a port: one host described once and
+ * ported is the whole point of keeping the shapes identical.
+ */
+struct HostInvokeRequest {
+    /// The `type` this `<invoke>` named.
+    std::string processorType;
+    /// The invoke's id (§scxml-6.4.1), auto-derived when the author declared
+    /// none. This is the name the DOCUMENT waits on: a completion is
+    /// `done.invoke.<invokeId>`, so a host finishing asynchronously must keep
+    /// it.
+    std::string invokeId;
+    /// `<invoke src="...">`, empty when the document named none. SCE does not
+    /// interpret it — what a src means is the invoked processor's business.
+    std::string src;
+    /// `<param>` values keyed by name; a repeated name keeps every value in
+    /// document order.
+    std::map<std::string, std::vector<std::string>> params;
+    /// Inline `<content>`, empty when the document carried none.
+    std::string content;
+};
+
+/**
+ * @brief An `<invoke>` the host was running, at the point its state exited
+ */
+struct HostInvokeCancel {
+    /// The `type` the `<invoke>` named.
+    std::string processorType;
+    /// The invocation being cancelled — the same id its start carried.
+    std::string invokeId;
+};
+
+/**
+ * @brief One turn of a host-run invoke's lifecycle
+ *
+ * Exactly one of `start` and `cancel` is engaged. Both arms go to ONE
+ * registered handler rather than to two separately registered callbacks,
+ * because a host that can start an invocation and cannot stop it is not a
+ * working invoker — and two registrations make that state reachable. One
+ * handler means the pair is registered together or not at all.
+ */
+struct HostInvokeEvent {
+    /// §scxml-6.4: the state was entered and the macrostep has settled. Begin
+    /// the invoked process.
+    std::optional<HostInvokeRequest> start;
+    /// §scxml-6.4: the state exited. Stop it.
+    ///
+    /// Delivered only for an invocation that actually started: a state that
+    /// exits before the macrostep ends never runs its invoke, and cancelling
+    /// something that never began would have the host tearing down state it
+    /// never built.
+    std::optional<HostInvokeCancel> cancel;
+};
+
+/**
+ * @brief A host invoker's answer to a start
+ *
+ * Read only for a start; an answer to a cancel is ignored, because there is
+ * nothing left for it to mean.
+ */
+struct HostInvokeResponse {
+    /// Payload for an immediate `done.invoke.<invokeId>`, for an invocation
+    /// that completed before returning.
+    ///
+    /// `std::nullopt` is the ordinary case: the work outlives the call, and
+    /// the host raises the completion itself when it finishes. SCE does not
+    /// synthesise a completion the host did not report — an invoked process
+    /// that never terminates never fires `done.invoke`, which is what
+    /// §scxml-6.4 says.
+    std::optional<std::string> doneData;
+};
+
+/**
+ * @brief A registered invoke-lifecycle handler
+ */
+using HostInvokeHandler = std::function<std::optional<HostInvokeResponse>(const HostInvokeEvent &)>;
+
 }  // namespace SCE

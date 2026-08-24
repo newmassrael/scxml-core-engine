@@ -125,11 +125,90 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
         {% for invoke_info in state.invokes | unsupported %}
         if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
             && p->invoke_idx == {{ loop.index0 + (state.invokes | scxml | length) }}) {
+{% if invoke_info.host_served %}
+            /* W3C SCXML 6.4.1: the host declared this `type`, so START the
+               invocation rather than refusing it. The id handed over is the
+               DOCUMENT's, not the per-instance one the pending queue carries:
+               `done.invoke.<id>` is the name the author wrote a transition
+               for, so it is the name the host must answer on.
+
+               Emitted inside the `unsupported` loop rather than in a
+               `host_invoker` one of its own, because `p->invoke_idx` is
+               positional — it counts this state's invokes in order, and a
+               second loop would restart the index and address the wrong
+               entry. The two arms are told apart by the per-entry flag. */
+{% if invoke_info.params %}
+            sce_host_send_param_t _host_inv_params[{{ invoke_info.params | length }}];
+            int _host_inv_param_count = 0;
+{% for param in invoke_info.params %}
+{% if param.is_static_literal %}
+            static const char _host_inv_param_value_{{ loop.index0 }}[] = "{{ param.static_value | escape_c }}";
+            _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
+            _host_inv_params[_host_inv_param_count].value = _host_inv_param_value_{{ loop.index0 }};
+            _host_inv_param_count++;
+{% endif %}
+{% endfor %}
+{% endif %}
+            {
+                sce_host_invoke_event_t _host_inv;
+                sce_host_invoke_response_t _host_inv_out;
+                const sce_host_invoker_entry_t *_host_inv_entry =
+                    sce_host_invoker_find(&sm->host_invokers, "{{ invoke_info.invoke_type | escape_c }}");
+                memset(&_host_inv, 0, sizeof(_host_inv));
+                memset(&_host_inv_out, 0, sizeof(_host_inv_out));
+                _host_inv.phase = SCE_HOST_INVOKE_START;
+                _host_inv.processor_type = "{{ invoke_info.invoke_type | escape_c }}";
+                _host_inv.invoke_id = "{{ invoke_info.invoke_id | escape_c }}";
+                _host_inv.src = "{{ invoke_info.src | default('', true) | escape_c }}";
+                _host_inv.content = "{{ invoke_info.content | default('', true) | escape_c }}";
+{% if invoke_info.params %}
+                _host_inv.params = _host_inv_param_count > 0 ? _host_inv_params : NULL;
+                _host_inv.param_count = _host_inv_param_count;
+{% else %}
+                _host_inv.params = NULL;
+                _host_inv.param_count = 0;
+{% endif %}
+                if (_host_inv_entry == NULL) {
+                    /* W3C SCXML 6.4.1: declared but no invoker registered. The
+                       document asked for a process to be run and none was,
+                       which is the same fact as an unsupported type — so the
+                       same event, rather than a silence that reads as
+                       started. */
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke> names an invoker the host declared but never registered");
+{% endif %}
+                } else {
+                    _host_inv_entry->handler(_host_inv_entry->user_data, &_host_inv, &_host_inv_out);
+                    sce_host_invocation_mark(&sm->started_host_invokes,
+                                             "{{ invoke_info.invoke_type | escape_c }}",
+                                             "{{ invoke_info.invoke_id | escape_c }}");
+                    if (_host_inv_out.has_done_data) {
+                        /* W3C SCXML 6.4: a completion the host reported NOW.
+                           One it reports later arrives the same way, by
+                           raising the event itself. */
+                        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
+                        const {{ csym_prefix }}{{ model.name }}_event_t _done_ev =
+                            {{ csym_prefix }}{{ model.name }}_event_from_name(
+                                "done.invoke.{{ invoke_info.invoke_id | escape_c }}",
+                                strlen("done.invoke.{{ invoke_info.invoke_id | escape_c }}"));
+                        if (_done_ev != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+                            memset(&_done_evt, 0, sizeof(_done_evt));
+                            _done_evt.event = _done_ev;
+                            sce_copy_bounded_data(_done_evt.data, _host_inv_out.done_data);
+                            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
+                        }
+                    }
+                }
+            }
+{% else %}
             /* W3C SCXML 6.4.1: unsupported `type` — place error.execution on
                the internal queue and start nothing. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<invoke> declares a type this processor does not support");
+{% endif %}
             continue;
         }
         {% endfor %}

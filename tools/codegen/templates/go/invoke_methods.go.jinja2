@@ -189,12 +189,45 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% endif %}
 {% endfor %}
 {% for state_id, state in model.states | dictsort %}
-{% if state.invokes | unsupported %}
-{% for invoke_info in state.invokes | unsupported %}
+{% if state.invokes | unsupported_refused %}
+{% for invoke_info in state.invokes | unsupported_refused %}
 		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
 			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> declares a type this processor does not support"))
+			continue
+		}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.invokes | host_invoker %}
+{% for invoke_info in state.invokes | host_invoker %}
+		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+			// W3C SCXML 6.4.1: the host declared this `type`, so START the
+			// invocation rather than refusing it. The id handed over is the
+			// DOCUMENT's, not the per-instance one the pending queue carries:
+			// `done.invoke.<id>` is the name the author wrote a transition
+			// for, so it is the name the host must answer on.
+			hostInvokeParams := map[string][]string{}
+{% for param in invoke_info.params %}
+{% if param.is_static_literal %}
+			hostInvokeParams["{{ param.name | escape_go }}"] = append(hostInvokeParams["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
+{% endif %}
+{% endfor %}
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+				ProcessorType: "{{ invoke_info.invoke_type | escape_go }}",
+				InvokeID:      "{{ invoke_info.invoke_id }}",
+				Src:           "{{ invoke_info.src | default('', true) | escape_go }}",
+				Params:        hostInvokeParams,
+				Content:       "{{ invoke_info.content | default('', true) | escape_go }}",
+			}) {
+				// W3C SCXML 6.4.1: declared but no invoker registered. The
+				// document asked for a process to be run and none was, which
+				// is the same fact as an unsupported type — so the same
+				// event, rather than a silence that reads as started.
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> names an invoker the host declared but never registered"))
+			}
 			continue
 		}
 {% endfor %}

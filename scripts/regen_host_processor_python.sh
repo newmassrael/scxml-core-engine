@@ -57,6 +57,14 @@ DELAYED_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_delayed_host
 "$CODEGEN" generate "$DELAYED_FIXTURE" -l python -o "$TMP/" \
     --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR"
 
+# W3C SCXML 6.4.1: the invoke half. A separate declaration from the processor
+# one because they are separate contracts — a host that can deliver an event is
+# not thereby able to run a process with a lifetime.
+INVOKER_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml"
+HOST_INVOKER="x-sce-host"
+"$CODEGEN" generate "$INVOKER_FIXTURE" -l python -o "$TMP/" \
+    --input-root "$INPUT_ROOT" --host-invoker "$HOST_INVOKER"
+
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
 for src in "$TMP"/*_sm.py; do
@@ -68,3 +76,4 @@ cp "$TMP"/*_sm.py "$GENERATED_DIR/"
 echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"

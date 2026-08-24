@@ -387,66 +387,28 @@ fn reject_native_actions_in_unsupported_lang(
 // that defect one layer up, with the build now actively promising the
 // send would be delivered.
 //
-// The two declarations were one refusal while they were also one
-// answer: every backend either had both registries or neither, and
-// splitting the message would have had an author drop one flag and meet
-// the same refusal again for the other. C++ ended that — it carries
-// `StaticExecutionEngine::registerEventProcessor` and emits the `<send>`
-// dispatch, and has no invoker registry — so the halves are asked
-// separately now. A backend that has neither still calls both and the
-// author sees both named.
-fn reject_declaration_in_unsupported_lang(
-    declared: &[String],
-    flag: &'static str,
-    what: &'static str,
-    model: &SCXMLModel,
-    language: &'static str,
-) -> Result<(), GenerateError> {
-    if declared.is_empty() {
-        return Ok(());
-    }
-    Err(GenerateError::UnsupportedFeature(format!(
-        "{} ({}) has no {} codegen path — a {} needs a runtime registry to \
-         dispatch into, and {} has none. Generate this machine for `--lang \
-         rust`, or drop the declaration and let '{}' keep the W3C SCXML 6.2 \
-         error.execution refusal.",
-        flag,
-        declared.join(", "),
-        language,
-        what,
-        language,
-        model.name
-    )))
-}
-
-// §scxml-6.2.5 host-served Event I/O Processor: every backend (Rust, C++,
-// C11, Go, Python, Kotlin) now lowers a `<send type>` the host declared to a
-// dispatch into a runtime registry, so the former
-// `reject_host_processors_in_unsupported_lang` fail-fast gate is retired.
-// Its removal is the claim that a path exists, and a claim made by deleting
-// something has to be paid for elsewhere — the per-backend
-// `a_declared_type_emits_a_dispatch_for_*` tests and the five runtime
-// channels are where. The invoker half below is NOT retired: no backend but
-// Rust has an `<invoke>` entry registry, and a single refusal covering both
-// would accept declarations five backends cannot service.
-
-/// Refuse `--host-invoker` on a backend with no `<invoke>` entry registry.
-///
-/// Separate from the processor half since C++ grew one registry and not the
-/// other; that asymmetry has since become the whole story, the processor half
-/// having reached every backend while this one reached none but Rust.
-fn reject_host_invokers_in_unsupported_lang(
-    model: &SCXMLModel,
-    language: &'static str,
-) -> Result<(), GenerateError> {
-    reject_declaration_in_unsupported_lang(
-        &model.host_invoker_types,
-        "--host-invoker",
-        "host-run invoker",
-        model,
-        language,
-    )
-}
+// §scxml-6.2.5 host-served Event I/O Processor AND §scxml-6.4.1 host-run
+// `<invoke>`: every backend (Rust, C++, C11, Go, Python, Kotlin) now lowers
+// both declarations to a dispatch into a runtime registry, so both fail-fast
+// gates — `reject_host_processors_in_unsupported_lang` and
+// `reject_host_invokers_in_unsupported_lang`, and the shared
+// `reject_declaration_in_unsupported_lang` they were built from — are retired.
+//
+// Their removal is the claim that a path exists, and a claim made by deleting
+// something has to be paid for elsewhere. For the send half that is the
+// per-backend `a_declared_type_emits_a_dispatch_for_*` tests and the six
+// runtime channels. For the invoke half it is the six channels named on
+// `sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml`,
+// each asserting the four outcomes an invocation's LIFETIME can take: started
+// with what the document wrote, cancelled when the state exits, cancelled once
+// and only if it started, and reported when nobody ran it. The last two are
+// the ones a configuration assertion cannot see — the machine looks correct
+// whether or not the host was ever told to stop.
+//
+// The two were asked separately for as long as a backend had one registry and
+// not the other, which C++ started and every other backend then repeated. That
+// asymmetry is what ended here; the flags stay separate because the contracts
+// are, not because the coverage differs.
 
 /// The native-code prefixes a `cond` may carry, paired with the one
 /// backend that lowers each.
@@ -1107,12 +1069,12 @@ fn render_cpp(
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     reject_native_actions_in_unsupported_lang(model, "C++")?;
-    // No `reject_host_processors_in_unsupported_lang` here: the C++ AOT engine
-    // carries the registry (`StaticExecutionEngine::registerEventProcessor`)
-    // and `actions/send.jinja2` emits the dispatch, so a declared type has a
-    // path to dispatch INTO. The invoker half is still refused below, which is
-    // why the two are asked separately.
-    reject_host_invokers_in_unsupported_lang(model, "C++")?;
+    // Neither host refusal here: the C++ AOT engine carries both registries
+    // (`StaticExecutionEngine::registerEventProcessor` for §scxml-6.2.5 and
+    // `registerInvoker` for §scxml-6.4.1), and the templates emit the `<send>`
+    // dispatch and the `<invoke>` start/cancel pair into them. The invoker half
+    // landed second because it is the wider of the two: an invocation has a
+    // lifetime the exit chain has to end.
     reject_native_conditions_in_unsupported_lang(model, "C++")?;
     reject_native_scripts_in_unsupported_lang(model, "C++")?;
     let inl_filename = format!("{input_stem}_sm.inl");
@@ -1258,11 +1220,13 @@ fn render_c11(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_native_actions_in_unsupported_lang(model, "C11")?;
-    // No `reject_host_processors_in_unsupported_lang` here: the C11 backend
-    // carries `sce_host_processor_registry_t` on the generated struct and
-    // emits the `<send>` dispatch into it. The invoker half is still absent,
-    // which is why the call below stays — the same split C++ forced.
-    reject_host_invokers_in_unsupported_lang(model, "C11")?;
+    // Neither host refusal here: the C11 backend carries
+    // `sce_host_processor_registry_t` for §scxml-6.2.5 and
+    // `sce_host_invoker_registry_t` + `sce_host_invocation_set_t` for
+    // §scxml-6.4.1 on the generated struct, and the templates emit the
+    // `<send>` dispatch and the `<invoke>` start/cancel pair into them. Both
+    // are bounded arrays rather than maps, because the freestanding profile
+    // has no allocator.
     reject_native_conditions_in_unsupported_lang(model, "C11")?;
     reject_native_scripts_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
@@ -1375,12 +1339,10 @@ pub fn generate_kotlin(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
-    // No `reject_host_processors_in_unsupported_lang` here: the Kotlin
-    // runtime carries `StateMachineEngine.registerEventProcessor` and the
-    // template emits the `<send>` dispatch into it. The invoker half is still
-    // absent, which is why the call below stays — the same split every other
-    // backend forced.
-    reject_host_invokers_in_unsupported_lang(model, "Kotlin")?;
+    // Neither host refusal here: the Kotlin runtime carries
+    // `StateMachineEngine.registerEventProcessor` for §scxml-6.2.5 and
+    // `registerInvoker` for §scxml-6.4.1, and the templates emit the `<send>`
+    // dispatch and the `<invoke>` start/cancel pair into them.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
@@ -1400,9 +1362,8 @@ pub fn generate_kotlin_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
-    // See `generate_kotlin` above: the Kotlin backend has a `<send>` registry
-    // and no invoker one.
-    reject_host_invokers_in_unsupported_lang(model, "Kotlin")?;
+    // See `generate_kotlin` above: the Kotlin backend carries both host
+    // registries.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
@@ -1558,11 +1519,12 @@ fn render_kotlin(
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
-    // No `reject_host_processors_in_unsupported_lang` here: the Go runtime
-    // carries `Engine.RegisterEventProcessor` and the template emits the
-    // `<send>` dispatch into it. The invoker half is still absent, which is
-    // why the call below stays — the same split C++ and C11 forced.
-    reject_host_invokers_in_unsupported_lang(model, "Go")?;
+    // Neither host refusal here any more: the Go runtime carries
+    // `Engine.RegisterEventProcessor` for §scxml-6.2.5 and
+    // `Engine.RegisterInvoker` for §scxml-6.4.1, and the templates emit the
+    // `<send>` dispatch and the `<invoke>` start/cancel pair into them. The
+    // invoker half is the wider of the two — an invocation has a lifetime the
+    // exit chain has to end — which is why it landed second.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
@@ -1578,9 +1540,7 @@ pub fn generate_go_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
-    // See `generate_go` above: the Go backend has a `<send>` registry and no
-    // invoker one.
-    reject_host_invokers_in_unsupported_lang(model, "Go")?;
+    // See `generate_go` above: the Go backend carries both host registries.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
@@ -1605,12 +1565,10 @@ pub fn generate_go_with_templates(
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_native_actions_in_unsupported_lang(model, "Python")?;
-    // No `reject_host_processors_in_unsupported_lang` here: the Python
-    // runtime carries `Engine.register_event_processor` and the template
-    // emits the `<send>` dispatch into it. The invoker half is still absent,
-    // which is why the call below stays — the same split C++, C11 and Go
-    // forced.
-    reject_host_invokers_in_unsupported_lang(model, "Python")?;
+    // Neither host refusal here: the Python runtime carries
+    // `Engine.register_event_processor` for §scxml-6.2.5 and
+    // `Engine.register_invoker` for §scxml-6.4.1, and the templates emit the
+    // `<send>` dispatch and the `<invoke>` start/cancel pair into them.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
     reject_native_scripts_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
@@ -1627,9 +1585,8 @@ pub fn generate_python_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_native_actions_in_unsupported_lang(model, "Python")?;
-    // See `generate_python` above: the Python backend has a `<send>` registry
-    // and no invoker one.
-    reject_host_invokers_in_unsupported_lang(model, "Python")?;
+    // See `generate_python` above: the Python backend carries both host
+    // registries.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
     reject_native_scripts_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;

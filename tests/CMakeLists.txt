@@ -768,6 +768,7 @@ add_executable(integration_tests
     integration/AiLoopAotTest.cpp
     integration/HostProcessorAotTest.cpp
     integration/DelayedHostSendAotTest.cpp
+    integration/HostInvokerAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp
@@ -1426,6 +1427,17 @@ sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml
     HOST_PROCESSOR x-sce-host
+)
+
+# §scxml-6.4.1: the invoke half of the host seam. A separate declaration from
+# the processor one because they are separate contracts — a host that can
+# deliver an event is not thereby able to run a process with a lifetime — and
+# the flag has to be spelled HERE for the reason the processor one does:
+# codegen decides at compile time whether an `<invoke type>` starts or refuses.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml
+    HOST_INVOKER x-sce-host
 )
 
 # W3C SCXML 3.4: `getCurrentState()` names an atomic state in a parallel

@@ -66,6 +66,17 @@ type Engine[S comparable, E comparable] struct {
 	// is what a `<send>` names; see host_processor.go.
 	hostProcessors map[string]HostSendHandler
 
+	// hostInvokers holds what RUNS each §scxml-6.4.1 `<invoke type>` the host
+	// declared. A second map rather than a second use of the one above,
+	// because delivering an event is not the same capability as running a
+	// process with a lifecycle — see host_processor.go's invoker half.
+	hostInvokers map[string]HostInvokeHandler
+
+	// startedHostInvokes records every host-run invocation started and not yet
+	// cancelled, so the exit chain can be an unconditional call: the engine
+	// knows whether there is anything to cancel.
+	startedHostInvokes map[hostInvokeKey]struct{}
+
 	// scheduler is the §scxml-6.2 delayed event scheduler.
 	scheduler *PullScheduler[E]
 

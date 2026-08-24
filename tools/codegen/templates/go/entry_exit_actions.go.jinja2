@@ -376,14 +376,28 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 		return result
 	}()
 {% endif %}
-{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
+{# W3C SCXML 6.4: `host_invoker` is named here as well as inside the loop, and
+   that is load-bearing rather than belt-and-braces — the Rust template records
+   the measurement. `unsupported` covers a host-served invoke today, but a
+   document whose ONLY `<invoke>` is host-served must still emit an exit
+   `switch`, or the host is never told to stop the process it was told to
+   start. Naming the narrow filter in the guard keeps that true however the
+   broad one is later narrowed. #}
+{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported or model.invokes | host_invoker %}
 {% if has_invoke_exits %}
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
+{% if state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported or state.invokes | host_invoker %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:
 		sce.CancelInvokesForState(&p.pendingInvokes, {{ machine_name }}State{{ state_id | to_state_variant }})
+{% for invoke_info in state.invokes | host_invoker %}
+		// W3C SCXML 6.4: the host's invocation ends with the state that
+		// started it. Unconditional here: the engine knows whether this one
+		// ever started and stays silent when it did not, so the emitted chain
+		// does not need its own bookkeeping.
+		engine.CancelHostInvoke("{{ invoke_info.invoke_type | escape_go }}", "{{ invoke_info.invoke_id }}")
+{% endfor %}
 {% for invoke_info in state.invokes | scxml %}
 		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
 			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
