@@ -17,8 +17,14 @@
 //!
 //! So these runs try offline first and reach the network only when the cache
 //! genuinely cannot answer.
+//!
+//! The probe-crate helpers are this file's own subject; `workflow` is a
+//! sibling with a different one, published here because two suites parse the
+//! same workflow structure and a second parser would be a second answer.
 
 use std::process::{Command, Output};
+
+pub mod workflow;
 
 /// What one probe run did, so a caller can assert on the route rather than
 /// only on the result.
@@ -95,6 +101,11 @@ fn failed_for_want_of_network(output: &Output) -> bool {
 /// time; this adds `--offline` to the first one. A cache that can answer
 /// means the run never touches the network, which is what keeps a push from
 /// depending on a service being up.
+///
+/// `dead_code` for the same reason `ProbeRun` carries it: the suites that
+/// declare this module for `workflow` alone compile this function and never
+/// call it.
+#[allow(dead_code)]
 pub fn run_cargo_offline_first(build: impl Fn() -> Command) -> ProbeRun {
     let mut offline_cmd = build();
     offline_cmd.arg("--offline");

@@ -19,6 +19,10 @@
 // registered in `workflow_trigger_coverage`'s tree-wide gate list and runs
 // from an unfiltered workflow.
 
+mod common;
+
+use common::workflow::{job_text, split_workflow};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -1312,5 +1316,320 @@ fn a_failing_build_reaches_the_gate_log_through_the_helper() {
          what this helper exists for — the compiler's message goes to stdout, and a \
          gate that sends it to /dev/null reports a failure it cannot explain.\n\
          stderr was:\n{stderr}\nstdout was:\n{stdout}"
+    );
+}
+
+/// The script a CI job runs to put the rev-pinned validator on the runner.
+const MNEMOSYNE_INSTALLER: &str = "scripts/install_mnemosyne_cli.sh";
+
+/// The lines of `text` that are code, with whole-line comments dropped.
+///
+/// Both alphabets this file scans — Rust test sources and shell gate scripts
+/// — start a whole-line comment the same way once `//` and `#` are both
+/// counted, and both carry prose that names the very things being searched
+/// for. A scanner that reads its own comments has been the defect twice in
+/// this repository, so the stripping is not optional politeness.
+fn code_lines(text: &str) -> impl Iterator<Item = &str> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with("//") && !l.starts_with('#'))
+}
+
+/// Cargo test targets named on a command line, as `--test <name>`.
+fn named_test_targets(text: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in code_lines(text) {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        for pair in words.windows(2) {
+            if pair[0] != "--test" {
+                continue;
+            }
+            let name = pair[1].trim_matches(['"', '\'', '\\'].as_slice());
+            if !name.is_empty() {
+                out.insert(name.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Whether a source resolves the rev-pinned validator at all.
+///
+/// The needles are assembled at compile time so this predicate does not match
+/// the file it lives in on its own search terms — the same guard
+/// `workflow_trigger_coverage` uses for its signatures, and for the same
+/// reason: a scanner that matches itself measures nothing.
+fn resolves_the_pinned_validator(text: &str) -> bool {
+    let pin = concat!("MNEMOSYNE", "_REV");
+    let install_root = concat!("mnemosyne", "-rev");
+    let gate_script = concat!("ledger-citations", ".sh");
+    code_lines(text).any(|l| l.contains(pin) || l.contains(install_root) || l.contains(gate_script))
+}
+
+/// Test targets that reach for the rev-pinned `mnemosyne-cli`.
+///
+/// Derived from the sources rather than listed, because a list is a second
+/// place to remember: a new suite that resolves the pin would be added to the
+/// tree and not to the list, and the gate would read green over it. The
+/// signature is the resolution itself — the pin's name, the revision-keyed
+/// install root, or the gate script that resolves it in shell — since a suite
+/// cannot reach that binary without spelling one of them.
+///
+/// This file matches its own signature, and must: two of its tests drive the
+/// staged citation stage as a subprocess, and both fail without the binary.
+fn targets_that_need_the_pinned_validator() -> Vec<String> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let mut out: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("rs"))
+        .filter(|p| {
+            let text = std::fs::read_to_string(p)
+                .unwrap_or_else(|e| panic!("read {}: {}", p.display(), e));
+            resolves_the_pinned_validator(&text)
+        })
+        .map(|p| {
+            p.file_stem()
+                .expect("a .rs file has a stem")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// What a run script can execute: the test targets it names, plus whether it
+/// sweeps the workspace — which runs every target there is, named or not.
+#[derive(Default)]
+struct Reach {
+    named: BTreeSet<String>,
+    sweeps_the_workspace: bool,
+}
+
+impl Reach {
+    fn runs(&self, target: &str) -> bool {
+        self.sweeps_the_workspace || self.named.contains(target)
+    }
+}
+
+/// Fold shell line continuations, so a command split over several lines is
+/// read as the one command it is.
+fn joined_commands(text: &str) -> String {
+    let mut out = String::new();
+    for line in text.lines() {
+        let trimmed = line.trim_end();
+        if let Some(head) = trimmed.strip_suffix('\\') {
+            out.push_str(head);
+            out.push(' ');
+        } else {
+            out.push_str(trimmed);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// Every target the mutation corpus can hand its runner, read from the
+/// casefiles' own `mutation_tests` declarations.
+///
+/// The rounds gate takes one casefile per run and the corpus decides which,
+/// so what the JOB can execute is the union — a lane provisioned for today's
+/// selection is provisioned for none of the others.
+fn corpus_oracle_targets(root: &Path) -> BTreeSet<String> {
+    let dir = root.join("sce-build/tests/mutations");
+    let mut out = BTreeSet::new();
+    let entries =
+        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e));
+    let mut casefiles = 0usize;
+    for path in entries.flatten().map(|e| e.path()) {
+        if path.extension().and_then(|x| x.to_str()) != Some("cases") {
+            continue;
+        }
+        casefiles += 1;
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+        for line in code_lines(&text).filter(|l| l.starts_with("mutation_tests")) {
+            out.extend(named_test_targets(line));
+        }
+    }
+    assert!(
+        casefiles > 20,
+        "read only {casefiles} casefile(s) from {} — the enumeration is broken, \
+         not the corpus",
+        dir.display()
+    );
+    out
+}
+
+/// What the commands in `text` reach, following `scripts/gate <slug>` into the
+/// script it runs.
+///
+/// Following it matters because no CI job spells a cargo invocation any more:
+/// every lane delegates to the gate runner, so a reader that stopped at the
+/// workflow would see a job that runs no tests at all.
+fn reach_of(text: &str, root: &Path, depth: usize) -> Reach {
+    let mut reach = Reach::default();
+    if depth > 4 {
+        return reach;
+    }
+    let commands = joined_commands(text);
+    for line in code_lines(&commands) {
+        reach.named.extend(named_test_targets(line));
+        if line.contains("cargo test") && line.contains("--workspace") {
+            reach.sweeps_the_workspace = true;
+        }
+        // A dry run enumerates what a real one would do and executes none of
+        // it, so it needs nothing installed. Reading the switch rather than
+        // the slug keeps this from becoming a list of blessed jobs.
+        if line.contains("_DRY_RUN=1") {
+            continue;
+        }
+        for slug in gate_slugs_invoked(line) {
+            let script = root.join("scripts/gates").join(format!("{slug}.sh"));
+            let Ok(body) = std::fs::read_to_string(&script) else {
+                continue;
+            };
+            let inner = reach_of(&body, root, depth + 1);
+            reach.named.extend(inner.named);
+            reach.sweeps_the_workspace |= inner.sweeps_the_workspace;
+            // The rounds gate resolves its targets from the corpus at run
+            // time, so its script names none of them.
+            if body.contains("sce-build/tests/mutations") {
+                reach.named.extend(corpus_oracle_targets(root));
+            }
+        }
+    }
+    reach
+}
+
+/// The gate slugs a command line runs, as `scripts/gate <slug> [<slug> …]`.
+fn gate_slugs_invoked(line: &str) -> Vec<String> {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let Some(at) = words
+        .iter()
+        .position(|w| *w == "scripts/gate" || w.ends_with("/scripts/gate"))
+    else {
+        return Vec::new();
+    };
+    words[at + 1..]
+        .iter()
+        // A flag, a redirection or a pipe ends the slug list: what follows is
+        // the runner's own vocabulary, not a gate's name.
+        .take_while(|w| !w.starts_with(['-', '>', '|', '&']))
+        .map(|w| w.trim_matches(['"', '\''].as_slice()).to_string())
+        .collect()
+}
+
+/// Every workflow as `(file name, text)`, sorted for stable diagnostics.
+fn workflow_texts(root: &Path) -> Vec<(String, String)> {
+    let dir = root.join(".github/workflows");
+    let mut out: Vec<(String, String)> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "yml" || x == "yaml"))
+        .map(|p| {
+            let name = p
+                .file_name()
+                .expect("a workflow file has a name")
+                .to_string_lossy()
+                .into_owned();
+            let text = std::fs::read_to_string(&p)
+                .unwrap_or_else(|e| panic!("read {}: {}", p.display(), e));
+            (name, text)
+        })
+        .collect();
+    out.sort();
+    assert!(
+        out.len() > 5,
+        "found {} workflow(s); the directory read is broken, not the tree",
+        out.len()
+    );
+    out
+}
+
+#[test]
+fn every_job_that_runs_the_pinned_validator_installs_it() {
+    // Measured 2026-08-24 and again on 2026-08-25: `mutation-rounds.yml` ran
+    // the corpus round whose oracle is this very suite, on a runner that had
+    // no rev-pinned `mnemosyne-cli`. The staged citation stage refuses
+    // without it — exit 3, "the gate could not run" — so the round stopped at
+    // `baseline is not green (2 failing)` and said nothing about any of its
+    // cases. Three casefiles share that oracle, so one missing install step
+    // read as three rotten corners of the corpus.
+    //
+    // `rust-workspace-tests.yml` had carried the same defect and had it
+    // repaired; the repair was not carried to the sibling lane, which is the
+    // shape a per-lane memory always ends up in. Hence a derived rule.
+    //
+    // Per JOB and not per FILE, deliberately: each job gets its own runner,
+    // so an install step in the neighbouring job provisions nothing here.
+    // `mutation-rounds.yml` is exactly where that mistake is available — its
+    // `select` job names the same gate, in a dry run that executes nothing.
+    let root = repo_root();
+    let needing: BTreeSet<String> = targets_that_need_the_pinned_validator()
+        .into_iter()
+        .collect();
+    assert!(
+        needing.len() >= 2,
+        "the scan found {} suite(s) that resolve the rev-pinned validator; it \
+         used to find two, so the signature has stopped matching and this \
+         gate would pass by measuring nothing: {needing:?}",
+        needing.len()
+    );
+    assert!(
+        needing.contains("gate_registry_contract"),
+        "the scan lost the suite it is running inside, which drives the staged \
+         citation stage as a subprocess and demonstrably fails without the \
+         binary. The signature is broken: {needing:?}"
+    );
+
+    let mut carriers: Vec<String> = Vec::new();
+    let mut unprovisioned: Vec<String> = Vec::new();
+    for (file, text) in workflow_texts(&root) {
+        let (_, jobs) = split_workflow(&text);
+        for job in &jobs {
+            let body = job_text(job);
+            let reach = reach_of(&body, &root, 0);
+            let runs: Vec<&str> = needing
+                .iter()
+                .filter(|t| reach.runs(t))
+                .map(String::as_str)
+                .collect();
+            if runs.is_empty() {
+                continue;
+            }
+            carriers.push(format!("{file}:{}", job.id));
+            if !body.contains(MNEMOSYNE_INSTALLER) {
+                unprovisioned.push(format!(
+                    "  {file}: job `{}` runs {} but never runs {MNEMOSYNE_INSTALLER}",
+                    job.id,
+                    runs.join(", ")
+                ));
+            }
+        }
+    }
+
+    assert!(
+        carriers.len() >= 3,
+        "only {} job(s) were found to run a suite that needs the pinned \
+         validator: {carriers:?}. Three lanes did — the workspace sweep, the \
+         tree-wide gate and the mutation round — so a smaller number means \
+         the reach derivation stopped following `scripts/gate`, not that CI \
+         got simpler.",
+        carriers.len()
+    );
+    assert!(
+        unprovisioned.is_empty(),
+        "CI job(s) run a suite that resolves the rev-pinned `mnemosyne-cli` on \
+         a runner that never installs it:\n{}\n\
+         Such a job cannot fail for a reason about the tree — the citation \
+         gate exits 3, \"the gate could not run\", and every verdict built on \
+         it is void. Add the cache and install steps that \
+         `rust-workspace-tests.yml` carries to the job itself; an install in a \
+         neighbouring job runs on a different machine.",
+        unprovisioned.join("\n")
     );
 }
