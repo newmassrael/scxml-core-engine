@@ -125,22 +125,49 @@ func TestNativeActionDispatchesTypedPayloadToHostInterface(t *testing.T) {
 // nothing to read, and handing the host a zeroed buffer it would take for
 // data is the one outcome this seam must never produce.
 //
-// The machine reaches `assembling` either way, which is exactly why this is
-// asserted on the host's record rather than on the configuration.
+// Asserted on the host's record AND on the configuration: the record says the
+// host was not handed a value it would take for data, and `faulted` says the
+// machine reported it rather than swallowing it. §scxml-3.12.2 makes the second
+// half a contract — `error.execution` covers errors "arising from expression
+// evaluation", and the processor MUST place it on the internal event queue.
 func TestNativeActionDoesNotFireWithoutItsTypedPayload(t *testing.T) {
 	s := newStarted()
 
 	s.engine.RaiseExternalByName("fragment.received", "")
 	s.engine.Step()
 
-	if got := s.engine.GetCurrentState(); got != StatechartNativeActionStateAssembling {
-		t.Fatalf("state after untyped fragment.received = %v, want Assembling", got)
-	}
 	if len(s.host.appended) != 0 {
 		t.Fatalf("append_fragment_payload fired %d times without a typed payload, want 0", len(s.host.appended))
 	}
+	if got := s.engine.GetCurrentState(); got != StatechartNativeActionStateFaulted {
+		t.Fatalf("state after untyped fragment.received = %v, want Faulted", got)
+	}
 	// The eventless effects still ran: they read no payload, so nothing about
 	// this delivery should have stopped them.
+	if s.host.idleEntries != 1 {
+		t.Fatalf("on_idle_entry fired %d times, want 1", s.host.idleEntries)
+	}
+	if s.host.assemblingExits != 1 {
+		t.Fatalf("on_assembling_exit fired %d times, want 1", s.host.assemblingExits)
+	}
+}
+
+// The same arm, reached with NO host mistake at all: `<raise
+// event="fragment.received"/>` is legal SCXML this generator accepts, and a
+// raise carries no typed payload. The host's only act is delivering
+// `selftest`; everything after it is the document's own doing.
+func TestNativeActionAnswersADocumentRaisedEventWithErrorExecution(t *testing.T) {
+	s := newStarted()
+
+	s.engine.RaiseExternalByName("selftest", "")
+	s.engine.Step()
+
+	if len(s.host.appended) != 0 {
+		t.Fatalf("append_fragment_payload fired %d times on a document raise, want 0", len(s.host.appended))
+	}
+	if got := s.engine.GetCurrentState(); got != StatechartNativeActionStateFaulted {
+		t.Fatalf("state after a document-raised fragment.received = %v, want Faulted", got)
+	}
 	if s.host.idleEntries != 1 {
 		t.Fatalf("on_idle_entry fired %d times, want 1", s.host.idleEntries)
 	}

@@ -118,6 +118,13 @@ class NativeActionTest {
     /// fires — the guard is the event name — but the arg-bearing action has
     /// nothing to read, and handing the host a zeroed buffer it would take for
     /// data is the one outcome this seam must never produce.
+    ///
+    /// Asserted on the host's record AND on the configuration: the record says
+    /// the host was not handed a value it would take for data, and `Faulted`
+    /// says the machine reported it rather than swallowing it. §scxml-3.12.2
+    /// makes the second half a contract — `error.execution` covers errors
+    /// "arising from expression evaluation", and the processor MUST place it
+    /// on the internal event queue.
     @Test
     fun nativeActionDoesNotFireWithoutItsTypedPayload() {
         val host = Recorder()
@@ -128,17 +135,51 @@ class NativeActionTest {
             sm.tick()
 
             assertEquals(
-                StatechartNativeActionState.Assembling,
-                sm.currentState.value,
-                "the transition is guarded by the event name and must still be taken"
-            )
-            assertEquals(
                 0,
                 host.appended.size,
                 "appendFragmentPayload fired without a typed payload to read"
             )
+            assertEquals(
+                StatechartNativeActionState.Faulted,
+                sm.currentState.value,
+                "the unreadable argument must reach the document as error.execution"
+            )
             // The eventless effects still ran: they read no payload, so nothing
             // about this delivery should have stopped them.
+            assertEquals(1, host.idleEntries)
+            assertEquals(
+                1,
+                host.assemblingExits,
+                "answering error.execution leaves assembling, so its <onexit> runs"
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /// The same arm, reached with NO host mistake at all: `<raise
+    /// event="fragment.received"/>` is legal SCXML this generator accepts, and
+    /// a raise carries no typed payload. The host's only act is delivering
+    /// `selftest`; everything after it is the document's own doing.
+    @Test
+    fun nativeActionAnswersADocumentRaisedEventWithErrorExecution() {
+        val host = Recorder()
+        val sm = machine(host)
+        sm.initialize()
+        try {
+            sm.send(StatechartNativeActionEvent.Selftest)
+            sm.tick()
+
+            assertEquals(
+                0,
+                host.appended.size,
+                "a document-raised fragment.received has no payload to hand the host"
+            )
+            assertEquals(
+                StatechartNativeActionState.Faulted,
+                sm.currentState.value,
+                "the document's own raise must come back to it as error.execution"
+            )
             assertEquals(1, host.idleEntries)
         } finally {
             sm.cleanup()

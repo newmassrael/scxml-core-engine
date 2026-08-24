@@ -368,11 +368,18 @@ fn reject_mesh_rpc_in_unsupported_lang(
 // something has to be paid for elsewhere. Here that is
 // `sce-build/tests/native_action_backend_parity.rs` — which asserts that every
 // backend emits an interface, a host seam and a call site for the same
-// document, and that the arg-bearing call is guarded by that backend's typed
-// payload tag — plus the six runtime channels named on
+// document, that the arg-bearing call is guarded by that backend's typed
+// payload tag, and that the guard's OTHER arm answers with `error.execution` in
+// one shared wording — plus the six runtime channels named on
 // `sce-build/tests/fixtures/event_schema/statechart_native_action.scxml`, each
 // driving a real host implementation and asserting the effects fired with the
 // typed arguments the event carried.
+//
+// The fifth question was added on 2026-08-24 because the first four passed
+// while the six disagreed about the arm nothing takes: five skipped in silence
+// and Rust aborted through a `debug_assert!` that `--release` compiled away.
+// Emitting the same guard is not the same as agreeing on what it guards
+// against.
 
 // §scxml-6.2.5: a host-declared Event I/O Processor lowers to a
 // dispatch into a runtime registry, and a backend without one has

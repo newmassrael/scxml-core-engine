@@ -166,14 +166,52 @@ static int an_untyped_delivery_does_not_fire_the_arg_bearing_act(void) {
     statechart_native_action_step(&sm);
 
     int bad = 0;
-    // The machine moves either way, which is exactly why the host's
-    // record is what this scenario reads.
-    bad |= check("untyped", "in assembling",
-                 statechart_native_action_in_state(&sm, STATECHART_NATIVE_ACTION_STATE_ASSEMBLING), 1);
+    // Read on the host's record AND on the configuration: the record says
+    // the host was not handed a value it would take for data, and
+    // `faulted` says the machine reported it rather than swallowing it.
+    // §scxml-3.12.2 makes the second half a contract - `error.execution`
+    // covers errors "arising from expression evaluation", and the
+    // processor MUST place it on the internal event queue.
     bad |= check("untyped", "append_fragment_payload calls", r.append_calls, 0);
+    bad |= check("untyped", "in faulted",
+                 statechart_native_action_in_state(&sm, STATECHART_NATIVE_ACTION_STATE_FAULTED), 1);
     // The eventless effects still ran: they read no payload, so nothing
     // about this delivery should have stopped them.
     bad |= check("untyped", "on_idle_entry", r.idle_entries, 1);
+    bad |= check("untyped", "on_assembling_exit", r.assembling_exits, 1);
+
+    statechart_native_action_destroy(&sm);
+    return bad;
+}
+
+// The same arm, reached with NO host mistake at all. `<raise
+// event="fragment.received"/>` is legal SCXML this generator accepts, and
+// a raise carries no typed payload. The host's only act here is delivering
+// `selftest`; everything after it is the document's own doing, so a
+// generator answering it by aborting would be blaming the author for a
+// document it compiled.
+static int a_document_raise_is_answered_with_error_execution(void) {
+    recorder_t r;
+    memset(&r, 0, sizeof(r));
+    statechart_native_action_actions_t v = host_vtable(&r);
+
+    statechart_native_action_t sm;
+    if (!statechart_native_action_init_with_actions(&sm, &v)) {
+        (void)fprintf(stderr, "native_action: FAIL [doc-raise] - a complete vtable was refused\n");
+        return 1;
+    }
+
+    statechart_native_action_event_with_meta_t evt;
+    memset(&evt, 0, sizeof(evt));
+    evt.event = STATECHART_NATIVE_ACTION_EVENT_SELFTEST;
+    statechart_native_action_raise_external(&sm, &evt);
+    statechart_native_action_step(&sm);
+
+    int bad = 0;
+    bad |= check("doc-raise", "append_fragment_payload calls", r.append_calls, 0);
+    bad |= check("doc-raise", "in faulted",
+                 statechart_native_action_in_state(&sm, STATECHART_NATIVE_ACTION_STATE_FAULTED), 1);
+    bad |= check("doc-raise", "on_idle_entry", r.idle_entries, 1);
 
     statechart_native_action_destroy(&sm);
     return bad;
@@ -250,6 +288,7 @@ int main(void) {
     int bad = 0;
     bad |= a_host_receives_every_declared_act();
     bad |= an_untyped_delivery_does_not_fire_the_arg_bearing_act();
+    bad |= a_document_raise_is_answered_with_error_execution();
     bad |= a_vtable_missing_an_operation_is_refused();
     bad |= a_null_vtable_is_refused();
     bad |= two_machines_reach_their_own_hosts();
@@ -258,6 +297,6 @@ int main(void) {
         (void)fprintf(stderr, "native_action: FAIL - see the scenario(s) named above\n");
         return 1;
     }
-    (void)printf("native_action: PASS - 5 scenarios\n");
+    (void)printf("native_action: PASS - 6 scenarios\n");
     return 0;
 }
