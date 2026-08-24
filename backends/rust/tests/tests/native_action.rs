@@ -127,12 +127,13 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
 /// nothing to read, and handing the host a value it would take for data is the
 /// one outcome this seam must never produce.
 ///
-/// Asserted on the host's record rather than on the configuration, because the
-/// machine reaches `assembling` either way — the record is the half a
-/// configuration assertion cannot see. That record is also the ONE observable
-/// contract all six channels share: each of the other five asserts exactly it
-/// against this same document, because five of the six lower the untyped arm
-/// to a branch that simply is not taken.
+/// Asserted on the host's record AND on the configuration, because the two
+/// answer different halves: the record says the host was not handed a value it
+/// would take for data, and `faulted` says the machine said so instead of
+/// swallowing it. §scxml-3.12.2 is what makes the second half a contract rather
+/// than a nicety — `error.execution` covers errors "arising from expression
+/// evaluation", the processor MUST place it on the internal event queue, and
+/// this document answers it.
 ///
 /// The refusal and the proof that the site is live are asserted on ONE engine:
 /// the untyped delivery leaves the host untouched, then the SAME machine takes
@@ -141,13 +142,12 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
 /// machine that never reached the call site — a check whose only discriminator
 /// is an absence reads a broken machine as a pass.
 ///
-/// Compiled only where the record is reachable. This backend is the one of the
-/// six whose untyped arm is a `debug_assert!`, so a development build stops at
-/// the panic before any of this can be observed; there the same delivery is
-/// witnessed by `native_action_debug_build_asserts_on_a_missing_typed_payload`
-/// instead. The two are a partition, not a pair — each profile builds exactly
-/// one of them, and neither profile is left without a witness.
-#[cfg(not(debug_assertions))]
+/// No `cfg` gate, and that is the point. Until 2026-08-24 this backend lowered
+/// the untyped arm to a `debug_assert!`: the same delivery aborted a
+/// development build and did nothing at all in `--release`, so no single test
+/// could state the contract and the two profiles needed a partition between
+/// them. One lowering for six backends replaced it, and one test in one shape
+/// covering both profiles is what proves that divergence is gone.
 #[test]
 fn native_action_does_not_fire_without_its_typed_payload() {
     let log = Rc::new(RefCell::new(Log::default()));
@@ -160,23 +160,28 @@ fn native_action_does_not_fire_without_its_typed_payload() {
     engine.raise_external_by_name("fragment.received", "");
     engine.step();
 
-    assert_eq!(
-        engine.get_current_state(),
-        StatechartNativeActionState::Assembling,
-        "an untyped fragment.received still takes the transition - its guard is the event name"
-    );
     assert!(
         log.borrow().appended.is_empty(),
         "append_fragment_payload fired without a typed payload to read: {:?}",
         log.borrow().appended
     );
     assert_eq!(
+        engine.get_current_state(),
+        StatechartNativeActionState::Faulted,
+        "the unreadable argument must reach the document as error.execution"
+    );
+    assert_eq!(
         log.borrow().idle_entries,
         1,
         "the no-argument entry effect is unaffected by the missing payload"
     );
+    assert_eq!(
+        log.borrow().assembling_exits,
+        1,
+        "answering error.execution leaves assembling, so its <onexit> runs"
+    );
 
-    // Lower bound, on the same engine: return to `idle` and deliver the event
+    // Lower bound, on the same engine: recover to `idle` and deliver the event
     // through its generated typed inject. The call site the untyped delivery
     // skipped is now reached and fires, so the empty record above measures the
     // missing payload and not an inert machine.
@@ -189,41 +194,52 @@ fn native_action_does_not_fire_without_its_typed_payload() {
     engine.step();
 
     assert_eq!(
+        engine.get_current_state(),
+        StatechartNativeActionState::Assembling
+    );
+    assert_eq!(
         log.borrow().appended,
         vec![(b"abc".to_vec(), 7)],
         "the same action site must fire once the typed payload is present"
     );
 }
 
-/// Rust is the only one of the six backends that also says so LOUDLY: the arm
-/// an untyped delivery takes is a generated `debug_assert!`, so a development
-/// build turns the contract violation into a panic while a release build
-/// compiles it out and costs an MCU target nothing.
+/// The same arm, reached with NO host mistake at all.
 ///
-/// Gated on `debug_assertions` so it is ABSENT from a release sweep rather
-/// than silently passing there. Ungated, it asserts a panic the profile has
-/// already removed — a check built on a deficiency, which is why the release
-/// lane reported `test did not panic as expected` while the refusal itself was
-/// working. It still executes in CI: `rust-workspace-tests.yml` runs
-/// `cargo test --workspace` on the default profile precisely so assertions
-/// like this one are compiled in, and `hook_ci_parity` fails if either that
-/// lane or the hook stage it mirrors moves onto `--release`.
+/// `<raise event="fragment.received"/>` is legal SCXML this generator accepts,
+/// and a raise carries no typed payload — so the document alone can put the
+/// arg-bearing action in front of a delivery it cannot read. Measured on
+/// 2026-08-24, that document killed a development build of this backend and
+/// silently did nothing in `--release`; a generator cannot answer a document it
+/// accepted by aborting the process.
 ///
-/// The expected message is what makes this a witness and not a smoke test: it
-/// pins the arm taken to the refusal arm rather than to any other panic on the
-/// path. Paired with `native_action_dispatches_typed_payload_to_host_trait`,
-/// which is compiled into both profiles, a development build still gets both
-/// halves of the seam — typed delivery reaches the host, untyped delivery
-/// takes the arm nobody wrote.
-#[cfg(debug_assertions)]
+/// The host's only act here is delivering `selftest`. Everything after it is
+/// the document's own doing, which is what separates this from
+/// `native_action_does_not_fire_without_its_typed_payload` — same arm, an
+/// origin the host cannot be blamed for, and the same three facts must hold.
 #[test]
-#[should_panic(expected = "requires the typed payload of its triggering event")]
-fn native_action_debug_build_asserts_on_a_missing_typed_payload() {
+fn native_action_answers_a_document_raised_event_with_error_execution() {
     let log = Rc::new(RefCell::new(Log::default()));
     let mut engine =
         sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(log.clone())));
     engine.initialize();
 
-    engine.raise_external_by_name("fragment.received", "");
+    engine.raise_external_by_name("selftest", "");
     engine.step();
+
+    assert!(
+        log.borrow().appended.is_empty(),
+        "a document-raised fragment.received has no payload to hand the host: {:?}",
+        log.borrow().appended
+    );
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartNativeActionState::Faulted,
+        "the document's own raise must come back to it as error.execution"
+    );
+    assert_eq!(
+        log.borrow().idle_entries,
+        1,
+        "the entry effect ran once and the machine never returned to idle"
+    );
 }

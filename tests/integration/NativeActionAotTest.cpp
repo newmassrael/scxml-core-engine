@@ -118,8 +118,11 @@ TEST_F(NativeActionAotTest, NativeActionDispatchesTypedPayloadToHostInterface) {
 /// nothing to read, and handing the host a value it would take for data is the
 /// one outcome this seam must never produce.
 ///
-/// Asserted on the host's record rather than on the configuration, because the
-/// machine reaches `assembling` either way.
+/// Asserted on the host's record AND on the configuration: the record says the
+/// host was not handed a value it would take for data, and `Faulted` says the
+/// machine reported it rather than swallowing it. §scxml-3.12.2 makes the second
+/// half a contract — `error.execution` covers errors "arising from expression
+/// evaluation", and the processor MUST place it on the internal event queue.
 TEST_F(NativeActionAotTest, NativeActionDoesNotFireWithoutItsTypedPayload) {
     Recorder host;
     Machine sm(host);
@@ -131,11 +134,32 @@ TEST_F(NativeActionAotTest, NativeActionDoesNotFireWithoutItsTypedPayload) {
     sm.raiseExternal(Event::Fragment_received);
     sm.step();
 
-    EXPECT_EQ(sm.getCurrentState(), State::Assembling)
-        << "the transition is guarded by the event name and must still be taken";
     EXPECT_EQ(host.appended.size(), 0u) << "appendFragmentPayload fired without a typed payload to read";
+    EXPECT_EQ(sm.getCurrentState(), State::Faulted)
+        << "the unreadable argument must reach the document as error.execution";
     // The eventless effects still ran: they read no payload, so nothing about
     // this delivery should have stopped them.
+    EXPECT_EQ(host.idleEntries, 1);
+    EXPECT_EQ(host.assemblingExits, 1) << "answering error.execution leaves assembling, so its <onexit> runs";
+}
+
+/// The same arm, reached with NO host mistake at all: `<raise
+/// event="fragment.received"/>` is legal SCXML this generator accepts, and a
+/// raise carries no typed payload. The host's only act is delivering
+/// `selftest`; everything after it is the document's own doing, so a generator
+/// answering it by aborting would be blaming the author for a document it
+/// compiled.
+TEST_F(NativeActionAotTest, NativeActionAnswersADocumentRaisedEventWithErrorExecution) {
+    Recorder host;
+    Machine sm(host);
+    sm.initialize();
+
+    sm.raiseExternal(Event::Selftest);
+    sm.step();
+
+    EXPECT_EQ(host.appended.size(), 0u) << "a document-raised fragment.received has no payload to hand the host";
+    EXPECT_EQ(sm.getCurrentState(), State::Faulted)
+        << "the document's own raise must come back to it as error.execution";
     EXPECT_EQ(host.idleEntries, 1);
 }
 

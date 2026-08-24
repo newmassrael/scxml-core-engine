@@ -28,10 +28,18 @@
 //! 3. **Every call site is emitted**, including the two operations that appear
 //!    in no transition at all.
 //! 4. **The arg-bearing call is guarded by that backend's typed-payload tag.**
-//!    An event raised by name carries no payload; firing anyway would hand the
-//!    host a zero value it would take for data. The runtime channels measure
-//!    the effect; what is measured here is that the guard is emitted at all,
-//!    on every backend, from one lowering.
+//!    An event that arrives without its typed payload carries nothing the
+//!    arguments can be read from; firing anyway would hand the host a zero
+//!    value it would take for data. The runtime channels measure the effect;
+//!    what is measured here is that the guard is emitted at all, on every
+//!    backend, from one lowering.
+//! 5. **That guard's other arm answers with `error.execution`, in one
+//!    wording.** A guard says what does NOT happen; this says what does. The
+//!    document itself can put a payload-typed event on the queue with no
+//!    payload — `<raise>` is legal SCXML — so the arm is reachable without any
+//!    host mistake, and both "skip in silence" and "abort the process" are
+//!    answers a generator owes the author instead of §scxml-3.12.2's. Question 4
+//!    passed for months while the six disagreed about this one.
 //!
 //! Engine-freedom is asserted from the manifest rather than from the absence
 //! of a substring — see `native_action_alone_needs_no_script_engine_on_any_backend`.
@@ -86,9 +94,21 @@ struct Expectation {
     receiver: &'static str,
     /// The tag check wrapping the arg-bearing call.
     payload_guard: &'static str,
+    /// How this backend raises `error.execution` from the arm an unreadable
+    /// delivery takes. Six spellings, one behaviour — the point of reading it
+    /// here is that a backend which quietly went back to skipping, or which
+    /// grew its own diagnostic instead, stops matching.
+    error_arm: &'static str,
     /// `operation -> spelling`, in that language's convention.
     method: fn(&str) -> String,
 }
+
+/// The one message all six carry. Spelled once here so "the six agree" is a
+/// thing this file can assert rather than a thing six string literals happen
+/// to do — the failure mode `error.execution` has already been through on this
+/// codebase is six backends wording the same failure six ways.
+const UNREADABLE_ARG_MESSAGE: &str = "<sce:action name='append_fragment_payload'> needs the typed \
+     payload of 'fragment.received', which this delivery did not carry";
 
 fn snake(op: &str) -> String {
     op.to_string()
@@ -127,6 +147,8 @@ fn expectations() -> Vec<Expectation> {
             host_seam: "pub fn new(actions: A)",
             receiver: "self.actions.",
             payload_guard: "match &self.pending_payload {",
+            error_arm: "_ => { engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(\
+                        StatechartNativeActionEvent::ErrorExecution,",
             method: snake,
         },
         Expectation {
@@ -138,6 +160,8 @@ fn expectations() -> Vec<Expectation> {
             receiver: "p.actions.",
             payload_guard:
                 "p.pendingPayloadTag == StatechartNativeActionPayloadTagFragmentReceived",
+            error_arm:
+                "engine.Raise(sce.NewPlatformError(StatechartNativeActionEventErrorExecution,",
             method: pascal,
         },
         Expectation {
@@ -147,6 +171,7 @@ fn expectations() -> Vec<Expectation> {
             host_seam: "private val actions: StatechartNativeActionActions,",
             receiver: "actions.",
             payload_guard: "pendingFragmentReceivedPayload?.let {",
+            error_arm: "?: run { raiseInternal(StatechartNativeActionEvent.Error.Execution,",
             method: camel,
         },
         Expectation {
@@ -155,7 +180,8 @@ fn expectations() -> Vec<Expectation> {
             interface: "class StatechartNativeActionActions(Protocol):",
             host_seam: "def __init__(self, actions: StatechartNativeActionActions) -> None:",
             receiver: "self._actions.",
-            payload_guard: "if (_p := self._pending_fragment_received_payload) is not None:",
+            payload_guard: "if (_p := self._pending_fragment_received_payload) is not None",
+            error_arm: "else self._raise_error_execution(engine,",
             method: snake,
         },
         Expectation {
@@ -169,6 +195,7 @@ fn expectations() -> Vec<Expectation> {
             receiver: "actions_->",
             payload_guard:
                 "pendingPayloadTag_ == StatechartNativeActionPayloadTag::FragmentReceived",
+            error_arm: "engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,",
             method: camel,
         },
         Expectation {
@@ -187,6 +214,8 @@ fn expectations() -> Vec<Expectation> {
             receiver: "sm->actions.",
             payload_guard:
                 "sm->pending_payload.tag == STATECHART_NATIVE_ACTION_PAYLOAD_FRAGMENT_RECEIVED",
+            error_arm: "statechart_native_action_raise_platform_error(sm, \
+                        STATECHART_NATIVE_ACTION_EVENT_ERROR_EXECUTION,",
             method: snake,
         },
     ]
@@ -322,12 +351,64 @@ fn every_backend_guards_the_arg_bearing_call_with_its_typed_payload_tag() {
         assert!(
             text.contains(e.payload_guard),
             "{}: the arg-bearing call is not guarded by the typed-payload tag. An event \
-             raised by NAME carries no payload; firing anyway hands the host a zero \
-             value it would take for data, and the machine reaches the same state \
-             either way so no configuration assertion can see it. Expected to \
-             find:\n  {}",
+             that arrives without its typed payload carries nothing the arguments can \
+             be read from; firing anyway hands the host a zero value it would take for \
+             data. Expected to find:\n  {}",
             e.lang,
             e.payload_guard
+        );
+    }
+}
+
+/// The arm an unreadable delivery takes must SAY so, identically, on all six.
+///
+/// Two deliveries reach it and only one is a host mistake: a host reaching past
+/// the generated typed inject, and the DOCUMENT'S OWN `<raise>` of a
+/// payload-typed event — legal SCXML this generator accepts, so "blame the
+/// caller" is not available as an answer. §scxml-3.12.2 supplies the one that
+/// is: an error "arising from expression evaluation" is signalled as
+/// `error.execution` on the internal event queue, which the document can
+/// answer with a transition.
+///
+/// Measured on 2026-08-24, the six did not agree. Five skipped in silence and
+/// Rust alone aborted through a `debug_assert!` that `--release` compiled away,
+/// so one legal document either killed a development build or did nothing at
+/// all depending on the profile. This test is what makes that a red rather than
+/// something only a reader would notice.
+///
+/// The shared message is asserted alongside the per-backend spelling because
+/// six wordings of one failure is the OTHER way a single contract turns back
+/// into six, and it is a drift this codebase has already paid for once.
+#[test]
+fn every_backend_answers_an_unreadable_argument_with_error_execution() {
+    let all = expectations();
+    // Lower bound. A sweep that lost rows reports "every backend agrees" by
+    // asking fewer of them, and an empty loop is indistinguishable from a pass.
+    assert_eq!(
+        all.len(),
+        6,
+        "§scxml-G-7 is lowered by six backends; this table stopped asking all of them"
+    );
+
+    for e in all {
+        let files = generate(e.lang, e.files);
+        let text = emitted(&files);
+        assert!(
+            text.contains(e.error_arm),
+            "{}: an unreadable argument is not answered with error.execution. Silence \
+             here is the seam deciding, on the host's behalf, that a failure it can see \
+             is not worth reporting — and the document has a transition for it. \
+             Expected to find:\n  {}",
+            e.lang,
+            e.error_arm
+        );
+        assert!(
+            text.contains(UNREADABLE_ARG_MESSAGE),
+            "{}: the raise carries a different message from the other backends. One \
+             failure, one wording — a per-backend phrasing is how a shared contract \
+             becomes six. Expected to find:\n  {}",
+            e.lang,
+            UNREADABLE_ARG_MESSAGE
         );
     }
 }
