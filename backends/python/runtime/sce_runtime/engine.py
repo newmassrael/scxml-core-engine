@@ -417,7 +417,7 @@ class Engine(Generic[S, E]):
         )
         self._policy.initialize_datamodel(self)
 
-        # W3C SCXML 3.3: the leaves of the restored set are its members that
+        # §scxml-3.3: the leaves of the restored set are its members that
         # hold no child in it. Derived rather than taken from the caller,
         # because the set is what a host records and the leaves are a fact
         # about it — asking for both would let the two disagree.
