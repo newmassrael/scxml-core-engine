@@ -251,6 +251,83 @@ func (e *Engine[S, E]) Initialize() {
 	}
 }
 
+// EnterAt enters a configuration this document already describes, without
+// re-running the <onentry> actions an earlier run already ran (§scxml-3.2).
+//
+// # What it is for
+//
+// A host that persisted where a machine was and is bringing it back in a new
+// process. Initialize replays the document from its initial state, which runs
+// every <onentry> on the way in — a resumed session would send its greeting
+// twice, re-arm timers, and re-issue acts whose recipients already received
+// them.
+//
+// # What it takes, and why two arguments
+//
+// Exactly what the two readers on this engine publish: GetActiveStates and
+// GetCurrentState. Handing back both is not redundancy — for a machine with
+// <parallel> states the configuration does not determine the current state.
+// currentState is the leaf the engine descended to, so which region it sits in
+// is a fact about the transition history rather than about the configuration,
+// and a set alone cannot recover it.
+//
+// # What it refuses
+//
+// Every set that is not a configuration of THIS document — see
+// ValidateConfiguration for the rules and ConfigurationRejection for what each
+// refusal names. Validation runs before any mutation, so a refused call leaves
+// the engine exactly as it was; entering "near" the requested configuration is
+// the one outcome this door must never produce, because a host has no way to
+// detect it afterwards.
+//
+// # What it does not do
+//
+//   - No <onentry>, and no <onexit>: no state is entered or left.
+//   - No macrostep. Initialize settles the machine before returning; this does
+//     not, because the configuration handed in was already a settled one —
+//     running the loop here could take an eventless transition the earlier run
+//     had no reason to take, and fire the <send>s on the way. The host drives
+//     the machine on with Step or Tick as it otherwise would.
+//   - No datamodel restore. §scxml-5.3 declaration still runs, so the variables
+//     exist with their document defaults and a host can then put its saved
+//     values back through IScriptEngine — the engine does not persist datamodel
+//     state and does not pretend to.
+//
+// The Go twin of the Rust runtime's Engine::enter_at and of the C++
+// StaticExecutionEngine::enterAt.
+//
+// Returns ConfigurationAccepted on success; the rule that was broken otherwise,
+// with the engine untouched.
+func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationRejection {
+	// Before anything is touched: a rejection must not half-enter.
+	verdict := ValidateConfiguration[S, E](e.policy, configuration, current)
+	if verdict != ConfigurationAccepted {
+		log.Printf("[sce] Engine::EnterAt: refused -- %s", verdict)
+		return verdict
+	}
+
+	// §scxml-5.3: the datamodel is declared before anything can read it. This
+	// is not a state entry action -- <datamodel> holds <data>, not executable
+	// content -- so it runs here for the same reason it runs in Initialize: a
+	// cond or an assign evaluated after this call would otherwise reference
+	// variables that were never declared.
+	if e.policy.NeedsDataModelInit() {
+		e.policy.InitializeDataModel(e)
+	}
+
+	e.currentState = current
+
+	// §scxml-3.4: a machine that keeps its own active set is handed it back.
+	// The condition is the one the generator emits SetActiveStates under, so a
+	// policy reached here has the override.
+	if e.policy.HasActiveStates() {
+		e.policy.SetActiveStates(configuration)
+	}
+
+	e.isRunning = true
+	return ConfigurationAccepted
+}
+
 // Step processes one macrostep: drain queues and run eventless transitions.
 //
 // Matches Rust Engine::step. Used by parent SMs to explicitly drive children

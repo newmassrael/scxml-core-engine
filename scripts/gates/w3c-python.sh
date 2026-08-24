@@ -78,9 +78,15 @@ status=0
 # backend that answers `[1,2,3].indexOf(2)` with -1, because no fixture in it
 # asks. Named here rather than left to collection so a directory that stops
 # being collected shows up as a count, not as silence.
+#
+# `configuration_entry/` is the fourth, and the same reasoning: it drives
+# §scxml-3.2 `Engine.enter_at` over documents that already exist in the tree
+# rather than adding a fixture of its own, so it is not a stem and nothing else
+# names it. A directory of witnesses no runner enumerates is a directory of
+# files.
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
-        backends/python/tests/ecmascript/ \
+        backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
         --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
 cat "$LOG/pytest.log"
 

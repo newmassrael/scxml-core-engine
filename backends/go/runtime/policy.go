@@ -70,6 +70,29 @@ type StatePolicy[S comparable, E comparable] interface {
 	// Required for In() predicate and _state.active queries.
 	GetStateName(state S) string
 
+	// GetStateFromName is the reverse lookup: (state, true) if name matches a
+	// state this document declares, or (zero, false) otherwise.
+	//
+	// Required (no default) for the reason GetStateName is: the mapping is
+	// structural, and a default could only ever answer false. A policy that had
+	// not emitted the table would then report every recorded configuration as
+	// unknown — which a caller reads as "this run has no history" rather than
+	// as a policy that is incomplete. Mirrors GetEventFromName, which is
+	// required for the same reason on the event side.
+	//
+	// This is what lets a configuration cross a process. A host can only record
+	// state NAMES — a journal, a wire, a file — while Engine.EnterAt takes a
+	// []S. Without the reverse, a recorded configuration cannot be turned back
+	// into the argument that door asks for and resuming degrades to replaying
+	// from the initial state. A consumer-side table would age silently the
+	// moment the document gained a state; only the generator writes one that
+	// ages with the document.
+	//
+	// The round trip is an identity: GetStateFromName(GetStateName(s)) is
+	// (s, true) for every state of the document, and a name the document does
+	// not carry is (zero, false) rather than a guess.
+	GetStateFromName(name string) (S, bool)
+
 	// NullEvent returns the sentinel event value for eventless transition dispatch
 	// (§scxml-3.13). Generated code produces a Null variant.
 	NullEvent() E
@@ -215,6 +238,17 @@ type StatePolicy[S comparable, E comparable] interface {
 
 	// GetActiveStates returns the active states for parallel state machines (§scxml-3.4).
 	GetActiveStates() []S
+
+	// SetActiveStates hands a machine that keeps its own active set that set
+	// back (§scxml-3.4). The write half of GetActiveStates, and the only caller
+	// is Engine.EnterAt: the ordinary entry and exit paths grow the set one
+	// state at a time as they walk, while a restore is handed the whole
+	// configuration at once.
+	//
+	// A no-op on a policy whose HasActiveStates is false — such a machine's
+	// configuration is the parent walk from its current state, which EnterAt
+	// restores by setting that state.
+	SetActiveStates(states []S)
 
 	// ForwardToAutoforwardChildren forwards external events to autoforward children
 	// (§scxml-6.4.1).

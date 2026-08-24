@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c97edcb094613d8138825758fc943d853d23ad4854f2fa7dcf6ff6f58539b674
-// template-hash: 4cbf0ce468f2db0011b4fa010e6c117357964548e492f95e76a21755c70778e3
+// template-hash: 6d29ccd65cc69c7036210e21d4c9d2a46b7717262dc7e045f86a45620f80383f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -185,6 +185,14 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML 5.3: the declaration hook `enterAt` reaches. Every other caller
+    // arrives through a guard, an assign or a script block, all of which run
+    // `ensureScriptEngine()` on their own way in; a resume runs none of them,
+    // and a host putting saved values back needs the variables to exist first.
+    override fun declareDatamodel() {
+        ensureScriptEngine()
+    }
 
     // W3C SCXML B.1: Lazy script engine initialization
     private fun ensureScriptEngine() {

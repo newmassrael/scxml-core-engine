@@ -127,6 +127,50 @@ enum {{ csym_prefix }}{{ model.name }}_state_e {
 };
 typedef enum {{ csym_prefix }}{{ model.name }}_state_e {{ csym_prefix }}{{ model.name }}_state_t;
 
+/* ── W3C SCXML 3.2: why a restored configuration was refused ───────── */
+{# The C twin of `SCE::Core::ConfigurationRejection` (cpp),
+   `ConfigurationRejection` (rust / go / kotlin / python). An enumerated
+   reason rather than a bool: a host handing back a journal it wrote itself
+   needs to know WHICH rule its record broke, and "invalid" sends it looking
+   at the wrong half. #}
+enum {{ csym_prefix }}{{ model.name }}_configuration_rejection_e {
+    /* The accepting answer. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE = 0,
+    /* No states at all. A machine is never in nothing. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_EMPTY,
+    /* A state appears twice. Checked before every arity count below, which
+       would otherwise read a duplicate as a second child and blame the
+       wrong rule. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_DUPLICATE,
+    /* A state is present whose parent is not — the set is not ancestor-closed. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ANCESTOR_MISSING,
+    /* W3C SCXML 3.2: a configuration closes on exactly one root. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ROOT_COUNT,
+    /* W3C SCXML 3.3: a compound state holds exactly one active child. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_COMPOUND_CHILD_COUNT,
+    /* W3C SCXML 3.4: a <parallel> holds EVERY region, and one is missing. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_REGION_MISSING,
+    /* W3C SCXML 3.4: a <parallel> holds every region and nothing else. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_CHILD_COUNT,
+    /* An atomic state has a child in the set, so it is not atomic here. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ATOMIC_HAS_CHILDREN,
+    /* A state value outside this document's enumeration. The five other
+       backends need no such member: a member of their configuration is a
+       generated enum or sealed object, so a state this document does not
+       have cannot be constructed. C alone can be handed an out-of-range
+       integer, and answering it with a walk over a bitmap it does not fit
+       is undefined behaviour rather than a refusal. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_UNKNOWN_STATE{% if has_native_actions %},
+    /* W3C SCXML G.7: the host did not supply every act this document
+       declares. Also not a member the other backends need — an unimplemented
+       interface method does not compile there — and it is here for the same
+       reason `_init_with_actions` already refuses one: C has no such check,
+       so it moves to the call a C host has to make. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_HOST_ACTIONS_INCOMPLETE{% endif %}
+
+};
+typedef enum {{ csym_prefix }}{{ model.name }}_configuration_rejection_e {{ csym_prefix }}{{ model.name }}_configuration_rejection_t;
+
 {% if model.has_history_states %}
 /* ── W3C SCXML 3.10: History pseudo-state enumeration ─────────────── */
 {# History state IDs are not part of the regular state enum (parser.rs
@@ -1132,6 +1176,102 @@ void {{ csym_prefix }}{{ model.name }}_finalize_session({{ csym_prefix }}{{ mode
 uint32_t {{ csym_prefix }}{{ model.name }}_active_states(const {{ csym_prefix }}{{ model.name }}_t *sm);
 bool {{ csym_prefix }}{{ model.name }}_in_state(const {{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
 bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* W3C SCXML 3.3: the document's own name for `s`, or "" for a value outside
+   this document's enumeration.
+
+   A host that persists where a machine was has to write it down as TEXT: the
+   enum above is a build artefact of one binary, and the process that resumes
+   is a different one. This publishes the name and `_state_from_name` reads it
+   back, which is what lets a journal survive its own record and reach
+   `_init_at`. The pointer is to a string literal with static storage — the
+   caller neither frees nor outlives it. */
+const char *{{ csym_prefix }}{{ model.name }}_state_name({{ csym_prefix }}{{ model.name }}_state_t s);
+
+/* W3C SCXML 3.3: the read half of the pair above. Writes the state `name`
+   names through `out` and answers true; answers false, leaving `*out`
+   untouched, for a name this document does not declare (and for a NULL
+   argument either way).
+
+   False rather than a guess. A name guessed at is how a restore reaches a
+   configuration nobody recorded — and the refusal is what makes a typo in a
+   journal a reported failure instead of a machine quietly somewhere else. */
+bool {{ csym_prefix }}{{ model.name }}_state_from_name(const char *name, {{ csym_prefix }}{{ model.name }}_state_t *out);
+
+/* W3C SCXML 3.2: a human-readable reason, for the message a refusal carries. */
+const char *{{ csym_prefix }}{{ model.name }}_configuration_rejection_text(
+    {{ csym_prefix }}{{ model.name }}_configuration_rejection_t r);
+
+/* W3C SCXML 3.2 / 3.3 / 3.4: is this set of states a CONFIGURATION of the
+   document?
+
+   Pure — reads the static hierarchy and nothing else, touches no machine, and
+   is public because a host can then ask before it commits. Cost is quadratic
+   in `count`, which is a handful of states, and this runs once per restore:
+   the shape is chosen for being obviously right rather than for being fast,
+   exactly as its five twins are.
+
+   Unlike them it takes no "current state" argument, and there is none to take:
+   this backend keeps no current-state shadow (see `_active_states` above —
+   `_get_current_state` is gone on purpose, because single-leaf semantics break
+   for `<parallel>`). So the two current-state rules the other engines check
+   have nothing here to check them against, and a host journalling from this
+   backend has no leaf to journal. What it does check is every rule about the
+   set itself, which is the whole of what this backend can be in. */
+{{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_prefix }}{{ model.name }}_validate_configuration(
+    const {{ csym_prefix }}{{ model.name }}_state_t *configuration, size_t count);
+
+/* W3C SCXML 3.2: bring a machine up IN a configuration this document already
+   describes, without running the `<onentry>` actions an earlier run already
+   ran.
+
+   ## What it is for
+
+   A host that persisted where a machine was and is bringing it back in a new
+   process. `_init` replays the document from its initial state, which runs
+   every `<onentry>` on the way in — a resumed session would send its greeting
+   twice, re-arm timers, and re-issue acts whose recipients already received
+   them.
+
+   ## Why it is an `_init` variant rather than a door on a live machine
+
+   On this backend construction and entry are ONE call: `_init` memsets the
+   struct and then walks. There is no moment between them for a host to hand a
+   configuration in, which is why the set arrives as an argument — the same
+   reason the host-processor registry and the clock do. Its siblings have two
+   calls and so have a door.
+
+   ## What it refuses
+
+   Every set that is not a configuration of THIS document — see
+   `_validate_configuration` for the rules and the rejection enum for what each
+   refusal names. Validation runs BEFORE the memset, so a refused call leaves
+   the caller's storage exactly as it was; coming up "near" the requested
+   configuration is the one outcome this must never produce, because a host has
+   no way to detect it afterwards.
+
+   ## What it does not do
+
+   No `<onentry>`, no `<onexit>`, and no macrostep: the configuration handed in
+   was already a settled one, and running the loop here could take an eventless
+   transition the earlier run had no reason to take and fire the `<send>`s on
+   the way. The host drives on with `_step` / `_tick` as it otherwise would.
+   The datamodel is declared with its document defaults, not restored — a host
+   puts its saved values back itself.
+
+   The C twin of `Engine::enter_at` (Rust), `enterAt` (C++ / Kotlin), `EnterAt`
+   (Go) and `enter_at` (Python).
+
+   Takes the full argument set every `_init` variant splits between them: a
+   resume is the one call where a host has all of them to hand, and one
+   function is better than the product of the wrappers. */
+{{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_prefix }}{{ model.name }}_init_at(
+    {{ csym_prefix }}{{ model.name }}_t *sm,
+    const {{ csym_prefix }}{{ model.name }}_state_t *configuration, size_t count{% if model.needs_event_scheduler %},
+    sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
+    const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+    const sce_host_processor_registry_t *host_processors{% endif %}{% if has_native_actions %},
+    const {{ native_actions_interface }} *actions{% endif %});
 
 /* W3C SCXML 3.3: Compile-time policy queries (mirror C++ `*Policy::*`). */
 {{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_initial_state(void);

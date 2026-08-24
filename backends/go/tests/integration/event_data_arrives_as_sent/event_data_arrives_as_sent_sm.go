@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8e0f0b7b552dfbb89b9083db177a216e77a3534d3f6112690f84145daf0386d4
-// template-hash: 4cbf0ce468f2db0011b4fa010e6c117357964548e492f95e76a21755c70778e3
+// template-hash: 6d29ccd65cc69c7036210e21d4c9d2a46b7717262dc7e045f86a45620f80383f
 // generated-at: 0
 
 
@@ -87,6 +87,71 @@ func (s EventDataArrivesAsSentState) String() string {
 		return "waiting"
 	}
 	return "unknown"
+}
+
+// EventDataArrivesAsSentStateFromName is the read half of the pair above — a state
+// id back into the state it names (W3C SCXML 3.3).
+//
+// A host that persists where a machine was has to write it down as TEXT: the
+// constants above are a build artefact of one binary, and the process that
+// resumes is a different one. String publishes the name and this reads it back,
+// which is what lets a journal survive its own record and reach
+// sce.Engine.EnterAt.
+//
+// The second return is false for a name this document does not declare. A name
+// guessed at rather than refused is how a restore reaches a configuration
+// nobody recorded — and the refusal is what makes a typo in a journal a
+// reported failure instead of a machine quietly somewhere else.
+//
+// Emitted from the same loop over the document's states as String, so the two
+// age together.
+func EventDataArrivesAsSentStateFromName(name string) (EventDataArrivesAsSentState, bool) {
+	switch name {
+	case "documented":
+		return EventDataArrivesAsSentStateDocumented, true
+	case "evaluated":
+		return EventDataArrivesAsSentStateEvaluated, true
+	case "flattened":
+		return EventDataArrivesAsSentStateFlattened, true
+	case "garbled":
+		return EventDataArrivesAsSentStateGarbled, true
+	case "heard":
+		return EventDataArrivesAsSentStateHeard, true
+	case "mangled":
+		return EventDataArrivesAsSentStateMangled, true
+	case "opening":
+		return EventDataArrivesAsSentStateOpening, true
+	case "quoted":
+		return EventDataArrivesAsSentStateQuoted, true
+	case "settled":
+		return EventDataArrivesAsSentStateSettled, true
+	case "swallowed":
+		return EventDataArrivesAsSentStateSwallowed, true
+	case "waiting":
+		return EventDataArrivesAsSentStateWaiting, true
+	}
+	var zero EventDataArrivesAsSentState
+	return zero, false
+}
+
+// EventDataArrivesAsSentAllStates is every state this document declares, in the
+// order the constants above are issued.
+//
+// Emitted from the same loop, so a walk over it is a walk over the document
+// rather than over a list somebody maintained beside it — a test that spells
+// its own list goes on passing when the document grows a state.
+var EventDataArrivesAsSentAllStates = []EventDataArrivesAsSentState{
+	EventDataArrivesAsSentStateDocumented,
+	EventDataArrivesAsSentStateEvaluated,
+	EventDataArrivesAsSentStateFlattened,
+	EventDataArrivesAsSentStateGarbled,
+	EventDataArrivesAsSentStateHeard,
+	EventDataArrivesAsSentStateMangled,
+	EventDataArrivesAsSentStateOpening,
+	EventDataArrivesAsSentStateQuoted,
+	EventDataArrivesAsSentStateSettled,
+	EventDataArrivesAsSentStateSwallowed,
+	EventDataArrivesAsSentStateWaiting,
 }
 
 // ======================================================================
@@ -465,6 +530,13 @@ func (p *EventDataArrivesAsSentPolicy) GetStateName(state EventDataArrivesAsSent
 	return state.String()
 }
 
+// GetStateFromName reads a state id back into the state it names (W3C SCXML 3.3).
+// The reverse of GetStateName, and what turns a host's recorded configuration
+// back into the argument sce.Engine.EnterAt takes.
+func (p *EventDataArrivesAsSentPolicy) GetStateFromName(name string) (EventDataArrivesAsSentState, bool) {
+	return EventDataArrivesAsSentStateFromName(name)
+}
+
 // NullEvent returns the sentinel for eventless transition dispatch (W3C SCXML 3.13).
 func (p *EventDataArrivesAsSentPolicy) NullEvent() EventDataArrivesAsSentEvent {
 	return EventDataArrivesAsSentEventNull
@@ -545,6 +617,11 @@ func (p *EventDataArrivesAsSentPolicy) HasFinalize() bool { return false }
 func (p *EventDataArrivesAsSentPolicy) HasAutoforward() bool { return false }
 func (p *EventDataArrivesAsSentPolicy) HasActiveStates() bool { return false }
 func (p *EventDataArrivesAsSentPolicy) GetActiveStates() []EventDataArrivesAsSentState { return nil }
+// W3C SCXML 3.4: this machine keeps no active set — its configuration is the
+// parent walk from the current state — so there is nothing for a restore to
+// hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
+// which is false above; the method exists because the interface is one contract.
+func (p *EventDataArrivesAsSentPolicy) SetActiveStates(_ []EventDataArrivesAsSentState) {}
 func (p *EventDataArrivesAsSentPolicy) HasExternalEventFlag() bool { return true }
 // GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
 func (p *EventDataArrivesAsSentPolicy) GetInitialOrHistoryChild(state EventDataArrivesAsSentState) EventDataArrivesAsSentState {
