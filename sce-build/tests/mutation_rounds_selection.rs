@@ -883,9 +883,11 @@ fn the_selection_narrows_and_the_round_only_obeys() {
     );
     assert_eq!(
         select.get("SCE_MUTATION_ROUNDS").map(String::as_str),
-        Some("${{ inputs.casefiles }}"),
+        Some("${{ github.event_name == 'schedule' && 'all' || inputs.casefiles }}"),
         "⚠ the selection must be handed the dispatch's subset, or asking for one \
-         casefile runs all of them"
+         casefile runs all of them — and a scheduled run must be handed `all`, \
+         or the weekly sweep selects nothing. See \
+         `a_scheduled_run_is_handed_the_whole_corpus`."
     );
 
     let run = step_env(&workflow, "Run the round");
@@ -899,6 +901,114 @@ fn the_selection_narrows_and_the_round_only_obeys() {
          matrix entry names. Every extra key here is a second narrowing, made \
          in a job that does not hold the inputs the first one used — which is \
          the asymmetry this lane already paid for once, in the other direction."
+    );
+}
+
+/// Run the gate in dry-run mode with a named subset, and return what it chose.
+///
+/// The sibling of `selection_for`, through the gate's OTHER input: that one
+/// hands it a change set, this one hands it `SCE_MUTATION_ROUNDS`. Both are
+/// real channels the lane uses — a push fills the first, a dispatch and now a
+/// scheduled run fill the second — so both are driven here rather than
+/// asserted about.
+fn selection_named(subset: &str) -> (bool, BTreeMap<String, String>, String) {
+    let out = Command::new("bash")
+        .arg("scripts/gates/mutation-rounds.sh")
+        .current_dir(repo_root())
+        .env("SCE_MUTATION_ROUNDS_DRY_RUN", "1")
+        .env("SCE_MUTATION_ROUNDS", subset)
+        // No change set at all, which is the state a scheduled run is in: the
+        // workflow's `Resolve the change set` step writes no file for an event
+        // that carries no range.
+        .env_remove("SCE_GATE_CHANGED_FILE")
+        .output()
+        .expect("run the gate");
+
+    (
+        out.status.success(),
+        report(&String::from_utf8_lossy(&out.stdout)),
+        String::from_utf8_lossy(&out.stderr).to_string(),
+    )
+}
+
+/// The weekly trigger reaches every casefile, and reaches them because it says
+/// so rather than by falling through.
+///
+/// Three things have to hold together, and the middle one is the one that is
+/// easy to get wrong:
+///
+///   1. the workflow actually has a `schedule:` trigger — routing without a
+///      trigger is dead code;
+///   2. that event is handed `all` EXPLICITLY. The tempting reading is that
+///      `schedule` carries no range, so the gate runs the corpus by itself.
+///      It does not. Handed no change file the gate derives a range from the
+///      tracking ref, and at the tip of `main` that range is empty: measured
+///      on this repository, `0 of 84 casefile(s)`. A weekly lane that ran
+///      nothing would PASS, which is the same absent-verdict-reading-as-green
+///      the trigger exists to end;
+///   3. the value it is handed really does select the whole corpus, asked of
+///      the gate rather than assumed of it.
+///
+/// The floor on (3) is the whole corpus and not a constant, so a casefile
+/// added tomorrow is covered without editing this test — and the separate
+/// assertion that the corpus is non-trivial is what stops an empty
+/// `git ls-files` from making the comparison hold vacuously.
+#[test]
+fn a_scheduled_run_is_handed_the_whole_corpus() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+
+    // (1) The trigger exists, with a cron under it.
+    let schedule_at = workflow
+        .lines()
+        .position(|line| line.trim() == "schedule:")
+        .expect(
+            "⚠ the workflow declares no `schedule:` trigger, so nothing ever runs the \
+             corpus whole and a casefile whose targets go quiet is never judged again",
+        );
+    assert!(
+        workflow
+            .lines()
+            .skip(schedule_at + 1)
+            .take(3)
+            .any(|line| line.trim().starts_with("- cron:")),
+        "⚠ `schedule:` must carry a cron entry; a trigger with no schedule never fires"
+    );
+
+    // (2) The routing names the corpus for that event.
+    let select = step_env(&workflow, "Which casefiles does this change reach");
+    let routed = select
+        .get("SCE_MUTATION_ROUNDS")
+        .map(String::as_str)
+        .expect("the selection step must set SCE_MUTATION_ROUNDS");
+    assert!(
+        routed.contains("github.event_name == 'schedule' && 'all'"),
+        "⚠ a scheduled run must be handed `all` by name. Relying on the absent \
+         change set is the trap: the gate answers an empty tracking-ref range \
+         with `0 of 84`, and the lane would pass having measured nothing. Got: \
+         {routed:?}"
+    );
+
+    // (3) That value really does reach every casefile — asked, not assumed.
+    let corpus = casefiles();
+    assert!(
+        corpus.len() > 1,
+        "⚠ the corpus enumeration came back with {} entries; every comparison \
+         below would hold vacuously",
+        corpus.len()
+    );
+    let (ok, chosen, log) = selection_named("all");
+    assert!(
+        ok,
+        "selecting the whole corpus must pass; the gate said:\n{log}"
+    );
+    let missing: Vec<&String> = corpus.iter().filter(|c| !chosen.contains_key(*c)).collect();
+    assert!(
+        missing.is_empty(),
+        "⚠ `all` left {} of {} casefile(s) unselected, so the weekly sweep would \
+         not reach them: {missing:?}",
+        missing.len(),
+        corpus.len()
     );
 }
 

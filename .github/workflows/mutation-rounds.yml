@@ -43,6 +43,34 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  # ## Why a clock, and not only a change set
+  #
+  # Everything above selects by CHANGE: the union of `mutation_targets` the
+  # push touched. That is the right economics for a push and the wrong answer
+  # for the corpus, because it means a casefile whose targets go quiet is
+  # never run again — and a round that never runs is not a green one, it is
+  # an absent verdict that reads as green.
+  #
+  # Measured 2026-08-24, aggregating this workflow's last 40 runs job by job:
+  # of 84 casefiles only 48 had reached a `success` in that window, 16 had not
+  # been selected once, and NINE carried a `failure` with no later success —
+  # one of them (`host_processor_dispatch_c11`) a real defect that had been
+  # sitting unrepaired since 2026-08-23 behind three `cancelled` runs. Nothing
+  # was broken; nobody was asked.
+  #
+  # `mutation-cases` does sweep the whole corpus on every push, and it is not
+  # a substitute: it runs `scripts/mutate --check`, which asks only whether
+  # each case still finds its anchor. Measured the same day, it answered
+  # "8/8 case(s) still apply" for a casefile whose mutations did not compile.
+  # Anchors are cheap and say nothing about whether a mutation is still
+  # evidence.
+  #
+  # Weekly rather than nightly because the corpus is the expensive answer and
+  # the debt it catches accrues in weeks, not hours; Sunday 03:17 UTC to sit
+  # away from the weekday push traffic this lane shares runners with. The
+  # minute is deliberate — GitHub schedules cluster on the hour.
+  schedule:
+    - cron: '17 3 * * 0'
   # A dispatch can name the casefiles to run, because otherwise the only way
   # to exercise a given round in CI is to wait for a push that happens to
   # touch its declared target — and waiting is what let the ctest path sit
@@ -179,7 +207,18 @@ jobs:
         # the step's `env:` rather than its body: a `${{ }}` inside the body is
         # a string bash never expands, and the test that executes this step
         # would then be running something other than what CI runs.
-        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
+        #
+        # ⚠ A scheduled run says `all` EXPLICITLY, and the reason is that the
+        # obvious shortcut is wrong. `schedule` is not `push`, so the step
+        # above leaves `base` empty and reports "no resolvable range" — from
+        # which it looks as though the gate would fall through to the whole
+        # corpus on its own. It does not: handed no change file, the gate
+        # derives a range from the tracking ref instead, and at the tip of
+        # `main` that range is empty. Measured on this repository, that path
+        # selects `0 of 84 casefile(s)`. A weekly lane that ran nothing and
+        # passed is precisely the absent verdict this trigger exists to end,
+        # so the corpus is asked for by name.
+        SCE_MUTATION_ROUNDS: ${{ github.event_name == 'schedule' && 'all' || inputs.casefiles }}
       run: |
         set -euo pipefail
         # Through the runner, like the run step below: one spelling for the
