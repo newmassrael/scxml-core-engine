@@ -1559,46 +1559,58 @@ class Engine(Generic[S, E]):
     ) -> List[TransitionResult[S]]:
         """`removeConflictingTransitions`.
 
-        Two transitions conflict if their exit sets intersect. The one
-        with the deeper source (or earlier document order on a tie) wins;
-        the other is dropped.
+        Two transitions conflict when their exit sets intersect. Of a
+        conflicting pair the one whose source is a proper DESCENDANT of the
+        other's wins; when neither descends from the other, the one earlier in
+        document order wins.
+
+        Descendant, not deeper. What stood here sorted the candidates
+        deepest-source-first and kept whichever it reached first, which is the
+        same answer only when the conflicting sources lie on one chain. Two
+        regions of a `<parallel>` do not: their sources are unrelated, so depth
+        is an accident of how deep each region happens to nest, and document
+        order is what the appendix uses. Measured 2026-08-25 on a region-root
+        external transition — its target was never entered, because a sibling
+        region's transition one level deeper was considered first and won.
+
+        A transition that exits nothing intersects nothing, so a targetless
+        transition is never preempted; that falls out rather than being a case.
         """
-        # §scxml-D-removeConflictingTransitions: intersecting exit sets are
-        # the conflict test, and the deeper source wins.
-        # Stable sort: deeper-source-first, then document order, so a
-        # later iteration consistently sees the winners first.
+        # §scxml-D-removeConflictingTransitions: iterate in DOCUMENT ORDER,
+        # letting a descendant source displace an already-kept transition.
         candidates = sorted(
             candidates,
-            key=lambda t: (
-                -self._depth_of(t.source if t.source is not None else t.target),
-                self._policy.get_document_order(
-                    t.source if t.source is not None else t.target
-                ),
+            key=lambda t: self._policy.get_document_order(
+                t.source if t.source is not None else t.target
             ),
         )
-        filtered: List[TransitionResult[S]] = []
-        filtered_exits: List[Set[S]] = []
+        kept: List[TransitionResult[S]] = []
+        kept_exits: List[Set[S]] = []
         for cand in candidates:
             cand_exit = self._compute_exit_set(cand)
-            conflict = False
-            for kept_exit in filtered_exits:
-                if cand_exit & kept_exit:
-                    conflict = True
+            cand_source = cand.source if cand.source is not None else cand.target
+            preempted = False
+            displaced: List[int] = []
+            for index, held_exit in enumerate(kept_exits):
+                if not (cand_exit & held_exit):
+                    continue
+                held = kept[index]
+                held_source = held.source if held.source is not None else held.target
+                if cand_source is not None and held_source is not None and (
+                    self._is_proper_descendant(cand_source, held_source)
+                ):
+                    displaced.append(index)
+                else:
+                    preempted = True
                     break
-            if not conflict:
-                filtered.append(cand)
-                filtered_exits.append(cand_exit)
-        return filtered
-
-    def _depth_of(self, state: Optional[S]) -> int:
-        if state is None:
-            return 0
-        depth = 0
-        s: Optional[S] = state
-        while s is not None:
-            s = self._policy.get_parent(s)
-            depth += 1
-        return depth
+            if preempted:
+                continue
+            for index in reversed(displaced):
+                kept.pop(index)
+                kept_exits.pop(index)
+            kept.append(cand)
+            kept_exits.append(cand_exit)
+        return kept
 
     # ── Transition execution ──────────────────────────────────────
 
@@ -2193,19 +2205,57 @@ class Engine(Generic[S, E]):
             s = self._policy.get_parent(s)
         return False
 
+    def _is_transition_domain_candidate(self, state: S) -> bool:
+        """W3C SCXML Appendix D ``isCompoundStateOrScxmlElement``.
+
+        A ``<parallel>`` answers false. It is the whole reason ``findLCCA``
+        differs from a plain lowest-common-ancestor, and the two questions have
+        to be asked together: a region root is a compound ``<state>`` whose
+        parent is a ``<parallel>``, so filtering on "compound" alone would still
+        admit the ``<parallel>`` on backends that report it as compound.
+
+        The ``<scxml>`` element is the appendix's other legal answer and has no
+        state here, which is why ``_find_lcca`` returns ``None`` for it rather
+        than naming it.
+        """
+        return self._policy.is_compound_state(state) and not self._policy.is_parallel_state(
+            state
+        )
+
     def _find_lcca(self, source: S, target: S) -> Optional[S]:
-        """W3C SCXML 5.9.2 — Lowest Common Compound Ancestor: lowest state
-        that is a proper ancestor of both `source` and `target`. Returns
-        None when they share no common ancestor (transition crosses the
-        document root)."""
-        source_ancestors: List[S] = []
-        s = self._policy.get_parent(source)
-        while s is not None:
-            source_ancestors.append(s)
-            s = self._policy.get_parent(s)
-        s = self._policy.get_parent(target)
-        while s is not None:
-            if s in source_ancestors:
-                return s
-            s = self._policy.get_parent(s)
+        """W3C SCXML Appendix D ``findLCCA`` — the Least Common COMPOUND Ancestor.
+
+        The proper ancestors of `source`, filtered by
+        ``isCompoundStateOrScxmlElement``, lowest one that also contains
+        `target`. Returns ``None`` when the answer is the ``<scxml>`` element
+        itself, which callers read as "exit the whole configuration".
+
+        What stood here answered the first ancestor shared by both, whatever its
+        kind — that is ``findLCA``, which the appendix names separately, and the
+        difference only shows when a ``<parallel>`` sits between the source and
+        the first compound ``<state>`` above it. That is exactly a transition
+        written on a REGION ROOT, and answering the ``<parallel>`` left the other
+        regions unexited: measured 2026-08-25 as the sibling region taking its
+        own transition on the same event while this one's target was never
+        entered at all.
+
+        The walk is over `source`'s ancestors rather than `target`'s because the
+        filter has to be applied to the candidate, and the appendix's candidate
+        list is ``getProperAncestors(source)``.
+
+        The containment test is STRICT — a state is not its own descendant —
+        and that settles the case where `target` is itself an ancestor of
+        `source`. Accepting `ancestor == target` there would make the target its
+        own domain, and a domain is never exited, so the target's ``onexit``
+        would not run on the way back into it. W3C test 579 turns on exactly
+        that: it counts `s0`'s ``onexit`` when `s03` transitions to `s0`, and
+        with the loose test it reached `<final id="fail">`.
+        """
+        ancestor = self._policy.get_parent(source)
+        while ancestor is not None:
+            if self._is_transition_domain_candidate(
+                ancestor
+            ) and self._is_proper_descendant(target, ancestor):
+                return ancestor
+            ancestor = self._policy.get_parent(ancestor)
         return None

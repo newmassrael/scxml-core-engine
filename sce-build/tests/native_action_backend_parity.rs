@@ -221,12 +221,22 @@ fn expectations() -> Vec<Expectation> {
     ]
 }
 
-/// Run `sce-codegen generate` for `lang` into a per-language scratch directory.
+/// Run `sce-codegen generate` for `lang` into a scratch directory belonging to
+/// one CASE and one language.
 ///
-/// The directory is derived from the language rather than randomised and is
-/// emptied first, so a previous run's artifacts cannot be read as this one's.
-/// `--no-format` keeps the emitted text the emitter's own: a formatter that is
-/// absent on one machine would otherwise move the assertions' ground.
+/// The directory is derived rather than randomised and is emptied first, so a
+/// previous run's artifacts cannot be read as this one's. `--no-format` keeps
+/// the emitted text the emitter's own: a formatter that is absent on one
+/// machine would otherwise move the assertions' ground.
+///
+/// `tag` must be unique per `#[test]`, not merely per file. Rust runs the tests
+/// in this binary as concurrent threads of one process, so a tag shared across
+/// tests has several of them calling `remove_dir_all` on the same path while
+/// the others are reading out of it. That is not a hypothetical: it failed in
+/// CI on 2026-08-25 with four of six tests down, one of them reporting an
+/// artifact as `No such file or directory` — and the same binary passed under
+/// `--test-threads=1` on the same commit, which is what a shared scratch
+/// directory looks like from the outside.
 fn generate_into(lang: &str, tag: &str) -> (PathBuf, std::process::Output) {
     let out = repo_root().join("target").join(tag).join(lang);
     let _ = std::fs::remove_dir_all(&out);
@@ -257,8 +267,8 @@ fn generate_into(lang: &str, tag: &str) -> (PathBuf, std::process::Output) {
 }
 
 /// The named artifacts for one backend, keyed by filename.
-fn generate(lang: &str, files: &[&str]) -> BTreeMap<String, String> {
-    let (out, _) = generate_into(lang, "native_action_backend_parity");
+fn generate(lang: &str, files: &[&str], case: &str) -> BTreeMap<String, String> {
+    let (out, _) = generate_into(lang, case);
     files
         .iter()
         .map(|name| {
@@ -284,7 +294,7 @@ fn emitted(files: &BTreeMap<String, String>) -> String {
 #[test]
 fn every_backend_emits_a_host_interface_for_a_native_action() {
     for e in expectations() {
-        let files = generate(e.lang, e.files);
+        let files = generate(e.lang, e.files, "native_action_parity_host_interface");
         let text = emitted(&files);
         assert!(
             text.contains(e.interface),
@@ -311,7 +321,7 @@ fn every_backend_emits_a_host_interface_for_a_native_action() {
 #[test]
 fn every_backend_takes_its_host_where_the_machine_is_constructed() {
     for e in expectations() {
-        let files = generate(e.lang, e.files);
+        let files = generate(e.lang, e.files, "native_action_parity_host_injection");
         let text = emitted(&files);
         assert!(
             text.contains(e.host_seam),
@@ -328,7 +338,7 @@ fn every_backend_takes_its_host_where_the_machine_is_constructed() {
 #[test]
 fn every_backend_emits_a_call_site_for_every_declared_operation() {
     for e in expectations() {
-        let files = generate(e.lang, e.files);
+        let files = generate(e.lang, e.files, "native_action_parity_call_sites");
         let text = emitted(&files);
         for op in OPERATIONS {
             let call = format!("{}{}(", e.receiver, (e.method)(op));
@@ -346,7 +356,7 @@ fn every_backend_emits_a_call_site_for_every_declared_operation() {
 #[test]
 fn every_backend_guards_the_arg_bearing_call_with_its_typed_payload_tag() {
     for e in expectations() {
-        let files = generate(e.lang, e.files);
+        let files = generate(e.lang, e.files, "native_action_parity_payload_guard");
         let text = emitted(&files);
         assert!(
             text.contains(e.payload_guard),
@@ -391,7 +401,7 @@ fn every_backend_answers_an_unreadable_argument_with_error_execution() {
     );
 
     for e in all {
-        let files = generate(e.lang, e.files);
+        let files = generate(e.lang, e.files, "native_action_parity_unreadable_arg");
         let text = emitted(&files);
         assert!(
             text.contains(e.error_arm),
