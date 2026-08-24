@@ -991,6 +991,12 @@ class AiLoopTest {
 
         sm = started()
         sm.step(AiLoopEvent.Turn.Done)
+        // Recorded here, before the verdict, because `judging` is where a
+        // completed turn WAITS — the only state in the cycle a host reaches by
+        // sending nothing. Every other branch of this walk records after driving
+        // the machine on, and that is exactly how `judging` stayed unvisited
+        // while the floor below read as satisfied.
+        record(sm)
         sm.verdict(true)
         record(sm)
         sm.step(AiLoopEvent.Turn.Done)
@@ -1026,11 +1032,37 @@ class AiLoopTest {
 
         // A floor, not a target: without one, a table that had lost every arm
         // but the first would pass this by being asked about a single state.
+        //
+        // 21 is measured rather than chosen. The document declares 25 states and
+        // the four below are unreachable to any reader of the configuration, so
+        // a floor of 25 would retire this test and the 20 it used to hold
+        // understated the walk by one.
         assertTrue(
-            seen.size >= 20,
-            "these scenarios are meant to stand in most of the document; they reached " +
-                "${seen.size} states: ${seen.map { sm.nameOfState(it) }}",
+            seen.size >= 21,
+            "these scenarios are meant to stand in every state a reader can observe; they " +
+                "reached ${seen.size} states: ${seen.map { sm.nameOfState(it) }}",
         )
+
+        // The other side of that ratchet, and the reason the number above is a
+        // measurement: these four are inner <final>s whose <onentry> is a
+        // <raise> that ends the run in the SAME macrostep — `reported` raises
+        // `run.converged`, `stuck` and `spent` raise `run.exhausted`,
+        // `abandoned` raises `run.blocked` — so a configuration read taken
+        // between macrosteps can never stand in one. Nothing else in the
+        // document is like that.
+        //
+        // Asserting their ABSENCE is what keeps 21 honest from above: make one
+        // of them observable, or extend the walk to reach it, and this fails
+        // until the floor is raised with it.
+        for (unobservable in listOf("abandoned", "reported", "spent", "stuck")) {
+            val state = sm.stateOfName(unobservable)
+            assertNotNull(state, "`$unobservable` is a state this document declares")
+            assertFalse(
+                seen.contains(state),
+                "`$unobservable` was reached, so the ceiling this test documents has moved: " +
+                    "raise the floor above to match what the walk now stands in",
+            )
+        }
 
         for (state in seen) {
             val name = sm.nameOfState(state)

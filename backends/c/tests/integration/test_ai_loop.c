@@ -1072,6 +1072,12 @@ static int every_state_a_run_reaches_reads_back_from_its_own_name(void) {
 
     start(&sm, &wiring);
     step(&sm, AI_LOOP_EVENT_TURN_DONE);
+    // Recorded here, before the verdict, because `judging` is where a completed
+    // turn WAITS — the only state in the cycle a host reaches by sending
+    // nothing. Every other branch of this walk records after driving the machine
+    // on, and that is exactly how `judging` stayed unvisited while the floor
+    // below read as satisfied.
+    seen |= ai_loop_active_states(&sm);
     verdict(&sm, true);
     seen |= ai_loop_active_states(&sm);
     step(&sm, AI_LOOP_EVENT_TURN_DONE);
@@ -1120,9 +1126,44 @@ static int every_state_a_run_reaches_reads_back_from_its_own_name(void) {
     }
     // A floor, not a target: without one, a table that had lost every arm but
     // the first would pass this by being asked about a single state.
-    if (reached < 20) {
+    //
+    // 21 is measured rather than chosen. The document declares 25 states and
+    // the four below are unreachable to any reader of the configuration, so a
+    // floor of 25 would retire this test and the 20 it used to hold understated
+    // the walk by one.
+    if (reached < 21) {
         bad |= fail_num("every_state_a_run_reaches_reads_back_from_its_own_name", "states these scenarios stood in",
-                        (long long)reached, 20);
+                        (long long)reached, 21);
+    }
+
+    // The other side of that ratchet, and the reason the number above is a
+    // measurement: these four are inner <final>s whose <onentry> is a <raise>
+    // that ends the run in the SAME macrostep — `reported` raises
+    // `run.converged`, `stuck` and `spent` raise `run.exhausted`, `abandoned`
+    // raises `run.blocked` — so a configuration read taken between macrosteps
+    // can never stand in one. Nothing else in the document is like that.
+    //
+    // Asserting their ABSENCE is what keeps 21 honest from above: make one of
+    // them observable, or extend the walk to reach it, and this fails until the
+    // floor is raised with it.
+    static const char *const unobservable[] = {"abandoned", "reported", "spent", "stuck"};
+    for (size_t i = 0; i < sizeof(unobservable) / sizeof(unobservable[0]); i++) {
+        ai_loop_state_t state;
+        if (!ai_loop_state_from_name(unobservable[i], &state)) {
+            (void)fprintf(stderr,
+                          "ai_loop: FAIL [every_state_a_run_reaches_reads_back_from_its_own_name] - "
+                          "`%s` is a state this document declares\n",
+                          unobservable[i]);
+            bad |= 1;
+            continue;
+        }
+        if ((seen & (uint32_t)(1u << (unsigned)state)) != 0u) {
+            (void)fprintf(stderr,
+                          "ai_loop: FAIL [every_state_a_run_reaches_reads_back_from_its_own_name] - "
+                          "`%s` was reached, so the ceiling this test documents has moved: raise the floor\n",
+                          unobservable[i]);
+            bad |= 1;
+        }
     }
 
     for (int s = 0; s < (int)AI_LOOP_STATE_COUNT; s++) {
