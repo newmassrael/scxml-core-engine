@@ -14618,6 +14618,10 @@
         {
           "file": "sce-build/src/script_engine_analyzer.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

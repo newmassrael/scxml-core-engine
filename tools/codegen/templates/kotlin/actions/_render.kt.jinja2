@@ -29,4 +29,12 @@
 {% include 'actions/if.kt.jinja2' with context %}
 {% elif action.type == 'foreach' %}
 {% include 'actions/foreach.kt.jinja2' with context %}
+{% elif action.type == 'native_action' %}
+{# W3C SCXML G.7: <sce:action> native host dispatch. The call site (including
+   the typed `_event.data` null check when the action reads a payload field) is
+   lowered ahead of the template by `forge::native_action::render` and stored
+   on `action.native_action_rendered`, so this branch only emits it. No script
+   engine is involved. #}
+            // W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}">
+            {{ action.native_action_rendered }}
 {% endif %}

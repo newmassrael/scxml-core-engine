@@ -769,6 +769,7 @@ add_executable(integration_tests
     integration/HostProcessorAotTest.cpp
     integration/DelayedHostSendAotTest.cpp
     integration/HostInvokerAotTest.cpp
+    integration/NativeActionAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp
@@ -1438,6 +1439,21 @@ sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml
     HOST_INVOKER x-sce-host
+)
+
+# §scxml-G-7: `<sce:action>` native host dispatch, compiled for C++ from the
+# same document the Rust, Go, Kotlin, Python and C11 channels drive
+# (`scripts/regen_native_action.sh` commits the three that keep a tree).
+#
+# No declaration flag here, unlike the three above, and that is the difference
+# between the two seams rather than an omission: a host-served `<send type>` is
+# a build-time DECLARATION because the document names a processor the platform
+# may not have, while `<sce:action>` names an operation the document itself
+# declares — codegen reads it from the element and emits an interface the host
+# must implement to compile at all.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/event_schema/statechart_native_action.scxml
 )
 
 # W3C SCXML 3.4: `getCurrentState()` names an atomic state in a parallel

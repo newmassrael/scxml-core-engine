@@ -81,12 +81,18 @@ scripts/regen_event_schema_native_kotlin.sh
 echo "==> EventSchema native-lowering Python tree"
 scripts/regen_event_schema_native_python.sh
 
-# W3C SCXML G.7 `<sce:action>` native host-trait dispatch gate. Rust-only
-# committed tree (the other backends do not yet lower `<sce:action>`), driven
-# by its own regen script like the EventSchema gates above. Part of the crate
-# so it is really type-checked, so its §6.2.6 header must refresh with every
-# template edit alongside the rest.
-echo "==> Native-action host-trait Rust tree"
+# W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
+# regen script like the EventSchema gates above.
+#
+# The "Rust-only" this comment used to claim stopped being true on 2026-08-24,
+# when every backend grew a native-action path and the refusal the other five
+# raised was retired. Three of the six commit a tree — Rust, Go and Kotlin —
+# and each is part of its language's test module, so it is really compiled and
+# its §6.2.6 header must refresh with every template edit alongside the rest.
+# The other three are not here and each for its own reason: Python's module is
+# gitignored (`scripts/gates/w3c-python.sh` regenerates it), and C++ and C11
+# generate at build time from their own CMake registrations.
+echo "==> Native-action host-dispatch Rust + Go + Kotlin trees"
 scripts/regen_native_action.sh
 
 # W3C SCXML 6.2.5 host-served Event I/O Processor gate, and W3C SCXML 6.2.4's

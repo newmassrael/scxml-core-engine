@@ -2018,6 +2018,15 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             }
 {% endif %}
         }
+{% elif action.type == 'native_action' %}
+{# W3C SCXML G.7: <sce:action> native host dispatch. The call site (including
+   the `sm->pending_payload.tag` check when the action reads a typed field) is
+   lowered ahead of the template by `forge::native_action::render` and stored
+   on `action.native_action_rendered`, so this branch only emits it. No Lua
+   state is touched — this is the one action that runs on a machine with no
+   `lua_State` at all, which is the point of the construct on an MCU. #}
+        /* W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}"> */
+        {{ action.native_action_rendered }}
 {% endif %}
 {% endmacro %}
 
@@ -5085,11 +5094,35 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
 }
 
 {% if not model.has_parent_communication %}
-SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
+{# W3C SCXML G.7: a machine whose document declares `<sce:action>`s cannot
+   start without a host, so `_init` returns whether it accepted one. Every
+   initialiser below carries the same verdict outward — `void` for every other
+   document shape, byte-identical to the pre-feature emit. #}
+{% set init_rc = 'bool' if has_native_actions else 'void' %}
+SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
-                                                       const sce_host_processor_registry_t *host_processors{% endif %}) {
+                                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if has_native_actions %},
+                                                       const {{ native_actions_interface }} *actions{% endif %}) {
+{% if has_native_actions %}
+    /* W3C SCXML G.7: refuse a host that does not perform every act this
+       document declares, BEFORE anything is touched — a refused call leaves
+       the machine exactly as it was, which is the same rule the configuration
+       door follows. The five other backends get this from their type systems
+       (an unimplemented interface method does not compile); C has no such
+       check, so it moves to the one call a C host has to make. */
+    if (actions == NULL{% for op in native_action_ops %} || actions->{{ op }} == NULL{% endfor %}) {
+        return false;
+    }
+{% endif %}
     memset(sm, 0, sizeof(*sm));
+{% if has_native_actions %}
+    /* Copied in before the entry walk, for the reason the host-processor
+       registry below is: the first `<onentry>` body may already perform an
+       act, and a vtable written afterwards would arrive one act too late — and
+       a value this call MEMSETS cannot be set before it. */
+    sm->actions = *actions;
+{% endif %}
 {% if model.host_processor_types %}
     /* §scxml-6.2.5: the host's wiring is installed BEFORE the entry walk,
        for the reason the BasicHTTP address above it is: the first
@@ -5170,22 +5203,33 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix
 {% if model.needs_event_scheduler %}
     end_turn(sm, _turn_opened);
 {% endif %}
+{% if has_native_actions %}
+    return true;
+{% endif %}
 }
 
+{% if has_native_actions %}
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const {{ native_actions_interface }} *actions) {
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}, actions);
+}
+{% else %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %});
 }
+{% endif %}
 {% if model.needs_event_scheduler %}
 
-SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %});
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock{% if has_native_actions %}, const {{ native_actions_interface }} *actions{% endif %}) {
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
 }
 {% endif %}
 {% if model.host_processor_types %}
 
-SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
-                                  const sce_host_processor_registry_t *host_processors) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors);
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %}) {
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors{% if has_native_actions %}, actions{% endif %});
 }
 {% if model.needs_event_scheduler %}
 
@@ -5201,10 +5245,11 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ cs
    MONOTONIC clock. A host that owns time and serves a processor could
    therefore have one or the other, and a delayed host-served send is exactly
    the case that needs both. */
-SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   sce_clock_t clock,
-                                  const sce_host_processor_registry_t *host_processors) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}, host_processors);
+                                  const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %}) {
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}, host_processors{% if has_native_actions %}, actions{% endif %});
 }
 {% endif %}
 {% endif %}
@@ -5536,9 +5581,10 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(co
    the `_init_with_parent` shape, which exists for the same reason: some
    deployment context has to be in place before the configuration entry walk
    runs, and `_init` zeroes the struct so no setter called earlier survives. */
-SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
-                                                                      const char *basic_http_access_uri) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri{% if model.host_processor_types %}, NULL{% endif %});
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                      const char *basic_http_access_uri{% if has_native_actions %},
+                                                                      const {{ native_actions_interface }} *actions{% endif %}) {
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri{% if model.host_processor_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
 }
 {% endif %}
 {% else %}

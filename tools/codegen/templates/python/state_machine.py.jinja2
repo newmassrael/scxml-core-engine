@@ -28,7 +28,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 {% endif %}
 from enum import IntEnum
+{% if has_native_actions %}
+from typing import Any, Dict, List, Optional, Protocol, Tuple
+{% else %}
 from typing import Any, Dict, List, Optional, Tuple
+{% endif %}
 
 from sce_runtime import (
     Engine,
@@ -215,6 +219,13 @@ def _parse_delay_text(text: str) -> int:
 
 {{ event_payload_defs }}
 {% endif %}
+{% if has_native_actions %}
+# ======================================================================
+# W3C SCXML G.7: `<sce:action>` host dispatch
+# ======================================================================
+
+{{ native_actions_defs }}
+{% endif %}
 # ======================================================================
 # Policy
 # ======================================================================
@@ -233,7 +244,17 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
     `self._session_id`.
     """
 
+{% if has_native_actions %}
+    def __init__(self, actions: {{ native_actions_interface }}) -> None:
+        # W3C SCXML G.7: the host implementation every `<sce:action>` in this
+        # document calls directly (`self._actions.<op>(…)`) instead of the
+        # script engine. A constructor parameter rather than a setter, because
+        # the initial state's `<onentry>` can already perform an act — a host
+        # installed afterwards would arrive one act too late.
+        self._actions = actions
+{% else %}
     def __init__(self) -> None:
+{% endif %}
         # W3C SCXML 6.4 — when this policy runs as an invoked child its
         # `<send target="#_parent">` actions push `(event_name, data)`
         # tuples here; the parent's `ScxmlInvoke.drain_events()` lifts
@@ -512,15 +533,26 @@ _DOCUMENT_ORDER: Dict[{{ machine_name }}State, int] = {
 # Convenience factory
 # ======================================================================
 
-def create_engine(script_engine=None) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
+def create_engine({% if has_native_actions %}actions: {{ native_actions_interface }}, {% endif %}script_engine=None) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
     """Construct a runnable engine bound to a fresh policy instance.
 
     Engine DI Parity RFC (Path B+): every Engine instance owns its script
     engine. `create_engine()` instantiates a default `LuaScriptEngine` when
     no engine is supplied; callers swap implementations (QuickJS, test
     stubs) by passing one explicitly.
+{% if has_native_actions %}
+
+    W3C SCXML G.7: `actions` is the host implementation of every
+    `<sce:action>` this document declares. It leads the parameter list and
+    has no default, because the initial state's `<onentry>` may already
+    perform an act — a host arriving later would arrive one act too late.
+{% endif %}
     """
+{% if has_native_actions %}
+    policy = {{ machine_name }}Policy(actions)
+{% else %}
     policy = {{ machine_name }}Policy()
+{% endif %}
     if script_engine is None:
         script_engine = _LuaScriptEngine()
         script_engine.initialize()

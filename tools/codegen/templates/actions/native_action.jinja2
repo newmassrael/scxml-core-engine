@@ -1,0 +1,11 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML G.7: <sce:action> native host dispatch. The call site (including
+   the typed `_event.data` tag check when the action reads a payload field) is
+   lowered ahead of the template by `forge::native_action::render` and stored
+   on `action.native_action_rendered`, so this template only emits it — the
+   same division of labour every backend's sibling uses, and the reason one
+   lowering serves six. No script engine is involved. #}
+                // W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}">
+                {{ action.native_action_rendered }}
