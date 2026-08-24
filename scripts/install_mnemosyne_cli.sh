@@ -20,6 +20,20 @@
 #
 # Idempotent: a binary already at the pinned revision is left alone, so a
 # cache restore makes this a no-op rather than a rebuild.
+#
+# ⚠ THE BUILD MACHINES NEED IT TOO, and nothing reminds anyone. `bx` can send
+# `scripts/gate ledger-citations` to a host in the fleet, and that host looks
+# for the binary at the same derived path this script writes. Its `needs`
+# check cannot see the difference: `command -v mnemosyne-cli` answers yes for
+# ANY revision, so a machine carrying the wrong one is chosen and the gate
+# then exits with an install line instead of a verdict — which is not green,
+# however it reads. Measured 2026-08-24: all three registered hosts carried
+# either no pinned build or a different revision.
+#
+# So a pin bump is four installs, not one: here, and once on each host. There
+# is deliberately no automation for it in this script — reaching into a
+# machine registry is not a repository's business, and a script that tried
+# would go stale the first time a host was added.
 
 set -euo pipefail
 
