@@ -382,7 +382,10 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
-        "cost_s": 52,
+        # 36s, pace-normalised on 2026-08-24, down from a declared 52s. Left
+        # local: it is now the cheapest of the forge arms and the only one that
+        # still runs before a push.
+        "cost_s": 36,
         "summary": "Go forge conformance regenerate + test",
     },
     "forge-rust": {
@@ -515,7 +518,10 @@ GATES: dict[str, dict] = {
     "http-endpoint-ssot": {
         "workflows": ["http-endpoint-ssot.yml"],
         "runner_workflow": True,
-        "cost_s": 0,
+        # 4s, pace-normalised on 2026-08-24. It read 0 because the scan itself
+        # is 124ms; what the 0 left out is the process the runner has to start
+        # around it, which every gate pays and only the cheap ones notice.
+        "cost_s": 4,
         "summary": "BasicHTTP fixture endpoint has one owner",
     },
     # The generated codecs are committed goldens, not workspace members:
@@ -652,13 +658,22 @@ GATES: dict[str, dict] = {
         "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        # 69s, pace-normalised from a push on 2026-08-23 that ran at 1.51x the
-        # rate these numbers were first taken at. The earlier note said 10s in a
-        # push whose generated tree was already current and 34s when it was not;
-        # both readings were taken with fewer suites in the same run. The
-        # second JVM engine is a re-run of the test task against that tree, so
-        # covering it still costs a fraction of the first.
-        "cost_s": 69,
+        # 69s was measured on a push whose Kotlin tree was already current.
+        # 152s, pace-normalised, is what it cost on 2026-08-24 when a
+        # `tools/codegen/templates/**` edit invalidated every generated Kotlin
+        # file — and that is not the unusual case for this row, because that
+        # path is one of its own triggers. A gate is worth what it costs when
+        # its trigger actually fires, so the higher reading is the one written
+        # down. The earlier note said 10s / 34s, both taken with fewer suites
+        # in the same run.
+        "ci_only": "152s when a template edit fires its own trigger — half "
+                   "the 300s push budget for one gate, and it breached the "
+                   "ceiling on the push that measured it. w3c-tests.yml is "
+                   "unfiltered, so CI runs this arm on every push regardless: "
+                   "the same trade `w3c-python` took at less than half the "
+                   "cost. What is given up is that a Kotlin AOT regression "
+                   "now reaches main and is answered a round later.",
+        "cost_s": 152,
         "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS)",
     },
     "w3c-python": {
