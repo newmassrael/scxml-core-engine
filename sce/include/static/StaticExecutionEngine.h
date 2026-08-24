@@ -26,6 +26,7 @@
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
 #include "core/AOTEventQueue.h"
+#include "core/ConfigurationHelper.h"
 #include "core/EventMatchingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
@@ -2291,6 +2292,90 @@ public:
             executeOnExit(currentState_, activeStates);
             completionCallback_();
         }
+    }
+
+    /**
+     * @brief Enter a configuration this machine was already in, WITHOUT running
+     *        `<onentry>`.
+     *
+     * `initialize()` is the other door and the contrast is the whole point: it
+     * enters the document's initial configuration and runs the entry actions of
+     * every state on the way in. This one enters a configuration the caller
+     * names and runs none of them. A host that has persisted where a machine
+     * was, and is bringing it back in a new process, wants the second:
+     * §scxml-3.8 entry actions are "executed when the state is entered", and
+     * re-executing them is a replay of what the earlier run already did — an
+     * `<onentry><send>` would post its event a second time, to a peer that
+     * already received it.
+     *
+     * ## What it takes, and why two arguments
+     *
+     * Exactly what the two readers on this engine publish: `getActiveStates()`
+     * and `getCurrentState()`. Handing back both is not redundancy — for a
+     * machine with `<parallel>` states the configuration does not determine the
+     * current state. `currentState_` is the leaf the engine descended to, so
+     * which region it sits in is a fact about the transition history rather
+     * than about the configuration, and a set alone cannot recover it.
+     *
+     * ## What it refuses
+     *
+     * Every set that is not a configuration of THIS document — see
+     * `SCE::Core::validateConfiguration` for the rules and
+     * `SCE::Core::ConfigurationRejection` for what each refusal names.
+     * Validation runs before any mutation, so a refused call leaves the engine
+     * exactly as it was; entering "near" the requested configuration is the one
+     * outcome this door must never produce, because a host has no way to detect
+     * it afterwards.
+     *
+     * ## What it does not do
+     *
+     * - No `<onentry>`, and no `<onexit>`: no state is entered or left.
+     * - No macrostep. `initialize()` settles the machine before returning; this
+     *   does not, because the configuration handed in was already a settled
+     *   one — running the loop here could take an eventless transition the
+     *   earlier run had no reason to take, and fire the `<send>`s on the way.
+     *   The host drives the machine on with `step()` or `tick()` as it
+     *   otherwise would.
+     * - No datamodel restore. §scxml-5.3 declaration still runs, so the
+     *   variables exist with their document defaults and a host can then put
+     *   its saved values back through `IScriptEngine` — the engine does not
+     *   persist datamodel state and does not pretend to.
+     *
+     * The C++ twin of the Rust runtime's `Engine::enter_at`.
+     *
+     * @return `ConfigurationRejection::None` on success; the rule that was
+     *         broken otherwise, with the engine untouched.
+     */
+    [[nodiscard]] SCE::Core::ConfigurationRejection enterAt(const std::vector<State> &configuration, State current) {
+        // Before anything is touched: a rejection must not half-enter.
+        const auto verdict = SCE::Core::validateConfiguration<StatePolicy>(configuration, current);
+        if (verdict != SCE::Core::ConfigurationRejection::None) {
+            SCE_LOG_ERROR("AOT enterAt: refused — {}", SCE::Core::configurationRejectionText(verdict));
+            return verdict;
+        }
+
+        // §scxml-5.3: the datamodel is declared before anything can read it.
+        // This is not a state entry action — `<datamodel>` holds `<data>`, not
+        // executable content — so it runs here for the same reason it runs in
+        // `initialize()`: a `cond` or an `assign` evaluated after this call
+        // would otherwise reference variables that were never declared.
+        if constexpr (SCE::Core::HasDataModelInit<StatePolicy, StaticExecutionEngine>) {
+            policy_.initializeDataModel(*this);
+        }
+
+        currentState_ = current;
+
+        // §scxml-3.4: a machine that keeps its own active set is handed it
+        // back. The condition is the one the generator emits `setActiveStates`
+        // under, so a policy reached here has the method.
+        if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
+            if constexpr (SCE::Core::HasActiveStates<StatePolicy>) {
+                policy_.setActiveStates(configuration);
+            }
+        }
+
+        isRunning_ = true;
+        return SCE::Core::ConfigurationRejection::None;
     }
 
     /**

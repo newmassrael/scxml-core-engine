@@ -13,6 +13,7 @@
 #pragma once
 #include "common/EventDataHelper.h"
 #include "common/InPredicateHelper.h"
+#include "core/ConfigurationHelper.h"
 #include "core/EntryExitHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/StateEntryHelper.h"
@@ -215,5 +216,21 @@ static_assert(::SCE::Core::EventNamingPolicy<inline_codecPolicy>,
 static_assert(::SCE::Core::StateNamingPolicy<inline_codecPolicy>,
     "Generated inline_codecPolicy must satisfy StateNamingPolicy concept");
 #endif
+
+// §scxml-3.3: `getStateName` and `getStateFromName` are a round trip, or they
+// are two independent maps that happen to agree today.
+//
+// Emitting both halves from one list is not enough on its own: an edit that
+// touches one loop and not the other still compiles, and the defect is then a
+// name that does not read back — which only a host attempting a restore would
+// ever meet, in another process, hours later. A per-state assertion moves that
+// to the build.
+//
+// Here rather than inside the policy, because a constexpr member function is
+// not usable in a constant expression until its class is complete.
+static_assert(inline_codecPolicy::getStateFromName(inline_codecPolicy::getStateName(inline_codecPolicy::State::Active)) == inline_codecPolicy::State::Active,
+    "getStateName / getStateFromName disagree about `active`");
+static_assert(inline_codecPolicy::getStateFromName(inline_codecPolicy::getStateName(inline_codecPolicy::State::Idle)) == inline_codecPolicy::State::Idle,
+    "getStateName / getStateFromName disagree about `idle`");
 
 }  // namespace SCE::Generated::inline_codec

@@ -162,6 +162,35 @@ public:
     }
 }
 
+// §scxml-3.3: the read half of the pair above — a state id back into the
+// State it names.
+//
+// A host that persists where a machine was has to write it down as TEXT:
+// an enumerator is a build artefact of one binary, and the process that
+// resumes is a different one. `getStateName` publishes the name and this
+// reads it back, which is what lets a journal survive its own record and
+// reach `StaticExecutionEngine::enterAt`.
+//
+// `std::nullopt` for a name this document does not declare. A name guessed
+// at rather than refused is how a restore reaches a configuration nobody
+// recorded — and the refusal is what makes a typo in a journal a reported
+// failure instead of a machine quietly somewhere else.
+[[nodiscard]] static constexpr std::optional<State> getStateFromName(const char* name) noexcept {
+    if (name == nullptr) {
+        return std::nullopt;
+    }
+    if (::SCE::Core::constexprStrEq(name, "active")) return State::Active;
+    if (::SCE::Core::constexprStrEq(name, "idle")) return State::Idle;
+    return std::nullopt;
+}
+
+// The pair is a round trip or it is two independent maps, and that is
+// asserted per state at COMPILE time — after this class closes, beside the
+// concept checks in `state_machine.jinja2`. It cannot be here: a constexpr
+// member function is not usable in a constant expression until its class
+// is complete, and GCC says exactly that ("called in a constant expression
+// before its definition is complete").
+
 private:
 
 public:

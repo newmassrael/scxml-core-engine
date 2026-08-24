@@ -770,6 +770,7 @@ add_executable(integration_tests
     integration/DelayedHostSendAotTest.cpp
     integration/HostInvokerAotTest.cpp
     integration/NativeActionAotTest.cpp
+    integration/ConfigurationEntryAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp

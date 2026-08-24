@@ -52,8 +52,11 @@ const CPP_DRIVER: &str = "tests/integration/AiLoopAotTest.cpp";
 /// without the payload its `cond` reads; 25 when the document's sends became
 /// acts a host serves (§scxml-6.2.5) and needed a scenario that RECORDS them,
 /// since the silent handler every other scenario registers cannot tell a
-/// declared act from a targetless send that lost its `type`.
-const SCENARIO_FLOOR: usize = 25;
+/// declared act from a targetless send that lost its `type`; 27 since
+/// 2026-08-24, when the resume seam (§scxml-3.2 `enterAt` / `get_state_from_name`)
+/// reached the C++ engine and the two scenarios that had been the Rust
+/// channel's word alone got their siblings.
+const SCENARIO_FLOOR: usize = 27;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
