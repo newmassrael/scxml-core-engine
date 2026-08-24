@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fdec330b81544755a6389817fab34d8e574b0a205089b7220c9bd9302bdd70
+// source-hash: 9e85e11997494073a40bf661d9f24e2bc472fad7b57e93e3c87932bf8615ff0f
 // template-hash: 6d29ccd65cc69c7036210e21d4c9d2a46b7717262dc7e045f86a45620f80383f
 // generated-at: 0
 
@@ -1560,7 +1560,7 @@ impl StatePolicy for AiLoopPolicy {
         }
         match state {
             AiLoopState::Abandoned => {
-                // SCE-MAP: ai_loop.scxml:443 :: abandoned :: _state_body
+                // SCE-MAP: ai_loop.scxml:465 :: abandoned :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1591,7 +1591,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Closing => {
-                // SCE-MAP: ai_loop.scxml:355 :: closing :: _state_body
+                // SCE-MAP: ai_loop.scxml:377 :: closing :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1674,7 +1674,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Judging => {
-                // SCE-MAP: ai_loop.scxml:294 :: judging :: _state_body
+                // SCE-MAP: ai_loop.scxml:316 :: judging :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1760,7 +1760,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Paused => {
-                // SCE-MAP: ai_loop.scxml:401 :: paused :: _state_body
+                // SCE-MAP: ai_loop.scxml:423 :: paused :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1800,7 +1800,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Priming => {
-                // SCE-MAP: ai_loop.scxml:241 :: priming :: _state_body
+                // SCE-MAP: ai_loop.scxml:263 :: priming :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1883,7 +1883,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Reflecting => {
-                // SCE-MAP: ai_loop.scxml:324 :: reflecting :: _state_body
+                // SCE-MAP: ai_loop.scxml:346 :: reflecting :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1949,7 +1949,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Reported => {
-                // SCE-MAP: ai_loop.scxml:376 :: reported :: _state_body
+                // SCE-MAP: ai_loop.scxml:398 :: reported :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1964,7 +1964,7 @@ impl StatePolicy for AiLoopPolicy {
                 ));
             }
             AiLoopState::Restarting => {
-                // SCE-MAP: ai_loop.scxml:344 :: restarting :: _state_body
+                // SCE-MAP: ai_loop.scxml:366 :: restarting :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -2030,7 +2030,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Screening => {
-                // SCE-MAP: ai_loop.scxml:277 :: screening :: _state_body
+                // SCE-MAP: ai_loop.scxml:299 :: screening :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -2096,7 +2096,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Spent => {
-                // SCE-MAP: ai_loop.scxml:479 :: spent :: _state_body
+                // SCE-MAP: ai_loop.scxml:501 :: spent :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -2107,7 +2107,7 @@ impl StatePolicy for AiLoopPolicy {
                 }
             }
             AiLoopState::Stuck => {
-                // SCE-MAP: ai_loop.scxml:384 :: stuck :: _state_body
+                // SCE-MAP: ai_loop.scxml:406 :: stuck :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -2418,7 +2418,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Judging => {
                 match self.last_transition_index {
                     2 => {
-                        // SCE-MAP: ai_loop.scxml:312 :: judging :: _transition_2
+                        // SCE-MAP: ai_loop.scxml:334 :: judging :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -2502,7 +2502,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Paused => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:418 :: paused :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:440 :: paused :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2535,7 +2535,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Reflecting => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:329 :: reflecting :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:351 :: reflecting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2611,7 +2611,7 @@ impl StatePolicy for AiLoopPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: ai_loop.scxml:335 :: reflecting :: _transition_1
+                        // SCE-MAP: ai_loop.scxml:357 :: reflecting :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -2695,7 +2695,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Within => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:472 :: within :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:494 :: within :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2723,7 +2723,7 @@ impl StatePolicy for AiLoopPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: ai_loop.scxml:475 :: within :: _transition_1
+                        // SCE-MAP: ai_loop.scxml:497 :: within :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -2756,7 +2756,7 @@ impl StatePolicy for AiLoopPolicy {
             AiLoopState::Working => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: ai_loop.scxml:261 :: working :: _transition_0
+                        // SCE-MAP: ai_loop.scxml:283 :: working :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2908,7 +2908,7 @@ impl AiLoopPolicy {
                     self.last_transition_source_state = check_state;
                     self.last_transition_index = 0;
                     self.has_transition_actions = false;
-                    self.last_transition_is_internal = false;
+                    self.last_transition_is_internal = true;
                     self.last_transition_is_targetless = false;
 
                     if let Some(ref mut collect) = collect_mode {
@@ -2917,7 +2917,7 @@ impl AiLoopPolicy {
                             target: AiLoopState::Paused,
                             transition_index: 0,
                             has_actions: false,
-                            is_internal: false,
+                            is_internal: true,
                             is_targetless: false,
                         });
                     } else {
@@ -2932,7 +2932,7 @@ impl AiLoopPolicy {
                     self.last_transition_source_state = check_state;
                     self.last_transition_index = 1;
                     self.has_transition_actions = false;
-                    self.last_transition_is_internal = false;
+                    self.last_transition_is_internal = true;
                     self.last_transition_is_targetless = false;
 
                     if let Some(ref mut collect) = collect_mode {
@@ -2941,7 +2941,7 @@ impl AiLoopPolicy {
                             target: AiLoopState::Paused,
                             transition_index: 1,
                             has_actions: false,
-                            is_internal: false,
+                            is_internal: true,
                             is_targetless: false,
                         });
                     } else {
@@ -2956,7 +2956,7 @@ impl AiLoopPolicy {
                     self.last_transition_source_state = check_state;
                     self.last_transition_index = 2;
                     self.has_transition_actions = false;
-                    self.last_transition_is_internal = false;
+                    self.last_transition_is_internal = true;
                     self.last_transition_is_targetless = false;
 
                     if let Some(ref mut collect) = collect_mode {
@@ -2965,7 +2965,7 @@ impl AiLoopPolicy {
                             target: AiLoopState::Restarting,
                             transition_index: 2,
                             has_actions: false,
-                            is_internal: false,
+                            is_internal: true,
                             is_targetless: false,
                         });
                     } else {
