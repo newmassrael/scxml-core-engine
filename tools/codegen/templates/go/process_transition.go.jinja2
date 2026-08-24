@@ -182,7 +182,7 @@ func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_na
 {% endif %}
 				transitionIndex: {{ trans.transition_index | default(loop.index0) }},
 				hasActions:      {{ 'true' if trans.actions else 'false' }},
-				isInternal:      {{ 'true' if trans.transition_type == 'internal' else 'false' }},
+				isInternal:      {{ 'true' if trans.type == 'internal' else 'false' }},
 				isTargetless:    {{ 'true' if not trans.target else 'false' }},
 			}
 {% if trans.cond %}
@@ -227,7 +227,7 @@ func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_na
 {% endif %}
 				transitionIndex: {{ trans.transition_index | default(loop.index0) }},
 				hasActions:      {{ 'true' if trans.actions else 'false' }},
-				isInternal:      {{ 'true' if trans.transition_type == 'internal' else 'false' }},
+				isInternal:      {{ 'true' if trans.type == 'internal' else 'false' }},
 				isTargetless:    {{ 'true' if not trans.target else 'false' }},
 			}
 {% if trans.cond %}
@@ -277,7 +277,7 @@ func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_na
 			*currentState = {{ machine_name }}State{{ trans.target | to_state_variant }}
 {% endif %}
 {% endif %}
-			p.lastTransitionIsInternal = {{ 'true' if trans.transition_type == 'internal' else 'false' }}
+			p.lastTransitionIsInternal = {{ 'true' if trans.type == 'internal' else 'false' }}
 			p.lastTransitionIsTargetless = {{ 'true' if not trans.target else 'false' }}
 			p.lastTransitionSourceState = {{ machine_name }}State{{ state_id | to_state_variant }}
 {% if model.has_transition_actions %}
@@ -326,7 +326,7 @@ func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_na
 			*currentState = {{ machine_name }}State{{ trans.target | to_state_variant }}
 {% endif %}
 {% endif %}
-			p.lastTransitionIsInternal = {{ 'true' if trans.transition_type == 'internal' else 'false' }}
+			p.lastTransitionIsInternal = {{ 'true' if trans.type == 'internal' else 'false' }}
 			p.lastTransitionIsTargetless = {{ 'true' if not trans.target else 'false' }}
 			p.lastTransitionSourceState = {{ machine_name }}State{{ state_id | to_state_variant }}
 {% if model.has_transition_actions %}
