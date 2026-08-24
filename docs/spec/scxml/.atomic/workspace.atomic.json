@@ -9921,6 +9921,16 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "startedHostInvokes_",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "symbol": "HostInvokeEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "symbol": "HostInvokeResponse",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -10218,6 +10228,15 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "registerInvoker",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

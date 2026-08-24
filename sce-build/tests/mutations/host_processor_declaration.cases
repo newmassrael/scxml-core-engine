@@ -42,6 +42,7 @@ mutation_targets sce-build/src/host_processor_analyzer.rs sce-build/src/generato
 # as a compiled target it reported INCONCLUSIVE ("the mutation never reached
 # the code under test") while in fact reaching it perfectly well.
 mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 \
+    tools/codegen/templates/rust/invoke_methods.rs.jinja2 \
     sce-build/src/bin/sce_codegen.rs
 # The analyzer's own `tests` module and the CLI-level declaration suite. Named
 # explicitly because a `--lib` selector cannot resolve an oracle from a target
@@ -158,67 +159,45 @@ edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
      "{% if action.send_type_unsupported or action.send_type_host_served %}")
 PY
 
-# ── The backends with no registry stop refusing ─────────────────────
+# ── The declared `<invoke>` stops being started ─────────────────────
 #
-# This is the case that decides whether the round repaid its defect or moved
-# it. A backend that emits a dispatch it cannot service has a build promising
-# a delivery nothing performs.
+# ⚠ FOUR CASES USED TO LIVE HERE and they are gone rather than re-aimed.
+# They mutated `reject_declaration_in_unsupported_lang` — the fail-fast that
+# refused a declaration on a backend with no registry — and that function has
+# no callers left: every backend grew both registries, so both
+# `reject_host_processors_in_unsupported_lang` and
+# `reject_host_invokers_in_unsupported_lang` were retired with it.
+#
+# Re-aiming was not available. An anchor is re-aimed when the site MOVED; here
+# the site was deleted on purpose, and the claim it guarded ("a backend that
+# cannot service a declaration must not accept it") is now vacuously true —
+# there is no such backend. A case that cannot fail is worse than no case,
+# because it reads as coverage.
+#
+# What the retirement has to be paid for with is the opposite claim, and it is
+# the one the cases below make: a declaration REACHES the backend that renders,
+# and nothing else does. That claim cannot be retired by coverage, because it
+# is the feature rather than the absence of one. The per-backend halves live in
+# `host_processor_dispatch_{go,python,cpp,c11}.cases`; Rust's are here beside
+# the send-half cases they mirror.
 
-mutation_case "a backend without a registry accepts the declaration" <<'PY'
-edit("sce-build/src/generator.rs",
-     """    if declared.is_empty() {
-        return Ok(());
-    }""",
-     """    if !declared.is_empty() {
-        return Ok(());
-    }""")
+mutation_case "the rust template emits no host invoke start" <<'PY'
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     "{% if state.invokes | host_invoker %}",
+     "{% if false and state.invokes | host_invoker %}")
 PY
 
-# The invoke half of the same refusal. Declaring only an invoker, on a
-# backend with no registry, must refuse exactly as declaring only a
-# processor does — a check reading only the processor list would let the
-# other through silently.
+# ── …or is emitted alongside the refusal it replaced ────────────────
 #
-# The two lists used to feed ONE check and this case emptied the chained
-# iterator. C++ ended that: it grew a `<send>` registry and no invoker one,
-# so the halves are separate functions now and the invoker list is read in
-# exactly one place. Emptying it there is the same mutation, aimed at where
-# the answer moved to — and it now also covers C++, which is the backend the
-# split made able to get this wrong.
-mutation_case "the refusal ignores the invoke declaration" <<'PY'
-edit("sce-build/src/generator.rs",
-     """    reject_declaration_in_unsupported_lang(
-        &model.host_invoker_types,
-        "--host-invoker",""",
-     """    reject_declaration_in_unsupported_lang(
-        &[],
-        "--host-invoker",""")
-PY
+# The other direction, and the one a single-sided case would miss. A machine
+# that both starts the invocation and raises `error.execution` for it has the
+# document seeing the act performed AND refused — the send half's
+# `a served type also takes the unsupported arm` in reverse.
 
-# ── …or start refusing documents that declared nothing ─────────────
-#
-# The other side of the same check. A refusal that fires unconditionally
-# would take every existing document on five backends with it, and a gate
-# that only measured the refusal direction would call that a pass.
-
-mutation_case "the refusal fires with nothing declared" <<'PY'
-edit("sce-build/src/generator.rs",
-     """    if declared.is_empty() {
-        return Ok(());
-    }
-    Err(GenerateError::UnsupportedFeature(format!(""",
-     """    Err(GenerateError::UnsupportedFeature(format!(""")
-PY
-
-# ── …or refuse without saying what to change ────────────────────────
-#
-# An author reading the refusal has to know WHICH declaration to drop. With
-# several on one command line, a message that names none is a grep.
-
-mutation_case "the refusal does not name the declared type" <<'PY'
-edit("sce-build/src/generator.rs",
-     "        declared.join(\", \"),",
-     "        String::new(),")
+mutation_case "a declared invoke also takes the refusal arm" <<'PY'
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     "{% if state.invokes | unsupported_refused %}",
+     "{% if state.invokes | unsupported_refused or state.invokes | host_invoker %}")
 PY
 
 # ── `check` stops being able to predict the build ───────────────────
@@ -231,18 +210,24 @@ PY
 # These three are the ways that comes back — the flag unspellable, the
 # declaration accepted and dropped, or accepted and not published.
 
+# ⚠ The anchor carries `conflicts_with_all = ["forge"]` because that is what
+# makes it `CheckArgs`'s and not one of the two identically-named flags on
+# `generate` and `orchestrate`. It was `["scxml_set", "forge", "deploy"]`
+# while the flag was single-document-only; `orchestrate` then grew the same
+# declaration, so the route stopped conflicting and only `--forge` — a
+# document set with no `<send>` for a processor to serve — still does.
 mutation_case "check cannot be told about a declared processor" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
      """    #[arg(
         long = "host-processor",
         value_name = "TYPE",
-        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+        conflicts_with_all = ["forge"]
     )]
     host_processor: Vec<String>,""",
      """    #[arg(
         long = "host-processor-unspellable",
         value_name = "TYPE",
-        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+        conflicts_with_all = ["forge"]
     )]
     host_processor: Vec<String>,""")
 PY
