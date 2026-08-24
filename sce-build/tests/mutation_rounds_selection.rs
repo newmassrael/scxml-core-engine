@@ -253,6 +253,12 @@ fn declared_needs(casefile: &str) -> Vec<String> {
 /// Whether a casefile drives its round through ctest — the same line the
 /// workflow reads to decide whether to configure CMake.
 fn declares_ctest(casefile: &str) -> bool {
+    declared_runner(casefile) == "ctest"
+}
+
+/// The runner a casefile declares, read from the harness that owns the
+/// casefile vocabulary rather than by matching its text.
+fn declared_runner(casefile: &str) -> String {
     let out = Command::new("scripts/mutate")
         .args(["--declares", casefile])
         .current_dir(repo_root())
@@ -260,7 +266,8 @@ fn declares_ctest(casefile: &str) -> bool {
         .expect("run scripts/mutate --declares");
     String::from_utf8_lossy(&out.stdout)
         .lines()
-        .any(|line| line == "runner\tctest")
+        .find_map(|line| line.strip_prefix("runner\t").map(str::to_string))
+        .unwrap_or_else(|| panic!("{casefile} declares no runner"))
 }
 
 fn casefiles() -> Vec<String> {
@@ -443,6 +450,65 @@ fn step_condition(workflow: &str, step_name: &str) -> String {
         .find_map(|line| line.trim().strip_prefix("if: "))
         .unwrap_or_else(|| panic!("step {step_name:?} declares no `if:` condition"))
         .to_string()
+}
+
+/// Every runner the corpus declares is provisioned in the job that runs it.
+///
+/// The rounds job is one job per casefile and it installs by CONDITION —
+/// `matrix.runner == 'ctest'` builds a CMake tree, and a cargo round pays for
+/// none of it. That shape is right and it is also the shape of the defect this
+/// repository has already paid for twice: a lane that did not install what a
+/// round needed reported `baseline is not green` — a true sentence about a
+/// missing tool, phrased as a defect in the tree — for every run the casefile
+/// ever had. The rev-pinned validator cost two casefiles their rounds that way
+/// (2026-08-25), and the same silence is one `mutation_go` away from
+/// happening again with a toolchain nobody thought to add.
+///
+/// So this derives rather than lists: it reads the runner off every casefile
+/// through `scripts/mutate --declares`, and asks the workflow whether some
+/// step keys off it. Add a casefile in a new language and this fails until the
+/// lane can run it — which is the moment it is cheapest to notice, rather than
+/// after a round has reported a red baseline about a missing interpreter.
+///
+/// `cargo` is exempt and is the only exemption: the Rust toolchain is
+/// installed unconditionally, because every job in this lane needs it to build
+/// `sce-codegen`.
+#[test]
+fn every_runner_the_corpus_declares_is_provisioned_in_the_rounds_job() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+
+    let corpus = casefiles();
+    assert!(
+        corpus.len() >= 5,
+        "⚠ the corpus reports {} casefile(s); this test derives its answer from \
+         them, and an empty sweep would pass by having nothing to check",
+        corpus.len()
+    );
+
+    let mut runners: BTreeSet<String> = corpus.iter().map(|c| declared_runner(c)).collect();
+    runners.remove("cargo");
+
+    assert!(
+        runners.len() >= 3,
+        "⚠ the corpus declares {} non-cargo runner(s): {runners:?}. Three are \
+         expected — ctest, go and pytest — and a smaller set means either a \
+         runner was dropped or this derivation stopped reading them, which \
+         would make the sweep below vacuous",
+        runners.len()
+    );
+
+    for runner in &runners {
+        let wanted = format!("matrix.runner == '{runner}'");
+        assert!(
+            workflow.contains(&wanted),
+            "⚠ the corpus declares a `{runner}` runner and no step in \
+             .github/workflows/mutation-rounds.yml is conditioned on \
+             `{wanted}`. A round whose toolchain the job never installed does \
+             not report a missing tool — it reports the baseline it could not \
+             run, as though the tree were broken."
+        );
+    }
 }
 
 /// Run the workflow's selection step over a change set and return the outputs

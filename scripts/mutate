@@ -265,6 +265,34 @@ mutation_tests() { mutation_declare_runner cargo "$@"; }
 # already contains.
 mutation_ctest() { mutation_declare_runner ctest "$@"; }
 
+# Go selector for the tests under study: a module directory, then one or more
+# package patterns as `go list` accepts them.
+#
+#     mutation_go backends/go/tests ./integration/ai_loop/
+#
+# The module directory is first because Go resolves everything relative to it
+# and this harness runs from the repository root — the same reason the ctest
+# selector must carry `--test-dir`. The packages are compiled to real binaries
+# with `go test -c`, so this runner answers the changed-artifact question with
+# a file rather than with a claim: `go test` alone leaves nothing on disk to
+# hash, and a runner that cannot hash what runs cannot tell a surviving
+# mutation from one that never reached the code.
+mutation_go() { mutation_declare_runner go "$@"; }
+
+# pytest selector for the tests under study: a rootdir, then the arguments
+# pytest itself takes.
+#
+#     mutation_pytest backends/python/tests integration/ai_loop/
+#
+# Python compiles nothing a host can hash, so its sources ARE the artifacts —
+# which is why a Python casefile declares its edits with
+# `mutation_runtime_targets` rather than `mutation_targets`, and why the
+# artifact set below is the collected test files plus the generated machines
+# beside them. Anything upstream of those (the runtime package, a template) is
+# a runtime target too, and check 1 is answered for it the way it is for a
+# gate script: the file on disk differed while the tests ran.
+mutation_pytest() { mutation_declare_runner pytest "$@"; }
+
 # Files a case is allowed to edit, COMPILED INTO the tests. Snapshotted at
 # init and restored after every case, so a case body never has to clean up
 # after itself and a case that dies mid-edit cannot leave the tree broken
@@ -920,6 +948,287 @@ if red and not open(names).read().strip():
 # no such per-test clock and reports its own.
 print(f"{run} {failed} 0")
 PY
+}
+
+# ── The Go runner ──────────────────────────────────────────────────
+#
+# `go test` builds and runs in one step and leaves nothing behind, so a
+# harness that shelled out to it could answer "did the tests pass" and not
+# "did the mutation reach what ran" — and this file exists for the second
+# question. `go test -c` splits the two: it writes a real test binary, which
+# is hashable exactly like a cargo or ctest artifact, and the binary is then
+# executed directly. Everything downstream — the changed-binary rule, the
+# run-count rule, the timeout — is the shared code, unchanged.
+
+# The module directory a Go selector names, and the packages after it.
+mutation_go_module_dir() { printf '%s\n' "${MUTATION_RUNNER_ARGS[0]:-}"; }
+mutation_go_packages() { printf '%s\n' "${MUTATION_RUNNER_ARGS[@]:1}"; }
+
+# Where a package's compiled test binary is written. One file per package,
+# named after the package path so two packages cannot land on one path and
+# report each other's hash.
+mutation_go_binary_for() {
+    local pkg="${1//\//_}"
+    printf '%s/go-%s.test\n' "$WORK" "${pkg//./_}"
+}
+
+# Compile every selected package into a test binary, then take those binaries
+# as the artifact set.
+#
+# Compiled BEFORE resolving for the reason `mutation_ctest_resolve` states at
+# length: resolution is a file-existence test, and a package whose binary this
+# round is the first to build does not have one yet. A Go package is worse
+# than a CMake target here, not better — nothing on disk survives a previous
+# run at all.
+#
+# A compile failure is ignored, deliberately: a tree that will not build is
+# the baseline's verdict to give, with the compiler's own words, rather than
+# this function's.
+mutation_go_resolve() {
+    local dir pkg binary
+    dir="$(mutation_go_module_dir)"
+    if [[ -z "$dir" || ! -f "$dir/go.mod" ]]; then
+        red "mutation_go needs a module directory first: '$dir' holds no go.mod"
+        exit 2
+    fi
+    if [[ ${#MUTATION_RUNNER_ARGS[@]} -lt 2 ]]; then
+        red "mutation_go needs at least one package after the module directory"
+        exit 2
+    fi
+
+    MUTATION_ARTIFACTS=()
+    while IFS= read -r pkg; do
+        [[ -n "$pkg" ]] || continue
+        binary="$(mutation_go_binary_for "$pkg")"
+        ( cd "$dir" && go test -c -o "$binary" "$pkg" ) >>"$MUTATION_BUILD_LOG" 2>&1 || true
+        [[ -f "$binary" ]] && MUTATION_ARTIFACTS+=("$binary")
+    done < <(mutation_go_packages)
+
+    if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
+        red "the selector compiled no test binaries: ${MUTATION_RUNNER_ARGS[*]}"
+        red "the build log's tail:"
+        mutation_build_diagnostics >&2
+        exit 2
+    fi
+}
+
+# Recompile into the same paths and hash. `-count=1` is not needed here and
+# would be meaningless: this is a compile, and the run below never consults a
+# cache because it executes the binary itself.
+mutation_go_build_and_hash() {
+    local dir pkg binary
+    dir="$(mutation_go_module_dir)"
+    : >"$MUTATION_BUILD_LOG"
+    while IFS= read -r pkg; do
+        [[ -n "$pkg" ]] || continue
+        binary="$(mutation_go_binary_for "$pkg")"
+        ( cd "$dir" && go test -c -o "$binary" "$pkg" ) >>"$MUTATION_BUILD_LOG" 2>&1 || return 1
+    done < <(mutation_go_packages)
+    mutation_hash_artifacts
+}
+
+# Run each binary with `-test.v`, which is what makes the per-test verdict
+# lines exist to count and to name.
+#
+# Counted from those lines rather than from the trailing `ok`/`FAIL`, because
+# that trailer says nothing about how many tests ran — and "how many ran" is
+# the comparison that separates a real SURVIVED from a case that quietly
+# changed the suite. Top-level lines only: Go indents subtests, and a parent
+# whose subtest failed prints its own verdict too.
+#
+# Run with the package's own directory as cwd, the way `go test` does, so a
+# test reading a file beside itself finds it.
+mutation_go_run() {
+    local dir pkg binary out rc run failed total_run=0 total_failed=0 timed_out=0
+    dir="$(mutation_go_module_dir)"
+    : > "$MUTATION_FAILING"
+    while IFS= read -r pkg; do
+        [[ -n "$pkg" ]] || continue
+        binary="$(mutation_go_binary_for "$pkg")"
+        [[ -f "$binary" ]] || continue
+        rc=0
+        out="$(cd "$dir/${pkg#./}" 2>/dev/null || cd "$dir"; \
+               timeout "$MUTATION_ARTIFACT_TIMEOUT" "$binary" -test.v 2>&1)" || rc=$?
+        if [[ "$rc" == "124" ]]; then
+            timed_out=1
+            printf '%s (did not terminate within %ss)\n' "$pkg" \
+                "$MUTATION_ARTIFACT_TIMEOUT" >> "$MUTATION_FAILING"
+            continue
+        fi
+        run="$(printf '%s\n' "$out" | grep -cE '^--- (PASS|FAIL|SKIP): ' || true)"
+        failed="$(printf '%s\n' "$out" | grep -cE '^--- FAIL: ' || true)"
+        printf '%s\n' "$out" | mutation_failures_from_go >> "$MUTATION_FAILING"
+        total_run=$((total_run + ${run:-0}))
+        total_failed=$((total_failed + ${failed:-0}))
+    done < <(mutation_go_packages)
+    printf '%s %s %s\n' "$total_run" "$total_failed" "$timed_out"
+}
+
+# The selector still names packages this module has. `go list` reads the
+# module graph and compiles nothing, so it is the part of the runner question
+# the cheap mode can answer — the same division `mutation_cargo_check_selector`
+# draws.
+mutation_go_check_selector() {
+    local dir n
+    dir="$(mutation_go_module_dir)"
+    if [[ -z "$dir" || ! -f "$dir/go.mod" ]]; then
+        red "mutation_go needs a module directory first: '$dir' holds no go.mod"
+        return 1
+    fi
+    if ! command -v go >/dev/null 2>&1; then
+        dim "selector NOT checked: go is not on PATH"
+        return 0
+    fi
+    n="$( ( cd "$dir" && go list $(mutation_go_packages) 2>/dev/null ) | grep -c . || true)"
+    if [[ "${n:-0}" -gt 0 ]]; then
+        dim "selector matches $n Go package(s)"
+        return 0
+    fi
+    red "the Go selector matches no package in $dir: ${MUTATION_RUNNER_ARGS[*]}"
+    return 1
+}
+
+# ── The pytest runner ──────────────────────────────────────────────
+#
+# Python builds nothing, so the artifact set is the source that will be
+# imported for the selection: the collected test files, and the generated
+# `*_sm.py` machines beside them. Both are real evidence — a mutation in
+# either changes a hash — and a mutation UPSTREAM of them (the runtime
+# package, a codegen template) is a runtime target, answered the way a gate
+# script is: the file on disk differed from the baseline while the tests ran.
+#
+# The counts come from a JUnit report rather than from the summary line, for
+# the reason the ctest runner gives: `27 passed in 0.13s` and
+# `1 failed, 26 passed in 0.14s` are different sentences, and a parser written
+# against one reads the other as zero tests.
+
+mutation_pytest_rootdir() { printf '%s\n' "${MUTATION_RUNNER_ARGS[0]:-}"; }
+mutation_pytest_args() { printf '%s\n' "${MUTATION_RUNNER_ARGS[@]:1}"; }
+
+mutation_pytest_resolve() {
+    local root
+    root="$(mutation_pytest_rootdir)"
+    if [[ -z "$root" || ! -d "$root" ]]; then
+        red "mutation_pytest needs a rootdir first: '$root' is not a directory"
+        exit 2
+    fi
+
+    # Collection is the build step's stand-in, and it runs first for the same
+    # reason: a generated machine this round's own regeneration produces does
+    # not exist yet on a clean tree, and collection would then report an import
+    # error for a file the round is about to write.
+    mutation_regenerate || true
+
+    # The collected test files, plus the generated machines beside them. Those
+    # machines are not collected — they hold no tests — and they are where a
+    # template or document mutation lands, so a set without them would hash
+    # only the files the mutation did NOT touch.
+    mapfile -t MUTATION_ARTIFACTS < <(
+        cd "$root" || exit 0
+        python3 -m pytest --collect-only -q $(mutation_pytest_args) 2>/dev/null |
+            python3 -c '
+import os, sys
+
+files = set()
+for line in sys.stdin:
+    head = line.split("::", 1)[0].strip()
+    if head.endswith(".py") and os.path.isfile(head):
+        files.add(os.path.realpath(head))
+        for sibling in os.listdir(os.path.dirname(head) or "."):
+            if sibling.endswith("_sm.py"):
+                files.add(os.path.realpath(os.path.join(os.path.dirname(head), sibling)))
+for path in sorted(files):
+    print(path)
+'
+    )
+
+    if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
+        red "the selector collected no test files: ${MUTATION_RUNNER_ARGS[*]}"
+        exit 2
+    fi
+}
+
+# There is nothing to compile, so this is the regeneration bridge plus the
+# hash. Returning non-zero on a refused regeneration is what lets a mutation
+# that breaks the GENERATOR read as "the tree does not build" rather than as a
+# survivor.
+mutation_pytest_build_and_hash() {
+    : >"$MUTATION_BUILD_LOG"
+    if ! mutation_regenerate; then
+        printf '%s\n' "$MUTATION_REGEN_ERROR" >"$MUTATION_BUILD_LOG"
+        return 1
+    fi
+    mutation_hash_artifacts
+}
+
+mutation_pytest_run() {
+    local root report console
+    root="$(mutation_pytest_rootdir)"
+    report="$WORK/pytest-junit.xml"
+    console="$WORK/pytest-console.txt"
+    rm -f "$report"
+    : > "$MUTATION_FAILING"
+    ( cd "$root" && timeout "$MUTATION_ARTIFACT_TIMEOUT" \
+        python3 -m pytest $(mutation_pytest_args) -q -p no:cacheprovider \
+        --junitxml="$report" ) >"$console" 2>&1
+    local rc=$?
+    if [[ "$rc" == "124" ]]; then
+        printf 'pytest (did not terminate within %ss)\n' "$MUTATION_ARTIFACT_TIMEOUT" \
+            >> "$MUTATION_FAILING"
+        printf '0 0 1\n'
+        return
+    fi
+    mutation_failures_from_pytest < "$console" > "$MUTATION_FAILING"
+    if [[ ! -f "$report" ]]; then
+        # No report and no timeout means pytest refused before it ran anything
+        # — a collection error, which is what a mutation upstream of an import
+        # looks like. Reported as zero-run rather than zero-failed so the
+        # run-count rule catches it instead of it reading as a green sweep.
+        printf '0 0 0\n'
+        return
+    fi
+    python3 - "$report" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+suites = [root] if root.tag == "testsuite" else root.iter("testsuite")
+run = failed = 0
+for suite in suites:
+    total = int(suite.get("tests", 0))
+    skipped = int(suite.get("skipped", 0))
+    run += total - skipped
+    failed += int(suite.get("failures", 0)) + int(suite.get("errors", 0))
+# Third field: pytest's own timeout is handled by the caller above, so a
+# report that exists is a run that came back.
+print(f"{run} {failed} 0")
+PY
+}
+
+mutation_pytest_check_selector() {
+    local root n
+    root="$(mutation_pytest_rootdir)"
+    if [[ -z "$root" || ! -d "$root" ]]; then
+        red "mutation_pytest needs a rootdir first: '$root' is not a directory"
+        return 1
+    fi
+    if ! python3 -c 'import pytest' >/dev/null 2>&1; then
+        dim "selector NOT checked: pytest is not importable"
+        return 0
+    fi
+    n="$( ( cd "$root" && python3 -m pytest --collect-only -q $(mutation_pytest_args) 2>/dev/null ) |
+          grep -cE '::' || true)"
+    if [[ "${n:-0}" -gt 0 ]]; then
+        dim "selector collects $n test(s)"
+        return 0
+    fi
+    # A machine this suite imports is generated and gitignored, so an empty
+    # collection on a clean tree is a missing artifact rather than a dead
+    # casefile — the same distinction the ctest checker draws for a stale build
+    # tree, and the reason that one refuses to accuse.
+    dim "selector NOT checked: $root collected nothing — its generated machines"
+    dim "may not have been produced yet (see this casefile's mutation_regen)"
+    return 0
 }
 
 # ── Cheap liveness ─────────────────────────────────────────────────
