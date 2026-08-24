@@ -53,9 +53,11 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace SCE::Static {
@@ -819,6 +821,18 @@ private:
     // than one callback because the identifier set is open and a host may
     // serve several — which is also why the request carries its own type.
     std::map<std::string, ::SCE::HostSendHandler> hostProcessors_;
+    // §scxml-6.4.1: handlers that RUN each `<invoke type>` this host declared.
+    // A second map rather than a second use of the one above, because
+    // delivering an event is not the same capability as running a process with
+    // a lifecycle — see `core/HostProcessor.h`'s invoker half.
+    std::map<std::string, ::SCE::HostInvokeHandler> hostInvokers_;
+    // §scxml-6.4: every host-run invocation started and not yet cancelled, so
+    // the emitted exit chain can be an unconditional call — the engine knows
+    // whether there is anything to cancel. Held here rather than in the
+    // generated machine because "did this one start?" is the question the
+    // cancel path has to answer, and answering it in each backend's template
+    // would be the same bookkeeping written once per language.
+    std::set<std::pair<std::string, std::string>> startedHostInvokes_;
     MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §mesh-9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §mesh-9.5: mesh-rpc exit / cancel hook
@@ -2754,6 +2768,86 @@ public:
             }
         }
         return replies;
+    }
+
+    /**
+     * @brief §scxml-6.4.1: register what RUNS every `<invoke type="<t>">` this
+     *        machine executes
+     *
+     * Separate from registerEventProcessor() because they are separate
+     * contracts: a host that can deliver an event is not thereby able to run a
+     * process with a lifecycle, and one registry would make declaring either
+     * silently claim both.
+     *
+     * The build's half is the `--host-invoker` declaration that made codegen
+     * emit a start here instead of a refusal; a registration alone cannot
+     * change emitted code. Registering an already-registered type replaces its
+     * handler, which is what a host re-wiring one expects.
+     */
+    void registerInvoker(const std::string &processorType, ::SCE::HostInvokeHandler handler) {
+        hostInvokers_[processorType] = std::move(handler);
+    }
+
+    /**
+     * @brief Whether an invoker is registered for `processorType`
+     */
+    bool hasInvoker(const std::string &processorType) const {
+        return hostInvokers_.find(processorType) != hostInvokers_.end();
+    }
+
+    /**
+     * @brief §scxml-6.4.1: start a host-run invocation, reporting whether
+     *        anything ran
+     *
+     * `false` means no invoker was registered, which the generated site turns
+     * into `error.execution` — an invoke nobody ran is the same fact whether
+     * the type was undeclared or the handler was never wired up.
+     *
+     * A started invocation is RECORDED here so the cancel path can find it;
+     * see `startedHostInvokes_` for why that bookkeeping is the engine's.
+     *
+     * §scxml-6.4: a completion the host reports NOW rides back as
+     * `done.invoke.<id>`, under the id the AUTHOR wrote a transition for. One
+     * it reports later arrives the same way, by raising the event itself — the
+     * engine does not distinguish the two, and never synthesises a completion
+     * the host did not report.
+     */
+    bool performHostInvoke(const ::SCE::HostInvokeRequest &request) {
+        const auto it = hostInvokers_.find(request.processorType);
+        if (it == hostInvokers_.end()) {
+            return false;
+        }
+        ::SCE::HostInvokeEvent event;
+        event.start = request;
+        const auto response = it->second(event);
+        startedHostInvokes_.emplace(request.processorType, request.invokeId);
+        if (response.has_value() && response->doneData.has_value()) {
+            raiseExternal(std::string("done.invoke.") + request.invokeId, *response->doneData);
+        }
+        return true;
+    }
+
+    /**
+     * @brief §scxml-6.4: stop a host-run invocation whose state has exited
+     *
+     * Unconditional from the emitted exit chain; the engine knows whether the
+     * invocation ever started and stays silent when it did not.
+     *
+     * @return whether a cancel was delivered
+     */
+    bool cancelHostInvoke(const std::string &processorType, const std::string &invokeId) {
+        const auto key = std::make_pair(processorType, invokeId);
+        if (startedHostInvokes_.erase(key) == 0) {
+            return false;
+        }
+        const auto it = hostInvokers_.find(processorType);
+        if (it == hostInvokers_.end()) {
+            return false;
+        }
+        ::SCE::HostInvokeEvent event;
+        event.cancel = ::SCE::HostInvokeCancel{processorType, invokeId};
+        (void)it->second(event);
+        return true;
     }
 
     /**

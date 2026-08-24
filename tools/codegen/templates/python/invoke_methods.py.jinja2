@@ -257,7 +257,7 @@
                     engine._done_invoke_emitted[{{ inv.invoke_id | py_string_literal }}] = True
                 continue
 {% endfor %}
-{% for inv in state.invokes | unsupported %}
+{% for inv in state.invokes | unsupported_refused %}
             if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
                 # W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 # on the internal queue and start nothing.
@@ -265,6 +265,36 @@
                     engine,
                     "<invoke> declares a type this processor does not support",
                 )
+                continue
+{% endfor %}
+{% for inv in state.invokes | host_invoker %}
+            if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
+                # W3C SCXML 6.4.1: the host declared this `type`, so START the
+                # invocation rather than refusing it. The id handed over is the
+                # DOCUMENT's, not the per-instance one the pending queue
+                # carries: `done.invoke.<id>` is the name the author wrote a
+                # transition for, so it is the name the host must answer on.
+                if not engine.perform_host_invoke(_HostInvokeRequest(
+                    processor_type={{ inv.invoke_type | py_string_literal }},
+                    invoke_id={{ inv.invoke_id | py_string_literal }},
+                    src={{ inv.src | default('', true) | py_string_literal }},
+                    params={
+{% for param in inv.params %}
+{% if param.is_static_literal %}
+                        {{ param.name | py_string_literal }}: [{{ param.static_value | py_string_literal }}],
+{% endif %}
+{% endfor %}
+                    },
+                    content={{ inv.content | default('', true) | py_string_literal }},
+                )):
+                    # W3C SCXML 6.4.1: declared but no invoker registered. The
+                    # document asked for a process to be run and none was,
+                    # which is the same fact as an unsupported type — so the
+                    # same event, rather than a silence that reads as started.
+                    self._raise_error_execution(
+                        engine,
+                        "<invoke> names an invoker the host declared but never registered",
+                    )
                 continue
 {% endfor %}
 {% endfor %}
@@ -284,6 +314,20 @@
                 p for p in engine._pending_invokes
                 if not p.invoke_id.endswith(_suffix)
             ]
+{% endfor %}
+{% endif %}
+{% set host_list = state.invokes | host_invoker | list %}
+{% if host_list %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for inv in host_list %}
+            # W3C SCXML 6.4: the host's invocation ends with the state that
+            # started it. Unconditional here: the engine knows whether this
+            # one ever started and stays silent when it did not, so the
+            # emitted chain needs no bookkeeping of its own.
+            engine.cancel_host_invoke(
+                {{ inv.invoke_type | py_string_literal }},
+                {{ inv.invoke_id | py_string_literal }},
+            )
 {% endfor %}
 {% endif %}
 {% set scxml_list = state.invokes | scxml_family | list %}

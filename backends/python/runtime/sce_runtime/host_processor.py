@@ -27,7 +27,7 @@ string.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 
 @dataclass
@@ -90,3 +90,89 @@ class HostSendResponse:
 #: it cannot invent a W3C-meaningful outcome for one, and swallowing it
 #: would produce exactly the silence this whole surface exists to remove.
 HostSendHandler = Callable[[HostSendRequest], List[HostSendResponse]]
+
+
+# ── W3C SCXML 6.4.1: `<invoke>` the HOST runs ────────────────────────────
+#
+# The clause leaves the invokable set to the platform in the same words 6.2.5
+# uses for `<send>`, so a host may implement its own `type` here too — but an
+# invoke is not a send. It has a LIFETIME: it starts when the state is entered,
+# it is cancelled if the state exits, and the document may be waiting on
+# `done.invoke.<id>`. That is why the handler receives an event rather than a
+# bare request, and why this is a second registry rather than a second use of
+# the first: a host that can deliver an event is not thereby able to run a
+# process it must also be able to stop.
+
+
+@dataclass
+class HostInvokeRequest:
+    """An ``<invoke>`` the host runs, at the point the state was entered."""
+
+    #: The `type` this ``<invoke>`` named.
+    processor_type: str = ""
+    #: The invoke's id (W3C SCXML 6.4.1), auto-derived when the author
+    #: declared none. This is the name the DOCUMENT waits on: a completion
+    #: is ``done.invoke.<invoke_id>``, so a host that finishes
+    #: asynchronously must keep it.
+    invoke_id: str = ""
+    #: ``<invoke src="...">``, empty when the document named none. SCE does
+    #: not interpret it — what a src means is the invoked processor's
+    #: business.
+    src: str = ""
+    #: ``<param>`` values keyed by name; a repeated name keeps every value
+    #: in document order.
+    params: Dict[str, List[str]] = field(default_factory=dict)
+    #: Inline ``<content>``, empty when the document carried none.
+    content: str = ""
+
+
+@dataclass
+class HostInvokeCancel:
+    """An ``<invoke>`` the host was running, at the point its state exited."""
+
+    #: The `type` the ``<invoke>`` named.
+    processor_type: str = ""
+    #: The invocation being cancelled — the same id its start carried.
+    invoke_id: str = ""
+
+
+@dataclass
+class HostInvokeEvent:
+    """One turn of a host-run invoke's lifecycle.
+
+    Exactly one of ``start`` and ``cancel`` is set. Both arms go to ONE
+    registered handler rather than to two separately registered callbacks,
+    because a host that can start an invocation and cannot stop it is not a
+    working invoker — and two registrations make that state reachable. One
+    handler means the pair is registered together or not at all."""
+
+    #: W3C SCXML 6.4: the state was entered and the macrostep has settled.
+    #: Begin the invoked process.
+    start: Optional[HostInvokeRequest] = None
+    #: W3C SCXML 6.4: the state exited. Stop it.
+    #:
+    #: Delivered only for an invocation that actually started: a state that
+    #: exits before the macrostep ends never runs its invoke, and cancelling
+    #: something that never began would have the host tearing down state it
+    #: never built.
+    cancel: Optional[HostInvokeCancel] = None
+
+
+@dataclass
+class HostInvokeResponse:
+    """A host invoker's answer to a start.
+
+    Read only for a start; an answer to a cancel is ignored, because there
+    is nothing left for it to mean."""
+
+    #: Payload for an immediate ``done.invoke.<invoke_id>``, for an
+    #: invocation that completed before returning. ``None`` is the ordinary
+    #: case: the work outlives the call and the host raises the completion
+    #: itself when it finishes. SCE does not synthesise a completion the
+    #: host did not report — an invoked process that never terminates never
+    #: fires ``done.invoke``, which is what W3C SCXML 6.4 says.
+    done_data: Optional[str] = None
+
+
+#: A registered invoke-lifecycle handler.
+HostInvokeHandler = Callable[[HostInvokeEvent], Optional[HostInvokeResponse]]

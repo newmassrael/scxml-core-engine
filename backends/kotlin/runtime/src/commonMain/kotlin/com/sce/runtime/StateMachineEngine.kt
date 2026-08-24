@@ -479,6 +479,128 @@ abstract class StateMachineEngine<S : State, E : Event>(
     fun hasEventProcessor(processorType: String): Boolean =
         hostProcessors.containsKey(processorType)
 
+    // ── §scxml-6.4.1: `<invoke>` the HOST runs ────────────────────────────
+    //
+    // The clause leaves the invokable set to the platform in the same words
+    // §scxml-6.2.5 uses for `<send>`, so a host may implement its own `type`
+    // here too — but an invoke is not a send. It has a LIFETIME: it starts
+    // when the state is entered, it is cancelled if the state exits, and the
+    // document may be waiting on `done.invoke.<id>`. That is why the handler
+    // receives an event rather than a bare request, and why this is a second
+    // registry rather than a second use of the first: a host that can deliver
+    // an event is not thereby able to run a process it must also be able to
+    // stop.
+
+    /** An `<invoke>` the host runs, at the point the state was entered. */
+    data class HostInvokeRequest(
+        val processorType: String,
+        /**
+         * The invoke's id, auto-derived when the author declared none. This is
+         * the name the DOCUMENT waits on: a completion is
+         * `done.invoke.<invokeId>`, so a host that finishes asynchronously
+         * must keep it.
+         */
+        val invokeId: String = "",
+        /** `<invoke src="...">`, empty when the document named none. */
+        val src: String = "",
+        /** `<param>` values keyed by name; repeats keep document order. */
+        val params: Map<String, List<String>> = emptyMap(),
+        /** Inline `<content>`, empty when the document carried none. */
+        val content: String = ""
+    )
+
+    /** An `<invoke>` the host was running, at the point its state exited. */
+    data class HostInvokeCancel(val processorType: String, val invokeId: String)
+
+    /**
+     * One turn of a host-run invoke's lifecycle. Exactly one arm is non-null.
+     *
+     * Both go to ONE registered handler rather than to two separately
+     * registered callbacks, because a host that can start an invocation and
+     * cannot stop it is not a working invoker — and two registrations make
+     * that state reachable.
+     */
+    data class HostInvokeEvent(
+        val start: HostInvokeRequest? = null,
+        val cancel: HostInvokeCancel? = null
+    )
+
+    /**
+     * A host invoker's answer to a start; an answer to a cancel is ignored.
+     *
+     * [doneData] null is the ordinary case: the work outlives the call and the
+     * host raises `done.invoke.<id>` itself when it finishes. SCE does not
+     * synthesise a completion the host did not report — an invoked process
+     * that never terminates never fires `done.invoke`, which is what
+     * §scxml-6.4 says.
+     */
+    data class HostInvokeResponse(val doneData: String? = null)
+
+    private val hostInvokers = mutableMapOf<String, (HostInvokeEvent) -> HostInvokeResponse?>()
+
+    /** Every host-run invocation started and not yet cancelled. */
+    private val startedHostInvokes = mutableSetOf<Pair<String, String>>()
+
+    /**
+     * §scxml-6.4.1: register what RUNS every `<invoke type="<t>">` this
+     * machine executes.
+     *
+     * Separate from [registerEventProcessor] because they are separate
+     * contracts. Registering twice for one type replaces the handler.
+     */
+    fun registerInvoker(
+        processorType: String,
+        handler: (HostInvokeEvent) -> HostInvokeResponse?
+    ) {
+        hostInvokers[processorType] = handler
+    }
+
+    /** Whether an invoker is registered for [processorType]. */
+    fun hasInvoker(processorType: String): Boolean = hostInvokers.containsKey(processorType)
+
+    /**
+     * §scxml-6.4.1: start a host-run invocation, reporting whether anything
+     * ran.
+     *
+     * `false` means no invoker was registered, which the generated site turns
+     * into `error.execution` — an invoke nobody ran is the same fact whether
+     * the type was undeclared or the handler was never wired up.
+     *
+     * A started invocation is RECORDED here so the cancel path can find it:
+     * "did this one start?" is the question the exit chain has to answer, and
+     * answering it in each backend's template would be the same bookkeeping
+     * written once per language.
+     */
+    protected fun performHostInvoke(request: HostInvokeRequest): Boolean {
+        val handler = hostInvokers[request.processorType] ?: return false
+        val response = handler(HostInvokeEvent(start = request))
+        startedHostInvokes.add(request.processorType to request.invokeId)
+        val doneData = response?.doneData
+        if (doneData != null) {
+            // §scxml-6.4: a completion the host reported NOW, under the id the
+            // AUTHOR wrote a transition for.
+            sendByNameWithData("done.invoke.${request.invokeId}", doneData)
+        }
+        return true
+    }
+
+    /**
+     * §scxml-6.4: stop a host-run invocation whose state has exited.
+     *
+     * Unconditional from the emitted exit chain; the engine knows whether the
+     * invocation ever started and stays silent when it did not. Public because
+     * the exit chain is not the only way an invocation ends — a host that
+     * tears its own session down needs to say so.
+     */
+    fun cancelHostInvoke(processorType: String, invokeId: String): Boolean {
+        if (!startedHostInvokes.remove(processorType to invokeId)) {
+            return false
+        }
+        val handler = hostInvokers[processorType] ?: return false
+        handler(HostInvokeEvent(cancel = HostInvokeCancel(processorType, invokeId)))
+        return true
+    }
+
     /**
      * §scxml-6.2: dispatch a host-served `<send>` and raise, in order,
      * every event the handler says the act produced.

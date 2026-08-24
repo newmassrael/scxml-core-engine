@@ -103,7 +103,46 @@
 {% endif %}
 {% if has_invokes %}
 {% for inv in invoke_entries[state_id] %}
-{% if inv.is_unsupported is defined and inv.is_unsupported %}
+{% if inv.is_unsupported is defined and inv.is_unsupported and inv.host_served is defined and inv.host_served %}
+                // W3C SCXML 6.4.1: the host declared this `type`, so the
+                // deferred closure STARTS the invocation rather than refusing
+                // it. Deferred like its sibling so §scxml-6.4 ordering holds —
+                // an invoke runs at macrostep end — and so a state that exits
+                // first never starts it at all.
+                //
+                // The id handed to the host is the DOCUMENT's, not the
+                // per-instance one the pending queue carries:
+                // `done.invoke.<id>` is the name the author wrote a transition
+                // for, so it is the name the host must answer on.
+                run {
+                    val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
+                    deferInvoke(state, generatedInvokeId) {
+                        val hostInvokeParams = mutableMapOf<String, List<String>>()
+{% for param in inv.params %}
+{% if param.is_static_literal %}
+                        hostInvokeParams["{{ param.name | escape_kotlin }}"] =
+                            (hostInvokeParams["{{ param.name | escape_kotlin }}"] ?: emptyList()) + "{{ param.static_value | escape_kotlin }}"
+{% endif %}
+{% endfor %}
+                        val started = performHostInvoke(
+                            HostInvokeRequest(
+                                processorType = "{{ inv.invoke_type | escape_kotlin }}",
+                                invokeId = "{{ inv.invoke_id | escape_kotlin }}",
+                                src = "{{ inv.src | default('', true) | escape_kotlin }}",
+                                params = hostInvokeParams
+                            )
+                        )
+                        if (!started) {
+                            // W3C SCXML 6.4.1: declared but no invoker
+                            // registered. The document asked for a process to
+                            // be run and none was, which is the same fact as
+                            // an unsupported type — so the same event, rather
+                            // than a silence that reads as started.
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                        }
+                    }
+                }
+{% elif inv.is_unsupported is defined and inv.is_unsupported %}
                 // W3C SCXML 6.4.1: `type` names no processor this platform
                 // implements. The deferred closure runs at macrostep end and
                 // raises error.execution — no child is created, so nothing
@@ -421,7 +460,13 @@
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
 {% for inv in invoke_entries[state_id] %}
-{% if not (inv.is_unsupported is defined and inv.is_unsupported) %}
+{% if inv.is_unsupported is defined and inv.is_unsupported and inv.host_served is defined and inv.host_served %}
+                // W3C SCXML 6.4: the host's invocation ends with the state
+                // that started it. Unconditional here: the engine knows
+                // whether this one ever started and stays silent when it did
+                // not, so the emitted chain needs no bookkeeping of its own.
+                cancelHostInvoke("{{ inv.invoke_type | escape_kotlin }}", "{{ inv.invoke_id | escape_kotlin }}")
+{% elif not (inv.is_unsupported is defined and inv.is_unsupported) %}
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("{{ inv.invoke_id }}")
 {% endif %}

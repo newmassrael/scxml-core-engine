@@ -30,10 +30,18 @@ from __future__ import annotations
 
 import uuid
 from collections import deque
-from typing import Any, Callable, Dict, Generic, List, Optional, Set, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Optional, Set, Tuple, TypeVar
 
 from .event import EventMetadata, EventWithMetadata, is_error_event
-from .host_processor import HostSendHandler, HostSendRequest, HostSendResponse
+from .host_processor import (
+    HostInvokeCancel,
+    HostInvokeEvent,
+    HostInvokeHandler,
+    HostInvokeRequest,
+    HostSendHandler,
+    HostSendRequest,
+    HostSendResponse,
+)
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
 from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
@@ -260,6 +268,15 @@ class Engine(Generic[S, E]):
         # declared to this build. Keyed by the `type` string, which is what
         # a `<send>` names; see `host_processor.py`.
         self._host_processors: Dict[str, HostSendHandler] = {}
+        # §scxml-6.4.1 — what RUNS each `<invoke type>` the host declared. A
+        # second map rather than a second use of the one above, because
+        # delivering an event is not the same capability as running a
+        # process with a lifecycle; see `host_processor.py`'s invoker half.
+        self._host_invokers: Dict[str, HostInvokeHandler] = {}
+        # §scxml-6.4 — every host-run invocation started and not yet
+        # cancelled, so the emitted exit chain can be an unconditional call:
+        # the engine knows whether there is anything to cancel.
+        self._started_host_invokes: Set[Tuple[str, str]] = set()
         # §scxml-5.5 + 6.3.1 — donedata stashed when a top-level
         # `<final>` is entered. The invoking parent's `ScxmlInvoke`
         # reads this via `getattr(child, "done_data", None)` so it can
@@ -805,6 +822,78 @@ class Engine(Generic[S, E]):
                 sendid=request.send_id,
             )
         return replies
+
+    # ── Host-run `<invoke>` (§scxml-6.4.1) ─────────────────────
+
+    def register_invoker(
+        self, processor_type: str, handler: HostInvokeHandler
+    ) -> None:
+        """W3C SCXML 6.4.1 — register what RUNS every ``<invoke type="<t>">``
+        this machine executes.
+
+        Separate from `register_event_processor` because they are separate
+        contracts: a host that can deliver an event is not thereby able to
+        run a process with a lifecycle, and one registry would make
+        declaring either silently claim both.
+
+        Registering twice for one type replaces the handler, for the reason
+        the send half does."""
+        self._host_invokers[processor_type] = handler
+
+    def has_invoker(self, processor_type: str) -> bool:
+        """Whether an invoker is registered for `processor_type`."""
+        return processor_type in self._host_invokers
+
+    def perform_host_invoke(self, request: HostInvokeRequest) -> bool:
+        """W3C SCXML 6.4.1 — start a host-run invocation, reporting whether
+        anything ran.
+
+        `False` means no invoker was registered, which the generated site
+        turns into `error.execution` — an invoke nobody ran is the same fact
+        whether the type was undeclared or the handler was never wired up.
+
+        A started invocation is RECORDED here so the cancel path can find
+        it: "did this one start?" is the question the cancel path has to
+        answer, and answering it in each backend's template would be the
+        same bookkeeping written once per language.
+
+        W3C SCXML 6.4: a completion the host reports NOW rides back as
+        ``done.invoke.<id>``, under the id the AUTHOR wrote a transition
+        for. One it reports later arrives the same way, by raising the event
+        itself — the engine does not distinguish the two, and never
+        synthesises a completion the host did not report."""
+        handler = self._host_invokers.get(request.processor_type)
+        if handler is None:
+            return False
+        response = handler(HostInvokeEvent(start=request))
+        self._started_host_invokes.add((request.processor_type, request.invoke_id))
+        if response is not None and response.done_data is not None:
+            self.send_external_by_name(
+                f"done.invoke.{request.invoke_id}",
+                data=response.done_data,
+            )
+        return True
+
+    def cancel_host_invoke(self, processor_type: str, invoke_id: str) -> bool:
+        """W3C SCXML 6.4 — stop a host-run invocation whose state has exited.
+
+        Unconditional from the emitted exit chain; the engine knows whether
+        the invocation ever started and stays silent when it did not."""
+        key = (processor_type, invoke_id)
+        if key not in self._started_host_invokes:
+            return False
+        self._started_host_invokes.discard(key)
+        handler = self._host_invokers.get(processor_type)
+        if handler is None:
+            return False
+        handler(
+            HostInvokeEvent(
+                cancel=HostInvokeCancel(
+                    processor_type=processor_type, invoke_id=invoke_id
+                )
+            )
+        )
+        return True
 
     # ── <send> / <cancel> / scheduler API (§scxml-6.2) ─────────
 

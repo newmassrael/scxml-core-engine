@@ -288,6 +288,227 @@ static inline const sce_host_processor_entry_t *sce_host_registry_find(const sce
     return NULL;
 }
 
+/* ── §scxml-6.4.1: `<invoke>` the HOST runs ─────────────────────── */
+/*
+ * The clause leaves the invokable set to the platform in the same words
+ * §scxml-6.2.5 uses for `<send>`, so a host may implement its own `type`
+ * here too — but an invoke is not a send. It has a LIFETIME: it starts
+ * when the state is entered, it is cancelled if the state exits, and the
+ * document may be waiting on `done.invoke.<id>`. That is why the handler
+ * is told WHICH turn it is being called for, and why this is a second
+ * registry rather than a second use of the first: a host that can deliver
+ * an event is not thereby able to run a process it must also be able to
+ * stop.
+ *
+ * The C11 port of the invoker half in `sce_rust_runtime::host_processor`,
+ * `sce/include/core/HostProcessor.h`, `backends/go/runtime/host_processor.go`
+ * and `backends/python/runtime/sce_runtime/host_processor.py`. The shape
+ * differs in one way only, and it is the freestanding profile's: a tagged
+ * struct instead of a variant, because C has no sum type and a pointer
+ * pair would let a caller engage both arms.
+ */
+
+/** How many invoker types one machine may serve. */
+#ifndef SCE_MAX_HOST_INVOKERS
+#define SCE_MAX_HOST_INVOKERS 4
+#endif
+
+/** How many host-run invocations may be in flight at once. */
+#ifndef SCE_MAX_HOST_INVOCATIONS
+#define SCE_MAX_HOST_INVOCATIONS 4
+#endif
+
+/** Which turn of the lifecycle the handler is being called for. */
+typedef enum sce_host_invoke_phase_e {
+    /** §scxml-6.4: the state was entered and the macrostep has settled.
+        Begin the invoked process. */
+    SCE_HOST_INVOKE_START = 0,
+    /** §scxml-6.4: the state exited. Stop it.
+
+        Delivered only for an invocation that actually started: a state
+        that exits before the macrostep ends never runs its invoke, and
+        cancelling something that never began would have the host tearing
+        down state it never built. */
+    SCE_HOST_INVOKE_CANCEL = 1
+} sce_host_invoke_phase_t;
+
+/**
+ * One turn of a host-run invoke's lifecycle.
+ *
+ * Every field is what the document wrote. On a cancel only
+ * `processor_type` and `invoke_id` are meaningful — the rest is what the
+ * start carried and is not re-read, because a cancel names an invocation
+ * rather than describing one.
+ *
+ * Like the send request beside it, nothing here owns memory: a handler
+ * that needs a value after it returns copies it.
+ */
+typedef struct sce_host_invoke_event_s {
+    sce_host_invoke_phase_t phase;
+    /** The `type` this `<invoke>` named. */
+    const char *processor_type;
+    /** The invoke's id (§scxml-6.4.1), auto-derived when the author
+        declared none. This is the name the DOCUMENT waits on: a
+        completion is `done.invoke.<invoke_id>`, so a host that finishes
+        asynchronously must keep it. */
+    const char *invoke_id;
+    /** `<invoke src="...">`, empty when the document named none. SCE does
+        not interpret it — what a src means is the invoked processor's
+        business. */
+    const char *src;
+    /** Inline `<content>`, empty when the document carried none. */
+    const char *content;
+    /** `<param>` values in document order, repeats included. Shares the
+        send half's pair type: a name and a value is the same shape here,
+        and two structs would be two spellings of one fact. */
+    const sce_host_send_param_t *params;
+    int param_count;
+} sce_host_invoke_event_t;
+
+/**
+ * A host invoker's answer to a start.
+ *
+ * Read only for a start; an answer to a cancel is ignored, because there
+ * is nothing left for it to mean.
+ */
+typedef struct sce_host_invoke_response_s {
+    /** Whether `done_data` below carries a completion.
+
+        false is the ordinary case: the work outlives the call, and the
+        host raises `done.invoke.<id>` itself when it finishes. SCE does
+        not synthesise a completion the host did not report — an invoked
+        process that never terminates never fires `done.invoke`, which is
+        what §scxml-6.4 says. */
+    bool has_done_data;
+    /** Payload for an immediate `done.invoke.<invoke_id>`. Copied by the
+        engine before this struct goes out of scope. */
+    char done_data[SCE_MAX_DATA_LEN];
+} sce_host_invoke_response_t;
+
+/**
+ * What runs one declared invoke type.
+ *
+ * `user_data` is handed back unchanged — C's answer to the closure the
+ * other engines capture. `out` is zero-initialised by the caller; a
+ * handler with nothing to report leaves it alone.
+ */
+typedef void (*sce_host_invoke_handler_fn)(void *user_data, const sce_host_invoke_event_t *event,
+                                           sce_host_invoke_response_t *out);
+
+/** One registered invoker and the type it runs. */
+typedef struct sce_host_invoker_entry_s {
+    char type[SCE_MAX_ID_LEN];
+    sce_host_invoke_handler_fn handler;
+    void *user_data;
+} sce_host_invoker_entry_t;
+
+/**
+ * The set of invoke types a host has registered handlers for.
+ *
+ * Bounded like its send sibling and for the same reason: the freestanding
+ * profile has no allocator, so the ceiling is a build-time decision a
+ * deployment can raise (`-DSCE_MAX_HOST_INVOKERS=N`).
+ */
+typedef struct sce_host_invoker_registry_s {
+    sce_host_invoker_entry_t entries[SCE_MAX_HOST_INVOKERS];
+    int count;
+} sce_host_invoker_registry_t;
+
+/**
+ * Register `handler` for `type`, replacing any handler already there.
+ *
+ * Returns false when the registry is full or the type does not fit its
+ * slot, because a registration that did not happen must not read as one
+ * that did.
+ */
+static inline bool sce_host_invoker_register(sce_host_invoker_registry_t *registry, const char *type,
+                                             sce_host_invoke_handler_fn handler, void *user_data) {
+    int i;
+    sce_host_invoker_entry_t *slot;
+    if (registry == NULL || type == NULL || handler == NULL) {
+        return false;
+    }
+    if (strlen(type) >= (size_t)SCE_MAX_ID_LEN) {
+        return false;
+    }
+    for (i = 0; i < registry->count; i++) {
+        if (strcmp(registry->entries[i].type, type) == 0) {
+            registry->entries[i].handler = handler;
+            registry->entries[i].user_data = user_data;
+            return true;
+        }
+    }
+    if (registry->count >= (int)SCE_MAX_HOST_INVOKERS) {
+        return false;
+    }
+    slot = &registry->entries[registry->count];
+    sce_copy_bounded_id(slot->type, type);
+    slot->handler = handler;
+    slot->user_data = user_data;
+    registry->count++;
+    return true;
+}
+
+/** The entry running `type`, or NULL when nothing is registered. */
+static inline const sce_host_invoker_entry_t *sce_host_invoker_find(const sce_host_invoker_registry_t *registry,
+                                                                    const char *type) {
+    int i;
+    if (registry == NULL || type == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < registry->count; i++) {
+        if (strcmp(registry->entries[i].type, type) == 0) {
+            return &registry->entries[i];
+        }
+    }
+    return NULL;
+}
+
+/**
+ * Every host-run invocation started and not yet cancelled.
+ *
+ * Held by the generated machine but WALKED here, so "did this one start?"
+ * — the question the cancel path has to answer — is answered once rather
+ * than once per backend. Bounded for the reason the registries are.
+ */
+typedef struct sce_host_invocation_set_s {
+    char types[SCE_MAX_HOST_INVOCATIONS][SCE_MAX_ID_LEN];
+    char ids[SCE_MAX_HOST_INVOCATIONS][SCE_MAX_ID_LEN];
+    int count;
+} sce_host_invocation_set_t;
+
+/** Record that `(type, invoke_id)` started. Full is a silent no-op: the
+    ceiling is a deployment's to raise, and refusing the START would be a
+    worse answer than losing the cancel bookkeeping for one. */
+static inline void sce_host_invocation_mark(sce_host_invocation_set_t *set, const char *type, const char *invoke_id) {
+    if (set == NULL || set->count >= (int)SCE_MAX_HOST_INVOCATIONS) {
+        return;
+    }
+    sce_copy_bounded_id(set->types[set->count], type);
+    sce_copy_bounded_id(set->ids[set->count], invoke_id);
+    set->count++;
+}
+
+/** Remove `(type, invoke_id)` if present, reporting whether it was. */
+static inline bool sce_host_invocation_take(sce_host_invocation_set_t *set, const char *type, const char *invoke_id) {
+    int i;
+    int j;
+    if (set == NULL || type == NULL || invoke_id == NULL) {
+        return false;
+    }
+    for (i = 0; i < set->count; i++) {
+        if (strcmp(set->types[i], type) == 0 && strcmp(set->ids[i], invoke_id) == 0) {
+            for (j = i; j + 1 < set->count; j++) {
+                sce_copy_bounded_id(set->types[j], set->types[j + 1]);
+                sce_copy_bounded_id(set->ids[j], set->ids[j + 1]);
+            }
+            set->count--;
+            return true;
+        }
+    }
+    return false;
+}
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

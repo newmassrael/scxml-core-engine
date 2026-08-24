@@ -391,7 +391,21 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
                                   const sce_host_send_request_t *request);
 {% endif %}
 {% endif %}
-{% if model.needs_http_send or model.host_processor_types %}
+{% if model.host_invoker_types %}
+/* W3C SCXML 6.4.1: the host-invoke start site sits in `execute_pending_invokes`,
+   which this translation unit emits BEFORE the name→event mapping below. The
+   start site needs that mapping to turn a host-reported completion into
+   `done.invoke.<id>`, so it is forward-declared here — the same reason
+   `scheduled_push` above is. Measured: without it an invoker-only document
+   compiled with an implicit declaration and would have failed at link. */
+SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_from_name(const char *name, size_t len);
+{% endif %}
+{# §scxml-6.4.1 is in this guard for the reason §scxml-6.2.5 is: a host-run
+   invoke answers with a COMPLETION, and `done.invoke.<id>` is a name chosen
+   while the machine runs, so the same inverse mapping is what turns it into an
+   event. Measured: an invoker-only document compiled with an implicit
+   declaration of this function and would have failed at link. #}
+{% if model.needs_http_send or model.host_processor_types or model.host_invoker_types %}
 
 /* W3C SCXML C.2: standalone server's response carries the receiving
    event's name as a JSON string (`{"event":"<name>",...}`). The generated
@@ -2811,8 +2825,43 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
     {% for state_id, state in model.states | dictsort %}
     {% set has_scxml_invoke_exit = (state.invokes | scxml) | length > 0 %}
     {% set has_hybrid_invoke_exit = (state.invokes | hybrid) | length > 0 %}
-    {% if state.on_exit_blocks or has_scxml_invoke_exit or has_hybrid_invoke_exit %}
+    {# W3C SCXML 6.4: a host-run invoke joins this chain for its own reason —
+       its exit path tells the HOST to stop, which no other arm does. Named in
+       the guard rather than left to `unsupported`: a state whose only invoke
+       is host-served must still get a `case`, or the host is told to start and
+       never told to stop. The Rust and Go templates record the same
+       measurement. #}
+    {% set has_host_invoke_exit = (state.invokes | host_invoker) | length > 0 %}
+    {% if state.on_exit_blocks or has_scxml_invoke_exit or has_hybrid_invoke_exit or has_host_invoke_exit %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+        {% for invoke_info in state.invokes | host_invoker %}
+        /* W3C SCXML 6.4: the host's invocation ends with the state that
+           started it. `sce_host_invocation_take` answers whether this one ever
+           started, so the emitted chain needs no bookkeeping of its own — a
+           state that exits before its macrostep settles never started, and the
+           host is not told to tear down work it never began. */
+        {
+            const sce_host_invoker_entry_t *_host_cancel_entry =
+                sce_host_invoker_find(&sm->host_invokers, "{{ invoke_info.invoke_type | escape_c }}");
+            if (sce_host_invocation_take(&sm->started_host_invokes,
+                                         "{{ invoke_info.invoke_type | escape_c }}",
+                                         "{{ invoke_info.invoke_id | escape_c }}")
+                && _host_cancel_entry != NULL) {
+                sce_host_invoke_event_t _host_cancel;
+                sce_host_invoke_response_t _host_cancel_out;
+                memset(&_host_cancel, 0, sizeof(_host_cancel));
+                memset(&_host_cancel_out, 0, sizeof(_host_cancel_out));
+                _host_cancel.phase = SCE_HOST_INVOKE_CANCEL;
+                _host_cancel.processor_type = "{{ invoke_info.invoke_type | escape_c }}";
+                _host_cancel.invoke_id = "{{ invoke_info.invoke_id | escape_c }}";
+                _host_cancel.src = "";
+                _host_cancel.content = "";
+                _host_cancel.params = NULL;
+                _host_cancel.param_count = 0;
+                _host_cancel_entry->handler(_host_cancel_entry->user_data, &_host_cancel, &_host_cancel_out);
+            }
+        }
+        {% endfor %}
         {% for block in state.on_exit_blocks %}
         /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} —
            each block is an independent helper so a `return;` inside
@@ -5182,6 +5231,68 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_has_event_processor(const {{ cs
         return false;
     }
     return sce_host_registry_find(&sm->host_processors, processor_type) != NULL;
+}
+{% endif %}
+{% if model.host_invoker_types %}
+
+/* W3C SCXML 6.4.1: register what RUNS `processor_type`.
+
+   Separate from `_register_event_processor` because they are separate
+   contracts: a host that can deliver an event is not thereby able to run a
+   process with a lifetime.
+
+   Usable on a machine that is already initialised — unlike the send half,
+   whose first act can run during `_init`. An `<invoke>` never does: §scxml-6.4
+   runs it at the END of the entry macrostep, so a registration made after
+   `_init` and before the first `_step` still arrives in time. `_init_with_host_invokers`
+   exists anyway, for a host that wires both seams in one place. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_invoker({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                                                  sce_host_invoke_handler_fn handler, void *user_data) {
+    if (sm == NULL) {
+        return false;
+    }
+    return sce_host_invoker_register(&sm->host_invokers, processor_type, handler, user_data);
+}
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_has_invoker(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type) {
+    if (sm == NULL) {
+        return false;
+    }
+    return sce_host_invoker_find(&sm->host_invokers, processor_type) != NULL;
+}
+
+/* W3C SCXML 6.4: stop a host-run invocation from outside the exit chain.
+
+   Exposed because the exit chain is not the only way an invocation ends: a
+   host that tears its own session down needs to say so, and a test needs to
+   ask whether "did this one start?" is answered correctly. Returns whether a
+   cancel was delivered. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                                                    const char *invoke_id) {
+    const sce_host_invoker_entry_t *entry;
+    sce_host_invoke_event_t event;
+    sce_host_invoke_response_t out;
+    if (sm == NULL) {
+        return false;
+    }
+    if (!sce_host_invocation_take(&sm->started_host_invokes, processor_type, invoke_id)) {
+        return false;
+    }
+    entry = sce_host_invoker_find(&sm->host_invokers, processor_type);
+    if (entry == NULL) {
+        return false;
+    }
+    memset(&event, 0, sizeof(event));
+    memset(&out, 0, sizeof(out));
+    event.phase = SCE_HOST_INVOKE_CANCEL;
+    event.processor_type = processor_type;
+    event.invoke_id = invoke_id;
+    event.src = "";
+    event.content = "";
+    event.params = NULL;
+    event.param_count = 0;
+    entry->handler(entry->user_data, &event, &out);
+    return true;
 }
 {% endif %}
 

@@ -92,9 +92,10 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-# The Go half. Only the processor fixture: Go has a `<send>` registry and no
-# invoker one, so generating the invoker document here would meet the refusal
-# that is still correct for it.
+# The Go half. Both fixtures now: the Go runtime carries a `<send>` registry
+# (§scxml-6.2.5) and an `<invoke>` one (§scxml-6.4.1), so neither document meets
+# a refusal here any more. The invoker tree lands in its own directory for the
+# reason stated below.
 #
 # The `// From:` rewrite is the same one every `regen_*_go.sh` does — the
 # tracked artefact has to point at the canonical fixture rather than at the
@@ -123,7 +124,21 @@ cp "$GO_TMP"/*_sm.go "$GO_GENERATED_DIR/"
 # is two package names in one directory.
 GO_DELAYED_DIR="backends/go/tests/integration/statechart_delayed_host_send"
 GO_DELAYED_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP"' EXIT
+GO_INVOKER_DIR="backends/go/tests/integration/statechart_host_invoker"
+GO_INVOKER_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP"' EXIT
+
+# §scxml-6.4.1: the invoke half, in its own Go directory for the same
+# package-name reason.
+"$CODEGEN" generate "$INVOKER_FIXTURE" -l go -o "$GO_INVOKER_TMP/" --host-invoker "$HOST_INVOKER"
+
+mkdir -p "$GO_INVOKER_DIR"
+find "$GO_INVOKER_DIR" -maxdepth 1 -name '*_sm.go' -delete
+for src in "$GO_INVOKER_TMP"/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${GO_INVOKER_TMP}/|// From: $(dirname "$INVOKER_FIXTURE")/|g" "$src"
+done
+cp "$GO_INVOKER_TMP"/*_sm.go "$GO_INVOKER_DIR/"
 
 "$CODEGEN" generate "$DELAYED_FIXTURE" -l go -o "$GO_DELAYED_TMP/" --host-processor "$HOST_PROCESSOR"
 
@@ -143,3 +158,5 @@ echo "Regenerated: $GO_GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $GO_DELAYED_DIR/ from"
 echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "Regenerated: $GO_INVOKER_DIR/ from"
+echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"

@@ -55,9 +55,10 @@
 #include "sce/sample.h"
 {% endif %}
 
-{% if model.host_processor_types %}
-/* §scxml-6.2.5: host-served Event I/O Processor types + the bounded
-   registry this machine dispatches through
+{% if model.host_processor_types or model.host_invoker_types %}
+/* §scxml-6.2.5 + §scxml-6.4.1: host-served Event I/O Processor types and
+   host-run `<invoke>` types + the bounded registries this machine
+   dispatches through
    (backends/c/runtime/include/sce/host_processor.h). Header-only, the
    same INTERFACE-only contract `sce/invoke.h` carries; the per-machine
    dispatch is emitted into the generated `_sm.c`. cpp's
@@ -547,6 +548,15 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        uses must still offer the registration or the host cannot compile
        against its own contract. */
     sce_host_processor_registry_t host_processors;
+{% endif %}
+{% if model.host_invoker_types %}
+    /* W3C SCXML 6.4.1: what RUNS each `<invoke type>` this host declared, and
+       which of those invocations are in flight. Two members rather than one
+       because they answer two questions: "who runs this type" and "did this
+       one start" — the second is what the exit chain has to know before it
+       tells a host to stop something. */
+    sce_host_invoker_registry_t host_invokers;
+    sce_host_invocation_set_t started_host_invokes;
     {% endif %}
 } {{ csym_prefix }}{{ model.name }}_t;
 
@@ -619,6 +629,26 @@ void {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ cs
    Returns false when the registry is full or the type does not fit its
    slot, because a registration that did not happen must not read as one
    that did. */
+{% if model.host_invoker_types %}
+/* W3C SCXML 6.4.1: register what RUNS `processor_type`, and ask what is
+   registered. Separate from the `<send>` half because they are separate
+   contracts — delivering an event is not the same capability as running a
+   process with a lifetime.
+
+   Unlike the send half these are safe after `_init`: §scxml-6.4 runs an
+   `<invoke>` at the END of the entry macrostep, so a registration made before
+   the first `_step` still arrives in time. */
+bool {{ csym_prefix }}{{ model.name }}_register_invoker({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                  sce_host_invoke_handler_fn handler, void *user_data);
+bool {{ csym_prefix }}{{ model.name }}_has_invoker(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type);
+
+/* W3C SCXML 6.4: stop a host-run invocation from outside the exit chain, for a
+   host that tears its own session down. Returns whether a cancel was
+   delivered — false when this invocation never started, which is the question
+   the exit chain also asks. */
+bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                  const char *invoke_id);
+{% endif %}
 bool {{ csym_prefix }}{{ model.name }}_register_event_processor({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                                                 sce_host_send_handler_fn handler, void *user_data);
 
