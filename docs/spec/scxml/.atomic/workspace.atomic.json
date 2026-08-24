@@ -2266,6 +2266,21 @@
           "file": "sce/include/core/ConfigurationHelper.h",
           "symbol": "ConfigurationRejection",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "EnterAt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "ConfigurationRejection",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "enterAt",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2662,6 +2677,46 @@
           "file": "sce/include/core/ConfigurationHelper.h",
           "symbol": "ConfigurationRejection",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ValidateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ConfigurationCompoundChildCount",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ConfigurationCurrentNotAtomic",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "ConfigurationRejection",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "validateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "activeConfiguration",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "nameOfState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "stateOfName",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3003,6 +3058,36 @@
           "file": "sce/include/core/ConfigurationHelper.h",
           "symbol": "ConfigurationRejection",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ValidateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ConfigurationParallelChildCount",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ConfigurationParallelRegionMissing",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "EnterAt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "ConfigurationRejection",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "validateConfiguration",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -6171,6 +6256,21 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "enterAt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "EnterAt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "declareDatamodel",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "enterAt",
           "kind": "references"
         }

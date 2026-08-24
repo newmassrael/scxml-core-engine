@@ -30,8 +30,20 @@ from __future__ import annotations
 
 import uuid
 from collections import deque
-from typing import Any, Callable, Dict, Generic, List, Optional, Set, Tuple, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TypeVar,
+)
 
+from .configuration import ConfigurationRejection, validate_configuration
 from .event import EventMetadata, EventWithMetadata, is_error_event
 from .host_processor import (
     HostInvokeCancel,
@@ -334,6 +346,91 @@ class Engine(Generic[S, E]):
         # taken off the external queue — so an autoforward child is live for
         # every event `<onentry>` queued on the way in.
         self._run_main_event_loop()
+
+    def enter_at(
+        self, configuration: Sequence[S], current: S
+    ) -> ConfigurationRejection:
+        """W3C SCXML 3.2 — enter a configuration this document already
+        describes, without re-running the `<onentry>` actions an earlier run
+        already ran.
+
+        **What it is for.** A host that persisted where a machine was and is
+        bringing it back in a new process. `initialize` replays the document
+        from its initial state, which runs every `<onentry>` on the way in — a
+        resumed session would send its greeting twice, re-arm timers, and
+        re-issue acts whose recipients already received them.
+
+        **What it takes, and why two arguments.** Exactly what the two readers
+        on this engine publish: `active_configuration` and `current_state`.
+        Handing back both is not redundancy — for a machine with `<parallel>`
+        states the configuration does not determine which leaf a run was at.
+
+        This engine, unlike the C++/Rust/Go ones, does not STORE a current
+        state: `current_state` answers the document-order-earliest member of
+        `active_leaves`, and the leaves are rebuilt here in document order the
+        same way `_enter_initial_path` leaves them. So `current` is VALIDATED
+        rather than stored — it pins that the leaf the host recorded is an
+        atomic member of the set it recorded beside it. That is the honest
+        difference, and it is the same one a run of this engine already shows:
+        a parallel machine that entered through `initialize` reports the
+        earliest leaf too.
+
+        **What it refuses.** Every set that is not a configuration of THIS
+        document — see `validate_configuration` for the rules and
+        `ConfigurationRejection` for what each refusal names. Validation runs
+        before any mutation, so a refused call leaves the engine exactly as it
+        was; entering "near" the requested configuration is the one outcome this
+        door must never produce, because a host has no way to detect it
+        afterwards.
+
+        **What it does not do.** No `<onentry>` and no `<onexit>`: no state is
+        entered or left. No macrostep — `initialize` settles the machine before
+        returning, this does not, because the configuration handed in was
+        already a settled one; the host drives on with `send_event` as it
+        otherwise would. No datamodel restore: W3C SCXML 5.3 declaration still
+        runs, so the variables exist with their document defaults and a host can
+        then put its saved values back through the script engine.
+
+        The Python twin of `Engine::enter_at` (Rust), `enterAt` (C++) and
+        `EnterAt` (Go).
+
+        Returns `ConfigurationRejection.NONE` on success; the rule that was
+        broken otherwise, with the engine untouched.
+        """
+        # Before anything is touched: a rejection must not half-enter.
+        verdict = validate_configuration(self._policy, configuration, current)
+        if verdict is not ConfigurationRejection.NONE:
+            return verdict
+
+        # The same three steps `initialize` takes before it walks the entry
+        # path, in the same order and for the same reasons — a resumed machine
+        # reads `_sessionid`, answers `In()`, and finds its `<data>` declared.
+        # Only the walk and the macrostep loop are skipped.
+        self._script_engine.setup_system_variables(
+            self._session_id,
+            self._policy.machine_name(),
+            io_processors.build(self._session_id, self.basic_http_access_uri),
+        )
+        self._script_engine.set_state_query_callback(
+            self._session_id,
+            lambda state_id: self._policy.is_state_active(state_id, self),
+        )
+        self._policy.initialize_datamodel(self)
+
+        # W3C SCXML 3.3: the leaves of the restored set are its members that
+        # hold no child in it. Derived rather than taken from the caller,
+        # because the set is what a host records and the leaves are a fact
+        # about it — asking for both would let the two disagree.
+        members = list(configuration)
+        self._active_leaves = [
+            state
+            for state in members
+            if not any(self._policy.get_parent(other) == state for other in members)
+        ]
+        self._active_leaves.sort(key=self._policy.get_document_order)
+
+        self._is_running = True
+        return ConfigurationRejection.NONE
 
     def stop(self) -> None:
         self._is_running = False

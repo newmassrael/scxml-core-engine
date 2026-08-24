@@ -65,6 +65,45 @@ func (s {{ machine_name }}State) String() string {
 	return "unknown"
 }
 
+// {{ machine_name }}StateFromName is the read half of the pair above — a state
+// id back into the state it names (W3C SCXML 3.3).
+//
+// A host that persists where a machine was has to write it down as TEXT: the
+// constants above are a build artefact of one binary, and the process that
+// resumes is a different one. String publishes the name and this reads it back,
+// which is what lets a journal survive its own record and reach
+// sce.Engine.EnterAt.
+//
+// The second return is false for a name this document does not declare. A name
+// guessed at rather than refused is how a restore reaches a configuration
+// nobody recorded — and the refusal is what makes a typo in a journal a
+// reported failure instead of a machine quietly somewhere else.
+//
+// Emitted from the same loop over the document's states as String, so the two
+// age together.
+func {{ machine_name }}StateFromName(name string) ({{ machine_name }}State, bool) {
+	switch name {
+{% for state_id in model.states | sort %}
+	case "{{ state_id }}":
+		return {{ machine_name }}State{{ state_id | to_state_variant }}, true
+{% endfor %}
+	}
+	var zero {{ machine_name }}State
+	return zero, false
+}
+
+// {{ machine_name }}AllStates is every state this document declares, in the
+// order the constants above are issued.
+//
+// Emitted from the same loop, so a walk over it is a walk over the document
+// rather than over a list somebody maintained beside it — a test that spells
+// its own list goes on passing when the document grows a state.
+var {{ machine_name }}AllStates = []{{ machine_name }}State{
+{% for state_id in model.states | sort %}
+	{{ machine_name }}State{{ state_id | to_state_variant }},
+{% endfor %}
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -421,6 +460,13 @@ func (p *{{ machine_name }}Policy) GetStateName(state {{ machine_name }}State) s
 	return state.String()
 }
 
+// GetStateFromName reads a state id back into the state it names (W3C SCXML 3.3).
+// The reverse of GetStateName, and what turns a host's recorded configuration
+// back into the argument sce.Engine.EnterAt takes.
+func (p *{{ machine_name }}Policy) GetStateFromName(name string) ({{ machine_name }}State, bool) {
+	return {{ machine_name }}StateFromName(name)
+}
+
 // NullEvent returns the sentinel for eventless transition dispatch (W3C SCXML 3.13).
 func (p *{{ machine_name }}Policy) NullEvent() {{ machine_name }}Event {
 	return {{ machine_name }}EventNull
@@ -480,6 +526,15 @@ func (p *{{ machine_name }}Policy) SetLastTransitionSourceState(state {{ machine
 // GetActiveStates returns the active state configuration (W3C SCXML 3.4).
 func (p *{{ machine_name }}Policy) GetActiveStates() []{{ machine_name }}State {
 	return p.activeStates
+}
+
+// SetActiveStates hands this machine an active set whole (W3C SCXML 3.4).
+// The write half of GetActiveStates: entry and exit grow the set one state at a
+// time as they walk, and sce.Engine.EnterAt hands back a configuration an
+// earlier run already settled on. Copied rather than aliased so a caller's slice
+// cannot go on changing this machine's configuration behind it.
+func (p *{{ machine_name }}Policy) SetActiveStates(states []{{ machine_name }}State) {
+	p.activeStates = append(p.activeStates[:0:0], states...)
 }
 {% endif %}
 
@@ -544,6 +599,11 @@ func (p *{{ machine_name }}Policy) HasAutoforward() bool { return false }
 {% if not model.has_parallel_states and not model.uses_in_predicate %}
 func (p *{{ machine_name }}Policy) HasActiveStates() bool { return false }
 func (p *{{ machine_name }}Policy) GetActiveStates() []{{ machine_name }}State { return nil }
+// W3C SCXML 3.4: this machine keeps no active set — its configuration is the
+// parent walk from the current state — so there is nothing for a restore to
+// hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
+// which is false above; the method exists because the interface is one contract.
+func (p *{{ machine_name }}Policy) SetActiveStates(_ []{{ machine_name }}State) {}
 {% else %}
 func (p *{{ machine_name }}Policy) HasActiveStates() bool { return true }
 {% endif %}

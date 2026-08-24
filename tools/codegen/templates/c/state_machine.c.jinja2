@@ -2096,6 +2096,66 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.na
     return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ model.initial | upper | replace('-', '_') | replace('.', '_') }};
 }
 
+/* W3C SCXML 3.3: the document's own name for a state — see the header for why
+   a host that persists a configuration needs one. */
+SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_state_name({{ csym_prefix }}{{ model.name }}_state_t s) {
+    switch (s) {
+    {% for state_id in model.states | sort %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        return "{{ state_id }}";
+    {% endfor %}
+    default:
+        return "";
+    }
+}
+
+/* W3C SCXML 3.3: the read half of the pair above, emitted from the same loop
+   over the document's states so the two age together. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_state_from_name(const char *name, {{ csym_prefix }}{{ model.name }}_state_t *out) {
+    if (name == NULL || out == NULL) {
+        return false;
+    }
+    {% for state_id in model.states | sort %}
+    if (strcmp(name, "{{ state_id }}") == 0) {
+        *out = {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }};
+        return true;
+    }
+    {% endfor %}
+    return false;
+}
+
+SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_configuration_rejection_text(
+    {{ csym_prefix }}{{ model.name }}_configuration_rejection_t r) {
+    switch (r) {
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE:
+        return "accepted";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_EMPTY:
+        return "the configuration is empty; a machine is never in nothing";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_DUPLICATE:
+        return "a state appears twice";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ANCESTOR_MISSING:
+        return "a state is present whose parent is not, so the set is not ancestor-closed";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ROOT_COUNT:
+        return "a configuration closes on exactly one root (W3C SCXML 3.2)";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_COMPOUND_CHILD_COUNT:
+        return "a compound state holds exactly one active child (W3C SCXML 3.3)";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_REGION_MISSING:
+        return "a <parallel> holds every region and one is missing (W3C SCXML 3.4)";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_CHILD_COUNT:
+        return "a <parallel> holds every region and nothing else (W3C SCXML 3.4)";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ATOMIC_HAS_CHILDREN:
+        return "an atomic state has a child in the set";
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_UNKNOWN_STATE:
+        return "a value outside this document's state enumeration";
+{% if has_native_actions %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_HOST_ACTIONS_INCOMPLETE:
+        return "the host does not perform every act this document declares (W3C SCXML G.7)";
+{% endif %}
+    default:
+        return "unknown";
+    }
+}
+
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_final_state({{ csym_prefix }}{{ model.name }}_state_t s) {
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
@@ -2205,6 +2265,106 @@ SCE_SM_FN static SCE_C_UNUSED bool is_descendant_of({{ csym_prefix }}{{ model.na
         }
         cur = parent;
     }
+}
+
+/* W3C SCXML 3.2 / 3.3 / 3.4 — is this set of states a CONFIGURATION of the
+   document? The rules in one place, reading the same static hierarchy the
+   entry walk above reads. See the header for what each refusal names and for
+   why this asks nothing about a current state.
+
+   Placed here rather than beside `_state_name`: it reads `state_get_parent`,
+   the two shape predicates and the bitmap helpers, and C wants them declared
+   first. */
+SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_prefix }}{{ model.name }}_validate_configuration(
+    const {{ csym_prefix }}{{ model.name }}_state_t *configuration, size_t count) {
+    if (configuration == NULL || count == 0u) {
+        return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_EMPTY;
+    }
+
+    /* Before any hierarchy question: a value this document does not have
+       cannot be asked one. The five other backends get this from their type
+       systems — a member of their configuration is a generated enum or sealed
+       object — so here it is the first rule instead. */
+    for (size_t i = 0u; i < count; ++i) {
+        if ((unsigned)configuration[i] >= (unsigned){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT) {
+            return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_UNKNOWN_STATE;
+        }
+    }
+
+    for (size_t i = 0u; i < count; ++i) {
+        for (size_t j = 0u; j < i; ++j) {
+            if (configuration[j] == configuration[i]) {
+                return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_DUPLICATE;
+            }
+        }
+    }
+
+    /* Every member is in range and named once, so the set is a bitmap now and
+       membership is one test rather than a walk. */
+    uint32_t held = 0u;
+    for (size_t i = 0u; i < count; ++i) {
+        held |= state_bit(configuration[i]);
+    }
+
+    size_t roots = 0u;
+    for (size_t i = 0u; i < count; ++i) {
+        bool has_parent = false;
+        {{ csym_prefix }}{{ model.name }}_state_t parent = state_get_parent(configuration[i], &has_parent);
+        if (!has_parent) {
+            ++roots;
+        } else if (!config_in(held, parent)) {
+            return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ANCESTOR_MISSING;
+        }
+    }
+    if (roots != 1u) {
+        return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ROOT_COUNT;
+    }
+
+    for (size_t i = 0u; i < count; ++i) {
+        const {{ csym_prefix }}{{ model.name }}_state_t s = configuration[i];
+        size_t children = 0u;
+        for (size_t j = 0u; j < count; ++j) {
+            bool has_parent = false;
+            {{ csym_prefix }}{{ model.name }}_state_t parent = state_get_parent(configuration[j], &has_parent);
+            if (has_parent && parent == s) {
+                ++children;
+            }
+        }
+
+        if (state_is_parallel(s)) {
+            /* W3C SCXML 3.4: EVERY region, because they are "simultaneously
+               active when the parent element is active". The regions are the
+               document's children of `s` — the same enumeration
+               `enter_parallel_regions` walks. */
+            size_t regions = 0u;
+            for (uint32_t r = 0u; r < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++r) {
+                bool region_has_parent = false;
+                {{ csym_prefix }}{{ model.name }}_state_t region_parent =
+                    state_get_parent(({{ csym_prefix }}{{ model.name }}_state_t)r, &region_has_parent);
+                if (!region_has_parent || region_parent != s) {
+                    continue;
+                }
+                ++regions;
+                if (!config_in(held, ({{ csym_prefix }}{{ model.name }}_state_t)r)) {
+                    return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_REGION_MISSING;
+                }
+            }
+            if (children != regions) {
+                return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_CHILD_COUNT;
+            }
+            continue;
+        }
+
+        if (state_is_compound(s)) {
+            if (children != 1u) {
+                return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_COMPOUND_CHILD_COUNT;
+            }
+        } else if (children != 0u) {
+            return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ATOMIC_HAS_CHILDREN;
+        }
+    }
+
+    return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE;
 }
 
 /* W3C SCXML 3.2: leaf extraction. Returns the unique active state with
@@ -5099,7 +5259,18 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
    initialiser below carries the same verdict outward — `void` for every other
    document shape, byte-identical to the pre-feature emit. #}
 {% set init_rc = 'bool' if has_native_actions else 'void' %}
-SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
+{# The construction half of `_init`, shared with `_init_at`.
+
+   Everything a session needs before it is anywhere: the host's wiring, the
+   clock, the session identity, the datamodel. What it deliberately does NOT do
+   is enter — `_init` walks the initial configuration afterwards and `_init_at`
+   sets the one a host recorded. Splitting them is what lets the resume door
+   exist at all on a backend where construction and entry are one call.
+
+   Returns false only when the host's act table is incomplete; that check stays
+   FIRST, before the memset, so a refused call leaves the caller's storage
+   exactly as it was — the same rule the configuration door follows. #}
+SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
                                                        const sce_host_processor_registry_t *host_processors{% endif %}{% if has_native_actions %},
@@ -5146,11 +5317,6 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
        afterwards would leave the queue holding deadlines from two time bases
        that do not compare. */
     sm->clock = clock;
-    /* §scxml-3.13: entering the initial configuration is one turn, and the
-       `<onentry>` handlers it runs arm their `<send delay>`s against one
-       instant — see `sched_now_ms` for what reading the clock per `<send>`
-       did to two of them. */
-    bool _turn_opened = begin_turn(sm);
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm);
 {% if model.needs_script_engine %}
@@ -5178,9 +5344,35 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
     sm->is_running = true;
     {% if model.needs_script_engine %}
     /* W3C SCXML 5.10: Open Lua engine and seed datamodel before any
-       <onentry> body runs (those bodies may reference datamodel vars). */
+       <onentry> body runs (those bodies may reference datamodel vars).
+       `_init_at` reaches the same line for the same reason: a `cond` or an
+       `assign` evaluated after a resume would otherwise reference variables
+       that were never declared. */
 {{ se.lua_init_engine() }}
     {% endif %}
+    return true;
+}
+
+SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
+                                                       sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
+                                                       const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+                                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if has_native_actions %},
+                                                       const {{ native_actions_interface }} *actions{% endif %}) {
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if has_native_actions %}, actions{% endif %})) {
+{% if has_native_actions %}
+        return false;
+{% else %}
+        return;
+{% endif %}
+    }
+{% if model.needs_event_scheduler %}
+    /* §scxml-3.13: entering the initial configuration is one turn, and the
+       `<onentry>` handlers it runs arm their `<send delay>`s against one
+       instant — see `sched_now_ms` for what reading the clock per `<send>`
+       did to two of them. `_init_at` opens no turn: it runs no `<onentry>`,
+       so there is no instant's worth of executable content to hold together. */
+    bool _turn_opened = begin_turn(sm);
+{% endif %}
     /* W3C SCXML 3.2: Configuration entry via the unified
        enter_state_recursive walk — sets the initial root and every
        ancestor / region-child / initial-descendant bit, runs onentry in
@@ -5206,6 +5398,47 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
 {% if has_native_actions %}
     return true;
 {% endif %}
+}
+
+/* W3C SCXML 3.2 — the resume door. See the header for what it is for, what it
+   refuses, and why it is an `_init` variant rather than a call on a live
+   machine. */
+SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_prefix }}{{ model.name }}_init_at(
+    {{ csym_prefix }}{{ model.name }}_t *sm,
+    const {{ csym_prefix }}{{ model.name }}_state_t *configuration, size_t count{% if model.needs_event_scheduler %},
+    sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
+    const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+    const sce_host_processor_registry_t *host_processors{% endif %}{% if has_native_actions %},
+    const {{ native_actions_interface }} *actions{% endif %}) {
+    /* Before anything is touched — the memset included: a rejection must not
+       half-enter, and on this backend "half" would mean a caller's storage
+       zeroed for a set the document never describes. */
+    const {{ csym_prefix }}{{ model.name }}_configuration_rejection_t verdict =
+        {{ csym_prefix }}{{ model.name }}_validate_configuration(configuration, count);
+    if (verdict != {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE) {
+        return verdict;
+    }
+
+{% if has_native_actions %}
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}, actions)) {
+        return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_HOST_ACTIONS_INCOMPLETE;
+    }
+{% else %}
+    /* Cannot fail for this document: the act table is the only thing
+       construction refuses, and this document declares no acts. */
+    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %});
+{% endif %}
+
+    /* W3C SCXML 3.2: the configuration IS the bitmap on this backend, so the
+       restore is the set of bits the host recorded — no entry walk, and so no
+       `<onentry>`. `_init_construct` has already memset it to zero, which is
+       what makes this an assignment of the whole configuration rather than a
+       merge with whatever was there. */
+    for (size_t i = 0u; i < count; ++i) {
+        sm->active |= state_bit(configuration[i]);
+    }
+
+    return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE;
 }
 
 {% if has_native_actions %}

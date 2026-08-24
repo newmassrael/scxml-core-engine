@@ -18,6 +18,14 @@
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
+    // W3C SCXML 5.3: the declaration hook `enterAt` reaches. Every other caller
+    // arrives through a guard, an assign or a script block, all of which run
+    // `ensureScriptEngine()` on their own way in; a resume runs none of them,
+    // and a host putting saved values back needs the variables to exist first.
+    override fun declareDatamodel() {
+        ensureScriptEngine()
+    }
+
     // W3C SCXML B.1: Lazy script engine initialization
     private fun ensureScriptEngine() {
         if (scriptEngineInitialized) return
