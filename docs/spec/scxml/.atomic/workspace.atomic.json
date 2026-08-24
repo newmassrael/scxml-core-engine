@@ -2717,6 +2717,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "stateOfName",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "enter_at",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
