@@ -1106,8 +1106,42 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     // Exit parallel state and all its regions
                     exitState(currentState);
 
-                    // Enter external target state
-                    enterState(externalTransitionTarget);
+                    // §scxml-D-addAncestorStatesToEnter: a transition whose domain
+                    // lies above the `<parallel>` can still TARGET a state inside
+                    // it -- an external transition written on a region root, or one
+                    // crossing from one region to another. The parallel is then
+                    // re-entered, and the entry set is the target's own path plus
+                    // the DEFAULT entry of every other region.
+                    //
+                    // Entering the target on its own, which is what stood here,
+                    // left the machine holding a single deep state with none of its
+                    // ancestors and none of the sibling regions: measured
+                    // 2026-08-25 as the configuration `[restarting]`, where the
+                    // spec-conforming answer is `[run, drive, restarting, watch,
+                    // alive]`.
+                    std::string regionRootOnTargetPath;
+                    if (auto *targetNode = model_->findStateById(externalTransitionTarget)) {
+                        for (IStateNode *node = targetNode; node != nullptr; node = node->getParent()) {
+                            if (node->getParent() && node->getParent()->getId() == currentState) {
+                                regionRootOnTargetPath = node->getId();
+                                break;
+                            }
+                        }
+                    }
+
+                    if (regionRootOnTargetPath.empty()) {
+                        // Target is outside the parallel state entirely.
+                        enterState(externalTransitionTarget);
+                    } else {
+                        // Re-enter the parallel state, defaulting every region the
+                        // target's path does not descend into...
+                        enterState(currentState, regionRootOnTargetPath);
+                        // ...then descend that one region to the target itself.
+                        if (hierarchyManager_) {
+                            hierarchyManager_->enterStateWithAncestors(externalTransitionTarget,
+                                                                       model_->findStateById(currentState));
+                        }
+                    }
 
                     anyTransitionExecuted = true;
                     stats_.totalTransitions++;

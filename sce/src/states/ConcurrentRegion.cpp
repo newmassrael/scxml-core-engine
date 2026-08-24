@@ -39,6 +39,26 @@ std::shared_ptr<IStateNode> findStateInRegion(const std::shared_ptr<IStateNode> 
     return nullptr;
 }
 
+/// §scxml-D-isDescendant: STRICTLY below `ancestor`.
+///
+/// A state is not its own descendant, which is what keeps `findLCCA` from
+/// collapsing a transition's domain onto a target that happens to be an
+/// ancestor of the source.
+bool containsProperDescendant(const IStateNode *ancestor, const std::string &stateId) {
+    if (!ancestor || ancestor->getId() == stateId) {
+        return false;
+    }
+    for (const auto &child : ancestor->getChildren()) {
+        if (!child) {
+            continue;
+        }
+        if (child->getId() == stateId || containsProperDescendant(child.get(), stateId)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 ConcurrentRegion::ConcurrentRegion(const std::string &id, std::shared_ptr<IStateNode> rootState,
@@ -261,39 +281,45 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                                   checkStatePtr->getId(), checkStatePtr->getId(), targetState, transitionEvent,
                                   isInternal, hasActions);
 
-                    // §scxml-3.13: Check if transition exits the parallel state
-                    // External: transition target is OUTSIDE the parallel state (e.g., p0s3 -> s1)
-                    // Internal: transition target is INSIDE the parallel state (e.g., p0s2 -> p0s1)
+                    // §scxml-D-computeExitSet: which active states this transition
+                    // exits follows from its DOMAIN, and nothing else.
+                    //
+                    // What stood here asked a different question -- "is the target
+                    // inside this <parallel>?" -- and answered "internal" whenever
+                    // it was. That reading has no domain in it: an external
+                    // transition written on a REGION ROOT keeps its target inside
+                    // the parallel and still has the DOCUMENT ROOT as its domain,
+                    // because §scxml-D-findLCCA filters the candidate ancestors
+                    // with `isCompoundStateOrScxmlElement` and a <parallel> is
+                    // neither. Measured 2026-08-25: the region kept its old leaf
+                    // active alongside the new one, and the sibling region's
+                    // transition on the same event was never preempted.
                     IStateNode *parallelStatePtr = rootState_->getParent();
-                    bool isExternalTransition = true;  // Default to external for safety
 
-                    if (parallelStatePtr) {
-                        // W3C SCXML: Check if target is a descendant of ANY region in the parallel state
-                        // Parallel state children = regions (p0s1, p0s2, p0s3, p0s4)
-                        const auto &parallelChildren = parallelStatePtr->getChildren();
-                        for (const auto &regionRoot : parallelChildren) {
-                            if (regionRoot && isDescendantOf(regionRoot, targetState)) {
-                                // Target is within this parallel state's regions -> internal transition
-                                isExternalTransition = false;
-                                SCE_LOG_DEBUG("ConcurrentRegion: Target '{}' is within parallel state '{}' -> internal "
-                                              "transition",
-                                              targetState, parallelStatePtr->getId());
-                                break;
-                            }
-                        }
+                    // §scxml-D-computeExitSet: only a transition WITH a target
+                    // contributes to the exit set -- the appendix guards the whole
+                    // computation with `if t.target`. A targetless transition runs
+                    // its content and exits nothing at all.
+                    //
+                    // This engine spells a targetless transition as source ->
+                    // source, so the domain rule below would otherwise read it as
+                    // a real self-transition and exit everything down to the
+                    // domain. The old exit-set code hid that by accident: an LCA
+                    // of a state with itself is the state, leaving the set empty.
+                    auto exitSet = targets.empty() ? std::vector<std::string>{}
+                                                   : computeExitSet(checkStatePtr, targetState, isInternal);
 
-                        if (isExternalTransition) {
-                            SCE_LOG_DEBUG(
-                                "ConcurrentRegion: Target '{}' is outside parallel state '{}' -> external transition",
-                                targetState, parallelStatePtr->getId());
-                        }
-                    }
+                    // "External" here means what the microstep below needs to know:
+                    // the <parallel> itself is in the exit set, so it exits and the
+                    // target is re-entered through a fresh entry path. That is
+                    // exactly the case the domain lies above the <parallel>.
+                    const bool isExternalTransition =
+                        parallelStatePtr &&
+                        std::find(exitSet.begin(), exitSet.end(), parallelStatePtr->getId()) != exitSet.end();
 
-                    if (isExternalTransition) {
-                        SCE_LOG_DEBUG("ConcurrentRegion: Transition target '{}' is outside region '{}' - marking as "
-                                      "external for conflict resolution",
-                                      targetState, id_);
-                    }
+                    SCE_LOG_DEBUG("ConcurrentRegion: Transition {} -> {} exits {} states, parallel '{}' exits: {}",
+                                  checkStatePtr->getId(), targetState, exitSet.size(),
+                                  parallelStatePtr ? parallelStatePtr->getId() : std::string{}, isExternalTransition);
 
                     // Create transition descriptor for conflict resolution
                     TransitionDescriptorString descriptor;
@@ -304,10 +330,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                     descriptor.hasActions = hasActions;
                     descriptor.isInternal = isInternal;
                     descriptor.isExternal = isExternalTransition;
-
-                    // Compute exit set (states to be exited)
-                    // W3C SCXML: Exit set is all states from source up to (but not including) LCA with target
-                    descriptor.exitSet = computeExitSet(checkStatePtr->getId(), targetState);
+                    descriptor.exitSet = std::move(exitSet);
 
                     SCE_LOG_DEBUG(
                         "ConcurrentRegion: Transition descriptor: {} -> {} (exitSet size: {}, transitionIndex: "
@@ -593,137 +616,85 @@ void ConcurrentRegion::updateCurrentState() {
     SCE_LOG_DEBUG("Region {} current state: {}", id_, currentState_);
 }
 
-std::vector<std::string> ConcurrentRegion::computeExitSet(const std::string &source, const std::string &target) const {
+IStateNode *ConcurrentRegion::computeTransitionDomain(IStateNode *sourceNode, const std::string &target,
+                                                      bool isInternal) const {
+    if (!sourceNode) {
+        return nullptr;
+    }
+
+    // §scxml-D-getTransitionDomain: an internal transition whose source is a
+    // compound state and whose targets are all proper descendants of it has the
+    // SOURCE as its domain -- the source itself never exits, so the other
+    // regions of an enclosing <parallel> are untouched.
+    if (isInternal && sourceNode->getType() == Type::COMPOUND && containsProperDescendant(sourceNode, target)) {
+        return sourceNode;
+    }
+
+    // §scxml-D-findLCCA: the proper ancestors of the source, filtered by
+    // `isCompoundStateOrScxmlElement`, first one containing every target.
+    //
+    // A <parallel> answers neither predicate, so it is skipped -- which is the
+    // entire difference between this and a plain lowest-common-ancestor, and it
+    // only ever shows up when a <parallel> sits between the source and the
+    // first compound <state> above it. That is precisely a transition written
+    // on a REGION ROOT, and a transition crossing from one region to another.
+    for (IStateNode *ancestor = sourceNode->getParent(); ancestor != nullptr; ancestor = ancestor->getParent()) {
+        if (ancestor->getType() != Type::COMPOUND) {
+            continue;
+        }
+        if (containsProperDescendant(ancestor, target)) {
+            return ancestor;
+        }
+    }
+
+    // Out of ancestors: the domain is the <scxml> element, of which every
+    // active state is a descendant.
+    return nullptr;
+}
+
+std::vector<std::string> ConcurrentRegion::computeExitSet(IStateNode *sourceNode, const std::string &target,
+                                                          bool isInternal) const {
     std::vector<std::string> exitSet;
 
-    // W3C SCXML Appendix D: Compute exit set for transition
-    // Exit set = states from source up to (but not including) LCA with target
-
-    // Helper lambda to find state node by ID within a subtree
-    std::function<std::shared_ptr<IStateNode>(const std::shared_ptr<IStateNode> &, const std::string &)> findNode;
-    findNode = [&findNode](const std::shared_ptr<IStateNode> &node,
-                           const std::string &id) -> std::shared_ptr<IStateNode> {
-        if (!node) {
-            return nullptr;
-        }
-        if (node->getId() == id) {
-            return node;
-        }
-        for (const auto &child : node->getChildren()) {
-            if (auto found = findNode(child, id)) {
-                return found;
-            }
-        }
-        return nullptr;
-    };
-
-    // Helper lambda to search across all sibling regions (within parallel state)
-    auto findInParallelState = [&](const std::string &stateId) -> std::shared_ptr<IStateNode> {
-        IStateNode *parallelStatePtr = rootState_->getParent();
-        if (!parallelStatePtr) {
-            return nullptr;
-        }
-
-        // Search in all children (regions) of the parallel state
-        const auto &parallelChildren = parallelStatePtr->getChildren();
-        for (const auto &regionRoot : parallelChildren) {
-            if (regionRoot) {
-                if (auto found = findNode(regionRoot, stateId)) {
-                    return found;
-                }
-            }
-        }
-        return nullptr;
-    };
-
-    // Try to find target in current region first
-    auto targetNode = findNode(rootState_, target);
-    bool isCrossRegion = false;
-
-    // If not found in current region, check sibling regions
-    if (!targetNode) {
-        targetNode = findInParallelState(target);
-        if (targetNode) {
-            isCrossRegion = true;  // Target is in sibling region
-        }
-    }
-
-    // Build path from source to root
-    std::vector<std::string> sourcePath;
-    auto sourceNode = findNode(rootState_, source);
-    while (sourceNode) {
-        sourcePath.push_back(sourceNode->getId());
-        IStateNode *parent = sourceNode->getParent();
-        sourceNode = parent ? findNode(rootState_, parent->getId()) : nullptr;
-    }
-
-    // Calculate exitSet based on transition type
-    if (!targetNode) {
-        // External transition: target is outside parallel state entirely
-        // W3C SCXML: Exit all states from source to region root, include parallel state
-        for (const auto &state : sourcePath) {
-            exitSet.push_back(state);
-            if (state == rootState_->getId()) {
-                // Add parallel state to exitSet for external transitions
-                IStateNode *parallelStatePtr = rootState_->getParent();
-                if (parallelStatePtr) {
-                    exitSet.push_back(parallelStatePtr->getId());
-                }
-                break;
-            }
-        }
-    } else if (isCrossRegion) {
-        // Cross-region transition: LCA is the parallel state
-        // W3C SCXML: Exit all states from source up to (but not including) parallel state
-        // This means: exit states in source region up to and including region root
-        for (const auto &state : sourcePath) {
-            exitSet.push_back(state);
-            if (state == rootState_->getId()) {
-                // Reached region root, stop here (don't include parallel state)
-                break;
-            }
-        }
-    } else {
-        // Within-region transition: normal LCA calculation
-        // Build path from target to root
-        std::vector<std::string> targetPath;
-        auto targetNodeCopy = targetNode;
-        while (targetNodeCopy) {
-            targetPath.push_back(targetNodeCopy->getId());
-            IStateNode *parent = targetNodeCopy->getParent();
-            targetNodeCopy = parent ? findNode(rootState_, parent->getId()) : nullptr;
-        }
-
-        // Find LCA (first common ancestor)
-        std::string lca;
-        for (const auto &sourceState : sourcePath) {
-            for (const auto &targetState : targetPath) {
-                if (sourceState == targetState) {
-                    lca = sourceState;
-                    break;
-                }
-            }
-            if (!lca.empty()) {
-                break;
-            }
-        }
-
-        // Exit set = states from source up to (but not including) LCA
-        for (const auto &state : sourcePath) {
-            if (state == lca) {
-                break;  // Don't include LCA
-            }
-            exitSet.push_back(state);
-        }
-
-        SCE_LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} (within-region, LCA: {}, exitSet size: {})", source,
-                      target, lca, exitSet.size());
+    if (!rootState_) {
         return exitSet;
     }
 
-    const char *transitionType = !targetNode ? "external" : (isCrossRegion ? "cross-region" : "within-region");
-    SCE_LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} ({}, exitSet size: {})", source, target, transitionType,
-                  exitSet.size());
+    IStateNode *domain = computeTransitionDomain(sourceNode, target, isInternal);
+
+    // §scxml-D-computeExitSet: the ACTIVE proper descendants of the domain.
+    //
+    // The walk starts at the region's active leaf, not at the transition's
+    // source: a transition written on a region root has active descendants
+    // BELOW its source, and reading the source's own chain -- which is what
+    // stood here -- left them active beside the newly entered state, a
+    // configuration in which two children of one compound state are active at
+    // once.
+    IStateNode *leaf = findStateInRegion(rootState_, currentState_).get();
+    if (!leaf) {
+        leaf = rootState_.get();
+    }
+
+    for (IStateNode *node = leaf; node != nullptr; node = node->getParent()) {
+        if (node == domain) {
+            break;  // The domain itself is not exited.
+        }
+        exitSet.push_back(node->getId());
+
+        if (node == rootState_.get()) {
+            // The walk left the region, so the domain is above the enclosing
+            // <parallel> -- a <parallel> is never a domain itself -- and the
+            // <parallel> is a proper descendant of the domain too.
+            if (IStateNode *parallelStatePtr = rootState_->getParent()) {
+                exitSet.push_back(parallelStatePtr->getId());
+            }
+            break;
+        }
+    }
+
+    SCE_LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} (internal: {}, domain: {}, exitSet size: {})",
+                  sourceNode ? sourceNode->getId() : std::string{}, target, isInternal,
+                  domain ? domain->getId() : std::string{"<scxml>"}, exitSet.size());
     return exitSet;
 }
 
