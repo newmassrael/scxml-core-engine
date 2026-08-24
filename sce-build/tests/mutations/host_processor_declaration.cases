@@ -194,10 +194,29 @@ PY
 # document seeing the act performed AND refused — the send half's
 # `a served type also takes the unsupported arm` in reverse.
 
+# ⚠ TWO edits, and the second is the one that does anything. Same defect as
+# the Go sibling in `host_processor_dispatch_go.cases`, found by sweeping for
+# the shape after that one was repaired on 2026-08-24.
+#
+# The refusal block's GUARD and its LOOP read the same filter, so widening the
+# guard alone opens a block whose loop then iterates the same empty list: the
+# emitted machine is byte-identical and no oracle can fail. Measured, not
+# reasoned — generating the invoker fixture with the guard widened differed
+# from the baseline in the `template-hash` header and in NOTHING else (0 body
+# lines).
+#
+# This one was never even reported: its job was cancelled in both CI runs
+# inspected that day, so the SURVIVED it would have produced was never seen.
+#
+# Widening the loop too is what actually puts a host-served invoke through the
+# refusal body, which is the string `a_declared_invoker_...` asserts is absent.
 mutation_case "a declared invoke also takes the refusal arm" <<'PY'
 edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
      "{% if state.invokes | unsupported_refused %}",
      "{% if state.invokes | unsupported_refused or state.invokes | host_invoker %}")
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     "{% for invoke_info in state.invokes | unsupported_refused %}",
+     "{% for invoke_info in (state.invokes | unsupported_refused) + (state.invokes | host_invoker) %}")
 PY
 
 # ── `check` stops being able to predict the build ───────────────────
