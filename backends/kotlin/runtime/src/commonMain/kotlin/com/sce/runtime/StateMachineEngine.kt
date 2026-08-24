@@ -232,6 +232,57 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     protected fun isStateActive(stateId: String): Boolean = stateId in activeStateIds
 
+    /**
+     * §scxml-3.3: every state this machine is currently in.
+     *
+     * The host-facing half of [activeStateIds], which is `protected` because
+     * the microstep loop is its only writer. A host that means to persist where
+     * a machine was has to be able to READ where it is, and until this existed
+     * it could not: [currentState] answers one leaf, and one leaf is not a
+     * configuration of a document with `<parallel>` regions.
+     *
+     * Pair it with [enterAt], which takes exactly this and a current state
+     * back. Journal it through [nameOfState] — the objects here are a build
+     * artefact of one process, and the process that resumes is a different one.
+     */
+    val activeConfiguration: Set<S>
+        get() = activeStateIds.mapNotNull { resolveState(it) }.toSet()
+
+    /**
+     * §scxml-3.3: the document's own name for [state] — what a host writes down.
+     *
+     * The host-facing half of [stateIdOf], which generated code overrides and
+     * which is `protected`.
+     */
+    fun nameOfState(state: S): String = stateIdOf(state)
+
+    /**
+     * §scxml-3.3: the state [name] names, or `null` when this document declares
+     * no such state.
+     *
+     * The host-facing half of [resolveState], and the read side of the pair
+     * [nameOfState] writes. Together they are what lets a journal survive its
+     * own record: a host records names, and this turns them back into the
+     * arguments [enterAt] asks for.
+     *
+     * `null` rather than a guess. A name guessed at is how a restore reaches a
+     * configuration nobody recorded, and the refusal is what makes a typo in a
+     * journal a reported failure instead of a machine quietly somewhere else.
+     */
+    fun stateOfName(name: String): S? = resolveState(name)
+
+    /**
+     * §scxml-5.3: declare this document's datamodel now.
+     *
+     * Generated code overrides this for a machine that has one; the default is
+     * a machine with no `<datamodel>` to declare. [enterAt] calls it for the
+     * reason [initialize] reaches the same code: a `cond` or an `assign`
+     * evaluated after the door returns would otherwise reference variables that
+     * were never declared, and a host restoring saved values wants somewhere to
+     * put them.
+     */
+    protected open fun declareDatamodel() {}
+
     // --- Observable State ---
 
     private val _currentState: MutableStateFlow<S> by lazy {
@@ -1346,6 +1397,96 @@ abstract class StateMachineEngine<S : State, E : Event>(
         } finally {
             endTurn(opened)
         }
+    }
+
+    /**
+     * §scxml-3.2: enter a configuration this document already describes,
+     * without re-running the `onEntry` actions an earlier run already ran.
+     *
+     * ## What it is for
+     *
+     * A host that persisted where a machine was and is bringing it back in a
+     * new process. [initialize] replays the document from its initial state,
+     * which runs every `onEntry` on the way in — a resumed session would send
+     * its greeting twice, re-arm timers, and re-issue acts whose recipients
+     * already received them.
+     *
+     * ## What it takes, and why two arguments
+     *
+     * Exactly what the two readers on this engine publish:
+     * [activeConfiguration] and [currentState]. Handing back both is not
+     * redundancy — for a machine with `<parallel>` states the configuration
+     * does not determine the current state. The current state is the leaf the
+     * engine descended to, so which region it sits in is a fact about the
+     * transition history rather than about the configuration, and a set alone
+     * cannot recover it. This engine STORES the leaf it is given, so a host
+     * that journalled [currentState] gets that same leaf back rather than
+     * whichever one document order happens to end on.
+     *
+     * ## What it refuses
+     *
+     * Every set that is not a configuration of THIS document — see
+     * [validateConfiguration] for the rules and [ConfigurationRejection] for
+     * what each refusal names. Validation runs before any mutation, so a
+     * refused call leaves the engine exactly as it was; entering "near" the
+     * requested configuration is the one outcome this door must never produce,
+     * because a host has no way to detect it afterwards.
+     *
+     * ## What it does not do
+     *
+     *  - No `onEntry`, and no `onExit`: no state is entered or left.
+     *  - No macrostep. [initialize] settles the machine before returning; this
+     *    does not, because the configuration handed in was already a settled
+     *    one — running the loop here could take an eventless transition the
+     *    earlier run had no reason to take, and fire the sends on the way. The
+     *    host drives on with [processEventSync] or [tick] as it otherwise
+     *    would.
+     *  - No datamodel restore. §scxml-5.3 declaration still runs through
+     *    [declareDatamodel], so the variables exist with their document
+     *    defaults and a host can then put its saved values back through the
+     *    script engine — the engine does not persist datamodel state and does
+     *    not pretend to.
+     *
+     * The Kotlin twin of `Engine::enter_at` (Rust), `enterAt` (C++), `EnterAt`
+     * (Go) and `enter_at` (Python).
+     *
+     * @return [ConfigurationRejection.NONE] on success; the rule that was
+     *         broken otherwise, with the engine untouched.
+     */
+    fun enterAt(configuration: Collection<S>, current: S): ConfigurationRejection {
+        // Before anything is touched: a rejection must not half-enter.
+        val verdict = validateConfiguration(
+            configuration.toList(),
+            current,
+            ::parentOf,
+            ::isAtomicState,
+            ::isParallelState,
+            ::getParallelRegions,
+        )
+        if (verdict != ConfigurationRejection.NONE) {
+            return verdict
+        }
+
+        // The synchronous door, like [initialize] — a host that resumes drives
+        // the machine on with [processEventSync] / [tick], and both read this.
+        syncMode = true
+
+        // §scxml-5.3: the datamodel is declared before anything can read it.
+        // This is not a state entry action — `<datamodel>` holds `<data>`, not
+        // executable content — so it runs here for the same reason it runs on
+        // the way into [initialize].
+        declareDatamodel()
+
+        activeStateIds.clear()
+        for (state in configuration) {
+            val id = stateIdOf(state)
+            if (id.isNotEmpty()) {
+                activeStateIds.add(id)
+            }
+        }
+        _currentState.value = current
+
+        return ConfigurationRejection.NONE
     }
 
     /**

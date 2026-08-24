@@ -99,6 +99,30 @@ class StatePolicy(ABC, Generic[S, E]):
         """Human-readable name of `state`."""
 
     @abstractmethod
+    def get_state_from_name(self, name: str) -> Optional[S]:
+        """Reverse lookup: the state `name` names, or `None` when this document
+        declares no such state.
+
+        Required (no default) for the reason `get_state_name` is: the mapping is
+        structural, and a default could only ever answer `None`. A policy that
+        had not emitted the table would then report every recorded configuration
+        as unknown — which a caller reads as "this run has no history" rather
+        than as a policy that is incomplete.
+
+        This is what lets a configuration cross a process. A host can only
+        record state NAMES — a journal, a wire, a file — while `Engine.enter_at`
+        takes states. Without the reverse, a recorded configuration cannot be
+        turned back into the argument that door asks for and resuming degrades
+        to replaying from the initial state. A consumer-side table would age
+        silently the moment the document gained a state; only the generator
+        writes one that ages with the document.
+
+        The round trip is an identity: `get_state_from_name(get_state_name(s))`
+        is `s` for every state of the document, and a name the document does not
+        carry is `None` rather than a guess.
+        """
+
+    @abstractmethod
     def get_event_name(self, event: E) -> str:
         """Human-readable name of `event`."""
 

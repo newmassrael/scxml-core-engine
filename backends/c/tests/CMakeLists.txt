@@ -1369,6 +1369,43 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.2: the resume seam — what `_init_at` accepts and what it
+    # refuses. Not a fixture stem: it drives the two machines above rather than
+    # adding a document of its own, because the claim is about a runtime door
+    # and not about a topology. Both machines are here on purpose — the
+    # parallel one is where the region rules and the datamodel declaration are,
+    # the native-action one is where this backend's own extra refusal is (a
+    # host that does not perform every act the document declares, which the
+    # five other backends get from their type systems).
+    #
+    # Linked WITH the script engine, unlike `sce_c_integration_native_action`:
+    # this target holds both machines and one of them has a `lua_State`. The
+    # "no lua" proof stays where it was, on the target that holds only the
+    # native-action machine.
+    add_executable(sce_c_integration_configuration_entry
+        integration/test_configuration_entry.c
+        ${INTEGRATION_C_TEST_parallel_regions_take_own_transitions_SOURCES}
+        ${INTEGRATION_C_TEST_statechart_native_action_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_configuration_entry PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_configuration_entry PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_configuration_entry PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_configuration_entry
+        COMMAND sce_c_integration_configuration_entry
+    )
+    set_tests_properties(c11_integration_configuration_entry PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     add_executable(sce_c_integration_host_processor
         integration/test_host_processor.c
         ${INTEGRATION_C_TEST_statechart_host_processor_SOURCES}

@@ -10,6 +10,7 @@ through the C++ Interpreter via pybind11, not through this AOT runtime.
 """
 
 from . import scripting
+from .configuration import ConfigurationRejection, validate_configuration
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
 from .host_processor import (
@@ -43,6 +44,7 @@ from .scripting import (
 
 __all__ = [
     "ChildSession",
+    "ConfigurationRejection",
     "Engine",
     "Event",
     "EventMetadata",
@@ -73,6 +75,7 @@ __all__ = [
     "published_origin",
     "session_id_from_scxml_location",
     "scripting",
+    "validate_configuration",
 ]
 
 __version__ = "0.1.0"

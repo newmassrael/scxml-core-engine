@@ -91,6 +91,25 @@ _STATE_NAMES: Dict[{{ machine_name }}State, str] = {
 }
 
 
+# W3C SCXML 3.3: the read half of the table above — a state id back into the
+# state it names.
+#
+# A host that persists where a machine was has to write it down as TEXT: the
+# enum above is a build artefact of one process, and the process that resumes is
+# a different one. `_STATE_NAMES` publishes the name and this reads it back,
+# which is what lets a journal survive its own record and reach
+# `Engine.enter_at`.
+#
+# Emitted from the same loop over the document's states, so the two age
+# together. A name this document does not declare is absent here rather than
+# guessed at — a guess is how a restore reaches a configuration nobody recorded.
+_STATE_BY_NAME: Dict[str, {{ machine_name }}State] = {
+{% for state_id in model.states.keys() | sort %}
+    "{{ state_id }}": {{ machine_name }}State.{{ state_id | to_python_const }},
+{% endfor %}
+}
+
+
 # ======================================================================
 # Event enum (W3C SCXML 3.12)
 # ======================================================================
@@ -485,6 +504,12 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% endif %}
     def get_state_name(self, state: {{ machine_name }}State) -> str:
         return _STATE_NAMES[state]
+
+    def get_state_from_name(self, name: str) -> Optional[{{ machine_name }}State]:
+        # W3C SCXML 3.3 — the reverse of `get_state_name`, and what turns a
+        # host's recorded configuration back into the argument
+        # `Engine.enter_at` takes.
+        return _STATE_BY_NAME.get(name)
 
     def get_event_name(self, event: {{ machine_name }}Event) -> str:
         return _EVENT_NAMES[event]

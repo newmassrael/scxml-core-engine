@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 4cbf0ce468f2db0011b4fa010e6c117357964548e492f95e76a21755c70778e3
+// template-hash: 6d29ccd65cc69c7036210e21d4c9d2a46b7717262dc7e045f86a45620f80383f
 // generated-at: 0
 
 
@@ -63,6 +63,47 @@ func (s AutoforwardInternalQueueState) String() string {
 		return "phase"
 	}
 	return "unknown"
+}
+
+// AutoforwardInternalQueueStateFromName is the read half of the pair above — a state
+// id back into the state it names (W3C SCXML 3.3).
+//
+// A host that persists where a machine was has to write it down as TEXT: the
+// constants above are a build artefact of one binary, and the process that
+// resumes is a different one. String publishes the name and this reads it back,
+// which is what lets a journal survive its own record and reach
+// sce.Engine.EnterAt.
+//
+// The second return is false for a name this document does not declare. A name
+// guessed at rather than refused is how a restore reaches a configuration
+// nobody recorded — and the refusal is what makes a typo in a journal a
+// reported failure instead of a machine quietly somewhere else.
+//
+// Emitted from the same loop over the document's states as String, so the two
+// age together.
+func AutoforwardInternalQueueStateFromName(name string) (AutoforwardInternalQueueState, bool) {
+	switch name {
+	case "fail":
+		return AutoforwardInternalQueueStateFail, true
+	case "pass":
+		return AutoforwardInternalQueueStatePass, true
+	case "phase":
+		return AutoforwardInternalQueueStatePhase, true
+	}
+	var zero AutoforwardInternalQueueState
+	return zero, false
+}
+
+// AutoforwardInternalQueueAllStates is every state this document declares, in the
+// order the constants above are issued.
+//
+// Emitted from the same loop, so a walk over it is a walk over the document
+// rather than over a list somebody maintained beside it — a test that spells
+// its own list goes on passing when the document grows a state.
+var AutoforwardInternalQueueAllStates = []AutoforwardInternalQueueState{
+	AutoforwardInternalQueueStateFail,
+	AutoforwardInternalQueueStatePass,
+	AutoforwardInternalQueueStatePhase,
 }
 
 // ======================================================================
@@ -405,6 +446,13 @@ func (p *AutoforwardInternalQueuePolicy) GetStateName(state AutoforwardInternalQ
 	return state.String()
 }
 
+// GetStateFromName reads a state id back into the state it names (W3C SCXML 3.3).
+// The reverse of GetStateName, and what turns a host's recorded configuration
+// back into the argument sce.Engine.EnterAt takes.
+func (p *AutoforwardInternalQueuePolicy) GetStateFromName(name string) (AutoforwardInternalQueueState, bool) {
+	return AutoforwardInternalQueueStateFromName(name)
+}
+
 // NullEvent returns the sentinel for eventless transition dispatch (W3C SCXML 3.13).
 func (p *AutoforwardInternalQueuePolicy) NullEvent() AutoforwardInternalQueueEvent {
 	return AutoforwardInternalQueueEventNull
@@ -483,6 +531,11 @@ func (p *AutoforwardInternalQueuePolicy) HasFinalize() bool { return false }
 func (p *AutoforwardInternalQueuePolicy) HasAutoforward() bool { return true }
 func (p *AutoforwardInternalQueuePolicy) HasActiveStates() bool { return false }
 func (p *AutoforwardInternalQueuePolicy) GetActiveStates() []AutoforwardInternalQueueState { return nil }
+// W3C SCXML 3.4: this machine keeps no active set — its configuration is the
+// parent walk from the current state — so there is nothing for a restore to
+// hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
+// which is false above; the method exists because the interface is one contract.
+func (p *AutoforwardInternalQueuePolicy) SetActiveStates(_ []AutoforwardInternalQueueState) {}
 func (p *AutoforwardInternalQueuePolicy) HasExternalEventFlag() bool { return false }
 func (p *AutoforwardInternalQueuePolicy) SetNextEventIsExternal(_ bool) {}
 // GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).

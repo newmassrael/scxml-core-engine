@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: 4cbf0ce468f2db0011b4fa010e6c117357964548e492f95e76a21755c70778e3
+// template-hash: 6d29ccd65cc69c7036210e21d4c9d2a46b7717262dc7e045f86a45620f80383f
 // generated-at: 0
 
 
@@ -69,6 +69,53 @@ func (s SessionIdsAreDistinctState) String() string {
 		return "waiting"
 	}
 	return "unknown"
+}
+
+// SessionIdsAreDistinctStateFromName is the read half of the pair above — a state
+// id back into the state it names (W3C SCXML 3.3).
+//
+// A host that persists where a machine was has to write it down as TEXT: the
+// constants above are a build artefact of one binary, and the process that
+// resumes is a different one. String publishes the name and this reads it back,
+// which is what lets a journal survive its own record and reach
+// sce.Engine.EnterAt.
+//
+// The second return is false for a name this document does not declare. A name
+// guessed at rather than refused is how a restore reaches a configuration
+// nobody recorded — and the refusal is what makes a typo in a journal a
+// reported failure instead of a machine quietly somewhere else.
+//
+// Emitted from the same loop over the document's states as String, so the two
+// age together.
+func SessionIdsAreDistinctStateFromName(name string) (SessionIdsAreDistinctState, bool) {
+	switch name {
+	case "fail":
+		return SessionIdsAreDistinctStateFail, true
+	case "one_seen":
+		return SessionIdsAreDistinctStateOneSeen, true
+	case "pass":
+		return SessionIdsAreDistinctStatePass, true
+	case "phase":
+		return SessionIdsAreDistinctStatePhase, true
+	case "waiting":
+		return SessionIdsAreDistinctStateWaiting, true
+	}
+	var zero SessionIdsAreDistinctState
+	return zero, false
+}
+
+// SessionIdsAreDistinctAllStates is every state this document declares, in the
+// order the constants above are issued.
+//
+// Emitted from the same loop, so a walk over it is a walk over the document
+// rather than over a list somebody maintained beside it — a test that spells
+// its own list goes on passing when the document grows a state.
+var SessionIdsAreDistinctAllStates = []SessionIdsAreDistinctState{
+	SessionIdsAreDistinctStateFail,
+	SessionIdsAreDistinctStateOneSeen,
+	SessionIdsAreDistinctStatePass,
+	SessionIdsAreDistinctStatePhase,
+	SessionIdsAreDistinctStateWaiting,
 }
 
 // ======================================================================
@@ -702,6 +749,13 @@ func (p *SessionIdsAreDistinctPolicy) GetStateName(state SessionIdsAreDistinctSt
 	return state.String()
 }
 
+// GetStateFromName reads a state id back into the state it names (W3C SCXML 3.3).
+// The reverse of GetStateName, and what turns a host's recorded configuration
+// back into the argument sce.Engine.EnterAt takes.
+func (p *SessionIdsAreDistinctPolicy) GetStateFromName(name string) (SessionIdsAreDistinctState, bool) {
+	return SessionIdsAreDistinctStateFromName(name)
+}
+
 // NullEvent returns the sentinel for eventless transition dispatch (W3C SCXML 3.13).
 func (p *SessionIdsAreDistinctPolicy) NullEvent() SessionIdsAreDistinctEvent {
 	return SessionIdsAreDistinctEventNull
@@ -788,6 +842,11 @@ func (p *SessionIdsAreDistinctPolicy) HasFinalize() bool { return false }
 func (p *SessionIdsAreDistinctPolicy) HasAutoforward() bool { return false }
 func (p *SessionIdsAreDistinctPolicy) HasActiveStates() bool { return false }
 func (p *SessionIdsAreDistinctPolicy) GetActiveStates() []SessionIdsAreDistinctState { return nil }
+// W3C SCXML 3.4: this machine keeps no active set — its configuration is the
+// parent walk from the current state — so there is nothing for a restore to
+// hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
+// which is false above; the method exists because the interface is one contract.
+func (p *SessionIdsAreDistinctPolicy) SetActiveStates(_ []SessionIdsAreDistinctState) {}
 func (p *SessionIdsAreDistinctPolicy) HasExternalEventFlag() bool { return true }
 // GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
 func (p *SessionIdsAreDistinctPolicy) GetInitialOrHistoryChild(state SessionIdsAreDistinctState) SessionIdsAreDistinctState {
