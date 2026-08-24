@@ -24,7 +24,7 @@
 // `workflow_trigger_coverage`'s gate list and runs from the same
 // unfiltered workflow.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -1121,17 +1121,13 @@ fn gate_workflow_pairs() -> Vec<(String, String)> {
         .collect()
 }
 
-/// Does this workflow really ask `actions/checkout` for submodules?
+/// Does this YAML really ask `actions/checkout` for submodules?
 ///
 /// Comment lines are stripped FIRST, and that is the whole subtlety:
 /// `tree-hygiene.yml` explains its own exemption in the words it is exempt
 /// from — "No `submodules: recursive`: the gate skips third_party/" — so a
 /// substring search reads that comment as the opposite of what it says.
-fn workflow_asks_for_submodules(name: &str) -> bool {
-    let path = repo_root().join(".github/workflows").join(name);
-    let Ok(text) = fs::read_to_string(&path) else {
-        return false;
-    };
+fn asks_for_submodules(text: &str) -> bool {
     text.lines().any(|line| {
         let stripped = line.trim();
         if stripped.starts_with('#') {
@@ -1142,11 +1138,114 @@ fn workflow_asks_for_submodules(name: &str) -> bool {
     })
 }
 
+/// `(job name, job body)` for each job in a workflow.
+///
+/// A job is a two-space key under `jobs:`, which is the whole grammar this
+/// needs: the answer being derived is one step's `with:` value. Deliberately
+/// the same reading the preflight does, re-implemented rather than shelled
+/// out to — this file's job is to answer independently and compare.
+fn jobs_of(text: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut name: Option<String> = None;
+    let mut body: Vec<&str> = Vec::new();
+    let mut in_jobs = false;
+    for line in text.lines() {
+        if line.starts_with("jobs:") {
+            in_jobs = true;
+            continue;
+        }
+        if !in_jobs {
+            continue;
+        }
+        let is_job_header = line.starts_with("  ")
+            && !line.starts_with("   ")
+            && line.trim_end().ends_with(':')
+            && line
+                .trim()
+                .trim_end_matches(':')
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            && !line.trim().trim_end_matches(':').is_empty();
+        if is_job_header {
+            if let Some(previous) = name.take() {
+                out.push((previous, body.join("\n")));
+            }
+            name = Some(line.trim().trim_end_matches(':').to_string());
+            body = Vec::new();
+            continue;
+        }
+        body.push(line);
+    }
+    if let Some(previous) = name {
+        out.push((previous, body.join("\n")));
+    }
+    out
+}
+
+/// Does this job body invoke `scripts/gate <slug>`?
+///
+/// The trailing boundary is load-bearing: without it `w3c-python` matches the
+/// job running `scripts/gate w3c-python-bindings`, and those two jobs check
+/// out differently — which is exactly the confusion this axis exists to
+/// resolve.
+fn job_runs_slug(body: &str, slug: &str) -> bool {
+    let needle = format!("gate {slug}");
+    let mut from = 0usize;
+    while let Some(at) = body[from..].find(&needle) {
+        let start = from + at;
+        let end = start + needle.len();
+        let after_ok = body[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'));
+        let before_ok = start == 0
+            || !body[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if after_ok && before_ok {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
 /// The same answer, re-derived here from the same two inputs.
+///
+/// Per JOB, not per file. `actions/checkout` is a step, so a multi-job
+/// workflow answers this question several times: `w3c-tests.yml` has seven
+/// jobs and three of them say `submodules: false` outright. Measured
+/// 2026-08-24, the round after the preflight landed, a file-level answer
+/// refused six gates INSIDE CI — in the very jobs that had been running them
+/// green without submodules all along. A slug no job names falls back to the
+/// file, because "cannot tell" should refuse.
 fn expected_gates_needing_submodules() -> BTreeSet<String> {
-    gate_workflow_pairs()
+    let mut by_slug: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (slug, wf) in gate_workflow_pairs() {
+        by_slug.entry(slug).or_default().push(wf);
+    }
+    by_slug
         .into_iter()
-        .filter(|(_, wf)| workflow_asks_for_submodules(wf))
+        .filter(|(slug, workflows)| {
+            let texts: Vec<String> = workflows
+                .iter()
+                .filter_map(|wf| {
+                    fs::read_to_string(repo_root().join(".github/workflows").join(wf)).ok()
+                })
+                .collect();
+            let running: Vec<String> = texts
+                .iter()
+                .flat_map(|text| jobs_of(text))
+                .filter(|(_, body)| job_runs_slug(body, slug))
+                .map(|(_, body)| body)
+                .collect();
+            if running.is_empty() {
+                texts.iter().any(|text| asks_for_submodules(text))
+            } else {
+                running.iter().any(|body| asks_for_submodules(body))
+            }
+        })
         .map(|(slug, _)| slug)
         .collect()
 }
@@ -1241,12 +1340,36 @@ fn a_gate_that_builds_against_third_party_is_preflighted_for_submodules() {
         );
     }
 
+    // Measured 2026-08-24: each of these runs in a CI job that checks out
+    // WITHOUT submodules, and the preflight refused them there on the day it
+    // landed — five red lanes, in checkouts that were correct. They are named
+    // rather than counted because a count cannot say which six.
+    for exempt in [
+        "w3c-go",
+        "w3c-python",
+        "forge-go",
+        "forge-python",
+        "forge-rust",
+        "embed-manifest-failfast",
+    ] {
+        assert!(
+            !needing.contains(exempt),
+            "`{exempt}` was reported as needing submodules, but the CI job that runs \
+             it checks out without them — the derivation is reading the file instead \
+             of the job again"
+        );
+    }
+
     // A floor, not a target: a derivation that suddenly finds nothing would
     // pass every assertion above that is phrased as an absence.
+    //
+    // 12 since the derivation became per-job (2026-08-24); 18 before, and
+    // that 18 was the file-level over-count rather than a coverage this lost.
+    // The floor's purpose is catching an empty sweep, which 10 still serves.
     assert!(
-        needing.len() >= 15,
-        "the derivation found only {} gate(s) needing submodules, against 18 when it \
-         was written; it has stopped reading the workflows: {needing:?}",
+        needing.len() >= 10,
+        "the derivation found only {} gate(s) needing submodules, against 12 when it \
+         became per-job; it has stopped reading the workflows: {needing:?}",
         needing.len()
     );
 }

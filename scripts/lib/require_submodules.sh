@@ -34,6 +34,27 @@
 # free to drift the moment a workflow changes its mind — the same rule
 # `mutation-cases` and `mutation-rounds` follow for their own triggers.
 #
+# ── The declaration is per JOB, not per file ──────────────────────
+#
+# `actions/checkout` is a STEP, so a workflow with several jobs answers this
+# question several times. `w3c-tests.yml` has seven: `test-cpp`,
+# `test-kotlin`, `test-python-bindings` and `test-c11` ask for submodules
+# and `test-rust`, `test-python` and `test-go` explicitly do not
+# (`submodules: false`). A file-level scan puts every gate that file mirrors
+# on the side its LOUDEST job took.
+#
+# Measured 2026-08-24, the round after this preflight landed: it refused
+# `w3c-go`, `w3c-python`, `forge-go`, `forge-python`, `forge-rust` and
+# `embed-manifest-failfast` INSIDE CI — the very jobs that had been running
+# them green without submodules for as long as they had existed. Five red
+# lanes, all saying "4 submodule(s) are recorded but not checked out" in a
+# checkout that was correct.
+#
+# So the job that RUNS the slug is the one whose checkout decides. A slug no
+# job names falls back to the file's answer, because "cannot tell" should
+# refuse rather than let a build die deep with a message naming neither the
+# submodule nor the repair — which is the defect this whole file exists for.
+#
 # ── Usage ─────────────────────────────────────────────────────────
 #
 #   scripts/lib/require_submodules.sh <slug>...
@@ -65,12 +86,14 @@ import runpy
 import sys
 from pathlib import Path
 
+import re
+
 mod = runpy.run_path(sys.argv[1])
 workflow_dir = Path(sys.argv[2])
 
 
-def declares_submodules(path):
-    """True if the workflow really asks `actions/checkout` for submodules.
+def declares_submodules(text):
+    """True if this YAML really asks `actions/checkout` for submodules.
 
     Comment lines are stripped FIRST. `tree-hygiene.yml` explains its own
     exemption in the words it is exempt from — "No `submodules: recursive`:
@@ -78,7 +101,7 @@ def declares_submodules(path):
     as the opposite of what it says. Measured 2026-08-24: it put both gates
     mirroring that workflow on the wrong side of this answer.
     """
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("#"):
             continue
@@ -88,15 +111,64 @@ def declares_submodules(path):
     return False
 
 
+def jobs_of(text):
+    """`(job name, job body)` for each job in a workflow.
+
+    A job is a two-space key under `jobs:`, which is the whole grammar this
+    needs — the answer being derived is one step's `with:` value, and a YAML
+    parser is not in the standard library. A file whose shape this cannot
+    read yields no jobs, and the caller falls back to the file's answer.
+    """
+    out, name, body = [], None, []
+    in_jobs = False
+    for line in text.splitlines():
+        if line.startswith("jobs:"):
+            in_jobs = True
+            continue
+        if not in_jobs:
+            continue
+        header = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if header:
+            if name is not None:
+                out.append((name, "\n".join(body)))
+            name, body = header.group(1), []
+            continue
+        body.append(line)
+    if name is not None:
+        out.append((name, "\n".join(body)))
+    return out
+
+
+def runs_slug(body, slug):
+    """Does this job body invoke `scripts/gate <slug>`?
+
+    The trailing boundary is load-bearing: without it `w3c-python` matches
+    the job running `scripts/gate w3c-python-bindings`, and the two jobs
+    check out differently.
+    """
+    return re.search(r"\bgate\s+" + re.escape(slug) + r"(?![\w.-])", body) is not None
+
+
 for slug in sys.argv[3:]:
     entry = mod["GATES"].get(slug)
     if not entry:
         continue
+    texts = []
     for workflow in entry.get("workflows", []):
         path = workflow_dir / workflow
-        if path.is_file() and declares_submodules(path):
-            print(slug)
-            break
+        if path.is_file():
+            texts.append(path.read_text(encoding="utf-8"))
+
+    running = [body for text in texts for _, body in jobs_of(text) if runs_slug(body, slug)]
+    if running:
+        # The job that runs it is the one whose checkout it has to mirror.
+        needs = any(declares_submodules(body) for body in running)
+    else:
+        # No job names it — fall back to the file, which refuses rather than
+        # guessing that a gate it cannot place needs nothing.
+        needs = any(declares_submodules(text) for text in texts)
+    if needs:
+        print(slug)
 PYEOF
 )
 
