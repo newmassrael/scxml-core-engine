@@ -35,10 +35,22 @@ mutation_oracles backends/c/tests/integration/test_host_processor.c
 # The feature's off switch. Without the arm the send falls through to a
 # sibling arm that knows nothing about the host, and the act reaches nobody.
 
+# ⚠ TWO edits, and the second one changes no behaviour at all. Closing the
+# arm leaves `_perform_host_send` defined and called from nowhere, and this
+# tree builds with `-Wall -Wextra -pedantic -Werror`, so
+# `-Werror=unused-function` refuses the mutant before any test can run — the
+# round reported INCONCLUSIVE and proved nothing. Dropping `static` gives the
+# now-uncalled definition external linkage, which silences that diagnostic
+# without removing the definition. Removing it is NOT an option: the delayed
+# path calls the same helper under `model.has_delayed_host_send`, and a
+# fixture on that branch would fail to link rather than fail its assertions.
 mutation_case "the template emits no host dispatch" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "{% if action.send_type_host_served %}\n            /* §scxml-6.2.5:",
      "{% if false and action.send_type_host_served %}\n            /* §scxml-6.2.5:")
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send(",
+     "SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_perform_host_send(")
 PY
 
 # ── …or happens and reports nothing when nobody is wired ────────────
@@ -67,6 +79,10 @@ PY
 # A document that can name an act but not parameterise it has lost most of
 # the reason to move the act into the document.
 
+# ⚠ The `(void)` is not decoration. Sending "" instead of the evaluated value
+# leaves `_host_param_value_0` with no remaining reader, and
+# `-Werror=unused-variable` refuses the mutant. Consuming and discarding it is
+# what the defect looks like anyway: the value was computed and then not sent.
 mutation_case "the param value does not cross" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
@@ -74,6 +90,7 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
                 _host_param_count++;
 {% else %}""",
      """                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                (void)_host_param_value_{{ loop.index0 }};
                 _host_params[_host_param_count].value = "";
                 _host_param_count++;
 {% else %}""")
@@ -86,12 +103,17 @@ PY
 # meets an empty registry — the wiring silently undone by the call that was
 # supposed to install it.
 
+# ⚠ Dropping the copy outright leaves `host_processors` an unread parameter,
+# and `-Werror=unused-parameter` refuses that. `(void)` is the idiom this very
+# template already uses for the same reason (`enter_parallel_regions`), and it
+# is also the honest shape of the defect: the argument arrived and was thrown
+# away.
 mutation_case "the wiring does not survive init" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """    if (host_processors != NULL) {
         sm->host_processors = *host_processors;
     }""",
-     "")
+     "    (void)host_processors;")
 PY
 
 # ── A reply is raised without being recognised ──────────────────────
