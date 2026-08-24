@@ -1463,6 +1463,55 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # The AI supervision loop — the sixth and last channel of the worked
+    # example at examples/ai_loop/ai_loop.scxml.
+    #
+    # Named through SCXML_FILE for the reason the two registrations above give:
+    # the input is a worked EXAMPLE rather than a stem under
+    # `integration_resources/`, so nothing enumerates it. The C++ channel is
+    # registered the same way in `tests/CMakeLists.txt`; the Rust, Go, Kotlin
+    # and Python ones have per-stem regen scripts because their trees are
+    # written to disk, and this backend generates into the build tree instead.
+    # `sce-build/tests/ai_loop_channel_parity.rs` reads this file as this
+    # channel's generator and holds all six to one scenario set.
+    #
+    # HOST_PROCESSOR is load-bearing, not decoration: the document declares its
+    # acts as sends the host serves (W3C SCXML 6.2.5), and codegen decides at
+    # compile time whether such a site dispatches or refuses. Without it every
+    # act would raise `error.execution` and the driver would be measuring the
+    # refusal.
+    sce_generate_static_integration_c_test(ai_loop "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/examples/ai_loop/ai_loop.scxml"
+        HOST_PROCESSOR x-sce-host
+    )
+
+    add_executable(sce_c_integration_ai_loop
+        integration/test_ai_loop.c
+        ${INTEGRATION_C_TEST_ai_loop_SOURCES}
+    )
+    # WITH the script engine: this document's prompts, budget and standing
+    # rules are datamodel values and its guards read them, so the machine owns
+    # a lua_State — unlike `sce_c_integration_native_action`, whose every
+    # effect is native and whose link is the proof it needs none.
+    target_link_libraries(sce_c_integration_ai_loop PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_ai_loop PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_ai_loop PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_ai_loop
+        COMMAND sce_c_integration_ai_loop
+    )
+    set_tests_properties(c11_integration_ai_loop PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-6.4.3: an <invoke> <param> gives a declared <data> of the invoked
     # session the value the INVOKING session produced, and a name matching no
     # top-level <data> there is not added at all. This backend already answers
