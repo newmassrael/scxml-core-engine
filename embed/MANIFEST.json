@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "d6c90b7772",
+  "embed_version": "9b4b5c7c40",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 271,
@@ -572,6 +572,7 @@
         "template FunctionTemplateDecl buildEntryChainFromAncestor",
         "template FunctionTemplateDecl buildExitChain",
         "template FunctionTemplateDecl findLCA",
+        "template FunctionTemplateDecl findLCCA",
         "template FunctionTemplateDecl isDescendantOf"
       ],
       "name": "SCE::Core::HierarchicalAlgorithms"
