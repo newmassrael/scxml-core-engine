@@ -201,8 +201,19 @@
         </transition>
         <transition event="withBadParam" cond="sawParamError !== 1" target="failNoParamError"/>
         <transition event="withBadParam" cond="_event.data.broken === ''" target="failBrokenParamDelivered"/>
-        <transition event="withBadParam" cond="_event.data.kept !== 'here'" target="failSiblingParamLost"/>
-        <transition event="withBadParam" target="pass"/>
+        <!-- Asked positively, and `pass` is not the fall-through. A channel
+             that loses the whole payload leaves `_event.data` with nothing to
+             index, so every guard above it RAISES rather than answering, and a
+             raised guard is false. Written the other way round — `!== 'here'`
+             to a fail state with `pass` underneath — that made an emptied
+             payload indistinguishable from a correct one: both guards errored
+             to false and the machine fell through to `pass`. Measured
+             2026-08-25 by the C11 mutation that stops rewinding a failed
+             `<param>`: the half-written pair breaks `_scxml_params(...)`, the
+             serializer blanks the buffer, and all seven channels still said
+             `pass`. -->
+        <transition event="withBadParam" cond="_event.data.kept === 'here'" target="pass"/>
+        <transition event="withBadParam" target="failSiblingParamLost"/>
     </state>
 
     <final id="pass"/>
