@@ -45,18 +45,42 @@
 // What the host meant to send.
 #define INTACT_OBJECT "{\"done\":true}"
 
+// The host's own bounded copy, exactly as an embedder writes it. Shared by both
+// queues' helpers below: only WHICH queue the carrier is handed to differs, and
+// a second copy of the bounding would let the two drift apart.
+static void build_carrier(undecodable_payload_is_reported_event_with_meta_t *carrier,
+                          undecodable_payload_is_reported_event_t event, const char *payload) {
+    memset(carrier, 0, sizeof(*carrier));
+    carrier->event = event;
+    size_t len = strlen(payload);
+    if (len >= sizeof(carrier->data)) {
+        len = sizeof(carrier->data) - 1u;
+    }
+    memcpy(carrier->data, payload, len);
+    carrier->data[len] = '\0';
+}
+
 static void deliver(undecodable_payload_is_reported_t *sm, undecodable_payload_is_reported_event_t event,
                     const char *payload) {
-    undecodable_payload_is_reported_event_with_meta_t carrier = {0};
-    carrier.event = event;
-    // The host's own bounded copy, exactly as an embedder writes it.
-    size_t len = strlen(payload);
-    if (len >= sizeof(carrier.data)) {
-        len = sizeof(carrier.data) - 1u;
-    }
-    memcpy(carrier.data, payload, len);
-    carrier.data[len] = '\0';
+    undecodable_payload_is_reported_event_with_meta_t carrier;
+    build_carrier(&carrier, event, payload);
     undecodable_payload_is_reported_raise_external(sm, &carrier);
+    undecodable_payload_is_reported_step(sm);
+}
+
+// W3C SCXML 5.3: the same delivery on the OTHER queue. The internal queue has a
+// dequeue site of its own and records the reading there separately, so a
+// binding that drops it on this path leaves every external delivery still
+// counted and nothing else in this file can see the loss.
+//
+// It goes through the generated raise rather than through the document because
+// an event raised BY NAME carries no payload at all — `<raise>` has no content
+// to give it, so a document cannot put an unreadable payload on this queue.
+static void deliver_internal(undecodable_payload_is_reported_t *sm, undecodable_payload_is_reported_event_t event,
+                             const char *payload) {
+    undecodable_payload_is_reported_event_with_meta_t carrier;
+    build_carrier(&carrier, event, payload);
+    undecodable_payload_is_reported_raise(sm, &carrier);
     undecodable_payload_is_reported_step(sm);
 }
 
@@ -251,6 +275,43 @@ int main(void) {
             named != UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_NOTE) {
             fprintf(stderr, "undecodable_payload_is_reported: FAIL - a delivery that parsed "
                             "moved a name that belongs to one that did not.\n");
+            rc = 1;
+        }
+
+        undecodable_payload_is_reported_destroy(&sm);
+    }
+
+    // W3C SCXML 5.3: the internal queue's dequeue records the reading too.
+    // Every block above delivers externally, so the internal binding could stop
+    // recording altogether and each of them would still pass.
+    {
+        undecodable_payload_is_reported_t sm;
+        undecodable_payload_is_reported_init(&sm);
+
+        deliver_internal(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_NOTE, TRUNCATED_ARRAY);
+
+        // The lower bound, first: a queue that never dequeued anything reports
+        // zero losses, and zero losses is what a working engine reports for a
+        // document that lost nothing. Without this the two checks below pass on
+        // an empty queue.
+        int64_t notes = -1;
+        (void)undecodable_payload_is_reported_notes(&sm, &notes);
+        if (notes != 1) {
+            fprintf(stderr, "undecodable_payload_is_reported: FAIL - the internally raised "
+                            "`note` never reached its transition, so the checks below would "
+                            "measure an empty queue rather than a lost payload.\n");
+            rc = 1;
+        }
+        if (undecodable_payload_is_reported_undecodable_payloads(&sm) != 1u) {
+            fprintf(stderr, "undecodable_payload_is_reported: FAIL - `" TRUNCATED_ARRAY "` "
+                            "arrived on the internal queue and the loss went uncounted.\n");
+            rc = 1;
+        }
+        undecodable_payload_is_reported_event_t named = UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_ANSWER;
+        if (!undecodable_payload_is_reported_last_undecodable_payload(&sm, &named) ||
+            named != UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_NOTE) {
+            fprintf(stderr, "undecodable_payload_is_reported: FAIL - the internal delivery "
+                            "that lost its payload was not named.\n");
             rc = 1;
         }
 
