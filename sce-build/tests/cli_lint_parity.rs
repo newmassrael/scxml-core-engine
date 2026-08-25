@@ -373,3 +373,80 @@ fn a_false_declaration_is_refused_without_the_flag() {
         "a document with no declaration was refused: {none_stderr}"
     );
 }
+
+/// …and the always-on entry runs pass 1 ONLY: it judges declarations and
+/// reports no gap.
+///
+/// The three fixtures above cannot see the difference, and the reason is
+/// structural rather than an oversight to be repaired by adding an
+/// assertion to them. The always-on entry short-circuits before the walk
+/// when the document declares nothing, so `no_declaration` never reaches
+/// the gap code at all; `stale` is rejected in pass 1 before pass 2 could
+/// run; and `true_declaration` is the protocol-stage shape whose compound
+/// fails the common-ground precondition, so its reportable set is empty
+/// and a pass 2 running there would produce the same silence. Widening
+/// the always-on entry to the full walk therefore changed no verdict any
+/// of them asks for, which is how it survived a mutation round.
+///
+/// What distinguishes the two is a document where a TRUE declaration and
+/// an UNCOVERED reportable gap coexist — `b` declares the gap it has,
+/// `c` has the same gap and declares nothing, and `tick` gives the
+/// compound the common ground the report needs. Pass 1 accepts, pass 2
+/// would reject, so the two answers differ and the flag is what chooses
+/// between them.
+///
+/// Both halves are asserted, because the first alone is an absence: a
+/// later change that stopped considering this compound reportable would
+/// leave the no-flag half passing for the wrong reason. The `--lint` half
+/// is what keeps the discriminator alive, and it names `c` alone —
+/// evidence that pass 1 read `b`'s declaration rather than that the gap
+/// went unnoticed.
+#[test]
+fn the_always_on_entry_does_not_report_gaps() {
+    let scratch = ScratchDir::new("declaration-without-report");
+
+    let declared_beside_a_gap = scratch.write(
+        "declared_beside_a_gap.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="declared_beside_a_gap" initial="dispatch">
+  <state id="dispatch" initial="a">
+    <state id="a">
+      <transition event="cmd.start" target="b"/>
+      <transition event="tick" target="c"/>
+    </state>
+    <state id="b" sce:unhandled="cmd.start">
+      <transition event="tick" target="a"/>
+    </state>
+    <state id="c">
+      <transition event="tick" target="a"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+
+    let (code, stderr) = cli_check(&declared_beside_a_gap, false);
+    assert_eq!(
+        code, 0,
+        "the always-on entry reported a gap: the declaration check is not \
+         a lint, but the gap report is — stderr: {stderr}"
+    );
+
+    let (lint_code, lint_stderr) = cli_check(&declared_beside_a_gap, true);
+    assert_ne!(
+        lint_code, 0,
+        "the fixture no longer has a reportable gap, so the assertion \
+         above no longer distinguishes pass 1 from the full walk"
+    );
+    assert!(
+        lint_stderr.contains("cmd.start"),
+        "`--lint` rejected for some other reason than the gap: {lint_stderr}"
+    );
+    assert!(
+        lint_stderr.contains("non-handlers: [\"c\"]"),
+        "`--lint` must report `c` alone — `b` declared the same gap, so \
+         naming it would mean pass 1 never read the declaration: {lint_stderr}"
+    );
+}
