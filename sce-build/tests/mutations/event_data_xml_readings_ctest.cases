@@ -31,6 +31,17 @@
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
+#
+# The REPLACEMENT rots on its own schedule, and nothing cheap sees it. Measured
+# 2026-08-25, run 32803356117: two cases here read `4/6 caught, 0 survived, 2
+# inconclusive` because the functions they mutate had changed what they RETURN
+# while their anchors kept matching to the byte — `parseEventData` now answers
+# `ParsedEventData` rather than a bare `JSValue`, and `setCurrentEvent` answers
+# `future<SetCurrentEventResult>` rather than `future<ScriptResult>`. Both cases
+# still applied, so `mutation-cases` reported them present; both stopped
+# compiling, so they proved nothing. An anchor check reads the site a case
+# leaves FROM and never the shape it lands IN, which is why only a round that
+# builds can tell a case from a comment.
 
 mutation_ctest --test-dir build -R '^(EventDataReadings|IntegrationTests|c11_integration_event_data_arrives_as_sent)$'
 mutation_targets sce/include/scripting/XMLDOMWrapper.h sce/src/scripting/JSEngineImpl.cpp
@@ -83,7 +94,7 @@ mutation_case "the quickjs engine reports the refusal to its caller" <<'PY'
 edit("sce/src/scripting/JSEngineImpl.cpp",
      """        JS_FreeValue(ctx, JS_GetException(ctx));
     }""",
-     """        return dom;
+     """        return {dom, SCE::PayloadReading::Dom};
     }""")
 PY
 
@@ -126,8 +137,8 @@ edit("sce/src/scripting/LuaEngine.cpp",
             if (luaL_dostring(L, loadExpr.c_str()) == LUA_OK) {
                 lua_setfield(L, -2, "data");
                 lua_setglobal(L, "_event");
-                std::promise<ScriptResult> pMutated;
-                pMutated.set_value(ScriptResult::createSuccess(true));
+                std::promise<SetCurrentEventResult> pMutated;
+                pMutated.set_value({ScriptResult::createSuccess(true), PayloadReading::Structured});
                 return pMutated.get_future();
             }
             lua_pop(L, 1);
