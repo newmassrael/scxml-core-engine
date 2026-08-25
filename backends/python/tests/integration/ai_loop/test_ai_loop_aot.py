@@ -360,6 +360,49 @@ def test_a_pane_that_dies_mid_turn_is_noticed_and_rebuilt() -> None:
     )
 
 
+def test_an_internal_region_root_transition_leaves_the_sibling_region() -> None:
+    """The three transitions on the ``drive`` region root carry ``type="internal"``.
+
+    §scxml-D-getTransitionDomain. The document's own comment calls that
+    load-bearing rather than decorative, and nothing measured it.
+
+    An internal transition whose target descends from its compound source has
+    that source as its domain, so ``drive`` is the whole of what exits and the
+    sibling regions are left alone. Read as EXTERNAL -- by a document that omits
+    the type, or by an engine that drops it -- the domain is the DOCUMENT ROOT,
+    because findLCCA filters the proper ancestors to ``<state>`` and ``<scxml>``
+    and the only ancestor of a region root is the ``<parallel>``. Every region
+    would then exit and come back at its default.
+
+    The two answers are distinguishable only while a sibling region is OFF its
+    default, which is why ``session.lost`` comes first -- it puts ``watch`` in
+    ``rebuilding``. Firing ``hold`` on a run whose regions all sit at their
+    defaults cannot tell the two apart, and that is why the 27 scenarios written
+    before this one did not.
+    """
+    engine = _started()
+
+    # Move `watch` off its default, so that a region restarted by too wide a
+    # domain is a state this scenario can see.
+    _step(engine, Event.SESSION_LOST)
+    assert _holds(engine, State.REBUILDING), (
+        "precondition: the liveness watch has to be off its default, or nothing "
+        f"below can tell a domain that spared it from one that reset it; active: {_where(engine)}"
+    )
+
+    # Written on the region root, `type="internal"`.
+    _step(engine, Event.HOLD)
+    assert _holds(engine, State.PAUSED), (
+        "the transition's own target is entered whichever domain the engine resolved, "
+        f"so this half failing means it did not fire at all; active: {_where(engine)}"
+    )
+    assert _holds(engine, State.REBUILDING) and not _holds(engine, State.ALIVE), (
+        "an internal region-root transition has the region as its domain, so the watch "
+        "keeps what it saw; reading `alive` here means the domain reached the document "
+        f"root and every region was restarted underneath the cycle; active: {_where(engine)}"
+    )
+
+
 def test_one_cancel_reaches_every_region() -> None:
     engine = _started()
 

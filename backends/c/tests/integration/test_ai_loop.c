@@ -462,6 +462,60 @@ static int a_pane_that_dies_mid_turn_is_noticed_and_rebuilt(void) {
     return bad;
 }
 
+// W3C SCXML Appendix D §scxml-D-getTransitionDomain: the three transitions on
+// the `drive` region root carry `type="internal"`, and the document's own
+// comment calls that load-bearing rather than decorative. Nothing measured it.
+//
+// An internal transition whose target descends from its compound source has
+// that source as its domain, so `drive` is the whole of what exits and the
+// sibling regions are left alone. Read as EXTERNAL — by a document that omits
+// the type, or by an engine that drops it — the domain is the DOCUMENT ROOT,
+// because `findLCCA` filters the proper ancestors to `<state>` and `<scxml>`
+// and the only ancestor of a region root is the `<parallel>`. Every region
+// would then exit and come back at its default.
+//
+// The two answers are distinguishable only while a sibling region is OFF its
+// default, which is why `session.lost` comes first — it puts `watch` in
+// `rebuilding`. Firing `hold` on a run whose regions all sit at their defaults
+// cannot tell the two apart, and that is exactly why the 27 scenarios written
+// before this one did not: measured 2026-08-25, the whole suite passes against
+// a C11 engine whose `find_lcca` has no candidate filter at all.
+static int an_internal_region_root_transition_leaves_the_sibling_region(void) {
+    ai_loop_t sm;
+    sce_host_processor_registry_t wiring;
+    start(&sm, &wiring);
+
+    int bad = 0;
+    // Move `watch` off its default, so that a region restarted by too wide a
+    // domain is a state this scenario can see.
+    step(&sm, AI_LOOP_EVENT_SESSION_LOST);
+    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_REBUILDING)) {
+        bad |= fail_where("an_internal_region_root_transition_leaves_the_sibling_region",
+                          "precondition: the liveness watch has to be off its default, or nothing below can "
+                          "tell a domain that spared it from one that reset it",
+                          &sm);
+    }
+
+    // Written on the region root, `type="internal"`.
+    step(&sm, AI_LOOP_EVENT_HOLD);
+
+    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_PAUSED)) {
+        bad |= fail_where("an_internal_region_root_transition_leaves_the_sibling_region",
+                          "the transition's own target is entered whichever domain the engine resolved, so "
+                          "this half failing means the transition did not fire at all",
+                          &sm);
+    }
+    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_REBUILDING) || ai_loop_in_state(&sm, AI_LOOP_STATE_ALIVE)) {
+        bad |= fail_where("an_internal_region_root_transition_leaves_the_sibling_region",
+                          "an internal region-root transition has the region as its domain, so the watch keeps "
+                          "what it saw; reading `alive` here means the domain reached the document root and "
+                          "every region was restarted underneath the cycle",
+                          &sm);
+    }
+    ai_loop_destroy(&sm);
+    return bad;
+}
+
 static int one_cancel_reaches_every_region(void) {
     ai_loop_t sm;
     sce_host_processor_registry_t wiring;
@@ -1211,6 +1265,7 @@ int main(void) {
     bad |= the_person_interrupts_the_inner_session_by_hand();
     bad |= nobody_comes();
     bad |= a_pane_that_dies_mid_turn_is_noticed_and_rebuilt();
+    bad |= an_internal_region_root_transition_leaves_the_sibling_region();
     bad |= one_cancel_reaches_every_region();
     bad |= the_machine_answers_what_its_own_datamodel_holds();
     bad |= the_strategy_a_host_edits_is_the_strategy_it_can_read_back();
@@ -1231,6 +1286,6 @@ int main(void) {
         (void)fprintf(stderr, "ai_loop: FAIL - see the scenario(s) named above\n");
         return 1;
     }
-    (void)printf("ai_loop: PASS - 27 scenarios\n");
+    (void)printf("ai_loop: PASS - 28 scenarios\n");
     return 0;
 }
