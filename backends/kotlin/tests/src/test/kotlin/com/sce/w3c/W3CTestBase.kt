@@ -6,6 +6,7 @@
 package com.sce.w3c
 
 import com.sce.runtime.Event
+import com.sce.runtime.ManualClock
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
@@ -93,6 +94,21 @@ abstract class W3CTestBase<S : State, E : Event> {
          * `when` above, which is the drift this whole change is about.
          */
         val KNOWN_ENGINES: List<String> = listOf("rhino", "quickjs", "lua")
+
+        /**
+         * How many times the drive loop will advance virtual time before it
+         * calls the machine stuck.
+         *
+         * A budget in STEPS rather than in milliseconds, because virtual time
+         * does not bound the loop on its own: a `<send>` that re-arms itself
+         * with `delay="0s"` is always due now, so the loop would tick forever
+         * without the clock ever moving. Generous enough that no conforming
+         * document reaches it — the corpus's busiest run advances a handful of
+         * times — and finite so a runaway fails with a message instead of
+         * being killed by a JUnit timeout, which would put the wall clock back
+         * in the verdict.
+         */
+        const val MAX_VIRTUAL_STEPS: Int = 10_000
     }
 
     /**
@@ -127,14 +143,65 @@ abstract class W3CTestBase<S : State, E : Event> {
     @Test
     open fun testW3CConformance() {
         val sm = createStateMachine()
+
+        // §scxml-6.2: this harness OWNS time rather than racing it.
+        //
+        // The clock has to be installed before `initialize()`, because entering
+        // the initial configuration arms every `<send delay>` in it against
+        // whatever clock is there at that moment — the setter refuses a swap
+        // afterwards for exactly that reason.
+        sm.clock = ManualClock()
         sm.initialize()
 
-        // C++ ScheduledAotTest pattern: poll for delayed sends/invokes
+        // The drive loop below replaced a wall-clock one
+        // (`System.currentTimeMillis() + timeoutMs`, polled with
+        // `Thread.sleep(10); tick()`). That loop made the verdict a race
+        // between two real-time quantities that have nothing to do with the
+        // clause under test: how fast this thread is scheduled, and the
+        // document's OWN failure timer.
+        //
+        // 154 of the corpus's documents arm one — `<send event="timeout"
+        // delay="Ns"/>`, the shortest at 2s — so a suite that is descheduled
+        // for two seconds reads a conforming engine as failing. Measured
+        // 2026-08-25: `availableProcessors()` reports 32 whatever else is
+        // running, because this machine sets no cgroup quota, so the suite
+        // sizes itself for a machine it does not have and loses that race
+        // under load. Raising the budget only moves the mark; it does not
+        // stop the document's timer, which is armed in the same real seconds.
+        //
+        // Virtual time removes the race outright: nothing is due until this
+        // loop says so, and the same sequence of calls produces the same
+        // configuration on an idle machine and a loaded one.
         if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + timeoutMs
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
+            var remaining = timeoutMs
+            var steps = 0
+            while (!sm.isInFinalState) {
+                // Tick before advancing. Not every reason a machine is not
+                // finished yet is on the clock: an invoked child that has
+                // nothing SCHEDULED still needs its parent's tick to run its
+                // queues and to be noticed finishing, and it reports no
+                // deadline for that. The wall-clock loop this replaced ticked
+                // every 10ms whether anything was due or not, so it never had
+                // to say so; a loop that only moves when a deadline says to
+                // must.
                 sm.tick()
+                if (sm.isInFinalState) {
+                    break
+                }
+                // `null` is "nothing is owed" — by this machine or any child
+                // it is responsible for ticking. With the tick above already
+                // done, no amount of further time can change the answer.
+                val due = sm.timeUntilNextScheduledMs() ?: break
+                if (due > remaining) break
+                sm.advanceTimeMs(due)
+                remaining -= due
+                if (++steps > MAX_VIRTUAL_STEPS) {
+                    throw AssertionError(
+                        "the machine asked to be ticked $MAX_VIRTUAL_STEPS times without " +
+                            "reaching a final state or consuming its ${timeoutMs}ms budget; " +
+                            "a send that re-arms itself with no delay is the usual cause"
+                    )
+                }
             }
         }
 

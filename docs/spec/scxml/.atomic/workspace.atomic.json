@@ -10086,6 +10086,11 @@
           "file": "backends/python/runtime/sce_runtime/host_processor.py",
           "symbol": "HostInvokeResponse",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "timeUntilNextScheduledMs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
