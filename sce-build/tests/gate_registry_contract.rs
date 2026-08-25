@@ -615,11 +615,30 @@ fn staged_citation_fixture_files(dir: &Path, files: &[(&str, &str)]) {
         .unwrap_or_else(|e| panic!("copy {f}: {e}"));
     }
     std::fs::create_dir_all(dir.join("tools/git-hooks")).expect("mkdir tools/git-hooks");
-    std::fs::copy(
-        root.join("tools/git-hooks/pre-commit"),
-        dir.join("tools/git-hooks/pre-commit"),
-    )
-    .expect("copy pre-commit");
+    // Every regular file in the hook directory, not `pre-commit` alone. The
+    // hook sources its siblings out of its OWN directory on purpose — its
+    // comment says "so it resolves the same way when the hook is invoked
+    // against another tree", which is exactly this fixture — so a copy naming
+    // one file dies on the first `source` a later stage adds, before reaching
+    // the stage under test. Measured: `ident-gate.sh` landed in `ca9210ea8b`
+    // and left this fixture failing at `pre-commit` line 68 with "no such file
+    // or directory", which reads as a defect in the citation stage it never
+    // got to. A sweep cannot go stale the next time a stage grows a sibling.
+    let hooks = root.join("tools/git-hooks");
+    for entry in std::fs::read_dir(&hooks).expect("read tools/git-hooks") {
+        let entry = entry.expect("read a tools/git-hooks entry");
+        if !entry.file_type().expect("stat a hook entry").is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        std::fs::copy(entry.path(), dir.join("tools/git-hooks").join(&name))
+            .unwrap_or_else(|e| panic!("copy tools/git-hooks/{}: {e}", name.to_string_lossy()));
+    }
+    assert!(
+        dir.join("tools/git-hooks/pre-commit").is_file(),
+        "the sweep copied no pre-commit, so every hook test below would fail \
+         for the fixture's reason rather than the hook's"
+    );
     // `.github` joins `docs` and the adoption tools because the stage has two
     // halves now: the existence sweep these fixtures exercise, and the binding
     // axes, which resolve the rev-pinned mnemosyne binary out of
