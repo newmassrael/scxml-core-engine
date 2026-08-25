@@ -350,15 +350,49 @@ int main(void) {
     // _advance_time_ms on a clock the host does not own must not move it: the
     // caller believes it owns time and does not, so the events it is waiting
     // for would arrive on a schedule it did not choose.
+    //
+    // The reading is not where that shows. `_now_ms` goes through
+    // `sce_clock_read`, which returns `clock.now_ms` ONLY for a manual clock —
+    // for a source clock it calls the host's function instead. So the field the
+    // refusal protects and the value read back here are two different places,
+    // and a refusal that stopped working moves the first while the second sits
+    // still. The field is therefore asserted directly, beside the reading.
     {
         late_tick_honours_cancel_t sm;
         stepping_reset(0u);
         late_tick_honours_cancel_init_with_clock(&sm, sce_clock_source(stepping_now, NULL));
         uint64_t before = late_tick_honours_cancel_now_ms(&sm);
+        uint64_t before_field = sm.clock.now_ms;
         late_tick_honours_cancel_advance_time_ms(&sm, 5000u);
         if (late_tick_honours_cancel_now_ms(&sm) != before) {
             fprintf(stderr, "late_tick_honours_cancel: FAIL - _advance_time_ms moved a "
                             "clock the host does not own.\n");
+            rc = 1;
+        }
+        if (sm.clock.now_ms != before_field) {
+            fprintf(stderr,
+                    "late_tick_honours_cancel: FAIL - _advance_time_ms moved the clock of a "
+                    "machine whose time the host does not own: %llu -> %llu ms.\n",
+                    (unsigned long long)before_field, (unsigned long long)sm.clock.now_ms);
+            rc = 1;
+        }
+        late_tick_honours_cancel_destroy(&sm);
+    }
+
+    // ...and that field does move when the host DOES own the clock, so the
+    // assertion above is about the refusal rather than about a field nothing
+    // writes. Without this pair, dropping `now_ms` from the manual path would
+    // leave the check above passing for the wrong reason.
+    {
+        late_tick_honours_cancel_t sm;
+        late_tick_honours_cancel_init_with_clock(&sm, sce_clock_manual(0u));
+        late_tick_honours_cancel_advance_time_ms(&sm, 250u);
+        if (sm.clock.now_ms != 250u) {
+            fprintf(stderr,
+                    "late_tick_honours_cancel: FAIL - a host-owned clock did not take the "
+                    "250 ms it was given; it reads %llu. The refusal check above cannot "
+                    "tell a working guard from a field nobody writes.\n",
+                    (unsigned long long)sm.clock.now_ms);
             rc = 1;
         }
         late_tick_honours_cancel_destroy(&sm);
