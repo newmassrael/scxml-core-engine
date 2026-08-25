@@ -8,11 +8,18 @@
 # string — which the clause requires — and the host that built it can find out,
 # which the clause says nothing about.
 #
-# The C++ half covers a hazard the other backends do not have. The Interpreter
-# records the rung inside `EventContextGuard`'s CONSTRUCTOR, because that guard
-# restores the previously bound event on the way out: a reading taken after it
-# describes a different delivery. A case below moves the read out of the
-# constructor, which is the shape a later reader would naturally write.
+# The C++ Interpreter records the rung inside `EventContextGuard`'s CONSTRUCTOR,
+# because that guard restores the previously bound event on the way out: a
+# reading taken after it describes a different delivery.
+#
+# No case below witnesses that timing, and with this fixture none can. It raises
+# nothing, so every delivery is top-level, `isNested_` is always false, and the
+# destructor's restore branch never runs at all — a case that moved the read out
+# of the constructor would read the same delivery either way and come back green
+# for a reason that has nothing to do with the hazard. The witness that hazard
+# wants is one delivery that is both nested AND carrying an unreadable payload,
+# and it wants a fixture of its own. What the Interpreter cases below do measure
+# is the count and the name.
 #
 # The C11 target is the TEMPLATE rather than a generated file, for the reason
 # `c11_datamodel_reader.cases` gives: this backend commits no generated tree, so
@@ -31,12 +38,19 @@ mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
 mutation_oracles tests/integration/UndecodablePayloadIsReportedAotTest.cpp tests/integration/UndecodablePayloadIsReportedTest.cpp backends/c/tests/integration/test_undecodable_payload_is_reported.c
 
 # ── C++ AOT: the count itself ──────────────────────────────────────
+#
+# `(void)reading;` is not decoration. `reading` is referenced nowhere else in
+# `notePayloadReading`, so disabling the test on its own leaves the parameter
+# unused and `-Werror=unused-parameter` refuses the whole tree — and a mutation
+# the compiler rejected measured nothing. Keeping the parameter alive while the
+# count can never move is what makes this a verdict rather than a build failure.
 
 mutation_case "the cpp aot engine records nothing for a lost payload" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
      """        if (reading == ::SCE::PayloadReading::Undecodable) {
             ++undecodablePayloads_;""",
-     """        if (false) {
+     """        (void)reading;
+        if (false) {
             ++undecodablePayloads_;""")
 PY
 
@@ -73,14 +87,24 @@ edit("sce/src/runtime/StateMachine.cpp",
      """                if (false) {""")
 PY
 
-# ── C++ Interpreter: reading the rung too late ─────────────────────
+# ── C++ Interpreter: the count moves, the name does not ────────────
 #
-# The hazard the constructor comment is about. `EventContextGuard`'s destructor
-# re-binds the SAVED event, so the executor's "last reading" after the guard
-# unwinds belongs to a different delivery — and for a fixture whose deliveries
-# all reach the same state, the wrong answer still looks plausible.
+# The count still increments; only `lastUndecodablePayloadEvent_` stops being
+# written. `TheEngineNamesTheDeliveryThatLostItsPayload` is the only assertion
+# that separates the two, which is what the fixture's second loss under a
+# DIFFERENT event name exists to make possible.
+#
+# ⚠ This case does NOT witness the hazard the constructor comment in
+# `StateMachine.cpp` names — that the guard's destructor re-binds the SAVED
+# event, so a reading taken after it belongs to a different delivery. Nothing
+# here can: this fixture raises nothing, so every delivery is top-level,
+# `isNested_` is always false, and the destructor's restore branch never runs.
+# A witness needs one delivery that is BOTH nested AND carrying an undecodable
+# payload, and the reachable shape is `<donedata><content>` on a compound
+# state's `<final>`: that payload rides on `done.state.id`, and that event is
+# drained from the INTERNAL queue. It wants a fixture of its own.
 
-mutation_case "the interpreter reads the rung after the guard restores" <<'PY'
+mutation_case "the interpreter counts the loss but never names it" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
      """                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
                     ++owner_->undecodablePayloads_;
