@@ -164,19 +164,32 @@ edit("sce-build/src/bin/sce_codegen.rs",
      "")
 PY
 
+# Widening the declares-nothing short-circuit, rather than replacing the
+# whole `if` with an unconditional `return Ok(())`. The two mutations have
+# the same effect on the entry point, but the second leaves the walk below
+# unreachable and the tree stops compiling under `-D warnings`
+# (`unreachable_statement`, and `source` goes unused with it) — reported
+# INCONCLUSIVE, which is the verdict this case carried while measuring
+# nothing.
 mutation_case "the always-on entry point reports nothing" <<'PY'
 edit("sce-build/src/scxml_exhaustiveness.rs",
-     """    if model.states.values().all(|s| s.unhandled.is_empty()) {
-        return Ok(());
-    }""",
-     "    return Ok(());")
+     "    if model.states.values().all(|s| s.unhandled.is_empty()) {",
+     "    if true || model.states.values().all(|s| s.unhandled.is_empty()) {")
 PY
 
 # ── …or starts reporting gaps on every build ────────────────────────
 #
-# The other direction, and the one that would refuse the W3C corpus: the
-# always-on entry must run pass 1 ONLY. Widening it to the full walk turns
-# every sequential protocol machine into a build failure.
+# The other direction: the always-on entry must run pass 1 ONLY.
+#
+# What this does NOT reach is the W3C corpus, and believing it did is what
+# left the case SURVIVED for a round. The entry short-circuits before the
+# walk when the document declares nothing, so a corpus that never writes
+# `sce:unhandled` cannot tell the two apart — and neither can a document
+# whose only declaration is under a compound the common-ground precondition
+# excludes, because there the reportable set is empty and pass 2 is silent
+# anyway. The discriminator is a document where a TRUE declaration and an
+# UNCOVERED reportable gap coexist: `cli_lint_parity.rs`'s
+# `the_always_on_entry_does_not_report_gaps`.
 
 mutation_case "the always-on entry runs the gap report too" <<'PY'
 edit("sce-build/src/scxml_exhaustiveness.rs",
