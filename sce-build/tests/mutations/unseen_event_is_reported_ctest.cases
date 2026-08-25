@@ -121,11 +121,18 @@ PY
 
 # ── C11: the loop's abandoned queue ────────────────────────────────
 
+# The call is dropped but the symbol is kept referenced. Deleting the line
+# outright leaves `record_unseen_external_events` as this translation unit's
+# only unused static function, and every generated machine then fails to
+# compile with `-Werror=unused-function` — reported INCONCLUSIVE, which is the
+# verdict this case carried while measuring nothing. `(void)f;` is a use for
+# that warning and not a call, so the defect is the same and the tree builds.
 mutation_case "the c11 loop abandons the queue silently" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """            record_unseen_external_events(sm);
             break;""",
-     """            break;""")
+     """            (void)record_unseen_external_events;
+            break;""")
 PY
 
 # ── C11: naming an event that was never refused ────────────────────
