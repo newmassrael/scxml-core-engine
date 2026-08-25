@@ -3256,6 +3256,26 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
+     * The domain of an EXTERNAL transition: the nearest proper ancestor of the
+     * source that contains the target, or `null` for the `<scxml>` element when
+     * no ancestor does.
+     *
+     * Split out so that the internal case can state its own answer rather than be
+     * rewritten into this one — see [applySimultaneousTransitions], where doing
+     * that produced a configuration the document does not have.
+     */
+    private fun externalTransitionDomain(txSource: S, target: S): S? {
+        // §scxml-D-getTransitionDomain, the `else` branch: findLCCA over the
+        // source's proper ancestors.
+        var lcca: S? = parentOf(txSource)
+        while (lcca != null) {
+            if (isDescendantOf(target, lcca)) break
+            lcca = parentOf(lcca)
+        }
+        return lcca
+    }
+
+    /**
      * Apply multiple non-conflicting event-based transitions as a single microstep.
      * §scxml-D-microstepProcedure: Compute exit set -> Exit all -> Actions all -> Enter all.
      *
@@ -3267,14 +3287,34 @@ abstract class StateMachineEngine<S : State, E : Event>(
         transitions: List<Pair<S, TransitionResult<S>>>,
         event: E?
     ) {
-        val externals = mutableListOf<Pair<S, TransitionResult.External<S>>>()
+        // Each state-changing transition as (source, target, DOMAIN). The domain
+        // travels with the transition rather than being re-derived below, because
+        // §scxml-D-getTransitionDomain does not answer it from source and target
+        // alone: for an internal transition whose target descends from its
+        // compound source, the domain IS that source, and no walk over the
+        // source's ancestors can produce it.
+        //
+        // This list used to hold synthesized `External`s — an `InternalToTarget`
+        // was rewritten as `External(target, transitionSource)` so one exit-set
+        // path could serve both. That rewrite discards the only thing that made
+        // the transition internal. The ancestor walk then answered with the
+        // enclosing `<parallel>`, the exit set grew to every region under it, and
+        // the parallel re-entry in step 3 brought each sibling region back at its
+        // DEFAULT child while that region's own transition in the same microstep
+        // had already entered a different one — two children of one compound
+        // state active at once, which is not a configuration (§scxml-3.4).
+        //
+        // Measured 2026-08-25 on tests/integration/parallel_region_root_external_domain.scxml:
+        // `hold` (internal, written on the region root `drive`) left `watch`
+        // holding both `alive` and `rebuilding`.
+        val externals = mutableListOf<Triple<S, S, S?>>()
         val internals = mutableListOf<Pair<S, TransitionResult<S>>>()
         for ((source, result) in transitions) {
             when (result) {
-                is TransitionResult.External -> externals.add(source to result)
-                is TransitionResult.InternalToTarget -> {
-                    externals.add(source to TransitionResult.External(result.target, result.transitionSource))
-                }
+                is TransitionResult.External ->
+                    externals.add(Triple(source, result.target, externalTransitionDomain(result.transitionSource ?: source, result.target)))
+                is TransitionResult.InternalToTarget ->
+                    externals.add(Triple(source, result.target, result.transitionSource ?: source))
                 is TransitionResult.Internal -> internals.add(source to result)
                 is TransitionResult.Ignored -> {}
             }
@@ -3291,20 +3331,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // then union them. A state is in the exit set if it is a descendant
             // of the transition's domain AND it's currently active.
             val exitSet = mutableSetOf<String>()
-            for ((source, result) in sorted) {
-                val txSource = result.transitionSource ?: source
-                // Compute domain (LCCA)
-                var lcca: S? = parentOf(txSource)
-                while (lcca != null) {
-                    if (isDescendantOf(result.target, lcca)) break
-                    lcca = parentOf(lcca)
-                }
-                // Add all active descendants of LCCA to exit set
+            for ((_, _, domain) in sorted) {
+                // Add all active proper descendants of the domain to the exit
+                // set. A null domain is the `<scxml>` element — the whole active
+                // configuration goes.
                 for (stateId in activeStateIds) {
-                    if (lcca != null) {
+                    if (domain != null) {
                         val state = resolveState(stateId) ?: continue
-                        if (state == lcca) continue
-                        if (!isDescendantOf(state, lcca)) continue
+                        if (state == domain) continue
+                        if (!isDescendantOf(state, domain)) continue
                     }
                     exitSet.add(stateId)
                 }
@@ -3324,14 +3359,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
 
             // Step 2: Transition actions in document order
-            for ((source, _) in sorted) {
+            for ((source, _, _) in sorted) {
                 executeTransitionActions(source, event)
             }
 
             // Step 3: Enter all targets in document order
             // C++ executeMicrostep pattern: buildEntryChain + parallel region re-entry
-            for ((_, result) in sorted) {
-                val target = result.target
+            for ((_, target, _) in sorted) {
                 val ancestorsToEnter = mutableListOf<S>()
                 var parallelAncToReenter: S? = null
                 var anc = parentOf(target)
@@ -3370,7 +3404,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
 
             _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
-                ?: resolveLeafState(sorted.last().second.target)
+                ?: resolveLeafState(sorted.last().second)
             flushPendingFinalState()
         }
 
