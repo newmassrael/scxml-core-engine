@@ -63,11 +63,19 @@ PY
 # chain that gets through is the alternating one, and `alts` is the only
 # reading that separates five hundred from a thousand.
 
+# The ceiling is doubled rather than the counter reset at the drain's entry.
+# Resetting there is a no-op and read as SURVIVED: `processInternalQueue` is
+# entered with the counter already at zero for this macrostep (the resets live
+# in `_step` and `checkEventlessTransitions`), and the drain loop that spends
+# the budget is inside `processInternalEventQueue`, so a statement before that
+# call never runs again while the chain turns. Doubling the ceiling is the same
+# claim — the internal branch answers to a limit of its own rather than to the
+# macrostep's — and it is one the alternating chain can show: 500 laps become
+# 1000, which is exactly what `AnAlternatingChainSpendsOneSharedBudget` reads.
 mutation_case "the cpp aot internal branch budgets itself" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        SCE_LOG_DEBUG("AOT processInternalQueue: Starting internal queue processing");""",
-     """        SCE_LOG_DEBUG("AOT processInternalQueue: Starting internal queue processing");
-        macrostepMicrostepsTaken_ = 0;  // MUTANT: a budget of this drain's own""")
+     """                if (macrostepMicrostepsTaken_ < MAX_MACROSTEP_MICROSTEPS) {""",
+     """                if (macrostepMicrostepsTaken_ < MAX_MACROSTEP_MICROSTEPS * 2) {""")
 PY
 
 # ── C++ AOT: the microstep that was answered is the one counted ────
@@ -102,6 +110,25 @@ PY
 # A drain that only watched the dispatch result would turn forever on a queue
 # nobody is draining — this is the second gate, and it is not redundant.
 
+# ⚠ This case cannot currently be judged, and the reason is the harness rather
+# than the case. What the gate protects here is TERMINATION, not a value:
+# `drainInternalEvents` says so itself — the raiser answers a refusal by
+# leaving the event queued, so `hasEvents()` stays true and a drain that stops
+# asking turns forever. So the only observable is that the suite does not end.
+#
+# `IntegrationTests` does carry `TIMEOUT 180` (tests/CMakeLists.txt), and
+# `mutation_ctest_run` asserts in its own comment that "a mutant that never
+# ends comes back as an ordinary red rather than a hung round". Measured
+# 2026-08-25, it does not: the round reported `ran 0 tests, baseline ran 3`,
+# which is INCONCLUSIVE — no verdict about the tests at all.
+#
+# Weakening the predicate to keep it finite was tried and is worse: any form
+# that lets `mayTakeMicrostep()` run once restores the original behaviour,
+# because the raiser reaches the same `StateMachine::mayTakeMicrostep()`
+# through the budget it was lent, sets `macrostepTruncated_`, and ends the
+# chain. The case then SURVIVES while expressing no defect at all. The honest
+# mutation is the one below; the repair belongs in the harness's reading of a
+# timed-out ctest run.
 mutation_case "the interpreter drain stops asking the budget" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
      """        [this]() { return mayTakeMicrostep(); });""",
@@ -151,27 +178,40 @@ PY
 
 # ── C11: the microstep that was answered is the one counted ────────
 
+# The spend is moved BEFORE the gate rather than after its closing brace. A
+# document with `error_events` emits `else if (event_is_error(...))` right
+# after that brace, so a statement placed between them compiles to
+# `'else' without a previous 'if'` and every generated machine is refused —
+# reported INCONCLUSIVE, which measures nothing. Spending first says the same
+# thing (the turn pays whether or not it answered) and leaves the chain intact.
 mutation_case "an unanswered internal event still spends the c11 budget" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            handle_microstep(sm, enabled, count);
+     """        if (process_transition(sm, evt.event, enabled, &count)) {
+            count = remove_conflicting_transitions(enabled, count);
+            handle_microstep(sm, enabled, count);
             /* W3C SCXML Appendix D: the loop turn that selects nothing takes
                no microstep, so it spends no budget. Only a turn that answered
                the event moved the machine, and only those are what a ceiling
                on microsteps can be counted in. */
             sm->macrostep_microsteps_taken++;
         }""",
-     """            handle_microstep(sm, enabled, count);
-        }
-        sm->macrostep_microsteps_taken++;""")
+     """        sm->macrostep_microsteps_taken++;  /* MUTANT: spent before the turn answered */
+        if (process_transition(sm, evt.event, enabled, &count)) {
+            count = remove_conflicting_transitions(enabled, count);
+            handle_microstep(sm, enabled, count);
+        }""")
 PY
 
 # ── C11: one budget, not one per branch ────────────────────────────
 
+# Same repair as its C++ AOT twin above, for the same reason: a reset placed
+# before the `while` is a no-op, because the counter is already zero when the
+# drain is entered and the statement never runs again while the loop turns.
+# The doubled ceiling makes the claim the alternating chain can count.
 mutation_case "the c11 internal branch budgets itself" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """    while (sm->internal_queue.count != 0u) {
         if (sm->macrostep_microsteps_taken == SCE_MAX_MACROSTEP_MICROSTEPS) {""",
-     """    sm->macrostep_microsteps_taken = 0u;  /* MUTANT: a budget of this drain's own */
-    while (sm->internal_queue.count != 0u) {
-        if (sm->macrostep_microsteps_taken == SCE_MAX_MACROSTEP_MICROSTEPS) {""")
+     """    while (sm->internal_queue.count != 0u) {
+        if (sm->macrostep_microsteps_taken == SCE_MAX_MACROSTEP_MICROSTEPS * 2u) {""")
 PY
