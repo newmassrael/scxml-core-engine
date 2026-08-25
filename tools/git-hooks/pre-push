@@ -48,6 +48,42 @@ fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# ── The identities this push would publish.
+#
+# BEFORE the `PREPUSH_FULL` branch below, which `exec`s the runner and would
+# otherwise skip this entirely — the one arrangement where "run every gate"
+# runs one fewer.
+#
+# Not a `scripts/gates/` entry: it verifies the commits being published rather
+# than the tree, and no hosted runner can observe an identity before it exists.
+# See ident-gate.sh for why the push and not only the commit — pre-commit runs
+# only for `git commit`, so a cherry-pick, a rebase, a merge, `SKIP_PRECOMMIT`
+# or a commit made where the hooks are not installed reaches the remote without
+# meeting it, and that last one is the shape the incident had.
+#
+# ⚠ The refs are consumed here, so they are read ONCE into a variable and the
+# loop below walks that: stdin is a one-shot stream and two consumers cannot
+# both have it.
+# shellcheck source=tools/git-hooks/ident-gate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ident-gate.sh"
+PUSHED_REFS="$(cat)"
+ident_push_failed=0
+while read -r _iref ilocal _irref iremote; do
+    [[ -z "${ilocal:-}" ]] && continue
+    [[ "$ilocal" =~ ^0+$ ]] && continue   # a deletion publishes no commits
+    if [[ -z "${iremote:-}" || "$iremote" =~ ^0+$ ]]; then
+        ident_range="$ilocal"             # new ref: grade the whole history
+    else
+        ident_range="${iremote}..${ilocal}"
+    fi
+    ident_gate_range "pre-push" "$ident_range" || ident_push_failed=1
+done <<<"$PUSHED_REFS"
+if (( ident_push_failed )); then
+    printf '\npre-push: rewrite the offending commits before pushing — the remote is\n' >&2
+    printf 'pre-push: public and a push does not un-publish.\n' >&2
+    exit 1
+fi
+
 RUNNER="$REPO_ROOT/scripts/gate"
 [[ -x "$RUNNER" ]] || {
     printf '\nERROR pre-push: gate runner missing at %s\n' "$RUNNER" >&2
@@ -84,7 +120,7 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     else
         git diff --name-only "$remote_sha" "$local_sha" >>"$CHANGED_FILE"
     fi
-done
+done <<<"$PUSHED_REFS"
 
 # githooks(5): git writes one line per ref it is about to push. No lines
 # therefore means there is nothing to push — an already-up-to-date `git
