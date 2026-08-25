@@ -374,6 +374,48 @@ TEST_F(AiLoopAotTest, APaneThatDiesMidTurnIsNoticedAndRebuilt) {
         << describe(sm);
 }
 
+// W3C SCXML Appendix D getTransitionDomain: the three transitions on the
+// `drive` region root carry `type="internal"`, and the document's own comment
+// calls that load-bearing rather than decorative. Nothing measured it.
+//
+// An internal transition whose target descends from its compound source has
+// that source as its domain, so `drive` is the whole of what exits and the
+// sibling regions are left alone. Read as EXTERNAL -- by a document that omits
+// the type, or by an engine that drops it -- the domain is the DOCUMENT ROOT,
+// because findLCCA filters the proper ancestors to <state> and <scxml> and the
+// only ancestor of a region root is the <parallel>. Every region would then
+// exit and come back at its default.
+//
+// The two answers are distinguishable only while a sibling region is OFF its
+// default, which is why `session.lost` comes first -- it puts `watch` in
+// `rebuilding`. Firing `hold` on a run whose regions all sit at their defaults
+// cannot tell the two apart, and that is why the 27 scenarios written before
+// this one did not.
+TEST_F(AiLoopAotTest, AnInternalRegionRootTransitionLeavesTheSiblingRegion) {
+    Machine sm;
+    start(sm);
+
+    // Move `watch` off its default, so that a region restarted by too wide a
+    // domain is a state this scenario can see.
+    sm.processEvent(Machine::Event::Session_lost);
+    ASSERT_TRUE(holds(sm, Machine::State::Rebuilding))
+        << "precondition: the liveness watch has to be off its default, or nothing below can tell "
+           "a domain that spared it from one that reset it; active: "
+        << describe(sm);
+
+    // Written on the region root, `type="internal"`.
+    sm.processEvent(Machine::Event::Hold);
+    EXPECT_TRUE(holds(sm, Machine::State::Paused))
+        << "the transition's own target is entered whichever domain the engine resolved, so this "
+           "half failing means it did not fire at all; active: "
+        << describe(sm);
+    EXPECT_TRUE(holds(sm, Machine::State::Rebuilding) && !holds(sm, Machine::State::Alive))
+        << "an internal region-root transition has the region as its domain, so the watch keeps "
+           "what it saw; reading `alive` here means the domain reached the document root and every "
+           "region was restarted underneath the cycle; active: "
+        << describe(sm);
+}
+
 TEST_F(AiLoopAotTest, OneCancelReachesEveryRegion) {
     Machine sm;
     start(sm);
