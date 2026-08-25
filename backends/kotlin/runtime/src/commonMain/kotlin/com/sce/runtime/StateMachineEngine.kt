@@ -1545,7 +1545,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun timeUntilNextScheduledMs(): Long? {
         if (!syncMode) return null
-        val next = (scheduledSends.firstOrNull()?.fireTimeMs)
+        val own = (scheduledSends.firstOrNull()?.fireTimeMs)
             .let { sends ->
                 val https = scheduledHttpSends.firstOrNull()?.fireTimeMs
                 when {
@@ -1553,8 +1553,27 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     https == null -> sends
                     else -> minOf(sends, https)
                 }
-            } ?: return null
-        return maxOf(0L, next - engineElapsedMs())
+            }
+            ?.let { maxOf(0L, it - engineElapsedMs()) }
+
+        // §scxml-6.4: an invoked child's deadlines are this machine's answer
+        // too. In the synchronous mode the parent is what ticks its children —
+        // they share this engine's clock instance — so a moment a child needs
+        // is a moment the host must not step over. Reporting only `own` made
+        // this a promise the engine could not keep: a host that advanced
+        // straight to the next answer got there having skipped the child's
+        // work, and if the parent's own next send was the document's failure
+        // timer, the run reached it before the child could finish.
+        //
+        // Invisible until a host actually used the answer to decide how far to
+        // jump. A host polling on a fixed interval never skipped anything, so
+        // it never noticed it had been told the wrong number.
+        var soonest = own
+        for ((_, entry) in activeInvokes) {
+            val childNext = entry.child.timeUntilNextScheduledMs() ?: continue
+            soonest = if (soonest == null) childNext else minOf(soonest, childNext)
+        }
+        return soonest
     }
 
     /**
