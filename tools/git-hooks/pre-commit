@@ -55,6 +55,19 @@ fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# ── The identity this commit would carry, ahead of every stage below.
+#
+# Not a `scripts/gates/` entry on purpose: it verifies the invocation rather
+# than the tree, and no hosted runner can observe it — see ident-gate.sh. It
+# is also the only refusal in this hook that a revert does not undo, because
+# the remote is public and a push does not un-publish.
+#
+# Sourced from THIS HOOK's directory rather than from `$REPO_ROOT`, so it
+# resolves the same way when the hook is invoked against another tree.
+# shellcheck source=tools/git-hooks/ident-gate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ident-gate.sh"
+ident_gate_pending "pre-commit" || exit 1
+
 log_step() { printf '\n==> pre-commit: %s\n' "$1" >&2; }
 fail_step() { printf '\nERROR pre-commit: %s FAILED — commit aborted.\n  Run `cargo fmt --all` locally, re-stage the touched files, and retry.\n  Bypass with SKIP_PRECOMMIT=1 for emergencies.\n' "$1" >&2; exit 1; }
 
