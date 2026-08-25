@@ -23,8 +23,14 @@
 # `JSON.parse` over the shared file. The backend that decodes a payload
 # through the shared reader is C11 — which rebuilds through a codegen binary
 # CMake does not rebuild, so a ctest round cannot see the file move either.
-# `shared_json_reader_is_a_parser` loads it raw, and the last two cases below
-# are aimed at it.
+# `shared_json_reader_is_a_parser` loads it raw, and THREE of the cases below
+# are aimed at it: the two named "the shared JSON reader ..." and the
+# `JSON.parse` case that closes the file. Written as a count rather than as
+# "the last two cases below", which is what this sentence said until
+# 2026-08-26. That phrasing was true when it landed and stopped being true the
+# same day, when the two `sce-build/src/filters.rs` chunker cases were appended
+# after it — a header that points at cases by POSITION goes stale the next time
+# somebody adds one, and nothing in the harness reads prose.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
