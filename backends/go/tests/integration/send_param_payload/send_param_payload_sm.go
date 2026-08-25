@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 93906883b5b4165f4116a79fbaaf89b99fecf00e95a105efdfc747f19d8b3ab1
+// source-hash: 15abee63eca48c0d096ade54003293e94f23f9dffeaf437e4cf29a0ed73c4eb2
 // template-hash: c11ce025286de32d15ba70522b50fb24cf722356167a9d021470bd1434f2dd9a
 // generated-at: 0
 
@@ -1141,8 +1141,8 @@ func (p *SendParamPayloadPolicy) tryTransitionInState(checkState SendParamPayloa
 		}
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventWithBadParam {
-			if p.evaluateGuard(`(_event.data.kept ~= "here")`, engine) {
-			*currentState = SendParamPayloadStateFailSiblingParamLost
+			if p.evaluateGuard(`(_event.data.kept == "here")`, engine) {
+			*currentState = SendParamPayloadStatePass
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = SendParamPayloadStateParamErrorPhase
@@ -1153,7 +1153,7 @@ func (p *SendParamPayloadPolicy) tryTransitionInState(checkState SendParamPayloa
 		}
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventWithBadParam {
-			*currentState = SendParamPayloadStatePass
+			*currentState = SendParamPayloadStateFailSiblingParamLost
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = SendParamPayloadStateParamErrorPhase
