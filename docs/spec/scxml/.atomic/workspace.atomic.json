@@ -14176,6 +14176,16 @@
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::computeTransitionDomain",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "externalTransitionDomain",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applySimultaneousTransitions",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
