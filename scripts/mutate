@@ -143,6 +143,25 @@
 # still COMPILES, and whether the suite still turns red. Those stay with the
 # full round, which is why this mode reports "applies" and never "CAUGHT" —
 # a check that cannot see a test result must not print a word that names one.
+#
+# ── `SCE_MUTATION_REPORT_DIR`: keep the runner's own artefacts ─────
+#
+#     SCE_MUTATION_REPORT_DIR=/somewhere scripts/mutate <casefile>
+#
+# Set it and the ctest runner copies, per run, the console it captured and
+# the JUnit document it read — or, when ctest wrote no document at all, a
+# marker file saying so. Files are numbered in run order (`ctest-01` is the
+# baseline, `ctest-02` the first case), because the case label is local to
+# the case loop and does not reach the runner.
+#
+# It exists because a verdict this harness cannot explain from its own summary
+# is unreadable afterwards: `$WORK` is a mktemp directory the EXIT trap
+# removes, so by the time anyone asks "ran 0 tests — out of what?" the
+# evidence is gone. Measured 2026-08-25: one case of
+# `internal_chain_is_bounded_ctest` reported `ran 0 tests, baseline ran 3` and
+# the round had to be repeated twice before the reason was in reach.
+#
+# Unset by default. A round that keeps nothing behaves exactly as before.
 
 set -euo pipefail
 
@@ -201,6 +220,20 @@ MUTATION_ARTIFACTS=()
 # harness under `GTEST_FILTER=<suite>` — a workaround for a fact the runner
 # already had in front of it and threw away.
 MUTATION_FAILING="$WORK/failing.txt"
+# Why the last run produced no result this harness could read, when that is
+# what happened — one sentence per line, empty otherwise.
+#
+# A runner that comes back with nothing is not a runner that came back with
+# zero. Conflating the two is how a verdict acquires the wrong headline: the
+# ctest parser used to answer an absent JUnit document with `0 0 0`, which
+# reaches the case loop as "ran 0 tests, baseline ran 3" and prints "the case
+# changed which tests exist" — a claim about the CASE for something the RUNNER
+# did. Both are INCONCLUSIVE, but only one of them is a lead.
+#
+# A file rather than a variable, for the reason the failing list is one: the
+# runners execute inside a command substitution, so anything they set in a
+# shell variable dies with the subshell that set it.
+MUTATION_UNREADABLE="$WORK/unreadable.txt"
 # Wall-clock cap on one test binary, so a mutant that does not TERMINATE is a
 # verdict rather than a hung round.
 #
@@ -212,6 +245,31 @@ MUTATION_FAILING="$WORK/failing.txt"
 # repository's slowest test binary (the workspace's longest single artifact
 # runs about two) and far short of a wait anyone would sit through.
 MUTATION_ARTIFACT_TIMEOUT="${MUTATION_ARTIFACT_TIMEOUT:-300}"
+# Ceiling on the resident size the TEST RUNNER itself may reach, in KiB.
+#
+# This is the ctest runner's clock, in the only currency that measures the
+# failure mode it actually has. CTest buffers a test's entire stdout in
+# memory, without bound: measured 2026-08-25 on a scratch project whose one
+# test logs forever, ctest's own RSS grew linearly past a gigabyte, and
+# neither `--test-output-size-failed 16384` nor `--test-output-truncation
+# tail` changed that — peak 1064 MiB against 1094 MiB, with only the report
+# shrinking (307 KB → 17 KB). Those flags bound what is WRITTEN, not what is
+# HELD.
+#
+# So a mutant that neither terminates nor stays quiet kills the runner before
+# the runner can judge it. Measured the same day, twice: the kernel's OOM
+# killer took `ctest` at 26 GB (20:57:52 and 21:58:50) while it was running a
+# mutant of `internal_chain_is_bounded_ctest`'s interpreter drain — the entry's
+# own `TIMEOUT 180` never got to fire. A killed ctest writes no
+# `--output-junit` document, the parser then read the absent document as zero
+# tests, and the case came back INCONCLUSIVE under the wrong headline: "the
+# case changed which tests exist". It had not; the runner had died.
+#
+# Four gibibytes, because the baseline of every ctest casefile here holds
+# kilobytes and the runaway reached twenty-six gigabytes — anything in between
+# separates them. A baseline that trips this refuses the round, the same way a
+# baseline that does not terminate does.
+MUTATION_RUNNER_RSS_CAP_KB="${MUTATION_RUNNER_RSS_CAP_KB:-4194304}"
 MUTATION_CAUGHT=0
 MUTATION_SURVIVED=0
 MUTATION_INCONCLUSIVE=0
@@ -618,7 +676,7 @@ mutation_restore_quiet() {
 
 mutation_resolve_artifacts() { "mutation_${MUTATION_RUNNER}_resolve"; }
 mutation_build_and_hash() { "mutation_${MUTATION_RUNNER}_build_and_hash"; }
-mutation_run_artifacts() { "mutation_${MUTATION_RUNNER}_run"; }
+mutation_run_artifacts() { : > "$MUTATION_UNREADABLE"; "mutation_${MUTATION_RUNNER}_run"; }
 
 # Run every declared bridge, in declaration order, from the repository root.
 #
@@ -885,9 +943,92 @@ mutation_ctest_build_and_hash() {
     mutation_hash_artifacts
 }
 
+# A process's resident size in KiB, or 0 once it is gone.
+mutation_process_rss_kb() {
+    local field
+    field="$(awk '/^VmRSS:/ {print $2}' "/proc/$1/status" 2>/dev/null || true)"
+    printf '%s\n' "${field:-0}"
+}
+
+# Run ctest, watch what it costs, and print its exit status.
+#
+# The watching is the point. CTest holds a test's whole output in memory (see
+# `MUTATION_RUNNER_RSS_CAP_KB`), so the runner is the first casualty of a
+# mutant that spins while logging — and a dead runner writes no report, which
+# is a verdict lost rather than earned. This harness therefore stops the run
+# itself, at a ceiling it names, instead of leaving the choice of victim to
+# the kernel's OOM killer.
+#
+# `$1` where ctest writes its JUnit document, `$2` where its console goes.
+# When the run was stopped here, the reason is left in
+# `$WORK/runner-stopped.txt` — a file, because this runs inside a command
+# substitution and a variable would not survive it.
+mutation_ctest_supervise() {
+    local report="$1" console="$2" rc=0
+    : > "$WORK/runner-stopped.txt"
+    ctest "${MUTATION_RUNNER_ARGS[@]}" --no-tests=error -j "$(sce_build_jobs_value)" \
+        --output-on-failure --output-junit "$report" >"$console" 2>&1 &
+    local pid=$! rss=0
+    while kill -0 "$pid" 2>/dev/null; do
+        rss="$(mutation_process_rss_kb "$pid")"
+        if (( rss > MUTATION_RUNNER_RSS_CAP_KB )); then
+            printf 'ctest (buffered %s MiB of test output, past the %s MiB ceiling — the run was stopped)\n' \
+                "$((rss / 1024))" "$((MUTATION_RUNNER_RSS_CAP_KB / 1024))" \
+                > "$WORK/runner-stopped.txt"
+            # The children first, then ctest. Killing ctest alone would leave
+            # the test process writing into a pipe with no reader, which is a
+            # bet on it honouring SIGPIPE; and once ctest is gone its pid is
+            # no longer there to be asked who its children were.
+            local kid
+            for kid in $(pgrep -P "$pid" 2>/dev/null || true); do
+                kill -KILL "$kid" 2>/dev/null || true
+            done
+            kill -KILL "$pid" 2>/dev/null || true
+            break
+        fi
+        sleep 2
+    done
+    wait "$pid" || rc=$?
+    printf '%s\n' "$rc"
+}
+
+# Copy what the last ctest run left behind into `SCE_MUTATION_REPORT_DIR`,
+# when the caller asked for that. `$1` report path, `$2` console path.
+#
+# The absence of the report is itself a reading — the parser answers it with
+# no counts at all — so record WHICH of the two happened rather than only
+# copying what exists.
+mutation_ctest_keep_artifacts() {
+    [[ -n "${SCE_MUTATION_REPORT_DIR:-}" ]] || return 0
+    mkdir -p "$SCE_MUTATION_REPORT_DIR"
+    # The counter lives in a FILE, not a variable. Its readers run inside a
+    # command substitution, so a shell variable incremented here dies with
+    # the subshell — measured 2026-08-25: twelve runs of one round all wrote
+    # `ctest-01`, which made every artefact unattributable to a case.
+    local seq_file="$SCE_MUTATION_REPORT_DIR/.seq" seq kept
+    seq=$(( $(cat "$seq_file" 2>/dev/null || echo 0) + 1 ))
+    printf '%s\n' "$seq" > "$seq_file"
+    kept="$(printf '%s/ctest-%02d' "$SCE_MUTATION_REPORT_DIR" "$seq")"
+    cp -f "$2" "$kept.console.txt" 2>/dev/null || true
+    if [[ -f "$1" ]]; then
+        cp -f "$1" "$kept.junit.xml" 2>/dev/null || true
+    else
+        printf 'ctest wrote no --output-junit document\n' > "$kept.junit.missing"
+    fi
+    if [[ -s "$WORK/runner-stopped.txt" ]]; then
+        cp -f "$WORK/runner-stopped.txt" "$kept.runner-stopped.txt" 2>/dev/null || true
+    fi
+}
+
 # One ctest run over the declared selector; "<tests_run> <failed>" read from
 # the JUnit report it writes. `--no-tests=error` is what keeps an empty run
 # from reporting as a green one.
+#
+# `--output-on-failure` is what puts gtest's own verdict lines in reach:
+# without it ctest prints only its per-entry pass/fail, so a red round over a
+# binary holding hundreds of assertions could be attributed no further than
+# the binary's name. Measured — the first C++ round under this harness
+# reported `red: IntegrationTests` and nothing finer.
 #
 # The report rather than the console summary, because that summary is not one
 # sentence: an all-passing run prints "100% tests passed out of 2" and a
@@ -901,18 +1042,30 @@ mutation_ctest_run() {
     local report="$WORK/ctest-junit.xml" console="$WORK/ctest-console.txt"
     rm -f "$report"
     : > "$MUTATION_FAILING"
-    # Kept rather than discarded, because it carries the only naming of what
-    # went red that is finer than a ctest entry: one entry here is a binary
-    # holding hundreds of assertions.
-    # `--output-on-failure` is what puts gtest's own verdict lines in reach:
-    # without it ctest prints only its per-entry pass/fail, so a red round
-    # over a binary holding hundreds of assertions could be attributed no
-    # further than the binary's name. Measured — the first C++ round under
-    # this harness reported `red: IntegrationTests` and nothing finer.
-    ctest "${MUTATION_RUNNER_ARGS[@]}" --no-tests=error -j "$(sce_build_jobs_value)" \
-        --output-on-failure --output-junit "$report" >"$console" 2>&1 || true
+    local rc stopped=""
+    rc="$(mutation_ctest_supervise "$report" "$console")"
+    stopped="$(cat "$WORK/runner-stopped.txt" 2>/dev/null || true)"
+    mutation_ctest_keep_artifacts "$report" "$console"
     mutation_failures_from_gtest < "$console" > "$MUTATION_FAILING"
+
+    # The runner was stopped by this harness, which is a reading and not a
+    # gap: the baseline ran the same selector to completion under the same
+    # ceiling, and the mutant did not. Reported through the same field a
+    # non-terminating cargo binary uses, because it is the same verdict —
+    # the suite never came back to say otherwise.
+    if [[ -n "$stopped" ]]; then
+        printf '%s\n' "$stopped" >> "$MUTATION_FAILING"
+        printf '0 0 1\n'
+        return
+    fi
     if [[ ! -f "$report" ]]; then
+        # An absent document is not a run of zero tests. Say which happened,
+        # so the case loop can decline to blame the case for it.
+        {
+            printf 'ctest exited %s and wrote no --output-junit document, so this\n' "$rc"
+            printf 'round has no reading of what ran. Re-run with SCE_MUTATION_REPORT_DIR\n'
+            printf 'set to keep the console it did write.\n'
+        } > "$MUTATION_UNREADABLE"
         printf '0 0 0\n'
         return
     fi
@@ -1666,9 +1819,27 @@ mutation_init() {
     }
     local baseline_timed_out
     read -r BASELINE_RUN BASELINE_FAILED baseline_timed_out <<<"$(mutation_run_artifacts)"
+    if [[ -s "$MUTATION_UNREADABLE" ]]; then
+        red "the baseline run produced no readable result — the round cannot start,"
+        red "because there is nothing for the cases below to be compared against"
+        local baseline_unreadable
+        while IFS= read -r baseline_unreadable; do
+            [[ -n "$baseline_unreadable" ]] || continue
+            red "              $baseline_unreadable"
+        done < "$MUTATION_UNREADABLE"
+        exit 2
+    fi
     if [[ "$baseline_timed_out" == "1" ]]; then
-        red "baseline did not terminate within ${MUTATION_ARTIFACT_TIMEOUT}s — the round"
-        red "cannot start, because every case below would time out for that reason"
+        red "the baseline run did not come back — the round cannot start, because"
+        red "every case below would stop for that reason rather than its own"
+        # The runner said which ceiling it hit; a wall clock and a memory
+        # ceiling are both reported through this field, and quoting the
+        # runner is how this stays true when a third one is added.
+        local baseline_stopped
+        while IFS= read -r baseline_stopped; do
+            [[ -n "$baseline_stopped" ]] || continue
+            red "              $baseline_stopped"
+        done < "$MUTATION_FAILING"
         exit 2
     fi
     if [[ "$BASELINE_FAILED" != "0" ]]; then
@@ -1873,6 +2044,27 @@ PY
         return
     fi
 
+    # Before the run-count guard, deliberately. A runner that produced nothing
+    # readable reaches that guard as `ran 0 tests`, and the guard's sentence —
+    # "the case changed which tests exist" — is then a claim about the case for
+    # something the runner did. Measured 2026-08-25: it sent one case of
+    # `internal_chain_is_bounded_ctest` back for two more rounds under that
+    # heading before the real reason (an OOM-killed ctest) surfaced.
+    if [[ -s "$MUTATION_UNREADABLE" ]]; then
+        red "INCONCLUSIVE  $label"
+        red "              the test runner produced no readable result, so this"
+        red "              round has no verdict about the tests — the case is not"
+        red "              what this reading is about"
+        local unreadable_line
+        while IFS= read -r unreadable_line; do
+            [[ -n "$unreadable_line" ]] || continue
+            dim "              $unreadable_line"
+        done < "$MUTATION_UNREADABLE"
+        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_restore
+        return
+    fi
+
     if [[ "$run" != "$BASELINE_RUN" ]]; then
         red "INCONCLUSIVE  $label"
         red "              ran $run tests, baseline ran $BASELINE_RUN — the case"
@@ -1969,6 +2161,9 @@ while (( $# )); do
             printf '  (default)   full round — build, run, require every case CAUGHT\n'
             printf '  --check     apply and restore only; no build, no test run\n'
             printf '  --declares  print the declared runner, targets and services, then exit\n\n'
+            printf 'SCE_MUTATION_REPORT_DIR=<dir>  keep each ctest run'\''s console and JUnit\n'
+            printf '                               document (or a marker when ctest wrote none),\n'
+            printf '                               numbered in run order from the baseline\n\n'
             printf 'The casefile vocabulary is documented in this file'\''s header.\n'
             exit 0 ;;
         -*) red "mutate: unknown option $1"; exit 2 ;;
