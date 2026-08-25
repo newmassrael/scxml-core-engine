@@ -1109,6 +1109,46 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML Appendix D: `findLCCA` filters the source's PROPER ancestors
+    # with `isCompoundStateOrScxmlElement`, so a `<parallel>` is never a
+    # transition domain and an EXTERNAL transition written on a region root
+    # resolves to the document root. `find_lcca` here returned the first proper
+    # ancestor containing the target whatever its kind — `findLCA`, which the
+    # appendix distinguishes from `findLCCA` — and the two answers differ only
+    # when a `<parallel>` sits between the source and the first compound
+    # `<state>` above it, which is exactly what a region root is.
+    #
+    # Named through SCXML_FILE rather than by stem: the document is shared
+    # verbatim with the C++, Rust, Go and Python channels and lives beside its
+    # C++ test, because a stem under `integration_resources/` is a
+    # seven-channel commitment and the Kotlin channel has no witness here yet.
+    sce_generate_static_integration_c_test(parallel_region_root_external_domain "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/parallel_region_root_external_domain.scxml"
+    )
+
+    add_executable(sce_c_integration_parallel_region_root_external_domain
+        integration/test_parallel_region_root_external_domain.c
+        ${INTEGRATION_C_TEST_parallel_region_root_external_domain_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_parallel_region_root_external_domain PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_parallel_region_root_external_domain PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_parallel_region_root_external_domain PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_parallel_region_root_external_domain
+        COMMAND sce_c_integration_parallel_region_root_external_domain
+    )
+    set_tests_properties(c11_integration_parallel_region_root_external_domain PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.3 + Appendix D: a compound state entered only because the
     # target lies inside it takes no default initial child. Appendix D asks that
     # as two functions — `addDescendantStatesToEnter` for the target,

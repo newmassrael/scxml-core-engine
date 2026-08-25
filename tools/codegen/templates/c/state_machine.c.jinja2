@@ -2220,6 +2220,30 @@ SCE_SM_FN static SCE_C_UNUSED bool state_is_parallel({{ csym_prefix }}{{ model.n
     }
 }
 
+/* W3C SCXML 3.3: this state's position in DOCUMENT order.
+
+   The C twin of `get_document_order` (Rust / Go / Kotlin / Python), and it
+   exists here for the reason it exists there: Appendix D walks the active
+   configuration in document order in several places, and no engine can
+   recover that order from its own configuration store. This one least of all
+   — the configuration is a bitmap indexed by the state enum, and that enum is
+   emitted in ALPHABETICAL order, so iterating it ascending walks the document
+   in whatever order the author happened to name things.
+
+   Ranks are the parser's own, so they are stable across a regeneration and
+   comparable only with each other; nothing here assumes they are contiguous
+   or start at zero. */
+SCE_SM_FN static SCE_C_UNUSED uint32_t state_document_order({{ csym_prefix }}{{ model.name }}_state_t s) {
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        return {{ state.document_order }}u;
+    {% endfor %}
+    default:
+        return 0u;
+    }
+}
+
 /* W3C SCXML 3.6: Initial child of a compound state. Returns the state
    itself if not compound (callers loop until `child == self` for descend). */
 SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t state_get_initial_child({{ csym_prefix }}{{ model.name }}_state_t s) {
@@ -3246,8 +3270,29 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
    Algorithms appendix, which is the function `getTransitionDomain` calls
    for external transitions whose source/target hierarchy needs the
    full proper-ancestor walk).
-   Walks `getProperAncestors(source)` and returns the first ancestor that
-   contains `target` as a STRICT descendant. The strict check is what
+   Walks `getProperAncestors(source)`, keeps only the ancestors the appendix
+   admits as CANDIDATES, and returns the first of those that contains
+   `target` as a STRICT descendant.
+
+   The candidate filter is `isCompoundStateOrScxmlElement`. A `<parallel>` is
+   neither a compound `<state>` nor the `<scxml>` element, so it is skipped
+   and the walk continues above it — which is the whole difference between a
+   region root's external transition landing on its enclosing `<parallel>`
+   and landing on the document root. Omitting the filter is `findLCA`, the
+   function the appendix distinguishes this one from, and the two answers
+   coincide everywhere except when a `<parallel>` sits between the source and
+   the first compound `<state>` above it. `state_is_compound` is true for a
+   `<parallel>` too (the parser defaults every parent's `initial` to its first
+   child), which is why the parallel test is spelled separately here, exactly
+   as `compute_exit_set` spells it for the internal-transition rule.
+
+   The `<scxml>` element is the other candidate, and it is the has_parent ==
+   false answer below rather than an enum member: this document's states are
+   its own, the root is not one of them, and `compute_exit_set`'s no-LCA
+   branch is what gives that answer its meaning (exit the whole active
+   configuration).
+
+   The strict check is what
    distinguishes findLCCA from the older single-pair `findLCA`: when
    target is itself an ancestor of source (e.g. test579's s03→s0),
    findLCA collapses LCA onto target, so exit set computation excludes
@@ -3269,7 +3314,8 @@ SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t find_lcc
     bool hp = false;
     {{ csym_prefix }}{{ model.name }}_state_t cur = state_get_parent(source, &hp);
     while (hp) {
-        if (is_descendant_of(target, cur)) {
+        bool is_candidate = state_is_compound(cur) && !state_is_parallel(cur);
+        if (is_candidate && is_descendant_of(target, cur)) {
             *out_has = true;
             return cur;
         }
@@ -3541,21 +3587,68 @@ SCE_SM_FN static bool try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm
     return *out_count > before;
 }
 
+/* The next active state in DOCUMENT order that `walked` does not already
+   hold, or false once the walk has seen them all. Written as a resumable step
+   rather than as a sorted list because this profile has no allocator and the
+   configuration is a bitmap: `walked` is the cursor, and it is a bitmap for
+   the same reason the configuration is. */
+SCE_SM_FN static SCE_C_UNUSED bool next_active_in_document_order(uint32_t active, uint32_t walked,
+                                                        {{ csym_prefix }}{{ model.name }}_state_t *out) {
+    bool found = false;
+    uint32_t best_rank = 0u;
+    for (uint32_t i = 0u; i < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++i) {
+        uint32_t bit = (uint32_t)1u << i;
+        if ((active & bit) == 0u || (walked & bit) != 0u) {
+            continue;
+        }
+        {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)i;
+        uint32_t rank = state_document_order(s);
+        if (!found || rank < best_rank) {
+            found = true;
+            best_rank = rank;
+            *out = s;
+        }
+    }
+    return found;
+}
+
 /* W3C SCXML App.D: optimal-enabled-set selection. Two branches mirror
    cpp processTransition's eventless / external split:
-   - eventless: walk every active state in document order (enum-value
-     order = alphabetic = doc-order proxy), no parent bubbling. cpp
-     selectEventlessTransitions evaluates every active state including
-     compound and parallel ancestors; the C switch's `default: break;`
-     arm short-circuits ancestors that declare no transitions.
-   - external: walk every active leaf, bubble up the parent chain, stop
-     at the first match per leaf. The same parent transition reached
-     from two converging bubble paths gets pushed twice — conflict
-     resolution dedups via exit-set intersection (test403b adversarial
-     fixture pins this dedup behaviour).
+   - eventless: walk every active state in document order, no parent
+     bubbling. cpp selectEventlessTransitions evaluates every active state
+     including compound and parallel ancestors; the C switch's
+     `default: break;` arm short-circuits ancestors that declare no
+     transitions.
+   - external: walk every active leaf in document order, bubble up the
+     parent chain, stop at the first match per leaf. The same parent
+     transition reached from two converging bubble paths gets pushed twice —
+     conflict resolution dedups via exit-set intersection (test403b
+     adversarial fixture pins this dedup behaviour).
    Compound and parallel ancestors are excluded as candidate leaves; a
    future fixture forcing done.state events on a compound/parallel target
-   relaxes that filter alongside the cpp `isDoneStateEvent` mirror. */
+   relaxes that filter alongside the cpp `isDoneStateEvent` mirror.
+
+   Both branches walk `state_document_order`, and the ORDER IS LOAD-BEARING
+   rather than cosmetic: `remove_conflicting_transitions` keeps the first of
+   two conflicting transitions and preempts the later one unless the later
+   one's source is a strict descendant. Hand it the same two transitions
+   reversed and it preempts the other side.
+
+   This used to iterate the state enum ascending, on the reasoning that
+   "enum-value order = alphabetic = doc-order proxy". The two orders are not
+   the same order, and they diverge exactly where the answer matters — sibling
+   `<parallel>` regions, whose enabled transitions are the ones that conflict.
+   Measured 2026-08-25 on `tests/integration/parallel_region_root_external_domain.scxml`,
+   whose regions are `drive` (first in the document) and `watch` (second):
+   alphabetically `alive` precedes `working`, so the walk collected `watch`'s
+   transition first and preempted `drive`'s — the region that document order
+   says wins.
+
+   Ranks are compared, never indexed, so a document whose ranks are sparse
+   walks the same as one whose ranks are dense. The scan is quadratic in the
+   state count, which is bounded at 32 by the configuration bitmap; the five
+   other backends sort a list for this, and a list is what this profile has
+   no allocator for. */
 {{ sce_map.source_marker(model.source_location, "c", symbol_artifact=sce_artifact.machine) }}
 SCE_SM_FN static bool process_transition({{ csym_prefix }}{{ model.name }}_t *sm,
                                 {{ csym_prefix }}{{ model.name }}_event_t event,
@@ -3563,23 +3656,24 @@ SCE_SM_FN static bool process_transition({{ csym_prefix }}{{ model.name }}_t *sm
                                 uint8_t *out_count) {
     *out_count = 0u;
     sm->transition_taken = false;
+    uint32_t walked = 0u;
+    /* Written by the walk before either branch reads it. The initialiser is
+       here for the compiler's sake and not the algorithm's: `-Werror` does not
+       see through the helper's bool return that `*out` is set on every true,
+       and an uninitialised read is the one thing this must not be. */
+    {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)0;
     if (event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-        for (uint32_t i = 0u; i < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++i) {
-            if ((sm->active & ((uint32_t)1u << i)) == 0u) {
-                continue;
-            }
-            (void)try_match_in_state(sm, ({{ csym_prefix }}{{ model.name }}_state_t)i, event, out_list, out_count);
+        while (next_active_in_document_order(sm->active, walked, &s)) {
+            walked |= state_bit(s);
+            (void)try_match_in_state(sm, s, event, out_list, out_count);
         }
     } else {
-        for (uint32_t i = 0u; i < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++i) {
-            if ((sm->active & ((uint32_t)1u << i)) == 0u) {
+        while (next_active_in_document_order(sm->active, walked, &s)) {
+            walked |= state_bit(s);
+            if (state_is_compound(s) || state_is_parallel(s)) {
                 continue;
             }
-            {{ csym_prefix }}{{ model.name }}_state_t leaf = ({{ csym_prefix }}{{ model.name }}_state_t)i;
-            if (state_is_compound(leaf) || state_is_parallel(leaf)) {
-                continue;
-            }
-            {{ csym_prefix }}{{ model.name }}_state_t check_state = leaf;
+            {{ csym_prefix }}{{ model.name }}_state_t check_state = s;
             while (true) {
                 if (try_match_in_state(sm, check_state, event, out_list, out_count)) {
                     break;
