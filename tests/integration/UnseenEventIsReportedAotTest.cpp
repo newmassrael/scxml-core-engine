@@ -138,4 +138,37 @@ TEST(UnseenEventIsReportedAotTest, TheEngineNamesTheEventItNeverLookedAt) {
     EXPECT_EQ(*sm->lastUnseenEvent(), SM::Event::Finish) << "the name did not follow the second refusal";
 }
 
+/// The other way an event goes unlooked-at: it was already on the external
+/// queue when the loop ended.
+///
+/// Every test above hands the event over AFTER the machine stopped, which is
+/// the door — `processEvent`'s `!isRunning_` branch. Appendix D's loop has a
+/// second place where an event stops being looked at, and it is not the door:
+/// the loop checks `isInFinalState()` before it drains the external queue, so
+/// whatever is sitting there when the machine reaches its final state is never
+/// dequeued at all. Nothing above can reach that state — the fixture carries no
+/// `<send>`, deliberately, so the document cannot leave anything on the queue.
+/// `raiseExternal` can, because it enqueues without running the loop.
+///
+/// `pokes` is the half that makes this a statement about the LOOP: it says the
+/// event was never looked at, rather than looked at and unmatched, which is the
+/// distinction this whole fixture exists to draw.
+TEST(UnseenEventIsReportedAotTest, AnEventStillQueuedWhenTheLoopEndsIsCounted) {
+    auto sm = started();
+
+    sm->raiseExternal(SM::Event::Poke);
+    EXPECT_EQ(sm->unseenExternalEvents(), 0u) << "queuing is not refusing; the machine is still running";
+
+    sm->processEvent(SM::Event::Finish);
+    ASSERT_TRUE(sm->isInFinalState()) << "`finish` should have taken the machine to its top-level final state";
+
+    EXPECT_EQ(sm->unseenExternalEvents(), 1u)
+        << "`poke` was on the external queue when the machine reached its final state, so the loop "
+           "ended without ever dequeuing it. A host that read only the door's count would be told "
+           "nothing about the events its own queue still held";
+    EXPECT_EQ(sm->getPolicy().pokes().value_or(-1), 0)
+        << "`poke`'s transition ran, so the event WAS looked at and this count is measuring "
+           "something other than the loop abandoning its queue";
+}
+
 }  // namespace SCE::Tests
