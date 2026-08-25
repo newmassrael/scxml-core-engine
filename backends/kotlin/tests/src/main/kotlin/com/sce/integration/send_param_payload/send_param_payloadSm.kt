@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 93906883b5b4165f4116a79fbaaf89b99fecf00e95a105efdfc747f19d8b3ab1
+// source-hash: 15abee63eca48c0d096ade54003293e94f23f9dffeaf437e4cf29a0ed73c4eb2
 // template-hash: c11ce025286de32d15ba70522b50fb24cf722356167a9d021470bd1434f2dd9a
 // generated-at: 0
 
@@ -410,9 +410,9 @@ class SendParamPayloadStateMachine(
 
         event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard("_event.data.broken === ''") -> TransitionResult.External(SendParamPayloadState.FailBrokenParamDelivered, SendParamPayloadState.ParamErrorPhase)
 
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard("_event.data.kept !== 'here'") -> TransitionResult.External(SendParamPayloadState.FailSiblingParamLost, SendParamPayloadState.ParamErrorPhase)
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard("_event.data.kept === 'here'") -> TransitionResult.External(SendParamPayloadState.Pass, SendParamPayloadState.ParamErrorPhase)
 
-        event is SendParamPayloadEvent.WithBadParam -> TransitionResult.External(SendParamPayloadState.Pass, SendParamPayloadState.ParamErrorPhase)
+        event is SendParamPayloadEvent.WithBadParam -> TransitionResult.External(SendParamPayloadState.FailSiblingParamLost, SendParamPayloadState.ParamErrorPhase)
 
         else -> TransitionResult.Ignored
     }
@@ -453,56 +453,56 @@ class SendParamPayloadStateMachine(
                 }
             }
             is SendParamPayloadState.FailBrokenParamDelivered -> {
-                // SCE-MAP: send_param_payload.scxml:215 :: failBrokenParamDelivered :: _state_body
+                // SCE-MAP: send_param_payload.scxml:226 :: failBrokenParamDelivered :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failBrokenParamDelivered")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailChildPayload -> {
-                // SCE-MAP: send_param_payload.scxml:209 :: failChildPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:220 :: failChildPayload :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failChildPayload")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailDuplicateParams -> {
-                // SCE-MAP: send_param_payload.scxml:213 :: failDuplicateParams :: _state_body
+                // SCE-MAP: send_param_payload.scxml:224 :: failDuplicateParams :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failDuplicateParams")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailInternalPayload -> {
-                // SCE-MAP: send_param_payload.scxml:210 :: failInternalPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:221 :: failInternalPayload :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failInternalPayload")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailNoParamError -> {
-                // SCE-MAP: send_param_payload.scxml:214 :: failNoParamError :: _state_body
+                // SCE-MAP: send_param_payload.scxml:225 :: failNoParamError :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failNoParamError")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailNumberType -> {
-                // SCE-MAP: send_param_payload.scxml:211 :: failNumberType :: _state_body
+                // SCE-MAP: send_param_payload.scxml:222 :: failNumberType :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failNumberType")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailSiblingParamLost -> {
-                // SCE-MAP: send_param_payload.scxml:216 :: failSiblingParamLost :: _state_body
+                // SCE-MAP: send_param_payload.scxml:227 :: failSiblingParamLost :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failSiblingParamLost")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailStringType -> {
-                // SCE-MAP: send_param_payload.scxml:212 :: failStringType :: _state_body
+                // SCE-MAP: send_param_payload.scxml:223 :: failStringType :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failStringType")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -549,7 +549,7 @@ class SendParamPayloadStateMachine(
             }
             }
             is SendParamPayloadState.Pass -> {
-                // SCE-MAP: send_param_payload.scxml:208 :: pass :: _state_body
+                // SCE-MAP: send_param_payload.scxml:219 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -616,35 +616,35 @@ class SendParamPayloadStateMachine(
                 activeStateIds.remove("awaitChild")
             }
             is SendParamPayloadState.FailBrokenParamDelivered -> {
-                // SCE-MAP: send_param_payload.scxml:215 :: failBrokenParamDelivered :: _state_body
+                // SCE-MAP: send_param_payload.scxml:226 :: failBrokenParamDelivered :: _state_body
                 activeStateIds.remove("failBrokenParamDelivered")
             }
             is SendParamPayloadState.FailChildPayload -> {
-                // SCE-MAP: send_param_payload.scxml:209 :: failChildPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:220 :: failChildPayload :: _state_body
                 activeStateIds.remove("failChildPayload")
             }
             is SendParamPayloadState.FailDuplicateParams -> {
-                // SCE-MAP: send_param_payload.scxml:213 :: failDuplicateParams :: _state_body
+                // SCE-MAP: send_param_payload.scxml:224 :: failDuplicateParams :: _state_body
                 activeStateIds.remove("failDuplicateParams")
             }
             is SendParamPayloadState.FailInternalPayload -> {
-                // SCE-MAP: send_param_payload.scxml:210 :: failInternalPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:221 :: failInternalPayload :: _state_body
                 activeStateIds.remove("failInternalPayload")
             }
             is SendParamPayloadState.FailNoParamError -> {
-                // SCE-MAP: send_param_payload.scxml:214 :: failNoParamError :: _state_body
+                // SCE-MAP: send_param_payload.scxml:225 :: failNoParamError :: _state_body
                 activeStateIds.remove("failNoParamError")
             }
             is SendParamPayloadState.FailNumberType -> {
-                // SCE-MAP: send_param_payload.scxml:211 :: failNumberType :: _state_body
+                // SCE-MAP: send_param_payload.scxml:222 :: failNumberType :: _state_body
                 activeStateIds.remove("failNumberType")
             }
             is SendParamPayloadState.FailSiblingParamLost -> {
-                // SCE-MAP: send_param_payload.scxml:216 :: failSiblingParamLost :: _state_body
+                // SCE-MAP: send_param_payload.scxml:227 :: failSiblingParamLost :: _state_body
                 activeStateIds.remove("failSiblingParamLost")
             }
             is SendParamPayloadState.FailStringType -> {
-                // SCE-MAP: send_param_payload.scxml:212 :: failStringType :: _state_body
+                // SCE-MAP: send_param_payload.scxml:223 :: failStringType :: _state_body
                 activeStateIds.remove("failStringType")
             }
             is SendParamPayloadState.InternalPhase -> {
@@ -656,7 +656,7 @@ class SendParamPayloadStateMachine(
                 activeStateIds.remove("paramErrorPhase")
             }
             is SendParamPayloadState.Pass -> {
-                // SCE-MAP: send_param_payload.scxml:208 :: pass :: _state_body
+                // SCE-MAP: send_param_payload.scxml:219 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is SendParamPayloadState.TypedPhase -> {

@@ -84,10 +84,27 @@ PY
 
 # ── C++ AOT: ignoring the name ─────────────────────────────────────
 
+# Injected at ONE call site rather than into `param_eval_failed`. The macro is
+# shared by six arms and they do not agree on what the container is called —
+# four have `params`, one has `hostRequest.params`, one has `httpParams` — so a
+# `params[...]` in the macro body is `'params' was not declared in this scope`
+# on the last two, and the whole tree stops compiling. That was INCONCLUSIVE,
+# which is a case that cannot run rather than a case that found nothing.
+#
+# The site below is the immediate-send arm, which is the one the fixture's
+# `<send target="#_internal" event="withBadParam">` is generated through
+# (confirmed against `send_param_payload_sm.inl`, whose failure branch sits
+# under a locally declared `params`). Its `param_eval_failed` call is the only
+# one indented eight, which is what makes the anchor unique.
 mutation_case "the cpp aot template carries the failed param under its name" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     """{{ indent }}// W3C SCXML 5.7.1: report the failure and omit the name and value.""",
-     """{{ indent }}params["{{ param.name | escape_cpp }}"].push_back("");""")
+     """    } else {
+{{ param_eval_failed(param, '        ') }}
+    }""",
+     """    } else {
+{{ param_eval_failed(param, '        ') }}
+        params["{{ param.name | escape_cpp }}"].push_back("");
+    }""")
 PY
 
 # ── C11: the report ────────────────────────────────────────────────
@@ -108,11 +125,17 @@ PY
 # is what names that: one param that will not evaluate must cost its own
 # pair and nothing else.
 
+# The rewind is replaced rather than deleted. `_pstart` is read here and
+# nowhere else, so dropping the line leaves it set-and-unused and every
+# generated machine fails `-Werror=unused-variable` — INCONCLUSIVE, and a case
+# that never runs measures nothing. `(void)_pstart;` keeps the variable used
+# and still does not rewind, which is the defect this case is about.
 mutation_case "the c11 template leaves the half-written pair in the buffer" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """                        _ed_len = _pstart;
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(""",
-     """                        {{ csym_prefix }}{{ machine }}_raise_platform_error(""")
+     """                        (void)_pstart;
+                        {{ csym_prefix }}{{ machine }}_raise_platform_error(""")
 PY
 
 # ── C11: the separator ─────────────────────────────────────────────
@@ -124,11 +147,16 @@ PY
 # and the whole payload comes back empty — `failSiblingParamLost` again,
 # from the opposite end of the same buffer.
 
+# The flag is SET early and left in the condition. Taking `_ed_any` out of the
+# condition instead removes its only read, and `-Werror=unused-but-set-variable`
+# then refuses every generated machine — INCONCLUSIVE. Setting it beforehand
+# makes the condition true at the first pair, which is exactly the defect, and
+# the read stays where it was.
 mutation_case "the c11 template decides the separator before the pair is written" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """                    int _pstart = _ed_len;
                     if (_ed_any && _ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }""",
      """                    int _pstart = _ed_len;
                     _ed_any = 1;
-                    if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }""")
+                    if (_ed_any && _ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }""")
 PY

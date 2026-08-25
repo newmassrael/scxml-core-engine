@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 93906883b5b4165f4116a79fbaaf89b99fecf00e95a105efdfc747f19d8b3ab1
+// source-hash: 15abee63eca48c0d096ade54003293e94f23f9dffeaf437e4cf29a0ed73c4eb2
 // template-hash: c11ce025286de32d15ba70522b50fb24cf722356167a9d021470bd1434f2dd9a
 // generated-at: 0
 
@@ -1537,7 +1537,7 @@ impl SendParamPayloadPolicy {
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == SendParamPayloadEvent::WithBadParam {
                     // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard("(_event.data.kept ~= \"here\")", engine) {
+                    if self.safe_evaluate_guard("(_event.data.kept == \"here\")", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 3;
@@ -1545,7 +1545,7 @@ impl SendParamPayloadPolicy {
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
 
-                        *current_state = SendParamPayloadState::FailSiblingParamLost;
+                        *current_state = SendParamPayloadState::Pass;
                         *transition_taken = true;
                         return true;
                     }
@@ -1559,7 +1559,7 @@ impl SendParamPayloadPolicy {
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
 
-                    *current_state = SendParamPayloadState::Pass;
+                    *current_state = SendParamPayloadState::FailSiblingParamLost;
                     *transition_taken = true;
                     return true;
                 }
