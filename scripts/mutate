@@ -198,7 +198,12 @@ source "$SCE_REPO_ROOT/scripts/lib/mutation_ledger.sh"
 MUTATION_OBJCOPY="$(command -v objcopy || true)"
 
 WORK="$(mktemp -d)"
-trap 'mutation_restore_quiet; rm -rf "$WORK"' EXIT
+# The scratch is removed only once the record above it says the tree is back.
+# `mutation_restore_quiet` swallows its own errors by design, so a restore that
+# did not happen used to end with the mutation in the tree AND its snapshot
+# deleted — the one case where the round destroys the evidence of its own
+# failure. `mutation_inflight_close` re-reads the files before it agrees.
+trap 'mutation_restore_quiet; if mutation_inflight_close; then rm -rf "$WORK"; fi' EXIT
 # Where the artifact hash writes its normalised copy, so the temporary lands
 # beside the round's other scratch rather than in the caller's TMPDIR.
 MUTATION_HASH_SCRATCH="$WORK"
@@ -647,6 +652,12 @@ mutation_snapshot() {
         # there is no reason to create the condition in the first place.
         cp "$f" "$WORK/snapshot/$f"
     done < <(mutation_all_targets)
+    # And say where it is, before a case body touches anything. This is the one
+    # moment both halves of that record are true — the original bytes are on
+    # disk, and the tree still holds them too — and a record written here is
+    # what a later invocation reads when this process is killed outright.
+    mutation_inflight_open "$CASEFILE" "$MUTATION_MODE" "$WORK" "$WORK/snapshot" \
+        "$(mutation_all_targets)"
 }
 
 mutation_restore() {
@@ -1879,6 +1890,10 @@ mutation_case() {
     body="$(cat)"
     [[ "${MUTATION_PASS:-run}" != "declare" ]] || return 0
 
+    # Before the edit, so a round killed during this case is recoverable as
+    # THIS case rather than as "somewhere in this casefile".
+    mutation_inflight_case "$label"
+
     printf '%s\n' "$body" > "$WORK/case.py"
     if ! MUTATION_DECLARED_FILES="$(printf '%s\n' \
             ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
@@ -2215,6 +2230,18 @@ fi
 
 CASEFILE="${MUTATION_ARGV[0]}"
 [[ -f "$CASEFILE" ]] || { red "no such casefile: $CASEFILE"; exit 2; }
+
+# Before anything reads the tree, including the casefile's own anchors.
+#
+# A round that was killed outright left its mutation behind, and a leftover
+# mutation reaching this round's baseline is not a stale file — it is a
+# measurement of a tree nobody chose, reported with exactly the confidence of
+# any other. `--declares` is excluded because it answers a question about the
+# DECLARATION and returns before touching the tree; recovering here would make
+# a caller pay for a repair it did not ask about.
+if [[ "$MUTATION_MODE" != "declares" ]]; then
+    mutation_inflight_recover || exit 2
+fi
 
 # The casefile declares the selector and targets, then the cases. Sourcing
 # happens in two passes so `mutation_init` can run — and reject a red
