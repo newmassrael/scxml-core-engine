@@ -3,11 +3,22 @@
 //
 // W3C SCXML B.2.8.1: a payload's rung is read while it is still true.
 //
-// ⚠⚠ READ THIS FIRST. This file is a SECOND witness, not the only one. The
-// hazard `EventContextGuard` describes is already caught by
-// `UndecodablePayloadIsReportedTest` — measured, below — so nothing here is
-// load-bearing for it. What this adds is the nested shape, and the record of
-// three mutation placements and which of them anything catches.
+// ⚠⚠ READ THIS FIRST. One assertion here is the only one in this repository that
+// can fail: `TheNestedDeliveryPutsTheOuterEventBack` covers
+// `~EventContextGuard`'s `if (actionExecutorImpl_ && isNested_)` restore actually
+// RUNNING. Measured 2026-08-26 — guarding that branch out with
+// `if (false && ...)` left the entire integration suite green at 369 tests.
+// Every other document in the tree delivers only at top level, so `isNested_` is
+// false throughout and the branch is dead code as far as the suite can see.
+// Deleting this file puts it back to being unwitnessed.
+//
+// The other direction — the branch NOT running when nothing was saved — has no
+// witness and cannot have one: see `ATopLevelDeliveryIsNotRestoredOverWithNothing`
+// below, and the "why there is no second case" note in
+// `sce-build/tests/mutations/nested_delivery_restores_the_outer_event_ctest.cases`.
+//
+// The READ hazard next to it is a different matter and is already covered
+// elsewhere — see the placement table below. Do not conflate the two.
 //
 // The guard's constructor reads the rung immediately after binding, and says:
 //
@@ -16,15 +27,20 @@
 //     guard's destructor binds the SAVED event on the way out, which would
 //     overwrite it.
 //
-// The debt register held that this needed a NESTED delivery whose own payload is
-// undecodable, on the reasoning that `isNested_` is always false in the sibling
-// fixture so the restore branch never runs and a moved read is invisible there.
-// That reasoning is wrong, and the reason it is wrong is worth more than the
-// fixture it asked for: `lastPayloadReading_` is STICKY. It survives until the
-// next `setCurrentEvent`, so moving the read changes when it is sampled relative
-// to the sequence of bindings, and the counts move with no nesting at all.
+// The debt register asked for a nested delivery whose own payload is
+// undecodable, so that a mutation MOVING THE READ would be caught. Half of that
+// reasoning does not hold and half of it does, and the split is the useful part.
 //
-// Three placements, each applied by hand to `StateMachine.cpp` and measured
+// It does not hold for the read: `lastPayloadReading_` is STICKY, surviving until
+// the next `setCurrentEvent`, so moving the read changes when it is sampled
+// relative to the sequence of bindings and the counts move with no nesting at
+// all. The sibling fixture catches two of the three placements below unaided.
+//
+// It DOES hold for the restore, which is the branch the register actually named.
+// That branch has no observable at top level by construction — there is nothing
+// to restore — so only a nested document can see it, and none existed.
+//
+// Three READ placements, each applied by hand to `StateMachine.cpp` and measured
 // 2026-08-26 against this tree:
 //
 //   A. READ BEFORE THE BINDING — caught. `UndecodablePayloadIsReportedTest`
@@ -39,8 +55,17 @@
 //      guard then samples exactly what it would have sampled in its
 //      constructor. Same count, same name. Nothing is wrong to catch.
 //
-// So the hazard is witnessed, and the facts below are about this document rather
-// than about a gap:
+// And two mutations to the RESTORE, which is what the register was really about:
+//
+//   D. THE BRANCH NEVER RUNS (`if (false && ... && isNested_)`) — caught here,
+//      and nowhere else: 369/369 green without this file. This one is a case, in
+//      `sce-build/tests/mutations/nested_delivery_restores_the_outer_event_ctest.cases`.
+//   E. THE BRANCH ALWAYS RUNS (`if (actionExecutorImpl_)`) — uncatchable, and
+//      removed as a case after proving it. `setCurrentEvent` skips an empty name
+//      (`ActionExecutorImpl.cpp:455`), so restoring an empty saved event does
+//      nothing and the mutation is behaviourally identical to the original.
+//
+// How this document is built:
 //
 //   1. NESTING IS AVAILABLE, and this file's document obtains it. Entering a
 //      compound state's `<final>` queues `done.state.<parent>` internally, and
@@ -107,6 +132,9 @@ constexpr const char *DOCUMENT = R"(<?xml version="1.0" encoding="UTF-8"?>
 
   <state id="waiting">
     <transition event="outer" target="wrapper"/>
+    <!-- Matches, does nothing, stays put: a delivery with no nesting at all,
+         which is what pins the OTHER half of the restore's predicate. -->
+    <transition event="lone"/>
   </state>
 
   <state id="wrapper" initial="inner">
@@ -146,6 +174,20 @@ protected:
         if (engine_) {
             engine_->shutdown();
         }
+    }
+
+    /// Read an expression in the machine's own session, after `processEvent`
+    /// has returned.
+    ///
+    /// This is how the RESTORE becomes observable at all. The outer guard's
+    /// `isNested_` is false, so it restores nothing; whatever `_event` holds when
+    /// `processEvent` comes back is therefore whatever the INNER guard's
+    /// destructor left there — the outer event if it restored, the nested one if
+    /// it did not.
+    std::string readInSession(const std::string &expr) {
+        auto result = engine_->evaluateExpression(sm_->getSessionId(), expr).get();
+        EXPECT_TRUE(result.isSuccess()) << "`" << expr << "` is readable in this session";
+        return result.isSuccess() ? result.getValueAsString() : std::string("<unreadable>");
     }
 
     IScriptEngine *engine_ = nullptr;
@@ -196,6 +238,62 @@ TEST_F(NestedDeliveryKeepsTheOuterPayloadReportTest, TheOuterReportSurvivesTheNe
         << sm_->getStatistics().lastUndecodablePayloadEvent
         << "`. Naming the nested event means the rung was read against a delivery that did not "
            "lose anything";
+}
+
+/// THE RESTORE BRANCH ITSELF: `if (actionExecutorImpl_ && isNested_)`.
+///
+/// This is the assertion G9 asked for, and nothing else in this repository makes
+/// it. Measured 2026-08-26: guarding that branch out with `if (false && ...)`
+/// left the ENTIRE integration suite green at 369 tests. Every document in it
+/// delivers only at top level, so `isNested_` is false everywhere and the branch
+/// is dead code as far as the suite can see — a mutation deleting it proves
+/// nothing, which is exactly what "no witness" means.
+///
+/// What the branch owes: after a nested delivery finishes, `_event` is the OUTER
+/// event again, so anything the outer frame does next sees the delivery it is
+/// actually handling. Without the restore, `_event` is left pointing at the
+/// nested event and every later reader in that frame is quietly answered about
+/// the wrong one.
+///
+/// Readable from here because the outer guard restores nothing of its own —
+/// `isNested_` is false for it — so `_event` after `processEvent` returns is
+/// precisely what the inner guard's destructor left behind.
+TEST_F(NestedDeliveryKeepsTheOuterPayloadReportTest, TheNestedDeliveryPutsTheOuterEventBack) {
+    ASSERT_TRUE(sm_->processEvent(OUTER_EVENT, TRUNCATED_OBJECT).success);
+    ASSERT_EQ(sm_->getCurrentState(), "settled") << "the nested delivery has to have happened";
+
+    EXPECT_EQ(readInSession("_event.name"), OUTER_EVENT)
+        << "the nested `" << INNER_EVENT << "` delivery finished and `_event` was left as `"
+        << readInSession("_event.name") << "`. `~EventContextGuard`'s `isNested_` branch exists to put `" << OUTER_EVENT
+        << "` back; without it the outer frame keeps handling one event while the datamodel "
+           "answers about another";
+
+    EXPECT_NE(readInSession("_event.name"), INNER_EVENT)
+        << "`_event` is still the nested delivery, so the restore did not run";
+}
+
+/// The top-level half, as a REGRESSION GUARD — not as a witness.
+///
+/// ⚠ It does not catch a mutation that widens the branch to
+/// `if (actionExecutorImpl_)`. That was written, run twice, and removed: a
+/// top-level guard's `savedEvent_` is empty and
+/// `ActionExecutorImpl::setCurrentEvent` skips the datamodel update for an empty
+/// name (`ActionExecutorImpl.cpp:455`), so restoring unconditionally is
+/// behaviourally identical and no assertion anywhere can tell. The `isNested_`
+/// conjunct earns its place by saying what the branch means.
+///
+/// What this still pins is worth a line: a delivery that nested nothing leaves
+/// `_event` as itself. If the skip at that line were ever removed, an
+/// unconditional restore WOULD blank it, and this is where that shows.
+TEST_F(NestedDeliveryKeepsTheOuterPayloadReportTest, ATopLevelDeliveryIsNotRestoredOverWithNothing) {
+    ASSERT_TRUE(sm_->processEvent("lone", "just a sentence").success)
+        << "`lone` matches a targetless transition on `waiting`";
+    ASSERT_EQ(sm_->getCurrentState(), "waiting") << "a targetless transition leaves the configuration alone";
+
+    EXPECT_EQ(readInSession("_event.name"), "lone")
+        << "this delivery nested nothing, so there was no saved event to put back and `_event` "
+           "must still be the delivery just handled. It reads `"
+        << readInSession("_event.name") << "` instead — an unconditional restore bound the empty saved event over it";
 }
 
 }  // namespace Tests
