@@ -294,32 +294,15 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                     // neither. Measured 2026-08-25: the region kept its old leaf
                     // active alongside the new one, and the sibling region's
                     // transition on the same event was never preempted.
-                    IStateNode *parallelStatePtr = rootState_->getParent();
-
-                    // §scxml-D-computeExitSet: only a transition WITH a target
-                    // contributes to the exit set -- the appendix guards the whole
-                    // computation with `if t.target`. A targetless transition runs
-                    // its content and exits nothing at all.
-                    //
-                    // This engine spells a targetless transition as source ->
-                    // source, so the domain rule below would otherwise read it as
-                    // a real self-transition and exit everything down to the
-                    // domain. The old exit-set code hid that by accident: an LCA
-                    // of a state with itself is the state, leaving the set empty.
-                    auto exitSet = targets.empty() ? std::vector<std::string>{}
-                                                   : computeExitSet(checkStatePtr, targetState, isInternal);
-
-                    // "External" here means what the microstep below needs to know:
-                    // the <parallel> itself is in the exit set, so it exits and the
-                    // target is re-entered through a fresh entry path. That is
-                    // exactly the case the domain lies above the <parallel>.
-                    const bool isExternalTransition =
-                        parallelStatePtr &&
-                        std::find(exitSet.begin(), exitSet.end(), parallelStatePtr->getId()) != exitSet.end();
-
-                    SCE_LOG_DEBUG("ConcurrentRegion: Transition {} -> {} exits {} states, parallel '{}' exits: {}",
-                                  checkStatePtr->getId(), targetState, exitSet.size(),
-                                  parallelStatePtr ? parallelStatePtr->getId() : std::string{}, isExternalTransition);
+                    // §scxml-D-computeExitSet is defined over the CONFIGURATION,
+                    // and a region does not have one: it sees its own states and
+                    // nothing else, so any set it assembles stops at its own
+                    // leaf-to-domain chain and can never name a sibling region --
+                    // which is exactly what a transition leaving the `<parallel>`
+                    // exits. `StateMachine` owns the configuration and computes
+                    // the set there, through the procedure both engines share.
+                    // `isExternal` follows from that same set rather than from a
+                    // second, narrower one computed here.
 
                     // Create transition descriptor for conflict resolution
                     TransitionDescriptorString descriptor;
@@ -329,14 +312,12 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                     descriptor.transitionIndex = transitionIndex;
                     descriptor.hasActions = hasActions;
                     descriptor.isInternal = isInternal;
-                    descriptor.isExternal = isExternalTransition;
-                    descriptor.exitSet = std::move(exitSet);
+                    descriptor.isTargetless = targets.empty();
 
-                    SCE_LOG_DEBUG(
-                        "ConcurrentRegion: Transition descriptor: {} -> {} (exitSet size: {}, transitionIndex: "
-                        "{}, external: {})",
-                        descriptor.source, descriptor.target, descriptor.exitSet.size(), descriptor.transitionIndex,
-                        descriptor.isExternal);
+                    SCE_LOG_DEBUG("ConcurrentRegion: Transition descriptor: {} -> {} (transitionIndex: {}, "
+                                  "internal: {}, targetless: {})",
+                                  descriptor.source, descriptor.target, descriptor.transitionIndex,
+                                  descriptor.isInternal, descriptor.isTargetless);
 
                     result.enabledTransitions.push_back(descriptor);
                     return result;  // §scxml-3.13: First enabled transition wins in hierarchy
@@ -652,51 +633,12 @@ IStateNode *ConcurrentRegion::computeTransitionDomain(IStateNode *sourceNode, co
     return nullptr;
 }
 
-std::vector<std::string> ConcurrentRegion::computeExitSet(IStateNode *sourceNode, const std::string &target,
-                                                          bool isInternal) const {
-    std::vector<std::string> exitSet;
-
-    if (!rootState_) {
-        return exitSet;
-    }
-
-    IStateNode *domain = computeTransitionDomain(sourceNode, target, isInternal);
-
-    // §scxml-D-computeExitSet: the ACTIVE proper descendants of the domain.
-    //
-    // The walk starts at the region's active leaf, not at the transition's
-    // source: a transition written on a region root has active descendants
-    // BELOW its source, and reading the source's own chain -- which is what
-    // stood here -- left them active beside the newly entered state, a
-    // configuration in which two children of one compound state are active at
-    // once.
-    IStateNode *leaf = findStateInRegion(rootState_, currentState_).get();
-    if (!leaf) {
-        leaf = rootState_.get();
-    }
-
-    for (IStateNode *node = leaf; node != nullptr; node = node->getParent()) {
-        if (node == domain) {
-            break;  // The domain itself is not exited.
-        }
-        exitSet.push_back(node->getId());
-
-        if (node == rootState_.get()) {
-            // The walk left the region, so the domain is above the enclosing
-            // <parallel> -- a <parallel> is never a domain itself -- and the
-            // <parallel> is a proper descendant of the domain too.
-            if (IStateNode *parallelStatePtr = rootState_->getParent()) {
-                exitSet.push_back(parallelStatePtr->getId());
-            }
-            break;
-        }
-    }
-
-    SCE_LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} (internal: {}, domain: {}, exitSet size: {})",
-                  sourceNode ? sourceNode->getId() : std::string{}, target, isInternal,
-                  domain ? domain->getId() : std::string{"<scxml>"}, exitSet.size());
-    return exitSet;
-}
+// Appendix D's computeExitSet used to be answered here, from the region's own
+// leaf up to the domain. That walk is the region's whole world, and the
+// appendix's answer is not: for a transition whose domain lies above the
+// enclosing `<parallel>`, every active state of every SIBLING region is below
+// the domain too, and no walk rooted in one region reaches them. `StateMachine`
+// computes it now, over the configuration it owns, through `ExitSetAlgorithms`.
 
 bool ConcurrentRegion::isDescendantOf(const std::shared_ptr<IStateNode> &root, const std::string &targetId) const {
     if (!root) {

@@ -743,6 +743,10 @@ add_executable(integration_tests
     # parallel-ancestor rule reaches the same verdict here — so it is a guard for
     # that removal, not a discriminator of the exit set underneath it.
     integration/ParallelExitPreemptsSiblingRegionTest.cpp
+    # The set that rule stands in for. Appendix D computeExitSet is read off the
+    # configuration, so a transition leaving the `<parallel>` names the sibling
+    # region too — which one region's own leaf-to-domain chain can never do.
+    integration/ParallelExitSetNamesSiblingRegionTest.cpp
     # Interpreter only, deliberately: the seam it exercises is
     # `EventContextGuard`'s, and that guard is the Interpreter's. Its document is
     # inline rather than a fixture stem because no other channel has the site.
