@@ -737,6 +737,13 @@ add_executable(integration_tests
     integration/DiscardedEventIsObservableAotTest.cpp
     integration/UndecodablePayloadIsReportedTest.cpp
     integration/UndecodablePayloadIsReportedAotTest.cpp
+    # Interpreter only, deliberately: the seam it exercises is
+    # `EventContextGuard`'s, and that guard is the Interpreter's. Its document is
+    # inline rather than a fixture stem because no other channel has the site.
+    # ⚠ Read its header before counting it as coverage — it pins the nesting
+    # recipe and the outer report, NOT the constructor-timing hazard, and it says
+    # why no witness for that is constructible today.
+    integration/NestedDeliveryKeepsTheOuterPayloadReportTest.cpp
     integration/UnseenEventIsReportedTest.cpp
     integration/UnseenEventIsReportedAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp
