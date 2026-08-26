@@ -595,6 +595,37 @@ fn the_push_hook_delegates_rather_than_carrying_gates() {
 /// fixture because the stage reads the whole staged set: one gate run covers
 /// every boundary, so a path per fixture would spawn the gate once per path for
 /// no added coverage.
+/// The first address `tools/git-hooks/ident-gate.sh` accepts, asked OF the gate.
+///
+/// Sourced rather than copied. A second literal spelling of the allow-list
+/// would go stale the moment that list changes, and it would go stale
+/// SILENTLY: a fixture that stops satisfying a precondition fails as the stage
+/// it never reached, which is the shape this whole helper exists to prevent.
+fn allowed_ident_email(root: &Path) -> String {
+    let gate = root.join("tools/git-hooks/ident-gate.sh");
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "source {}; printf '%s' \"${{SCE_ALLOWED_IDENT_EMAILS[0]}}\"",
+            gate.display()
+        ))
+        .output()
+        .unwrap_or_else(|e| panic!("source {}: {e}", gate.display()));
+    assert!(
+        out.status.success(),
+        "could not read the allow-list out of {}: {out:?}",
+        gate.display()
+    );
+    let email = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    assert!(
+        email.contains('@'),
+        "the gate's allow-list yielded no address ({email:?}), so every fixture \
+         below would set an identity the gate refuses and fail as the stage it \
+         never reached"
+    );
+    email
+}
+
 fn staged_citation_fixture_files(dir: &Path, files: &[(&str, &str)]) {
     let root = repo_root();
     let run = |args: &[&str]| {
@@ -606,6 +637,42 @@ fn staged_citation_fixture_files(dir: &Path, files: &[(&str, &str)]) {
         assert!(out.status.success(), "git {args:?}: {out:?}");
     };
     run(&["init", "-q"]);
+    // The IDENTITY precondition, fixed by the fixture instead of inherited
+    // from whoever is watching.
+    //
+    // `pre-commit` sources `ident-gate.sh` before Stage 0 and refuses when it
+    // cannot read the identity a commit would carry. A fresh fixture
+    // repository has none of its own, so the gate fell through to the global
+    // config: on a developer machine that answered and the hook ran, and on a
+    // hosted runner with no identity `git var GIT_AUTHOR_IDENT` failed.
+    // Measured 2026-08-26 on `6937e04f38` — green locally, red in BOTH `Rust
+    // Workspace Tests` and `Tree Hygiene`, and red as "the hook did not reach
+    // the citation stage", which reads as a defect in the stage under test.
+    let allowed = allowed_ident_email(&root);
+    run(&["config", "user.name", "sce fixture"]);
+    run(&["config", "user.email", &allowed]);
+    // A lower bound on the precondition itself, because "we wrote the config"
+    // and "git will stamp this" are different claims: `GIT_AUTHOR_EMAIL` and
+    // `GIT_COMMITTER_EMAIL` in the environment override the two lines above,
+    // and `git var` is what the gate itself grades. Asserting here names the
+    // environment as the cause; leaving it to the hook names the citation
+    // stage, which is not what broke.
+    for role in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"] {
+        let out = Command::new("git")
+            .args(["var", role])
+            .current_dir(dir)
+            .output()
+            .unwrap_or_else(|e| panic!("git var {role}: {e}"));
+        let ident = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && ident.contains(&format!("<{allowed}>")),
+            "the fixture repository would stamp {role} as {ident:?}, not \
+             <{allowed}> — the hook's identity gate refuses that and the tests \
+             below would fail as the stage they never reached. Check the \
+             environment: GIT_AUTHOR_EMAIL / GIT_COMMITTER_EMAIL override the \
+             config this fixture just wrote."
+        );
+    }
     std::fs::create_dir_all(dir.join("scripts/gates")).expect("mkdir scripts/gates");
     for f in ["lib.sh", "ledger-citations.sh"] {
         std::fs::copy(
