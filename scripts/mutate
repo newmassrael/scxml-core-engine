@@ -1054,6 +1054,11 @@ MUTATION_KEPT_CONSOLE_MAX_BYTES="${MUTATION_KEPT_CONSOLE_MAX_BYTES:-2097152}"
 # call site: this function writes to the report directory and nothing else.
 mutation_copy_capped() {
     local src="$1" dst="$2" size half dropped
+    # Explicitly, because the `cp` this replaced was silent about a source that
+    # is not there and this must be too: `wc -c <missing` fails at the
+    # redirection, which bash reports in its own words on stderr — a line in
+    # the round's output about a file the round never promised.
+    [[ -f "$src" ]] || return 0
     size="$(wc -c <"$src" 2>/dev/null || echo 0)"
     if (( size <= MUTATION_KEPT_CONSOLE_MAX_BYTES )); then
         cp -f "$src" "$dst" 2>/dev/null || true
