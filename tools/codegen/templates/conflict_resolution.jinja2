@@ -37,8 +37,13 @@
 
     // Appendix D removeConflictingTransitions: Remove conflicting transitions using shared Helper
     // ARCHITECTURE.MD: Zero Duplication - delegates to ConflictResolutionHelper
+    // Appendix D computeExitSet reads the CONFIGURATION, so the caller hands the
+    // active states over rather than this deriving them from the hierarchy: a
+    // transition's exit set includes the sibling regions of any `<parallel>`
+    // below its domain, and the source's own ancestor chain never reaches them.
     static ::std::vector<TransitionInfo> removeConflictingTransitions(
-        const ::std::vector<TransitionInfo>& enabledTransitions) {
+        const ::std::vector<TransitionInfo>& enabledTransitions,
+        const ::std::vector<State>& configuration) {
 
         // Convert TransitionInfo to Helper format with exit sets
         using Helper = ::SCE::Core::ConflictResolutionHelper<{{ model.name }}Policy>;
@@ -56,7 +61,8 @@
 
             // Appendix D computeExitSet: Compute exit set using shared Helper
             // W3C SCXML 5.9.2: Pass targetless flag for correct exit set computation
-            desc.exitSet = Helper::computeExitSet(trans.source, trans.target, trans.isInternal, trans.isTargetless);
+            desc.exitSet = Helper::computeExitSet(trans.source, trans.target, trans.isInternal, trans.isTargetless,
+                                                  configuration);
 
             descriptors.push_back(desc);
         }

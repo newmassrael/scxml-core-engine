@@ -13841,6 +13841,11 @@
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::computeExitSet",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "computeExitSet",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14034,6 +14039,11 @@
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::computeTransitionDomain",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "getTransitionDomain",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14190,6 +14200,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "applySimultaneousTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "getTransitionDomain",
           "kind": "implements"
         }
       ],

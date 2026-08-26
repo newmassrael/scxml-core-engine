@@ -18,12 +18,128 @@
 
 #include "core/HierarchicalStateHelper.h"
 #include "core/StatePolicyConcepts.h"
+#include <algorithm>
 #include <functional>
 #include <optional>
 #include <unordered_set>
 #include <vector>
 
 namespace SCE::Core {
+
+/**
+ * @brief Appendix D's computeExitSet and getTransitionDomain, over a configuration
+ *
+ * @details
+ * The appendix computes an exit set FROM THE CONFIGURATION: for a transition
+ * that has a target, it is every active state that is a proper descendant of
+ * the transition's domain. Walking only the source's own ancestor chain answers
+ * that same set in a machine whose configuration is a single chain, and a
+ * strictly smaller one the moment a `<parallel>` is active below the domain --
+ * the sibling regions are descendants of the domain too, and the chain never
+ * reaches them.
+ *
+ * The gap is not cosmetic. `removeConflictingTransitions` decides conflict by
+ * INTERSECTING these sets, so a chain-shaped exit set makes a transition that
+ * tears a whole `<parallel>` down look disjoint from the sibling region's
+ * transition on the same event.
+ *
+ * Lambda-injected so the Interpreter (states are `std::string`) and the AOT
+ * engine (states are an enum) share one implementation -- the same shape
+ * `ConflictResolutionAlgorithms` uses, and the reason this engine's conflict
+ * set and its microstep set are now one procedure rather than two that agree
+ * only where no `<parallel>` is active.
+ */
+struct ExitSetAlgorithms {
+    /**
+     * @brief Appendix D's getTransitionDomain
+     *
+     * @param isDomainCandidate `isCompoundStateOrScxmlElement`; a `<parallel>` answers false
+     * @return The domain, or std::nullopt when it is the `<scxml>` element --
+     *         which has no state identifier in either engine, and which callers
+     *         read as "every active state lies below it"
+     */
+    template <typename StateType, typename GetParentFn, typename IsDomainCandidateFn>
+    [[nodiscard]] static std::optional<StateType>
+    getTransitionDomain(const StateType &source, const std::vector<StateType> &targets, bool isInternal,
+                        GetParentFn getParent, IsDomainCandidateFn isDomainCandidate) {
+        const auto containedBy = [&](const StateType &ancestor) {
+            return std::all_of(targets.begin(), targets.end(), [&](const StateType &target) {
+                return HierarchicalAlgorithms::isDescendantOf(target, ancestor, getParent);
+            });
+        };
+
+        // §scxml-D-getTransitionDomain: an internal transition whose targets all
+        // lie below a compound source has the SOURCE as its domain, so the
+        // source stays active and only its active descendants are exited. That
+        // is not the same as exiting nothing: a transition rooted at one of
+        // those descendants exits it too, and the appendix expects the two to be
+        // found in conflict.
+        if (isInternal && !targets.empty() && isDomainCandidate(source) && containedBy(source)) {
+            return source;
+        }
+
+        // §scxml-D-findLCCA over the source and EVERY target at once -- the
+        // first legal candidate that contains all of them. Combining pairwise
+        // answers can only widen the domain.
+        StateType current = source;
+        while (true) {
+            auto parent = getParent(current);
+            if (!parent.has_value()) {
+                return std::nullopt;  // Out of proper ancestors: the domain is the <scxml> element.
+            }
+            current = parent.value();
+
+            if (!isDomainCandidate(current)) {
+                continue;  // A <parallel> is not a domain.
+            }
+            if (containedBy(current)) {
+                return current;
+            }
+        }
+    }
+
+    /**
+     * @brief Appendix D's computeExitSet: the active proper descendants of the domain
+     *
+     * @param configuration The states currently active — the appendix's `configuration`
+     * @return The exited states, in the configuration's own order
+     */
+    template <typename StateType, typename GetParentFn, typename IsDomainCandidateFn>
+    [[nodiscard]] static std::vector<StateType>
+    computeExitSet(const StateType &source, const std::vector<StateType> &targets, bool isInternal, bool isTargetless,
+                   const std::vector<StateType> &configuration, GetParentFn getParent,
+                   IsDomainCandidateFn isDomainCandidate) {
+        std::vector<StateType> exitSet;
+
+        // §scxml-D-computeExitSet: the appendix guards the whole computation
+        // with `if t.target`, so a transition without one exits nothing at all
+        // and can therefore never be preempted.
+        if (isTargetless || targets.empty()) {
+            return exitSet;
+        }
+
+        const auto domain = getTransitionDomain(source, targets, isInternal, getParent, isDomainCandidate);
+
+        exitSet.reserve(configuration.size());
+        for (const auto &state : configuration) {
+            if (!domain.has_value()) {
+                // The domain is the <scxml> element and every active state is a
+                // descendant of it -- the sibling regions of an enclosing
+                // `<parallel>` included.
+                exitSet.push_back(state);
+                continue;
+            }
+            if (state == domain.value()) {
+                continue;  // The domain itself is not exited.
+            }
+            if (HierarchicalAlgorithms::isDescendantOf(state, domain.value(), getParent)) {
+                exitSet.push_back(state);
+            }
+        }
+
+        return exitSet;
+    }
+};
 
 /**
  * @brief Helper functions for parallel state transition conflict detection
@@ -62,14 +178,22 @@ public:
     };
 
     /**
-     * @brief Compute exit set for a transition
+     * @brief §scxml-D-computeExitSet: the active states this transition exits
      *
-     * §scxml-3.13: Exit set = all states exited when taking this transition
-     * = source state + ancestors up to (but not including) LCA with targets
+     * @details
+     * The appendix reads the exit set off the CONFIGURATION -- every active
+     * state that is a proper descendant of the transition's domain -- so this
+     * needs the configuration and cannot be answered from the hierarchy alone.
+     * Walking the source's own ancestor chain, which is what stood here, names
+     * the same states only while no `<parallel>` is active below the domain; a
+     * transition that tears one down then looked disjoint from the sibling
+     * region's transition on the same event, and `removeConflictingTransitions`
+     * intersects exactly this set.
      *
      * @tparam StateType State enum or identifier type
      * @tparam PolicyType Policy class with state hierarchy
      * @param transition Transition to compute exit set for
+     * @param configuration The currently active states
      * @return Set of states that will be exited
      */
 #if __cpp_concepts >= 202002L
@@ -77,198 +201,28 @@ public:
 #else
     template <typename StateType, typename PolicyType>
 #endif
-    static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition) {
-        std::unordered_set<StateType> exitSet;
+    static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition,
+                                                        const std::vector<StateType> &configuration) {
+        using Hierarchy = SCE::Core::HierarchicalStateHelper<PolicyType>;
 
-        // §scxml-3.13: Targetless internal transitions (consumes event only, no exit/enter)
-        // These transitions execute actions but do not change state - empty exit set
-        if (transition.isTargetless) {
-            return exitSet;  // Empty exit set for targetless transition
-        }
+        // ARCHITECTURE.md Zero Duplication: one appendix procedure, bound here
+        // to a StatePolicy and in the Interpreter to lambdas over state IDs.
+        const auto exited = ExitSetAlgorithms::computeExitSet(
+            transition.source, transition.targets, transition.isInternal, transition.isTargetless, configuration,
+            [](const StateType &s) { return PolicyType::getParent(s); },
+            [](const StateType &s) { return Hierarchy::isTransitionDomainCandidate(s); });
 
-        // §scxml-3.13: Internal transition to compound descendant - source stays active
-        if (transition.isInternal) {
-            bool allTargetsAreDescendants = true;
-            for (const auto &target : transition.targets) {
-                if (!isInternalToDescendant<StateType, PolicyType>(transition.source, target)) {
-                    allTargetsAreDescendants = false;
-                    break;
-                }
-            }
-
-            if (allTargetsAreDescendants) {
-                return exitSet;  // Empty set - source and ancestors remain active
-            }
-        }
-
-        // External transition (or internal transition that behaves as external)
-        // §scxml-D-getTransitionDomain: the domain is findLCCA over the source
-        // and every target — the candidates are compound `<state>`s and the
-        // `<scxml>` element, never a `<parallel>`. This set is what conflict
-        // resolution intersects, so answering a `<parallel>` here made a
-        // region-root transition look non-conflicting with the sibling
-        // region's transition on the same event.
-        // The appendix takes findLCCA over the whole list at once — the first
-        // legal candidate that contains EVERY target — rather than combining
-        // pairwise answers, which can only widen the domain.
-        std::optional<StateType> lca = std::nullopt;
-        {
-            using Hierarchy = SCE::Core::HierarchicalStateHelper<PolicyType>;
-            StateType current = transition.source;
-            while (true) {
-                auto parent = PolicyType::getParent(current);
-                if (!parent.has_value()) {
-                    break;  // Out of ancestors: the domain is the <scxml> element.
-                }
-                current = parent.value();
-
-                if (!Hierarchy::isTransitionDomainCandidate(current)) {
-                    continue;  // A <parallel> is not a domain.
-                }
-
-                bool containsEveryTarget = true;
-                for (const auto &target : transition.targets) {
-                    if (!Hierarchy::isDescendantOf(target, current)) {
-                        containsEveryTarget = false;
-                        break;
-                    }
-                }
-
-                if (containsEveryTarget) {
-                    lca = current;
-                    break;
-                }
-            }
-        }
-
-        // Collect all states from source up to (but not including) LCA
-        auto current = transition.source;
-        while (true) {
-            exitSet.insert(current);
-
-            auto parent = PolicyType::getParent(current);
-            if (!parent.has_value()) {
-                break;
-            }
-
-            // Stop before LCA
-            if (lca.has_value() && parent.value() == lca.value()) {
-                break;
-            }
-
-            current = parent.value();
-        }
+        std::unordered_set<StateType> exitSet(exited.begin(), exited.end());
 
         return exitSet;
     }
 
-    /**
-     * @brief Check if two transitions conflict
-     *
-     * §scxml-D-removeConflictingTransitions: two transitions conflict if their exit sets intersect
-     * (they would exit the same state, which is invalid).
-     *
-     * §scxml-3.13: Special case for parallel states - if a transition exits a parallel state,
-     * it conflicts with any transition whose source is a descendant of that parallel state,
-     * even if their exit sets don't explicitly intersect (because exiting the parallel state
-     * implicitly exits all its child regions).
-     *
-     * @tparam StateType State enum or identifier type
-     * @param t1 First transition
-     * @param t2 Second transition
-     * @return true if transitions conflict
-     */
-#if __cpp_concepts >= 202002L
-    template <typename StateType, ParallelStatePolicy PolicyType>
-#else
-    template <typename StateType, typename PolicyType>
-#endif
-    static bool hasConflict(const Transition<StateType> &t1, const Transition<StateType> &t2) {
-        // Check if exit sets intersect
-        for (const auto &state : t1.exitSet) {
-            if (t2.exitSet.find(state) != t2.exitSet.end()) {
-                return true;  // Conflict: both exit the same state
-            }
-        }
-
-        // §scxml-3.13: Parallel state conflict detection
-        // If t1 exits a parallel state, it conflicts with any transition whose source is a descendant of that parallel
-        // state
-        for (const auto &exitState : t1.exitSet) {
-            if (PolicyType::isParallelState(exitState)) {
-                if (PolicyType::isDescendantOf(t2.source, exitState)) {
-                    return true;  // Conflict: t1 exits parallel ancestor of t2's source
-                }
-            }
-        }
-
-        // Check reverse: t2 exits parallel state that is ancestor of t1's source
-        for (const auto &exitState : t2.exitSet) {
-            if (PolicyType::isParallelState(exitState)) {
-                if (PolicyType::isDescendantOf(t1.source, exitState)) {
-                    return true;  // Conflict: t2 exits parallel ancestor of t1's source
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @brief Select optimal enabled transition set (non-conflicting)
-     *
-     * §scxml-D-removeConflictingTransitions: from all enabled transitions, select maximal
-     * non-conflicting subset. Preemption rule: Transitions in child states
-     * have priority over parent states.
-     *
-     * Algorithm:
-     * 1. Sort transitions by state hierarchy depth (deeper first)
-     * 2. Greedily select transitions that don't conflict with already selected
-     *
-     * @tparam StateType State enum or identifier type
-     * @tparam PolicyType Policy class with state hierarchy
-     * @param enabledTransitions All enabled transitions for current event
-     * @return Non-conflicting subset of transitions to execute
-     */
-#if __cpp_concepts >= 202002L
-    template <typename StateType, ParallelStatePolicy PolicyType>
-#else
-    template <typename StateType, typename PolicyType>
-#endif
-    static std::vector<Transition<StateType>>
-    selectOptimalTransitions(std::vector<Transition<StateType>> &enabledTransitions) {
-        // Compute exit sets for all transitions
-        for (auto &transition : enabledTransitions) {
-            transition.exitSet = computeExitSet<StateType, PolicyType>(transition);
-        }
-
-        // Sort by state hierarchy depth (deeper states first - preemption)
-        std::sort(enabledTransitions.begin(), enabledTransitions.end(),
-                  [](const Transition<StateType> &a, const Transition<StateType> &b) {
-                      return getDepth<StateType, PolicyType>(a.source) > getDepth<StateType, PolicyType>(b.source);
-                  });
-
-        // Greedy selection: Pick transitions that don't conflict with already selected
-        std::vector<Transition<StateType>> selectedTransitions;
-
-        for (const auto &transition : enabledTransitions) {
-            bool conflicts = false;
-
-            // Check if this transition conflicts with any already selected
-            for (const auto &selectedTransition : selectedTransitions) {
-                if (hasConflict<StateType, PolicyType>(transition, selectedTransition)) {
-                    conflicts = true;
-                    break;
-                }
-            }
-
-            if (!conflicts) {
-                selectedTransitions.push_back(transition);
-            }
-        }
-
-        return selectedTransitions;
-    }
+    // §scxml-D-removeConflictingTransitions lives in ConflictResolutionHelper,
+    // where both engines reach it. A second resolver stood here -- a depth sort
+    // and a greedy scan, which is not the appendix's ordered-set procedure -- and
+    // nothing in the tree called it. It is gone rather than carried forward with
+    // the configuration this exit set now needs: two implementations of one
+    // appendix procedure can only drift, and the unreachable one drifts unseen.
 
     /**
      * @brief Get hierarchy depth of a state
@@ -324,86 +278,16 @@ public:
                                                       const std::vector<StateType> &activeStates) {
         std::vector<StateType> statesToExit;
 
-        // §scxml-D-computeExitSet: For each transition, compute LCA-based exit set
-        // Exit set = all active states that are descendants of LCA (excluding LCA itself)
+        // §scxml-D-computeExitSet takes a LIST of transitions and unions their
+        // exit sets. Each one is the same procedure conflict resolution
+        // intersects -- the microstep and the resolver must not be able to
+        // disagree about which states a transition exits, and they did while
+        // this walked the configuration itself and `computeExitSet` walked the
+        // source's ancestor chain.
         for (const auto &trans : transitions) {
-            // §scxml-3.13: Targetless transitions do not exit any states
-            // These transitions execute actions but do not change state configuration
-            if (trans.isTargetless) {
-                continue;  // Skip exit computation for targetless transition
-            }
-
-            // Handle each target separately (parallel states may have multiple targets)
-            if (trans.targets.empty()) {
-                continue;  // No target, no exit needed
-            }
-
-            for (const auto &target : trans.targets) {
-                // §scxml-3.13: Compute effective LCA considering internal transition semantics
-                auto lca = computeEffectiveLCA<StateType, PolicyType>(trans.source, target, trans.isInternal);
-
-                if (!lca.has_value()) {
-                    // §scxml-D-computeExitSet: the domain is the <scxml>
-                    // element, and EVERY active state is a descendant of it —
-                    // so the whole configuration exits and the target's entry
-                    // chain is walked fresh.
-                    //
-                    // Walking only the source's own ancestor chain, which is
-                    // what stood here, is the same set in a machine whose
-                    // configuration is a single chain — and silently wrong the
-                    // moment a `<parallel>` is active, because the sibling
-                    // regions are descendants of the domain too. That is the
-                    // half of a region-root external transition the domain fix
-                    // above cannot supply on its own.
-                    for (const auto &activeState : activeStates) {
-                        bool alreadyInSet =
-                            std::find(statesToExit.begin(), statesToExit.end(), activeState) != statesToExit.end();
-                        if (!alreadyInSet) {
-                            statesToExit.push_back(activeState);
-                        }
-                    }
-                } else {
-                    // §scxml-D-computeExitSet: exit every active descendant of
-                    // the transition's domain; the domain itself stays.
-                    //
-                    // The domain can never be the source: the ancestor search
-                    // chooses among proper ancestors, which exclude the state
-                    // itself, and the one other answer `computeEffectiveLCA`
-                    // gives — the source, for an internal transition to a
-                    // descendant — is handled by the `isInternal` branch above.
-                    // An external self-transition is therefore an ordinary
-                    // descendant of its parent domain and needs no case of its
-                    // own.
-                    for (const auto &activeState : activeStates) {
-                        if (activeState == lca.value()) {
-                            continue;  // The domain is not exited
-                        }
-
-                        bool shouldExit = false;
-                        auto current = activeState;
-
-                        while (true) {
-                            auto parent = PolicyType::getParent(current);
-                            if (!parent.has_value()) {
-                                break;  // Reached root without finding the domain
-                            }
-
-                            if (parent.value() == lca.value()) {
-                                shouldExit = true;
-                                break;
-                            }
-                            current = parent.value();
-                        }
-
-                        // Add to exit set if should exit and not already present
-                        if (shouldExit) {
-                            bool alreadyInSet =
-                                std::find(statesToExit.begin(), statesToExit.end(), activeState) != statesToExit.end();
-                            if (!alreadyInSet) {
-                                statesToExit.push_back(activeState);
-                            }
-                        }
-                    }
+            for (const auto &state : computeExitSet<StateType, PolicyType>(trans, activeStates)) {
+                if (std::find(statesToExit.begin(), statesToExit.end(), state) == statesToExit.end()) {
+                    statesToExit.push_back(state);
                 }
             }
         }
@@ -531,66 +415,11 @@ public:
         return transitionEvent == currentEvent;
     }
 
-private:
-    /**
-     * @brief Check if a transition qualifies as internal-to-descendant
-     *
-     * §scxml-3.13: An internal transition does NOT exit its source state when:
-     * 1. The source is a compound state (NOT parallel, NOT atomic)
-     * 2. The target is a proper descendant of the source
-     *
-     * @tparam StateType State enum or identifier type
-     * @tparam PolicyType Policy class with state hierarchy
-     * @param source Source state of the transition
-     * @param target Target state to check
-     * @return true if source is compound and target is a proper descendant
-     */
-#if __cpp_concepts >= 202002L
-    template <typename StateType, ParallelStatePolicy PolicyType>
-#else
-    template <typename StateType, typename PolicyType>
-#endif
-    static bool isInternalToDescendant(StateType source, StateType target) {
-        bool sourceIsCompound = PolicyType::isCompoundState(source) && !PolicyType::isParallelState(source);
-        if (!sourceIsCompound) {
-            return false;
-        }
-        return PolicyType::isDescendantOf(target, source) && target != source;
-    }
-
-    /**
-     * @brief Compute effective LCA for a (source, target) pair considering internal transition semantics
-     *
-     * §scxml-3.13: For internal transitions where the source is compound and
-     * the target is a proper descendant, the effective LCA is the source itself
-     * (source stays active). For all other cases, standard LCA via hierarchy traversal.
-     *
-     * @tparam StateType State enum or identifier type
-     * @tparam PolicyType Policy class with state hierarchy
-     * @param source Source state of the transition
-     * @param target Target state of the transition
-     * @param isInternal Whether the transition is type="internal"
-     * @return Effective LCA state, or nullopt if no common ancestor found
-     */
-#if __cpp_concepts >= 202002L
-    template <typename StateType, ParallelStatePolicy PolicyType>
-#else
-    template <typename StateType, typename PolicyType>
-#endif
-    static std::optional<StateType> computeEffectiveLCA(StateType source, StateType target, bool isInternal) {
-        if (isInternal && isInternalToDescendant<StateType, PolicyType>(source, target)) {
-            return source;  // Source is the LCA - don't exit it
-        }
-        // §scxml-D-getTransitionDomain: findLCCA, not findLCA. The appendix
-        // filters the candidate ancestors with `isCompoundStateOrScxmlElement`,
-        // so a `<parallel>` is never a domain — and a transition written on a
-        // REGION ROOT is precisely the case where the two procedures differ.
-        // Asking for a plain LCA answered the enclosing `<parallel>`, which
-        // left the sibling regions unexited and their own transitions on the
-        // same event unpreempted: measured 2026-08-25 as a configuration
-        // holding BOTH children of the sibling region at once.
-        return SCE::Core::HierarchicalStateHelper<PolicyType>::findLCCA(source, target);
-    }
+    // §scxml-D-getTransitionDomain used to be spelled twice below this line --
+    // `isInternalToDescendant` and `computeEffectiveLCA`, private helpers whose
+    // only callers were the two exit-set walks above. Both now go through
+    // `ExitSetAlgorithms::getTransitionDomain`, which is the one place the rule
+    // is written and the one the Interpreter can reach as well.
 };
 
 }  // namespace SCE::Core

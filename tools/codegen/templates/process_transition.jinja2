@@ -212,7 +212,7 @@
 
             // Appendix D removeConflictingTransitions: Remove conflicting transitions (optimal transition set)
             if (!enabledTransitions.empty()) {
-                enabledTransitions = removeConflictingTransitions(enabledTransitions);
+                enabledTransitions = removeConflictingTransitions(enabledTransitions, activeStates_);
                 AOT_DEBUG("AOT processTransition: After conflict resolution: {} transitions", enabledTransitions.size());
             }
 
@@ -298,7 +298,7 @@
 
             // Appendix D removeConflictingTransitions: Remove conflicting transitions (optimal transition set)
             if (!enabledTransitions.empty()) {
-                enabledTransitions = removeConflictingTransitions(enabledTransitions);
+                enabledTransitions = removeConflictingTransitions(enabledTransitions, activeStates_);
                 AOT_DEBUG("AOT processTransition: After conflict resolution: {} transitions", enabledTransitions.size());
             }
 
