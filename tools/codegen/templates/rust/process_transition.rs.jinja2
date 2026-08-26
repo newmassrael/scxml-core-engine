@@ -120,7 +120,7 @@
 
             // Appendix D removeConflictingTransitions: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
-                enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
+                enabled_transitions = self.remove_conflicting_transitions(&enabled_transitions);
             }
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
@@ -175,7 +175,7 @@
 
             // Appendix D removeConflictingTransitions: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
-                enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
+                enabled_transitions = self.remove_conflicting_transitions(&enabled_transitions);
             }
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep

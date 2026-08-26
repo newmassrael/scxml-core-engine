@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 280975c88158c1a2612c8726a71e4ae581a1e42f8ef6d030924e99800aff8d10
-// template-hash: c11ce025286de32d15ba70522b50fb24cf722356167a9d021470bd1434f2dd9a
+// template-hash: b9b6d5a256b534ee1bf3d5ad94af0afa9df9e54bf19008d6dd27d12f1bc9a55e
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -710,7 +710,7 @@ impl StatePolicy for ParallelCompletionRaisesDoneStatePolicy {
 
             // Appendix D removeConflictingTransitions: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
-                enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
+                enabled_transitions = self.remove_conflicting_transitions(&enabled_transitions);
             }
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
@@ -782,7 +782,7 @@ impl StatePolicy for ParallelCompletionRaisesDoneStatePolicy {
 
             // Appendix D removeConflictingTransitions: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
-                enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
+                enabled_transitions = self.remove_conflicting_transitions(&enabled_transitions);
             }
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
@@ -911,8 +911,10 @@ impl ParallelCompletionRaisesDoneStatePolicy {
         }
     }
 
-    // Appendix D removeConflictingTransitions: Remove conflicting transitions
-    fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> TransitionList {
+    // Appendix D removeConflictingTransitions: Remove conflicting transitions.
+    // Takes `&self` because Appendix D computeExitSet reads the CONFIGURATION,
+    // and the set this intersects has to be the set `execute_microstep` exits.
+    fn remove_conflicting_transitions(&self, enabled: &[TransitionInfo]) -> TransitionList {
         let mut filtered: TransitionList = TransitionList::new();
 
         for t1 in enabled {
@@ -922,9 +924,9 @@ impl ParallelCompletionRaisesDoneStatePolicy {
             for (idx, t2) in filtered.iter().enumerate() {
                 // Appendix D removeConflictingTransitions: Check if exit sets intersect
                 let t1_exits =
-                    Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
+                    self.compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
                 let t2_exits =
-                    Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
+                    self.compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
 
                 // Appendix D removeConflictingTransitions: two transitions conflict
                 // when their EXIT SETS intersect. A transition that exits nothing
@@ -1004,85 +1006,91 @@ impl ParallelCompletionRaisesDoneStatePolicy {
         filtered
     }
 
-    // Appendix D computeExitSet: Compute exit set for a transition
-    // Matches C++ `ParallelTransitionHelper::computeExitSet` — returns all states
-    // from `source` up to (but not including) LCA(source, target). For internal
-    // transitions where the target is a descendant of the source, returns empty.
-    fn compute_exit_set(
+    // Appendix D getTransitionDomain: the state every exited and entered state
+    // descends from. `None` means the `<scxml>` element, which has no variant
+    // here -- callers read it as "every active state lies below it".
+    fn transition_domain(
         source: ParallelCompletionRaisesDoneStateState,
         target: ParallelCompletionRaisesDoneStateState,
         is_internal: bool,
-        is_targetless: bool,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<ParallelCompletionRaisesDoneStateState>
-    {
-        // W3C SCXML 5.9.2: Targetless transitions execute actions only — no exit/entry
-        if is_targetless {
-            return ::sce_rust_runtime::helpers::hierarchy::new_chain();
-        }
-
-        // W3C SCXML 3.13: Internal transition to a compound descendant — source stays active.
-        // Matches C++ `isInternalToDescendant`: source must be compound (not parallel) AND
-        // target must be a proper descendant. If source is atomic or parallel, the internal
-        // transition behaves as external (W3C SCXML 3.13).
+    ) -> Option<ParallelCompletionRaisesDoneStateState> {
+        // W3C SCXML 3.13: Internal transition to a compound descendant — the
+        // SOURCE is the domain, so it stays active while its active descendants
+        // are exited. If source is atomic or parallel, the internal transition
+        // behaves as external (W3C SCXML 3.13).
         if is_internal
             && Self::is_compound_state(source)
             && !Self::is_parallel_state(source)
             && Self::is_descendant_of(target, source)
             && target != source
         {
-            return ::sce_rust_runtime::helpers::hierarchy::new_chain();
+            return Some(source);
         }
 
         // Appendix D findLCCA: walk up from source for the lowest CANDIDATE
         // ancestor that contains target. The candidates are the ones
-        // `isCompoundStateOrScxmlElement` admits, so a `<parallel>` is skipped --
-        // the same filter `execute_microstep` applies, and it has to be the same
-        // one: this exit set is what conflict resolution intersects, so answering
-        // a `<parallel>` here made a region-root transition look non-conflicting
-        // with the sibling region's transition on the same event.
+        // `isCompoundStateOrScxmlElement` admits, so a `<parallel>` is skipped.
         //
         // If no candidate contains target (top-level siblings, or a region root's
         // external transition whose only non-candidate ancestor is the
-        // `<parallel>`), `lca` stays `None` and the walk runs to the root.
-        let lca: Option<ParallelCompletionRaisesDoneStateState> = {
-            let mut current = source;
-            let mut result = None;
-            loop {
-                match Self::get_parent(current) {
-                    Some(parent) => {
-                        let is_domain_candidate =
-                            Self::is_compound_state(parent) && !Self::is_parallel_state(parent);
-                        if is_domain_candidate
-                            && (Self::is_descendant_of(target, parent) || target == parent)
-                        {
-                            result = Some(parent);
-                            break;
-                        }
-                        current = parent;
-                    }
-                    None => break,
-                }
-            }
-            result
-        };
-
-        // Appendix D findLCCA: Collect states from source up to (excluding) LCA
-        let mut exit_set = ::sce_rust_runtime::helpers::hierarchy::new_chain();
+        // `<parallel>`), the domain is the `<scxml>` element.
         let mut current = source;
         loop {
-            ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut exit_set, current);
             match Self::get_parent(current) {
                 Some(parent) => {
-                    if let Some(lca_state) = lca {
-                        if parent == lca_state {
-                            break;
-                        }
+                    let is_domain_candidate =
+                        Self::is_compound_state(parent) && !Self::is_parallel_state(parent);
+                    if is_domain_candidate
+                        && (Self::is_descendant_of(target, parent) || target == parent)
+                    {
+                        return Some(parent);
                     }
                     current = parent;
                 }
-                None => break,
+                None => return None,
             }
         }
+    }
+
+    // Appendix D computeExitSet: the ACTIVE states that are proper descendants
+    // of the transition's domain.
+    //
+    // This is read off the CONFIGURATION, which is why it takes `&self`. Walking
+    // the source's own ancestor chain instead -- what stood here -- names the
+    // same states only while no `<parallel>` is active below the domain: a
+    // sibling region is a descendant of the domain and is not on that chain. It
+    // left this generator with TWO exit sets, one for conflict resolution and one
+    // for `execute_microstep`, which now share this procedure and cannot disagree.
+    fn compute_exit_set(
+        &self,
+        source: ParallelCompletionRaisesDoneStateState,
+        target: ParallelCompletionRaisesDoneStateState,
+        is_internal: bool,
+        is_targetless: bool,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<ParallelCompletionRaisesDoneStateState>
+    {
+        let mut exit_set = ::sce_rust_runtime::helpers::hierarchy::new_chain();
+
+        // Appendix D computeExitSet guards the whole computation with `if t.target`:
+        // a transition without one exits nothing and conflicts with nothing.
+        if is_targetless {
+            return exit_set;
+        }
+
+        let domain = Self::transition_domain(source, target, is_internal);
+
+        for &active_state in &self.active_states {
+            let exits = match domain {
+                // The domain itself is not exited; everything active below it is.
+                Some(d) => active_state != d && Self::is_descendant_of(active_state, d),
+                // The domain is the `<scxml>` element: the whole configuration goes.
+                None => true,
+            };
+            if exits {
+                ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut exit_set, active_state);
+            }
+        }
+
         exit_set
     }
 
@@ -1098,77 +1106,23 @@ impl ParallelCompletionRaisesDoneStatePolicy {
             return;
         }
 
-        // Appendix D computeExitSet Step 1-2: Compute states to exit
-        // W3C SCXML 3.13: Transition domain = LCCA(source, target). When there is no
-        // common ancestor (top-level sibling transition), we exit every active ancestor
-        // of source up to the root — modelled here as `domain = None`.
+        // Appendix D computeExitSet Step 1-2: the union of the transitions' exit
+        // sets, each one the SAME procedure `remove_conflicting_transitions`
+        // intersects. A microstep that exits a different set from the one the
+        // resolver judged cannot be reasoned about, and this walked the
+        // configuration while `compute_exit_set` walked the source's chain.
         let mut states_to_exit: ::sce_rust_runtime::helpers::hierarchy::StateChain<
             ParallelCompletionRaisesDoneStateState,
         > = ::sce_rust_runtime::helpers::hierarchy::new_chain();
         for trans in transitions {
-            if trans.is_targetless {
-                continue;
-            }
-            // W3C SCXML 3.13: Compute transition domain
-            // Matches C++ `computeEffectiveLCA` — internal transition with compound
-            // (non-parallel) source and proper descendant target uses source as domain.
-            let is_internal_to_descendant = trans.is_internal
-                && Self::is_compound_state(trans.source)
-                && !Self::is_parallel_state(trans.source)
-                && Self::is_descendant_of(trans.target, trans.source)
-                && trans.target != trans.source;
-            let domain: Option<ParallelCompletionRaisesDoneStateState> =
-                if is_internal_to_descendant {
-                    Some(trans.source)
-                } else {
-                    // Appendix D findLCCA: the lowest ancestor of `source` that also
-                    // contains `target` -- among the CANDIDATES, which the procedure
-                    // filters with `isCompoundStateOrScxmlElement`. A `<parallel>` is
-                    // neither a compound `<state>` nor the `<scxml>` element, so it is
-                    // never a transition domain.
-                    //
-                    // Taking the first common ancestor whatever its kind is `findLCA`,
-                    // which the appendix distinguishes from this, and the difference is
-                    // invisible until a `<parallel>` sits between the source and the
-                    // first compound `<state>` above it -- exactly a transition written
-                    // on a REGION ROOT. Answering the `<parallel>` there left the other
-                    // regions unexited: measured 2026-08-25 as a configuration holding
-                    // BOTH children of the sibling region at once.
-                    let mut anc_opt = Self::get_parent(trans.source);
-                    let mut result = None;
-                    while let Some(anc) = anc_opt {
-                        let is_domain_candidate =
-                            Self::is_compound_state(anc) && !Self::is_parallel_state(anc);
-                        if is_domain_candidate
-                            && (Self::is_descendant_of(trans.target, anc) || trans.target == anc)
-                        {
-                            result = Some(anc);
-                            break;
-                        }
-                        anc_opt = Self::get_parent(anc);
-                    }
-                    result
-                };
-
-            for &active_state in &self.active_states {
-                let should_exit = match domain {
-                    Some(d) => {
-                        // External transition where source is its own LCA (source compound,
-                        // target descendant) — exit source and its active descendants.
-                        if !trans.is_internal && d == trans.source {
-                            active_state == d || Self::is_descendant_of(active_state, d)
-                        } else {
-                            Self::is_descendant_of(active_state, d)
-                        }
-                    }
-                    // No LCA — exit every active ancestor/descendant on source's chain.
-                    None => {
-                        active_state == trans.source
-                            || Self::is_descendant_of(trans.source, active_state)
-                            || Self::is_descendant_of(active_state, trans.source)
-                    }
-                };
-                if should_exit && !states_to_exit.contains(&active_state) {
+            let exited = self.compute_exit_set(
+                trans.source,
+                trans.target,
+                trans.is_internal,
+                trans.is_targetless,
+            );
+            for &active_state in exited.iter() {
+                if !states_to_exit.contains(&active_state) {
                     ::sce_rust_runtime::helpers::hierarchy::push_chain(
                         &mut states_to_exit,
                         active_state,

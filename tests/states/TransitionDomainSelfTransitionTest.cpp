@@ -132,6 +132,11 @@ struct EnumPolicy {
     }
 };
 
+// §scxml-D-GlobalVariables `configuration`: the machine at rest, both regions of
+// `run` active down to a leaf. §scxml-D-computeExitSet is defined over this and
+// not over the hierarchy, so every exit-set assertion below has to name it.
+const std::vector<S> kConfiguration = {S::Run, S::Drive, S::Running, S::Working, S::Budget, S::Within};
+
 }  // namespace
 
 TEST(TransitionDomainSelfTransition, DomainOfASelfTransitionIsTheParent) {
@@ -155,7 +160,7 @@ TEST(TransitionDomainSelfTransition, ExitSetOfASelfTransitionIsTheStateAlone) {
     self.isInternal = false;
     self.isTargetless = false;
 
-    const auto exitSet = Core::ParallelTransitionHelper::computeExitSet<S, EnumPolicy>(self);
+    const auto exitSet = Core::ParallelTransitionHelper::computeExitSet<S, EnumPolicy>(self, kConfiguration);
 
     EXPECT_EQ(exitSet.size(), 1u) << "an external self-transition exits its source and re-enters it — nothing else";
     EXPECT_EQ(exitSet.count(S::Within), 1u);
@@ -172,10 +177,10 @@ TEST(TransitionDomainSelfTransition, ASelfTransitionDoesNotPreemptASiblingRegion
     using CR = Core::ConflictResolutionHelper<EnumPolicy>;
 
     CR::TransitionDescriptor deep(S::Working, S::Judging);
-    deep.exitSet = CR::computeExitSet(S::Working, S::Judging, false, false);
+    deep.exitSet = CR::computeExitSet(S::Working, S::Judging, false, false, kConfiguration);
 
     CR::TransitionDescriptor self(S::Within, S::Within);
-    self.exitSet = CR::computeExitSet(S::Within, S::Within, false, false);
+    self.exitSet = CR::computeExitSet(S::Within, S::Within, false, false, kConfiguration);
 
     const auto selected = CR::removeConflictingTransitions({deep, self});
 
@@ -189,6 +194,83 @@ TEST(TransitionDomainSelfTransition, ASelfTransitionDoesNotPreemptASiblingRegion
     };
     EXPECT_TRUE(hasSource(S::Working));
     EXPECT_TRUE(hasSource(S::Within));
+}
+
+// ── §scxml-D-computeExitSet is read off the configuration ────────────────────
+//
+// The three below pin the procedure itself rather than an outcome, because the
+// outcome is already held up by a rule about `<parallel>` ancestors that
+// `removeConflictingTransitions` applies on top of the intersection. That rule
+// is not in the appendix; it stands in for the states this set was failing to
+// name. Nothing can be said about removing it until the set underneath is the
+// appendix's, and these are what say so.
+
+TEST(TransitionDomainSelfTransition, ExitSetNamesTheSiblingRegionUnderTheDomain) {
+    // A transition crossing from one region of `run` to the other. `run` is a
+    // `<parallel>` and therefore not a domain candidate, so §scxml-D-findLCCA
+    // walks past it and the domain is the `<scxml>` element — under which every
+    // active state lies, `budget` and `within` included.
+    Core::ParallelTransitionHelper::Transition<S> crossRegion;
+    crossRegion.source = S::Working;
+    crossRegion.targets = {S::Within};
+
+    const auto exitSet = Core::ParallelTransitionHelper::computeExitSet<S, EnumPolicy>(crossRegion, kConfiguration);
+
+    EXPECT_EQ(exitSet.count(S::Within), 1u)
+        << "the sibling region's active leaf is missing from the exit set. §scxml-D-computeExitSet "
+           "collects the ACTIVE states below the domain; walking the source's own ancestor chain "
+           "instead never reaches a sibling region, so `removeConflictingTransitions` sees this "
+           "transition and that region's transition on the same event as disjoint.";
+    EXPECT_EQ(exitSet.count(S::Budget), 1u) << "the sibling region root is below the domain too";
+    EXPECT_EQ(exitSet.count(S::Run), 1u) << "the `<parallel>` itself is below the `<scxml>` domain and exits with it";
+
+    // The whole configuration is below the document root, so all six exit.
+    EXPECT_EQ(exitSet.size(), kConfiguration.size())
+        << "the domain is the `<scxml>` element, so §scxml-D-computeExitSet answers the whole "
+           "configuration — no active state survives a transition whose domain is the document";
+}
+
+TEST(TransitionDomainSelfTransition, InternalTransitionToADescendantExitsThatDescendant) {
+    // §scxml-D-getTransitionDomain hands an internal transition its own SOURCE
+    // as the domain. That is not the same as exiting nothing: the source stays,
+    // its active descendants do not.
+    Core::ParallelTransitionHelper::Transition<S> internalDown;
+    internalDown.source = S::Running;
+    internalDown.targets = {S::Working};
+    internalDown.isInternal = true;
+
+    const auto exitSet = Core::ParallelTransitionHelper::computeExitSet<S, EnumPolicy>(internalDown, kConfiguration);
+
+    EXPECT_EQ(exitSet.count(S::Working), 1u)
+        << "an internal transition to a descendant answered an EMPTY exit set, so it conflicted with "
+           "nothing — including a transition rooted at `working`, which it demonstrably exits";
+    EXPECT_EQ(exitSet.count(S::Running), 0u) << "the domain itself is not exited; that is what makes it internal";
+    EXPECT_EQ(exitSet.size(), 1u);
+}
+
+TEST(TransitionDomainSelfTransition, TheConflictSetAndTheMicrostepSetAreOneProcedure) {
+    // The debt this test closes: the engine held TWO exit sets. The one
+    // `removeConflictingTransitions` intersects walked the source's ancestor
+    // chain; the one the microstep exits read the configuration. They answer
+    // the same question and must not be able to disagree about it.
+    const std::vector<Core::ParallelTransitionHelper::Transition<S>> transitions = {
+        Core::ParallelTransitionHelper::Transition<S>(S::Working, {S::Within}),
+    };
+
+    const auto microstepSet =
+        Core::ParallelTransitionHelper::computeStatesToExit<S, EnumPolicy>(transitions, kConfiguration);
+    const auto conflictSet =
+        Core::ParallelTransitionHelper::computeExitSet<S, EnumPolicy>(transitions.front(), kConfiguration);
+
+    ASSERT_EQ(microstepSet.size(), conflictSet.size())
+        << "the states this transition is judged to exit and the states it actually exits differ. "
+           "Whichever is right, a resolver reading one while the microstep runs the other cannot be "
+           "reasoned about.";
+    for (const auto state : microstepSet) {
+        EXPECT_EQ(conflictSet.count(state), 1u)
+            << "state " << static_cast<int>(state) << " is exited by the microstep but absent from the set "
+            << "conflict resolution intersects";
+    }
 }
 
 }  // namespace SCE

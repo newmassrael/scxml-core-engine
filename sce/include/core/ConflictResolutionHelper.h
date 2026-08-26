@@ -245,32 +245,37 @@ public:
      * @brief Compute exit set for a single transition
      *
      * @details
-     * §scxml-D-computeExitSet: Exit set = states from source up to (but not including) LCA
+     * §scxml-D-computeExitSet: the active states that are proper descendants of
+     * the transition's domain. It is read off the CONFIGURATION, which is why
+     * the caller has to hand one over — the same set the microstep exits, and
+     * the set `removeConflictingTransitions` below intersects.
      *
      * ARCHITECTURE.md Zero Duplication: Delegates to ParallelTransitionHelper for exit set computation.
      * Single Source of Truth - same algorithm used by AOT engine microstep execution.
      *
      * @param source Source state of transition
      * @param target Target state of transition
+     * @param configuration The currently active states
      * @return Exit set (states to be exited)
      *
      * @par Thread Safety
      * Thread-safe and reentrant.
      *
      * @par Performance
-     * - Time Complexity: O(depth)
-     * - Space Complexity: O(depth)
+     * - Time Complexity: O(|configuration| * depth)
+     * - Space Complexity: O(|configuration|)
      *
      * @par Example
      * @code
-     * // Given hierarchy: S0 -> { S01 -> S011, S02 }
+     * // Given hierarchy: S0 -> { S01 -> S011, S02 }, configuration [S0, S01, S011]
      * // Transition from S011 to S02
-     * auto exitSet = ConflictResolutionHelper<Policy>::computeExitSet(State::S011, State::S02);
-     * // Returns: [S011, S01] (exit both S011 and S01 to reach LCA S0)
+     * auto exitSet = ConflictResolutionHelper<Policy>::computeExitSet(
+     *     State::S011, State::S02, false, false, {State::S0, State::S01, State::S011});
+     * // Returns: [S01, S011] (the active proper descendants of the domain S0)
      * @endcode
      */
-    static std::vector<State> computeExitSet(State source, State target, bool isInternal = false,
-                                             bool isTargetless = false) {
+    static std::vector<State> computeExitSet(State source, State target, bool isInternal, bool isTargetless,
+                                             const std::vector<State> &configuration) {
         // ARCHITECTURE.MD Zero Duplication: Delegate to ParallelTransitionHelper
         // Construct minimal Transition descriptor for exit set computation
         typename ParallelTransitionHelper::Transition<State> trans;
@@ -280,7 +285,7 @@ public:
         trans.isTargetless = isTargetless;  // §scxml-3.13: Pass targetless transition flag
 
         // §scxml-D-computeExitSet: Use shared Helper for exit set computation
-        auto exitSetUnordered = ParallelTransitionHelper::computeExitSet<State, StatePolicy>(trans);
+        auto exitSetUnordered = ParallelTransitionHelper::computeExitSet<State, StatePolicy>(trans, configuration);
 
         // Convert unordered_set to vector for conflict resolution algorithm
         std::vector<State> exitSet(exitSetUnordered.begin(), exitSetUnordered.end());

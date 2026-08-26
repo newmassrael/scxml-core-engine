@@ -737,6 +737,12 @@ add_executable(integration_tests
     integration/DiscardedEventIsObservableAotTest.cpp
     integration/UndecodablePayloadIsReportedTest.cpp
     integration/UndecodablePayloadIsReportedAotTest.cpp
+    # Holds the appendix's answer shut while the spec-alien heuristics in
+    # `ConflictResolutionAlgorithms` are removed. Measured 2026-08-27: it passes
+    # both with and without an appendix-faithful exit set, because the
+    # parallel-ancestor rule reaches the same verdict here — so it is a guard for
+    # that removal, not a discriminator of the exit set underneath it.
+    integration/ParallelExitPreemptsSiblingRegionTest.cpp
     # Interpreter only, deliberately: the seam it exercises is
     # `EventContextGuard`'s, and that guard is the Interpreter's. Its document is
     # inline rather than a fixture stem because no other channel has the site.

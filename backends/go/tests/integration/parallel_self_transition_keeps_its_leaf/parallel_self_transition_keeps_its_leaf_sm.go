@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 09b7454cf9165bde8e92b3225905fad8bae3b40d103c1bd2ce5da264bfe36345
-// template-hash: c11ce025286de32d15ba70522b50fb24cf722356167a9d021470bd1434f2dd9a
+// template-hash: b9b6d5a256b534ee1bf3d5ad94af0afa9df9e54bf19008d6dd27d12f1bc9a55e
 // generated-at: 0
 
 
@@ -1178,59 +1178,68 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) selectOptimalTransitions(tran
 	return filtered
 }
 
-// computeExitSetForConflict computes exit set for conflict detection (Appendix D computeExitSet).
-// Returns states from source up to (but not including) LCA(source, target).
-func (p *ParallelSelfTransitionKeepsItsLeafPolicy) computeExitSetForConflict(t transitionInfo) []ParallelSelfTransitionKeepsItsLeafState {
-	if t.isTargetless {
-		return nil
-	}
-
-	// W3C SCXML 3.13: Internal transition to a compound descendant — source stays active.
-	if t.isInternal &&
-		p.IsCompoundState(t.source) && !p.IsParallelState(t.source) &&
-		p.IsDescendantOf(t.target, t.source) && t.target != t.source {
-		return nil
+// transitionDomain is Appendix D getTransitionDomain — the state every exited
+// and entered state descends from. A nil answer is the <scxml> element, which
+// has no State constant here; callers read it as "every active state is below".
+func (p *ParallelSelfTransitionKeepsItsLeafPolicy) transitionDomain(source, target ParallelSelfTransitionKeepsItsLeafState, isInternal bool) *ParallelSelfTransitionKeepsItsLeafState {
+	// W3C SCXML 3.13: Internal transition to a compound descendant — the SOURCE
+	// is the domain, so it stays active while its active descendants are exited.
+	if isInternal &&
+		p.IsCompoundState(source) && !p.IsParallelState(source) &&
+		p.IsDescendantOf(target, source) && target != source {
+		d := source
+		return &d
 	}
 
 	// Appendix D findLCCA: walk up from source for the lowest CANDIDATE ancestor
 	// that contains target. The candidates are the ones
-	// isCompoundStateOrScxmlElement admits, so a <parallel> is skipped — the same
-	// filter executeMicrostep applies, and it has to be the same one: this exit
-	// set is what conflict resolution intersects, so answering a <parallel> here
-	// made a region-root transition look non-conflicting with the sibling
-	// region's transition on the same event.
+	// isCompoundStateOrScxmlElement admits, so a <parallel> is skipped.
 	//
 	// If no candidate contains target (top-level siblings, or a region root's
 	// external transition whose only non-candidate ancestor is the <parallel>),
-	// lca stays nil and the walk runs to the root.
-	var lca *ParallelSelfTransitionKeepsItsLeafState
-	current := t.source
+	// the domain is the <scxml> element.
+	current := source
 	for {
 		parent, hasParent := p.GetParent(current)
 		if !hasParent {
-			break
+			return nil
 		}
 		isDomainCandidate := p.IsCompoundState(parent) && !p.IsParallelState(parent)
-		if isDomainCandidate && (p.IsDescendantOf(t.target, parent) || t.target == parent) {
-			lca = &parent
-			break
+		if isDomainCandidate && (p.IsDescendantOf(target, parent) || target == parent) {
+			return &parent
 		}
 		current = parent
 	}
+}
 
-	// Appendix D findLCCA: Collect states from source up to (excluding) LCA
+// computeExitSetForConflict is Appendix D computeExitSet: the ACTIVE states that
+// are proper descendants of the transition's domain.
+//
+// It reads p.activeStates, because that is what the appendix computes over.
+// Walking the source's own ancestor chain instead — what stood here — names the
+// same states only while no <parallel> is active below the domain: a sibling
+// region descends from the domain and is not on that chain. It left this
+// generator with TWO exit sets, one for conflict resolution and one for
+// executeMicrostep, which now share this procedure and cannot disagree.
+func (p *ParallelSelfTransitionKeepsItsLeafPolicy) computeExitSetForConflict(t transitionInfo) []ParallelSelfTransitionKeepsItsLeafState {
+	// Appendix D computeExitSet guards the whole computation with `if t.target`:
+	// a transition without one exits nothing and conflicts with nothing.
+	if t.isTargetless {
+		return nil
+	}
+
+	domain := p.transitionDomain(t.source, t.target, t.isInternal)
+
 	var exitSet []ParallelSelfTransitionKeepsItsLeafState
-	current = t.source
-	for {
-		exitSet = append(exitSet, current)
-		parent, hasParent := p.GetParent(current)
-		if !hasParent {
-			break
+	for _, activeState := range p.activeStates {
+		exits := true
+		if domain != nil {
+			// The domain itself is not exited; everything active below it is.
+			exits = activeState != *domain && p.IsDescendantOf(activeState, *domain)
 		}
-		if lca != nil && parent == *lca {
-			break
+		if exits {
+			exitSet = append(exitSet, activeState)
 		}
-		current = parent
 	}
 	return exitSet
 }
@@ -1248,65 +1257,20 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) executeMicrostep(transitions 
 		if trans.isTargetless {
 			continue
 		}
-		// W3C SCXML 3.13: Compute transition domain
-		isInternalToDescendant := trans.isInternal &&
-			p.IsCompoundState(trans.source) && !p.IsParallelState(trans.source) &&
-			p.IsDescendantOf(trans.target, trans.source) && trans.target != trans.source
-
-		var domain *ParallelSelfTransitionKeepsItsLeafState
-		if isInternalToDescendant {
-			d := trans.source
-			domain = &d
-		} else {
-			// Appendix D findLCCA: the lowest ancestor of source that also
-			// contains target — among the CANDIDATES, which the procedure filters
-			// with isCompoundStateOrScxmlElement. A <parallel> is neither a
-			// compound <state> nor the <scxml> element, so it is never a
-			// transition domain.
-			//
-			// Taking the first common ancestor whatever its kind is findLCA, which
-			// the appendix distinguishes from this, and the difference is
-			// invisible until a <parallel> sits between the source and the first
-			// compound <state> above it — exactly a transition written on a REGION
-			// ROOT. Answering the <parallel> there left the other regions
-			// unexited: measured 2026-08-25 as a configuration holding BOTH
-			// children of the sibling region at once.
-			anc, hasAnc := p.GetParent(trans.source)
-			for hasAnc {
-				isDomainCandidate := p.IsCompoundState(anc) && !p.IsParallelState(anc)
-				if isDomainCandidate && (p.IsDescendantOf(trans.target, anc) || trans.target == anc) {
-					domain = &anc
+		// Appendix D computeExitSet: the SAME procedure selectOptimalTransitions
+		// intersects. A microstep that exits a different set from the one the
+		// resolver judged cannot be reasoned about, and this walked the
+		// configuration while computeExitSetForConflict walked source's chain.
+		for _, activeState := range p.computeExitSetForConflict(trans) {
+			found := false
+			for _, s := range statesToExit {
+				if s == activeState {
+					found = true
 					break
 				}
-				anc, hasAnc = p.GetParent(anc)
 			}
-		}
-
-		for _, activeState := range p.activeStates {
-			shouldExit := false
-			if domain != nil {
-				d := *domain
-				if !trans.isInternal && d == trans.source {
-					shouldExit = activeState == d || p.IsDescendantOf(activeState, d)
-				} else {
-					shouldExit = p.IsDescendantOf(activeState, d)
-				}
-			} else {
-				shouldExit = activeState == trans.source ||
-					p.IsDescendantOf(trans.source, activeState) ||
-					p.IsDescendantOf(activeState, trans.source)
-			}
-			if shouldExit {
-				found := false
-				for _, s := range statesToExit {
-					if s == activeState {
-						found = true
-						break
-					}
-				}
-				if !found {
-					statesToExit = append(statesToExit, activeState)
-				}
+			if !found {
+				statesToExit = append(statesToExit, activeState)
 			}
 		}
 	}

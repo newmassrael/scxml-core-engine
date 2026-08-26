@@ -11,8 +11,9 @@
 // the two exit sets intersect and the sibling's source is not a descendant of
 // this one's.
 //
-// The engine answered `run` here instead, because `computeEffectiveLCA` asked
-// for a plain LCA -- the first common ancestor, whatever its kind. That is the
+// The engine answered `run` here instead, because the domain rule it then used
+// asked for a plain LCA -- the first common ancestor, whatever its kind. That
+// rule is now `ExitSetAlgorithms::getTransitionDomain`, written once. That is the
 // `findLCA` the appendix distinguishes from `findLCCA`, and the difference is
 // invisible until a <parallel> sits between the source and the first compound
 // <state> above it, which is exactly a region root.

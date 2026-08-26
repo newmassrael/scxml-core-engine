@@ -572,6 +572,7 @@ Helpers distributed across `sce/include/core/` and `sce/include/common/`:
 | `InvokeHelper` | 6.4 | Invoke lifecycle (defer/cancel/execute pattern) |
 | `TransitionHelper` | 3.13 | Transition selection and execution |
 | `ConflictResolutionHelper` | D.2 | Optimal transition set selection |
+| `ParallelTransitionHelper` (`ExitSetAlgorithms`) | D.2 | `getTransitionDomain` + `computeExitSet` over the configuration |
 | `ParallelStateHelper` | 3.4 | Parallel region orchestration |
 | `HistoryHelper` | 3.11 | History state recording/restoration |
 | `EntryExitHelper` | 3.7, 3.8 | State entry/exit action execution |
