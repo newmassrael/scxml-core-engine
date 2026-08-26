@@ -30,6 +30,11 @@ struct TransitionDescriptorString {
     bool hasActions = false;           // §scxml-3.13: Whether transition has action nodes
     bool isInternal = false;           // §scxml-3.13: Whether transition is type="internal"
     bool isExternal = false;           // §scxml-3.13: Whether transition exits parallel state
+    // Appendix D's computeExitSet guards the whole computation with `if
+    // t.target`. A region spells a targetless transition as source -> source,
+    // which the domain rule would otherwise read as a real self-transition and
+    // exit everything down to the domain, so the flag has to travel with it.
+    bool isTargetless = false;
 
     TransitionDescriptorString() = default;
 

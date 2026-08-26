@@ -13828,11 +13828,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "computeExitSet",
-          "kind": "references"
-        },
-        {
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::processEvent",
           "kind": "references"
@@ -13845,6 +13840,11 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "computeExitSet",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
           "kind": "implements"
         }
       ],
@@ -14043,6 +14043,11 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "getTransitionDomain",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
           "kind": "references"
         }
       ],
@@ -16081,6 +16086,12 @@
       "target_kind": "section",
       "target_id": "scxml-3.2",
       "reason": "probe artefact: --symbol was passed a placeholder while discovering the flag's shape; the real bindings follow"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-computeExitSet",
+      "reason": "ConcurrentRegion::computeExitSet deleted: the appendix computes the exit set over the configuration, which a region does not have; StateMachine owns it now"
     }
   ],
   "frames": {},

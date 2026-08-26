@@ -910,10 +910,56 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         for (const auto &result : results) {
             // Collect enabled transitions from this region
             for (const auto &transition : result.enabledTransitions) {
-                SCE_LOG_DEBUG(
-                    "StateMachine: Collected enabled transition from region '{}': {} -> {} (event='{}', external={})",
-                    result.regionId, transition.source, transition.target, transition.event, transition.isExternal);
                 allEnabledTransitions.push_back(transition);
+            }
+        }
+
+        // §scxml-D-computeExitSet: the ACTIVE states below the transition's
+        // domain. It is read off the CONFIGURATION, and a region cannot see one
+        // — it knows only its own states, so the set it could assemble stops at
+        // its own leaf-to-domain chain and never names a sibling region. For a
+        // transition leaving the `<parallel>` the domain is above the
+        // `<parallel>`, so the sibling regions ARE below it, and
+        // `removeConflictingTransitions` intersects exactly this set: computed
+        // per region, the question of whether two regions' transitions conflict
+        // was decided on a set that could not mention the state making them so.
+        //
+        // ARCHITECTURE.md Zero Duplication: the same procedure the AOT engine
+        // reaches through `ParallelTransitionHelper`, bound here to lambdas over
+        // state IDs rather than to a StatePolicy.
+        {
+            const auto configuration =
+                hierarchyManager_ ? hierarchyManager_->getActiveStates() : std::vector<std::string>{};
+
+            auto parentOf = [this](const std::string &stateId) -> std::optional<std::string> {
+                auto stateNode = model_->findStateById(stateId);
+                if (stateNode && stateNode->getParent()) {
+                    return stateNode->getParent()->getId();
+                }
+                return std::nullopt;
+            };
+
+            // §scxml-D-findLCCA `isCompoundStateOrScxmlElement`: a `<parallel>`
+            // answers false, which is the whole difference from a plain LCA.
+            auto isDomainCandidate = [this](const std::string &stateId) {
+                auto stateNode = model_->findStateById(stateId);
+                return stateNode && stateNode->getType() == Type::COMPOUND;
+            };
+
+            const std::string parallelStateId = parallelState ? parallelState->getId() : std::string{};
+
+            for (auto &t : allEnabledTransitions) {
+                t.exitSet = SCE::Core::ExitSetAlgorithms::computeExitSet<std::string>(
+                    t.source, {t.target}, t.isInternal, t.isTargetless, configuration, parentOf, isDomainCandidate);
+
+                // What the microstep below needs from the set: the `<parallel>`
+                // is among the states this transition exits, so it tears down
+                // and the target is re-entered through a fresh entry path.
+                t.isExternal = !parallelStateId.empty() &&
+                               std::find(t.exitSet.begin(), t.exitSet.end(), parallelStateId) != t.exitSet.end();
+
+                SCE_LOG_DEBUG("StateMachine: Enabled transition {} -> {} (event='{}') exits {} state(s), external={}",
+                              t.source, t.target, t.event, t.exitSet.size(), t.isExternal);
             }
         }
 
