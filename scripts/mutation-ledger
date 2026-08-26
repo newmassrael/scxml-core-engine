@@ -1,0 +1,469 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# Ask the mutation corpus what it has and has not been judged on.
+#
+# `scripts/mutate` runs one casefile and writes the round's verdict to a
+# durable path (`scripts/lib/mutation_ledger.sh` says where, and why). This
+# reads that ledger back and answers the question a session actually starts
+# with: *which casefiles has nobody run yet.*
+#
+# That question had no command before this one. It was answered by taking the
+# corpus listing, subtracting a hand-kept list of names in whichever scratch
+# directory the previous session happened to use, and hoping the list was
+# complete. Measured 2026-08-26 it was not: one batch of five casefiles was
+# missing from the debt registry's own count, and the residue number in the
+# memory index disagreed with the tree five different ways on the same day.
+# A number that has to be re-derived by hand every session is a number that is
+# wrong most of the time.
+#
+# ── The corpus is the tree, not the ledger ────────────────────────
+#
+# Every question here starts from `sce-build/tests/mutations/*.cases` and uses
+# the ledger only to say what is known about each one. A casefile added today
+# is unjudged the moment it lands, without anyone registering it anywhere, and
+# a casefile deleted stops being asked about. The alternative — a list of
+# casefiles kept beside the verdicts — is a second copy of the tree's own
+# contents, and this repository has watched that copy go stale twice already.
+#
+# ── Judged means measured, and nothing else counts ────────────────
+#
+# A casefile is judged when a round was RUN on it and its per-case verdicts
+# were read — `provenance` `live` or `round-log`. That is the whole of it. In
+# particular an `asserted` record, which is somebody's note that a round once
+# happened whose log is gone, does NOT make a casefile judged: it is the exact
+# claim this ledger exists to stop being indistinguishable from a reading, and
+# counting it would put the laundering back one level up.
+#
+# Which leaves three questions, kept apart because each moves the number for a
+# different reason:
+#
+#   unjudged  no measured record — the set the corpus-wide goal shrinks
+#   claimed   unjudged, but carrying an assertion that a round once passed.
+#             Still needs running; worth knowing it is a re-run rather than a
+#             first look, because a case that passed in August and fails now
+#             is a regression and not a gap.
+#   stale     measured, but the casefile has been EDITED since — the verdict
+#             describes a case that no longer says what it said. A stale
+#             casefile is not unjudged, and folding it in would make the
+#             headline count move for a reason it does not name.
+
+set -euo pipefail
+
+SCE_REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$SCE_REPO_ROOT"
+
+# The ledger's location comes from the same file the writer uses. Spelling it
+# again here is how a reader and a writer end up looking at two directories.
+# shellcheck source=scripts/lib/mutation_ledger.sh
+source "$SCE_REPO_ROOT/scripts/lib/mutation_ledger.sh"
+
+MUTATION_CORPUS_DIR="sce-build/tests/mutations"
+
+usage() {
+    cat <<'USAGE'
+usage: scripts/mutation-ledger <command> [args]
+
+  status              the corpus, judged against the ledger
+  unjudged            casefiles no round has measured, one per line
+  judged              casefiles a round has measured, and its newest verdict
+  claimed             unjudged casefiles carrying an assertion that a round
+                      once passed, with the note that says who claimed it
+  stale               judged casefiles edited since the round that judged them
+  show <stem>         every record for one casefile
+  path                where the ledger lives
+
+  import-log --casefile <path> --log <file> [--tree <sha>]
+                      recover a record from a saved `scripts/mutate` console
+                      log, marked provenance=round-log
+  assert --casefile <path> --note <text> [--tree <sha>]
+                      record that a round happened whose log is gone, marked
+                      provenance=asserted — never counted as measured evidence
+
+Options for `unjudged`, `judged`, `stale`:
+  --runner cargo|ctest   only casefiles driven by that runner
+  --detail               prefix each line with runner and case count
+USAGE
+}
+
+# What the tree declares about one casefile: its runner and how many cases it
+# holds. Read from the casefile itself rather than recorded in the ledger,
+# because both change when the casefile is edited and the ledger's copy would
+# then describe the version that was judged rather than the one on disk.
+corpus_facts() {
+    python3 - "$MUTATION_CORPUS_DIR" <<'PY'
+import glob
+import os
+import re
+import sys
+
+runners = {"mutation_ctest": "ctest", "mutation_go": "go",
+           "mutation_pytest": "pytest", "mutation_tests": "cargo"}
+for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.cases"))):
+    runner, cases = "unknown", 0
+    with open(path) as fh:
+        for line in fh:
+            verb = line.split(" ", 1)[0].strip()
+            if verb in runners:
+                runner = runners[verb]
+            elif verb == "mutation_case":
+                cases += 1
+    stem = os.path.basename(path)[: -len(".cases")]
+    print("\t".join([stem, runner, str(cases), path]))
+PY
+}
+
+# Every record in the ledger, one JSON object per line, with the stem it
+# belongs to. Reading the whole ledger for every question costs milliseconds
+# against a corpus this size and removes the only thing an index would add:
+# a second place for the answer to be wrong.
+ledger_records() {
+    local dir
+    dir="$(mutation_ledger_dir)"
+    [[ -d "$dir" ]] || return 0
+    cat "$dir"/*.jsonl 2>/dev/null || true
+}
+
+# The shared reader. Takes the corpus facts on fd 3 and the ledger's records
+# on fd 4, and answers whichever question the first argument names.
+#
+# Neither on stdin, because stdin is where the interpreter reads this program
+# from: a heredoc'd script that also expects data on stdin gets an empty read
+# and reports an empty ledger — which it did, silently, until a record known
+# to be on disk failed to come back out.
+report() {
+    python3 - "$@" <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+command = sys.argv[1]
+runner_filter = sys.argv[2] or None
+detail = sys.argv[3] == "detail"
+argument = sys.argv[4] if len(sys.argv) > 4 else ""
+
+corpus = []
+with os.fdopen(3) as fh:
+    for line in fh:
+        stem, runner, cases, path = line.rstrip("\n").split("\t")
+        corpus.append({"stem": stem, "runner": runner,
+                       "cases": int(cases), "path": path})
+
+# Two indexes over the same lines, because "what is recorded about this
+# casefile" and "what has been MEASURED about it" are different questions and
+# the corpus-wide goal is defined against the second.
+MEASURED = ("live", "round-log")
+records, measured = {}, {}
+with os.fdopen(4) as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        record = json.loads(line)
+        records.setdefault(record["stem"], []).append(record)
+        if record["provenance"] in MEASURED:
+            measured.setdefault(record["stem"], []).append(record)
+
+
+def blob(path):
+    try:
+        return subprocess.run(["git", "hash-object", path], check=True,
+                              capture_output=True, text=True).stdout.strip()
+    except subprocess.CalledProcessError:
+        return "unknown"
+
+
+def newest(stem):
+    # Newest by the order rounds were appended, which is the order they
+    # happened. A timestamp comparison would be the same answer with one more
+    # way to be wrong (two rounds in the same second, a clock moved).
+    return measured[stem][-1] if stem in measured else None
+
+
+def line_for(entry, suffix=""):
+    if detail:
+        return "%-7s %3d  %s%s" % (entry["runner"], entry["cases"],
+                                   entry["stem"], suffix)
+    return entry["stem"] + suffix
+
+
+selected = [e for e in corpus
+            if runner_filter is None or e["runner"] == runner_filter]
+
+if command == "unjudged":
+    for entry in [e for e in selected if e["stem"] not in measured]:
+        print(line_for(entry))
+    sys.exit(0)
+
+if command == "judged":
+    for entry in selected:
+        record = newest(entry["stem"])
+        if record is None:
+            continue
+        verdict = "%d caught, %d survived, %d inconclusive" % (
+            record["caught"], record["survived"], record["inconclusive"])
+        print(line_for(entry, "  rc=%d  %s  [%s @ %s]" % (
+            record["rc"], verdict, record["provenance"], record["tree"][:12])))
+    sys.exit(0)
+
+if command == "stale":
+    for entry in selected:
+        record = newest(entry["stem"])
+        if record is None:
+            continue
+        current = blob(entry["path"])
+        if record["casefile_blob"] in ("unknown", current):
+            continue
+        print(line_for(entry, "  judged at blob %s, now %s" % (
+            record["casefile_blob"][:12], current[:12])))
+    sys.exit(0)
+
+if command == "claimed":
+    for entry in selected:
+        if entry["stem"] in measured:
+            continue
+        for record in records.get(entry["stem"], []):
+            print(line_for(entry, "  %s  %s" % (
+                record["provenance"], record.get("note", ""))))
+    sys.exit(0)
+
+if command == "show":
+    for record in records.get(argument, []):
+        print("%s  rc=%d  %s  tree=%s%s  %s" % (
+            record["ended"], record["rc"], record["provenance"],
+            record["tree"][:12],
+            "+dirty" if record.get("tree_dirty") else "", record["runner"]))
+        if record.get("note"):
+            print("    note: %s" % record["note"])
+        for case in record["cases"]:
+            print("    %-13s %s" % (case["verdict"], case["label"]))
+            for reason in case.get("detail", "").splitlines():
+                print("                  %s" % reason)
+            if case.get("red"):
+                print("                  red: %s" % ", ".join(case["red"]))
+    sys.exit(0)
+
+if command == "status":
+    judged = [e for e in selected if e["stem"] in measured]
+    unjudged = [e for e in selected if e["stem"] not in measured]
+
+    def tally(rows):
+        by_runner = {}
+        for entry in rows:
+            got = by_runner.setdefault(entry["runner"], [0, 0])
+            got[0] += 1
+            got[1] += entry["cases"]
+        return by_runner
+
+    print("corpus    %d casefile(s), %d case(s)"
+          % (len(selected), sum(e["cases"] for e in selected)))
+    for label, rows in (("judged", judged), ("unjudged", unjudged)):
+        parts = ["%s %d/%d" % (runner, got[0], got[1])
+                 for runner, got in sorted(tally(rows).items())]
+        print("%-9s %d casefile(s), %d case(s)%s"
+              % (label, len(rows), sum(e["cases"] for e in rows),
+                 "   " + "  ".join(parts) if parts else ""))
+    # Counted here rather than left to the two subcommands, because a corpus
+    # that reads 86/86 judged while a third of it is stale is the failure this
+    # ledger exists to make visible, and nobody runs a subcommand they have no
+    # reason to suspect.
+    stale = sum(1 for e in judged
+                if newest(e["stem"])["casefile_blob"] not in
+                ("unknown", blob(e["path"])))
+    claimed = sum(1 for e in unjudged if e["stem"] in records)
+    print("of the judged: %d stale (casefile edited since)" % stale)
+    print("of the unjudged: %d claimed (a round is asserted, its log gone)"
+          % claimed)
+    sys.exit(0)
+
+sys.exit("mutation-ledger: unknown command %s" % command)
+PY
+}
+
+# ── Recovering a round nobody recorded ─────────────────────────────
+#
+# The corpus was two thirds judged before the ledger existed, and that
+# evidence is a set of saved console logs plus, for twelve casefiles, nothing
+# but a name in a list. Both are worth having and they are not worth the same,
+# which is what `provenance` is for: `round-log` is a verdict this tool read
+# out of the runner's own words, `asserted` is a claim with no reading behind
+# it. Folding the second into the first would be the one thing a ledger must
+# never do — make an assertion indistinguishable from a measurement.
+
+# Which runner a casefile declares, read from the casefile. The recovered log
+# does not say, and a recovered record that guessed would be a fact invented
+# by the importer sitting in a field the writer fills from a declaration.
+casefile_runner() {
+    local casefile="$1" verb
+    while read -r verb _; do
+        case "$verb" in
+            mutation_ctest) printf 'ctest\n'; return ;;
+            mutation_go) printf 'go\n'; return ;;
+            mutation_pytest) printf 'pytest\n'; return ;;
+            mutation_tests) printf 'cargo\n'; return ;;
+        esac
+    done <"$casefile"
+    printf 'unknown\n'
+}
+
+import_log() {
+    local casefile="" log="" tree=""
+    while (( $# )); do
+        case "$1" in
+            --casefile) casefile="$2"; shift 2 ;;
+            --log) log="$2"; shift 2 ;;
+            --tree) tree="$2"; shift 2 ;;
+            *) echo "import-log: unknown option $1" >&2; exit 2 ;;
+        esac
+    done
+    [[ -n "$casefile" && -n "$log" ]] || { echo "import-log: --casefile and --log are required" >&2; exit 2; }
+    [[ -f "$log" ]] || { echo "import-log: no such log: $log" >&2; exit 2; }
+    [[ -f "$casefile" ]] || { echo "import-log: no such casefile: $casefile" >&2; exit 2; }
+
+    local rows
+    rows="$(mktemp)"
+    # shellcheck disable=SC2064
+    trap "rm -f '$rows'" RETURN
+    mutation_ledger_begin "$casefile" "$rows"
+    # A recovered round judged a casefile as it stood then, and the log says
+    # neither which commit that was nor what the casefile held. Both are left
+    # unknown rather than filled in from today's tree, which would make
+    # `stale` answer "unchanged" about a comparison it never made.
+    MUTATION_LEDGER_TREE="${tree:-unknown}"
+    MUTATION_LEDGER_BLOB=unknown
+
+    local rc
+    rc="$(MUTATION_LEDGER_FS="$MUTATION_LEDGER_FS" MUTATION_LEDGER_RS="$MUTATION_LEDGER_RS" \
+        python3 - "$log" "$rows" <<'PY'
+import os
+import re
+import sys
+
+log_path, rows_path = sys.argv[1], sys.argv[2]
+fs = os.environ["MUTATION_LEDGER_FS"]
+rs = os.environ["MUTATION_LEDGER_RS"]
+
+# The console's own shape: a verdict word, two or more spaces, the label, and
+# for the two that carry one a parenthesised detail at the end. Continuation
+# lines are indented fourteen columns, which is how the harness prints a
+# reason and a red list under the verdict they belong to.
+verdict_line = re.compile(
+    r"^(CAUGHT|SURVIVED|INCONCLUSIVE)\s{2,}(.*?)(?:\s{2}\((.*)\))?$")
+# The harness's closing line, which is the only place the round's own tally is
+# stated. A `--check` log closes with "case(s) still apply" instead and is not
+# a verdict about any test, so it does not match here and is refused below.
+summary_line = re.compile(
+    r"^(\d+)/(\d+) caught(?:, (\d+) survived, (\d+) inconclusive)?$")
+
+rows, current, summary = [], None, None
+for raw in open(log_path):
+    line = raw.rstrip("\n")
+    match = verdict_line.match(line)
+    if match:
+        current = {"verdict": match.group(1), "label": match.group(2),
+                   "detail": [m for m in [match.group(3)] if m], "red": []}
+        rows.append(current)
+        continue
+    tally = summary_line.match(line)
+    if tally:
+        summary = tally
+        current = None
+        continue
+    if current is not None and line.startswith(" " * 14):
+        text = line[14:].strip()
+        if text.startswith("red: "):
+            current["red"] = [n.strip() for n in text[5:].split(",") if n.strip()]
+        elif text:
+            current["detail"].append(text)
+        continue
+    current = None
+
+# A log this importer only half read must not become a record. The harness
+# prints its tally at the end precisely so the verdicts above it can be
+# checked against a number, and an import that skipped a case would otherwise
+# land as a smaller, cleaner round than the one that happened.
+if summary is None:
+    sys.exit("no `N/M caught` summary in %s — not a full round's log" % log_path)
+caught, total = int(summary.group(1)), int(summary.group(2))
+survived = int(summary.group(3) or 0)
+inconclusive = int(summary.group(4) or 0)
+seen = {"CAUGHT": 0, "SURVIVED": 0, "INCONCLUSIVE": 0}
+for row in rows:
+    seen[row["verdict"]] += 1
+if (len(rows), seen["CAUGHT"], seen["SURVIVED"], seen["INCONCLUSIVE"]) != \
+        (total, caught, survived, inconclusive):
+    sys.exit(
+        "%s: read %d verdict line(s) (%d/%d/%d) but the summary says %d "
+        "(%d/%d/%d) — the log was not fully understood"
+        % (log_path, len(rows), seen["CAUGHT"], seen["SURVIVED"],
+           seen["INCONCLUSIVE"], total, caught, survived, inconclusive))
+
+with open(rows_path, "w") as fh:
+    for row in rows:
+        fh.write(fs.join([row["verdict"], row["label"],
+                          "\n".join(row["detail"]),
+                          rs.join(row["red"])]) + "\n")
+# `scripts/mutate` exits 0 only when every case was CAUGHT.
+print(0 if survived == 0 and inconclusive == 0 else 1)
+PY
+)"
+    MUTATION_LEDGER_NOTE="recovered from $log" \
+        mutation_ledger_commit "$(casefile_runner "$casefile")" "$rc" round-log
+}
+
+assert_round() {
+    local casefile="" note="" tree=""
+    while (( $# )); do
+        case "$1" in
+            --casefile) casefile="$2"; shift 2 ;;
+            --note) note="$2"; shift 2 ;;
+            --tree) tree="$2"; shift 2 ;;
+            *) echo "assert: unknown option $1" >&2; exit 2 ;;
+        esac
+    done
+    [[ -n "$casefile" && -n "$note" ]] || { echo "assert: --casefile and --note are required" >&2; exit 2; }
+    [[ -f "$casefile" ]] || { echo "assert: no such casefile: $casefile" >&2; exit 2; }
+    local rows
+    rows="$(mktemp)"
+    # shellcheck disable=SC2064
+    trap "rm -f '$rows'" RETURN
+    mutation_ledger_begin "$casefile" "$rows"
+    MUTATION_LEDGER_TREE="${tree:-unknown}"
+    MUTATION_LEDGER_BLOB=unknown
+    # No rows, deliberately. An assertion has no per-case verdicts, and
+    # inventing empty ones would make it read as a round that found nothing.
+    # `thin` is how it stays visible as the weakest thing in the ledger.
+    MUTATION_LEDGER_NOTE="$note" \
+        mutation_ledger_commit "$(casefile_runner "$casefile")" 0 asserted
+}
+
+# ── Driver ─────────────────────────────────────────────────────────
+
+(( $# )) || { usage; exit 2; }
+COMMAND="$1"; shift
+
+case "$COMMAND" in
+    -h|--help|help) usage; exit 0 ;;
+    path) mutation_ledger_dir; exit 0 ;;
+    import-log) import_log "$@"; exit 0 ;;
+    assert) assert_round "$@"; exit 0 ;;
+    status|unjudged|judged|stale|claimed|show) ;;
+    *) usage >&2; exit 2 ;;
+esac
+
+RUNNER_FILTER=""
+DETAIL=""
+ARGUMENT=""
+while (( $# )); do
+    case "$1" in
+        --runner) RUNNER_FILTER="$2"; shift 2 ;;
+        --detail) DETAIL=detail; shift ;;
+        -*) echo "mutation-ledger: unknown option $1" >&2; exit 2 ;;
+        *) ARGUMENT="$1"; shift ;;
+    esac
+done
+
+report "$COMMAND" "$RUNNER_FILTER" "$DETAIL" "$ARGUMENT" \
+    3< <(corpus_facts) 4< <(ledger_records)
