@@ -421,3 +421,76 @@ fn a_casefile_edited_since_its_round_is_reported_stale() {
         "a casefile rewritten since the round that judged it reads as current"
     );
 }
+
+#[test]
+fn a_case_the_round_did_not_catch_is_reported_as_a_hole() {
+    let home = tempdir().expect("temp home");
+    let ledger = tempdir().expect("temp ledger");
+
+    // One round with one of each verdict, written through the library a real
+    // round writes through. Seeded rather than read off the real corpus,
+    // which has no hole in it today: a witness that asked the real ledger
+    // would assert against an empty sweep and stay green for exactly as long
+    // as that held — the shape of test this repository has retired before.
+    with_library(
+        home.path(),
+        &format!(
+            "export SCE_MUTATION_LEDGER_DIR={:?}; \
+             rows=\"$(mktemp)\"; \
+             mutation_ledger_begin {A_REAL_CASEFILE} \"$rows\"; \
+             mutation_ledger_case CAUGHT 'a driver cites a fixture that was never real' '1/2 red'; \
+             mutation_ledger_case SURVIVED 'the citation is never compared' '0/2 red'; \
+             mutation_ledger_case INCONCLUSIVE 'the comparison is deleted' 'the mutated tree did not compile'; \
+             mutation_ledger_commit cargo 1 >/dev/null; \
+             rm -f \"$rows\"",
+            ledger.path().display().to_string()
+        ),
+    );
+
+    let holes = ask(ledger.path(), &["holes"]);
+    for (verdict, label) in [
+        ("SURVIVED", "the citation is never compared"),
+        ("INCONCLUSIVE", "the comparison is deleted"),
+    ] {
+        assert!(
+            holes.lines().any(|line| line.starts_with(A_REAL_STEM)
+                && line.contains(verdict)
+                && line.contains(label)),
+            "`holes` does not name the {verdict} case:\n{holes}"
+        );
+    }
+
+    // The half that makes this a question rather than a listing: printing
+    // every case the round measured would satisfy both assertions above.
+    assert!(
+        !holes.contains("a driver cites a fixture that was never real"),
+        "a CAUGHT case is reported as a hole:\n{holes}"
+    );
+
+    // And the casefile is still judged. A round that leaves a hole measured
+    // the casefile all the same, and a reader that pushed it back onto the
+    // unjudged list would make "nobody has looked" and "somebody looked and
+    // it was bad" the same number again.
+    assert!(
+        !ask(ledger.path(), &["unjudged"])
+            .lines()
+            .any(|line| line == A_REAL_STEM),
+        "a round that left a hole put its casefile back on the unjudged list"
+    );
+
+    // The runner's own words, because they say how to repay it: a mutation
+    // the compiler refused is not the same repair as one that survived.
+    let detailed = ask(ledger.path(), &["holes", "--detail"]);
+    assert!(
+        detailed.contains("the mutated tree did not compile"),
+        "`--detail` drops the reason the round gave:\n{detailed}"
+    );
+
+    // Counted in the summary too. Nobody runs a subcommand they have no
+    // reason to suspect, which is why `stale` is counted there as well.
+    let summary = ask(ledger.path(), &["status"]);
+    assert!(
+        summary.contains("2 case(s) not caught, in 1 casefile(s)"),
+        "`status` does not count the cases a round did not catch:\n{summary}"
+    );
+}
