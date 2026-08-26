@@ -190,6 +190,11 @@ source "$SCE_REPO_ROOT/scripts/lib/sce_build_jobs.sh"
 # half of an INCONCLUSIVE verdict this harness used to throw away.
 # shellcheck source=scripts/lib/mutation_build_refusal.sh
 source "$SCE_REPO_ROOT/scripts/lib/mutation_build_refusal.sh"
+# And where the round's verdict is written down, which is not this terminal.
+# Its header carries the two failures that make a durable record part of the
+# harness rather than a habit of whoever ran it.
+# shellcheck source=scripts/lib/mutation_ledger.sh
+source "$SCE_REPO_ROOT/scripts/lib/mutation_ledger.sh"
 MUTATION_OBJCOPY="$(command -v objcopy || true)"
 
 WORK="$(mktemp -d)"
@@ -1932,9 +1937,7 @@ def edit(path, old, new):
 exec(compile(open(sys.argv[1]).read(), sys.argv[1], "exec"), {"edit": edit})
 PY
     then
-        red "INCONCLUSIVE  $label"
-        red "              the case body did not apply"
-        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_verdict INCONCLUSIVE "$label" "the case body did not apply"
         mutation_restore
         return
     fi
@@ -1948,12 +1951,9 @@ PY
     # mode reports. What it does report — does the anchor still apply — is
     # answered by the case body alone.
     if [[ "$MUTATION_MODE" != "check" ]] && ! mutation_regenerate; then
-        red "INCONCLUSIVE  $label"
-        red "              a mutation_regen command failed; the tests never ran"
-        while IFS= read -r line; do
-            dim "              $line"
-        done <<<"$MUTATION_REGEN_ERROR"
-        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_verdict INCONCLUSIVE "$label" \
+            "a mutation_regen command failed; the tests never ran" \
+            "" "$MUTATION_REGEN_ERROR"
         mutation_restore
         return
     fi
@@ -1966,10 +1966,9 @@ PY
     file_hashes="$(mutation_all_target_hashes)"
     compiled_hashes="$(mutation_compiled_target_hashes)"
     if [[ "$file_hashes" == "$BASELINE_FILE_HASHES" ]]; then
-        red "INCONCLUSIVE  $label"
-        red "              the case body left every target byte-identical —"
-        red "              nothing was mutated, so nothing was tested"
-        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_verdict INCONCLUSIVE "$label" \
+            "the case body left every target byte-identical —
+nothing was mutated, so nothing was tested"
         mutation_restore
         return
     fi
@@ -1979,8 +1978,7 @@ PY
     # deliberately does not say CAUGHT — nothing was built and no test ran,
     # so there is no verdict about a test to report.
     if [[ "$MUTATION_MODE" == "check" ]]; then
-        green "applies       $label"
-        MUTATION_CAUGHT=$((MUTATION_CAUGHT + 1))
+        mutation_verdict applies "$label"
         mutation_restore
         if [[ "$(mutation_all_target_hashes)" != "$BASELINE_FILE_HASHES" ]]; then
             red "              restore did not reproduce the baseline files"
@@ -2001,14 +1999,11 @@ PY
         # last use of a binding under `warnings = "deny"`, or the site it edits
         # has genuinely moved — and they are told apart by the compiler's first
         # line, which the harness is holding.
-        red "INCONCLUSIVE  $label"
-        red "              mutated tree does not compile; the tests never ran"
-        local refusal_line
-        while IFS= read -r refusal_line; do
-            [[ -n "$refusal_line" ]] || continue
-            red "              $refusal_line"
-        done < <(mutation_build_refusal <"$MUTATION_BUILD_LOG")
-        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        local refusal reason
+        refusal="$(mutation_build_refusal <"$MUTATION_BUILD_LOG")"
+        reason="mutated tree does not compile; the tests never ran"
+        [[ -n "$refusal" ]] && reason+=$'\n'"$refusal"
+        mutation_verdict INCONCLUSIVE "$label" "$reason"
         mutation_restore
         return
     fi
@@ -2019,10 +2014,9 @@ PY
     # already established it differs from the baseline.
     if [[ "$compiled_hashes" != "$BASELINE_COMPILED_HASHES" \
           && "$hashes" == "$BASELINE_HASHES" ]]; then
-        red "INCONCLUSIVE  $label"
-        red "              every test binary is byte-identical to the baseline —"
-        red "              the mutation never reached the code under test"
-        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_verdict INCONCLUSIVE "$label" \
+            "every test binary is byte-identical to the baseline —
+the mutation never reached the code under test"
         mutation_restore
         return
     fi
@@ -2037,9 +2031,9 @@ PY
     # itself is one), and without this the only verdict such a case could reach
     # was a round that never ended.
     if [[ "$timed_out" == "1" ]]; then
-        green "CAUGHT        $label  (a test binary did not terminate)"
+        mutation_verdict CAUGHT "$label" "a test binary did not terminate" \
+            "$MUTATION_FAILING"
         mutation_name_failures
-        MUTATION_CAUGHT=$((MUTATION_CAUGHT + 1))
         mutation_restore
         return
     fi
@@ -2051,36 +2045,28 @@ PY
     # `internal_chain_is_bounded_ctest` back for two more rounds under that
     # heading before the real reason (an OOM-killed ctest) surfaced.
     if [[ -s "$MUTATION_UNREADABLE" ]]; then
-        red "INCONCLUSIVE  $label"
-        red "              the test runner produced no readable result, so this"
-        red "              round has no verdict about the tests — the case is not"
-        red "              what this reading is about"
-        local unreadable_line
-        while IFS= read -r unreadable_line; do
-            [[ -n "$unreadable_line" ]] || continue
-            dim "              $unreadable_line"
-        done < "$MUTATION_UNREADABLE"
-        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_verdict INCONCLUSIVE "$label" \
+            "the test runner produced no readable result, so this
+round has no verdict about the tests — the case is not
+what this reading is about" \
+            "" "$(cat "$MUTATION_UNREADABLE")"
         mutation_restore
         return
     fi
 
     if [[ "$run" != "$BASELINE_RUN" ]]; then
-        red "INCONCLUSIVE  $label"
-        red "              ran $run tests, baseline ran $BASELINE_RUN — the case"
-        red "              changed which tests exist, so the verdict is not comparable"
-        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_verdict INCONCLUSIVE "$label" \
+            "ran $run tests, baseline ran $BASELINE_RUN — the case
+changed which tests exist, so the verdict is not comparable"
         mutation_restore
         return
     fi
 
     if [[ "$failed" -gt 0 ]]; then
-        green "CAUGHT        $label  ($failed/$run red)"
+        mutation_verdict CAUGHT "$label" "$failed/$run red" "$MUTATION_FAILING"
         mutation_name_failures
-        MUTATION_CAUGHT=$((MUTATION_CAUGHT + 1))
     else
-        red "SURVIVED      $label  (0/$run red)"
-        MUTATION_SURVIVED=$((MUTATION_SURVIVED + 1))
+        mutation_verdict SURVIVED "$label" "0/$run red"
     fi
 
     mutation_restore
@@ -2101,6 +2087,56 @@ PY
         red "              — later cases would be measured against a moved baseline"
         exit 2
     fi
+}
+
+# Print one case's verdict, count it, and write it to the round's record.
+#
+# One place rather than eleven. A verdict does three things — it reaches the
+# terminal, it moves a counter, and it lands in the ledger — and until this
+# function existed the first two were spelled out at every site that reaches
+# one. Adding the third site by site is how ten of the eleven get it and the
+# eleventh silently does not, which is the same shape of bug this whole
+# harness exists to find.
+#
+# `reason` is the sentence under the headline, in as many lines as it takes;
+# `note` is the runner's own words, which are dim because they are quoted
+# rather than written here. Both go into the record: a verdict a later reader
+# cannot explain is a verdict they have to re-earn with another round.
+mutation_verdict() {
+    local verdict="$1" label="$2" reason="${3:-}" red_file="${4:-}" note="${5:-}"
+    local line detail="$reason"
+    case "$verdict" in
+        CAUGHT)
+            green "CAUGHT        $label  ($reason)"
+            MUTATION_CAUGHT=$((MUTATION_CAUGHT + 1)) ;;
+        SURVIVED)
+            red "SURVIVED      $label  ($reason)"
+            MUTATION_SURVIVED=$((MUTATION_SURVIVED + 1)) ;;
+        # `--check` establishes that the case still applies and nothing more,
+        # so it must not print a word that names a test result. It is counted
+        # with the caught because `mutation_report` reads that counter as "the
+        # cases this mode could account for".
+        applies)
+            green "applies       $label"
+            MUTATION_CAUGHT=$((MUTATION_CAUGHT + 1)) ;;
+        INCONCLUSIVE)
+            red "INCONCLUSIVE  $label"
+            while IFS= read -r line; do
+                red "              $line"
+            done <<<"$reason"
+            MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1)) ;;
+        *)
+            red "mutate: mutation_verdict called with unknown verdict $verdict"
+            exit 2 ;;
+    esac
+    if [[ -n "$note" ]]; then
+        while IFS= read -r line; do
+            [[ -n "$line" ]] || continue
+            dim "              $line"
+        done <<<"$note"
+        detail+=$'\n'"$note"
+    fi
+    mutation_ledger_case "$verdict" "$label" "$detail" "$red_file"
 }
 
 # Name the tests a CAUGHT verdict is made of.
@@ -2194,8 +2230,29 @@ MUTATION_PASS=declare
 source "$CASEFILE"
 mutation_init
 
+# A full round is the only mode that reads a verdict, so it is the only mode
+# that writes one down. `--check` establishes that a case still applies, which
+# is worth a gate on every push and is emphatically not a judgement about the
+# tests — recording it would let a corpus-wide `--check` mark all 86 casefiles
+# judged without a single test having run.
+#
+# Opened here, before the first case body edits anything, so the commit the
+# round is measured against is the one it actually started from.
+if [[ "$MUTATION_MODE" == "run" ]]; then
+    mutation_ledger_begin "$CASEFILE" "$WORK/ledger-rows"
+fi
+
 MUTATION_PASS="$MUTATION_MODE"
 # shellcheck disable=SC1090
 source "$CASEFILE"
 
-mutation_report
+# The status first, then the record, then exit with the status. A record
+# written before the status is known would have to guess at it, and `rc` is
+# half of what a later reader needs: `6 caught, 0 survived` and `rc=0` are two
+# different claims, and it is the second that says the round reached its end.
+MUTATION_RC=0
+mutation_report || MUTATION_RC=$?
+if [[ "$MUTATION_MODE" == "run" ]]; then
+    dim "recorded: $(mutation_ledger_commit "$MUTATION_RUNNER" "$MUTATION_RC")"
+fi
+exit "$MUTATION_RC"
