@@ -36,7 +36,7 @@
 # claim this ledger exists to stop being indistinguishable from a reading, and
 # counting it would put the laundering back one level up.
 #
-# Which leaves three questions, kept apart because each moves the number for a
+# Which leaves four questions, kept apart because each moves the number for a
 # different reason:
 #
 #   unjudged  no measured record — the set the corpus-wide goal shrinks
@@ -48,6 +48,15 @@
 #             describes a case that no longer says what it said. A stale
 #             casefile is not unjudged, and folding it in would make the
 #             headline count move for a reason it does not name.
+#   holes     measured, and NOT caught. SURVIVED says the assertion never
+#             covered the code it names; INCONCLUSIVE says the round could
+#             not answer at all. This corpus has found both to be gaps in the
+#             test far more often than facts about the mutation, so they are
+#             the work a finished sweep leaves behind — and until this
+#             question existed the only place they were said out loud was the
+#             exit status of the round that read them: one line, to a
+#             terminal, gone when it scrolled. An empty `unjudged` is not a
+#             finished corpus, and nothing here could say so.
 
 set -euo pipefail
 
@@ -68,6 +77,8 @@ usage: scripts/mutation-ledger <command> [args]
   status              the corpus, judged against the ledger
   unjudged            casefiles no round has measured, one per line
   judged              casefiles a round has measured, and its newest verdict
+  holes               cases a measured round did not catch: SURVIVED or
+                      INCONCLUSIVE in the newest reading
   claimed             unjudged casefiles carrying an assertion that a round
                       once passed, with the note that says who claimed it
   stale               judged casefiles edited since the round that judged them
@@ -81,9 +92,10 @@ usage: scripts/mutation-ledger <command> [args]
                       record that a round happened whose log is gone, marked
                       provenance=asserted — never counted as measured evidence
 
-Options for `unjudged`, `judged`, `stale`:
+Options for `unjudged`, `judged`, `holes`, `stale`, `claimed`:
   --runner cargo|ctest   only casefiles driven by that runner
-  --detail               prefix each line with runner and case count
+  --detail               prefix each line with runner and case count, and for
+                         `holes` add the runner's own words about the case
 USAGE
 }
 
@@ -208,6 +220,37 @@ if command == "judged":
             record["rc"], verdict, record["provenance"], record["tree"][:12])))
     sys.exit(0)
 
+if command == "holes":
+    # The NEWEST measured record only, for the same reason `judged` reads it:
+    # a case that SURVIVED in June and was CAUGHT this morning is not a hole,
+    # and a reader that unioned every record ever written would report gaps
+    # its own repairs had already closed — which is how a debt list stops
+    # being read.
+    #
+    # The complement of `unjudged`, and deliberately not folded into it. A
+    # casefile leaves that list the moment a round measures it, whatever the
+    # round found, because "nobody has looked" and "somebody looked and it
+    # was bad" are answers to different questions and one number holding both
+    # says neither.
+    for entry in selected:
+        record = newest(entry["stem"])
+        if record is None:
+            continue
+        for case in record["cases"]:
+            if case["verdict"] == "CAUGHT":
+                continue
+            print(line_for(entry, "  %-12s %s" % (case["verdict"],
+                                                  case["label"])))
+            if not detail:
+                continue
+            # The runner's own words about why, which is what says how to
+            # repay it: an INCONCLUSIVE case names either a mutation the
+            # compiler refused or a run that selected different tests, and
+            # those are not the same repair.
+            for reason in case.get("detail", "").splitlines():
+                print("             %s" % reason)
+    sys.exit(0)
+
 if command == "stale":
     for entry in selected:
         record = newest(entry["stem"])
@@ -273,7 +316,15 @@ if command == "status":
                 if newest(e["stem"])["casefile_blob"] not in
                 ("unknown", blob(e["path"])))
     claimed = sum(1 for e in unjudged if e["stem"] in records)
+    # Counted here for the same reason `stale` is: a corpus whose unjudged
+    # set has gone empty reads as finished, and the cases a round measured
+    # and did not catch appear in no other line of this summary.
+    open_cases = [(e, case) for e in judged
+                  for case in newest(e["stem"])["cases"]
+                  if case["verdict"] != "CAUGHT"]
     print("of the judged: %d stale (casefile edited since)" % stale)
+    print("of the judged: %d case(s) not caught, in %d casefile(s)"
+          % (len(open_cases), len({e["stem"] for e, _ in open_cases})))
     print("of the unjudged: %d claimed (a round is asserted, its log gone)"
           % claimed)
     sys.exit(0)
@@ -449,7 +500,7 @@ case "$COMMAND" in
     path) mutation_ledger_dir; exit 0 ;;
     import-log) import_log "$@"; exit 0 ;;
     assert) assert_round "$@"; exit 0 ;;
-    status|unjudged|judged|stale|claimed|show) ;;
+    status|unjudged|judged|holes|stale|claimed|show) ;;
     *) usage >&2; exit 2 ;;
 esac
 
