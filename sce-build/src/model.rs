@@ -2568,13 +2568,17 @@ mod model_attribute_names {
             .iter()
             .filter_map(|(a, _)| a.split_once('.').map(|(b, _)| b))
             .collect();
+        // The bases are NAMED, not counted. A reader weighing this gate has to
+        // know which objects it reaches, and a bare number invites reading the
+        // whole template tree as covered.
         println!(
-            "{} distinct attribute name(s) on {} model-derived base(s), checked \
-             against {} declared name(s); {} known-missing listed",
+            "{} distinct attribute name(s) checked against {} declared name(s); \
+             {} known-missing listed. Model-derived bases ({}): {}",
             names.len(),
-            bases.len(),
             declared.len(),
-            KNOWN_MISSING.len()
+            KNOWN_MISSING.len(),
+            bases.len(),
+            bases.iter().copied().collect::<Vec<_>>().join(" ")
         );
 
         assert!(
