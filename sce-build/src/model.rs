@@ -2131,3 +2131,261 @@ impl SCXMLModel {
         current
     }
 }
+
+/// Every `model.<name>` a template reads is a name `SCXMLModel` declares.
+///
+/// The generator's root context object is this struct, and minijinja is
+/// configured `Chainable` — an attribute the struct does not declare becomes
+/// undefined, which is FALSY in a conditional and EMPTY when printed. So a
+/// misspelt field does not fail; it silently takes the else branch. Measured
+/// once already: a Go template read `trans.transition_type` where the model
+/// declares `type`, and `type="internal"` never reached that engine.
+///
+/// `UndefinedBehavior::Strict` is the obvious cure and it does not work here.
+/// This struct omits 91 optional fields from serialization
+/// (`skip_serializing_if = "Option::is_none"`), so under Strict every read of a
+/// currently-`None` field is an error indistinguishable from a typo — measured
+/// 2026-08-26: flipping it made all six backends fail rendering at
+/// `state_machine.jinja2:18`, on `model.needs_event_scheduler`, a real field
+/// that happened to be `None`.
+///
+/// What IS decidable is the name set. `model` is the root context and always
+/// this type, so `model.X` must be a declared name — no loop-binding inference
+/// needed. The schema is the authority rather than a list kept by hand, and
+/// `schema_for!` reports optional fields too, which is exactly what the Strict
+/// route could not separate.
+///
+/// ⚠ SCOPE, stated because a partial gate reads like a total one: this checks
+/// the `model.` base only. Templates also read `action.`, `state.`, `trans.`,
+/// `invoke_info.` and a dozen more whose types come from loop bindings this does
+/// not resolve — 576 distinct attribute names in all, of which 414 belong to
+/// types declared outside this file. The original defect was on `trans.`, so it
+/// would NOT have been caught here. `model.` is the largest single base (2238
+/// accesses) and the only one whose type needs no inference.
+#[cfg(test)]
+mod model_attribute_names {
+    use std::collections::BTreeSet;
+    use std::path::{Path, PathBuf};
+
+    /// The one access the templates make that this struct does not declare.
+    ///
+    /// `model.scxml_author` has never existed in the Rust sources. Three license
+    /// headers read it through `| default('[Author of input SCXML file]')`, so
+    /// the placeholder is what ships: measured 2026-08-26, 388 generated files
+    /// under version control carry that literal. It is listed rather than fixed
+    /// because the repair is a choice — carry the input document's author
+    /// through, or drop the access — and either one edits templates, which
+    /// re-pins `template-hash` across every committed tree. Named here so a NEW
+    /// unknown access still fails.
+    const KNOWN_MISSING: &[&str] = &["scxml_author"];
+
+    fn templates_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates")
+    }
+
+    /// Every property name in the schema, definitions included.
+    fn declared() -> BTreeSet<String> {
+        let schema = schemars::schema_for!(super::SCXMLModel);
+        let json = serde_json::to_value(&schema).expect("the schema serializes");
+        let mut names = BTreeSet::new();
+        collect_properties(&json, &mut names);
+        names
+    }
+
+    fn collect_properties(node: &serde_json::Value, out: &mut BTreeSet<String>) {
+        match node {
+            serde_json::Value::Object(map) => {
+                if let Some(serde_json::Value::Object(props)) = map.get("properties") {
+                    for key in props.keys() {
+                        out.insert(key.clone());
+                    }
+                }
+                for value in map.values() {
+                    collect_properties(value, out);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    collect_properties(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `model.<name>` occurrences inside Jinja delimiters, comments removed.
+    ///
+    /// Both halves matter. Outside `{{ }}` / `{% %}` a template is literal
+    /// output, and the C++ it emits contains `->model.` sequences that are not
+    /// template accesses at all; inside a `{# #}` comment the prose discusses
+    /// field names it does not read. A scan skipping either would report names
+    /// no render ever performs.
+    fn accesses() -> BTreeSet<(String, String)> {
+        let mut found = BTreeSet::new();
+        let mut stack = vec![templates_dir()];
+        while let Some(dir) = stack.pop() {
+            let entries = std::fs::read_dir(&dir).expect("the template tree is readable");
+            for entry in entries {
+                let path = entry.expect("a directory entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|e| e != "jinja2") {
+                    continue;
+                }
+                let body = std::fs::read_to_string(&path).expect("a template is readable");
+                let name = path
+                    .file_name()
+                    .expect("a file name")
+                    .to_string_lossy()
+                    .into_owned();
+                for expr in delimited(&strip_jinja_comments(&body)) {
+                    for attr in model_attrs(&expr) {
+                        found.insert((attr, name.clone()));
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    fn strip_jinja_comments(body: &str) -> String {
+        let mut out = String::with_capacity(body.len());
+        let mut rest = body;
+        while let Some(open) = rest.find("{#") {
+            out.push_str(&rest[..open]);
+            match rest[open..].find("#}") {
+                Some(end) => {
+                    out.push(' ');
+                    rest = &rest[open + end + 2..];
+                }
+                None => return out,
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// The contents of every `{{ ... }}` and `{% ... %}` region.
+    fn delimited(body: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut rest = body;
+        loop {
+            let curly = rest.find("{{");
+            let block = rest.find("{%");
+            let open = match (curly, block) {
+                (None, None) => break,
+                (Some(a), None) => a,
+                (None, Some(b)) => b,
+                (Some(a), Some(b)) => a.min(b),
+            };
+            let close = if rest[open..].starts_with("{{") {
+                "}}"
+            } else {
+                "%}"
+            };
+            let after = &rest[open + 2..];
+            match after.find(close) {
+                Some(end) => {
+                    out.push(after[..end].to_string());
+                    rest = &after[end + close.len()..];
+                }
+                None => break,
+            }
+        }
+        out
+    }
+
+    fn model_attrs(expr: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let bytes = expr.as_bytes();
+        let mut i = 0;
+        while let Some(at) = expr[i..].find("model.") {
+            let start = i + at;
+            // `model` must be a whole word: `sub_model.foo` is a different base.
+            let joined =
+                start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_');
+            i = start + "model.".len();
+            if joined {
+                continue;
+            }
+            let tail = &expr[i..];
+            let len = tail
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(tail.len());
+            if len > 0 {
+                out.push(tail[..len].to_string());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_model_attribute_a_template_reads_is_declared() {
+        let declared = declared();
+        let accesses = accesses();
+
+        // Floors, before any verdict. A scan of nothing violates nothing, and
+        // both sides can go empty independently: the schema derive is behind
+        // `cfg(test)` and the template tree is found by a relative path.
+        assert!(
+            declared.len() > 100,
+            "the schema reported only {} property name(s); this gate has no \
+             authority to check against",
+            declared.len()
+        );
+        assert!(
+            accesses.len() > 40,
+            "only {} model attribute access(es) were found under {}; this gate \
+             has no population and would pass on anything",
+            accesses.len(),
+            templates_dir().display()
+        );
+
+        let mut unknown: Vec<String> = accesses
+            .iter()
+            .filter(|(attr, _)| !declared.contains(attr))
+            .filter(|(attr, _)| !KNOWN_MISSING.contains(&attr.as_str()))
+            .map(|(attr, file)| format!("model.{attr} in {file}"))
+            .collect();
+        unknown.sort();
+        unknown.dedup();
+
+        let names: BTreeSet<&String> = accesses.iter().map(|(attr, _)| attr).collect();
+        println!(
+            "{} distinct model attribute(s) read across the template tree, \
+             checked against {} declared name(s); {} known-missing listed",
+            names.len(),
+            declared.len(),
+            KNOWN_MISSING.len()
+        );
+
+        assert!(
+            unknown.is_empty(),
+            "a template reads a `model.` attribute this struct does not declare. \
+             minijinja is `Chainable`, so it renders as nothing and a condition \
+             on it silently takes the else branch — the same shape that kept \
+             `type=\"internal\"` from reaching the Go engine:\n  {}",
+            unknown.join("\n  ")
+        );
+    }
+
+    /// The listed exception is still missing, and still only one.
+    ///
+    /// Without this the list could outlive its reason: someone adds the field,
+    /// the entry goes dead, and the next unknown access is waved through by a
+    /// name that no longer means anything.
+    #[test]
+    fn the_known_missing_list_names_only_absent_fields() {
+        let declared = declared();
+        for name in KNOWN_MISSING {
+            assert!(
+                !declared.contains(*name),
+                "`{name}` is now a declared field, so it must come off \
+                 KNOWN_MISSING — an exception list naming present fields \
+                 silently exempts real typos"
+            );
+        }
+    }
+}
