@@ -283,6 +283,19 @@ MUTATION_RUNNER_RSS_CAP_KB="${MUTATION_RUNNER_RSS_CAP_KB:-4194304}"
 MUTATION_CAUGHT=0
 MUTATION_SURVIVED=0
 MUTATION_INCONCLUSIVE=0
+
+# Every case the casefile declares, and every case that reached a verdict.
+#
+# Two lists rather than a count, because the difference between them is what a
+# round that stopped partway owes its reader. `unseen_event_is_reported_ctest`
+# stopped after its second case and the other six were never measured — and
+# nothing said so: the labels exist one at a time inside the case loop, the
+# ledger record is written at the end and so was never written at all, and what
+# reached the terminal was a red exit that reads like a casefile whose tests
+# are bad rather than a casefile two-thirds of which was not looked at. One of
+# those six then sat unmeasured for weeks.
+MUTATION_DECLARED_CASES=()
+MUTATION_JUDGED_CASES=()
 # `run` (the default) or `check`. Set once by the driver, read by the two
 # places whose work differs: what the baseline has to establish, and how far
 # a case is taken before its verdict.
@@ -1881,6 +1894,112 @@ mutation_init() {
     echo
 }
 
+# Stop the round here, having said what it judged and what it did not.
+#
+# The exits this replaces threw both away. `mutation_ledger_commit` runs at the
+# very end of the driver, so a round that stopped in the case loop left no
+# record at all — not even of the cases it HAD measured — and the corpus was
+# then told nothing rather than something incomplete. Measured on
+# `unseen_event_is_reported_ctest`: two of eight cases judged, six never
+# measured, no record written, and the casefile reading as a red round. The c11
+# case in that six went unjudged for weeks because nothing on either side said
+# it had not been looked at.
+#
+# So a stopped round writes its record like any other, with the cases it never
+# reached named in it. They are named rather than counted for the reason
+# `scripts/mutation-ledger` gives about holes: a number holding "measured and
+# bad" together with "never measured" says neither, and it is the label that
+# tells the next round what to re-run. `rc` stays 2 — the record says the round
+# did not reach its end, which is the claim a tally alone cannot make.
+mutation_stop_round() {
+    local reason="$1" label judged unjudged=()
+    # Set membership, spelled with a loop because the labels are author-written
+    # prose and an associative array keyed on them would need the same quoting
+    # care for no less code.
+    local declared
+    for declared in ${MUTATION_DECLARED_CASES[@]+"${MUTATION_DECLARED_CASES[@]}"}; do
+        local seen=0
+        for judged in ${MUTATION_JUDGED_CASES[@]+"${MUTATION_JUDGED_CASES[@]}"}; do
+            [[ "$judged" == "$declared" ]] && { seen=1; break; }
+        done
+        (( seen )) || unjudged+=("$declared")
+    done
+
+    if (( ${#unjudged[@]} )); then
+        red "              the round stopped here, so ${#unjudged[@]} case(s) were never measured:"
+        for label in "${unjudged[@]}"; do
+            # Deliberately not the shape of a verdict line. The ledger's
+            # log importer reads `^(CAUGHT|SURVIVED|INCONCLUSIVE)  <label>`
+            # off a console log and checks the rows it found against the
+            # round's own tally; a name printed here is not a verdict and
+            # must not be counted as one.
+            red "                not judged: $label"
+        done
+    fi
+
+    if [[ "$MUTATION_MODE" == "run" ]]; then
+        for label in ${unjudged[@]+"${unjudged[@]}"}; do
+            mutation_ledger_case UNJUDGED "$label" "the round stopped before this case: $reason"
+        done
+        dim "recorded: $(mutation_ledger_commit "$MUTATION_RUNNER" 2)"
+    fi
+    exit 2
+}
+
+# The tree is back where it started and the binaries are not.
+#
+# Those are two different facts, and the round used to die on the second while
+# never asking the first. Every declared file being byte-identical to the
+# baseline — which the caller establishes before reaching here — means the
+# source the next case mutates IS the source this round started from. What
+# moved is what a build made of it, and a build is allowed to move: this
+# repository's C++ tree links through ccache and its C tree is regenerated from
+# a template on every build, and neither promises byte-identical output twice.
+#
+# What that cost, measured: `unseen_event_is_reported_ctest` judged 2 of its 8
+# cases and stopped, and a second round over the identical casefile ran all 8 —
+# so the condition is intermittent, and the price of meeting it was two-thirds
+# of a casefile rather than anything about the code under test.
+#
+# A baseline is a MEASUREMENT, not an identity. So it is retaken here, and it
+# has to earn exactly what `mutation_init` made the first one earn: the run
+# comes back, its result is readable, it selects the same tests, and they are
+# green. Only then do the cases below have something to be compared against.
+# If it cannot earn that, this is not a build that wandered but a tree that is
+# genuinely no longer the baseline, and stopping is right — which is why the
+# refusal is a status rather than a message.
+mutation_rebaseline() {
+    local rebuilt="$1" run failed timed_out line
+    read -r run failed timed_out <<<"$(mutation_run_artifacts)"
+    if [[ -s "$MUTATION_UNREADABLE" ]]; then
+        red "              and the run that would retake it produced no readable result:"
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && red "                $line"
+        done < "$MUTATION_UNREADABLE"
+        return 1
+    fi
+    if [[ "$timed_out" == "1" ]]; then
+        red "              and the run that would retake it did not come back:"
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && red "                $line"
+        done < "$MUTATION_FAILING"
+        return 1
+    fi
+    if [[ "$run" != "$BASELINE_RUN" ]]; then
+        red "              and the run that would retake it selected $run test(s), not $BASELINE_RUN"
+        return 1
+    fi
+    if [[ "$failed" != "0" ]]; then
+        red "              and the run that would retake it is not green ($failed failing)"
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && red "                $line"
+        done < <(mutation_baseline_failures <"$MUTATION_FAILING")
+        return 1
+    fi
+    BASELINE_HASHES="$rebuilt"
+    return 0
+}
+
 # mutation_case <label>  (Python case body on stdin)
 mutation_case() {
     local label="$1"
@@ -1888,7 +2007,12 @@ mutation_case() {
     # Read unconditionally: the heredoc has to be consumed on the declaration
     # pass too, or the shell would hand its lines to the parser as commands.
     body="$(cat)"
-    [[ "${MUTATION_PASS:-run}" != "declare" ]] || return 0
+    if [[ "${MUTATION_PASS:-run}" == "declare" ]]; then
+        # Collected on the pass that sees all of them, which is the only pass
+        # that can: the run pass reaches a label and then leaves it behind.
+        MUTATION_DECLARED_CASES+=("$label")
+        return 0
+    fi
 
     # Before the edit, so a round killed during this case is recoverable as
     # THIS case rather than as "somewhere in this casefile".
@@ -1997,7 +2121,8 @@ nothing was mutated, so nothing was tested"
         mutation_restore
         if [[ "$(mutation_all_target_hashes)" != "$BASELINE_FILE_HASHES" ]]; then
             red "              restore did not reproduce the baseline files"
-            exit 2
+            red "              the snapshot it was restored from is at $WORK/snapshot"
+            mutation_stop_round "restore did not reproduce the baseline files"
         fi
         return
     fi
@@ -2088,19 +2213,42 @@ changed which tests exist, so the verdict is not comparable"
     # Restoring must put the tree back where it started. Checking it here
     # rather than at the end means a botched restore is attributed to the
     # case that caused it instead of poisoning every case after it.
-    local restored
-    restored="$(mutation_build_and_hash)" || { red "restore left a tree that does not build"; exit 2; }
-    if [[ "$restored" != "$BASELINE_HASHES" ]]; then
-        red "              restore did not reproduce the baseline binaries"
-        red "              — later cases would be measured against a moved baseline"
-        exit 2
-    fi
-    # And the files themselves, which for a runtime target is the only place a
-    # botched restore would show: its binaries are identical either way.
+    #
+    # The FILES first, and the binaries second. That order is the whole repair:
+    # it used to be the other way round, so a build that is not byte-repro-
+    # ducible was reported as a botched restore and killed the round over a
+    # tree that was in fact exactly where it started. Ask what is on disk
+    # before asking what a compiler made of it — the first question has an
+    # answer this harness owns, and the second does not.
     if [[ "$(mutation_all_target_hashes)" != "$BASELINE_FILE_HASHES" ]]; then
         red "              restore did not reproduce the baseline files"
         red "              — later cases would be measured against a moved baseline"
-        exit 2
+        # Where the bytes still are. The snapshot outlives this check, and
+        # naming it is the difference between a reader who can compare and one
+        # who has to guess which file moved.
+        red "              the snapshot it was restored from is at $WORK/snapshot"
+        mutation_stop_round "restore did not reproduce the baseline files"
+    fi
+
+    local restored
+    if ! restored="$(mutation_build_and_hash)"; then
+        red "              restore left a tree that does not build"
+        mutation_build_diagnostics >&2
+        mutation_stop_round "restore left a tree that does not build"
+    fi
+    if [[ "$restored" != "$BASELINE_HASHES" ]]; then
+        # Every declared file is byte-identical to the baseline — the check
+        # above just said so — so this is a build that moved and not a restore
+        # that failed. Retake the baseline rather than ending the casefile on
+        # it; `mutation_rebaseline` says what that costs and what it demands.
+        red "              the rebuilt binaries are not the baseline's, though every"
+        red "              declared file is — so the baseline is being retaken"
+        if ! mutation_rebaseline "$restored"; then
+            red "              the baseline could not be retaken, so later cases would be"
+            red "              measured against a moved baseline"
+            mutation_stop_round "the baseline could not be retaken after a rebuilt binary moved"
+        fi
+        green "              baseline retaken: $BASELINE_RUN tests, 0 failing"
     fi
 }
 
@@ -2151,6 +2299,7 @@ mutation_verdict() {
         done <<<"$note"
         detail+=$'\n'"$note"
     fi
+    MUTATION_JUDGED_CASES+=("$label")
     mutation_ledger_case "$verdict" "$label" "$detail" "$red_file"
 }
 
