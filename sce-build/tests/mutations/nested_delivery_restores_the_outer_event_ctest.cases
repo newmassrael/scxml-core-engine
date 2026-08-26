@@ -1,0 +1,80 @@
+# Mutation cases for §scxml-B-2-8-1 on the one branch of `EventContextGuard`
+# that only a NESTED delivery can reach.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/nested_delivery_restores_the_outer_event_ctest.cases`.
+#
+# `~EventContextGuard` restores the saved event under
+# `if (actionExecutorImpl_ && isNested_)`, and `isNested_` is
+# `!savedEvent_.name.empty()` — true only when a delivery began while another was
+# already bound. Every other document in the integration suite delivers at top
+# level, so that predicate is false throughout and the branch is dead code as far
+# as the suite can see.
+#
+# Measured 2026-08-26: guarding the branch out with `if (false && ...)` left the
+# whole integration suite green at 369 tests. A mutation nothing can catch is a
+# case that reads as covered and proves nothing, which is why this casefile
+# exists rather than a case in `undecodable_payload_is_reported_ctest` — that
+# fixture declares itself single-axis and cannot produce nesting at all.
+#
+# The oracle is the document that can: an external event whose transition enters
+# a compound state whose `<final>` carries `<donedata>`, so `done.state.<parent>`
+# is queued INTERNALLY and drained inside the guard the outer event built. The
+# engine says so itself —
+#
+#   EventContextGuard: Nested event processing - saving _event='outer',
+#   setting new _event='done.state.wrapper'
+#
+# — and what the restore owes is checked after `processEvent` returns: `_event` is
+# the outer event again, because the outer guard restores nothing of its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/src/runtime/StateMachine.cpp
+mutation_oracles tests/integration/NestedDeliveryKeepsTheOuterPayloadReportTest.cpp
+
+# ── The restore never runs ─────────────────────────────────────────
+#
+# Guarded out rather than deleted, deliberately: deleting the body would leave
+# `savedEvent_` unread and this file compiles with warnings as errors, which
+# would report INCONCLUSIVE — a mutation the compiler refused — instead of a
+# verdict about the tests.
+
+mutation_case "the guard never puts the outer event back" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """            if (actionExecutorImpl_ && isNested_) {
+                // Restore saved event
+                actionExecutorImpl_->setCurrentEvent(savedEvent_);""",
+     """            if (false && actionExecutorImpl_ && isNested_) {
+                // Restore saved event
+                actionExecutorImpl_->setCurrentEvent(savedEvent_);""")
+PY
+
+# ── Why there is no second case ────────────────────────────────────
+#
+# ⚠ A case widening the branch to `if (actionExecutorImpl_)` — restore
+# unconditionally — was written, run, and REMOVED. It came back SURVIVED twice,
+# and the second time with an assertion added specifically to catch it, which is
+# what prompted looking at why rather than trying harder.
+#
+# It cannot be caught, because it is a no-op in effect. A top-level guard's
+# `savedEvent_` is empty, and `ActionExecutorImpl::setCurrentEvent` skips the
+# datamodel update for an empty name outright:
+#
+#   ActionExecutorImpl.cpp:455
+#     if (currentEventName_.empty()) {
+#         SCE_LOG_DEBUG("Skipping _event update - no current event in context");
+#         return true;
+#     }
+#
+# So restoring an empty saved event changes nothing a document or a host can
+# observe: the `isNested_` conjunct is redundant for `_event` and earns its place
+# by saying what the branch means, not by changing what it does. A case whose
+# mutation is behaviourally identical to the original reports SURVIVED forever
+# and reads as a coverage gap that no test could ever close — this repository's
+# discriminator ②, a case that is a no-op wearing a verdict's clothes.
+#
+# `ATopLevelDeliveryIsNotRestoredOverWithNothing` in the oracle still asserts the
+# top-level half holds. It is a regression guard, not a witness for this
+# mutation, and its comment says so.
