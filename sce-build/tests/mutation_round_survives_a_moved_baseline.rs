@@ -417,40 +417,37 @@ fn a_build_that_is_reproducible_never_retakes_the_baseline() {
 /// The control, driven by the harness as it was before this repair.
 ///
 /// Kept because the repair is a behaviour and not a line: without this the
-/// test above passes on a harness that never had the defect, and nothing says
-/// the fixture reproduces the thing that cost six cases. The pre-repair
-/// script is read out of git rather than kept as a copy, so it cannot drift
-/// into agreeing with the current one.
+/// tests above pass on a harness that never had the defect, and nothing says
+/// the fixture reproduces the thing that cost six cases. The pre-repair script
+/// is read out of git rather than kept as a copy, so it cannot drift into
+/// agreeing with the current one.
+///
+/// ⚠ The revision is PINNED, and the first draft of this test was not — it
+/// asked git for the newest commit that had touched `scripts/mutate`, which the
+/// moment the repair landed was the repair itself. It then compared the fix
+/// against the fix, found no defect, printed a line to stderr and passed. That
+/// is this repository's recorded failure shape for a control built on an
+/// absence: the sweep goes empty and the emptiness reads as green. So every way
+/// out of this test is now a FAILURE with a sentence. If a later change to the
+/// libraries this pinned script sources makes it undrivable, that is a decision
+/// for a person — retire the control deliberately — and not something the test
+/// may take silently.
+const DEFECT_REVISION: &str = "79f1bf284d2010af4b727ae79e3c6f941621dce6";
+
 #[test]
 fn the_harness_this_replaces_ends_the_casefile_at_its_first_case() {
-    let before = Command::new("git")
-        .args([
-            "log",
-            "--diff-filter=M",
-            "--format=%H",
-            "-n",
-            "1",
-            "--",
-            "scripts/mutate",
-        ])
-        .current_dir(repo_root())
-        .output()
-        .expect("git log scripts/mutate");
-    let commit = String::from_utf8_lossy(&before.stdout).trim().to_string();
-    if commit.is_empty() {
-        // Nothing to compare against in a shallow or fresh checkout. Silence
-        // would read as a pass, so say which half of the pair did not run.
-        eprintln!("no earlier revision of scripts/mutate to control against — skipped");
-        return;
-    }
-
     let older = Command::new("git")
         .arg("show")
-        .arg(format!("{commit}:scripts/mutate"))
+        .arg(format!("{DEFECT_REVISION}:scripts/mutate"))
         .current_dir(repo_root())
         .output()
         .expect("git show scripts/mutate");
-    assert!(older.status.success(), "could not read the earlier harness");
+    assert!(
+        older.status.success(),
+        "the pinned pre-repair harness {DEFECT_REVISION} could not be read, so this \
+         control measured nothing:\n{}",
+        String::from_utf8_lossy(&older.stderr)
+    );
 
     let dir = tempdir().expect("temp dir");
     let harness = dir.path().join("mutate");
@@ -465,12 +462,13 @@ fn the_harness_this_replaces_ends_the_casefile_at_its_first_case() {
 
     let p = project("control", 0, true);
     let (ok, output) = p.round_with(&harness);
-    if !output.contains("restore did not reproduce the baseline binaries") {
-        // The earlier revision already carries the repair — the pair has
-        // nothing to say, and saying that is better than asserting on it.
-        eprintln!("the earlier revision does not show the defect — skipped");
-        return;
-    }
+    // The half that gives the other three their meaning: this fixture really
+    // does reproduce the defect, in the pre-repair harness's own words.
+    assert!(
+        output.contains("restore did not reproduce the baseline binaries"),
+        "the fixture no longer reproduces the defect this repair is about, so \
+         nothing here measures it:\n{output}"
+    );
     assert!(
         !ok,
         "the earlier harness ended a round it could not finish:\n{output}"
