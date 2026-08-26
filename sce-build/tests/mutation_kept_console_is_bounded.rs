@@ -32,10 +32,19 @@
 // reported CAUGHT and the record named one of the two tests that turned red.
 //
 // What the cap does cost is real and worth stating: a kept console loses the
-// failure TEXT of anything that failed in the middle. What it does not cost is
-// knowing WHICH tests failed — that is in the JUnit document, which is left
-// uncapped at ~2 MB for a whole round, and in the round's own `red:` line and
-// ledger record, both drawn from the full console.
+// failure TEXT of anything that failed in the middle. What it does NOT cost is
+// knowing which tests failed, and that is measured rather than assumed. On the
+// real casefile `unseen_event_is_reported_ctest`, `grep -o 'FAILED  ] S.C' |
+// sort -u` returns the SAME four names from the capped copy as from the
+// uncapped one: gtest repeats every failure in its end-of-run summary, and the
+// tail half keeps that summary. Nine `[  FAILED  ]` lines became five, and the
+// four dropped were duplicate first-occurrence ones.
+//
+// ⚠ Not the JUnit document — an earlier draft of this comment credited it, and
+// it is wrong: JUnit names the ctest ENTRY (`IntegrationTests`) and the counts,
+// never the gtest cases. The complete fine-grained list lives in the ledger
+// record's `red` array, which is drawn from the full console — measured at four
+// and five names on cases whose console line showed three and "+1 more".
 
 use std::fs;
 use std::path::{Path, PathBuf};
