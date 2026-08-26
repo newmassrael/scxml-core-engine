@@ -48,6 +48,19 @@
 #             describes a case that no longer says what it said. A stale
 #             casefile is not unjudged, and folding it in would make the
 #             headline count move for a reason it does not name.
+#   unverifiable
+#             measured, but the record carries no `casefile_blob` at all, so
+#             whether it is stale CANNOT BE ASKED. `import-log` writes this:
+#             a console log does not say which casefile version produced it,
+#             and filling one in from today's tree would be a lie. The reason
+#             this is its own question rather than a footnote to `stale` is
+#             that `stale` compares a recorded blob to the current one, so a
+#             record with no blob is not "not stale" — it is unexaminable, and
+#             the comparison silently passes. Measured 2026-08-26: the corpus
+#             read `86/86 judged` and `0 stale` while 37 of those 86 rested on
+#             recovered logs whose casefile version nothing could establish.
+#             That took a hand-written scan over the raw records to see, which
+#             is exactly the reading this ledger exists to save.
 #   holes     measured, and NOT caught. SURVIVED says the assertion never
 #             covered the code it names; INCONCLUSIVE says the round could
 #             not answer at all. This corpus has found both to be gaps in the
@@ -82,6 +95,8 @@ usage: scripts/mutation-ledger <command> [args]
   claimed             unjudged casefiles carrying an assertion that a round
                       once passed, with the note that says who claimed it
   stale               judged casefiles edited since the round that judged them
+  unverifiable        judged casefiles whose newest record carries no casefile
+                      blob, so `stale` cannot be asked of them
   show <stem>         every record for one casefile
   path                where the ledger lives
 
@@ -92,7 +107,7 @@ usage: scripts/mutation-ledger <command> [args]
                       record that a round happened whose log is gone, marked
                       provenance=asserted — never counted as measured evidence
 
-Options for `unjudged`, `judged`, `holes`, `stale`, `claimed`:
+Options for `unjudged`, `judged`, `holes`, `stale`, `unverifiable`, `claimed`:
   --runner cargo|ctest   only casefiles driven by that runner
   --detail               prefix each line with runner and case count, and for
                          `holes` add the runner's own words about the case
@@ -263,6 +278,15 @@ if command == "stale":
             record["casefile_blob"][:12], current[:12])))
     sys.exit(0)
 
+if command == "unverifiable":
+    for entry in selected:
+        record = newest(entry["stem"])
+        if record is None or record["casefile_blob"] != "unknown":
+            continue
+        print(line_for(entry, "  measured as %s, no casefile blob recorded"
+                       % record["provenance"]))
+    sys.exit(0)
+
 if command == "claimed":
     for entry in selected:
         if entry["stem"] in measured:
@@ -322,7 +346,15 @@ if command == "status":
     open_cases = [(e, case) for e in judged
                   for case in newest(e["stem"])["cases"]
                   if case["verdict"] != "CAUGHT"]
+    # Counted here for the reason `stale` is, and with a sharper edge: a
+    # record with no blob does not merely go uncounted by `stale`, it makes
+    # `stale` answer "no" to a question it never asked. Left off this summary
+    # the corpus reads finished and verified when half of it is only the first.
+    unverifiable = sum(1 for e in judged
+                       if newest(e["stem"])["casefile_blob"] == "unknown")
     print("of the judged: %d stale (casefile edited since)" % stale)
+    print("of the judged: %d unverifiable (no casefile blob; stale cannot be"
+          " asked)" % unverifiable)
     print("of the judged: %d case(s) not caught, in %d casefile(s)"
           % (len(open_cases), len({e["stem"] for e, _ in open_cases})))
     print("of the unjudged: %d claimed (a round is asserted, its log gone)"
@@ -500,7 +532,7 @@ case "$COMMAND" in
     path) mutation_ledger_dir; exit 0 ;;
     import-log) import_log "$@"; exit 0 ;;
     assert) assert_round "$@"; exit 0 ;;
-    status|unjudged|judged|holes|stale|claimed|show) ;;
+    status|unjudged|judged|holes|stale|unverifiable|claimed|show) ;;
     *) usage >&2; exit 2 ;;
 esac
 
