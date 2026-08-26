@@ -162,6 +162,11 @@
 # the round had to be repeated twice before the reason was in reach.
 #
 # Unset by default. A round that keeps nothing behaves exactly as before.
+#
+# A kept console is capped at both ends — see
+# `MUTATION_KEPT_CONSOLE_MAX_BYTES` — because a mutant that loops while logging
+# makes ctest print hundreds of megabytes of one repeated line. The cap is on
+# the COPY only; the verdict is read from the whole console every time.
 
 set -euo pipefail
 
@@ -1021,6 +1026,54 @@ mutation_ctest_supervise() {
     printf '%s\n' "$rc"
 }
 
+# How much of a kept console is worth keeping.
+#
+# CTest holds a test's whole output in memory and prints it all on failure, so
+# one red run of a mutant that loops while logging is not a log — it is a flood
+# with a diagnosis at each end. Measured: `undecodable_payload_is_reported_ctest`
+# left 678 MB per eleven-case round, of which 676 MB was console at ~97 MB per
+# red run, against 2.1 MB of JUnit for the whole round. On `/tmp` that is merely
+# rude; pointed at a persistent directory it fills a disk in a few rounds, and
+# this machine is shared and has already had a disk trim delete a running
+# build's `target/`.
+#
+# Two megabytes, and split between the two ends on purpose. What a person reads
+# a kept console FOR lives at the edges: the head has ctest's test list and the
+# first failure, the tail has the summary and which entries turned red. The
+# middle is the same assertion printed a million times.
+MUTATION_KEPT_CONSOLE_MAX_BYTES="${MUTATION_KEPT_CONSOLE_MAX_BYTES:-2097152}"
+
+# Copy `$1` to `$2`, keeping both ends and saying what was dropped.
+#
+# ⚠ Only ever called on the KEPT copy. The console a verdict is drawn from is
+# `$WORK/ctest-console.txt`, which `mutation_ctest_run` hands to
+# `mutation_failures_from_gtest` unabridged — a truncated copy reaching that
+# parser would silently shorten the `red:` list, which is the one place a CAUGHT
+# verdict says whether the tests that turned red are the ones that own the
+# clause. The two paths are kept apart here rather than in a comment at the
+# call site: this function writes to the report directory and nothing else.
+mutation_copy_capped() {
+    local src="$1" dst="$2" size half dropped
+    size="$(wc -c <"$src" 2>/dev/null || echo 0)"
+    if (( size <= MUTATION_KEPT_CONSOLE_MAX_BYTES )); then
+        cp -f "$src" "$dst" 2>/dev/null || true
+        return 0
+    fi
+    half=$(( MUTATION_KEPT_CONSOLE_MAX_BYTES / 2 ))
+    dropped=$(( size - half * 2 ))
+    {
+        head -c "$half" "$src"
+        # Its own lines, and naming the numbers, because a reader who cannot
+        # tell a truncated console from a short one will read a missing
+        # failure as a failure that did not happen.
+        printf '\n\n[mutate: %s bytes of this console were dropped here — it was\n' "$dropped"
+        printf ' %s bytes and the kept ceiling is %s. The first and last %s bytes\n' \
+            "$size" "$MUTATION_KEPT_CONSOLE_MAX_BYTES" "$half"
+        printf ' are above and below. The verdict was read from the whole of it.]\n\n'
+        tail -c "$half" "$src"
+    } > "$dst" 2>/dev/null || true
+}
+
 # Copy what the last ctest run left behind into `SCE_MUTATION_REPORT_DIR`,
 # when the caller asked for that. `$1` report path, `$2` console path.
 #
@@ -1038,7 +1091,7 @@ mutation_ctest_keep_artifacts() {
     seq=$(( $(cat "$seq_file" 2>/dev/null || echo 0) + 1 ))
     printf '%s\n' "$seq" > "$seq_file"
     kept="$(printf '%s/ctest-%02d' "$SCE_MUTATION_REPORT_DIR" "$seq")"
-    cp -f "$2" "$kept.console.txt" 2>/dev/null || true
+    mutation_copy_capped "$2" "$kept.console.txt"
     if [[ -f "$1" ]]; then
         cp -f "$1" "$kept.junit.xml" 2>/dev/null || true
     else
@@ -2363,7 +2416,11 @@ while (( $# )); do
             printf '  --declares  print the declared runner, targets and services, then exit\n\n'
             printf 'SCE_MUTATION_REPORT_DIR=<dir>  keep each ctest run'\''s console and JUnit\n'
             printf '                               document (or a marker when ctest wrote none),\n'
-            printf '                               numbered in run order from the baseline\n\n'
+            printf '                               numbered in run order from the baseline\n'
+            printf 'MUTATION_KEPT_CONSOLE_MAX_BYTES=<n>\n'
+            printf '                               ceiling on a KEPT console, both ends kept and\n'
+            printf '                               the gap named (default 2 MiB). The verdict is\n'
+            printf '                               always read from the whole console\n\n'
             printf 'The casefile vocabulary is documented in this file'\''s header.\n'
             exit 0 ;;
         -*) red "mutate: unknown option $1"; exit 2 ;;
