@@ -67,6 +67,13 @@
 # The three are not equivalent, and a ledger that could not tell them apart
 # would launder the third into the first.
 
+# The corpus's own directory, which both records below hang off. Spelled once
+# because the argument above is about the ROOT — a path with no session in it —
+# and a second copy is how one of the two records quietly moves.
+mutation_ledger_root() {
+    printf '%s\n' "$HOME/.local/share/sce-mutation-corpus"
+}
+
 # The ledger's location, and the ONLY place it is spelled. `scripts/mutate`
 # writes through this file and `scripts/mutation-ledger` reads through it, so
 # neither can drift from the other by editing a path.
@@ -75,7 +82,7 @@ mutation_ledger_dir() {
         printf '%s\n' "$SCE_MUTATION_LEDGER_DIR"
         return
     fi
-    printf '%s\n' "$HOME/.local/share/sce-mutation-corpus/verdicts"
+    printf '%s\n' "$(mutation_ledger_root)/verdicts"
 }
 
 # Field separators for the scratch file the case loop appends to. A label is
@@ -219,4 +226,138 @@ with open(out, "a") as fh:
     os.fsync(fh.fileno())
 print(out)
 PY
+}
+
+# ── The other record: what a round is doing WHILE it does it ──────
+#
+# Everything above is written when a round ENDS. A round that is killed reaches
+# none of it — and, until the record below existed, reached no restore either:
+# `scripts/mutate` hangs every restore off one `trap ... EXIT`, and a trap does
+# not run on SIGKILL. The mutation stays in the working tree, where the next
+# round reads it as the baseline and a successor session reads it as leftovers.
+#
+# It is the same failure this file's header is about, one step earlier: the
+# evidence that would have fixed it — the snapshot holding the original bytes —
+# survives the kill intact, under a `mktemp -d` name that lived nowhere but in
+# the killed process's memory. So the name is written down, before a file is
+# touched, under the same root and for the same reason as a verdict.
+#
+# The record's mechanics are in `scripts/lib/mutation_inflight.py`, whose header
+# carries the measurement; the four functions below are how a round reaches it.
+
+# Plain-text stand-ins for the three helpers `scripts/mutate` defines further
+# down its own file. It redefines them with colour once it reaches them, so
+# these are what a reader sourcing this library on its own gets — rather than an
+# unbound function on the one path that matters most, the report about a round
+# that was killed.
+declare -F red >/dev/null || red() { printf '%s\n' "$*"; }
+declare -F green >/dev/null || green() { printf '%s\n' "$*"; }
+declare -F dim >/dev/null || dim() { printf '%s\n' "$*"; }
+
+# Where the in-flight records live: beside the verdicts, under the same root,
+# for the same reason.
+mutation_inflight_dir() {
+    if [[ -n "${SCE_MUTATION_INFLIGHT_DIR:-}" ]]; then
+        printf '%s\n' "$SCE_MUTATION_INFLIGHT_DIR"
+        return
+    fi
+    printf '%s\n' "$(mutation_ledger_root)/in-flight"
+}
+
+# The program that owns a record's whole life, named once so the callers below
+# cannot disagree about where it is.
+mutation_inflight_tool() {
+    printf '%s\n' "$(dirname "${BASH_SOURCE[0]}")/mutation_inflight.py"
+}
+
+# Speak the tool's report in this harness's voice.
+#
+# The tool tags its lines rather than colouring them, because it is read by a
+# test and by a gate as well as by a person, and an escape sequence in front of
+# a line is how `^applies` came to match nothing across a corpus that had just
+# reported 124 cases.
+mutation_inflight_speak() {
+    local tag text
+    while IFS=$'\t' read -r tag text; do
+        case "$tag" in
+        R) red "$text" ;;
+        G) green "$text" ;;
+        *) dim "$text" ;;
+        esac
+    done
+}
+
+# Open the round's record. Called from `mutation_snapshot`, which is the one
+# moment both halves of it are true: the snapshot exists, and no case body has
+# run yet.
+#
+# `$$` rather than a pid the tool could read for itself: `$$` is the shell
+# running `scripts/mutate` even from inside a subshell, and that process is what
+# a later invocation asks about when it wants to know whether the round that
+# wrote this record is still going.
+mutation_inflight_open() {
+    local casefile="$1" mode="$2" work="$3" snapshot="$4" targets="$5"
+    # The tool chooses the NAME as well as the content, and prints it back. A
+    # name minted here would have to be created here, and a zero-byte `.json`
+    # sitting in that directory until the content arrives is a record a
+    # concurrent invocation reads as a parse error rather than as a round.
+    MUTATION_INFLIGHT_RECORD="$(printf '%s\n' "$targets" |
+        python3 "$(mutation_inflight_tool)" open \
+        --dir "$(mutation_inflight_dir)" \
+        --repo "$(git rev-parse --show-toplevel)" \
+        --casefile "$casefile" \
+        --mode "$mode" \
+        --tree "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+        --work "$work" \
+        --snapshot "$snapshot" \
+        --pid "$$")"
+}
+
+# Every record this machine holds, and whether its round is still going.
+#
+# Read by `scripts/mutation-ledger in-flight` and by nothing else. A round in
+# flight is deliberately NOT reported by `scripts/mutate`: it is not something
+# that harness can act on, and reporting it there made one round's output depend
+# on what else happened to be running.
+mutation_inflight_list() {
+    python3 "$(mutation_inflight_tool)" list --dir "$(mutation_inflight_dir)"
+}
+
+# Which case is being applied right now. Rewritten per case rather than written
+# once, because "something in this casefile is in your tree" and "this case is
+# in your tree" are a paragraph of searching apart — and the named case is also
+# the one case in the round that has no verdict.
+mutation_inflight_case() {
+    [[ -n "${MUTATION_INFLIGHT_RECORD:-}" ]] || return 0
+    python3 "$(mutation_inflight_tool)" case \
+        --record "$MUTATION_INFLIGHT_RECORD" --label "$1"
+}
+
+# Close the record, once the tree it named is back. Non-zero when it is not —
+# which is also what tells the EXIT trap to keep the snapshot a repair needs.
+mutation_inflight_close() {
+    [[ -n "${MUTATION_INFLIGHT_RECORD:-}" ]] || return 0
+    local report rc=0
+    report="$(python3 "$(mutation_inflight_tool)" close \
+        --record "$MUTATION_INFLIGHT_RECORD")" || rc=$?
+    if [[ -n "$report" ]]; then
+        printf '%s\n' "$report" | mutation_inflight_speak
+    fi
+    if [[ "$rc" -eq 0 ]]; then
+        MUTATION_INFLIGHT_RECORD=""
+    fi
+    return "$rc"
+}
+
+# Finish the restore of any round that did not. Non-zero when a record is left
+# that this harness will not act on by guessing.
+mutation_inflight_recover() {
+    local report rc=0
+    report="$(python3 "$(mutation_inflight_tool)" recover \
+        --dir "$(mutation_inflight_dir)" \
+        --repo "$(git rev-parse --show-toplevel)")" || rc=$?
+    if [[ -n "$report" ]]; then
+        printf '%s\n' "$report" | mutation_inflight_speak
+    fi
+    return "$rc"
 }
