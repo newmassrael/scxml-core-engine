@@ -2183,12 +2183,129 @@ mod model_attribute_names {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates")
     }
 
-    /// Every property name in the schema, definitions included.
+    /// Every name a template may legitimately read off a model object.
+    ///
+    /// TWO derivations, unioned, because neither alone is the declared surface
+    /// and finding that out cost a false accusation. `schema_for!` is
+    /// authoritative for the schema but NOT for the struct: this file marks
+    /// fields `#[cfg_attr(test, schemars(skip))]`, and five of them —
+    /// `symbol_state_path`, `symbol_artifact`, `native_payload_guard`,
+    /// `native_action_rendered` and their kin — are real fields templates read
+    /// every render. A gate built on the schema alone reported those as typos.
+    ///
+    /// So the schema supplies one set, the source text supplies another, and
+    /// `the_two_derivations_agree` below asserts the schema is a SUBSET of the
+    /// source scan. That is what keeps the text half honest: a scan that
+    /// silently stopped matching would drop below the schema and be caught,
+    /// rather than quietly widening the allow-set.
     fn declared() -> BTreeSet<String> {
+        let mut names = schema_names();
+        names.extend(source_names());
+        names.extend(PYCOMPAT_METHODS.iter().map(|m| (*m).to_string()));
+        names
+    }
+
+    /// Method names `minijinja_contrib::pycompat` makes callable on strings,
+    /// dicts and sequences. A template calling `state.id.startswith(...)` is
+    /// reading a method, not a field.
+    ///
+    /// ⚠ This does widen the accepted set, so a misspelling that happens to
+    /// equal one of these names would pass. That is the cost of the pycompat
+    /// shim being enabled at all; the alternative is a gate that fires on every
+    /// string operation in the tree.
+    const PYCOMPAT_METHODS: &[&str] = &[
+        "startswith",
+        "endswith",
+        "strip",
+        "lstrip",
+        "rstrip",
+        "split",
+        "splitlines",
+        "upper",
+        "lower",
+        "replace",
+        "items",
+        "keys",
+        "values",
+        "get",
+        "join",
+        "count",
+        "find",
+        "title",
+        "capitalize",
+        "isdigit",
+        "isalpha",
+        "format",
+    ];
+
+    fn schema_names() -> BTreeSet<String> {
         let schema = schemars::schema_for!(super::SCXMLModel);
         let json = serde_json::to_value(&schema).expect("the schema serializes");
         let mut names = BTreeSet::new();
         collect_properties(&json, &mut names);
+        names
+    }
+
+    /// The WIRE names of this file's fields, plus its public methods.
+    ///
+    /// ⚠⚠⚠ A renamed field contributes its rename and NOT its Rust identifier,
+    /// and getting that backwards is not a detail — it is the whole defect. G1's
+    /// recorded instance is `Transition`:
+    ///
+    ///     #[serde(rename = "type")]
+    ///     pub transition_type: String,
+    ///
+    /// The template must write `trans.type`; a Go template wrote
+    /// `trans.transition_type` and `type="internal"` never reached that engine.
+    /// A first draft of this scan added both names, so restoring the original
+    /// defect PASSED — measured. An accepted set containing the Rust identifier
+    /// is an accepted set that blesses exactly the mistake being hunted.
+    ///
+    /// Serde is what the render context goes through, so serde's name is the
+    /// only one a template can read. This is also why `schema_for!` had it right
+    /// on its own: schemars follows the same renames.
+    fn source_names() -> BTreeSet<String> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/model.rs");
+        let src = std::fs::read_to_string(&path).expect("this file is readable");
+        let mut names = BTreeSet::new();
+        let mut pending_rename: Option<String> = None;
+        for line in src.lines() {
+            let t = line.trim();
+            if let Some(at) = t.find("rename = \"") {
+                let rest = &t[at + "rename = \"".len()..];
+                if let Some(end) = rest.find('"') {
+                    pending_rename = Some(rest[..end].to_string());
+                }
+                continue;
+            }
+            let Some(rest) = t.strip_prefix("pub ") else {
+                // Attributes and doc comments sit between the rename and the
+                // field, so only a non-attribute, non-`pub` line clears it.
+                if !t.starts_with('#') && !t.starts_with("///") && !t.is_empty() {
+                    pending_rename = None;
+                }
+                continue;
+            };
+            if let Some(name) = rest.strip_prefix("fn ") {
+                let ident: String = name
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                if !ident.is_empty() {
+                    names.insert(ident);
+                }
+                pending_rename = None;
+            } else if let Some((ident, _)) = rest.split_once(':') {
+                let ident = ident.trim();
+                if !ident.is_empty() && ident.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                {
+                    match pending_rename.take() {
+                        Some(wire) => names.insert(wire),
+                        None => names.insert(ident.to_string()),
+                    };
+                }
+            }
+        }
         names
     }
 
@@ -2240,14 +2357,125 @@ mod model_attribute_names {
                     .expect("a file name")
                     .to_string_lossy()
                     .into_owned();
-                for expr in delimited(&strip_jinja_comments(&body)) {
-                    for attr in model_attrs(&expr) {
-                        found.insert((attr, name.clone()));
+                let exprs = delimited(&strip_jinja_comments(&body));
+                let derived = model_derived_bases(&exprs);
+                for expr in &exprs {
+                    for (base, attr) in attribute_accesses(expr) {
+                        if derived.contains(&base) {
+                            // The BASE is kept, not flattened to "model". A
+                            // finding that says `model.symbol_artifact` when the
+                            // template wrote `trans.symbol_artifact` sends the
+                            // reader to the wrong struct — which is how the
+                            // first version of this gate accused five real
+                            // fields of being typos.
+                            found.insert((format!("{base}.{attr}"), name.clone()));
+                        }
                     }
                 }
             }
         }
         found
+    }
+
+    /// The variables in one template that hold model data.
+    ///
+    /// `model` itself, plus every `{% for X in EXPR %}` whose EXPR is rooted at a
+    /// variable already known to be model data — so `state` from
+    /// `model.states`, then `trans` from `state.transitions`, and so on. Iterated
+    /// to a fixed point because a template may bind the outer loop after the
+    /// inner one in source order (an `{% include %}`d fragment does exactly
+    /// that).
+    ///
+    /// This is what lets the check reach past `model.`. It is also what keeps it
+    /// from drowning: templates read `action.`, `f.`, `field.`, `rule.`,
+    /// `variant.` and a dozen other bases that are forge kinds, macro arguments
+    /// or filter output, none of which this struct describes — 414 of the 576
+    /// distinct attribute names in the tree belong to those. Checking a name
+    /// against a schema that never claimed to hold it is how a gate produces
+    /// noise and then gets an exception list long enough to hide a real typo.
+    fn model_derived_bases(exprs: &[String]) -> BTreeSet<String> {
+        let mut derived: BTreeSet<String> = BTreeSet::new();
+        derived.insert("model".to_string());
+        loop {
+            let before = derived.len();
+            for expr in exprs {
+                for (bound, from) in for_bindings(expr) {
+                    if derived.contains(&from) {
+                        derived.insert(bound);
+                    }
+                }
+            }
+            if derived.len() == before {
+                break;
+            }
+        }
+        derived
+    }
+
+    /// `(bound variable, root of the iterated expression)` for one `{% for %}`.
+    ///
+    /// Handles the tuple form too: `{% for id, state in model.states.items() %}`
+    /// binds the VALUE to the second name, which is the one carrying model data.
+    fn for_bindings(expr: &str) -> Vec<(String, String)> {
+        let trimmed = expr.trim_start().trim_start_matches('-').trim_start();
+        let Some(rest) = trimmed.strip_prefix("for ") else {
+            return Vec::new();
+        };
+        let Some((names, iterated)) = rest.split_once(" in ") else {
+            return Vec::new();
+        };
+        // The iterated expression's root identifier: `state.transitions | foo`
+        // is rooted at `state`.
+        let root: String = iterated
+            .trim()
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if root.is_empty() {
+            return Vec::new();
+        }
+        let bound: Vec<&str> = names.split(',').map(str::trim).collect();
+        // One name binds the item; two bind key and value, and the value is the
+        // one that carries the model object.
+        let carrier = bound.last().copied().unwrap_or_default();
+        if carrier.is_empty()
+            || !carrier
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Vec::new();
+        }
+        vec![(carrier.to_string(), root)]
+    }
+
+    /// Every `<base>.<attr>` in one delimited expression.
+    fn attribute_accesses(expr: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let bytes = expr.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if !(bytes[i].is_ascii_alphabetic() || bytes[i] == b'_') {
+                i += 1;
+                continue;
+            }
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            if i >= bytes.len() || bytes[i] != b'.' {
+                continue;
+            }
+            let base = expr[start..i].to_string();
+            i += 1;
+            let attr_start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            if i > attr_start {
+                out.push((base, expr[attr_start..i].to_string()));
+            }
+        }
+        out
     }
 
     fn strip_jinja_comments(body: &str) -> String {
@@ -2297,30 +2525,6 @@ mod model_attribute_names {
         out
     }
 
-    fn model_attrs(expr: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        let bytes = expr.as_bytes();
-        let mut i = 0;
-        while let Some(at) = expr[i..].find("model.") {
-            let start = i + at;
-            // `model` must be a whole word: `sub_model.foo` is a different base.
-            let joined =
-                start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_');
-            i = start + "model.".len();
-            if joined {
-                continue;
-            }
-            let tail = &expr[i..];
-            let len = tail
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .unwrap_or(tail.len());
-            if len > 0 {
-                out.push(tail[..len].to_string());
-            }
-        }
-        out
-    }
-
     #[test]
     fn every_model_attribute_a_template_reads_is_declared() {
         let declared = declared();
@@ -2343,31 +2547,80 @@ mod model_attribute_names {
             templates_dir().display()
         );
 
+        let attr_of = |access: &str| -> String {
+            access
+                .rsplit_once('.')
+                .map(|(_, a)| a.to_string())
+                .unwrap_or_else(|| access.to_string())
+        };
+
         let mut unknown: Vec<String> = accesses
             .iter()
-            .filter(|(attr, _)| !declared.contains(attr))
-            .filter(|(attr, _)| !KNOWN_MISSING.contains(&attr.as_str()))
-            .map(|(attr, file)| format!("model.{attr} in {file}"))
+            .filter(|(access, _)| !declared.contains(&attr_of(access)))
+            .filter(|(access, _)| !KNOWN_MISSING.contains(&attr_of(access).as_str()))
+            .map(|(access, file)| format!("{access} in {file}"))
             .collect();
         unknown.sort();
         unknown.dedup();
 
-        let names: BTreeSet<&String> = accesses.iter().map(|(attr, _)| attr).collect();
+        let names: BTreeSet<String> = accesses.iter().map(|(a, _)| attr_of(a)).collect();
+        let bases: BTreeSet<&str> = accesses
+            .iter()
+            .filter_map(|(a, _)| a.split_once('.').map(|(b, _)| b))
+            .collect();
         println!(
-            "{} distinct model attribute(s) read across the template tree, \
-             checked against {} declared name(s); {} known-missing listed",
+            "{} distinct attribute name(s) on {} model-derived base(s), checked \
+             against {} declared name(s); {} known-missing listed",
             names.len(),
+            bases.len(),
             declared.len(),
             KNOWN_MISSING.len()
         );
 
         assert!(
             unknown.is_empty(),
-            "a template reads a `model.` attribute this struct does not declare. \
-             minijinja is `Chainable`, so it renders as nothing and a condition \
-             on it silently takes the else branch — the same shape that kept \
-             `type=\"internal\"` from reaching the Go engine:\n  {}",
+            "a template reads an attribute the model does not declare on a \
+             model-derived object. minijinja is `Chainable`, so it renders as \
+             nothing and a condition on it silently takes the else branch — the \
+             same shape that kept `type=\"internal\"` from reaching the Go \
+             engine:\n  {}",
             unknown.join("\n  ")
+        );
+    }
+
+    /// The two derivations overlap heavily, which is what keeps the text half
+    /// of `declared()` trustworthy.
+    ///
+    /// The scan reads `pub <name>:` out of one file; if it ever stopped matching
+    /// — a formatting change, a macro-generated struct — the accepted set would
+    /// shrink toward nothing and every real field would start reading as a typo.
+    /// A large intersection is what says it is still reading fields.
+    ///
+    /// ⚠ NOT containment, and the first draft of this test asserted containment
+    /// and failed: 64 of the schema's names — `bit_offset`, `endian`,
+    /// `tlv_chain_body_alias` and the rest of the forge vocabulary — belong to
+    /// types declared in OTHER files that `SCXMLModel` reaches by `$ref`. The
+    /// schema is transitive; this file is not the whole context surface. Saying
+    /// so here so the next reader does not "fix" the scan to chase them.
+    #[test]
+    fn the_two_derivations_overlap() {
+        let schema = schema_names();
+        let source = source_names();
+        assert!(
+            schema.len() > 100 && source.len() > 100,
+            "schema {} name(s), source scan {} name(s) — one of the two \
+             derivations has collapsed",
+            schema.len(),
+            source.len()
+        );
+        let shared = schema.intersection(&source).count();
+        assert!(
+            shared > 100,
+            "the two derivations share only {shared} name(s) out of {} schema \
+             and {} scanned; the source scan is no longer reading this file's \
+             fields, and the accepted set it feeds is nearly all schema",
+            schema.len(),
+            source.len()
         );
     }
 
