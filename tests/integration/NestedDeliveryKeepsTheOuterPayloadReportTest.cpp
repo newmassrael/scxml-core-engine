@@ -3,10 +3,11 @@
 //
 // W3C SCXML B.2.8.1: a payload's rung is read while it is still true.
 //
-// ⚠⚠ READ THIS FIRST. This file is NOT a witness for the constructor-timing
-// hazard that `EventContextGuard` describes, and it must not be counted as one.
-// It was built to be that witness and measurement showed it cannot be. What it
-// does pin is written at each test; what it cannot, and why, is here.
+// ⚠⚠ READ THIS FIRST. This file is a SECOND witness, not the only one. The
+// hazard `EventContextGuard` describes is already caught by
+// `UndecodablePayloadIsReportedTest` — measured, below — so nothing here is
+// load-bearing for it. What this adds is the nested shape, and the record of
+// three mutation placements and which of them anything catches.
 //
 // The guard's constructor reads the rung immediately after binding, and says:
 //
@@ -15,9 +16,31 @@
 //     guard's destructor binds the SAVED event on the way out, which would
 //     overwrite it.
 //
-// Catching a mutation that moves that read needs a NESTED delivery whose own
-// payload is undecodable. Three measurements, all made 2026-08-26 against this
-// tree, say no document can produce one:
+// The debt register held that this needed a NESTED delivery whose own payload is
+// undecodable, on the reasoning that `isNested_` is always false in the sibling
+// fixture so the restore branch never runs and a moved read is invisible there.
+// That reasoning is wrong, and the reason it is wrong is worth more than the
+// fixture it asked for: `lastPayloadReading_` is STICKY. It survives until the
+// next `setCurrentEvent`, so moving the read changes when it is sampled relative
+// to the sequence of bindings, and the counts move with no nesting at all.
+//
+// Three placements, each applied by hand to `StateMachine.cpp` and measured
+// 2026-08-26 against this tree:
+//
+//   A. READ BEFORE THE BINDING — caught. `UndecodablePayloadIsReportedTest`
+//      fails three assertions (counts, and the named event becomes the next
+//      delivery's). This file fails too, naming `done.state.wrapper`.
+//   B. READ AFTER THE RESTORE, in the destructor — caught. That fixture fails
+//      two (1 became 2, 2 became 3, the name became `answer`). This file fails
+//      one (1 became 2).
+//   C. READ IN THE DESTRUCTOR BUT BEFORE THE RESTORE — survives everything,
+//      and benignly: the inner guard's restore calls `setCurrentEvent(savedEvent_)`,
+//      which RE-READS the outer payload and resurrects its rung, so the outer
+//      guard then samples exactly what it would have sampled in its
+//      constructor. Same count, same name. Nothing is wrong to catch.
+//
+// So the hazard is witnessed, and the facts below are about this document rather
+// than about a gap:
 //
 //   1. NESTING IS AVAILABLE, and this file's document obtains it. Entering a
 //      compound state's `<final>` queues `done.state.<parent>` internally, and
@@ -38,19 +61,10 @@
 //      which reads as Structured. Under `datamodel="null"` the parser takes the
 //      literal branch and the same serialization still applies.
 //
-//   3. AND PUTTING THE BAD PAYLOAD ON THE OUTER DELIVERY DOES NOT SUBSTITUTE.
-//      That was this file's second design: let the nested delivery overwrite
-//      `lastPayloadReading_` and catch a late read by the count going to zero.
-//      It does not work, and the reason is worth writing down — the inner
-//      guard's destructor calls `setCurrentEvent(savedEvent_)`, which RE-READS
-//      the outer payload and resurrects its rung. Measured by moving the read
-//      into the destructor by hand: all ten tests here and in the sibling
-//      fixture still passed. The restore masks the hazard it was named for.
-//
-// So G9's residue is not "write a fixture". It is "no witness is constructible
-// through the current engine surface", and closing it needs a payload route
-// onto the internal queue that is not JSON-serialized — an engine change, to be
-// decided on its own merits rather than smuggled in as test scaffolding.
+//   3. SO THE BAD PAYLOAD RIDES ON THE OUTER DELIVERY HERE, and the nested one
+//      carries a clean payload whose only job is to be a second
+//      `setCurrentEvent` landing a different rung over the first. That is what
+//      placement B trips on, and it is the shape a document can actually have.
 
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/StateMachine.h"
