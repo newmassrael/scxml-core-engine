@@ -494,3 +494,58 @@ fn a_case_the_round_did_not_catch_is_reported_as_a_hole() {
         "`status` does not count the cases a round did not catch:\n{summary}"
     );
 }
+
+#[test]
+fn a_record_with_no_casefile_blob_is_reported_unverifiable_not_current() {
+    let home = tempdir().expect("temp home");
+    let ledger = tempdir().expect("temp ledger");
+
+    // What `import-log` writes: a console log does not say which casefile
+    // version produced it, so the blob is recorded as `unknown` rather than
+    // filled in from today's tree. The failure this guards is that `stale`
+    // compares a RECORDED blob to the current one, so a record carrying none
+    // is not "not stale" — the comparison never happens and silently passes.
+    // Measured 2026-08-26: the corpus read `86/86 judged` and `0 stale` while
+    // 37 of those 86 rested on recovered logs whose version nothing could
+    // establish, and only a hand-written scan over the raw records saw it.
+    with_library(
+        home.path(),
+        &format!(
+            "export SCE_MUTATION_LEDGER_DIR={:?}; \
+             rows=\"$(mktemp)\"; \
+             mutation_ledger_begin {A_REAL_CASEFILE} \"$rows\"; \
+             MUTATION_LEDGER_BLOB=unknown; \
+             mutation_ledger_case CAUGHT 'a case some vanished log judged' '1/2 red'; \
+             mutation_ledger_commit cargo 0 >/dev/null; \
+             rm -f \"$rows\"",
+            ledger.path().display().to_string()
+        ),
+    );
+
+    assert!(
+        ask(ledger.path(), &["unverifiable"])
+            .lines()
+            .any(|line| line.starts_with(A_REAL_STEM)),
+        "a record carrying no casefile blob reads as one whose version is known"
+    );
+
+    // The point of keeping this apart from `stale`: asked of a record with no
+    // blob, `stale` answers "no" to a question it never put. If this ever
+    // starts listing the stem, the two questions have been folded together
+    // and the quiet pass is back.
+    assert!(
+        !ask(ledger.path(), &["stale"])
+            .lines()
+            .any(|line| line.starts_with(A_REAL_STEM)),
+        "`stale` claims to have examined a record that carries nothing to examine"
+    );
+
+    // Counted in the summary for the reason `stale` and `holes` are: a corpus
+    // reading finished-and-verified when it is only the first is exactly what
+    // nobody has a reason to run a subcommand about.
+    let summary = ask(ledger.path(), &["status"]);
+    assert!(
+        summary.contains("1 unverifiable"),
+        "`status` does not count records whose version cannot be checked:\n{summary}"
+    );
+}
