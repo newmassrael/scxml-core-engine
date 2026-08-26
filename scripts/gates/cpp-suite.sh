@@ -67,8 +67,22 @@ sce_gate_build "$BUILD_DIR" \
 # per-link, one binary either carries the section or the flag did not reach
 # any link, and readelf over 129 binaries would cost more than it tells.
 sce_gate_step "debug-info layout of the emitted binaries"
-biggest="$(find "$BUILD_DIR/tests" -maxdepth 1 -type f -executable -printf '%s\t%p\n' \
-    | sort -rn | head -1 | cut -f2)"
+# `… | sort -rn | head -1` is a RACE, not a pipeline: `head` closes the pipe the
+# moment it has its line, and whether `sort` has finished writing by then
+# decides whether it dies of EPIPE. Under this file's `set -euo pipefail` that
+# death is the gate's verdict. Measured 2026-08-26: green on `6937e04f38`, red
+# on `12011b5e9d` with the same tree shape and no test failing —
+# `sort: fflush failed: 'standard output': Broken pipe`, and
+# `LastTestsFailed.log` absent, which is how a gate-script race disguises
+# itself as a suite failure.
+#
+# Taking the first line in the shell removes the reader that closes early, so
+# there is no pipe left to break. An empty listing still leaves `biggest`
+# empty and the check below still fires.
+listing="$(find "$BUILD_DIR/tests" -maxdepth 1 -type f -executable -printf '%s\t%p\n' \
+    | sort -rn)"
+biggest="${listing%%$'\n'*}"
+biggest="${biggest#*$'\t'}"
 [[ -n "$biggest" ]] \
     || sce_gate_fail "no test executable found under $BUILD_DIR/tests to judge"
 sections="$(readelf -S --wide "$biggest")"
