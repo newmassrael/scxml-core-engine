@@ -20,11 +20,19 @@
 mutation_tests -p sce-build --features cli --lib
 mutation_targets sce-build/src/forge/diagnostic.rs SCE_ERROR_CONTRACT.md
 # `--lib` names no test target, so nothing here is derivable from the selector.
-# Measured instead: all four cases red
+# Measured instead, out of the round's own record: five of the six cases red
 # `forge::diagnostic::tests::error_contract_catalog_is_the_full_enumeration`,
-# whose module is the file already under study — the two sides of the verdict
-# happen to share a file here, which is why this casefile was never exposed to
-# the gap the declaration closes.
+# and the sixth reds `contract_docs_cite_only_real_codes` — the wire-contract
+# case is aimed at the document rather than at the catalog, so it earns its
+# verdict from a different assertion. That module is the file already under
+# study, so the two sides of the verdict happen to share a file here, which is
+# why this casefile was never exposed to the gap the declaration closes.
+#
+# ⚠ This sentence said "all four cases" until 2026-08-26, and the file held SIX
+# on the day that landed — it was wrong on arrival, not stale by drift. It read
+# as true for nine days because nothing in the harness reads prose and every
+# case was CAUGHT. `mutation_casefile_headers_count_their_cases` now counts the
+# number back.
 mutation_oracles sce-build/src/forge/diagnostic.rs
 
 # ── The catalog is complete ────────────────────────────────────────
