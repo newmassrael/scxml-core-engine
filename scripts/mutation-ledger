@@ -98,6 +98,11 @@ usage: scripts/mutation-ledger <command> [args]
   unverifiable        judged casefiles whose newest record carries no casefile
                       blob, so `stale` cannot be asked of them
   show <stem>         every record for one casefile
+  in-flight           rounds that have not finished: one line each, saying
+                      whether the round is still running or was killed, and
+                      which casefile and case it holds. A dirty tree during a
+                      round is that round's work, not leftovers — ask here
+                      before reverting anything
   path                where the ledger lives
 
   import-log --casefile <path> --log <file> [--tree <sha>]
@@ -530,6 +535,7 @@ COMMAND="$1"; shift
 case "$COMMAND" in
     -h|--help|help) usage; exit 0 ;;
     path) mutation_ledger_dir; exit 0 ;;
+    in-flight) mutation_inflight_list; exit 0 ;;
     import-log) import_log "$@"; exit 0 ;;
     assert) assert_round "$@"; exit 0 ;;
     status|unjudged|judged|holes|stale|unverifiable|claimed|show) ;;
