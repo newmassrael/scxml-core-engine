@@ -304,8 +304,8 @@ fn claims(
     // count that is honest about what it declines is what lets the next reader
     // decide whether a new phrasing is worth a pattern.
     let mut residue = 0;
-    for i in 0..words.len() {
-        if claimed[i] {
+    for (i, taken) in claimed.iter().enumerate() {
+        if *taken {
             continue;
         }
         let numberish =
