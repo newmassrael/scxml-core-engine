@@ -346,19 +346,9 @@ private:
      */
     IStateNode *computeTransitionDomain(IStateNode *sourceNode, const std::string &target, bool isInternal) const;
 
-    /**
-     * @brief §scxml-D-computeExitSet: the active states a transition exits
-     *
-     * The proper descendants of the domain that are currently active. Within a
-     * region that is the chain from the region's active leaf up to the domain,
-     * plus the enclosing `<parallel>` when the domain lies above it.
-     *
-     * @param sourceNode Source state of the transition
-     * @param target Target state ID
-     * @param isInternal Whether the transition is spelled `type="internal"`
-     * @return Exit set (state IDs to be exited)
-     */
-    std::vector<std::string> computeExitSet(IStateNode *sourceNode, const std::string &target, bool isInternal) const;
+    // Appendix D's computeExitSet is not answerable here: it is defined over the
+    // configuration, and a region sees only its own states. `StateMachine` owns
+    // the configuration and computes it there for every enabled transition.
 
     /**
      * @brief Recursively check if target state is a descendant of root state
