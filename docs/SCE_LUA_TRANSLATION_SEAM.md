@@ -212,42 +212,79 @@ Two consequences for closing the ECMA-262 divergences:
 Measured 2026-08-28, before touching a template. The obvious order — split the
 C++ templates, then see what breaks — is wrong, and it fails silently.
 
-**38 sites must move together — and do NOT enumerate them by grepping for a
-filter.** This section first said 26, counted by looking for `escape_cpp` on
-an expression-bearing field. That method is wrong three ways, each of which
-hides sites rather than showing them:
+**38 sites must move together — the number survived a re-derivation but the
+SET did not.** This section first said 26, counted by looking for `escape_cpp`
+on an expression-bearing field. Re-measured 2026-08-28 against `37b1452386`,
+that method is wrong **five** ways, each of which hides sites rather than
+showing them:
 
 1. **A site can hand the engine raw source with no filter at all.**
    `actions/foreach.jinja2:48,94` pass `{{ action.array }}` unfiltered to
    `ForeachHelper::executeForeachWithActions` / `…WithoutBody`, which
    evaluates it. No `escape_cpp`, so no filter-keyed scan can see them.
-2. **A helper can re-enter the engine with the ORIGINAL text.**
-   `ScriptResultUtils::resultToString(result, engine, sid, originalExpression)`
-   takes the expression for a `JSON.stringify` fallback on complex objects
-   (`sce/include/scripting/ScriptResultUtils.h:38`), so
-   `actions/send.jinja2:80,113,533,901`, `actions/log.jinja2:12` and
-   `entry_exit_actions.jinja2:269` reach the engine a second time.
+2. **A helper can re-enter the engine with the ORIGINAL text — but only where
+   it is actually passed one.** `ScriptResultUtils::resultToString` takes
+   `(result, engine = nullptr, sid = {}, originalExpression = {})`
+   (`sce/include/scripting/ScriptResultUtils.h:38`), and the last three
+   default. Of the eighteen `resultToString` call sites in the C++ templates,
+   exactly **three** pass them — `actions/send.jinja2:80,113,533`. The other
+   fifteen call the one-argument form, which cannot reach the engine at all.
+   ⚠ This paragraph previously also named `actions/send.jinja2:901`,
+   `actions/log.jinja2:12` and `entry_exit_actions.jinja2:269`; all three are
+   one-argument calls. Sort them by whether `sessionId_` appears inside the
+   parentheses, not by the function's name.
 3. **A shape can appear twice.** `DataModelInitHelper::initializeVariableFromExpr`
    is at `datamodel_macros.jinja2:20` *and* `scriptengine_helpers.jinja2:164`;
    the first count caught only the one it happened to grep for.
+4. **An entry point the list does not name.** `actions/send.jinja2:213,569,656`
+   hand `{{ action.delayexpr }}` / `{{ action.eventexpr }}` to
+   `IScriptEngine::getVariable` (`IScriptEngine.h:114`) — a *name lookup*, not
+   an evaluator, so an entry-point list built from "what evaluates" omits it
+   while the templates route model expressions through it anyway. These three
+   are what replace the three phantom `resultToString` sites above: the total
+   was right by two errors cancelling.
+5. **A multi-line call.** Five sites put the call on one line and the
+   expression on the next — `datamodel_macros.jinja2:20`,
+   `scriptengine_helpers.jinja2:164`, `entry_exit_actions.jinja2:301`,
+   `actions/foreach.jinja2:48,94`. Any line-keyed grep, entry-point or filter,
+   reports 33 rather than 38 unless it joins the call.
 
 Count by ENTRY POINT instead — what the generated code calls to reach the
 engine — and re-derive rather than trusting this number:
 
 ```sh
 # C++-owned templates = everything outside rust/ kotlin/ go/ python/ c/
-grep -rnE "evaluateExpression\(|safeEvaluateGuard\(|executeScript\(|initializeVariableFromExpr\(|resultToString\(|resultToStringArray\(|executeForeachWith" \
+# getVariable( is in the list because of shape 4; the -A2 is because of shape 5.
+grep -rnE -A2 "evaluateExpression\(|safeEvaluateGuard\(|executeScript\(|initializeVariableFromExpr\(|resultToString\(|resultToStringArray\(|executeForeachWith|getVariable\(" \
   tools/codegen/templates/*.jinja2 tools/codegen/templates/actions/*.jinja2 \
   tools/codegen/templates/_macros/*.jinja2
 ```
 
-Measured 2026-08-28: **38** such sites carry a model expression
-(`cond` / `expr` / `content` / `typeexpr` / `targetexpr` / `sendidexpr` /
-`delayexpr` / `contentexpr` / `srcexpr` / `array`). ⚠ This method is itself
-shape-based: a NEW helper that evaluates on the caller's behalf would be
-missed the same way `ForeachHelper` and `resultToString` were. Whoever does
-the split should widen the entry-point list from
+Measured 2026-08-28 on `37b1452386`: **38** such sites carry a model
+expression (`cond` / `expr` / `content` / `typeexpr` / `targetexpr` /
+`sendidexpr` / `delayexpr` / `contentexpr` / `srcexpr` / `eventexpr` /
+`array`) — 33 on the call's own line, 5 on the line after it. ⚠ This method
+is still shape-based: a NEW helper that evaluates on the caller's behalf would
+be missed the same way `ForeachHelper`, `resultToString` and `getVariable`
+were. Whoever does the split should widen the entry-point list from
 `sce/include/scripting/` rather than assume this one is closed.
+
+**One site carries no model expression and still has to move.**
+`scriptengine_helpers.jinja2:87` evaluates the literal `"undefined"` for a
+`<data>` element with neither `expr` nor child content. It is ECMAScript text
+the engine evaluates, with no model field for any field-keyed filter to catch,
+and under a Lua-shaped artifact it has to be emitted as `nil`. Counting "sites
+carrying a model expression" is the right frame for *the split*; it is not the
+same set as "text the engine must be able to read".
+
+**Noted while counting, and NOT part of this axis.** Routing `delayexpr` and
+`eventexpr` through `getVariable` means only a bare variable name resolves —
+`getVariable` looks a name up, it does not evaluate. `delay`'s expression form
+(§scxml-6.2) and `eventexpr` (§scxml-6.2.1) admit any expression, so
+`{{ action.delayexpr }}` spelled `d.delay` or `'e' + n` would fail there under
+*any* engine, Lua or not. That is a conformance question about C++ codegen,
+independent of which language the string is in, and it should be measured on
+its own rather than folded into the seam work.
 
 Splitting a subset is not a smaller version of this change: the engine would
 receive Lua from some sites and ECMAScript from others, in one session — and
@@ -286,8 +323,9 @@ the seam has to answer for:
 | `DataModelInitHelper::initializeVariableFromExpr` | `sce/include/core/` | yes (2 sites) |
 | `ForeachHelper::executeForeachWithActions` / `…WithoutBody` | `sce/include/core/ForeachHelper.h` | yes (2 sites, unfiltered) |
 | `ForeachHelper::setLoopVariableFromExpr` | `ForeachHelper.h:121` | no |
-| `ScriptResultUtils::resultToString(…, originalExpression)` | `ScriptResultUtils.h:38` | yes (6 sites) |
+| `ScriptResultUtils::resultToString(…, originalExpression)` | `ScriptResultUtils.h:38` | yes (**3** sites — `send.jinja2:80,113,533`; the other fifteen `resultToString` calls pass one argument) |
 | `ScriptResultUtils::resultToStringArray(…, originalExpression)` | `ScriptResultUtils.h:49` | no |
+| `getVariable` | `IScriptEngine.h:114` | yes (**3** sites — `send.jinja2:213,569,656`, each handed `delayexpr`/`eventexpr`) |
 
 All of them mean "the author's source", and nothing in
 `sce/include/scripting/` or `sce/src/scripting/` accepts pre-lowered text.
@@ -295,6 +333,14 @@ This section previously said the interface had "exactly two evaluation entry
 points"; it has three, and `validateExpression` being dead surface is its own
 decision — extend it with the seam or retire it — rather than something to
 discover while implementing.
+
+⚠ `getVariable` is on this table for a reason worth keeping: it is **not** an
+evaluation entry point, and it was missed precisely because the table was
+built by asking which methods evaluate. What decides membership is whether a
+generated call carries the AUTHOR'S TEXT across the boundary, not what the
+callee then does with it. A row that took the last-argument default —
+`resultToString`'s `originalExpression` — was over-counted for the mirror-image
+reason: the name was read instead of the call.
 
 **The seam is not "skip the transformer".** `LuaEngine::evaluateExpressionInternal`
 does five things to the text, and only the first is the rewrite. Measured
