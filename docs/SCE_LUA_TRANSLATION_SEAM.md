@@ -319,6 +319,24 @@ to *translating ECMAScript*, so the seam has to be a branch inside this
 function — or a shared tail both paths call — rather than a second, simpler
 implementation beside it.
 
+**Kotlin's seam is wider, not narrower.** Measured the same way, on
+`backends/kotlin/lua/.../LuaScriptEngine.kt`: **five** transform call sites
+against C++'s three, and the same W3C semantics riding on them.
+
+| Transform call | Enclosing | Note |
+|---|---|---|
+| `:143` | `evaluateCondition` | passes `ExpressionContext.Guard` — a context argument C++ has no equivalent of |
+| `:151` | `evaluateExpr` | followed by the `ReferenceError` check (`:153-155`) and `return` wrapping (`:161`) |
+| `:185` | `executeScript` | |
+| `:224` | `assign` | `return` wrapping at `:234` |
+| `:301` | `executeForeach` | the array expression; `return` wrapping at `:304` |
+
+So the same rule holds on both: skip only the rewrite, keep the
+`ReferenceError` check and the `return` wrapping. The extra two sites
+(`assign`, `executeForeach`) are places C++ reaches through helpers rather
+than through the engine directly, which is why the counts differ — the work
+is the same, distributed differently.
+
 **So the order is: seam, then templates.** The seam is a contract about *what
 language the string is*, which means an engine that cannot evaluate that
 language must refuse rather than try — QuickJS handed Lua is the case, and the
