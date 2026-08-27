@@ -273,6 +273,27 @@ namespace URI `https://sce.example/ns/1` (constant `SCE_NAMESPACE` in
 `sce-build`). Unqualified or wrongly-namespaced attributes are rejected
 as schema violations (`xml/schema-validation`).
 
+That rejection is the AOT pipeline's, and it is worth saying which
+engine makes it, because the two do not accept the same documents.
+`sce-build` validates against `sce-forge.xsd` before codegen, so a
+wrongly-namespaced attribute stops there. The C++ Interpreter has no
+XSD stage — it parses with pugixml, which has no schema-validation
+surface, and `sce/` links libxml2 nowhere — so the same document is
+parsed rather than refused, and what stands in the schema's place is
+the structural checking in `sce/src/parsing/` (for the root namespace,
+`SCXMLParser::parseInternal` answering `ParseWrongRootElement`).
+
+This is a decided asymmetry, not a gap: giving the Interpreter a stage
+would mean a second XML library in one binary, replacing pugixml across
+its parser, or hand-writing a validator for `schemas/sce-forge.xsd`.
+The axis is whether schema validation is AVAILABLE rather than which
+language a backend is written in — `validate_or_skip` guarantees only
+that validation runs when a schema is, returning
+`NotValidated(SchemaNotFound|FeatureDisabled)` otherwise, so what the
+producer side really holds is that it says when it did not validate.
+`SCE_WIRE_CONTRACTS.md` and the comment on
+`ParsingCommon::isScxmlNamespace` carry the same distinction.
+
 ### §2.1 Forge kinds — `sce:kind`
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
