@@ -95,16 +95,33 @@ on:
         required: false
         default: ''
 
-# A dispatch gets a group of its own; pushes keep sharing one, so a newer push
-# still cancels the round an older one started.
+# Every push and every dispatch gets a group of its own; a pull request keeps
+# sharing one per ref.
 #
-# Measured 2026-08-17, within minutes of the dispatch input being added: asking
-# for a round over one casefile CANCELLED the push run for the same ref
-# (32034288611), because both landed in `<workflow>-refs/heads/main`. The
-# verdict CI reports on is the push's, so a dispatch was silently voiding it —
-# the opposite of what asking for an extra round is for.
+# `cancel-in-progress` is the right setting for a lane whose answer is about a
+# BRANCH — a newer commit really does supersede an older one's build — and the
+# wrong one for a lane whose answer is about a COMMIT. This lane's is:
+# selection is by change set, so a round judges the casefiles that ONE push's
+# targets selected, and nothing re-selects them afterwards unless a later push
+# happens to touch the same declared targets. A cancellation here is therefore
+# a verdict LOST, not deferred.
+#
+# Measured across this workflow's 40 runs from 2026-08-24T01:06 to
+# 08-25T02:13: 25 never reached `success`, and 24 of those ended `cancelled` —
+# the dominant way this lane failed to answer, ahead of the job timeout
+# `mutation_corpus_fits_its_lane` guards against. The habit that grew around
+# it — commit now, push later, if you need the verdict — is the shape of a
+# defect being worked around rather than repaid.
+#
+# A pull request keeps the shared group deliberately: there a force-push
+# destroys the very commit the run was judging, so superseding is correct.
+#
+# The dispatch key is the same property, repaid earlier for the same reason.
+# Measured 2026-08-17, within minutes of the dispatch input being added:
+# asking for a round over one casefile CANCELLED the push run for the same ref
+# (32034288611), because both landed in `<workflow>-refs/heads/main`.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || (github.event_name == 'workflow_dispatch' && github.run_id || github.event_name) }}
   cancel-in-progress: true
 
 # ## One job per casefile, and why the lane is shaped that way
@@ -116,15 +133,15 @@ concurrency:
 # 1,875s, 412s and 2,327s — for 1h37m of wall clock, and a push that selects
 # widely takes longer still (4h30m on 2026-08-17T15:40Z).
 #
-# Pushes to this repository arrive closer together than that. The concurrency
-# group above cancels an in-progress run when a newer push starts, which is
-# right — the verdict that matters is the newest commit's — but it means a
-# lane slower than the push interval never reaches one at all. Measured
-# 2026-08-18: the three most recent COMPLETED runs were `cancelled`,
-# `cancelled` and `cancelled`, at 1h41m, 1h21m and 3h31m of work discarded,
-# and a fourth push cancelled the third. Three consecutive commits went
-# without a mutation verdict, and nothing said so, because a cancelled lane is
-# not a red one.
+# Pushes to this repository arrive closer together than that, and the
+# concurrency group above used to cancel an in-progress run when a newer push
+# started. Measured 2026-08-18: the three most recent COMPLETED runs were
+# `cancelled`, `cancelled` and `cancelled`, at 1h41m, 1h21m and 3h31m of work
+# discarded, and a fourth push cancelled the third. Three consecutive commits
+# went without a mutation verdict, and nothing said so, because a cancelled
+# lane is not a red one. Keying a push run on `github.sha` is what ended that;
+# the matrix below is what keeps a single run's wall clock inside the interval
+# anyway, which is the half of the problem a concurrency key cannot touch.
 #
 # So the casefiles run as a matrix rather than a loop. Wall clock becomes the
 # slowest single casefile instead of their sum — 39m rather than 1h37m on the
