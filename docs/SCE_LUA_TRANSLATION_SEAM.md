@@ -158,6 +158,30 @@ so a scan that reads comments cannot tell output from documentation.
 Restoring the old constant turns that gate red naming `cpp`, which is the
 witness that it measures the thing it claims to.
 
+## The rewriters are an engine's input adapter, so the close is retirement
+
+Measured 2026-08-27: the C++ rewriter is called from `LuaEngine.cpp:535`
+(`transformer_.transform`) and `:573` (`transformScript`), and `LuaEngine` is
+compiled in only under `SCE_SCRIPT_ENGINE_LUA`. The Kotlin one is called from
+`LuaScriptEngine.kt:143`. Neither is a stage in the pipeline; each is the
+**input adapter of a Lua engine**, reached only when someone selects Lua.
+
+Two consequences for closing the ECMA-262 divergences:
+
+1. Nothing needs to be *fixed* in either rewriter. A backend generated with
+   build-time lowering hands its Lua engine Lua, so the adapter has nothing
+   left to adapt and that path stops being able to diverge. The lists empty
+   because the code is bypassed, not because it was repaired — which is what
+   `lua_engine_divergences.json` meant by "Closing these means parsing the
+   expression, which SCE already does once".
+2. The **C++ Interpreter cannot be closed that way.** It has no build step:
+   it parses SCXML at run time and evaluates the author's expressions
+   directly, so on the Lua selection it reaches the adapter no matter what
+   codegen emits. That is the residue this axis is most likely to end up
+   contracting rather than closing, and `sce-build`'s cdylib is the only
+   candidate route — `sce-build/Cargo.toml:138` records that nothing in-tree
+   consumes it, and `sce-build-wasm` has already built that wrapping once.
+
 ## What is not yet decided
 
 - The C++ **Interpreter** has no build step at all, so it cannot receive
