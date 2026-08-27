@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "9b4b5c7c40",
+  "embed_version": "e4aa6ca52d",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 271,
+  "symbol_count": 272,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -795,6 +795,15 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::ParallelTransitionHelper"
+    },
+    {
+      "header": "core/ParallelTransitionHelper.h",
+      "kind": "struct",
+      "members": [
+        "template FunctionTemplateDecl computeExitSet",
+        "template FunctionTemplateDecl getTransitionDomain"
+      ],
+      "name": "SCE::Core::ExitSetAlgorithms"
     },
     {
       "header": "core/PayloadReading.h",
@@ -2082,6 +2091,7 @@
         "field bool hasActions",
         "field bool isExternal",
         "field bool isInternal",
+        "field bool isTargetless",
         "field int transitionIndex",
         "field std::string event",
         "field std::string source",
