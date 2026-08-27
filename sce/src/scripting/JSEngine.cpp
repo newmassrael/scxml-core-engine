@@ -265,22 +265,28 @@ std::string JSEngine::getParentSessionId(const std::string &sessionId) const {
 
 // === JavaScript Execution ===
 
-std::future<ScriptResult> JSEngine::executeScript(const std::string &sessionId, const std::string &script) {
+// The three hooks take a ScriptSource but read only `text()`: this engine
+// accepts one language, so the seam's other half — the author's source kept
+// alongside a lowered text — has nothing to distinguish here. `text()` IS the
+// author's text on every call that reaches these.
+std::future<ScriptResult> JSEngine::doExecuteScript(const std::string &sessionId, const ScriptSource &script) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync(
-        [this, sessionId, script]() { return executeScriptInternal(sessionId, script); });
+        [this, sessionId, script = script.text()]() { return executeScriptInternal(sessionId, script); });
 }
 
-std::future<ScriptResult> JSEngine::evaluateExpression(const std::string &sessionId, const std::string &expression) {
+std::future<ScriptResult> JSEngine::doEvaluateExpression(const std::string &sessionId, const ScriptSource &expression) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
-    return platformExecutor_->executeAsync(
-        [this, sessionId, expression]() { return evaluateExpressionInternal(sessionId, expression); });
+    return platformExecutor_->executeAsync([this, sessionId, expression = expression.text()]() {
+        return evaluateExpressionInternal(sessionId, expression);
+    });
 }
 
-std::future<ScriptResult> JSEngine::validateExpression(const std::string &sessionId, const std::string &expression) {
+std::future<ScriptResult> JSEngine::doValidateExpression(const std::string &sessionId, const ScriptSource &expression) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
-    return platformExecutor_->executeAsync(
-        [this, sessionId, expression]() { return validateExpressionInternal(sessionId, expression); });
+    return platformExecutor_->executeAsync([this, sessionId, expression = expression.text()]() {
+        return validateExpressionInternal(sessionId, expression);
+    });
 }
 
 std::future<ScriptResult> JSEngine::setVariable(const std::string &sessionId, const std::string &name,

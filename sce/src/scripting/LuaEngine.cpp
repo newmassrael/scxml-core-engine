@@ -509,21 +509,50 @@ int LuaEngine::loadCachedChunk(lua_State *L, const std::string &code,
     return status;
 }
 
-std::future<ScriptResult> LuaEngine::executeScript(const std::string &sessionId, const std::string &script) {
+// The seam: the ONE step a pre-lowered call skips.
+//
+// docs/SCE_LUA_TRANSLATION_SEAM.md, "The seam is not 'skip the transformer'":
+// evaluating an expression here does five things to the text and only the
+// first is the rewrite. Steps 2-5 (the undeclared-variable check, the `return`
+// wrapping, the chunk cache, the assignment fallback) belong to EVALUATING LUA,
+// not to translating ECMAScript, so both paths converge on the same tail below
+// rather than growing a second, simpler implementation. Those four keep their
+// own clauses, cited where they are implemented in evaluateExpressionInternal.
+std::string LuaEngine::loweredTextOf(const ScriptSource &expression) {
+    // Already lowered by sce-build's ECMAScript frontend. Running the rewriter
+    // over the frontend's own output would shift an index the frontend already
+    // made 1-based a second time (`transformArrayIndexing`), an off-by-one with
+    // no diagnostic.
+    if (expression.language() == ScriptLanguage::Lua) {
+        return expression.text();
+    }
+    return transformer_.transform(expression.text());
+}
+
+std::string LuaEngine::loweredScriptOf(const ScriptSource &script) {
+    if (script.language() == ScriptLanguage::Lua) {
+        return script.text();
+    }
+    return transformer_.transformScript(script.text());
+}
+
+std::future<ScriptResult> LuaEngine::doExecuteScript(const std::string &sessionId, const ScriptSource &script) {
     auto result = executeScriptInternal(sessionId, script);
     std::promise<ScriptResult> promise;
     promise.set_value(std::move(result));
     return promise.get_future();
 }
 
-std::future<ScriptResult> LuaEngine::evaluateExpression(const std::string &sessionId, const std::string &expression) {
+std::future<ScriptResult> LuaEngine::doEvaluateExpression(const std::string &sessionId,
+                                                          const ScriptSource &expression) {
     auto result = evaluateExpressionInternal(sessionId, expression);
     std::promise<ScriptResult> promise;
     promise.set_value(std::move(result));
     return promise.get_future();
 }
 
-std::future<ScriptResult> LuaEngine::validateExpression(const std::string &sessionId, const std::string &expression) {
+std::future<ScriptResult> LuaEngine::doValidateExpression(const std::string &sessionId,
+                                                          const ScriptSource &expression) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -532,7 +561,7 @@ std::future<ScriptResult> LuaEngine::validateExpression(const std::string &sessi
         return p.get_future();
     }
 
-    std::string luaExpr = transformer_.transform(expression);
+    std::string luaExpr = loweredTextOf(expression);
     std::string wrapped = "return " + luaExpr;
 
     lua_State *L = it->second->L;
@@ -550,7 +579,7 @@ std::future<ScriptResult> LuaEngine::validateExpression(const std::string &sessi
     return p.get_future();
 }
 
-ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, const std::string &script) {
+ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, const ScriptSource &script) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -560,19 +589,22 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     lua_State *L = it->second->L;
 
     // Fast path: if this script was successfully executed before in this session,
-    // skip transformer and chunk cache lookup entirely.
+    // skip transformer and chunk cache lookup entirely. A cached entry from the
+    // other language is a miss: the same text lowers differently.
     auto &scriptExec = it->second->scriptExecCache;
-    auto sit = scriptExec.find(script);
-    if (sit != scriptExec.end()) {
-        lua_rawgeti(L, LUA_REGISTRYINDEX, sit->second);
+    auto sit = scriptExec.find(script.text());
+    if (sit != scriptExec.end() && sit->second.language == script.language()) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, sit->second.chunkRef);
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
         return luaResultToScriptResult(L, status);
     }
 
     // Slow path: first-time execution for this script in this session
-    std::string luaScript = transformer_.transformScript(script);
+    std::string luaScript = loweredScriptOf(script);
 
-    SCE_LOG_DEBUG("LuaEngine: Execute script [{}]: {} -> {}", sessionId, script, luaScript);
+    // The author's own text on the left, so a log line names what was written
+    // rather than what it became.
+    SCE_LOG_DEBUG("LuaEngine: Execute script [{}]: {} -> {}", sessionId, script.source(), luaScript);
 
     int loadStatus = loadCachedChunk(L, luaScript, it->second->chunkCache);
     if (loadStatus != LUA_OK) {
@@ -580,13 +612,13 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     }
 
     // Cache for fast path on subsequent calls
-    scriptExec[script] = it->second->chunkCache.at(luaScript).ref;
+    scriptExec[script.text()] = {it->second->chunkCache.at(luaScript).ref, script.language()};
 
     int status = lua_pcall(L, 0, LUA_MULTRET, 0);
     return luaResultToScriptResult(L, status);
 }
 
-ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId, const std::string &expression) {
+ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId, const ScriptSource &expression) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -597,9 +629,12 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
 
     // Fast path: if this expression was successfully evaluated before in this session,
     // skip transformer, "return" wrapping, and double cache lookup entirely.
+    // A cached entry from the other language is a miss: the same text lowers
+    // differently, and reusing the wrong chunk would be an off-by-one nobody
+    // gets a diagnostic for.
     auto &execCache = it->second->exprExecCache;
-    auto execIt = execCache.find(expression);
-    if (execIt != execCache.end()) {
+    auto execIt = execCache.find(expression.text());
+    if (execIt != execCache.end() && execIt->second.language == expression.language()) {
         auto &info = execIt->second;
         lua_rawgeti(L, LUA_REGISTRYINDEX, info.chunkRef);
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
@@ -615,21 +650,25 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     }
 
     // Slow path: first-time evaluation for this expression in this session
-    std::string luaExpr = transformer_.transform(expression);
+    std::string luaExpr = loweredTextOf(expression);
 
     // W3C SCXML: Detect undeclared simple variable references
     // JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
     // For simple identifier expressions (e.g., donedata param location="foo"),
     // check if the variable is declared before evaluating.
+    //
+    // Checked on the LOWERED text and reported from the AUTHOR'S: this message
+    // travels out on `_event.data` of `error.execution`, so naming the lowered
+    // Lua here would name a language the author never wrote.
     if (isUndeclaredSimpleVariable(luaExpr, it->second->declaredVars, L)) {
-        return ScriptResult::createError("ReferenceError: " + expression + " is not defined");
+        return ScriptResult::createError("ReferenceError: " + expression.source() + " is not defined");
     }
 
     // Wrap as return statement to get expression value
     std::string wrapped = "return " + luaExpr;
     auto &cache = it->second->chunkCache;
 
-    SCE_LOG_DEBUG("LuaEngine: Evaluate [{}]: {} -> {}", sessionId, expression, wrapped);
+    SCE_LOG_DEBUG("LuaEngine: Evaluate [{}]: {} -> {}", sessionId, expression.source(), wrapped);
 
     // Try compiled chunk from cache (or compile + cache on first call).
     // If "return <expr>" compiles, it's a valid expression — runtime errors are returned
@@ -640,7 +679,7 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
         if (status == LUA_OK) {
             // Cache for fast path on subsequent calls
-            execCache[expression] = {cache.at(wrapped).ref, true};
+            execCache[expression.text()] = {cache.at(wrapped).ref, true, expression.language()};
             return luaResultToScriptResult(L, status);
         }
         std::string error = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
@@ -672,7 +711,7 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
             int status = lua_pcall(L, 0, LUA_MULTRET, 0);
             if (status == LUA_OK) {
                 // Cache for fast path on subsequent calls
-                execCache[expression] = {cache.at(luaExpr).ref, false};
+                execCache[expression.text()] = {cache.at(luaExpr).ref, false, expression.language()};
                 return ScriptResult::createSuccess(ScriptUndefined{});
             }
             lua_pop(L, 1);

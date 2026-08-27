@@ -139,20 +139,21 @@ public:
     // === Thread-safe JavaScript Execution ===
 
     /**
-     * @brief Execute JavaScript script in the specified session
-     * @param sessionId Target session
-     * @param script JavaScript code to execute
-     * @return Future with execution result
+     * @brief ECMAScript, and this engine owns no adapter for anything else.
+     *
+     * QuickJS handed lowered Lua is the case the seam exists to refuse: the
+     * text is well-formed, it is simply in the other language, and trying it
+     * would produce a syntax error naming a language the author never wrote.
+     * A machine generated with build-time lowering has to be run on a Lua
+     * engine — see docs/SCE_LUA_TRANSLATION_SEAM.md.
      */
-    std::future<ScriptResult> executeScript(const std::string &sessionId, const std::string &script) override;
+    ScriptLanguage nativeLanguage() const override {
+        return ScriptLanguage::ECMAScript;
+    }
 
-    /**
-     * @brief Evaluate JavaScript expression in the specified session
-     * @param sessionId Target session
-     * @param expression JavaScript expression to evaluate
-     * @return Future with evaluation result
-     */
-    std::future<ScriptResult> evaluateExpression(const std::string &sessionId, const std::string &expression) override;
+    bool acceptsLanguage(ScriptLanguage language) const override {
+        return language == ScriptLanguage::ECMAScript;
+    }
 
     // === Session-specific Variable Management ===
 
@@ -281,14 +282,6 @@ public:
      * @brief Trigger garbage collection
      */
     void collectGarbage() override;
-
-    /**
-     * @brief Validate JavaScript expression syntax without executing it
-     * @param sessionId Target session for context
-     * @param expression JavaScript expression to validate
-     * @return Future with validation result (true if syntax is valid)
-     */
-    std::future<ScriptResult> validateExpression(const std::string &sessionId, const std::string &expression) override;
 
     // === INTEGRATED RESULT PROCESSING API ===
 
@@ -503,6 +496,17 @@ private:
     void processExecutionRequest(std::unique_ptr<ExecutionRequest> request);
     void initializeInternal();            // Common initialization logic
     void initializeEventRaiserService();  // EventRaiserService initialization
+
+    // === IScriptEngine hooks ===
+    //
+    // Reached only for ECMAScript: `acceptsLanguage` refuses everything else
+    // at the entry point, so `ScriptSource::text()` here is always the
+    // author's own text and equal to `source()`.
+    std::future<ScriptResult> doExecuteScript(const std::string &sessionId, const ScriptSource &script) override;
+    std::future<ScriptResult> doEvaluateExpression(const std::string &sessionId,
+                                                   const ScriptSource &expression) override;
+    std::future<ScriptResult> doValidateExpression(const std::string &sessionId,
+                                                   const ScriptSource &expression) override;
 
     // QuickJS helpers
     ScriptResult executeScriptInternal(const std::string &sessionId, const std::string &script);

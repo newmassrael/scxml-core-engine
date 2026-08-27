@@ -48,9 +48,20 @@ public:
     LuaEngine &operator=(const LuaEngine &) = delete;
 
     // === IScriptEngine ===
-    std::future<ScriptResult> executeScript(const std::string &sessionId, const std::string &script) override;
-    std::future<ScriptResult> evaluateExpression(const std::string &sessionId, const std::string &expression) override;
-    std::future<ScriptResult> validateExpression(const std::string &sessionId, const std::string &expression) override;
+
+    /// Lua, and it owns an adapter for the other one.
+    ///
+    /// `EcmaScriptToLuaTransformer` is that adapter, which is why this engine
+    /// accepts both languages while a QuickJS engine accepts only its own:
+    /// ECMAScript is rewritten on the way in, Lua is evaluated as given.
+    ScriptLanguage nativeLanguage() const override {
+        return ScriptLanguage::Lua;
+    }
+
+    bool acceptsLanguage(ScriptLanguage language) const override {
+        return language == ScriptLanguage::Lua || language == ScriptLanguage::ECMAScript;
+    }
+
     std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name,
                                           const ScriptValue &value) override;
     std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) override;
@@ -118,24 +129,54 @@ private:
         static constexpr int CHUNK_COMPILE_FAILED = INT_MIN;
         std::unordered_map<std::string, ChunkCacheEntry> chunkCache;
 
-        // Expression execution fast path: maps original ECMAScript expression
-        // directly to pre-resolved chunk ref, skipping transformer lookup,
+        // Expression execution fast path: maps the incoming expression text
+        // directly to a pre-resolved chunk ref, skipping transformer lookup,
         // "return" wrapping attempt, and double cache lookup on repeat calls.
+        //
+        // The entry records which language the text arrived in, because the
+        // key is the INPUT and one string can mean two different chunks:
+        // `arr[0]` handed over as ECMAScript is rewritten to `arr[0 + 1]`,
+        // while the same string handed over as already-lowered Lua is not.
+        // A language mismatch is therefore a miss, not a hit.
         struct ExprExecInfo {
             int chunkRef;       // Lua registry ref for compiled chunk
             bool returnsValue;  // true: "return expr" form; false: assignment (ScriptUndefined)
+            ScriptLanguage language = ScriptLanguage::ECMAScript;
         };
 
         std::unordered_map<std::string, ExprExecInfo> exprExecCache;
 
-        // Script execution fast path: maps original script directly to compiled
-        // chunk ref, skipping transformer cache lookup and string copy.
-        std::unordered_map<std::string, int> scriptExecCache;
+        // Script execution fast path: maps the incoming script text directly to
+        // a compiled chunk ref, skipping transformer cache lookup and string
+        // copy. Language-tagged for the same reason as ExprExecInfo.
+        struct ScriptExecInfo {
+            int chunkRef;
+            ScriptLanguage language = ScriptLanguage::ECMAScript;
+        };
+
+        std::unordered_map<std::string, ScriptExecInfo> scriptExecCache;
     };
 
+    // === IScriptEngine hooks ===
+    std::future<ScriptResult> doExecuteScript(const std::string &sessionId, const ScriptSource &script) override;
+    std::future<ScriptResult> doEvaluateExpression(const std::string &sessionId,
+                                                   const ScriptSource &expression) override;
+    std::future<ScriptResult> doValidateExpression(const std::string &sessionId,
+                                                   const ScriptSource &expression) override;
+
+    // The seam itself: the one step a pre-lowered call skips.
+    //
+    // Text that arrives as Lua is already the ECMAScript frontend's output and
+    // is passed through untouched; text that arrives as ECMAScript goes through
+    // the transformer, this engine's input adapter. Everything the engine does
+    // AFTER this — the undeclared-variable check, the `return` wrapping, the
+    // chunk cache, the assignment fallback — is common to both paths.
+    std::string loweredTextOf(const ScriptSource &expression);
+    std::string loweredScriptOf(const ScriptSource &script);
+
     // === Internal implementation ===
-    ScriptResult executeScriptInternal(const std::string &sessionId, const std::string &script);
-    ScriptResult evaluateExpressionInternal(const std::string &sessionId, const std::string &expression);
+    ScriptResult executeScriptInternal(const std::string &sessionId, const ScriptSource &script);
+    ScriptResult evaluateExpressionInternal(const std::string &sessionId, const ScriptSource &expression);
     ScriptResult setVariableInternal(const std::string &sessionId, const std::string &name, const ScriptValue &value);
     ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
 

@@ -17,6 +17,11 @@ set(SCE_BASE_SOURCES
     src/backends/DefaultBackend.cpp
 
     # Engine-agnostic scripting utilities (work with ScriptResult value types only)
+    # IScriptEngine.cpp holds the language seam's contract — the check that an
+    # engine handed a language it does not evaluate refuses rather than tries.
+    # It names no engine, and it is here rather than inline in the header
+    # because that header is included by every generated state machine.
+    src/scripting/IScriptEngine.cpp
     src/scripting/ScriptResultUtils.cpp
     src/scripting/XMLDOMWrapper.cpp
     src/scripting/SessionRegistry.cpp
