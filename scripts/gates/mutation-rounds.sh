@@ -124,6 +124,7 @@ fi
 declare -A RUNNER_OF=()
 declare -A TARGETS_OF=()
 declare -A NEEDS_OF=()
+declare -A CASES_OF=()
 for casefile in "${CASEFILES[@]}"; do
     if ! declared="$(scripts/mutate --declares "$casefile" 2>&1)"; then
         sce_gate_fail "could not read the declaration of $casefile:
@@ -137,9 +138,71 @@ to remove."
             runner) RUNNER_OF["$casefile"]="$value" ;;
             target|oracle) TARGETS_OF["$casefile"]+="$value"$'\n' ;;
             needs) NEEDS_OF["$casefile"]+="$value"$'\n' ;;
+            cases) CASES_OF["$casefile"]="$value" ;;
         esac
     done <<<"$declared"
 done
+
+# ── How many jobs one casefile is worth ───────────────────────────
+#
+# A round is a rebuild and a test run PER CASE, so a casefile's cost is its
+# case count times what one case costs on the lane's runner — and the second
+# factor is not a constant across casefiles, it is a property of the RUNNER.
+# That was the missing arithmetic. `mutation-rounds.yml` gave every casefile
+# one job with a 330-minute ceiling and the only thing guarding it counted
+# cases, so a ctest casefile and a cargo casefile of the same size were
+# treated as the same weight.
+#
+# Measured on dispatch 32803356117 (2026-08-25), one job per casefile on
+# `ubuntu-latest`, with the durations GitHub recorded:
+#
+#     host_processor_declaration     16 cargo cases     73 min   finished
+#     error_cascade_is_bounded_ctest 16 ctest cases   >330 min   cancelled
+#
+# Same count. EIGHT of that dispatch's twenty-four rounds ran to the ceiling
+# and were `cancelled` — neither green nor red, 44 hours of machine time that
+# said nothing about any case. The expensive ones are expensive because a
+# mutation lands in a header the whole tree includes, so ctest rebuilds nearly
+# everything for every case: the worst single-case job measured 96 minutes
+# (`parallel_microstep_owns_exit_and_entry`, 1 case), and the per-case
+# marginal from the completed jobs sits between 35 and 60.
+#
+# So the case count is turned into a JOB count here, and the casefile stops
+# being the unit that has to fit. The reciprocal — how many cases one job may
+# hold — is the number below, and it is the only place it is written down:
+# `mutation-rounds.yml` expands whatever this prints, and
+# `mutation_corpus_fits_its_lane` reads these values back out of this file and
+# checks them against the timeout the workflow declares. A constant with two
+# spellings is one that can be changed in the wrong one.
+#
+# ⚠ The remedy when a runner's rounds start being cancelled again is to LOWER
+# its number here, not to raise the workflow's ceiling: the ceiling is 30
+# minutes below the platform's own, which is what makes a timeout arrive with
+# this lane's name on it.
+mutation_rounds_cases_per_job() {
+    case "$1" in
+        # 3 x 60 marginal + ~100 fixed = ~280 against a 330 ceiling. Two would
+        # waste a fixed cost that is most of a job; four crosses it.
+        ctest) printf '3\n' ;;
+        # The worst measured elsewhere is `mutation_rounds_selection`, 21
+        # cargo cases in 4h16m — about 12 minutes each, because its cases
+        # drive whole gate scripts rather than a crate. 20 x 12 = 240.
+        *) printf '20\n' ;;
+    esac
+}
+
+# Ceiling division: a casefile of 16 ctest cases is 6 jobs, not 5 and a
+# remainder nobody runs. `scripts/mutate --shard` spreads the remainder over
+# the leading shards, so the jobs differ by at most one case.
+mutation_rounds_shards_for() {
+    local cases="$1" per_job
+    per_job="$(mutation_rounds_cases_per_job "$2")"
+    if (( cases <= 0 )); then
+        printf '1\n'
+        return
+    fi
+    printf '%s\n' "$(( (cases + per_job - 1) / per_job ))"
+}
 
 # ── Choose the casefiles to run ───────────────────────────────────
 SELECTED=()
@@ -232,9 +295,16 @@ sce_gate_step "${#SELECTED[@]} of ${#CASEFILES[@]} casefile(s) to run — $reaso
 # `c11_datamodel_reader` and the three `parallel_*` — went 34 commits without
 # a single CI round, `parallel_microstep_owns_exit_and_entry` among them: the
 # very case whose silent INCONCLUSIVE this gate was written to catch.
+#
+# A third column carries how many JOBS the casefile is worth, for the same
+# reason the runner is the second: the lane has to act on it and the only
+# alternative is a second derivation. It is the shard count from
+# `mutation_rounds_cases_per_job` above, and the workflow expands one matrix
+# entry per shard from it.
 if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
     for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
-        printf '%s\t%s\n' "$casefile" "${RUNNER_OF[$casefile]}"
+        printf '%s\t%s\t%s\n' "$casefile" "${RUNNER_OF[$casefile]}" \
+            "$(mutation_rounds_shards_for "${CASES_OF[$casefile]:-0}" "${RUNNER_OF[$casefile]}")"
     done
     exit 0
 fi
@@ -284,10 +354,31 @@ fi
 # runner by binding it directly — and both fail to start against one already
 # held. `sce_gate_with_http_fixture_server` starts it, runs the round, and
 # stops it before the loop's next turn.
+#
+# `SCE_MUTATION_SHARD` names one slice of one casefile, which is what a lane
+# job is handed. It is deliberately NOT derived here from the shard count
+# above: the count says how many jobs exist and the lane's matrix says which
+# one this is, and a gate that guessed its own index would answer for a
+# different slice than the one it was scheduled as. Absent — every by-hand
+# invocation — a round covers the whole casefile, which is `1/1`.
+#
+# It applies to the whole selection because a lane job carries exactly one
+# casefile; naming a shard alongside a wider selection would run the same
+# slice number of several files, which is never what a caller means.
+shard_args=()
+if [[ -n "${SCE_MUTATION_SHARD:-}" ]]; then
+    if (( ${#SELECTED[@]} != 1 )); then
+        sce_gate_fail "SCE_MUTATION_SHARD=$SCE_MUTATION_SHARD names a slice, but ${#SELECTED[@]} casefile(s) are selected.
+A shard is one slice of ONE casefile — the shape a lane job is handed. Name
+the casefile too, with SCE_MUTATION_ROUNDS."
+    fi
+    shard_args=(--shard "$SCE_MUTATION_SHARD")
+fi
+
 failed=()
 for casefile in "${SELECTED[@]}"; do
-    sce_gate_step "round: $casefile"
-    round=(scripts/mutate "$casefile")
+    sce_gate_step "round: $casefile${SCE_MUTATION_SHARD:+ (shard $SCE_MUTATION_SHARD)}"
+    round=(scripts/mutate ${shard_args[@]+"${shard_args[@]}"} "$casefile")
     if [[ "${NEEDS_OF[$casefile]:-}" == *"http-fixture"* ]]; then
         round=(sce_gate_with_http_fixture_server "${round[@]}")
     fi

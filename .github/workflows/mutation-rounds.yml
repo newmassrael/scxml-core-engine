@@ -284,7 +284,7 @@ jobs:
         SCE_MUTATION_ROUNDS_DRY_RUN=1 scripts/gate mutation-rounds > "$selected"
         cat "$selected"
         echo "count=$(grep -c . "$selected" || true)" >> "$GITHUB_OUTPUT"
-        # The same two columns, as the matrix the rounds job expands. Built
+        # The same three columns, as the matrix the rounds job expands. Built
         # here rather than in a second scan of the corpus, so a casefile can
         # only be run by a job the selection above actually named.
         #
@@ -292,9 +292,26 @@ jobs:
         # which is why the runner travels with the casefile instead of being
         # a lane-wide yes/no: a cargo casefile in a selection that also holds
         # a ctest one would otherwise pay for a CMake tree it never opens.
+        #
+        # The third column is how many JOBS the casefile is worth, and it is
+        # what stops a round ending with no verdict at all. A casefile used to
+        # be one job, and a round is a rebuild and a test run PER CASE: on
+        # dispatch 32803356117, EIGHT of twenty-four rounds ran to the
+        # 330-minute ceiling below and were `cancelled` — 44 hours that said
+        # nothing about any case. So a large casefile becomes several jobs,
+        # each running `--shard I/N` over its own contiguous slice. The
+        # arithmetic that picks N is `mutation_rounds_cases_per_job` in
+        # `scripts/gates/mutation-rounds.sh`, in one place; this expands what
+        # it printed and derives nothing of its own.
         matrix="$(awk -F'\t' '
           BEGIN { printf "{\"include\":[" }
-          NF >= 2 { printf "%s{\"casefile\":\"%s\",\"runner\":\"%s\"}", sep, $1, $2; sep = "," }
+          NF >= 3 {
+            for (shard = 1; shard <= $3; shard++) {
+              printf "%s{\"casefile\":\"%s\",\"runner\":\"%s\",\"shard\":\"%d/%d\"}", \
+                sep, $1, $2, shard, $3
+              sep = ","
+            }
+          }
           END { printf "]}\n" }
         ' "$selected")"
         echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
@@ -305,24 +322,30 @@ jobs:
       run: echo "No declared mutation target changed; mutation-cases checked every anchor."
 
   rounds:
-    name: "round: ${{ matrix.casefile }}"
+    name: "round: ${{ matrix.casefile }} ${{ matrix.shard }}"
     needs: select
     if: needs.select.outputs.count != '0'
     runs-on: ubuntu-latest
 
-    # Declared rather than inherited. GitHub's default is 360 minutes and the
-    # longest casefile measured 4h16m — `mutation_rounds_selection`, whose 21
-    # cases the matrix above cannot split because they live in ONE file. That
-    # is 76% of a ceiling nobody wrote down, and a job that crosses it is
-    # `cancelled`, which this workflow's own header records as the failure mode
-    # that let three consecutive commits go without a verdict: a cancelled lane
-    # is not a red one.
+    # Declared rather than inherited. GitHub's default is 360 minutes, and a
+    # job that crosses it is `cancelled` — which this workflow's own header
+    # records as the failure mode that let three consecutive commits go without
+    # a verdict: a cancelled lane is not a red one.
     #
     # 330 makes the margin explicit and puts the failure 30 minutes before the
     # platform's, so it arrives as this lane's timeout with this lane's name on
-    # it. It is not headroom — `mutation_corpus_fits_its_lane` is what keeps
-    # the largest casefile from growing into it, and the fix when it does is to
-    # split that file by concern so the matrix can carry the halves apart.
+    # it. It is not headroom, and it is not what keeps rounds inside it: the
+    # shard column in the matrix above is. Measured on dispatch 32803356117
+    # with one job per CASEFILE, EIGHT of twenty-four rounds ran to this
+    # ceiling and were cancelled, the largest holding 16 ctest cases. Sharded,
+    # the same casefile is six jobs of three, and the arithmetic tying the
+    # slice size to this number is checked by `mutation_corpus_fits_its_lane`
+    # — which reads this value out of this file rather than restating it.
+    #
+    # ⚠ The remedy when rounds start reaching this again is to lower the
+    # cases-per-job in `scripts/gates/mutation-rounds.sh`, not to raise this:
+    # a bigger number here only moves the cancellation later and takes the
+    # 30-minute margin with it.
     timeout-minutes: 330
 
     strategy:
@@ -489,4 +512,9 @@ jobs:
     - name: Run the round
       env:
         SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
+        # Which slice of it. The gate passes this to `scripts/mutate --shard`
+        # and derives nothing: the matrix says which job this is, and a gate
+        # that computed its own index would answer for a different slice than
+        # the one it was scheduled as.
+        SCE_MUTATION_SHARD: ${{ matrix.shard }}
       run: scripts/gate mutation-rounds

@@ -121,6 +121,50 @@ fn check(casefile: &Path) -> (bool, String) {
     (out.status.success(), text)
 }
 
+/// Run the check mode over one shard of a fixture; return (success, output).
+fn check_shard(casefile: &Path, shard: &str) -> (bool, String) {
+    let out = Command::new(repo_root().join("scripts/mutate"))
+        .arg("--check")
+        .arg("--shard")
+        .arg(shard)
+        .arg(casefile)
+        .current_dir(repo_root())
+        .output()
+        .expect("run scripts/mutate --check --shard");
+
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    (out.status.success(), text)
+}
+
+/// The case labels a run reported a verdict on, in the order it reported them.
+///
+/// Read off the console rather than counted, because the property under test
+/// is WHICH cases ran and a count cannot tell "the first two" from "the last
+/// two". `applies` is the check mode's verdict word; the run mode's are
+/// CAUGHT, SURVIVED and INCONCLUSIVE.
+fn labels_reported(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| line.trim_end().strip_prefix("applies "))
+        .map(|label| label.trim().to_string())
+        .collect()
+}
+
+/// A fixture whose cases are distinguishable by label and by anchor.
+fn sharded_fixture(count: usize) -> (Fixture, Vec<String>) {
+    let body: String = (0..count).map(|i| format!("line{i}\n")).collect();
+    let cases: String = (0..count)
+        .map(|i| {
+            format!(
+                "mutation_case \"case {i}\" <<'PY'\nedit(TARGET, \"line{i}\", \"LINE{i}\")\nPY\n\n"
+            )
+        })
+        .collect();
+    let labels = (0..count).map(|i| format!("case {i}")).collect();
+    (fixture(&body, &cases), labels)
+}
+
 fn assert_rejected(fixture: &Fixture, expected: &str) {
     let (ok, output) = check(&fixture.casefile);
     assert!(
@@ -131,6 +175,86 @@ fn assert_rejected(fixture: &Fixture, expected: &str) {
         output.contains(expected),
         "rejected, but not for the reason under test — expected {expected:?} in:\n{output}"
     );
+}
+
+/// The N shards of a casefile partition its cases: each runs once, in
+/// declaration order, and between them they run all of it.
+///
+/// This is what makes a casefile stop being the unit that has to fit inside a
+/// CI job. `mutation-rounds.yml` used to give each casefile one job, and eight
+/// of dispatch 32803356117's twenty-four rounds ran to the 330-minute ceiling
+/// and were `cancelled` — an absent verdict, which reads as neither green nor
+/// red. Splitting the file across jobs only helps if the split is exact:
+/// overlap measures the same case twice and calls it coverage, and a gap
+/// leaves cases nothing runs while every job reports success.
+#[test]
+fn the_shards_of_a_casefile_partition_its_cases_exactly() {
+    let (f, declared) = sharded_fixture(5);
+
+    let (ok, whole) = check(&f.casefile);
+    assert!(ok, "the unsharded fixture did not pass:\n{whole}");
+    assert_eq!(
+        labels_reported(&whole),
+        declared,
+        "the fixture itself does not report its five cases in order, so nothing \
+         below is measuring shards:\n{whole}"
+    );
+
+    // Three shards over five cases, so the remainder is exercised too: the
+    // sizes must come out 2, 2, 1 rather than 1, 1, 3.
+    let mut seen = Vec::new();
+    for index in 1..=3 {
+        let shard = format!("{index}/3");
+        let (ok, output) = check_shard(&f.casefile, &shard);
+        assert!(ok, "shard {shard} did not pass:\n{output}");
+        let reported = labels_reported(&output);
+        assert!(
+            !reported.is_empty(),
+            "shard {shard} reported a verdict on no case at all, and exited 0. \
+             A round that measures nothing and passes is the failure this whole \
+             harness is about:\n{output}"
+        );
+        assert!(
+            output.contains(&format!("shard {shard}: case(s)")),
+            "shard {shard} did not say which slice it was answering for, so its \
+             console cannot be read afterwards for what it covered:\n{output}"
+        );
+        seen.extend(reported);
+    }
+
+    assert_eq!(
+        seen, declared,
+        "the three shards did not partition the five cases. Concatenated in \
+         shard order they must be the casefile's own order, each case exactly \
+         once — a repeat is the same case measured twice, and an omission is a \
+         case no job runs while every job reports success."
+    );
+}
+
+/// A shard the casefile cannot supply is refused, not run empty.
+///
+/// The lane derives N from the case count, so an out-of-range shard means the
+/// selection and the casefile disagree. The dangerous answer is the quiet one:
+/// a slice past the end has no cases, and a round that measures nothing exits
+/// 0 and is recorded as a casefile that was judged.
+#[test]
+fn a_shard_the_casefile_cannot_supply_is_refused() {
+    let (f, _) = sharded_fixture(2);
+
+    let (ok, output) = check_shard(&f.casefile, "3/3");
+    assert!(
+        !ok,
+        "a casefile of two cases accepted a third shard:\n{output}"
+    );
+    assert!(
+        output.contains("would measure nothing"),
+        "refused, but not for the reason under test:\n{output}"
+    );
+
+    for shard in ["0/2", "3/2", "2"] {
+        let (ok, output) = check_shard(&f.casefile, shard);
+        assert!(!ok, "`--shard {shard}` was accepted:\n{output}");
+    }
 }
 
 #[test]

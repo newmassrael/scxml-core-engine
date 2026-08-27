@@ -114,12 +114,29 @@ fn report(stdout: &str) -> BTreeMap<String, String> {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .map(|line| {
-            let (casefile, runner) = line.split_once('\t').unwrap_or_else(|| {
+            let mut columns = line.split('\t');
+            let (casefile, runner, shards) = (columns.next(), columns.next(), columns.next());
+            let (Some(casefile), Some(runner), Some(shards)) = (casefile, runner, shards) else {
                 panic!(
-                    "⚠ every dry-run line must be `casefile<TAB>runner`; the workflow reads \
-                     the second column to decide whether to configure a CMake tree. Got: {line:?}"
+                    "⚠ every dry-run line must be `casefile<TAB>runner<TAB>shards`; the \
+                     workflow reads the second column to decide whether to configure a \
+                     CMake tree and the third to decide how many jobs the casefile is \
+                     worth. Got: {line:?}"
                 )
+            };
+            // A shard count is what stops a round reaching the lane's ceiling,
+            // so it has to be a number a job can be expanded from. Zero is the
+            // dangerous spelling: `for (shard = 1; shard <= 0; ...)` emits no
+            // job at all, and a casefile that quietly stops being run is the
+            // absent verdict this whole lane exists to end.
+            let count: usize = shards.parse().unwrap_or_else(|_| {
+                panic!("⚠ the shard column of {casefile:?} is not a number: {shards:?}")
             });
+            assert!(
+                count >= 1,
+                "⚠ {casefile} is worth {count} job(s), so the matrix would expand it \
+                 into nothing and the lane would report green having run no round on it"
+            );
             (casefile.to_string(), runner.to_string())
         })
         .collect()
@@ -702,20 +719,13 @@ fn matrix_of(outputs: &BTreeMap<String, String>, log: &str) -> Vec<(String, Stri
             panic!("⚠ `matrix` must carry an `include` array, which is the shape the runner expands a generated matrix from: {raw}\n{log}")
         });
 
-    let count: usize = outputs
-        .get("count")
-        .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| panic!("⚠ the selection step recorded no usable `count`:\n{log}"));
-    assert_eq!(
-        entries.len(),
-        count,
-        "⚠ the matrix and the count answer for different sets: {count} casefile(s) \
-         selected, {} job(s) would run. One of them is what a reader believes.\n{log}",
-        entries.len()
-    );
-
     let tracked = casefiles().into_iter().collect::<BTreeSet<_>>();
-    entries
+    // Every shard each casefile was expanded into, so the check below can ask
+    // whether the slices actually cover the file. A matrix that emitted
+    // `1/6 … 5/6` would look entirely healthy — six jobs, all green — while
+    // the sixth slice's cases were never measured by anything.
+    let mut shards_of: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
+    let rounds = entries
         .iter()
         .map(|entry| {
             let casefile = entry
@@ -735,9 +745,62 @@ fn matrix_of(outputs: &BTreeMap<String, String>, log: &str) -> Vec<(String, Stri
                     panic!("⚠ a matrix entry carries no runner, so its job cannot know whether to build a tree: {entry}\n{log}")
                 })
                 .to_string();
+            let shard = entry
+                .get("shard")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_else(|| {
+                    panic!("⚠ a matrix entry carries no shard, so its job would run the whole casefile — the shape whose rounds reached the lane's 330-minute ceiling and were cancelled: {entry}\n{log}")
+                });
+            let (index, of) = shard.split_once('/').unwrap_or_else(|| {
+                panic!("⚠ a matrix entry's shard is not `I/N`, which is what `scripts/mutate --shard` refuses: {shard}\n{log}")
+            });
+            let parse = |what: &str, raw: &str| -> usize {
+                raw.parse().unwrap_or_else(|_| {
+                    panic!("⚠ a matrix entry's shard {what} is not a number: {shard}\n{log}")
+                })
+            };
+            shards_of
+                .entry(casefile.clone())
+                .or_default()
+                .push((parse("index", index), parse("count", of)));
             (casefile, runner)
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    // The slices have to cover the casefile exactly: every index from 1 to N
+    // once, all agreeing on N. `scripts/mutate --shard` refuses an index
+    // outside its casefile, so a duplicate or a gap does not go red on the
+    // runner — it goes green having measured the same cases twice and some
+    // cases never.
+    for (casefile, mut shards) in shards_of.clone() {
+        shards.sort_unstable();
+        let of = shards[0].1;
+        let expected: Vec<(usize, usize)> = (1..=of).map(|index| (index, of)).collect();
+        assert_eq!(
+            shards, expected,
+            "⚠ the shards of `{casefile}` do not cover it: the matrix expanded \
+             {shards:?} where {of} slice(s) numbered 1..{of} are what \
+             `--shard` partitions the cases into. A missing index is a set of \
+             cases no job runs, reported as a lane that passed.\n{log}"
+        );
+    }
+
+    let count: usize = outputs
+        .get("count")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| panic!("⚠ the selection step recorded no usable `count`:\n{log}"));
+    assert_eq!(
+        shards_of.len(),
+        count,
+        "⚠ the matrix and the count answer for different sets: {count} casefile(s) \
+         selected, {} appear in the matrix. One of them is what a reader \
+         believes. `count` stays a count of CASEFILES — it is what decides \
+         whether the rounds job runs at all — while the matrix is one entry \
+         per JOB, which is a shard.\n{log}",
+        shards_of.len()
+    );
+
+    rounds
 }
 
 /// The `run:` body of the workflow step carrying the given `name:`, whether it
@@ -962,15 +1025,34 @@ fn the_selection_narrows_and_the_round_only_obeys() {
     let run = step_env(&workflow, "Run the round");
     assert_eq!(
         run,
-        BTreeMap::from([(
-            "SCE_MUTATION_ROUNDS".to_string(),
-            "${{ matrix.casefile }}".to_string()
-        )]),
-        "⚠ the round is handed something other than exactly the casefile its \
-         matrix entry names. Every extra key here is a second narrowing, made \
-         in a job that does not hold the inputs the first one used — which is \
-         the asymmetry this lane already paid for once, in the other direction."
+        BTreeMap::from([
+            (
+                "SCE_MUTATION_ROUNDS".to_string(),
+                "${{ matrix.casefile }}".to_string()
+            ),
+            (
+                "SCE_MUTATION_SHARD".to_string(),
+                "${{ matrix.shard }}".to_string()
+            ),
+        ]),
+        "⚠ the round is handed something other than exactly what its matrix \
+         entry names. Both keys are the same property: the selection decided \
+         which casefile and how many slices, and the round obeys. A key here \
+         reading anything but `matrix.` is a second narrowing, made in a job \
+         that does not hold the inputs the first one used — which is the \
+         asymmetry this lane already paid for once, in the other direction. A \
+         MISSING `SCE_MUTATION_SHARD` is the same defect the other way: every \
+         job would run the whole casefile, which is the shape whose rounds \
+         reached the 330-minute ceiling and were cancelled."
     );
+    for (key, value) in &run {
+        assert!(
+            value.starts_with("${{ matrix.") && value.ends_with(" }}"),
+            "⚠ `{key}` is handed `{value}`, which does not come from the matrix \
+             entry this job was scheduled as. The selection is the only place \
+             the subset is decided."
+        );
+    }
 }
 
 /// Run the gate in dry-run mode with a named subset, and return what it chose.

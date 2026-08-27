@@ -301,6 +301,41 @@ MUTATION_INCONCLUSIVE=0
 # those six then sat unmeasured for weeks.
 MUTATION_DECLARED_CASES=()
 MUTATION_JUDGED_CASES=()
+
+# ── Which cases THIS invocation is answerable for ──────────────────
+#
+# A round is a rebuild and a test run PER CASE, and a casefile that holds many
+# of the expensive kind cannot be finished inside one CI job. Measured on
+# dispatch 32803356117 (2026-08-25), one job per casefile: EIGHT of its
+# twenty-four rounds ran to `mutation-rounds.yml`'s 330-minute ceiling and were
+# `cancelled`, which is neither green nor red — 44 hours of machine time that
+# said nothing about any case. `error_cascade_is_bounded_ctest` held 16 cases
+# and did not finish; `host_processor_declaration` held 16 and finished in 73
+# minutes. Same count, different runner, and the count was all anything looked
+# at.
+#
+# So a casefile stops being the unit that has to fit. `--shard I/N` runs the
+# I-th contiguous slice of the declared cases, and N jobs cover the file. The
+# lane's arithmetic for choosing N lives in `scripts/gates/mutation-rounds.sh`,
+# in one place, and `mutation_corpus_fits_its_lane` is what checks it against
+# the ceiling the workflow declares.
+#
+# `1/1` — the whole file — is the default and the only thing a by-hand round
+# gets unless it asks otherwise. The slice is contiguous rather than
+# round-robin so the report can name it as a range a reader can re-run.
+MUTATION_SHARD_INDEX=1
+MUTATION_SHARD_COUNT=1
+# The 1-based half-open bounds this invocation answers for, filled in by
+# `mutation_shard_resolve` once the declare pass has seen every case, and the
+# labels inside them. The labels are what a stopped round reconciles against:
+# a case in another shard is not a hole this invocation left.
+MUTATION_SHARD_FIRST=1
+MUTATION_SHARD_LAST=0
+MUTATION_SHARD_CASES=()
+# Counts the cases the run pass walks past, so `mutation_case` can tell which
+# slice it is in without the casefile knowing shards exist.
+MUTATION_CASE_ORDINAL=0
+
 # `run` (the default) or `check`. Set once by the driver, read by the two
 # places whose work differs: what the baseline has to establish, and how far
 # a case is taken before its verdict.
@@ -1870,6 +1905,14 @@ mutation_init() {
         while IFS= read -r _need; do
             [[ -n "$_need" ]] && printf 'needs\t%s\n' "$_need"
         done < <(mutation_all_needs)
+        # How many cases a round would have to get through, which is what a
+        # caller sizing a shard needs and the one number it must not derive
+        # for itself. A `grep -c '^mutation_case '` beside the lane would be a
+        # second parser for this file's vocabulary, and this file's header
+        # already records what happened the last time one existed:
+        # `mutation_runtime_targets` was invisible to it on the day it landed.
+        # The count comes from the declare pass, which is the parser.
+        printf 'cases\t%s\n' "${#MUTATION_DECLARED_CASES[@]}"
         exit 0
     fi
     # Before the snapshot, which reads every declared file and would other-
@@ -1974,8 +2017,13 @@ mutation_stop_round() {
     # Set membership, spelled with a loop because the labels are author-written
     # prose and an associative array keyed on them would need the same quoting
     # care for no less code.
+    #
+    # Over THIS SHARD's cases, not the casefile's. A case another job answers
+    # for is not a hole this round left, and calling it one would put the same
+    # label in the ledger as UNJUDGED from one shard while another shard was
+    # recording its verdict. At `1/1` the two sets are the same list.
     local declared
-    for declared in ${MUTATION_DECLARED_CASES[@]+"${MUTATION_DECLARED_CASES[@]}"}; do
+    for declared in ${MUTATION_SHARD_CASES[@]+"${MUTATION_SHARD_CASES[@]}"}; do
         local seen=0
         for judged in ${MUTATION_JUDGED_CASES[@]+"${MUTATION_JUDGED_CASES[@]}"}; do
             [[ "$judged" == "$declared" ]] && { seen=1; break; }
@@ -2069,6 +2117,21 @@ mutation_case() {
         # Collected on the pass that sees all of them, which is the only pass
         # that can: the run pass reaches a label and then leaves it behind.
         MUTATION_DECLARED_CASES+=("$label")
+        return 0
+    fi
+
+    # Whose turn it is. Counted here rather than derived from the label,
+    # because two cases may legitimately carry the same prose and the slice is
+    # about position in the file.
+    MUTATION_CASE_ORDINAL=$(( MUTATION_CASE_ORDINAL + 1 ))
+    if (( MUTATION_CASE_ORDINAL < MUTATION_SHARD_FIRST \
+          || MUTATION_CASE_ORDINAL > MUTATION_SHARD_LAST )); then
+        # Silently, and deliberately so. A skipped case is not a verdict and
+        # not a hole: another shard of this same selection answers for it, and
+        # printing a line per case a job was never asked about would put
+        # sixteen non-verdicts in front of the three it made. What says which
+        # cases this invocation covered is the shard line above and the record
+        # below, both of which name the range.
         return 0
     fi
 
@@ -2404,6 +2467,63 @@ mutation_report() {
     return 1
 }
 
+# Decide which declared cases this invocation answers for.
+#
+# Called once, between the two passes: the declare pass is the only one that
+# sees every case, and the run pass has to know the bounds before it reaches
+# the first one.
+#
+# The slice is contiguous and the remainder is spread over the leading shards,
+# so no shard is more than one case larger than any other. Even slices matter
+# because the ceiling this exists for is per JOB: a shard carrying two extra
+# cases of the expensive kind is an hour of margin nobody budgeted.
+#
+# An EMPTY shard is refused rather than run. A round that measures nothing and
+# exits 0 is the failure this whole harness is about — `mutation_report`
+# already refuses a casefile with no cases for that reason, and a shard that
+# fell off the end of a shrinking casefile would otherwise reach the same
+# silence by a different route. It is a caller error: the lane derives N from
+# the case count, so an out-of-range shard means the selection and the casefile
+# disagree, and that is worth a name rather than a green tick.
+mutation_shard_resolve() {
+    local total="${#MUTATION_DECLARED_CASES[@]}" base remainder i
+    if (( MUTATION_SHARD_COUNT < 1 || MUTATION_SHARD_INDEX < 1 \
+          || MUTATION_SHARD_INDEX > MUTATION_SHARD_COUNT )); then
+        red "--shard $MUTATION_SHARD_INDEX/$MUTATION_SHARD_COUNT is not a shard:"
+        red "expected 1 <= index <= count, and count >= 1"
+        exit 2
+    fi
+    # Only when sharding was actually asked for. At `1/1` a case-less casefile
+    # is refused a few lines further on by `mutation_report`, in the words that
+    # name what is wrong with it — "the casefile declared no mutation_case" —
+    # and answering first with a sentence about shards would put a reader onto
+    # an argument they did not pass.
+    if (( MUTATION_SHARD_COUNT > 1 && MUTATION_SHARD_COUNT > total )); then
+        red "--shard $MUTATION_SHARD_INDEX/$MUTATION_SHARD_COUNT over a casefile"
+        red "declaring $total case(s): at least one shard would measure nothing"
+        red "and exit green. Derive the shard count from the case count."
+        exit 2
+    fi
+    base=$(( total / MUTATION_SHARD_COUNT ))
+    remainder=$(( total % MUTATION_SHARD_COUNT ))
+    # Shards 1..remainder take one extra case; the offset of shard I is the
+    # sum of the sizes before it, which is what this arithmetic spells.
+    if (( MUTATION_SHARD_INDEX <= remainder )); then
+        MUTATION_SHARD_FIRST=$(( (MUTATION_SHARD_INDEX - 1) * (base + 1) + 1 ))
+        MUTATION_SHARD_LAST=$(( MUTATION_SHARD_FIRST + base ))
+    else
+        MUTATION_SHARD_FIRST=$(( remainder * (base + 1) \
+            + (MUTATION_SHARD_INDEX - remainder - 1) * base + 1 ))
+        MUTATION_SHARD_LAST=$(( MUTATION_SHARD_FIRST + base - 1 ))
+    fi
+    MUTATION_SHARD_CASES=()
+    for (( i = MUTATION_SHARD_FIRST; i <= MUTATION_SHARD_LAST; i++ )); do
+        MUTATION_SHARD_CASES+=("${MUTATION_DECLARED_CASES[i - 1]}")
+    done
+    (( MUTATION_SHARD_COUNT > 1 )) || return 0
+    dim "shard $MUTATION_SHARD_INDEX/$MUTATION_SHARD_COUNT: case(s) $MUTATION_SHARD_FIRST-$MUTATION_SHARD_LAST of $total"
+}
+
 # ── Driver ─────────────────────────────────────────────────────────
 
 MUTATION_ARGV=()
@@ -2411,14 +2531,37 @@ while (( $# )); do
     case "$1" in
         --check) MUTATION_MODE=check ;;
         --declares) MUTATION_MODE=declares ;;
+        # `I/N`, validated here for SHAPE and in `mutation_shard_resolve` for
+        # RANGE — the second needs the case count and so cannot happen until
+        # the declare pass has run. Refusing a malformed one here rather than
+        # letting it fall through to the casefile argument is what keeps
+        # `--shard 2` from being read as a second casefile and reported as a
+        # usage error about arguments.
+        --shard)
+            shift
+            [[ "${1:-}" =~ ^([0-9]+)/([0-9]+)$ ]] || {
+                red "mutate: --shard takes I/N, e.g. --shard 2/6 — got '${1:-}'"
+                exit 2
+            }
+            MUTATION_SHARD_INDEX="${BASH_REMATCH[1]}"
+            MUTATION_SHARD_COUNT="${BASH_REMATCH[2]}" ;;
+        --shard=*)
+            [[ "${1#--shard=}" =~ ^([0-9]+)/([0-9]+)$ ]] || {
+                red "mutate: --shard takes I/N, e.g. --shard 2/6 — got '${1#--shard=}'"
+                exit 2
+            }
+            MUTATION_SHARD_INDEX="${BASH_REMATCH[1]}"
+            MUTATION_SHARD_COUNT="${BASH_REMATCH[2]}" ;;
         # Spelled out rather than sliced out of the header with a line
         # range: a range silently prints the wrong block the first time
         # anything above it grows, and this file's header has grown twice.
         -h|--help)
-            printf 'usage: scripts/mutate [--check|--declares] <casefile>\n\n'
+            printf 'usage: scripts/mutate [--check|--declares] [--shard I/N] <casefile>\n\n'
             printf '  (default)   full round — build, run, require every case CAUGHT\n'
             printf '  --check     apply and restore only; no build, no test run\n'
-            printf '  --declares  print the declared runner, targets and services, then exit\n\n'
+            printf '  --declares  print the declared runner, targets, services and case count\n'
+            printf '  --shard I/N run the I-th contiguous slice of the declared cases, so a\n'
+            printf '              casefile too large for one CI job is covered by N of them\n\n'
             printf 'SCE_MUTATION_REPORT_DIR=<dir>  keep each ctest run'\''s console and JUnit\n'
             printf '                               document (or a marker when ctest wrote none),\n'
             printf '                               numbered in run order from the baseline\n'
@@ -2435,7 +2578,7 @@ while (( $# )); do
 done
 
 if (( ${#MUTATION_ARGV[@]} != 1 )); then
-    echo "usage: scripts/mutate [--check] <casefile>" >&2
+    echo "usage: scripts/mutate [--check|--declares] [--shard I/N] <casefile>" >&2
     exit 2
 fi
 
@@ -2466,6 +2609,13 @@ fi
 MUTATION_PASS=declare
 # shellcheck disable=SC1090
 source "$CASEFILE"
+
+# Which of those cases this invocation answers for, decided BEFORE
+# `mutation_init` — a shard the casefile cannot supply is a caller error, and
+# finding it out after a baseline build would charge an hour of machine time
+# for an argument that was wrong when it was typed.
+mutation_shard_resolve
+
 mutation_init
 
 # A full round is the only mode that reads a verdict, so it is the only mode
@@ -2477,7 +2627,9 @@ mutation_init
 # Opened here, before the first case body edits anything, so the commit the
 # round is measured against is the one it actually started from.
 if [[ "$MUTATION_MODE" == "run" ]]; then
-    mutation_ledger_begin "$CASEFILE" "$WORK/ledger-rows"
+    mutation_ledger_begin "$CASEFILE" "$WORK/ledger-rows" \
+        "$MUTATION_SHARD_INDEX" "$MUTATION_SHARD_COUNT" \
+        "${#MUTATION_DECLARED_CASES[@]}"
 fi
 
 MUTATION_PASS="$MUTATION_MODE"
