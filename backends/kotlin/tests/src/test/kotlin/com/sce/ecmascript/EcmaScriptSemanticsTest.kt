@@ -44,6 +44,31 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
+/**
+ * Paths, relative to the repository root — the suite's `workingDir`, which is
+ * also how the shared table is named below and how the C++ and Rust readers
+ * name the same files.
+ */
+private const val DIVERGENCES_PATH = "tests/ecmascript/kotlin_lua_divergences.json"
+private const val ENGINE_PATH =
+    "backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt"
+
+/** What identifies one case, and one declared divergence against it. */
+private data class Key(val source: String, val clause: String)
+
+/**
+ * One case an engine answered differently from ECMA-262.
+ *
+ * Carried as a key plus a message rather than a message alone: the message is
+ * for a person reading a failure, and the key is what a declared list can be
+ * compared against. `source` alone is not the key — the table asks `a && b`
+ * under two clauses, and collapsing them would let one declaration cover a
+ * divergence nobody looked at.
+ */
+private data class Divergence(val source: String, val clause: String, val message: String) {
+    val key: Key get() = Key(source, clause)
+}
+
 /** One row of the shared table. */
 private class Case(
     val setup: String,
@@ -86,37 +111,77 @@ class EcmaScriptSemanticsTest {
      * Lua is measured too, and the assertion runs the other way.
      *
      * It is not an ECMAScript engine and it does not become one by being
-     * asked politely: 27 of these 58 cases answered differently when this was
-     * first run, the same class of disagreement the C++ build measured at 26.
-     * `datamodel="ecmascript"` is a claim about a language, so the honest
-     * landing is not a permanently red suite — which teaches a reader to
-     * scroll past red — but a test that pins WHY the answer is no, and fires
-     * if that ever stops being true.
+     * asked politely, so `datamodel="ecmascript"` — a claim about a language
+     * — cannot be met by it. The honest landing is not a permanently red
+     * suite, which teaches a reader to scroll past red, but a test that pins
+     * WHICH cases the answer is no for and fires when that set moves in
+     * either direction.
      *
-     * If this fails because Lua now conforms, nothing is broken: the
-     * documentation on `LuaScriptEngine` is what needs rewriting, and this
-     * comment with it.
+     * "Either direction" is the part this test did not used to have. It
+     * asserted only that the failure set was NOT EMPTY, which is satisfied by
+     * one disagreement and by fifty, so the rewriter could regress or improve
+     * for months without a word. The engine's own KDoc meanwhile carried "27
+     * of its 58" under a sentence saying this test held it to the
+     * measurement; it held no number at all, and the shared table had since
+     * grown to 98 cases. A declared list is what makes both directions
+     * visible — the same shape `tests/ecmascript/lua_engine_divergences.json`
+     * gives the C++ selection, and for the same reason its header states: a
+     * count that lives in prose is a count nobody re-answers.
+     *
+     * The two lists are separate on purpose. This backend rewrites with its
+     * own [com.sce.scripting.lua.EcmaScriptToLuaTransformer] onto a different
+     * Lua, so its divergences are its own measurement and neither list may be
+     * derived from the other.
      */
     @Test
     fun luaIsNotAnEcmaScriptEngineAndSaysSo() {
         val failures = collectFailures { LuaScriptEngine() }
+        val declared = loadDeclaredDivergences()
+
+        // Ordered before the floor deliberately. A list that is empty — the
+        // first run of a new one — fails HERE, printing every divergence in
+        // the shape the file takes, instead of dying below with nothing to
+        // show the person who has to write it.
+        val undeclared = failures.filterNot { it.key in declared }
         assertTrue(
-            failures.isNotEmpty(),
-            "Lua answered all ${loadCases().size} ECMA-262 cases correctly. That is good " +
-                "news and it makes this test wrong: the engine's own documentation says it " +
-                "is not an ECMAScript engine, and a reader choosing between the three " +
-                "deserves the current answer. Rewrite the doc comment on LuaScriptEngine " +
-                "and turn this into `measure(...)` beside the other two.",
+            undeclared.isEmpty(),
+            "${undeclared.size} expression(s) disagree with ECMA-262 on LuaScriptEngine " +
+                "without being declared to. Either the rewriter regressed, or " +
+                "$DIVERGENCES_PATH has not caught up with it. If it is the second, these " +
+                "are the entries to add:\n" +
+                undeclared.joinToString(",\n") {
+                    "    { \"source\": ${quoted(it.source)}, \"clause\": ${quoted(it.clause)} }"
+                } +
+                "\n\nWhat each one answered:\n" +
+                undeclared.joinToString("\n") { "  ${it.message}" },
+        )
+
+        val stillWrong = failures.map { it.key }.toSet()
+        val repaired = declared.filterNot { it in stillWrong }
+        assertTrue(
+            repaired.isEmpty(),
+            "${repaired.size} declared divergence(s) no longer describe this engine. Remove " +
+                "them from $DIVERGENCES_PATH — a list that keeps a repaired case is a list " +
+                "that cannot be trusted in the other direction either, and it is what a " +
+                "reader consults to decide whether their document stays inside what the " +
+                "rewriter covers.\n" +
+                repaired.joinToString("\n") { "  ${it.source}  (${it.clause})" },
+        )
+
+        assertTrue(
+            declared.isNotEmpty(),
+            "$DIVERGENCES_PATH declares nothing, and nothing disagreed. If Lua now answers " +
+                "all ${loadCases().size} ECMA-262 cases that is good news and it makes this " +
+                "test wrong: rewrite the doc comment on LuaScriptEngine and turn this into " +
+                "`measure(...)` beside the other two.",
         )
 
         // Refutable, and refuted where a consumer can see it: the engine's own
         // header must not be recommending itself for the datamodel it answers
         // differently from. It said "For AOSP/AAOS production, this replaces
-        // Rhino with a faster native engine" while answering 27 of 58 cases
-        // differently from the language that production would be running.
-        val header = File(
-            "backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt",
-        )
+        // Rhino with a faster native engine" while answering a whole class of
+        // the table differently from the language that production would run.
+        val header = File(ENGINE_PATH)
         assertTrue(header.isFile, "the Lua engine is missing at ${header.absolutePath}")
         val doc = header.readText().substringBefore("class LuaScriptEngine")
         assertTrue(
@@ -126,7 +191,47 @@ class EcmaScriptSemanticsTest {
                 "reader who takes that header at its word chooses an engine that runs their " +
                 "`datamodel=\"ecmascript\"` document as something else.",
         )
+
+        // The header must point at the list rather than restate its size. The
+        // count it used to carry outlived two growths of the shared table, and
+        // a number in prose is the one thing here nothing can re-answer.
+        assertTrue(
+            DIVERGENCES_PATH in doc,
+            "the Lua engine's documentation does not name $DIVERGENCES_PATH. That list is " +
+                "the answer to the question its header raises — which cases — and a reader " +
+                "who cannot reach it from the engine is left to take a count on trust, " +
+                "which is how the previous one survived being wrong.",
+        )
     }
+
+    /**
+     * The declared set, keyed the way the failures are.
+     *
+     * Read from disk rather than held in this file: the list is a measurement
+     * a person maintains and a reader consults, and a Kotlin constant is
+     * neither greppable beside the C++ list nor readable by anyone not
+     * building this backend.
+     */
+    private fun loadDeclaredDivergences(): Set<Key> {
+        val file = File(DIVERGENCES_PATH)
+        assertTrue(
+            file.isFile,
+            "the declared divergences are missing at ${file.absolutePath}. This test compares " +
+                "against them in both directions, so without the file it measures nothing.",
+        )
+        val root = Json.parseToJsonElement(file.readText()).jsonObject
+        return root.getValue("divergences").jsonArray.map { entry ->
+            val obj = entry.jsonObject
+            Key(
+                obj.getValue("source").jsonPrimitive.content,
+                obj.getValue("clause").jsonPrimitive.content,
+            )
+        }.toSet()
+    }
+
+    /** JSON-quoted, so a failure prints entries that can be pasted as-is. */
+    private fun quoted(value: String): String =
+        "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     private fun measure(engineName: String, create: () -> ScxmlScriptEngine) {
         val failures = collectFailures(create)
@@ -140,11 +245,11 @@ class EcmaScriptSemanticsTest {
                 "An engine offered for `datamodel=\"ecmascript\"` answers what that " +
                 "language answers; one that does not is not a choice a consumer can " +
                 "make safely, whatever else it is good at.\n" +
-                failures.joinToString("\n"),
+                failures.joinToString("\n") { it.message },
         )
     }
 
-    private fun collectFailures(create: () -> ScxmlScriptEngine): List<String> {
+    private fun collectFailures(create: () -> ScxmlScriptEngine): List<Divergence> {
         val cases = loadCases()
 
         // A floor, not an equality: adding a case must not have to touch this
@@ -156,7 +261,7 @@ class EcmaScriptSemanticsTest {
         )
 
         val engine = create()
-        val failures = mutableListOf<String>()
+        val failures = mutableListOf<Divergence>()
 
         cases.forEachIndexed { index, case ->
             val sessionId = "ecma262_case_$index"
@@ -168,8 +273,12 @@ class EcmaScriptSemanticsTest {
                     try {
                         engine.executeScript(sessionId, case.setup)
                     } catch (failure: Exception) {
-                        failures += "[${case.source}] setup did not run: ${failure.message}" +
-                            "\n  setup: ${case.setup}"
+                        failures += Divergence(
+                            case.source,
+                            case.clause,
+                            "[${case.source}] setup did not run: ${failure.message}" +
+                                "\n  setup: ${case.setup}",
+                        )
                         setupOk = false
                     }
                 }
@@ -183,24 +292,26 @@ class EcmaScriptSemanticsTest {
         return failures
     }
 
-    private fun evaluate(engine: ScxmlScriptEngine, sessionId: String, case: Case): List<String> {
+    private fun evaluate(engine: ScxmlScriptEngine, sessionId: String, case: Case): List<Divergence> {
+        fun diverged(message: String) = listOf(Divergence(case.source, case.clause, message))
+
         if (case.asCondition) {
             val expected = case.expected
             val answered =
                 try {
                     engine.evaluateCondition(sessionId, case.source)
                 } catch (failure: Exception) {
-                    return listOf(
+                    return diverged(
                         "[${case.source}] failed to evaluate as a condition: " +
                             "${failure.message} (${case.clause})",
                     )
                 }
             val wanted = (expected as? Answer.Bool)?.value
-                ?: return listOf("[${case.source}] is a condition but names a non-boolean answer")
+                ?: return diverged("[${case.source}] is a condition but names a non-boolean answer")
             return if (answered == wanted) {
                 emptyList()
             } else {
-                listOf(
+                diverged(
                     "[${case.source}] answered $answered, ECMAScript says " +
                         "${expected.describe()} (${case.clause})",
                 )
@@ -211,12 +322,12 @@ class EcmaScriptSemanticsTest {
             try {
                 engine.evaluateExpr(sessionId, case.source)
             } catch (failure: Exception) {
-                return listOf("[${case.source}] failed to evaluate: ${failure.message} (${case.clause})")
+                return diverged("[${case.source}] failed to evaluate: ${failure.message} (${case.clause})")
             }
         return if (matches(value, case.expected)) {
             emptyList()
         } else {
-            listOf(
+            diverged(
                 "[${case.source}] answered ${describe(value)}, ECMAScript says " +
                     "${case.expected.describe()} (${case.clause})",
             )

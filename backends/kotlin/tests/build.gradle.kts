@@ -99,6 +99,23 @@ tasks.test {
     // C++ DataModelInitHelper pattern: resolve data src paths relative to project root
     workingDir = File(rootDir)
 
+    // Data this suite reads through `workingDir` at RUN time, declared so
+    // Gradle knows the task is out of date when it changes.
+    //
+    // Without this the suite is skipped whenever only the data moved.
+    // `EcmaScriptSemanticsTest` reads `ecma262_semantics.json` — what
+    // ECMA-262 says — and `kotlin_lua_divergences.json` — which of those cases
+    // the Lua rewriter answers differently, held in BOTH directions. Neither
+    // is on the compile classpath, so editing either used to leave
+    // `:sce-kotlin-tests:test UP-TO-DATE`: measured 2026-08-27 by declaring a
+    // case as divergent that the engine answers correctly, which the suite
+    // must reject and instead reported BUILD SUCCESSFUL in 390ms without
+    // running a test. A list nothing re-reads is a list that cannot be wrong,
+    // which is the failure mode the list was written to remove.
+    inputs.dir(File(rootDir, "tests/ecmascript"))
+        .withPropertyName("sharedEcmaScriptTables")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // Native library paths (Lua + QuickJS JNI)
     val luaLibDir = project(":sce-kotlin-lua").layout.buildDirectory.dir("native/lib")
     val quickjsLibDir = project(":sce-kotlin-quickjs").layout.buildDirectory.dir("native/lib")
