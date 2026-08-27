@@ -234,18 +234,68 @@ impl Language {
     /// a Lua engine for a machine that hands it ECMAScript — the exact
     /// mis-supply the field exists to prevent.
     ///
-    /// `docs/SCE_LUA_TRANSLATION_SEAM.md` carries the per-backend table this
-    /// comes from, and `sce-build/tests/script_engine_language_parity.rs`
-    /// holds this mapping to the templates, so a backend that changes which
-    /// side of the seam it sits on cannot leave this answer behind.
+    /// `docs/SCE_LUA_TRANSLATION_SEAM.md` carries the per-backend table, and
+    /// `sce-build/tests/script_engine_language_parity.rs` holds this answer to
+    /// what the emitted artifact actually carries.
+    ///
+    /// **Derived, not listed.** This used to be a `match` naming four
+    /// backends on one side and two on the other, which is a second roster
+    /// beside the templates and free to disagree with them — the failure this
+    /// field already had once, as a hard-coded `"lua"`. It now reads
+    /// [`Self::lowers_expressions_at_build_time`], so moving a backend across
+    /// the seam is a template edit and nothing else. Same shape as the
+    /// mesh-rpc refusal, which reads `templates/mesh/<lang>/` rather than
+    /// asserting which backends have a mesh arm.
     pub fn script_engine_language(self) -> &'static str {
-        match self {
-            // Build-time lowering: the artifact carries Lua.
-            Language::Rust | Language::Go | Language::Python | Language::C11 => {
-                crate::manifest::SCRIPT_ENGINE_LANGUAGE_LUA
-            }
-            // Runtime evaluation of the author's own source.
-            Language::Cpp | Language::Kotlin => crate::manifest::SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT,
+        if self.lowers_expressions_at_build_time() {
+            crate::manifest::SCRIPT_ENGINE_LANGUAGE_LUA
+        } else {
+            crate::manifest::SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT
+        }
+    }
+
+    /// Whether this backend's templates lower expressions through the
+    /// build-time ECMAScript frontend, rather than emitting the author's
+    /// source for an engine to deal with at run time.
+    ///
+    /// Read off the embedded template tree — the same registry the renderer
+    /// uses — so the answer cannot drift from what is actually rendered.
+    /// Ownership comes from [`Self::template_owned_subdir`], which is the
+    /// existing single source of truth for "whose templates are these": five
+    /// backends own a subdirectory, and C++ owns everything no other backend
+    /// claims (the tree root, `actions/`, `mesh/`, `forge/`, `_macros/`).
+    ///
+    /// The marker is the GUARD filter specifically. `to_lua_guard` is what
+    /// wraps a condition in the frontend's truthiness helper, and truthiness
+    /// is where the rewriters' divergences from ECMA-262 concentrate, so it
+    /// is the filter whose presence decides which engine a host needs.
+    ///
+    /// ⚠ Jinja comments are stripped before the search. A template is free to
+    /// *mention* `to_lua_guard` in a `{# … #}` block while emitting source —
+    /// and a scanner that reads comments as code cannot tell a backend's
+    /// behaviour from its documentation. That is not hypothetical here: the
+    /// C++ tree's only mention of these filters is a comment
+    /// (`invoke_methods.jinja2`), and the artifact-side gate for this field
+    /// was fooled by exactly this shape on its first run.
+    pub fn lowers_expressions_at_build_time(self) -> bool {
+        const GUARD_LOWERING_FILTER: &str = "to_lua_guard";
+
+        crate::template_registry::EMBEDDED_TEMPLATES
+            .iter()
+            .filter(|(name, _)| self.owns_template(name))
+            .any(|(_, body)| strip_jinja_comments(body).contains(GUARD_LOWERING_FILTER))
+    }
+
+    /// Whether `name` (a template path relative to the tree root) belongs to
+    /// this backend. See [`Self::lowers_expressions_at_build_time`] for why
+    /// C++ is the complement rather than a subdirectory.
+    fn owns_template(self, name: &str) -> bool {
+        match self.template_owned_subdir() {
+            Some(dir) => name.starts_with(&format!("{dir}/")),
+            None => crate::template_registry::SUPPORTED_LANGUAGES
+                .iter()
+                .filter_map(|other| other.template_owned_subdir())
+                .all(|dir| !name.starts_with(&format!("{dir}/"))),
         }
     }
 }
@@ -352,6 +402,27 @@ fn license_config() -> serde_json::Value {
             "copyright_holder": "[Author of input SCXML file]"
         }
     })
+}
+
+/// `{# … #}` blocks removed, everything else untouched.
+///
+/// Used where a template is READ as evidence of what it emits: a comment is
+/// documentation, and counting it as behaviour is how a scan reports a
+/// backend doing something it only talks about. Unterminated openers swallow
+/// the rest of the body, which is the safe direction — a malformed template
+/// contributes no evidence rather than false evidence.
+fn strip_jinja_comments(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(open) = rest.find("{#") {
+        out.push_str(&rest[..open]);
+        match rest[open..].find("#}") {
+            Some(close) => rest = &rest[open + close + 2..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 pub(crate) fn render_error(e: minijinja::Error) -> GenerateError {
