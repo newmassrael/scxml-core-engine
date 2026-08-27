@@ -104,6 +104,11 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v6
       with:
+        # `mutation_round_survives_a_moved_baseline` reads a PINNED pre-repair
+        # harness out of git (`git show <rev>:scripts/mutate`), so this lane
+        # needs history. Under the default shallow fetch that read fails and
+        # the control reports that it measured nothing.
+        fetch-depth: 0
         submodules: recursive
 
     # libxml2 backs the default `xsd` feature; without it the workspace
