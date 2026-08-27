@@ -106,6 +106,45 @@ design must take the target engine as a codegen input (`script_engine_language`
 already exists on the manifest, `sce-build/src/manifest.rs:209`) rather than
 assume one.
 
+## Found while measuring: the manifest names the wrong engine on two backends
+
+`needs_script_engine` tells a host it must supply an engine;
+`script_engine_language` tells it *which kind*, and the field's own doc says it
+exists because "a consumer reading only the flag, and the document's
+`datamodel="ecmascript"`, would supply the wrong one"
+(`sce-build/src/manifest.rs:199`).
+
+It is derived from the flag alone
+(`sce-build/src/bin/sce_codegen.rs:782`) and the constant is hard-coded
+`"lua"` (`manifest.rs:45`), justified by a claim this table refutes: *"Not
+per-backend: the lowering happens in `sce-build`, before any backend renders,
+so every language's generated machine evaluates the same Lua."* That holds for
+Rust, Go, Python and C11. It does not hold for C++ and Kotlin, which hand the
+engine ECMAScript source.
+
+Measured 2026-08-27 on `examples/ai_loop/ai_loop.scxml`:
+
+```
+lang=cpp     needs_script_engine=True  script_engine_language='lua'
+lang=kotlin  needs_script_engine=True  script_engine_language='lua'
+lang=go      needs_script_engine=True  script_engine_language='lua'
+lang=python  needs_script_engine=True  script_engine_language='lua'
+lang=rust    needs_script_engine=True  script_engine_language='lua'
+lang=c11     needs_script_engine=True  script_engine_language='lua'
+```
+
+So a C++ or Kotlin host that obeys the manifest supplies a Lua engine for a
+machine that hands it ECMAScript — and on both, the default engine is *not*
+Lua (`SCE_SCRIPT_ENGINE=quickjs`, `W3CTestBase.DEFAULT_ENGINE="rhino"`). This
+is the same root cause as the divergences, surfacing on a wire surface rather
+than in an answer.
+
+Not fixed here. It is a manifest shape change, so it goes through
+`SCE_ERROR_CONTRACT.md` §10 and `SCE_WIRE_CONTRACTS.md`, and the honest
+correction depends on the decision below: if the target engine becomes a
+codegen input, this field reports that input; if it does not, the field has to
+become per-backend.
+
 ## What is not yet decided
 
 - The C++ **Interpreter** has no build step at all, so it cannot receive
