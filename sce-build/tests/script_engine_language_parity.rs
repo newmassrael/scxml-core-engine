@@ -67,6 +67,13 @@ const FIXTURE: &str =
 /// therefore useless as the discriminator — see the module note.
 const LOWERED_MARKER: &str = "_scxml_truthy(_event.data)";
 
+/// The prose surface: the per-backend table a reader consults.
+const SEAM_DOC: &str = "docs/SCE_LUA_TRANSLATION_SEAM.md";
+const SEAM_ANCHOR: &str = "sce:lua-translation-seam";
+/// The two verdicts its last column may carry.
+const SEAM_SOURCE_SIDE: &str = "ECMAScript source";
+const SEAM_LOWERED_SIDE: &str = "translated Lua";
+
 const SCHEMA: &str = "schemas/sce-manifest.v1.schema.json";
 
 fn repo_root() -> PathBuf {
@@ -232,4 +239,100 @@ fn the_reported_engine_language_matches_what_the_artifact_carries() {
          them all to one side, the mapping and the seam document both need rewriting rather \
          than this floor relaxing."
     );
+}
+
+/// The third surface: the table a reader consults.
+///
+/// The field is derived from the templates and held to the artifact by the
+/// case above, which leaves one way for the three to disagree — the prose
+/// going stale while both machine surfaces move together. A reader picking an
+/// engine reads the table, not the code, so it is checked rather than trusted.
+#[test]
+fn the_seam_table_and_the_derived_answer_agree() {
+    let doc = std::fs::read_to_string(repo_root().join(SEAM_DOC))
+        .unwrap_or_else(|e| panic!("{SEAM_DOC} is readable: {e}"));
+    let at = doc.find(SEAM_ANCHOR).unwrap_or_else(|| {
+        panic!(
+            "{SEAM_DOC} carries no `{SEAM_ANCHOR}` anchor. That table is the surface a reader \
+             consults before choosing an engine; without the anchor this case reads nothing \
+             and would pass by reading nothing."
+        )
+    });
+
+    let mut rows: Vec<(String, &'static str)> = Vec::new();
+    let mut header_seen = false;
+    for line in doc[at..].lines().skip(1) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || !trimmed.starts_with('|') {
+            if rows.is_empty() && !header_seen {
+                continue;
+            }
+            if trimmed.starts_with('|') {
+                continue;
+            }
+            if rows.is_empty() {
+                continue;
+            }
+            break;
+        }
+        let cells: Vec<&str> = trimmed
+            .trim_start_matches('|')
+            .trim_end_matches('|')
+            .split('|')
+            .map(str::trim)
+            .collect();
+        if cells.len() < 4 || !cells[0].starts_with('`') {
+            continue;
+        }
+        if !header_seen {
+            assert_eq!(
+                cells[0], "`--lang`",
+                "the seam table's first column is no longer the `--lang` spelling. It is read \
+                 positionally and compared with `Language::canonical_name`, so a display name \
+                 there has to fail here rather than be matched by guesswork."
+            );
+            header_seen = true;
+            continue;
+        }
+        let verdict = cells[cells.len() - 1];
+        let side = if verdict.contains(SEAM_SOURCE_SIDE) {
+            SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT
+        } else if verdict.contains(SEAM_LOWERED_SIDE) {
+            SCRIPT_ENGINE_LANGUAGE_LUA
+        } else {
+            panic!(
+                "the seam table's row for {} says '{verdict}'. The column has two readings — \
+                 `{SEAM_SOURCE_SIDE}` or `{SEAM_LOWERED_SIDE}` — because it answers which \
+                 language the engine must evaluate, and a third phrase is a claim nothing \
+                 checks.",
+                cells[0]
+            );
+        };
+        rows.push((cells[0].trim_matches('`').to_string(), side));
+    }
+
+    assert_eq!(
+        rows.len(),
+        Language::ALL.len(),
+        "the seam table has {} row(s) for {} backends. Every backend needs a row: a missing \
+         one is a backend whose engine a reader has to infer.\nrows: {rows:?}",
+        rows.len(),
+        Language::ALL.len()
+    );
+
+    for lang in Language::ALL {
+        let name = lang.canonical_name();
+        let (_, documented) = rows
+            .iter()
+            .find(|(row, _)| row == name)
+            .unwrap_or_else(|| panic!("the seam table names no row for `{name}`"));
+        assert_eq!(
+            *documented,
+            lang.script_engine_language(),
+            "the seam table says `{name}` needs a `{documented}` engine and the code derives \
+             `{}` from the templates. The table is what a reader picks an engine from, so a \
+             stale row sends them to the wrong one.",
+            lang.script_engine_language()
+        );
+    }
 }
