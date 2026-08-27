@@ -23,12 +23,21 @@ pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 /// The language a machine's expressions are actually evaluated in.
 ///
-/// A document declares `datamodel="ecmascript"`, and a consumer
-/// reasonably reads that attribute as the answer. It is not. SCE ships no
-/// ECMAScript engine: `sce-build/src/ecmascript/` parses the expression
-/// at generation time and emits **Lua**, which the injected
-/// `IScriptEngine` evaluates (`docs/SCE_ACCEPTED_SUBSET.md` §B.2, "What
-/// `ecmascript` currently means").
+/// A document declares `datamodel="ecmascript"`, and a consumer reasonably
+/// reads that attribute as the answer. It is not — but not for the reason
+/// this comment used to give, which was "SCE ships no ECMAScript engine:
+/// the expression is parsed at generation time and emitted as **Lua**".
+/// Measured 2026-08-27 (`docs/SCE_LUA_TRANSLATION_SEAM.md`): SCE ships two
+/// ECMAScript engines and both are defaults — QuickJS on C++
+/// (`SCE_SCRIPT_ENGINE=quickjs`) and Rhino on Kotlin
+/// (`W3CTestBase.DEFAULT_ENGINE`) — and on those two backends the emitted
+/// machine hands the engine the author's ECMAScript rather than Lua.
+///
+/// What is true is narrower and is the reason this field exists: the answer
+/// is the TARGET BACKEND's, not the document's. Four backends receive Lua
+/// that `sce-build/src/ecmascript/` lowered at generation time
+/// (`docs/SCE_ACCEPTED_SUBSET.md` §B.2, "What `ecmascript` currently
+/// means"); two receive source.
 ///
 /// Reported on the manifest because that gap cost a downstream consumer a
 /// round in 2026-08: their guards were ECMAScript source, they worked, and
