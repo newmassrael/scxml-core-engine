@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c3811de69809fcaca1ab0508e94a631fbb8f5a9a57e1924edd0d75fdf7afaa52
-// template-hash: b9b6d5a256b534ee1bf3d5ad94af0afa9df9e54bf19008d6dd27d12f1bc9a55e
+// template-hash: 1f4e4f9fb7a6afbcc11d24c73b03e4acaa51ec03610a45bb92197b670933aad7
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -809,6 +809,30 @@ func (p *ParallelRegionRootExternalDomainPolicy) selectOptimalTransitions(transi
 	var filtered []transitionInfo
 
 	for _, t1 := range transitions {
+		// Appendix D selectTransitions: the enabled set is an ORDERED SET, and
+		// the same transition reached from two different region leaves is ONE
+		// element of it, not two. A transition written on a <parallel>, or on an
+		// ancestor above one, is selected once per region by the bubbling walk —
+		// W3C test 403b turns on a <parallel>-level <assign> running exactly
+		// once. Selection stops at the first enabled transition of a state, so
+		// within one microstep a source contributes at most one transition and
+		// (source, target) identifies it.
+		//
+		// This is what the removed target/source criterion stood in for: a
+		// targetless duplicate is spelled source -> source, so that check
+		// happened to fire on it. Stated here it is the set semantics
+		// themselves, independent of how a targetless transition is spelled.
+		alreadySelected := false
+		for _, seen := range filtered {
+			if seen.source == t1.source && seen.target == t1.target {
+				alreadySelected = true
+				break
+			}
+		}
+		if alreadySelected {
+			continue
+		}
+
 		dominated := false
 		var toRemove []int
 
@@ -818,17 +842,25 @@ func (p *ParallelRegionRootExternalDomainPolicy) selectOptimalTransitions(transi
 			t2Exits := p.computeExitSetForConflict(t2)
 
 			// Appendix D removeConflictingTransitions: two transitions conflict
-			// when their EXIT SETS intersect, so a transition that exits nothing
-			// conflicts with nothing and can never be preempted. The two
-			// isTargetless guards below say this for the parallel-ancestor
-			// heuristics; stated once here it also covers the target/source
-			// heuristic, which reads a targetless transition as a self-transition
-			// on its own source and would otherwise preempt a live transition
-			// that merely shares that state.
-			if len(t1Exits) == 0 || len(t2Exits) == 0 {
-				continue
-			}
-
+			// when their EXIT SETS intersect. That is the whole test the appendix
+			// states, and it is now the whole test made here.
+			//
+			// Three rules used to sit beside it — a target/source equality check
+			// and a <parallel>-ancestor check in each direction — and none is in
+			// the appendix. They stood in for an exit set this generator could
+			// not compute: assembled from the source's own ancestor chain, a set
+			// could not name the sibling regions a transition leaving the
+			// <parallel> exits, so the intersection came back empty for
+			// transitions that plainly conflict. Appendix D computeExitSet reads
+			// p.activeStates now, so the intersection answers on its own.
+			//
+			// A transition that exits nothing still conflicts with nothing and
+			// can never be preempted — that is a targetless transition, which
+			// the appendix gives an empty exit set, and it is what W3C test 403c
+			// means by "this transition never gets preempted, should fire twice".
+			// The removed rules each read a targetless transition as a
+			// self-transition on its own source, which is why they needed the
+			// empty-exit-set gate and the isTargetless guards that stood here.
 			hasConflict := false
 			for _, s1 := range t1Exits {
 				for _, s2 := range t2Exits {
@@ -841,47 +873,16 @@ func (p *ParallelRegionRootExternalDomainPolicy) selectOptimalTransitions(transi
 					break
 				}
 			}
-
-			// Appendix D removeConflictingTransitions: Target/source conflict
-			if !hasConflict && (t1.target == t2.source || t2.target == t1.source) {
-				hasConflict = true
+			if !hasConflict {
+				continue
 			}
 
-			// W3C SCXML 3.13: Parallel exit conflict — only applies when
-			// BOTH transitions have targets (targetless transitions have empty exit sets
-			// and never conflict per Appendix D computeExitSet computeExitSet).
-			if !hasConflict && !t1.isTargetless && !t2.isTargetless {
-				if !(t2.isInternal && t2.source == t2.target) {
-					for _, exitState := range t1Exits {
-						if p.IsParallelState(exitState) && p.IsDescendantOf(t2.source, exitState) {
-							hasConflict = true
-							break
-						}
-					}
-				}
-				if !hasConflict && !(t1.isInternal && t1.source == t1.target) {
-					for _, exitState := range t2Exits {
-						if p.IsParallelState(exitState) && p.IsDescendantOf(t1.source, exitState) {
-							hasConflict = true
-							break
-						}
-					}
-				}
-			}
-
-			if hasConflict {
-				// Appendix D removeConflictingTransitions: Preemption rules
-				if t1.target == t2.source {
-					toRemove = append(toRemove, idx)
-				} else if t2.target == t1.source {
-					dominated = true
-					break
-				} else if p.IsDescendantOf(t1.source, t2.source) {
-					toRemove = append(toRemove, idx)
-				} else {
-					dominated = true
-					break
-				}
+			// Appendix D removeConflictingTransitions: the descendant source wins
+			if p.IsDescendantOf(t1.source, t2.source) {
+				toRemove = append(toRemove, idx)
+			} else {
+				dominated = true
+				break
 			}
 		}
 
