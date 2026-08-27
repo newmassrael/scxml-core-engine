@@ -1,0 +1,108 @@
+name: Compiled-In Content Assertions
+
+# The lane that runs when an input the sce-build suite `include_str!`s
+# changes, rather than when its Rust changes.
+#
+# ## Why it exists
+#
+# `sce-build`'s sources compile documents, schemas, headers and Lua into
+# the test binary. Editing one of those files changes what the suite
+# asserts without touching a single `.rs`, so the lane that judges it has
+# to start on the document's path. Measured 2026-08-27: nineteen such
+# inputs reached neither `rust-workspace-tests.yml`'s `paths:` nor the
+# `workspace-tests` gate's own `extra` — `SCE_ERROR_CONTRACT.md` and
+# `SCE_MESH.md` among them. A commit editing only those two documents ran
+# `contract_docs_cite_only_real_codes`, the test whose whole job is to
+# catch a phantom diagnostic slug in exactly those files, in no lane at
+# all. `ci-only-coverage` could not see it: that case compares the gate's
+# list against the workflow's, and both were missing the same nineteen.
+#
+# ## Why a second lane rather than a wider filter
+#
+# `rust-workspace-tests.yml` is 151s — half the push budget for one gate,
+# which is why it is `ci_only` in the first place. Adding
+# `sce/include/**`, `backends/**` and `tools/codegen/**` to ITS filter
+# would start that lane on nearly every push and re-open the cost problem
+# `ci_only` was introduced to close. So the wide filter goes on a cheap
+# lane instead, and the expensive one keeps the filter it has.
+#
+# ## Why `--lib` is the right scope, and not a list of test names
+#
+# Every one of the nineteen is `include_str!`-ed from `sce-build/src/`,
+# so the library suite is exactly the set of assertions that read them —
+# `acceptance_doc_covers_every_code` and `contract_docs_cite_only_real_codes`
+# included. Naming individual tests here would be a hand-kept list of the
+# same shape as the one this lane exists to retire; `--lib` is the scope
+# the tree defines. The integration targets stay with the heavy lane,
+# which still runs everything.
+#
+# `include-str-coverage` in `tools/git-hooks/gate_registry.py` is what
+# keeps this filter honest: it derives every `include_str!` target under
+# the declared root from the tree and fails if no lane running that suite
+# starts for it. A new compiled-in input is covered the day it is written.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sce-build/**'
+      - 'SCE_ERROR_CONTRACT.md'
+      - 'SCE_MESH.md'
+      - 'docs/SCE_ACCEPTED_SUBSET.md'
+      - 'schemas/**'
+      - 'apis/**'
+      - 'sce/include/**'
+      - 'backends/**'
+      - 'tools/codegen/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/doc-content-gate.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce-build/**'
+      - 'SCE_ERROR_CONTRACT.md'
+      - 'SCE_MESH.md'
+      - 'docs/SCE_ACCEPTED_SUBSET.md'
+      - 'schemas/**'
+      - 'apis/**'
+      - 'sce/include/**'
+      - 'backends/**'
+      - 'tools/codegen/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/doc-content-gate.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doc-content:
+    name: cargo test -p sce-build --features cli --lib
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-doc-content-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-doc-content-
+          ${{ runner.os }}-cargo-
+
+    # Delegates to the gate runner rather than restating the command, so
+    # the scope has one spelling for both callers.
+    - name: cargo test -p sce-build --features cli --lib
+      run: scripts/gate doc-content
