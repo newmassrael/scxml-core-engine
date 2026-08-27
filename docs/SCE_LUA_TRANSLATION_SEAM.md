@@ -253,11 +253,21 @@ Splitting a subset is not a smaller version of this change: the engine would
 receive Lua from some sites and ECMAScript from others, in one session — and
 the sites easiest to miss are exactly the ones no filter marks.
 
-**The blocker.** `LuaEngine` transforms on every first evaluation. Its "fast
-path" (`LuaEngine.cpp:563`, `:598`) is a memo cache keyed on the *input
-string*, not a bypass for text that is already Lua — the slow path calls
-`transformer_.transformScript` / `transform` unconditionally. Feeding it
-lowered Lua therefore runs the rewriter over the frontend's own output, and
+**The blocker.** `LuaEngine` transforms on every first evaluation, at **three**
+sites — one per expression entry point, including the one generated code never
+calls:
+
+| Transform call | Enclosing function |
+|---|---|
+| `LuaEngine.cpp:535` | `validateExpression` (dead surface in the templates, but it still rewrites) |
+| `LuaEngine.cpp:573` | `executeScriptInternal` (`transformScript`) |
+| `LuaEngine.cpp:618` | `evaluateExpressionInternal` |
+
+Nothing else in `sce/src` calls the transformer — `LuaDOMBinding.cpp` includes
+the header without using it — so those three are the whole runtime surface.
+The "fast path" above each (`:563`, `:598`) is a memo cache keyed on the
+*input string*, not a bypass for text that is already Lua. Feeding it lowered
+Lua therefore runs the rewriter over the frontend's own output, and
 `transformArrayIndexing` (`EcmaScriptToLuaTransformer.cpp:1101`) rewrites
 `arr[0]` to `arr[0 + 1]` — so an index the frontend already made 1-based is
 shifted **again**. That is an off-by-one with no diagnostic, which is worse
