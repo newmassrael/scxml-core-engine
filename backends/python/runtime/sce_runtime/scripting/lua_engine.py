@@ -2,15 +2,27 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """LuaScriptEngine — lupa-backed implementation of `IScriptEngine`.
 
-Cross-backend parity:
-- C++ uses Lua 5.4 directly via the C API + ECMAScript→Lua transformer.
-- Rust uses `mlua` (PUC Lua bindings) + the same transformer.
-- Go uses `gopher-lua` + the same transformer.
-- Kotlin uses JNI bindings + the same transformer.
-- C11 uses Lua 5.4 directly.
-- Python AOT now uses `lupa` (PyPI: lupa) + the same transformer
-  (`to_lua_expr` / `to_lua_guard` / `to_lua_script` filters in
-  `sce-build/src/filters.rs`).
+Cross-backend parity — and there are TWO transformers, not one. This list
+used to call them "the same transformer" for all six, which reads as though
+every backend sits on the same footing. It does not
+(`docs/SCE_LUA_TRANSLATION_SEAM.md` carries the table):
+
+- Lowered at CODEGEN time, by the `to_lua_expr` / `to_lua_guard` /
+  `to_lua_script` filters in `sce-build/src/filters.rs`. The engine is handed
+  Lua and evaluates it as it stands:
+  - Python AOT — `lupa` (PyPI: lupa).
+  - Rust — `mlua` (PUC Lua bindings).
+  - Go — `gopher-lua`.
+  - C11 — Lua 5.4 directly.
+- Rewritten at RUN time, by a per-backend `EcmaScriptToLuaTransformer` inside
+  the engine, because the generated code hands it the author's ECMAScript:
+  - C++ — Lua 5.4 via the C API, under `SCE_SCRIPT_ENGINE=lua` only.
+  - Kotlin — JNI bindings, when `LuaScriptEngine` is the injected engine.
+
+Those two runtime rewriters are where the ECMA-262 divergences live
+(`tests/ecmascript/lua_engine_divergences.json`,
+`tests/ecmascript/kotlin_lua_divergences.json`). The four above them have
+none, which is the whole reason this distinction is worth spelling out.
 
 Generated `*_sm.py` modules call `IScriptEngine.evaluate_expression(...)`
 with **Lua text** (already transformed at codegen time). The Lua engine
