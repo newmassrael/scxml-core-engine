@@ -212,19 +212,46 @@ Two consequences for closing the ECMA-262 divergences:
 Measured 2026-08-28, before touching a template. The obvious order — split the
 C++ templates, then see what breaks — is wrong, and it fails silently.
 
-**The 26 sites that must move together.** These are the C++-owned template
-sites whose escaped text is handed to the engine. Of 83 `escape_cpp` uses,
-only these reach it; the rest are names, static values, log lines and host
-request fields.
+**38 sites must move together — and do NOT enumerate them by grepping for a
+filter.** This section first said 26, counted by looking for `escape_cpp` on
+an expression-bearing field. That method is wrong three ways, each of which
+hides sites rather than showing them:
 
-| Filter needed | Count | Sites |
-|---|---|---|
-| `to_lua_guard` | 5 | `process_transition.jinja2:638,705,720`; `actions/if.jinja2:13,24` |
-| `to_lua_expr` | 16 | `scriptengine_helpers.jinja2:73`; `datamodel_macros.jinja2:21` (via `DataModelInitHelper`); `invoke_methods.jinja2:190`; `entry_exit_actions.jinja2:267`; `actions/send.jinja2:74,107,181,263,433,448,502,531,629,707,898`; `actions/log.jinja2:10`; `actions/cancel.jinja2:14` |
-| `to_lua_script` / `to_lua_assign_content` / `to_lua_data_content` | 4 | `scriptengine_helpers.jinja2:80,153,212`; `actions/script.jinja2:13` |
+1. **A site can hand the engine raw source with no filter at all.**
+   `actions/foreach.jinja2:48,94` pass `{{ action.array }}` unfiltered to
+   `ForeachHelper::executeForeachWithActions` / `…WithoutBody`, which
+   evaluates it. No `escape_cpp`, so no filter-keyed scan can see them.
+2. **A helper can re-enter the engine with the ORIGINAL text.**
+   `ScriptResultUtils::resultToString(result, engine, sid, originalExpression)`
+   takes the expression for a `JSON.stringify` fallback on complex objects
+   (`sce/include/scripting/ScriptResultUtils.h:38`), so
+   `actions/send.jinja2:80,113,533,901`, `actions/log.jinja2:12` and
+   `entry_exit_actions.jinja2:269` reach the engine a second time.
+3. **A shape can appear twice.** `DataModelInitHelper::initializeVariableFromExpr`
+   is at `datamodel_macros.jinja2:20` *and* `scriptengine_helpers.jinja2:164`;
+   the first count caught only the one it happened to grep for.
+
+Count by ENTRY POINT instead — what the generated code calls to reach the
+engine — and re-derive rather than trusting this number:
+
+```sh
+# C++-owned templates = everything outside rust/ kotlin/ go/ python/ c/
+grep -rnE "evaluateExpression\(|safeEvaluateGuard\(|executeScript\(|initializeVariableFromExpr\(|resultToString\(|resultToStringArray\(|executeForeachWith" \
+  tools/codegen/templates/*.jinja2 tools/codegen/templates/actions/*.jinja2 \
+  tools/codegen/templates/_macros/*.jinja2
+```
+
+Measured 2026-08-28: **38** such sites carry a model expression
+(`cond` / `expr` / `content` / `typeexpr` / `targetexpr` / `sendidexpr` /
+`delayexpr` / `contentexpr` / `srcexpr` / `array`). ⚠ This method is itself
+shape-based: a NEW helper that evaluates on the caller's behalf would be
+missed the same way `ForeachHelper` and `resultToString` were. Whoever does
+the split should widen the entry-point list from
+`sce/include/scripting/` rather than assume this one is closed.
 
 Splitting a subset is not a smaller version of this change: the engine would
-receive Lua from some sites and ECMAScript from others, in one session.
+receive Lua from some sites and ECMAScript from others, in one session — and
+the sites easiest to miss are exactly the ones no filter marks.
 
 **The blocker.** `LuaEngine` transforms on every first evaluation. Its "fast
 path" (`LuaEngine.cpp:563`, `:598`) is a memo cache keyed on the *input
