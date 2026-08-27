@@ -44,9 +44,17 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # `--features cli` because `committed_sourcemap_drift`,
-# `diagnostic_corpus_schema` and `diagnostic_fix_is_applicable` drive the
-# real `sce-codegen` binary; the other targets do not need it and are
-# unaffected by its presence.
+# `diagnostic_corpus_schema`, `diagnostic_fix_is_applicable` and
+# `mesh_rpc_backend_contract` drive the real `sce-codegen` binary; the
+# other targets do not need it and are unaffected by its presence.
+#
+# `mesh_rpc_backend_contract` is here rather than left to the workspace
+# suite for the reason the whole list exists: what it reads is `SCE_MESH.md`
+# §9.5, `tools/codegen/templates/mesh/**` and a fixture under `tests/mesh/`,
+# and rust-workspace-tests.yml's `paths:` filter names none of the three. An
+# edit to the mesh roster would otherwise be held to the contract only by a
+# lane that edit cannot start. This workflow declares no filter, so it runs
+# on exactly the pushes such an edit arrives in.
 cargo test -p sce-build --features cli \
     --test roadmap_marker_gate \
     --test scope_terminology \
@@ -73,4 +81,5 @@ cargo test -p sce-build --features cli \
     --test mutation_rounds_selection \
     --test mutation_corpus_fits_its_lane \
     --test mutation_round_survives_the_next_push \
+    --test mesh_rpc_backend_contract \
     || sce_gate_fail "tree-wide hygiene gates"
