@@ -263,11 +263,28 @@ lowered Lua therefore runs the rewriter over the frontend's own output, and
 shifted **again**. That is an off-by-one with no diagnostic, which is worse
 than the divergences this change exists to remove.
 
-**`IScriptEngine` has no seam for it.** It declares exactly two evaluation
-entry points — `executeScript` and `evaluateExpression`
-(`sce/include/scripting/IScriptEngine.h:76,84`) — and both mean "the author's
-source". Nothing in `sce/include/scripting/` or `sce/src/scripting/` accepts
-pre-lowered text.
+**`IScriptEngine` has no seam for it, and the entry-point set is bigger than
+a grep of the templates suggests.** Derived from the headers rather than from
+call sites, because a method the templates do not call today is still surface
+the seam has to answer for:
+
+| Entry point | Where | Called by generated C++ today |
+|---|---|---|
+| `executeScript` | `IScriptEngine.h:76` | yes |
+| `evaluateExpression` | `IScriptEngine.h:84` | yes |
+| `validateExpression` | `IScriptEngine.h:93` | **no** — implemented by both engines, called by no template and nowhere in `sce/src` outside them |
+| `DataModelInitHelper::initializeVariableFromExpr` | `sce/include/core/` | yes (2 sites) |
+| `ForeachHelper::executeForeachWithActions` / `…WithoutBody` | `sce/include/core/ForeachHelper.h` | yes (2 sites, unfiltered) |
+| `ForeachHelper::setLoopVariableFromExpr` | `ForeachHelper.h:121` | no |
+| `ScriptResultUtils::resultToString(…, originalExpression)` | `ScriptResultUtils.h:38` | yes (6 sites) |
+| `ScriptResultUtils::resultToStringArray(…, originalExpression)` | `ScriptResultUtils.h:49` | no |
+
+All of them mean "the author's source", and nothing in
+`sce/include/scripting/` or `sce/src/scripting/` accepts pre-lowered text.
+This section previously said the interface had "exactly two evaluation entry
+points"; it has three, and `validateExpression` being dead surface is its own
+decision — extend it with the seam or retire it — rather than something to
+discover while implementing.
 
 **So the order is: seam, then templates.** The seam is a contract about *what
 language the string is*, which means an engine that cannot evaluate that
