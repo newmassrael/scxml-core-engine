@@ -28,6 +28,32 @@ doc (linked below).
 All six surfaces are currently **`pre-release`**. SCE has not yet made
 a stability promise on any of them.
 
+### What is not a row here
+
+A row in this table is a **serialized artifact**: a schema file checked into
+`schemas/` or `apis/`, carrying an `x-sce-schema-status` header, matched by a
+producer-side status constant, and validated against real instances.
+`sce-build/tests/wire_surface_stability.rs` keys the registry by that
+filename and walks `schemas/`/`apis/` in reverse so a schema cannot land
+without a row — which is also why something with no schema file cannot
+acquire one.
+
+So a **build-time refusal is not a surface here**, however contractual it is.
+`<invoke type="sce:mesh-rpc">` on a backend with no mesh arm is the worked
+example: it is a promise about what SCE will not silently accept, it has no
+serialization, no status constant and no instances to validate, and a row for
+it would be unkeyable by the very test that guards this table. Its contract
+lives where the refusal is derived from — `SCE_MESH.md` §9.5's
+backend-coverage table, derived from `tools/codegen/templates/mesh/<dir>/` and
+held to the template tree and the CLI by
+`sce-build/tests/mesh_rpc_backend_contract.rs`.
+
+The general rule: if a claim has no artifact on the wire, its home is the
+document that owns the behaviour, with a test binding it to the tree. This
+note exists because the question was asked and answered once already, and the
+answer was reached by reading `wire_surface_stability.rs` rather than by
+anything written down.
+
 ## Where to read the status
 
 The status signal lives in the **schema file header**, never in the
