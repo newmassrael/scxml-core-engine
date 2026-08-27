@@ -325,6 +325,14 @@ GATES: dict[str, dict] = {
         # it.
         "runner_workflow": True,
         "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
+        # The crate whose test suite this gate runs. `include-str-coverage`
+        # in the self-test reads it: every file the sources under this root
+        # `include_str!` is an input the suite asserts on, so some lane that
+        # runs the suite has to start when it changes. Declaring the root is
+        # the hand-written half; which paths it implies comes from the tree,
+        # so an `include_str!` added tomorrow is covered the day it is
+        # written rather than the day somebody remembers a list.
+        "include_str_roots": ["sce-build"],
         # 151s — half the budget for one gate, and the hardest of the four to
         # give up, so the reason is stated rather than left to the number.
         # This is the densest correctness net in the tree: every contract test
@@ -455,6 +463,29 @@ GATES: dict[str, dict] = {
                    "example-codegen.yml runs it.",
         "cost_s": 99,
         "summary": "example SCXML codegen smoke + authored-document lint",
+    },
+    # The lane that starts on a compiled-in INPUT rather than on Rust.
+    #
+    # `workspace-tests` runs the same library assertions, but its filter is
+    # narrow on purpose — it is 151s, half the push budget, and widening it
+    # to reach `sce/include/**`, `backends/**` and `tools/codegen/**` would
+    # start it on nearly every push. So the wide filter lives here, on a
+    # lane that only builds the library suite. Both gates declare the same
+    # `include_str_roots`, and `include-str-coverage` checks their UNION:
+    # what has to hold is that SOME lane running the suite starts for the
+    # path, which is exactly what splitting by cost is allowed to satisfy.
+    "doc-content": {
+        "workflows": ["doc-content-gate.yml"],
+        "runner_workflow": True,
+        "include_str_roots": ["sce-build"],
+        "ci_only": "the library suite plus its build, on a filter wide "
+                   "enough to reach every compiled-in input. It is here "
+                   "rather than in the push because the push already "
+                   "delegates the same assertions through workspace-tests; "
+                   "what this lane adds is the paths that lane does not "
+                   "start for. doc-content-gate.yml runs it.",
+        "cost_s": 60,
+        "summary": "sce-build lib suite, compiled-in inputs",
     },
     "ledger-citations": {
         "workflows": ["spec-citations.yml"],
@@ -1484,6 +1515,81 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             "ci-only-coverage: no ci_only gate declared a trigger to compare "
             "— the case read nothing")
+
+    # The question both lists above are blind to.
+    #
+    # `ci-only-coverage` compares a gate's list against its workflow's, and
+    # two lists can agree with each other while agreeing with nothing else.
+    # What decides whether a suite goes red is what its sources
+    # `include_str!`: those files are compiled into the test binary, so
+    # editing one changes what the suite asserts without touching a `.rs`.
+    # Measured 2026-08-27: nineteen such inputs reached NEITHER list —
+    # `SCE_ERROR_CONTRACT.md` and `SCE_MESH.md` among them — so a commit
+    # editing only those documents ran the test that judges them in no lane
+    # at all, and `contract_docs_cite_only_real_codes` exists to catch a
+    # phantom slug in exactly those two files.
+    #
+    # The check is a UNION over the gates that declare a root, not a
+    # per-gate one: what has to be true is that SOME lane running the suite
+    # starts for the path. Splitting the cheap assertions into a lane with a
+    # wide filter is a valid way to satisfy it, and a per-gate check would
+    # call that arrangement broken.
+    cases += 1
+    include_re = re.compile(r'include_str!\(\s*"([^"]+)"\s*\)')
+    triggers_by_slug = gate_triggers(repo_root)
+    roots: dict[str, list[str]] = {}
+    for slug in sorted(GATES):
+        for root_glob in GATES[slug].get("include_str_roots") or []:
+            roots.setdefault(root_glob, []).append(slug)
+    targets_seen = 0
+    for root_glob, owners in sorted(roots.items()):
+        # Each owner's reach: its triggers AND its workflow's filter, since
+        # a gate held out of the push only runs when the workflow starts.
+        reaches = []
+        for slug in owners:
+            wf_globs: list[str] = []
+            for wf in GATES[slug].get("workflows") or []:
+                wf_globs.extend(workflow_paths(repo_root, wf))
+            trig = [glob_to_regex(g) for g in triggers_by_slug.get(slug, [])]
+            if "**" in wf_globs:
+                reaches.append((slug, trig, None))
+            else:
+                reaches.append((slug, trig, [glob_to_regex(g) for g in wf_globs]))
+        for src in tracked_matching(repo_root, f"{root_glob}/**"):
+            if not src.endswith(".rs"):
+                continue
+            try:
+                text = (repo_root / src).read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for rel in include_re.findall(text):
+                resolved = (repo_root / src).parent.joinpath(rel).resolve()
+                try:
+                    path = str(resolved.relative_to(repo_root))
+                except ValueError:
+                    continue
+                targets_seen += 1
+                if any(
+                    any(p.match(path) for p in trig)
+                    and (wf is None or any(p.match(path) for p in wf))
+                    for _, trig, wf in reaches
+                ):
+                    continue
+                failures.append(
+                    f"include-str-coverage: {src} compiles in '{path}', but "
+                    f"no gate running the '{root_glob}' suite "
+                    f"({', '.join(owners)}) starts for that path. Editing it "
+                    f"changes what the suite asserts and no lane runs — widen "
+                    f"a covering workflow's `paths:`, or give the assertion a "
+                    f"lane whose filter reaches it.")
+    if not roots:
+        failures.append(
+            "include-str-coverage: no gate declared `include_str_roots` — "
+            "the case read nothing")
+    if targets_seen < 1:
+        failures.append(
+            "include-str-coverage: no `include_str!` target was found under "
+            "the declared roots — the case read nothing")
 
     # Rule 2, held rather than described. A gate with no CI counterpart
     # states why in a field, not in a comment a reader has to find and a
