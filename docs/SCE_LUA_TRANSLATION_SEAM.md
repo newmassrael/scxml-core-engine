@@ -207,6 +207,48 @@ Two consequences for closing the ECMA-262 divergences:
    candidate route — `sce-build/Cargo.toml:138` records that nothing in-tree
    consumes it, and `sce-build-wasm` has already built that wrapping once.
 
+## Moving C++ across: the engine seam comes first, and here is why
+
+Measured 2026-08-28, before touching a template. The obvious order — split the
+C++ templates, then see what breaks — is wrong, and it fails silently.
+
+**The 26 sites that must move together.** These are the C++-owned template
+sites whose escaped text is handed to the engine. Of 83 `escape_cpp` uses,
+only these reach it; the rest are names, static values, log lines and host
+request fields.
+
+| Filter needed | Count | Sites |
+|---|---|---|
+| `to_lua_guard` | 5 | `process_transition.jinja2:638,705,720`; `actions/if.jinja2:13,24` |
+| `to_lua_expr` | 16 | `scriptengine_helpers.jinja2:73`; `datamodel_macros.jinja2:21` (via `DataModelInitHelper`); `invoke_methods.jinja2:190`; `entry_exit_actions.jinja2:267`; `actions/send.jinja2:74,107,181,263,433,448,502,531,629,707,898`; `actions/log.jinja2:10`; `actions/cancel.jinja2:14` |
+| `to_lua_script` / `to_lua_assign_content` / `to_lua_data_content` | 4 | `scriptengine_helpers.jinja2:80,153,212`; `actions/script.jinja2:13` |
+
+Splitting a subset is not a smaller version of this change: the engine would
+receive Lua from some sites and ECMAScript from others, in one session.
+
+**The blocker.** `LuaEngine` transforms on every first evaluation. Its "fast
+path" (`LuaEngine.cpp:563`, `:598`) is a memo cache keyed on the *input
+string*, not a bypass for text that is already Lua — the slow path calls
+`transformer_.transformScript` / `transform` unconditionally. Feeding it
+lowered Lua therefore runs the rewriter over the frontend's own output, and
+`transformArrayIndexing` (`EcmaScriptToLuaTransformer.cpp:1101`) rewrites
+`arr[0]` to `arr[0 + 1]` — so an index the frontend already made 1-based is
+shifted **again**. That is an off-by-one with no diagnostic, which is worse
+than the divergences this change exists to remove.
+
+**`IScriptEngine` has no seam for it.** It declares exactly two evaluation
+entry points — `executeScript` and `evaluateExpression`
+(`sce/include/scripting/IScriptEngine.h:76,84`) — and both mean "the author's
+source". Nothing in `sce/include/scripting/` or `sce/src/scripting/` accepts
+pre-lowered text.
+
+**So the order is: seam, then templates.** The seam is a contract about *what
+language the string is*, which means an engine that cannot evaluate that
+language must refuse rather than try — QuickJS handed Lua is the case, and the
+mesh-rpc refusal in `sce-build/src/generator.rs` is the shape that refusal
+should take. Only once an engine can be handed lowered text safely does
+`--script-engine lua` have anywhere to send it.
+
 ## What is not yet decided
 
 - The C++ **Interpreter** has no build step at all, so it cannot receive
