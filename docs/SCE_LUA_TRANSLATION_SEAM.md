@@ -622,19 +622,114 @@ outcome. The probe's language-correctness is observable only where it is asked
 directly. That is a limit of the helper's shape, not of the gate, and it is
 recorded here so nobody re-derives it as a gap.
 
+## Landed 2026-08-28: the target engine is a codegen input
+
+`sce-codegen generate --script-engine lua|ecmascript` (and the same on
+`check`, because the flag is verdict-bearing). Omit it and every backend emits
+for the engine it already emitted for, so a run that does not ask is
+byte-identical to one from before the flag existed.
+
+`ScriptEngineTarget` is the type; its spellings ARE the manifest's
+`script_engine_language` vocabulary, so the value a host reads and the value
+the run selected cannot become two names for one answer. The manifest now
+reports the **selection**, falling back to the backend's derived default —
+reporting the default over a selection would tell a host to supply the engine
+the machine was *not* generated for, which is the mis-supply that field exists
+to prevent.
+
+**The pair is emitted by one filter or not at all.**
+`to_script_source_expr` / `_guard` / `_script` emit a complete
+`::SCE::ScriptSource::ecmascript("…")` or `::SCE::ScriptSource::lua("…", "…")`.
+A template site that assembled the two arguments by hand would be one edit
+away from lowering one half and not the other, and every diagnostic the
+artifact raised would then name a language the author never wrote. The filters
+close over the run's selection rather than reading it from the render context:
+a template that could ask is a template that could ask *inconsistently*.
+The lowering half is fallible and its refusal propagates — falling back to the
+author's text on a parse error would emit an artifact half in each language
+and say nothing.
+
+### The refusal, and why it is not a lint
+
+A backend that cannot honour the request refuses. Both directions, and each
+names its own reason, because naming the wrong one sends a reader to the wrong
+repair:
+
+- **Rust / Go / Python / C11 asked for `ecmascript`** — no template arm emits
+  the author's source. Nothing walks that way yet; building one is a template
+  change, not a flag.
+- **C++ asked for `lua`** — refused *while any site remains*, and the refusal
+  lists them. This is the case with teeth. This document already states the
+  hazard: splitting a subset is not a smaller version of the change, because
+  the engine would receive Lua from some sites and ECMAScript from others **in
+  one session**, with no diagnostic anywhere saying so. So a half-migrated
+  backend must refuse, and the refusal is derived from a count taken off the
+  template tree — it lifts by itself when the last site moves, the way the
+  mesh-rpc refusal lifts when `templates/mesh/<lang>/` appears.
+
+### 29 sites, and why that is not 38
+
+`Language::unmigrated_expression_sites()` counts, and it counts **by model
+field**, not by call shape — the lesson the 38-site count paid for twice. A
+filter-keyed scan misses `{{ action.array }}`, passed with no filter at all; an
+entry-point-keyed scan misses a helper nobody thought to list. The author's
+text can only reach a template through one of these fields, so asking which
+interpolations mention one catches both shapes.
+
+Measured 2026-08-28: **29** distinct `(template, interpolation)` pairs. That is
+not in conflict with this document's 38 — 38 counts CALL SITES, and one
+interpolation serves several. 29 is the number of template edits the migration
+actually needs.
+
+Two corrections the scan needed, both measured rather than assumed:
+
+- **Word boundaries.** `trans.cond_cpp` is the *natively lowered* guard, a C++
+  expression the engine never sees. A substring test for `.cond` reported it as
+  an unmigrated script site and would have held the refusal shut forever over
+  something that was never on the wrong side of the seam.
+- **`forge/` is out of scope.** C++ owns everything no other backend claims, and
+  that complement includes `forge/` — which has its own per-language
+  directories and whose `expr` / `cond` are Forge AST fields emitted as native
+  code (`forge/cpp/procedure.h.jinja2` renders `if ({{ tr.cond }})` and names no
+  engine entry point at all). Ownership and "does this reach an engine" are
+  different questions.
+
+`sce-build/tests/script_engine_target_input.rs` holds all of it (9 cases).
+Breaking the pair filter (one half into both) and the migration scan (read
+nothing) turns **3** red.
+
+⚠ The scan case needed a second pass to be worth anything. Its first cut asked
+`supports_script_engine_target` in the empty-scan branch — which reads the SAME
+scan, so breaking the scanner made both answers say "migration complete" and
+left the case green. It now asks the independent question
+(`migrated_expression_sites()` must be non-empty), and *that* catches it. A
+gate whose two halves share a source is not a gate.
+
 ## What is not yet decided
 
 - ~~The six helper entry points.~~ **Done 2026-08-28** — and there were eight
-  helpers, not three; see "Landed 2026-08-28: the helpers" below. What is left
-  is the 38 template sites themselves: every one still emits the author's
-  ECMAScript, which the implicit `ScriptSource` reading preserves exactly.
-  Moving them needs the codegen to know its target engine, which is the
-  undecided item below.
+  helpers, not three; see "Landed 2026-08-28: the helpers" below.
+- ~~Whether the target engine becomes a codegen argument.~~ **Decided and
+  landed 2026-08-28**: `--script-engine`, defaulting to each backend's derived
+  answer. See "the target engine is a codegen input" below.
+- **The 29 C++ template sites.** Every one still emits the author's ECMAScript,
+  which the implicit `ScriptSource` reading preserves exactly, and
+  `--script-engine lua` on C++ is refused until the last one moves. Route each
+  through `to_script_source_*`; `sce-codegen generate -l cpp --script-engine
+  lua` prints the remaining list.
+  ⚠ The migration's failure mode is NOT a build error: a site left behind
+  compiles and quietly keeps the old behaviour. Count progress by sites the
+  scan still names, and check each moved site for a hand-written ECMAScript
+  wrapper that should have gone through `ScriptDialect`.
 - The C++ **Interpreter** has no build step at all, so it cannot receive
   build-time-translated text by this route. `sce-build`'s cdylib is the
   candidate answer — `Cargo.toml` records that there is no in-tree consumer of
   it today, and `sce-build-wasm` has already built that wrapping once.
-- Whether the target engine becomes a codegen argument, a per-artifact variant,
-  or a runtime-selected pair of emissions.
+- ~~Whether the target engine becomes a codegen argument, a per-artifact
+  variant, or a runtime-selected pair of emissions.~~ **Answered 2026-08-28:
+  a codegen argument.** The other two were not chosen against so much as ruled
+  out by what the artifact is — a Lua-shaped artifact can only run on a Lua
+  engine, so the choice has to be made where the artifact is produced, and it
+  has to be reported on the manifest for the host that will supply the engine.
 
-This file records the measurement, not that decision.
+This file records the measurement, and now also the decisions taken on it.

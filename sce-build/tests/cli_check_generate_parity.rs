@@ -355,6 +355,18 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "selects one partition of a deploy topology",
     ),
     f(
+        "--script-engine",
+        Reach::Verdict,
+        None,
+        "rust",
+        "names the language the generated machine hands its script engine, and \
+         a backend that cannot emit for it REFUSES — `rust` asked for \
+         `ecmascript` has no source-emitting template arm, and `cpp` asked for \
+         `lua` is refused while any site still hands the engine the author's \
+         text. It also moves the manifest's `script_engine_language`, which is \
+         what a host reads to know which engine to supply",
+    ),
+    f(
         "--source-root",
         Reach::Emission,
         Some(&["--source-root", "."]),
