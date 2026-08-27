@@ -31,14 +31,21 @@ already does once, in the build-time frontend that every backend uses."*
 both. Sites are the guard emission; the `expr` column names one representative
 site of the same shape.
 
-| Backend | Guard site | Filter chain | Hands the engine |
+<!-- sce:lua-translation-seam — parsed by sce-build/tests/script_engine_language_parity.rs -->
+
+| `--lang` | Guard site | Filter chain | Hands the engine |
 |---|---|---|---|
-| **C++** | `tools/codegen/templates/process_transition.jinja2:638` | `{{ trans.cond \| escape_cpp }}` | **ECMAScript source** |
-| **Kotlin** | `tools/codegen/templates/kotlin/transition_actions.kt.jinja2:24` | `{{ trans.cond \| escape_kotlin }}` | **ECMAScript source** |
-| Rust | `tools/codegen/templates/rust/state_machine.rs.jinja2:996` | `{{ trans.cond \| to_lua_guard \| escape_rust }}` | translated Lua |
-| Go | `tools/codegen/templates/go/process_transition.go.jinja2:170` | `` {{ trans.cond \| to_lua_guard }} `` | translated Lua |
-| Python | `tools/codegen/templates/python/process_transition.py.jinja2:35` | `{{ transition.cond \| to_lua_guard \| py_string_literal }}` | translated Lua |
-| C11 | `tools/codegen/templates/c/state_machine.c.jinja2:3554` → `se.lua_eval_guard` | `{{ cond \| to_lua_guard \| escape_c }}` (`c/scriptengine.jinja2:612`) | translated Lua |
+| `cpp` | `tools/codegen/templates/process_transition.jinja2:638` | `{{ trans.cond \| escape_cpp }}` | **ECMAScript source** |
+| `kotlin` | `tools/codegen/templates/kotlin/transition_actions.kt.jinja2:24` | `{{ trans.cond \| escape_kotlin }}` | **ECMAScript source** |
+| `rust` | `tools/codegen/templates/rust/state_machine.rs.jinja2:996` | `{{ trans.cond \| to_lua_guard \| escape_rust }}` | translated Lua |
+| `go` | `tools/codegen/templates/go/process_transition.go.jinja2:170` | `` {{ trans.cond \| to_lua_guard }} `` | translated Lua |
+| `python` | `tools/codegen/templates/python/process_transition.py.jinja2:35` | `{{ transition.cond \| to_lua_guard \| py_string_literal }}` | translated Lua |
+| `c11` | `tools/codegen/templates/c/state_machine.c.jinja2:3554` → `se.lua_eval_guard` | `{{ cond \| to_lua_guard \| escape_c }}` (`c/scriptengine.jinja2:612`) | translated Lua |
+
+The first column is the `--lang` spelling rather than a display name because
+`script_engine_language_parity` parses this table and compares it with what
+the code derives — three surfaces (this table, the manifest field, the field's
+doc) held to one answer instead of agreeing by inspection.
 
 Representative `expr` sites, same split: C++ `datamodel_macros.jinja2:21`
 (`escape_cpp`), Kotlin `kotlin/scriptengine_helpers.kt.jinja2:49`
