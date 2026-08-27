@@ -992,13 +992,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 return std::nullopt;
             };
 
-            auto isParallelState = [this](const std::string &stateId) -> bool {
-                auto stateNode = model_->findStateById(stateId);
-                return stateNode && stateNode->getType() == Type::PARALLEL;
-            };
-
-            descriptors =
-                ConflictResolutionAlgorithms::removeConflictingTransitions(descriptors, getParent, isParallelState);
+            descriptors = ConflictResolutionAlgorithms::removeConflictingTransitions(descriptors, getParent);
 
             SCE_LOG_DEBUG("StateMachine: After conflict resolution: {} transitions in optimal set", descriptors.size());
 
@@ -3095,12 +3089,7 @@ bool StateMachine::checkEventlessTransitions() {
             return stateNode->getParent()->getId();
         };
 
-        auto isParallelStateFunc = [&stateCache](const std::string &stateId) -> bool {
-            auto stateNode = stateCache[stateId];
-            return stateNode && stateNode->getType() == Type::PARALLEL;
-        };
-
-        auto filtered = Helper::removeConflictingTransitions(descriptors, getParentFunc, isParallelStateFunc);
+        auto filtered = Helper::removeConflictingTransitions(descriptors, getParentFunc);
 
         // Rebuild enabledTransitions with filtered set
         std::vector<TransitionInfo> filteredTransitions;

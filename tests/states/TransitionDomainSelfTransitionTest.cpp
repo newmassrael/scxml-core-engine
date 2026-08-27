@@ -196,12 +196,59 @@ TEST(TransitionDomainSelfTransition, ASelfTransitionDoesNotPreemptASiblingRegion
     EXPECT_TRUE(hasSource(S::Within));
 }
 
+TEST(TransitionDomainSelfTransition, IntersectionAloneReachesTheAppendixVerdict) {
+    // §scxml-D-removeConflictingTransitions tests ONE thing: whether the two
+    // exit sets intersect. Three rules used to sit beside it in this engine — a
+    // target/source equality check and a `<parallel>`-ancestor check each way —
+    // and this is the case they existed for, so it is the case that says whether
+    // removing them was safe.
+    //
+    // `working -> within` crosses from one region of `run` to the other. `run`
+    // is a `<parallel>` and so not a domain candidate, so §scxml-D-findLCCA
+    // walks past it: the domain is the `<scxml>` element, the transition tears
+    // the whole `<parallel>` down, and the other region's transition must be
+    // preempted by it.
+    using CR = Core::ConflictResolutionHelper<EnumPolicy>;
+
+    CR::TransitionDescriptor crossRegion(S::Working, S::Within);
+    crossRegion.exitSet = CR::computeExitSet(S::Working, S::Within, false, false, kConfiguration);
+
+    CR::TransitionDescriptor sibling(S::Within, S::Within);
+    sibling.exitSet = CR::computeExitSet(S::Within, S::Within, false, false, kConfiguration);
+
+    const auto selected = CR::removeConflictingTransitions({crossRegion, sibling});
+
+    ASSERT_EQ(selected.size(), 1u)
+        << "the sibling region's transition survived a transition that exits the whole `<parallel>`. "
+           "§scxml-D-computeExitSet puts every active state below the `<scxml>` domain in the first "
+           "transition's exit set, `within` among them, so the sets intersect and the appendix "
+           "preempts the one whose source is not a descendant of the other's.";
+    EXPECT_EQ(selected.front().source, S::Working);
+
+    // Why the order had to be "exit set first, rules second". Assembled from one
+    // region's own leaf-to-domain chain — what this engine did before — the same
+    // transition's exit set is `{working, running, drive, run}` and the sibling's
+    // is `{within}`. Those are DISJOINT, so the appendix rule alone acquits, and
+    // the `<parallel>`-ancestor rule was the only thing reaching the right
+    // verdict. Removing it while the set was still chain-shaped would have
+    // silently un-preempted the sibling region.
+    const std::vector<S> chainShaped = {S::Working, S::Running, S::Drive, S::Run};
+    const std::vector<S> siblingChain = {S::Within};
+    EXPECT_FALSE(Core::ConflictResolutionAlgorithms::hasIntersection(chainShaped, siblingChain))
+        << "a chain-shaped exit set was supposed to be unable to reach the sibling region — if these "
+           "now intersect, the premise this whole ordering rested on has changed";
+    EXPECT_TRUE(Core::ConflictResolutionAlgorithms::hasIntersection(crossRegion.exitSet, sibling.exitSet))
+        << "the appendix's configuration-shaped set is what makes the intersection true";
+}
+
 // ── §scxml-D-computeExitSet is read off the configuration ────────────────────
 //
-// The three below pin the procedure itself rather than an outcome, because the
-// outcome is already held up by a rule about `<parallel>` ancestors that
-// `removeConflictingTransitions` applies on top of the intersection. That rule
-// is not in the appendix; it stands in for the states this set was failing to
+// The three below pin the procedure itself rather than an outcome. They were
+// written while `removeConflictingTransitions` still applied a rule about
+// `<parallel>` ancestors on top of the intersection, which reached the same
+// outcome on its own and hid the set underneath. That rule is gone now — see
+// `IntersectionAloneReachesTheAppendixVerdict` for why it could only go after
+// this set was right. It stood in for the states this set was failing to
 // name. Nothing can be said about removing it until the set underneath is the
 // appendix's, and these are what say so.
 

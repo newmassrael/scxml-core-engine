@@ -3390,18 +3390,11 @@ SCE_SM_FN static SCE_C_UNUSED uint32_t compute_exit_set(uint32_t active,
 
 /* W3C SCXML App.D removeConflictingTransitions — full algorithm mirror.
    Walks the input list in document order; each new transition t1 is
-   compared against the already-filtered list. On conflict, the
-   preemption rule decides which side survives:
-     - t1.target == t2.source         → drop t2 (t1 enters t2's source, t2's exit absorbed)
-     - t2.target == t1.source         → drop t1 (reverse)
+   compared against the already-filtered list. Conflict is exit-set
+   bitmap intersection and nothing else; on conflict the preemption
+   rule decides which side survives:
      - t1.source descends from t2.src → drop t2 (t1 deeper, preempts)
      - else                           → drop t1 (t2 deeper or equal-depth-doc-prior)
-   Conflict criteria (any one):
-     a) exit-set bitmap intersection
-     b) target/source equality (handles dup parent transitions reached
-        from converging region leaves — test403b adversarial fixture)
-     c) one transition exits a parallel ancestor of the other's source,
-        unless the other is an internal self-loop (W3C 3.13 exception)
    Mirrors cpp ConflictResolutionAlgorithms::removeConflictingTransitions.
    Working buffer reuses the SCE_MAX_ENABLED_TRANSITIONS cap so no
    heap traffic; final result copied back into the caller's list. */
@@ -3412,6 +3405,34 @@ SCE_SM_FN static SCE_C_UNUSED uint8_t remove_conflicting_transitions({{ csym_pre
 
     for (uint8_t k = 0u; k < count; ++k) {
         {{ csym_prefix }}{{ model.name }}_transition_info_t t1 = list[k];
+
+        /* Appendix D selectTransitions: the enabled set is an ORDERED SET,
+           and the same transition reached from two different region leaves
+           is ONE element of it, not two. A transition written on a
+           <parallel>, or on an ancestor above one, is selected once per
+           region by the bubbling walk, so this is the ordinary case rather
+           than an edge one -- W3C test 403b turns on a <parallel>-level
+           <assign> running exactly once.
+
+           Selection stops at the first enabled transition of a state, so
+           within one microstep a source contributes at most one transition
+           and (source, target) identifies it. This is what the removed
+           target/source criterion was standing in for: a targetless
+           duplicate is spelled source -> source, so `t1.target ==
+           t2->source` happened to fire on it and drop the copy. That is
+           the set semantics stated where they belong, and it does not
+           depend on how a targetless transition is spelled. */
+        bool already_selected = false;
+        for (uint8_t d = 0u; d < filtered_count; ++d) {
+            if (filtered[d].source == t1.source && filtered[d].target == t1.target) {
+                already_selected = true;
+                break;
+            }
+        }
+        if (already_selected) {
+            continue;
+        }
+
         bool t1_preempted = false;
         bool to_remove[SCE_MAX_ENABLED_TRANSITIONS];
         for (uint8_t r = 0u; r < (uint8_t)SCE_MAX_ENABLED_TRANSITIONS; ++r) {
@@ -3420,61 +3441,32 @@ SCE_SM_FN static SCE_C_UNUSED uint8_t remove_conflicting_transitions({{ csym_pre
 
         for (uint8_t i = 0u; i < filtered_count; ++i) {
             {{ csym_prefix }}{{ model.name }}_transition_info_t *t2 = &filtered[i];
-            bool has_conflict = false;
 
-            /* (a) exit-set intersection */
-            if ((t1.exit_set & t2->exit_set) != 0u) {
-                has_conflict = true;
+            /* Appendix D removeConflictingTransitions: two transitions
+               conflict when their EXIT SETS intersect. That is the whole
+               test the appendix states, and it is now the whole test here.
+
+               Two more criteria used to stand beside it — target/source
+               equality, and a <parallel>-ancestor scan in each direction —
+               and neither is in the appendix. They stood in for exit sets
+               that could not name a sibling region; this backend already
+               computes the set over `active`, and the other engines do now
+               too, so the bitmap AND answers on its own.
+
+               A transition that exits nothing (exit_set == 0) still
+               conflicts with nothing, which is a targetless transition and
+               is what W3C test 403c means by "this transition never gets
+               preempted, should fire twice". */
+            if ((t1.exit_set & t2->exit_set) == 0u) {
+                continue;
             }
 
-            /* (b) target/source equality — dedups duplicate parent
-                  transitions reached from converging bubble paths. */
-            if (!has_conflict) {
-                if (t1.target == t2->source || t2->target == t1.source) {
-                    has_conflict = true;
-                }
-            }
-
-            /* (c) t1 exits a <parallel> ancestor of t2->source.
-                  Internal self-loops (source==target with type=internal)
-                  are exempt — they do not really exit any state. */
-            if (!has_conflict && !(t2->is_internal && t2->source == t2->target)) {
-                for (uint32_t j = 0u; j < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++j) {
-                    if ((t1.exit_set & ((uint32_t)1u << j)) == 0u) {
-                        continue;
-                    }
-                    {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)j;
-                    if (state_is_parallel(s) && is_descendant_of(t2->source, s)) {
-                        has_conflict = true;
-                        break;
-                    }
-                }
-            }
-
-            /* (c) reverse — t2 exits a <parallel> ancestor of t1.source. */
-            if (!has_conflict && !(t1.is_internal && t1.source == t1.target)) {
-                for (uint32_t j = 0u; j < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++j) {
-                    if ((t2->exit_set & ((uint32_t)1u << j)) == 0u) {
-                        continue;
-                    }
-                    {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)j;
-                    if (state_is_parallel(s) && is_descendant_of(t1.source, s)) {
-                        has_conflict = true;
-                        break;
-                    }
-                }
-            }
-
-            if (has_conflict) {
-                if (t1.target == t2->source) {
-                    to_remove[i] = true;
-                } else if (t2->target == t1.source) {
-                    t1_preempted = true;
-                } else if (is_descendant_of(t1.source, t2->source)) {
-                    to_remove[i] = true;
-                } else {
-                    t1_preempted = true;
-                }
+            /* Appendix D: the descendant source wins. */
+            if (is_descendant_of(t1.source, t2->source)) {
+                to_remove[i] = true;
+            } else {
+                t1_preempted = true;
+                break;
             }
         }
 
