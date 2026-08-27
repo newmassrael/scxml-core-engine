@@ -385,8 +385,21 @@ against C++'s three, and the same W3C semantics riding on them.
 So the same rule holds on both: skip only the rewrite, keep the
 `ReferenceError` check and the `return` wrapping. The extra two sites
 (`assign`, `executeForeach`) are places C++ reaches through helpers rather
-than through the engine directly, which is why the counts differ — the work
-is the same, distributed differently.
+than through the engine directly, which is why the transform counts differ.
+
+⚠ **But the work is NOT "the same, distributed differently", as this
+paragraph used to end.** Re-measured 2026-08-28 while landing the C++ seam,
+the SOURCE half is load-bearing in far more places on Kotlin. C++'s
+`LuaEngine` names the expression at exactly **two** sites — the
+`ReferenceError` and the debug log — and returns Lua's own message everywhere
+else. Kotlin's `LuaScriptEngine` formats its own failures and interpolates the
+author's text at **eight**: `:155`, `:175`, `:178` (`evaluateExpr`), `:231`,
+`:238`, `:244` (`assign`, all three assignment paths) and `:308`, `:313`
+(`executeForeach`, `$array`). Every one of them would name lowered Lua under a
+one-string entry point. Whoever does the Kotlin seam should count from
+`ScriptEngineException("` rather than from the transform calls: the transform
+sites say where the rewrite is skipped, and these say where the source is
+still needed afterwards.
 
 **So the seam cannot be a one-string signature.** Measured 2026-08-28 at
 `LuaEngine.cpp:618-626` and `LuaScriptEngine.kt:151-155`: both engines run the
