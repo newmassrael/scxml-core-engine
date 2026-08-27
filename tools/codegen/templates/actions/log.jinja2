@@ -7,7 +7,7 @@
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
-    auto logResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ action.expr | escape_cpp }}").get();
+    auto logResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.expr | to_script_source_expr }}).get();
     if (::SCE::ScriptResultUtils::isSuccess(logResult)) {
         SCE_LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::SCE::ScriptResultUtils::resultToString(logResult));
     } else {

@@ -875,14 +875,31 @@ fn resolve_script_engine_target(
     match target {
         ScriptEngineTarget::Lua => {
             let remaining = lang.unmigrated_expression_sites();
-            message.push_str(&format!(
-                ". {} template site(s) still hand the engine the author's text without the \
-                 (lowered, source) pair filter, and a partial migration would hand one engine \
-                 two languages in one session. Route each through `to_script_source_*` and this \
-                 refusal lifts by itself:\n  {}",
-                remaining.len(),
-                remaining.join("\n  ")
-            ));
+            let unknown = lang.unclassified_expression_sites();
+            message.push_str(
+                ". A partial migration would hand one engine two languages in one session, \
+                 with no diagnostic saying so, so this refuses until every site is accounted \
+                 for.",
+            );
+            if !remaining.is_empty() {
+                message.push_str(&format!(
+                    "\n\n{} site(s) still hand the engine the author's text without the \
+                     (lowered, source) pair filter — route each through `to_script_source_*`:\n  {}",
+                    remaining.len(),
+                    remaining.join("\n  ")
+                ));
+            }
+            if !unknown.is_empty() {
+                message.push_str(&format!(
+                    "\n\n{} site(s) mention a model expression and reach a callee this build \
+                     does not know. Each needs a decision ONCE: if the callee evaluates, add it \
+                     to `ENGINE_ENTRY_POINTS` and route the site through `to_script_source_*`; \
+                     if it does not (a name, a validation, a literal), say so where it is \
+                     used:\n  {}",
+                    unknown.len(),
+                    unknown.join("\n  ")
+                ));
+            }
         }
         ScriptEngineTarget::EcmaScript => {
             message.push_str(
