@@ -16,6 +16,7 @@
 
 #pragma once
 #include "core/LogMacros.h"
+#include "scripting/ScriptDialect.h"
 #include "scripting/ScriptResultUtils.h"
 #include <optional>
 #include <stdexcept>
@@ -119,7 +120,7 @@ public:
      */
     template <typename JSEngineType>
     static inline bool setLoopVariableFromExpr(JSEngineType &jsEngine, const std::string &sessionId,
-                                               const std::string &varName, const std::string &expr) {
+                                               const std::string &varName, const ScriptSource &expr) {
         try {
             if (!isLegalVariableName(varName)) {
                 SCE_LOG_ERROR("W3C FOREACH: Illegal variable name '{}'", varName);
@@ -130,15 +131,17 @@ public:
             if (evalResult.isSuccess()) {
                 auto setResult = jsEngine.setVariable(sessionId, varName, evalResult.getInternalValue()).get();
                 if (setResult.isSuccess()) {
-                    SCE_LOG_DEBUG("Set foreach variable: {} = {}", varName, expr);
+                    SCE_LOG_DEBUG("Set foreach variable: {} = {}", varName, expr.source());
                     return true;
                 }
             }
 
-            // Fallback: try as string literal
-            auto setStrResult = jsEngine.setVariable(sessionId, varName, ScriptValue(expr)).get();
+            // Fallback: try as string literal. The AUTHOR'S text is the literal
+            // — an expression that would not evaluate becomes the string the
+            // document wrote, not the string a lowering produced from it.
+            auto setStrResult = jsEngine.setVariable(sessionId, varName, ScriptValue(expr.source())).get();
             if (!setStrResult.isSuccess()) {
-                SCE_LOG_ERROR("Failed to set foreach variable {} = {}", varName, expr);
+                SCE_LOG_ERROR("Failed to set foreach variable {} = {}", varName, expr.source());
                 return false;
             }
             return true;
@@ -164,9 +167,9 @@ public:
      */
     template <typename JSEngineType>
     static inline std::optional<std::vector<ScriptValue>>
-    evaluateForeachArray(JSEngineType &jsEngine, const std::string &sessionId, const std::string &arrayExpr) {
+    evaluateForeachArray(JSEngineType &jsEngine, const std::string &sessionId, const ScriptSource &arrayExpr) {
         // §scxml-4.6: Array expression must be non-empty
-        if (arrayExpr.empty()) {
+        if (arrayExpr.text().empty()) {
             SCE_LOG_ERROR("Foreach array attribute is missing or empty");
             return std::nullopt;
         }
@@ -174,7 +177,7 @@ public:
         auto arrayResult = jsEngine.evaluateExpression(sessionId, arrayExpr).get();
 
         if (!arrayResult.isSuccess()) {
-            SCE_LOG_ERROR("Failed to evaluate array expression: {}", arrayExpr);
+            SCE_LOG_ERROR("Failed to evaluate array expression: {}", arrayExpr.source());
             return std::nullopt;
         }
 
@@ -192,11 +195,15 @@ public:
                 }
             }
 
-            std::string arrayCheckExpr = "(" + arrayExpr + ") instanceof Array";
-            auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, arrayCheckExpr).get();
+            // The probe is composed through the dialect table, not spelled
+            // inline: `instanceof Array` is ECMAScript, and this is one of the
+            // two composition sites the GENERATED path actually reaches, so a
+            // pre-lowered array expression would otherwise be wrapped in a
+            // language it is not written in.
+            auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, ScriptDialect::isArray(arrayExpr)).get();
             if (!arrayCheckResult.isSuccess() || !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
                 !std::get<bool>(arrayCheckResult.getInternalValue())) {
-                SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr);
+                SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr.source());
                 return std::nullopt;
             }
         }
@@ -256,7 +263,7 @@ public:
      */
     template <typename JSEngineType>
     static inline bool executeForeachWithoutBody(JSEngineType &jsEngine, const std::string &sessionId,
-                                                 const std::string &arrayExpr, const std::string &itemVar,
+                                                 const ScriptSource &arrayExpr, const std::string &itemVar,
                                                  const std::string &indexVar) {
         auto arrayValuesOpt = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
         if (!arrayValuesOpt.has_value()) {
@@ -343,7 +350,7 @@ public:
      */
     template <typename JSEngineType, typename BodyFunc>
     static inline bool executeForeachWithActions(JSEngineType &jsEngine, const std::string &sessionId,
-                                                 const std::string &arrayExpr, const std::string &itemVar,
+                                                 const ScriptSource &arrayExpr, const std::string &itemVar,
                                                  const std::string &indexVar, BodyFunc &&executeBody) {
         // Evaluate array expression — returns ScriptValue elements directly (no string round-trip)
         auto arrayValuesOpt = evaluateForeachArray(jsEngine, sessionId, arrayExpr);

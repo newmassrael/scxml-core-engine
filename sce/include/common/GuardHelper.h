@@ -37,12 +37,14 @@ namespace SCE::GuardHelper {
  *                                true/false if evaluation succeeded
  */
 inline std::optional<bool> evaluateGuard(IScriptEngine &jsEngine, const std::string &sessionId,
-                                         const std::string &guardExpr) {
+                                         const ScriptSource &guardExpr) {
     auto guardResult = jsEngine.evaluateExpression(sessionId, guardExpr).get();
 
     if (!guardResult.isSuccess()) {
         // §scxml-5.9: Evaluation errors → caller must raise error.execution
-        SCE_LOG_WARN("W3C SCXML 5.9: Guard evaluation failed: {}", guardExpr);
+        // Named by what the author wrote, not by what the engine was handed:
+        // a lowered guard in this line points at a line nobody can find.
+        SCE_LOG_WARN("W3C SCXML 5.9: Guard evaluation failed: {}", guardExpr.source());
         return std::nullopt;  // Signal evaluation failure
     }
 
