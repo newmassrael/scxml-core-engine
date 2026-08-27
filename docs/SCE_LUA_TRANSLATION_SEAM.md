@@ -515,14 +515,121 @@ call, so nothing in the tree crosses the seam in anger. The 38 sites are the
 next step, and the entry-point list they must widen from is
 `sce/include/scripting/` — not this document's table.
 
+## Landed 2026-08-28: the helpers, and the set was not the one named
+
+The helper row of the table above named three — `DataModelInitHelper`,
+`ForeachHelper`, `ScriptResultUtils`. Re-derived from the tree rather than from
+that list, the generated C++ calls **eight**:
+
+```sh
+# which helpers the C++-owned templates actually call
+for h in DataModelInitHelper ForeachHelper ScriptResultUtils \
+         AssignmentExecutionHelper DataModelReadHelper DoneDataHelper \
+         FinalizeHelper GuardHelper; do
+  grep -rhoE "$h::[A-Za-z_]+" tools/codegen/templates/*.jinja2 \
+       tools/codegen/templates/actions/*.jinja2 \
+       tools/codegen/templates/_macros/*.jinja2 | sort -u
+done
+```
+
+`AssignmentExecutionHelper`, `DoneDataHelper`, `FinalizeHelper`,
+`GuardHelper` and `DataModelReadHelper` were the five nobody had counted —
+which is the failure mode this document predicted in the same breath as the
+38: *"a NEW helper that evaluates on the caller's behalf would be missed the
+same way"*. All eight now take a `ScriptSource` on every parameter that
+carries the author's text.
+
+**A bare string still means the author's ECMAScript.** `ScriptSource` gained an
+implicit constructor from `std::string` / `const char *`, the way
+`std::filesystem::path` does, so several hundred existing call sites keep
+saying what they already said instead of being churned to say it explicitly.
+The three `std::string` overloads on `IScriptEngine` went away with it: with an
+implicit conversion a string LITERAL would be ambiguous between the two
+readings, and one entry point per operation is the better shape anyway. The
+failure mode of the implicit reading is the safe one — a site that should have
+passed lowered Lua and did not gets the author's text rewritten, which is
+exactly today's behaviour, so a missed site stays *diverging* rather than
+becoming newly wrong.
+
+### The part a type swap could not carry: composition
+
+Two helpers do not forward the expression, they **glue onto it** —
+`AssignmentExecutionHelper` builds `location = (expr);` and runs it as a
+script; `<donedata>` joins params. `ScriptSourceBuilder` is what keeps the two
+halves in step there: evaluated text accumulates with evaluated text, authored
+with authored, and punctuation lands in both. A part in the wrong language is
+refused from both halves rather than mixed in.
+
+Shape questions stay on `source()`: *is this a system variable*, *is this
+location a simple name*, *is this a function literal* are questions about what
+the AUTHOR wrote — §scxml-5.10 names `_event`, not whatever a lowering spells
+it as.
+
+### And the part composition could not carry either: the spelling differs
+
+Some of that glue is not punctuation, it is **ECMAScript**. Measured
+2026-08-28 there are **eight** composition sites, and `sce/include/scripting/ScriptDialect.h`
+is now the single place that says how each is spelled per language:
+
+| question | ECMAScript | Lua | same? |
+|---|---|---|---|
+| stringify | `JSON.stringify(x)` | `JSON.stringify(x)` | **yes** — `JSON` is a real Lua table (`json_builtins.lua:14`) |
+| isArray | `(x) instanceof Array` | `_isArray(x)` | no (`ecma_semantics.lua:102`) |
+| typeOf | `typeof (x)` | `_typeof(x)` | no (`ecma_semantics.lua:78`) |
+| lengthOf | `(x).length` | `#(x)` | no |
+| elementAt | `(x)[i]` | `_scxml_index(x, i)` | no (`ecma_semantics.lua:248`) |
+| temp bind | `var n = (x)` | `n = (x)` | no — Lua has no `var` |
+
+Only the first survives verbatim. ⚠ `elementAt` takes the index the CALLER
+counts in — 0-based in both spellings, because `_scxml_index` does the shift to
+Lua's 1-based storage itself. A caller that pre-shifted would move the element
+twice, which is the seam's own off-by-one arriving by another road.
+
+**Two of these are on the generated path, not one.** `resultToString`'s
+`stringify` is the harmless one; `ForeachHelper::evaluateForeachArray`'s
+`isArray` probe is reached from both `<foreach>` entry points the templates
+emit, and as `(<lowered lua>) instanceof Array` it would have been a syntax
+error that this helper reports as *"not an iterable collection"* — a
+`<foreach>` over a perfectly good array raising `error.execution` and iterating
+nothing.
+
+### One template moved, because a vector cannot convert element-wise
+
+`entry_exit_actions.jinja2` emits donedata params as
+`std::vector<std::pair<std::string, std::string>>`, and the implicit
+conversion that saved every other call site does not reach inside a container.
+That site now emits `ScriptSource::ecmascript(...)` explicitly — the first
+template in the tree to name the language. Since `template-hash` covers the
+whole template tree, every committed generated tree was re-pinned with
+`scripts/regen_all_committed_trees.sh`; nothing but the hash line moved.
+
+### What the gate measures, and one thing it does NOT
+
+`ScriptLanguageSeam` is 11 cases now. Breaking the builder (one half into
+both) and the dialect (`isArray` always ECMAScript) turns **2** red:
+`ComposingKeepsTheEvaluatedAndAuthoredHalvesApart` and
+`EachComposedQuestionMeansTheSameInBothLanguages` — the latter asks each
+composed question of BOTH engines in each engine's spelling and compares the
+answers, so a Lua spelling that does not exist, or exists and means something
+else, disagrees with the ECMAScript one.
+
+⚠ `ForeachCarriesATaggedArrayExpressionEndToEnd` stays **green** under that
+same `isArray` break, and the case says so in its own docstring rather than
+implying otherwise. The probe sits behind a short-circuit a well-formed array
+never reaches — `arrayResult.isArray()` is already true for a Lua sequence,
+and for a keyed table an honest `false` and a Lua syntax error are the same
+outcome. The probe's language-correctness is observable only where it is asked
+directly. That is a limit of the helper's shape, not of the gate, and it is
+recorded here so nobody re-derives it as a gap.
+
 ## What is not yet decided
 
-- **The six helper entry points.** `DataModelInitHelper`, `ForeachHelper` and
-  `ScriptResultUtils` still cross the boundary with a bare string, so the 38
-  template sites cannot move until they carry a `ScriptSource` too. The
-  interface's own three are done; these are not, and a NEW helper that
-  evaluates on the caller's behalf would be missed the same way the first
-  three were — widen from `sce/include/scripting/`, not from this file.
+- ~~The six helper entry points.~~ **Done 2026-08-28** — and there were eight
+  helpers, not three; see "Landed 2026-08-28: the helpers" below. What is left
+  is the 38 template sites themselves: every one still emits the author's
+  ECMAScript, which the implicit `ScriptSource` reading preserves exactly.
+  Moving them needs the codegen to know its target engine, which is the
+  undecided item below.
 - The C++ **Interpreter** has no build step at all, so it cannot receive
   build-time-translated text by this route. `sce-build`'s cdylib is the
   candidate answer — `Cargo.toml` records that there is no in-tree consumer of

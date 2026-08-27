@@ -37,10 +37,6 @@ std::future<ScriptResult> IScriptEngine::executeScript(const std::string &sessio
     return doExecuteScript(sessionId, script);
 }
 
-std::future<ScriptResult> IScriptEngine::executeScript(const std::string &sessionId, const std::string &script) {
-    return executeScript(sessionId, ScriptSource::ecmascript(script));
-}
-
 std::future<ScriptResult> IScriptEngine::evaluateExpression(const std::string &sessionId,
                                                             const ScriptSource &expression) {
     if (!acceptsLanguage(expression.language())) {
@@ -49,22 +45,12 @@ std::future<ScriptResult> IScriptEngine::evaluateExpression(const std::string &s
     return doEvaluateExpression(sessionId, expression);
 }
 
-std::future<ScriptResult> IScriptEngine::evaluateExpression(const std::string &sessionId,
-                                                            const std::string &expression) {
-    return evaluateExpression(sessionId, ScriptSource::ecmascript(expression));
-}
-
 std::future<ScriptResult> IScriptEngine::validateExpression(const std::string &sessionId,
                                                             const ScriptSource &expression) {
     if (!acceptsLanguage(expression.language())) {
         return refuseLanguage(expression);
     }
     return doValidateExpression(sessionId, expression);
-}
-
-std::future<ScriptResult> IScriptEngine::validateExpression(const std::string &sessionId,
-                                                            const std::string &expression) {
-    return validateExpression(sessionId, ScriptSource::ecmascript(expression));
 }
 
 std::future<ScriptResult> IScriptEngine::refuseLanguage(const ScriptSource &code) const {

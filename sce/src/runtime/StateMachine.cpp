@@ -4546,8 +4546,17 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
     const auto &params = doneData.getParams();
     if (!params.empty()) {
         SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating {} donedata params", params.size());
+        // The Interpreter parses SCXML at run time, so a param expression here
+        // is always the author's own ECMAScript — there is no build step that
+        // could have lowered it. Said once, at the boundary, rather than left
+        // to an implicit conversion the vector cannot perform element-wise.
+        std::vector<std::pair<std::string, ScriptSource>> taggedParams;
+        taggedParams.reserve(params.size());
+        for (const auto &param : params) {
+            taggedParams.emplace_back(param.first, ScriptSource::ecmascript(param.second));
+        }
         return DoneDataHelper::evaluateParams(
-            scriptEngine_, sessionId_, params, outEventData,
+            scriptEngine_, sessionId_, taggedParams, outEventData,
             [this](const std::string &msg) {
                 SCE_LOG_ERROR("W3C SCXML 5.7: {}", msg);
                 if (eventRaiser_) {

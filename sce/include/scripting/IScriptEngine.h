@@ -75,10 +75,12 @@ public:
     // engine implements is the `do*` hook in the protected section below.
     //
     // Each takes a ScriptSource: the text to evaluate, the language that text
-    // is written in, and the author's ECMAScript behind it. The
-    // `std::string` overloads mean `ScriptSource::ecmascript(...)` — the
-    // author's own text, which is what every call site predating the seam
-    // hands over. See docs/SCE_LUA_TRANSLATION_SEAM.md.
+    // is written in, and the author's ECMAScript behind it. ONE entry point
+    // per operation, with no string overload beside it — a bare string
+    // converts implicitly and means the author's own ECMAScript, which is what
+    // every call site predating the seam hands over. A second overload would
+    // only make a string literal ambiguous between the two readings.
+    // See docs/SCE_LUA_TRANSLATION_SEAM.md.
 
     /**
      * @brief Execute script in the specified session
@@ -89,9 +91,6 @@ public:
      */
     std::future<ScriptResult> executeScript(const std::string &sessionId, const ScriptSource &script);
 
-    /// The author's ECMAScript, unlowered — `ScriptSource::ecmascript(script)`.
-    std::future<ScriptResult> executeScript(const std::string &sessionId, const std::string &script);
-
     /**
      * @brief Evaluate expression in the specified session
      * @param sessionId Target session context
@@ -101,9 +100,6 @@ public:
      */
     std::future<ScriptResult> evaluateExpression(const std::string &sessionId, const ScriptSource &expression);
 
-    /// The author's ECMAScript, unlowered.
-    std::future<ScriptResult> evaluateExpression(const std::string &sessionId, const std::string &expression);
-
     /**
      * @brief Validate expression syntax without executing
      * @param sessionId Target session context for validation context
@@ -111,9 +107,6 @@ public:
      * @return Future with validation result (true if syntax is valid)
      */
     std::future<ScriptResult> validateExpression(const std::string &sessionId, const ScriptSource &expression);
-
-    /// The author's ECMAScript, unlowered.
-    std::future<ScriptResult> validateExpression(const std::string &sessionId, const std::string &expression);
 
     // === The language this engine speaks ===
 
