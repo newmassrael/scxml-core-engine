@@ -286,6 +286,29 @@ points"; it has three, and `validateExpression` being dead surface is its own
 decision — extend it with the seam or retire it — rather than something to
 discover while implementing.
 
+**The seam is not "skip the transformer".** `LuaEngine::evaluateExpressionInternal`
+does five things to the text, and only the first is the rewrite. Measured
+2026-08-28 at `LuaEngine.cpp:617-660`:
+
+1. `transformer_.transform(expression)` — the rewrite. **This is the only step
+   a pre-lowered path skips.**
+2. `isUndeclaredSimpleVariable(...)` → `ReferenceError: <expr> is not defined`.
+   A W3C semantic, not an optimisation: JavaScript throws for an undeclared
+   variable and Lua silently returns `nil`, so dropping this would make
+   lowered generation answer `nil` where the language answers an error.
+3. `"return " + luaExpr` — a lowered expression still has to be wrapped to
+   yield a value.
+4. The per-session chunk cache, keyed on the wrapped text.
+5. The assignment fallback: when `return <expr>` fails to compile (`x = 5`),
+   retry as a statement — with a §scxml-5.9 guard so a bare `return`, a valid
+   Lua chunk but not a JS expression, still fails (W3C test 344).
+
+A pre-lowered entry point that only does 3+4 would compile and pass casual
+tests while quietly losing 2 and 5. Steps 2–5 belong to *evaluating Lua*, not
+to *translating ECMAScript*, so the seam has to be a branch inside this
+function — or a shared tail both paths call — rather than a second, simpler
+implementation beside it.
+
 **So the order is: seam, then templates.** The seam is a contract about *what
 language the string is*, which means an engine that cannot evaluate that
 language must refuse rather than try — QuickJS handed Lua is the case, and the
