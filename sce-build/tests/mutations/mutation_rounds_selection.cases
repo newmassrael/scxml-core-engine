@@ -112,10 +112,53 @@ PY
 
 mutation_case "the dry run stops saying which runner each round needs" <<'PY'
 edit("scripts/gates/mutation-rounds.sh",
-     """    for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
-        printf '%s\\t%s\\n' "$casefile" "${RUNNER_OF[$casefile]}"
-    done""",
-     """    printf '%s\\n' ${SELECTED[@]+"${SELECTED[@]}"}""")
+     """        printf '%s\\t%s\\t%s\\n' "$casefile" "${RUNNER_OF[$casefile]}" \\
+            "$(mutation_rounds_shards_for""",
+     """        printf '%s\\t%s\\n' "$casefile" \\
+            "$(mutation_rounds_shards_for""")
+PY
+
+# ── The dry run stops saying how many jobs a casefile is worth ─────
+#
+# The third column is what stops a round being scheduled into a job it cannot
+# finish. Without it the matrix expands nothing — `for (shard = 1; shard <= "";
+# shard++)` runs zero times in awk — so the casefile is silently never run,
+# which is the absent verdict this lane exists to end wearing a green tick.
+
+mutation_case "the dry run stops saying how many jobs a casefile is worth" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     """        printf '%s\\t%s\\t%s\\n' "$casefile" "${RUNNER_OF[$casefile]}" \\
+            "$(mutation_rounds_shards_for""",
+     """        printf '%s\\t%s\\n' "$casefile" "${RUNNER_OF[$casefile]}" \\
+            "$(: mutation_rounds_shards_for""")
+PY
+
+# ── The slice grows past what a job is measured to finish ──────────
+#
+# The number this changes is the whole of the repair. Measured on dispatch
+# 32803356117: eight of twenty-four rounds ran to the lane's 330-minute
+# ceiling and were `cancelled`, the largest holding 16 ctest cases in one job.
+# A ctest case costs about an hour, so four to a job crosses the ceiling
+# again — and the shape of the failure is the one that says nothing: a
+# cancelled lane is neither green nor red.
+
+mutation_case "a ctest job is given more cases than it can finish" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     """        ctest) printf '3\\n' ;;""",
+     """        ctest) printf '9\\n' ;;""")
+PY
+
+# ── The casefile becomes one job again ─────────────────────────────
+#
+# Reverted to the shape the dispatch measured: every casefile worth exactly one
+# job, whatever it holds. Nothing about this reads as broken — the lane starts,
+# the matrix expands, the jobs run — until the largest of them reaches the
+# ceiling five and a half hours later.
+
+mutation_case "every casefile is worth one job again" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     """    printf '%s\\n' "$(( (cases + per_job - 1) / per_job ))\"""",
+     """    printf '1\\n'""")
 PY
 
 # ── The lane works the runner out for itself again ─────────────────
@@ -220,21 +263,31 @@ PY
 
 mutation_case "the round narrows a second time, on an input its job lacks" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """      env:
-        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
+     """        SCE_MUTATION_SHARD: ${{ matrix.shard }}
       run: scripts/gate mutation-rounds""",
-     """      env:
-        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
+     """        SCE_MUTATION_SHARD: ${{ matrix.shard }}
         SCE_GATE_CHANGED_FILE: changed.txt
       run: scripts/gate mutation-rounds""")
 PY
 
 mutation_case "the round runs the dispatch's subset instead of its own entry" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
+     """        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}""",
+     """        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}""")
+PY
+
+# ── The job stops being told which slice it is ─────────────────────
+#
+# Without it every job of a sharded casefile runs the WHOLE casefile: the same
+# cases measured N times over, in N jobs each of which then reaches the ceiling
+# the sharding exists to stay under. It reads as a lane doing more work, which
+# is the most expensive way to say nothing.
+
+mutation_case "the job is never told which slice it is running" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """        SCE_MUTATION_SHARD: ${{ matrix.shard }}
       run: scripts/gate mutation-rounds""",
-     """        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
-      run: scripts/gate mutation-rounds""")
+     """      run: scripts/gate mutation-rounds""")
 PY
 
 # ── The matrix is the only channel between the two jobs ────────────
@@ -246,8 +299,38 @@ PY
 
 mutation_case "the matrix carries casefiles without saying which runner they need" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """          NF >= 2 { printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\"}", sep, $1, $2; sep = "," }""",
-     """          NF >= 2 { printf "%s{\\"casefile\\":\\"%s\\"}", sep, $1; sep = "," }""")
+     """              printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\",\\"shard\\":\\"%d/%d\\"}", \\
+                sep, $1, $2, shard, $3""",
+     """              printf "%s{\\"casefile\\":\\"%s\\",\\"shard\\":\\"%d/%d\\"}", \\
+                sep, $1, shard, $3""")
+PY
+
+# ── The matrix stops saying which slice each job runs ──────────────
+#
+# An entry with no `shard` gives a job that runs the whole casefile, which is
+# the arrangement whose rounds reached the ceiling. It is the same loss as the
+# runner column one line above, and just as quiet: the lane starts, the jobs
+# expand, and the largest of them is cancelled hours later.
+
+mutation_case "the matrix stops saying which slice each job runs" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """              printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\",\\"shard\\":\\"%d/%d\\"}", \\
+                sep, $1, $2, shard, $3""",
+     """              printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\"}", \\
+                sep, $1, $2""")
+PY
+
+# ── The expansion drops the last slice ─────────────────────────────
+#
+# The failure a job count alone cannot see. Five jobs where six were owed looks
+# entirely healthy — every job green, nothing cancelled — while the cases in
+# the sixth slice are measured by nothing at all. It is the absent verdict
+# again, arrived at from the other side.
+
+mutation_case "the shard expansion drops the last slice" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """            for (shard = 1; shard <= $3; shard++) {""",
+     """            for (shard = 1; shard < $3; shard++) {""")
 PY
 
 mutation_case "the matrix and the count answer for different sets" <<'PY'
@@ -287,13 +370,10 @@ PY
 
 mutation_case "the lane derives the runner in its own shell again" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """          NF >= 2 { printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\"}", sep, $1, $2; sep = "," }
-          END { printf "]}\\n" }
-        ' "$selected")\"""",
-     """          NF >= 1 { printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\"}", sep, $1,
-                            (system("scripts/mutate --declares " $1 " | grep -qx runner\\tctest") == 0 ? "ctest" : "cargo"); sep = "," }
-          END { printf "]}\\n" }
-        ' "$selected")\"""")
+     """                sep, $1, $2, shard, $3""",
+     """                sep, $1,
+                (system("scripts/mutate --declares " $1 " | grep -qx runner\\tctest") == 0 ? "ctest" : "cargo"),
+                shard, $3""")
 PY
 
 # ── What has to be RUNNING for a round to mean anything ─────────────
