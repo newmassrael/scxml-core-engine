@@ -92,6 +92,15 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "forge_document_name_is_the_stem",
     "gate_registry_contract",
     "hook_ci_parity",
+    // Asks `git ls-files` which backends own a `tools/codegen/templates/mesh/
+    // <dir>/` tree, and that answer IS the gate: a directory appearing there
+    // is what lifts the mesh-rpc refusal, so SCE_MESH.md §9.5's roster has to
+    // flip with it. A `paths:` filter written over the tree as it stands
+    // enumerates `mesh/cpp/` — the answer this gate already knows — and by
+    // construction cannot name the directory whose arrival it exists to
+    // catch. It then drives `sce-codegen` for every `--lang` to check the
+    // roster against the binary, which widens the input set again.
+    "mesh_rpc_backend_contract",
     // Asks `git ls-files` for the mutation corpus and then asks the harness
     // what each casefile declares, so a casefile added anywhere — or one
     // that starts naming a new target — changes both what it reads and what
