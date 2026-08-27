@@ -130,13 +130,19 @@ fn cpp_refuses_the_lua_target_while_sites_remain() {
     );
 
     let remaining = Language::Cpp.unmigrated_expression_sites();
+    let unknown = Language::Cpp.unclassified_expression_sites();
+    // BOTH lists. Asking only about `remaining` would have passed on
+    // 2026-08-28 with 0 unmigrated and 9 unadjudicated sites — the escape
+    // hatch defeating the gate that owns it.
     assert_eq!(
         Language::Cpp.supports_script_engine_target(ScriptEngineTarget::Lua),
-        remaining.is_empty(),
-        "the Lua target is offered exactly when no site is left behind — \
-         {} site(s) remain:\n  {}",
+        remaining.is_empty() && unknown.is_empty(),
+        "the Lua target is offered exactly when NO site is left behind and NO \
+         site is unadjudicated — {} unmigrated:\n  {}\n{} unclassified:\n  {}",
         remaining.len(),
-        remaining.join("\n  ")
+        remaining.join("\n  "),
+        unknown.len(),
+        unknown.join("\n  ")
     );
 }
 

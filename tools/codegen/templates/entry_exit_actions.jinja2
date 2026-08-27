@@ -264,7 +264,7 @@
                     _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value }}");
 {% else %}
                     {
-                        auto paramResult = scriptEngine_mesh_{{ invoke_info.invoke_id }}.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
+                        auto paramResult = scriptEngine_mesh_{{ invoke_info.invoke_id }}.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
                         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
                             _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
                             _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());

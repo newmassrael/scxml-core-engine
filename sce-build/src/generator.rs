@@ -362,7 +362,19 @@ impl Language {
             return true;
         }
         match target {
-            ScriptEngineTarget::Lua => self.unmigrated_expression_sites().is_empty(),
+            // BOTH lists, and the second is not a formality. `unmigrated` is
+            // the population this file knows how to classify; `unclassified`
+            // is the population it does NOT — a site mentioning a model
+            // expression whose callee is absent from `ENGINE_ENTRY_POINTS`.
+            // Opening the Lua target on the first alone would let the escape
+            // hatch defeat the gate: measured 2026-08-28, `unmigrated` reached
+            // 0 while 9 sites were still unadjudicated, and any one of them
+            // that turns out to evaluate would make exactly the mixed artifact
+            // this refusal exists to prevent.
+            ScriptEngineTarget::Lua => {
+                self.unmigrated_expression_sites().is_empty()
+                    && self.unclassified_expression_sites().is_empty()
+            }
             // Nothing walks the other way yet: a backend that lowers has no
             // arm that emits the author's source, and inventing one would be
             // a second emission path for the four backends already correct.
@@ -437,7 +449,73 @@ impl Language {
                     if interpolation.contains(PAIR_FILTER_PREFIX) {
                         continue;
                     }
-                    sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()));
+                    match classify_expression_site(line, interpolation) {
+                        ExpressionSiteRole::EngineBound => {
+                            sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()))
+                        }
+                        // A message and a validation are not hand-offs, and
+                        // counting them would hold the refusal shut forever
+                        // over text no engine ever sees.
+                        ExpressionSiteRole::Message | ExpressionSiteRole::NotAHandOff => {}
+                    }
+                }
+            }
+        }
+        sites.sort();
+        sites.dedup();
+        sites
+    }
+
+    /// Sites that mention a model expression, are not prose, and reach a
+    /// callee this file does not know.
+    ///
+    /// ⚠ The escape hatch's escape hatch. `classify_expression_site` reads an
+    /// unknown callee as [`ExpressionSiteRole::NotAHandOff`] — the same answer
+    /// it gives `validateForeachAttributes`, which is correct there and would
+    /// be a silent hole anywhere else. A helper nobody added to
+    /// `ENGINE_ENTRY_POINTS` would drop out of the migration population
+    /// without a word, which is exactly how the seam document's own table
+    /// came to miss five helpers.
+    ///
+    /// So the unknown callees are listed rather than assumed benign. Each one
+    /// is a decision someone has to make once: it evaluates (add it to
+    /// `ENGINE_ENTRY_POINTS`) or it does not (say so where it is used).
+    pub fn unclassified_expression_sites(self) -> Vec<String> {
+        const MODEL_EXPRESSION_FIELDS: &[&str] = &[
+            ".cond",
+            ".expr",
+            ".array",
+            ".typeexpr",
+            ".targetexpr",
+            ".sendidexpr",
+            ".delayexpr",
+            ".contentexpr",
+            ".srcexpr",
+            ".eventexpr",
+            ".location",
+        ];
+
+        let mut sites = Vec::new();
+        for (name, body) in crate::template_registry::EMBEDDED_TEMPLATES.iter() {
+            if !self.owns_template(name) || name.starts_with("forge/") {
+                continue;
+            }
+            for line in strip_jinja_comments(body).lines() {
+                let code = line.trim_start();
+                if code.starts_with("//") || code.starts_with('*') || code.starts_with("/*") {
+                    continue;
+                }
+                for interpolation in jinja_interpolations(line) {
+                    if !mentions_model_expression(interpolation, MODEL_EXPRESSION_FIELDS)
+                        || interpolation.contains("to_script_source")
+                    {
+                        continue;
+                    }
+                    if classify_expression_site(line, interpolation)
+                        == ExpressionSiteRole::NotAHandOff
+                    {
+                        sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()));
+                    }
                 }
             }
         }
@@ -604,6 +682,118 @@ fn strip_jinja_comments(body: &str) -> String {
     while let Some(open) = rest.find("{#") {
         out.push_str(&rest[..open]);
         match rest[open..].find("#}") {
+            Some(close) => rest = &rest[open + close + 2..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// What a template interpolation of a model expression is actually DOING.
+///
+/// The three roles share one spelling — `{{ param.expr | escape_cpp }}` is
+/// the same eleven characters whether it is handed to an engine, printed in a
+/// log line, or checked for emptiness — so a scan that reads the spelling
+/// alone cannot tell them apart, and one that counted all three could never
+/// reach zero. That matters here because the count IS the refusal: if it can
+/// never reach zero, `--script-engine lua` can never be offered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExpressionSiteRole {
+    /// Handed across the boundary for an engine to evaluate. The migration's
+    /// population.
+    EngineBound,
+    /// Interpolated into a diagnostic — a `SCE_LOG_*` / `AOT_DEBUG` format
+    /// string, or any C++ string literal carrying other text besides the
+    /// expression. The author's own text is exactly what belongs there.
+    Message,
+    /// Reaches a callee that does not evaluate. Measured 2026-08-28:
+    /// `ForeachValidator::validateForeachAttributes` takes the array text and
+    /// only asks whether it is empty (`ForeachValidator.h:27`), so lowering it
+    /// would answer a question nobody asked.
+    NotAHandOff,
+}
+
+/// Callees that evaluate, or hand on to something that does.
+///
+/// ⚠ Derived from `sce/include/scripting/` and `sce/include/common/` rather
+/// than from a document — the seam document's own table missed five helpers by
+/// being a list. A callee absent from here reads as [`ExpressionSiteRole::NotAHandOff`],
+/// which is why `unclassified_expression_sites` exists to surface exactly that
+/// case instead of letting a missed helper pass as "not a hand-off".
+const ENGINE_ENTRY_POINTS: &[&str] = &[
+    "evaluateExpression",
+    "executeScript",
+    "validateExpression",
+    "safeEvaluateGuard",
+    "evaluateGuard",
+    "initializeVariableFromExpr",
+    "executeForeachWithActions",
+    "executeForeachWithoutBody",
+    "setLoopVariableFromExpr",
+    "evaluateForeachArray",
+    "resultToString",
+    "resultToStringArray",
+    "resultToScriptValueArray",
+    "executeAssignment",
+    "evaluateContent",
+    "evaluateParams",
+    "executeFinalizeWithEvent",
+];
+
+/// Which of the three roles this interpolation plays on `line`.
+fn classify_expression_site(line: &str, interpolation: &str) -> ExpressionSiteRole {
+    // A string literal carrying anything besides the interpolation is prose
+    // with a value in it — a log line, an error message, a comment rendered
+    // into the artifact. Checked FIRST because a message can sit on the very
+    // same line as a hand-off.
+    if interpolation_is_inside_prose(line, interpolation) {
+        return ExpressionSiteRole::Message;
+    }
+    if ENGINE_ENTRY_POINTS.iter().any(|entry| line.contains(entry)) {
+        return ExpressionSiteRole::EngineBound;
+    }
+    ExpressionSiteRole::NotAHandOff
+}
+
+/// Whether the interpolation sits in a C++ string literal that also carries
+/// other text.
+///
+/// `"{{ x }}"` is a value being passed. `"failed: {{ x }}"` is a sentence with
+/// a value in it. The difference is whether anything else survives inside the
+/// quotes once the interpolation is removed.
+fn interpolation_is_inside_prose(line: &str, interpolation: &str) -> bool {
+    let needle = format!("{{{{{interpolation}}}}}");
+    let Some(at) = line.find(&needle) else {
+        return false;
+    };
+    // Count quotes before the interpolation: an odd number means it opened a
+    // literal that has not closed, so the interpolation is inside one.
+    let before = &line[..at];
+    if before.matches('"').count() % 2 == 0 {
+        return false;
+    }
+    let open = before.rfind('"').map(|i| i + 1).unwrap_or(0);
+    let after_start = at + needle.len();
+    let close = line[after_start..]
+        .find('"')
+        .map(|i| after_start + i)
+        .unwrap_or(line.len());
+    let literal = &line[open..close];
+    // Whatever the literal holds besides this interpolation. Jinja control
+    // blocks do not count — `{% if %}` around a value is still one value.
+    let remainder: String = literal.replace(&needle, "");
+    let remainder = strip_jinja_statements(&remainder);
+    !remainder.trim().is_empty()
+}
+
+/// Remove `{% … %}` blocks, which are structure rather than emitted text.
+fn strip_jinja_statements(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(open) = rest.find("{%") {
+        out.push_str(&rest[..open]);
+        match rest[open..].find("%}") {
             Some(close) => rest = &rest[open + close + 2..],
             None => return out,
         }
@@ -2705,6 +2895,11 @@ mod tests {
         eprintln!("cpp unmigrated expression sites: {}", sites.len());
         for site in &sites {
             eprintln!("  {site}");
+        }
+        let unknown = Language::Cpp.unclassified_expression_sites();
+        eprintln!("cpp unclassified (callee unknown): {}", unknown.len());
+        for site in &unknown {
+            eprintln!("  ? {site}");
         }
     }
 
