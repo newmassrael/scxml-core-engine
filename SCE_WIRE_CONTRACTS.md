@@ -146,9 +146,26 @@ checked-in schema without linking the `sce-build` crate.
    - Symbol lookup — `lookup_schema_rejects_a_record_without_the_generator_stamp`
 
    The authoring grammar is in neither table because it is not validated
-   by a test: `forge::xsd_validator` validates **every input document**
-   against `sce-forge.xsd` on the production path, before codegen, which
-   is the stronger property.
+   by a test: `forge::xsd_validator` validates input documents against
+   `sce-forge.xsd` on the production path, before codegen, which is the
+   stronger property where it holds.
+
+   Stated as the producer states it, because this paragraph used to
+   claim **every input document** and that is a promise the code does
+   not make. `validate_or_skip` spells the guarantee as *"if a schema is
+   available, validation runs"*, not *"every invocation validates"*, and
+   it has two non-validating outcomes it returns rather than swallows:
+   `NotValidated(SchemaNotFound)` when `schemas/` is absent — a
+   downstream crate vendoring `sce-build` without it must still build —
+   and `NotValidated(FeatureDisabled)` on a build without the `xsd`
+   feature, which is how a `wasm32` target avoids reporting the same
+   success as a validated one. `warn_if_not_validated` is what makes
+   either case audible.
+
+   The distinction is not pedantry here: it is the same axis the C++
+   Interpreter sits on. That engine has no XSD stage at all, so an
+   unconditional reading of this paragraph would suggest the two engines
+   accept the same documents when they do not.
 
 ## Flipping a surface to `stable`
 
