@@ -36,11 +36,32 @@ bool ParsingCommon::isScxmlNamespace(const std::shared_ptr<IXMLElement> &element
     // §scxml-3.2 requires the namespace declaration on root —
     // strict matches the Rust AOT pipeline where `xsd_validator`
     // rejects xmlns-less documents at the parser boundary. The C++
-    // Interpreter has no XSD step today (tracked separately as a
-    // follow-up to add full pipeline symmetry), so the root-namespace
-    // check in `SCXMLParser::parseInternal` carries the equivalent
-    // load: an xmlns-less `<scxml>` root surfaces `ParseWrongRootElement`
+    // Interpreter has no XSD stage, so the root-namespace check in
+    // `SCXMLParser::parseInternal` carries the equivalent load: an
+    // xmlns-less `<scxml>` root surfaces `ParseWrongRootElement`
     // before this predicate is consulted for any child filtering.
+    //
+    // That absence is a decided asymmetry, not a gap awaiting a
+    // follow-up, and this comment used to say the opposite. It follows
+    // from the XML library: this engine parses with pugixml, which has
+    // no schema-validation surface at all, and `sce/` links libxml2
+    // nowhere. Adding a stage here therefore means a second XML library
+    // in one binary, replacing pugixml across `sce/src/parsing/`, or
+    // hand-writing a validator for `schemas/sce-forge.xsd` — none of
+    // which the Interpreter's job requires.
+    //
+    // The axis is "is schema validation available", not "Rust versus
+    // C++": `validate_or_skip` on the Rust side guarantees only that
+    // validation runs WHEN a schema is, and returns
+    // `NotValidated(SchemaNotFound|FeatureDisabled)` otherwise. What
+    // that side really holds is that it SAYS when it did not validate.
+    //
+    // The residue, stated rather than discovered later: the two engines
+    // do not accept the same documents. A document the AOT pipeline
+    // rejects as `xml/schema-validation` can still be parsed here, and
+    // structural checks like this one are what stand in its place.
+    // SCE_WIRE_CONTRACTS.md carries the same distinction on the
+    // producer side.
     return element->getNamespace() == Constants::SCXML_NAMESPACE;
 }
 
