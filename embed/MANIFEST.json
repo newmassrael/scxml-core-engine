@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "e4aa6ca52d",
+  "embed_version": "0744d870b7",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 272,
+  "symbol_count": 275,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1840,6 +1840,27 @@
       "kind": "function",
       "name": "SCE::ScriptResultUtils::resultToValue<T>",
       "signature": "std::optional<T> SCE::ScriptResultUtils::resultToValue<T>(const ScriptResult &)"
+    },
+    {
+      "header": "scripting/ScriptSource.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ScriptSource"
+    },
+    {
+      "header": "scripting/ScriptSource.h",
+      "kind": "enum",
+      "name": "SCE::ScriptLanguage",
+      "values": [
+        "ECMAScript",
+        "Lua"
+      ]
+    },
+    {
+      "header": "scripting/ScriptSource.h",
+      "kind": "function",
+      "name": "SCE::scriptLanguageName",
+      "signature": "const char * SCE::scriptLanguageName(ScriptLanguage)"
     },
     {
       "header": "scripting/SessionRegistry.h",
