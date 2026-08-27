@@ -139,9 +139,27 @@ Lua (`SCE_SCRIPT_ENGINE=quickjs`, `W3CTestBase.DEFAULT_ENGINE="rhino"`). This
 is the same root cause as the divergences, surfacing on a wire surface rather
 than in an answer.
 
-**Fixed 2026-08-27.** The field is now the target backend's answer, taken from
-`Language::script_engine_language`, and the wire vocabulary is
-`"lua" | "ecmascript"` (`SCRIPT_ENGINE_LANGUAGES`). The schema's `enum` was
+**Fixed 2026-08-27.** The field is now the target backend's answer, and the
+wire vocabulary is `"lua" | "ecmascript"` (`SCRIPT_ENGINE_LANGUAGES`).
+
+**It is derived, not listed.** `Language::script_engine_language` reads
+`Language::lowers_expressions_at_build_time`, which asks the embedded template
+registry — the same one the renderer uses — whether any template this backend
+OWNS applies `to_lua_guard`. Ownership is `Language::template_owned_subdir`,
+already the tree's answer to "whose templates are these": five backends own a
+subdirectory and C++ owns whatever no other backend claims. So the table above
+and the field cannot drift: moving a backend across the seam is a template
+edit and nothing else. This is the shape the mesh-rpc refusal uses, which
+reads `templates/mesh/<lang>/` rather than asserting which backends have a
+mesh arm.
+
+⚠ Jinja comments are stripped before that search, because a template may
+*mention* the filter while emitting source — the C++ tree's only mention of
+these filters is exactly that (`invoke_methods.jinja2`). Measured both ways on
+2026-08-27: adding a live `{{ 'x' | to_lua_guard }}` to a Kotlin-owned
+template flipped its reported language to `lua` and turned the gate red
+(`kotlin` emits no lowered Lua … but the manifest says `lua`), while leaving
+only `{# … to_lua_guard #}` behind left it green. The schema's `enum` was
 widened to match and its description — which had asserted the refuted "Not
 per-backend" claim — rewritten; `SCE_ERROR_CONTRACT.md` §10.1 gained the row
 it never had. A run that spans backends (`check` sweeps all six) omits the
