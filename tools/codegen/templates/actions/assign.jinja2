@@ -44,13 +44,13 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
     // `to_author_assign_content` so this backend and the lowering ones cannot
     // disagree about whether `21` is a number. Quoting it unconditionally, as
     // this line did, made it the string "21".
-    std::string expr = "{{ action.content | to_author_assign_content | replace('\\', '\\\\') | replace('"', '\\"') }}";
+    ::SCE::ScriptSource expr = {{ action.content | to_script_source_assign_content }};
     {% else %}
-    std::string expr = "{{ action.expr.rstrip(';') }}";
+    ::SCE::ScriptSource expr = {{ action.expr.rstrip(';') | to_script_source_expr }};
     {% endif %}
 
     success = ::SCE::AssignmentExecutionHelper::executeAssignment(
-        scriptEngine, sessionId_.value(), "{{ action.location }}", expr,
+        scriptEngine, sessionId_.value(), {{ action.location | to_script_source_location }}, expr,
         [&engine](const std::string& error) {
             SCE_LOG_ERROR("AOT assign: {}", error);
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));

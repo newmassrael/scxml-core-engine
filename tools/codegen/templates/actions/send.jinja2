@@ -816,7 +816,7 @@ auto& contentScriptEngine = getScriptEngine();
 ::SCE::DoneDataHelper::evaluateContent(
     contentScriptEngine,
     sessionId_.value(),
-    "{{ action.content | to_author_data_content | escape_cpp }}",
+    {{ action.content | to_script_source_data_content }},
     contentData,
     [&engine](const std::string& msg) {
         SCE_LOG_WARN("send content evaluation failed: {}", msg);

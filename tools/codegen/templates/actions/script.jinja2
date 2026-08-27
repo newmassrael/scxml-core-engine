@@ -10,7 +10,7 @@
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
     {% if action.content %}
-    auto scriptResult = scriptEngine.executeScript(sessionId_.value(), "{{ action.content | escape_cpp }}").get();
+    auto scriptResult = scriptEngine.executeScript(sessionId_.value(), {{ action.content | to_script_source_script }}).get();
     if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
         std::string errorMsg = "Script execution failed";
         SCE_LOG_ERROR("{}", errorMsg);
