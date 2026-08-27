@@ -409,6 +409,14 @@ impl Language {
             ".srcexpr",
             ".eventexpr",
             ".location",
+            // ⚠ `<assign>` / `<data>` inline content. Added 2026-08-28 after
+            // adjudicating the sites this list had produced: the content arm
+            // of `actions/assign.jinja2` renders through
+            // `to_author_assign_content` and hands the result to
+            // `executeAssignment`, which is every bit the hand-off the `expr`
+            // arm beside it is — and this list had no field that matched it,
+            // so the scan reported the arm as absent rather than as done.
+            ".content",
         ];
         /// What a migrated site routes through. One prefix covers the guard
         /// and expression spellings both.
@@ -436,7 +444,9 @@ impl Language {
             // author's expression into a comment beside the code that uses
             // it, and a scan that reads comments as code cannot tell output
             // from documentation — the mistake this seam's first gate made.
-            for line in strip_jinja_comments(body).lines() {
+            let stripped = strip_jinja_comments(body);
+            let lines: Vec<&str> = stripped.lines().collect();
+            for (index, line) in lines.iter().copied().enumerate() {
                 let code = line.trim_start();
                 if code.starts_with("//") || code.starts_with('*') || code.starts_with("/*") {
                     continue;
@@ -449,7 +459,7 @@ impl Language {
                     if interpolation.contains(PAIR_FILTER_PREFIX) {
                         continue;
                     }
-                    match classify_expression_site(line, interpolation) {
+                    match classify_expression_site(&lines, index, interpolation) {
                         ExpressionSiteRole::EngineBound => {
                             sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()))
                         }
@@ -493,6 +503,14 @@ impl Language {
             ".srcexpr",
             ".eventexpr",
             ".location",
+            // ⚠ `<assign>` / `<data>` inline content. Added 2026-08-28 after
+            // adjudicating the sites this list had produced: the content arm
+            // of `actions/assign.jinja2` renders through
+            // `to_author_assign_content` and hands the result to
+            // `executeAssignment`, which is every bit the hand-off the `expr`
+            // arm beside it is — and this list had no field that matched it,
+            // so the scan reported the arm as absent rather than as done.
+            ".content",
         ];
 
         let mut sites = Vec::new();
@@ -500,7 +518,9 @@ impl Language {
             if !self.owns_template(name) || name.starts_with("forge/") {
                 continue;
             }
-            for line in strip_jinja_comments(body).lines() {
+            let stripped = strip_jinja_comments(body);
+            let lines: Vec<&str> = stripped.lines().collect();
+            for (index, line) in lines.iter().copied().enumerate() {
                 let code = line.trim_start();
                 if code.starts_with("//") || code.starts_with('*') || code.starts_with("/*") {
                     continue;
@@ -511,7 +531,7 @@ impl Language {
                     {
                         continue;
                     }
-                    if classify_expression_site(line, interpolation)
+                    if classify_expression_site(&lines, index, interpolation)
                         == ExpressionSiteRole::NotAHandOff
                     {
                         sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()));
@@ -721,6 +741,22 @@ enum ExpressionSiteRole {
 /// being a list. A callee absent from here reads as [`ExpressionSiteRole::NotAHandOff`],
 /// which is why `unclassified_expression_sites` exists to surface exactly that
 /// case instead of letting a missed helper pass as "not a hand-off".
+/// Macros that render their arguments into a diagnostic rather than evaluating
+/// them. An expression handed to one of these is being *reported*, and the
+/// author's own text is exactly what belongs in a report.
+const DIAGNOSTIC_MACROS: &[&str] = &["SCE_LOG_", "AOT_DEBUG", "AOT_LOG"];
+
+/// How far back to look for the callee of a multi-line call.
+///
+/// ⚠ Not zero, and this is a shape this seam has already paid for once:
+/// *"A multi-line call. Five sites put the call on one line and the expression
+/// on the next … Any line-keyed grep, entry-point or filter, reports 33 rather
+/// than 38."* `ForeachHelper::executeForeachWithActions(` sits two lines above
+/// its `{{ action.array }}`, so a one-line window reads that array expression
+/// as reaching nobody — and a site that reaches nobody is a site the migration
+/// never has to move.
+const CALL_WINDOW_LINES: usize = 3;
+
 const ENGINE_ENTRY_POINTS: &[&str] = &[
     "evaluateExpression",
     "executeScript",
@@ -742,7 +778,12 @@ const ENGINE_ENTRY_POINTS: &[&str] = &[
 ];
 
 /// Which of the three roles this interpolation plays on `line`.
-fn classify_expression_site(line: &str, interpolation: &str) -> ExpressionSiteRole {
+fn classify_expression_site(
+    lines: &[&str],
+    index: usize,
+    interpolation: &str,
+) -> ExpressionSiteRole {
+    let line = lines[index];
     // A string literal carrying anything besides the interpolation is prose
     // with a value in it — a log line, an error message, a comment rendered
     // into the artifact. Checked FIRST because a message can sit on the very
@@ -750,8 +791,28 @@ fn classify_expression_site(line: &str, interpolation: &str) -> ExpressionSiteRo
     if interpolation_is_inside_prose(line, interpolation) {
         return ExpressionSiteRole::Message;
     }
-    if ENGINE_ENTRY_POINTS.iter().any(|entry| line.contains(entry)) {
+
+    // The window: this line and the few above it, which is where a multi-line
+    // call keeps its callee. An engine entry point anywhere in reach wins,
+    // because a call that both logs and evaluates is still a hand-off.
+    let start = index.saturating_sub(CALL_WINDOW_LINES);
+    if lines[start..=index]
+        .iter()
+        .any(|l| ENGINE_ENTRY_POINTS.iter().any(|entry| l.contains(entry)))
+    {
         return ExpressionSiteRole::EngineBound;
+    }
+
+    // A diagnostic macro with no engine entry point in reach is a report.
+    // This catches the argument form the prose check cannot see:
+    // `SCE_LOG_ERROR("… {}: {}", "name", "{{ expr }}")` hands the expression
+    // as its OWN literal, so nothing shares the quotes with it.
+    if line.contains('(')
+        && DIAGNOSTIC_MACROS
+            .iter()
+            .any(|macro_name| line.contains(macro_name))
+    {
+        return ExpressionSiteRole::Message;
     }
     ExpressionSiteRole::NotAHandOff
 }

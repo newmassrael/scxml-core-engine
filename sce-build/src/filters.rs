@@ -1228,6 +1228,61 @@ fn register_script_source_filters(
             })
         },
     );
+    // Inline `<content>` for `<data>` / `<send>`, and for `<assign>`.
+    //
+    // Content has its own pair of lowerings already — `to_author_*` for the
+    // backends that hand over source, `to_lua_*` for the ones that lower —
+    // and these are the seam's spelling of that same split: one call picks the
+    // arm the run selected and carries both halves out of it.
+    let for_data_content = Arc::clone(scope);
+    env.add_filter(
+        "to_script_source_data_content",
+        move |content: String| -> Result<String, minijinja::Error> {
+            Ok(match target {
+                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(
+                    &to_author_data_content(content, &for_data_content)?,
+                ),
+                ScriptEngineTarget::Lua => cpp_script_source_lua(
+                    &to_lua_data_content(content.clone(), &for_data_content)?,
+                    &to_author_data_content(content, &for_data_content)?,
+                ),
+            })
+        },
+    );
+    let for_assign_content = Arc::clone(scope);
+    env.add_filter(
+        "to_script_source_assign_content",
+        move |content: String| -> Result<String, minijinja::Error> {
+            Ok(match target {
+                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(
+                    &to_author_assign_content(content, &for_assign_content)?,
+                ),
+                ScriptEngineTarget::Lua => cpp_script_source_lua(
+                    &to_lua_assign_content(content.clone(), &for_assign_content)?,
+                    &to_author_assign_content(content, &for_assign_content)?,
+                ),
+            })
+        },
+    );
+    // An assignment TARGET.
+    //
+    // Not an expression: a location names a place to write, and the frontend
+    // lowers it with `to_lua_location` rather than `to_lua_expr` — a write is
+    // how this datamodel's globals come into existence, so the target is not
+    // resolved against what the document declares. It still crosses the
+    // boundary as executable text (`AssignmentExecutionHelper` glues it in
+    // front of `=` and runs the result), which is what puts it here at all.
+    env.add_filter(
+        "to_script_source_location",
+        move |location: String| -> Result<String, minijinja::Error> {
+            Ok(match target {
+                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(&location),
+                ScriptEngineTarget::Lua => {
+                    cpp_script_source_lua(&to_lua_location(location.clone())?, &location)
+                }
+            })
+        },
+    );
     // `<name> = <expr>`, executed as a script.
     //
     // A COMPOSED unit, and the reason it is a filter rather than two
