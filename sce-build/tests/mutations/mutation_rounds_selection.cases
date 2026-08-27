@@ -19,7 +19,17 @@
 # `mutation-cases` cannot cover this gate for the reason this gate exists:
 # whether the choosing still chooses is not a question about anchors.
 
-mutation_tests -p sce-build --test mutation_rounds_selection
+# Two target selectors, one cargo invocation. The selection half of this gate
+# is `mutation_rounds_selection`; the arithmetic half — how many jobs a
+# casefile is worth, and whether a full slice still fits the lane's ceiling —
+# is asserted in `mutation_corpus_fits_its_lane`, which reads the ceiling out
+# of the workflow and the slice size out of the gate. A round naming only the
+# first ran a suite that cannot see the number those cases change: measured
+# 2026-08-27, `--shard 7/27` reported SURVIVED at 0/13 red. Several `--test`
+# targets are what a cargo selector may carry; a bare filter is what it may
+# not, for the reason the harness header gives.
+mutation_tests -p sce-build --test mutation_rounds_selection \
+    --test mutation_corpus_fits_its_lane
 mutation_runtime_targets scripts/gates/mutation-rounds.sh
 # The lane's selection step is read out of the YAML and executed by
 # `the_lane_configures_a_cmake_tree_when_the_selection_needs_one`, so the
