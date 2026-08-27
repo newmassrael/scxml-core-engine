@@ -681,7 +681,59 @@ not in conflict with this document's 38 — 38 counts CALL SITES, and one
 interpolation serves several. 29 is the number of template edits the migration
 actually needs.
 
-**Migration in progress: 29 → 23** (same day). Moved so far, all of them
+### The count only means something once the roles are split
+
+The 29 counted three different things wearing one spelling.
+`{{ param.expr | escape_cpp }}` is the same eleven characters whether it is
+handed to an engine, printed in a log line, or checked for emptiness — and
+counting all three made the number **unable to reach zero**, which would have
+left `--script-engine lua` permanently unofferable. A termination condition
+that cannot be met is not a strict gate; it is a broken one.
+
+`classify_expression_site` now splits them, and the split is keyed on the
+CALLEE, not on the quoting:
+
+- **EngineBound** — the line calls something in `ENGINE_ENTRY_POINTS`. The
+  migration's population.
+- **Message** — the interpolation sits inside a C++ string literal carrying
+  other text (`SCE_LOG_ERROR("failed: {{ x }}")`). The author's own text is
+  exactly what belongs there; nothing to migrate.
+- **NotAHandOff** — the callee does not evaluate. Measured:
+  `ForeachValidator::validateForeachAttributes` takes the array text and only
+  asks whether it is empty (`ForeachValidator.h:27`), so lowering it would
+  answer a question nobody asked.
+
+⚠ **And the third bucket needed its own escape hatch.** An unknown callee also
+reads as `NotAHandOff` — correct for the validator, a silent hole anywhere
+else, and precisely how this document's own table came to miss five helpers.
+So `unclassified_expression_sites()` lists them instead. Measured 2026-08-28:
+**0 unmigrated, 9 unclassified.**
+
+⚠⚠ **The Lua target requires BOTH lists empty.** Keying the refusal on the
+migrated count alone would have opened it the moment `unmigrated` hit 0 —
+with 9 sites unadjudicated, any one of which might evaluate. The escape hatch
+would have defeated the gate that owns it. The gate case had the same bug and
+now asks the same two questions.
+
+### The 9 still to adjudicate
+
+Each needs one decision: the callee evaluates (add it to `ENGINE_ENTRY_POINTS`
+and route the site through `to_script_source_*`) or it does not (say so where
+it is used).
+
+| site | what it appears to be |
+|---|---|
+| `actions/assign.jinja2: {{ action.expr.rstrip(';') }}` | assigned into a `std::string expr` local, then passed to `executeAssignment` — an engine hand-off wearing a variable |
+| `actions/assign.jinja2: {{ action.location }}` | the assignment target; crosses as executable text in the complex-path arm |
+| `actions/foreach.jinja2: {{ action.array }}` | `validateForeachAttributes` — inert, and the `executeForeachWith*` calls beside it are the real hand-off |
+| `actions/log.jinja2: {{ action.expr \| replace("'", '"') }}` | interpolated as a C++ EXPRESSION, not a string — needs reading before touching |
+| `actions/send.jinja2: {{ action.delayexpr }}` | `getVariable` — a NAME lookup, and §scxml-6.2's own conformance question this document already carved out |
+| `actions/send.jinja2: {{ action.eventexpr }}` | same |
+| `entry_exit_actions.jinja2: {{ (param.location if param.location else param.expr) \| escape_cpp }}` | donedata params — already `ScriptSource` on the C++ side, needs the ternary rendered through the filter |
+| `entry_exit_actions.jinja2: {{ invoke_info.srcexpr }}` | invoke src path |
+| `invoke_methods.jinja2: {{ param.expr \| escape_cpp }}` | remaining occurrence in a `<param>` path |
+
+**Migration: 29 → 23 → 0 engine-bound** (same day). Moved so far, all of them
 guards or `<data expr>` — the two shapes the seam document names as
 representative, and guards first because §scxml-5.9 truthiness is where the
 runtime rewriters' ECMA-262 divergences concentrate:
@@ -703,9 +755,15 @@ and the authored half the author's. Spelling that at the site would have been
 two interpolations glued together, one edit away from lowering one and not the
 other — the hand-assembly the pair filter exists to prevent.
 
+Then the rest of the engine-bound population: `<send>`'s `typeexpr`,
+`targetexpr`, `contentexpr`, `delayexpr` and `<param>` expressions,
+`<cancel>`'s `sendidexpr`, `<log>`'s `expr`, `<invoke>`'s `srcexpr` /
+`contentexpr` / `<param>`, and the three `resultToString(…, originalExpression)`
+sites this document had already counted. Nine templates now call the filter.
+
 Verified in the same turn: the emitted artifact for `examples/ai_loop/ai_loop.scxml`
-carries **36** `::SCE::ScriptSource::ecmascript(...)` calls where it previously
-carried bare string literals, the full C++ tree builds, and
+carries `::SCE::ScriptSource::ecmascript(...)` calls where it previously
+carried bare string literals, the full C++ tree builds, every lane passes, and
 `tests/forge/expected/inline_mixed_sm.inl` — the one committed C++ expectation —
 re-pinned to exactly that change and nothing else.
 
