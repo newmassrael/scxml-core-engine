@@ -34,8 +34,8 @@
 // lowers `<assign expr>` through the frontend — both hand the authored
 // ECMAScript to their engine and let it decide — so they emit no raise
 // to compare against. That gap is a real one and it is not this test's
-// to assert; `every_backend_that_lowers_emits_the_same_refusal` pins
-// which backends are in scope so the list cannot quietly shrink.
+// to assert; `cpp_and_kotlin_do_not_lower_authored_ecmascript_here`
+// pins which backends are in scope so the list cannot quietly shrink.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
