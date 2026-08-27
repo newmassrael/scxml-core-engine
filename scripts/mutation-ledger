@@ -36,6 +36,16 @@
 # claim this ledger exists to stop being indistinguishable from a reading, and
 # counting it would put the laundering back one level up.
 #
+# A SHARDED round is the same rule one level down. `scripts/mutate --shard
+# I/N` measures a slice of a casefile, because a casefile of expensive cases
+# cannot be finished inside one CI job — eight rounds of dispatch 32803356117
+# ran to the lane's 330-minute ceiling and were cancelled. Its record carries
+# a `shard`, and one shard does NOT make a casefile judged: the set does, once
+# every index is present and describing the same casefile blob in the same
+# tree. Until then the shards are held aside and the casefile stays unjudged,
+# which is what it is. `rc` for the merged reading is the WORST of them — a
+# set in which one shard stopped partway did not reach its end.
+#
 # Which leaves four questions, kept apart because each moves the number for a
 # different reason:
 #
@@ -187,7 +197,42 @@ with os.fdopen(3) as fh:
 # casefile" and "what has been MEASURED about it" are different questions and
 # the corpus-wide goal is defined against the second.
 MEASURED = ("live", "round-log")
+
+
+def merge_shards(shards):
+    """One record from the complete set of shards that covered a casefile.
+
+    A shard measures some of a casefile's cases and says nothing about the
+    rest, so a shard alone must never make a casefile `judged` — that is the
+    corpus's cardinal error, an absent verdict reading as a present one. It is
+    the SET that judges, and only once every index is in it, describing the
+    same casefile blob in the same tree.
+
+    `rc` is the worst of them rather than the last: a set in which one shard
+    stopped partway has not reached its end, and `rc=0` is the claim that it
+    did. The tallies add; the cases concatenate in shard order, which is the
+    order they appear in the casefile.
+    """
+    ordered = [shards[i] for i in sorted(shards)]
+    merged = dict(ordered[-1])
+    merged["cases"] = [case for shard in ordered for case in shard["cases"]]
+    for key in ("caught", "survived", "inconclusive"):
+        merged[key] = sum(shard[key] for shard in ordered)
+    merged["rc"] = max(shard["rc"] for shard in ordered)
+    merged["started"] = min(shard["started"] for shard in ordered)
+    merged["ended"] = max(shard["ended"] for shard in ordered)
+    if any("tree_dirty" in shard for shard in ordered):
+        merged["tree_dirty"] = any(shard.get("tree_dirty") for shard in ordered)
+    merged.pop("shard", None)
+    return merged
+
+
 records, measured = {}, {}
+# Shards seen so far that do not yet cover their casefile, keyed by everything
+# that has to agree before they may be added up. The blob and the tree are in
+# the key because two shards of DIFFERENT versions of a casefile are not a
+# reading of either one.
+pending = {}
 with os.fdopen(4) as fh:
     for line in fh:
         line = line.strip()
@@ -195,8 +240,23 @@ with os.fdopen(4) as fh:
             continue
         record = json.loads(line)
         records.setdefault(record["stem"], []).append(record)
-        if record["provenance"] in MEASURED:
+        if record["provenance"] not in MEASURED:
+            continue
+        shard = record.get("shard")
+        if shard is None:
             measured.setdefault(record["stem"], []).append(record)
+            continue
+        key = (record["stem"], shard["of"], shard["declared"],
+               record.get("casefile_blob"), record["tree"])
+        group = pending.setdefault(key, {})
+        group[shard["index"]] = record
+        if len(group) < shard["of"]:
+            continue
+        # Appended where its LAST shard landed, so "newest by append order"
+        # goes on meaning what it means for every other record: the reading
+        # that finished most recently.
+        measured.setdefault(record["stem"], []).append(merge_shards(group))
+        del pending[key]
 
 
 def blob(path):

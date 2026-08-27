@@ -97,6 +97,19 @@ MUTATION_LEDGER_RS=$'\036'
 # is precisely the condition under which an end-of-round reading would lie.
 mutation_ledger_begin() {
     local casefile="$1" scratch="$2"
+    # Which slice of the casefile this round answers for. A sharded round
+    # measures some of the cases and says nothing about the rest, so a record
+    # that did not carry the slice would be indistinguishable from a whole
+    # round — and `scripts/mutation-ledger` would read one job's three cases as
+    # the sixteen-case casefile having been judged. That is the corpus's
+    # cardinal error, an absent verdict reading as a present one, spelled with
+    # a new mechanism.
+    #
+    # Defaults keep the by-hand call site honest: an argument-less caller is
+    # running the whole file, which is what `1/1` says.
+    MUTATION_LEDGER_SHARD_INDEX="${3:-1}"
+    MUTATION_LEDGER_SHARD_COUNT="${4:-1}"
+    MUTATION_LEDGER_SHARD_TOTAL="${5:-0}"
     MUTATION_LEDGER_CASEFILE="$casefile"
     MUTATION_LEDGER_ROWS="$scratch"
     : >"$MUTATION_LEDGER_ROWS"
@@ -151,14 +164,16 @@ mutation_ledger_commit() {
     python3 - "$MUTATION_LEDGER_ROWS" "$dir" "$MUTATION_LEDGER_CASEFILE" \
         "$MUTATION_LEDGER_TREE" "$MUTATION_LEDGER_DIRTY" "$MUTATION_LEDGER_BLOB" \
         "$runner" "$rc" "$provenance" "$MUTATION_LEDGER_STARTED" \
-        "${MUTATION_LEDGER_NOTE:-}" <<'PY'
+        "${MUTATION_LEDGER_NOTE:-}" \
+        "${MUTATION_LEDGER_SHARD_INDEX:-1}" "${MUTATION_LEDGER_SHARD_COUNT:-1}" \
+        "${MUTATION_LEDGER_SHARD_TOTAL:-0}" <<'PY'
 import json
 import os
 import sys
 import time
 
 (rows_path, dir_, casefile, tree, dirty, blob, runner, rc, provenance,
- started, note) = sys.argv[1:12]
+ started, note, shard_index, shard_count, shard_total) = sys.argv[1:15]
 fs = os.environ["MUTATION_LEDGER_FS"]
 rs = os.environ["MUTATION_LEDGER_RS"]
 
@@ -216,6 +231,18 @@ if tree != "unknown":
 # something.
 if note:
     record["note"] = note
+# Only when the round was one of several. A `1/1` on every record would be a
+# field that says nothing on the ninety-nine per cent of rows where the round
+# was the whole file, and an absent one is the honest spelling of "this record
+# covers the casefile". Its presence is what tells a reader the opposite, and
+# `declared` is how they know when the shards are complete without re-reading
+# a casefile that may have moved since.
+if int(shard_count) > 1:
+    record["shard"] = {
+        "index": int(shard_index),
+        "of": int(shard_count),
+        "declared": int(shard_total),
+    }
 
 # Appended, and flushed before the process leaves. A round is minutes of
 # machine time; losing its one line to a buffer is not a trade worth making.
