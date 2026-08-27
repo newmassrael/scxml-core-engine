@@ -209,7 +209,7 @@
         // Execution order: datamodel init → global scripts → state machine start
 {% for script in model.global_scripts %}
         {
-            auto scriptResult = scriptEngine.executeScript(sessionId_.value(), "{{ script.content | escape_cpp }}").get();
+            auto scriptResult = scriptEngine.executeScript(sessionId_.value(), {{ script.content | to_script_source_script }}).get();
             if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
                 std::string errorMsg = "Global script execution failed";
                 SCE_LOG_ERROR("W3C SCXML 5.8: {}", errorMsg);

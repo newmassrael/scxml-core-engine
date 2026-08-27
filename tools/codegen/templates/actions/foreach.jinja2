@@ -47,7 +47,7 @@
     // W3C SCXML 4.6: Use ForeachHelper for centralized error handling
     bool foreachSuccess = ::SCE::Core::ForeachHelper::executeForeachWithActions(
         scriptEngine, sessionId_.value(),
-        "{{ action.array }}", "{{ action.item }}", "{{ action.index }}",
+        {{ action.array | to_script_source_expr }}, "{{ action.item }}", "{{ action.index }}",
         [&]([[maybe_unused]] size_t i) -> bool {
             // W3C SCXML 4.6: Track overall success of all actions in this iteration
             bool iterationSuccess = true;
@@ -93,7 +93,7 @@
     auto& scriptEngine = getScriptEngine();
     bool foreachSuccess = ::SCE::Core::ForeachHelper::executeForeachWithoutBody(
         scriptEngine, sessionId_.value(),
-        "{{ action.array }}", "{{ action.item }}", "{{ action.index }}"
+        {{ action.array | to_script_source_expr }}, "{{ action.item }}", "{{ action.index }}"
     );
     // W3C SCXML 4.6: Check foreach execution result and raise error.execution on failure
     if (!foreachSuccess) {

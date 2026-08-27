@@ -300,7 +300,7 @@
                         auto _srcexpr_result_{{ invoke_info.invoke_id }} =
                             _srcexpr_engine_{{ invoke_info.invoke_id }}.evaluateExpression(
                                 sessionId_.value(),
-                                "{{ invoke_info.srcexpr }}").get();
+                                {{ invoke_info.srcexpr | to_script_source_expr }}).get();
                         if (!::SCE::ScriptResultUtils::isSuccess(_srcexpr_result_{{ invoke_info.invoke_id }})) {
                             engine.raise(typename Engine::EventWithMetadata(
                                 Event::Error_execution,
