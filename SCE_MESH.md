@@ -53,7 +53,7 @@ SCE Mesh is a **build-time + minimal-runtime** layer. It is explicitly **not**:
 
 Current realization state (see §8.3 and §13 for authoritative detail):
 
-- **Language coverage**: mesh runtime targets **C++ only**. The other five codegen backends (Kotlin, Rust, Python, Go, plus interpreter path) ship state-machine codegen without mesh. Per-language mesh expansion is evaluated case-by-case, not a parity obligation.
+- **Language coverage**: mesh runtime targets **C++ only**. The other five codegen backends (Rust, Kotlin, Go, Python, C11) ship state-machine codegen without mesh, and a mesh construct addressed to one of them is refused at build time rather than dropped. The per-backend table lives in §9.5 and is derived from `tools/codegen/templates/mesh/<dir>/` rather than restated here — this sentence spelled a five-backend list that omitted C11 and counted the interpreter path as a codegen backend, which is the drift a derived table removes. Per-language mesh expansion is evaluated case-by-case, not a parity obligation.
 - **Pattern coverage**: `service.fire_forget` is realized end-to-end across local/shm/someip/zenoh; `service.request` / `event.subscribe` / `field.get` are realized over someip and zenoh with wire-level correlation. A transport that does not implement a pattern is rejected at build time, never degraded at runtime (§8.3).
 - **Conformance scope**: distributed W3C SCXML conformance is a weak-equivalence claim with explicit deferrals; see §16 and `SCE_MESH_CONFORMANCE_MATRIX.md`.
 
@@ -1488,6 +1488,33 @@ The remaining `Unsupported` entries are structural rather than pending work. `lo
 **Requester-side correlation.** A reply retires the correlation entry the request registered, and only a peer in the request binding's responder set (§14.6) may do so — the same one-shot rule on every transport. What identifies the responder is structural, never `env.source`, which the sender writes: SOME/IP uses the handler registered per (service, instance, method), custom_tcp uses the stream the request left on, and DDS uses the endpoint — one client reads only the reply topic derived from its own target's `topic:`, so arrival on it *is* that target. A reply from outside the set raises §16.7 row 14 and leaves the entry live, so the request stays answerable.
 
 **Cancel ordering.** `handleServerResponse` cancels the timer *before* erasing the pending entry, so a timer cannot fire between the lookup and the erase and answer `MT_ERROR` for a request that is being answered normally. On shutdown the flag-set and scheduler drain precede every transport teardown, and every active arm depends on that order: the notice is an outbound send on transport state the teardown is about to destroy — a stopped vsomeip application, a shut-down TCP listener, a released DDS writer. Draining first means the last callback has already returned by the time any of them goes down.
+
+**Backend coverage — a build-time refusal, derived from the template tree.**
+
+`sce:mesh-rpc` has transport emission only where `tools/codegen/templates/mesh/<dir>/` exists. Every backend's parser accepts the invoke — the parser is language-agnostic — so a backend without that directory would emit a state machine whose `<onentry>` silently ignores the invoke, which is a declaration the author made and SCE quietly did not service. `sce-codegen` refuses at build time instead, with `GenerateError::UnsupportedFeature` naming the backends that do carry a mesh arm:
+
+```
+<invoke type="sce:mesh-rpc"> in 'brake_invoke' has no Rust codegen path
+(mesh transport emission exists for: cpp). Either generate this machine
+for `--lang cpp` or remove the mesh-rpc invokes from the SCXML.
+```
+
+The served set is READ from the embedded template tree at codegen time (`mesh_templates_exist_for`, `sce-build/src/generator.rs`) rather than asserted by that function, so adding `tools/codegen/templates/mesh/<dir>/` is what lifts a refusal and no hand-written "C++ only" can outlive the tree it described. The table below is the contract; `sce-build/tests/mesh_rpc_backend_contract.rs` holds it to the template tree AND to what the CLI actually answers on all six backends, so a row cannot drift from either.
+
+<!-- sce:mesh-rpc-backends — parsed by sce-build/tests/mesh_rpc_backend_contract.rs -->
+
+| `--lang` | Template directory under `tools/codegen/templates/mesh/` | Codegen path |
+|---|---|---|
+| `cpp` | `cpp/` | emitted |
+| `rust` | `rust/` | refused |
+| `kotlin` | `kotlin/` | refused |
+| `go` | `go/` | refused |
+| `python` | `python/` | refused |
+| `c11` | `c/` | refused |
+
+**Why this refusal is not retired the way `<sce:action>`'s was.** `reject_native_actions_in_unsupported_lang` was deleted because native host dispatch had been an accident of unfinished work: validation was already language-neutral, six backends grew the lowering, and the gate had nothing left to refuse — the procedure is recorded at the removal site in `sce-build/src/generator.rs` (§scxml-G-7) and judged by `sce-build/tests/native_action_backend_parity.rs`. Mesh is the other case. `ARCHITECTURE.md` Principle 8 makes C++-only mesh a stated scope rule — per-backend expansion is case-by-case, gated on explicit demand, not a standing parity obligation — so deleting this gate would not retire a refusal, it would accept a declaration SCE cannot service. The refusal is therefore SPLIT rather than removed: the gate stays, and which backends it names moved out of the function and into the tree above.
+
+**What lifting a refusal costs.** A row flips to `emitted` when `tools/codegen/templates/mesh/<dir>/` gains that backend's transport templates; no Rust edit is involved, and the diagnostic's "exists for:" list widens on its own. What the contract test then demands is that the backend actually generate this section's fixture (`tests/mesh/brake_invoke.scxml`), not merely own a directory — an empty template directory flips no row.
 
 ### 9.6 `<invoke type="scxml">` — full remote SCXML session (Session F)
 

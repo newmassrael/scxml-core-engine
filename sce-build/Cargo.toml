@@ -412,5 +412,17 @@ name = "forge_ast_export"
 path = "tests/forge_ast_export.rs"
 required-features = ["cli"]
 
+# SCE Mesh §9.5 backend-coverage contract. Binds the §9.5 table to the
+# tracked `tools/codegen/templates/mesh/<dir>/` tree AND to what the real
+# binary answers for each `--lang`, so the mesh-rpc refusal cannot drift
+# from the roster that documents it. Declared rather than auto-discovered
+# because the third of those three questions drives `sce-codegen`: with
+# the feature off cargo skips this target instead of leaving it to dangle
+# on an unset `CARGO_BIN_EXE_sce-codegen`.
+[[test]]
+name = "mesh_rpc_backend_contract"
+path = "tests/mesh_rpc_backend_contract.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
