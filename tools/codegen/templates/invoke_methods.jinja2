@@ -187,7 +187,7 @@
                         {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
                         {
                             ensureScriptEngine();
-                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
+                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
                             if (::SCE::ScriptResultUtils::isSuccess(__sce_param)) {
                                 child_{{ invoke_info.field_suffix }}_->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());
                             } else {
@@ -294,7 +294,7 @@
                         {
                             ensureScriptEngine();
                             auto& scriptEngine = getScriptEngine();
-                            auto pathResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.srcexpr }}").get();
+                            auto pathResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(pathResult)) {
                                 SCE_LOG_ERROR("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr }}' evaluation failed");
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "srcexpr evaluation failed"));
@@ -314,7 +314,7 @@
                         {
                             ensureScriptEngine();
                             auto& scriptEngine = getScriptEngine();
-                            auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.contentexpr }}").get();
+                            auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.contentexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
                                 SCE_LOG_ERROR("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr }}' evaluation failed");
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "contentexpr evaluation failed"));
