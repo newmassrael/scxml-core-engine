@@ -334,6 +334,11 @@ points"; it has three, and `validateExpression` being dead surface is its own
 decision — extend it with the seam or retire it — rather than something to
 discover while implementing.
 
+**Answered 2026-08-28 for the three `IScriptEngine` rows**, which now take a
+`ScriptSource` — see "Landed 2026-08-28" below; `validateExpression` was
+extended rather than retired. The six helper rows still take a bare string and
+are what the template split has to widen next.
+
 ⚠ `getVariable` is on this table for a reason worth keeping: it is **not** an
 evaluation entry point, and it was missed precisely because the table was
 built by asking which methods evaluate. What decides membership is whether a
@@ -409,8 +414,102 @@ mesh-rpc refusal in `sce-build/src/generator.rs` is the shape that refusal
 should take. Only once an engine can be handed lowered text safely does
 `--script-engine lua` have anywhere to send it.
 
+## Landed 2026-08-28: the seam exists on `IScriptEngine`
+
+`sce/include/scripting/ScriptSource.h` is the pair this section argued for.
+`ScriptLanguage` is `ECMAScript | Lua`, spelled to match the manifest's
+`script_engine_language` wire vocabulary so the tag an engine is handed and the
+field a host reads cannot become two names for one answer. `ScriptSource`
+carries `text()` — what the engine evaluates — beside `source()`, the author's
+ECMAScript. There is deliberately no one-argument `lua()`: a caller with no
+authored text must pass the Lua twice and thereby say that its diagnostics will
+name Lua.
+
+The three entry points now take one. They are **non-virtual**, and what each
+engine implements is a `do*` hook:
+
+| Entry point | Takes | Hook |
+|---|---|---|
+| `executeScript` | `ScriptSource`, or `std::string` meaning `ecmascript(...)` | `doExecuteScript` |
+| `evaluateExpression` | same | `doEvaluateExpression` |
+| `validateExpression` | same | `doValidateExpression` |
+
+Non-virtual because the refusal is a **contract, not an engine detail**: the
+public entry point asks `acceptsLanguage()` and returns `refuseLanguage()`
+before the hook is reached, so a third engine cannot forget it. Two new virtuals
+carry the engine's own answer — `nativeLanguage()` (the engine-side mirror of
+the manifest field) and `acceptsLanguage()` (true for the native language and
+for any language the engine owns an *adapter* for). `LuaEngine` answers
+`Lua` + accepts both, because `EcmaScriptToLuaTransformer` is that adapter;
+`JSEngine` answers `ECMAScript` + accepts only ECMAScript, which is what makes
+QuickJS-handed-Lua a refusal rather than a syntax error in someone else's
+language.
+
+**`validateExpression` was extended, not retired.** It is dead in the templates
+but live in `tests/engine/JSEngineBasicTest.cpp` and
+`ShutDownEngineAnswersTest.cpp`, so retiring it is a removal with its own
+witnesses to move; treating it like its two siblings costs one hook and keeps
+the interface uniform. Retirement stays available and is now a smaller change
+than it was.
+
+Inside `LuaEngine`, the seam is **one branch**, exactly as this document
+demanded: `loweredTextOf` / `loweredScriptOf` pass Lua through and send
+ECMAScript to the transformer, and everything after — the `ReferenceError`
+check, the `return` wrapping, the chunk cache, the assignment fallback —
+is the shared tail both paths run. The `ReferenceError` is built from
+`source()` while the check runs on the lowered text, which is the two-string
+requirement above, landed.
+
+⚠ **The per-session fast paths are keyed on the incoming text, so they carry
+the language too.** `arr[1]` means two different chunks depending on which tag
+it arrived with; a cache that answered the first caller's chunk to the second
+would reintroduce the same silent off-by-one from the other direction. A
+language mismatch is a miss.
+
+⚠ **`IScriptEngine.h` must not carry these bodies.** They are defined in
+`sce/src/scripting/IScriptEngine.cpp` (in `sce_base`, since they name no
+engine). Measured while landing this: with the bodies inline, that header —
+which every generated state machine includes — changed GCC 13's inlining and
+surfaced the known `-Wmaybe-uninitialized` false positive in `std::variant`'s
+move constructor, failing `W3CTestRunner_Test561.cpp` under `-Werror` when it
+had compiled clean at `8023a18b41`. The repo already names that false positive
+at `tests/CMakeLists.txt:221`; suppressing it on one more target would have
+hidden a header that had simply grown code it did not need to carry.
+
+`tests/engine/ScriptLanguageSeamTest.cpp` (ctest `ScriptLanguageSeam`, 7 cases)
+is the witness, and it names `LuaEngine` and `JSEngine` rather than reading the
+provider, for the reason `DomReadSurfaceTest` records: no gate configures
+`-DSCE_SCRIPT_ENGINE=lua`, so whichever half this build did not select would be
+compiled by every build and run by none. Each case carries its own control, so
+none of them can pass by measuring nothing:
+
+- lowered `arr[1]` answers the author's **first** element, and the same
+  characters tagged ECMAScript answer the **second** — the control is what
+  proves the skip is a real bypass rather than a no-op;
+- the `ReferenceError` names `nosuchvar[0]` and not `nosuchvar[1]`;
+- QuickJS refuses lowered Lua naming both languages, **and** evaluates
+  ECMAScript in the same session, so the refusal is about the language;
+- the provider's engine reports the language `SCE_SCRIPT_ENGINE` selected.
+
+Re-derive the red witness rather than trusting this paragraph: ignoring the tag
+in `loweredTextOf`, reporting `text()` instead of `source()` in the
+`ReferenceError`, and making `JSEngine::acceptsLanguage` answer `true` turn
+**5 of the 7** red, each attributable to one break (measured 2026-08-28; the
+two that stay green are the two neither break touches).
+
+What this does **not** yet do: no template emits a `ScriptSource::lua(...)`
+call, so nothing in the tree crosses the seam in anger. The 38 sites are the
+next step, and the entry-point list they must widen from is
+`sce/include/scripting/` — not this document's table.
+
 ## What is not yet decided
 
+- **The six helper entry points.** `DataModelInitHelper`, `ForeachHelper` and
+  `ScriptResultUtils` still cross the boundary with a bare string, so the 38
+  template sites cannot move until they carry a `ScriptSource` too. The
+  interface's own three are done; these are not, and a NEW helper that
+  evaluates on the caller's behalf would be missed the same way the first
+  three were — widen from `sce/include/scripting/`, not from this file.
 - The C++ **Interpreter** has no build step at all, so it cannot receive
   build-time-translated text by this route. `sce-build`'s cdylib is the
   candidate answer — `Cargo.toml` records that there is no in-tree consumer of
