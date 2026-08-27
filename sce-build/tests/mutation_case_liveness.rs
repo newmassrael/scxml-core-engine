@@ -107,11 +107,41 @@ fn fixture_with_selector(selector: &str, target_body: &str, cases: &str) -> Fixt
     }
 }
 
+/// Where a fixture's round keeps its in-flight record: beside the fixture,
+/// never in the ambient store.
+///
+/// A round opens a record before it mutates and retires it after it restores,
+/// and `mutation_inflight_recover` refuses to start when it finds an ABANDONED
+/// record whose snapshot directory is gone — the right answer for a developer
+/// tree, where that means a killed round left a mutation behind.
+///
+/// Without this, every test here shared one directory
+/// (`mutation_ledger_root()/in-flight`) while cargo ran them concurrently, so
+/// one test's finished round was another test's abandoned one: its pid had
+/// exited and its `tempdir()` snapshot was already unlinked, which is exactly
+/// the unrecoverable shape the guard hard-refuses. The refusal then stood
+/// where the rejection under test should have been, and the assertion failed
+/// reporting the wrong reason. Measured on job 98430990425 (sha bb02f7ad53):
+/// 11 of 28 failed that way, every message naming a sibling's temp path, while
+/// the same commit passed locally — the pass was ordering luck, not health.
+///
+/// Isolation also runs the other way: unscoped, these fixtures WRITE records
+/// into the store a real round reads, so a crash here could refuse a
+/// developer's next round over a mutation that was never in their tree.
+/// `mutation_inflight.rs` already scopes its rounds this way.
+fn inflight_dir(casefile: &Path) -> PathBuf {
+    casefile
+        .parent()
+        .expect("a fixture casefile lives in its own directory")
+        .join("in-flight")
+}
+
 /// Run the check mode over a fixture; return (success, combined output).
 fn check(casefile: &Path) -> (bool, String) {
     let out = Command::new(repo_root().join("scripts/mutate"))
         .arg("--check")
         .arg(casefile)
+        .env("SCE_MUTATION_INFLIGHT_DIR", inflight_dir(casefile))
         .current_dir(repo_root())
         .output()
         .expect("run scripts/mutate --check");
@@ -128,6 +158,7 @@ fn check_shard(casefile: &Path, shard: &str) -> (bool, String) {
         .arg("--shard")
         .arg(shard)
         .arg(casefile)
+        .env("SCE_MUTATION_INFLIGHT_DIR", inflight_dir(casefile))
         .current_dir(repo_root())
         .output()
         .expect("run scripts/mutate --check --shard");
