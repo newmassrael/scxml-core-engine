@@ -44,6 +44,21 @@ const SCOREBOARD_DOC: &str = "ARCHITECTURE.md";
 const CASES_JSON: &str = "tests/ecmascript/ecma262_semantics.json";
 const DIVERGENCES_JSON: &str = "tests/ecmascript/lua_engine_divergences.json";
 
+/// Every declared-divergence list beside the shared table.
+///
+/// Two engines rewrite ECMAScript into Lua — the C++ `lua` selection and the
+/// Kotlin backend's `LuaScriptEngine` — with different transformers onto
+/// different Luas, so each keeps its own measurement and neither may be
+/// derived from the other. Their integrity is one question, asked here once:
+/// a list whose entries name no case is a list its own suite compares against
+/// and cannot fault. The Kotlin one is checked from HERE rather than only
+/// from its suite because this lane needs no JVM, so an orphan is caught on
+/// every push instead of only when the Kotlin gate is selected.
+const DIVERGENCE_LISTS: &[&str] = &[
+    DIVERGENCES_JSON,
+    "tests/ecmascript/kotlin_lua_divergences.json",
+];
+
 /// The matrix is found by its header rather than by position: a section that
 /// moves keeps its table, and a table that is renamed should fail here rather
 /// than be silently skipped.
@@ -93,12 +108,16 @@ fn cases() -> Vec<serde_json::Value> {
         .clone()
 }
 
-fn divergences() -> Vec<serde_json::Value> {
-    json(DIVERGENCES_JSON)
+fn divergences_in(rel: &str) -> Vec<serde_json::Value> {
+    json(rel)
         .get("divergences")
         .and_then(|d| d.as_array())
-        .unwrap_or_else(|| panic!("{DIVERGENCES_JSON} has a `divergences` array"))
+        .unwrap_or_else(|| panic!("{rel} has a `divergences` array"))
         .clone()
+}
+
+fn divergences() -> Vec<serde_json::Value> {
+    divergences_in(DIVERGENCES_JSON)
 }
 
 /// One row of the engine matrix: the engine's name and the `N/M` it claims.
@@ -193,31 +212,42 @@ fn every_declared_divergence_answers_a_real_case() {
          key to identify a case."
     );
 
-    let declared = divergences();
     assert!(
-        !declared.is_empty(),
-        "{DIVERGENCES_JSON} declares nothing. The `lua` row is derived by subtracting \
-         from it, so an empty list would silently score that engine perfect — which is \
-         the claim the file was written to stop being made in prose."
+        DIVERGENCE_LISTS.len() >= 2,
+        "two engines rewrite ECMAScript into Lua and each keeps its own list; this sweep \
+         is down to {} and is no longer asking about both.",
+        DIVERGENCE_LISTS.len()
     );
 
-    let seen: BTreeSet<(String, String)> = declared.iter().map(key).collect();
-    assert_eq!(
-        seen.len(),
-        declared.len(),
-        "{DIVERGENCES_JSON} lists the same (source, clause) twice. Subtracting a count \
-         with duplicates in it scores the engine lower than the table can justify."
-    );
+    for list in DIVERGENCE_LISTS {
+        let declared = divergences_in(list);
+        assert!(
+            !declared.is_empty(),
+            "{list} declares nothing. Each list is what its suite compares an engine \
+             against in both directions, so an empty one silently scores that engine \
+             perfect — the claim these files were written to stop being made in prose."
+        );
 
-    let orphans: Vec<&(String, String)> = seen.difference(&known).collect();
-    assert!(
-        orphans.is_empty(),
-        "{} declared divergence(s) name no case in {CASES_JSON}. `ecmascript_semantics_test` \
-         catches this when it runs the engine; it is asserted here because the scoreboard's \
-         subtraction is only arithmetic while every entry answers a real case.\norphans: \
-         {orphans:?}",
-        orphans.len()
-    );
+        let seen: BTreeSet<(String, String)> = declared.iter().map(key).collect();
+        assert_eq!(
+            seen.len(),
+            declared.len(),
+            "{list} lists the same (source, clause) twice. A duplicate scores the engine \
+             lower than the table can justify, and hides that one of the two was never \
+             looked at."
+        );
+
+        let orphans: Vec<&(String, String)> = seen.difference(&known).collect();
+        assert!(
+            orphans.is_empty(),
+            "{} entr(ies) in {list} name no case in {CASES_JSON}. Each list's own suite \
+             would report these as cases that stopped diverging — which is the wrong \
+             sentence for an entry that never named one — and the C++ scoreboard \
+             subtracts this list's length, which is only arithmetic while every entry \
+             answers a real case.\norphans: {orphans:?}",
+            orphans.len()
+        );
+    }
 }
 
 #[test]

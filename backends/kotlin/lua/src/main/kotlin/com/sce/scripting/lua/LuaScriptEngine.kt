@@ -28,21 +28,24 @@ import org.w3c.dom.Node
  * differently from what ECMA-262 says, and the disagreements are not exotic —
  * `0 && x` comes back true, `1 == '1'` comes back false, `-7 % 3` comes back
  * 2, a computed array index is off by one. The C++ build measured the same
- * class and flipped its default engine away from Lua for that reason; the
- * cases it gets wrong are enumerated in
- * `tests/ecmascript/lua_engine_divergences.json`, clause by clause.
+ * class and flipped its default engine away from Lua for that reason.
  *
- * What holds this paragraph, precisely, so no more is read into it than is
- * true: `EcmaScriptSemanticsTest.luaIsNotAnEcmaScriptEngineAndSaysSo` asserts
- * that the failure set is NOT EMPTY and that this header still says "not an
- * ECMAScript engine". It does not pin WHICH cases, or how many. This
- * paragraph used to carry two counts — "27 of its 58" here and "26 of 58" for
- * C++ — under a sentence claiming the test held them to the measurement; it
- * did not, and the shared table had since grown to 98 cases, so both
- * denominators named a table that no longer existed. No count is written here
- * now. Registering this backend's divergence set the way C++ registers its
- * own is what would let one be, and until then the honest statement is the
- * shape, not a number.
+ * **Which cases** is not written here, because a count in prose is the one
+ * thing nothing can re-answer. It is enumerated, clause by clause, in
+ * `tests/ecmascript/kotlin_lua_divergences.json`, and
+ * `EcmaScriptSemanticsTest.luaIsNotAnEcmaScriptEngineAndSaysSo` holds this
+ * engine to that list in BOTH directions: a case that starts disagreeing
+ * without being declared is red, and a declared case that has been repaired
+ * is red too. The C++ selection has its own list beside it
+ * (`lua_engine_divergences.json`) — two measurements of two engines that
+ * share a strategy, neither derivable from the other.
+ *
+ * That list is what this paragraph used to lack. It carried two counts —
+ * "27 of its 58" here and "26 of 58" for C++ — under a sentence claiming the
+ * test held them to the measurement. It held neither; it asserted only that
+ * the failure set was not empty, which one disagreement satisfies as well as
+ * fifty. The shared table had meanwhile grown to 98 cases, so both
+ * denominators named a table that no longer existed.
  *
  * This header used to read "For AOSP/AAOS production, this replaces Rhino
  * with a faster native engine". It is faster, and that sentence sent a reader
