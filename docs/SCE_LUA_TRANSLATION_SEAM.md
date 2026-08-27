@@ -84,21 +84,27 @@ is what that costs on each side:
   a singleton fixed by that option. The `IScriptEngine&` parameter on generated
   code is an indirection over a compile-time choice, not a runtime one. No
   in-tree consumer constructs an engine and injects a different one.
-- **Kotlin: a real choice, exercised by benchmarks and a demo.** Generated
+- **Kotlin: a real choice, and its default is a correct engine.** Generated
   Kotlin takes `scriptEngine: ScxmlScriptEngine` as a *constructor argument*
   (`kotlin/state_machine.kt.jinja2:69`), and `EngineFactory` offers three —
   Rhino, Lua 5.4, QuickJS. Its callers in-tree are the JMH benchmarks
   (`backends/kotlin/benchmark/src/jmh/...`) and the Android app's benchmark
-  harness; the W3C suite selects with `-Psce.script.engine=` and
-  `ScriptEngineSelectionTest` guards that the selection is honoured.
+  harness; the W3C suite selects with `-Psce.script.engine=`, and
+  `W3CTestBase.engineFor` **refuses an unknown name rather than defaulting**
+  (it used to end `else -> RhinoScriptEngine()`, which made a misspelt engine
+  a green run under another engine's name). `W3CTestBase.DEFAULT_ENGINE` is
+  **`"rhino"`** — so unlike C++, whose default `quickjs` already bypasses the
+  rewriter, Kotlin's default is an ECMAScript engine reached through the same
+  constructor slot a Lua-shaped artifact would close.
 
 **The one sentence.** Moving translation to build time costs the ability to run
 one generated artifact on more than one engine, and the only place that ability
-is exercised in this tree is Kotlin — where two of the three engines offered
-(Rhino, QuickJS) answer every ECMA-262 case correctly and would be made
-unreachable by a Lua-shaped artifact, so the design must take the target engine
-as a codegen input (`script_engine_language` already exists on the manifest,
-`sce-build/src/manifest.rs:209`) rather than assume one.
+is exercised in this tree is Kotlin — where the two engines that answer every
+ECMA-262 case (Rhino, QuickJS) reach the machine through the same constructor
+slot a Lua-shaped artifact would close, and Rhino is the default — so the
+design must take the target engine as a codegen input (`script_engine_language`
+already exists on the manifest, `sce-build/src/manifest.rs:209`) rather than
+assume one.
 
 ## What is not yet decided
 
