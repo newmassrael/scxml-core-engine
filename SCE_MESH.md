@@ -1496,8 +1496,10 @@ The remaining `Unsupported` entries are structural rather than pending work. `lo
 ```
 <invoke type="sce:mesh-rpc"> in 'brake_invoke' has no Rust codegen path
 (mesh transport emission exists for: cpp). Either generate this machine
-for `--lang cpp` or remove the mesh-rpc invokes from the SCXML.
+with `--lang cpp` or remove the mesh-rpc invokes from the SCXML.
 ```
+
+Both halves of that sentence are derived. The diagnosis reads the served set from the template tree, and so does the remedy — a second backend gaining a mesh arm widens the `--lang` suggestion on its own. It did not always: the remedy was written as a literal `` `--lang cpp` `` three lines under a comment promising the message names no spelling of its own, which would have sent every operator to C++ no matter how wide the served set grew.
 
 The served set is READ from the embedded template tree at codegen time (`mesh_templates_exist_for`, `sce-build/src/generator.rs`) rather than asserted by that function, so adding `tools/codegen/templates/mesh/<dir>/` is what lifts a refusal and no hand-written "C++ only" can outlive the tree it described. The table below is the contract; `sce-build/tests/mesh_rpc_backend_contract.rs` holds it to the template tree AND to what the CLI actually answers on all six backends, so a row cannot drift from either.
 

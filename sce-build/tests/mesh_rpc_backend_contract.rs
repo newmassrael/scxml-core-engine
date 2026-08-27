@@ -55,7 +55,9 @@ use sce_build::generator::Language;
 /// than searched for by shape: a second table in this file must not be able
 /// to answer for this one.
 const CONTRACT_DOC: &str = "SCE_MESH.md";
-const ANCHOR: &str = "<!-- sce:mesh-rpc-backends";
+/// The slug, not the whole HTML comment: the refusal site cites it in prose
+/// too, and one spelling has to reach both readers.
+const ANCHOR: &str = "sce:mesh-rpc-backends";
 
 /// Where a backend's mesh templates live, relative to the repo root.
 const MESH_TEMPLATE_ROOT: &str = "tools/codegen/templates/mesh";
@@ -357,5 +359,269 @@ fn every_backend_answers_the_fixture_the_way_the_contract_says() {
                 row.lang
             );
         }
+    }
+}
+
+/// Whitespace collapsed to single spaces, so a line-wrapped quote in prose
+/// can be compared with the one-line sentence a terminal shows.
+fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// §9.5 quotes the refusal verbatim, and a verbatim quote rots.
+///
+/// It already did, inside one commit: the remedy moved from a hard-coded
+/// `` `--lang cpp` `` to a derived one, the emitted sentence changed from
+/// "generate this machine for" to "generate this machine with", and the
+/// document went on showing the old wording. Nothing but a reader would have
+/// caught that, and a reader is what the quote exists to serve — an operator
+/// searching for the error text they were shown.
+#[test]
+fn the_documented_diagnostic_is_the_one_the_binary_emits() {
+    let doc = std::fs::read_to_string(repo_root().join(CONTRACT_DOC))
+        .unwrap_or_else(|e| panic!("{CONTRACT_DOC} is readable: {e}"));
+
+    // The example block is identified by its content, not its position: it is
+    // the only fenced block quoting this fixture's refusal.
+    let needle = "<invoke type=\"sce:mesh-rpc\"> in 'brake_invoke'";
+    let at = doc.find(needle).unwrap_or_else(|| {
+        panic!(
+            "§9.5 no longer quotes the refusal for '{needle}'. The quote is what an \
+             operator searches for after seeing the error, so this gate has to fail \
+             rather than stop comparing."
+        )
+    });
+    let open = doc[..at].rfind("```").unwrap_or_else(|| {
+        panic!("§9.5's refusal quote is not inside a fenced block; this gate reads the fence")
+    });
+    let body_start = doc[open..].find('\n').expect("a fence ends its line") + open + 1;
+    let close = doc[body_start..]
+        .find("```")
+        .expect("§9.5's refusal quote has a closing fence")
+        + body_start;
+    let quoted = one_line(&doc[body_start..close]);
+
+    assert!(
+        quoted.len() > 80,
+        "§9.5's quoted refusal collapsed to {} chars. A short quote would be a \
+         substring of almost any diagnostic, which passes without comparing.\nquoted: \
+         {quoted}",
+        quoted.len()
+    );
+
+    let out_dir = repo_root()
+        .join("target")
+        .join("mesh_rpc_backend_contract")
+        .join("documented_diagnostic");
+    let _ = std::fs::remove_dir_all(&out_dir);
+    std::fs::create_dir_all(&out_dir).expect("scratch dir");
+
+    // The quote is Rust's, because §9.5 shows Rust's. Reading it from the
+    // document rather than naming it here would let a re-quoted example move
+    // the target it is supposed to be measured against.
+    let result = Command::new(codegen_bin())
+        .args([
+            "generate",
+            FIXTURE,
+            "-l",
+            "rust",
+            "-o",
+            out_dir.to_str().expect("utf-8 path"),
+            "--no-format",
+        ])
+        .current_dir(repo_root())
+        .output()
+        .expect("sce-codegen runs");
+    let stderr = one_line(&String::from_utf8_lossy(&result.stderr));
+
+    assert!(
+        stderr.contains(&quoted),
+        "§9.5 quotes a refusal the binary no longer emits. The document is showing an \
+         operator a sentence they will never see, which is worse than showing none — \
+         they will search for it.\n§9.5:  {quoted}\nactual: {stderr}"
+    );
+}
+
+/// The gate lives here, and the roster it enforces lives in §9.5.
+const GATE_SOURCE: &str = "sce-build/src/generator.rs";
+
+/// One `fn <name>` and its body, brace-matched from the signature.
+///
+/// Brace-matched rather than read to the next `fn`, so a helper landing
+/// between these two does not silently extend the region being judged.
+/// Format placeholders inside the string literals are balanced pairs, so
+/// they do not move the count.
+fn function_body<'a>(source: &'a str, signature: &str) -> &'a str {
+    let start = source.find(signature).unwrap_or_else(|| {
+        panic!(
+            "{GATE_SOURCE} no longer declares `{signature}`. The mesh-rpc gate is what \
+             this file exists to hold to §9.5's table; if it was renamed, this gate has \
+             to be re-aimed rather than left reading nothing."
+        )
+    });
+    let rest = &source[start..];
+    let open = rest.find('{').expect("a function has a body");
+    let mut depth = 0usize;
+    for (i, ch) in rest[open..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &rest[..open + i + 1];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("unbalanced braces reading `{signature}` out of {GATE_SOURCE}");
+}
+
+/// Line comments removed, string literals left alone.
+///
+/// The rule below is about what the CODE spells, not what a comment may
+/// explain: the paragraph recording that this gate once hard-coded `--lang
+/// cpp` has to be allowed to say so. A scanner that reads comments as code
+/// makes the record of a defect indistinguishable from the defect.
+fn strip_line_comments(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    for line in source.lines() {
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut cut = line.len();
+        let chars: Vec<char> = line.chars().collect();
+        for i in 0..chars.len() {
+            let ch = chars[i];
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' if in_string => escaped = true,
+                '"' => in_string = !in_string,
+                '/' if !in_string && chars.get(i + 1) == Some(&'/') => {
+                    cut = chars[..i].iter().map(|c| c.len_utf8()).sum();
+                    break;
+                }
+                _ => {}
+            }
+        }
+        out.push_str(&line[..cut]);
+        out.push('\n');
+    }
+    out
+}
+
+/// `needle` as a standalone word — so `go` does not match `algorithm` and
+/// `c11` does not match a longer identifier that contains it.
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    let boundary = |c: Option<char>| !matches!(c, Some(ch) if ch.is_alphanumeric() || ch == '_');
+    let bytes: Vec<char> = haystack.chars().collect();
+    let pat: Vec<char> = needle.chars().collect();
+    if pat.is_empty() || bytes.len() < pat.len() {
+        return false;
+    }
+    (0..=bytes.len() - pat.len()).any(|i| {
+        bytes[i..i + pat.len()] == pat[..]
+            && boundary(i.checked_sub(1).map(|p| bytes[p]))
+            && boundary(bytes.get(i + pat.len()).copied())
+    })
+}
+
+/// The gate's explanatory comment, from its header to the first function.
+fn gate_comment(source: &str) -> &str {
+    let gate_at = source
+        .find("// ── Mesh-rpc backend gate")
+        .unwrap_or_else(|| {
+            panic!(
+                "{GATE_SOURCE} carries no `// ── Mesh-rpc backend gate` header. That \
+                 comment is where the refusal explains itself and names §9.5; without \
+                 it a reader at the code has no route to the contract."
+            )
+        });
+    let derive_at = source
+        .find("fn mesh_templates_exist_for")
+        .expect("the gate's derivation helper");
+    &source[gate_at..derive_at]
+}
+
+fn gate_source() -> String {
+    std::fs::read_to_string(repo_root().join(GATE_SOURCE))
+        .unwrap_or_else(|e| panic!("{GATE_SOURCE} is readable: {e}"))
+}
+
+/// The refusal site must say WHERE its contract is written.
+///
+/// A gate that derives its own answer is only half a contract. The other half
+/// is the roster an author reads before picking `--lang`, and after that
+/// roster moved out of `ARCHITECTURE.md` Principle 8 and into §9.5's table,
+/// nothing at the code pointed to it — a reader at the refusal would have
+/// re-derived the set by reading this function, which is precisely what
+/// moving it was meant to stop.
+#[test]
+fn the_refusal_site_points_at_its_contract() {
+    let source = gate_source();
+    let comment = gate_comment(&source);
+
+    // Floor. A region that stopped being found would read as a comment
+    // satisfying nothing, and an empty `contains` sweep passes.
+    assert!(
+        comment.len() > 400,
+        "the mesh-rpc gate's comment shrank to {} bytes. It carries the reason the \
+         refusal is not retired the way `<sce:action>`'s was, and a stub cannot.",
+        comment.len()
+    );
+
+    for needle in ["SCE_MESH.md §9.5", ANCHOR, "mesh_rpc_backend_contract"] {
+        assert!(
+            comment.contains(needle),
+            "the mesh-rpc gate's comment does not name `{needle}`. The code has to say \
+             where its roster lives, or the next reader takes this function for the \
+             roster — which is what moving the set out of it was for."
+        );
+    }
+}
+
+/// The refusal site must not spell a backend of its own.
+///
+/// This is the half that had already been broken. The gate derives WHICH
+/// backends it refuses from the template tree, and a comment three lines
+/// above the diagnostic promised the message "is pointed at the backends that
+/// actually carry a mesh arm today rather than at a spelling this message
+/// happened to be written with" — while the next sentence read ``Either
+/// generate this machine for `--lang cpp` ``. A second backend gaining a mesh
+/// arm would have widened the "exists for" list and still sent every operator
+/// to C++.
+///
+/// Comments are stripped before the scan: the paragraph recording that defect
+/// has to be free to name it, or the record becomes indistinguishable from
+/// the defect.
+#[test]
+fn the_refusal_site_spells_no_backend_of_its_own() {
+    let source = gate_source();
+    let bodies = strip_line_comments(&format!(
+        "{}\n{}",
+        function_body(&source, "fn mesh_templates_exist_for"),
+        function_body(&source, "fn reject_mesh_rpc_in_unsupported_lang"),
+    ));
+    // Floor. This is an absence check, and an absence found in nothing is
+    // the shape that reports "clean" after the scan stopped reading.
+    assert!(
+        bodies.contains("EMBEDDED_TEMPLATES") && bodies.contains("Language::ALL"),
+        "the two gate functions were read but do not contain the derivation they exist \
+         for. Either the region extraction lost them or the gate stopped deriving — \
+         both make the scan below vacuous.\nread:\n{bodies}"
+    );
+    for lang in Language::ALL {
+        let name = lang.canonical_name();
+        assert!(
+            !contains_word(&bodies, name),
+            "the mesh-rpc gate spells `{name}` in its own body. Which backends are \
+             served is DERIVED from the template tree — both the diagnosis and the \
+             remedy — so a literal here is a second roster that the tree cannot \
+             correct, and it goes stale the moment a backend gains a mesh arm. This \
+             exact literal was already shipped once, in the sentence telling the \
+             operator which `--lang` to retry with."
+        );
     }
 }

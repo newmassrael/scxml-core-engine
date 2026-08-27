@@ -349,14 +349,28 @@ pub(crate) fn render_error(e: minijinja::Error) -> GenerateError {
 //
 // The refusal is NOT retired the way `<sce:action>`'s was below: mesh
 // being C++-only is a stated design constraint, not an accident of
-// unfinished work — SCE_MESH.md's language-coverage rule and
-// ARCHITECTURE.md Principle 8 both say per-language mesh expansion is
-// case-by-case and not a parity obligation. So the gate stays and is
-// *split* instead: which languages it refuses is now read from the
-// embedded template tree rather than asserted by this function. Adding
-// `templates/mesh/<lang>/` is what lifts a refusal, so the gate and
-// the templates cannot drift into disagreeing — a hand-written
-// "C++-only" could outlive the tree it described.
+// unfinished work — ARCHITECTURE.md Principle 8 says per-language mesh
+// expansion is case-by-case and not a parity obligation. So the gate
+// stays and is *split* instead: which languages it refuses is now read
+// from the embedded template tree rather than asserted by this
+// function. Adding `templates/mesh/<lang>/` is what lifts a refusal,
+// so the gate and the templates cannot drift into disagreeing — a
+// hand-written "C++-only" could outlive the tree it described.
+//
+// WHERE THE OTHER HALF OF THAT SPLIT IS WRITTEN. A gate deriving its
+// own answer is only half a contract; the other half is the roster an
+// author reads before picking `--lang`, and it lives in exactly one
+// place — SCE_MESH.md §9.5's backend-coverage table, under the
+// `sce:mesh-rpc-backends` anchor. Principle 8 deliberately does NOT
+// name the set any more: it used to assert "contains only `cpp/`",
+// which is a claim about this tree written where this tree cannot
+// correct it, and the same hand-written roster had already gone stale
+// in SCE_MESH.md §1 (it listed five non-mesh backends and omitted
+// C11). `sce-build/tests/mesh_rpc_backend_contract.rs` holds that
+// table to the template tree AND to what this function actually
+// answers per `--lang`, and it also reads THIS comment — so a pointer
+// that rots is a red rather than something only a reader would
+// notice.
 fn mesh_templates_exist_for(language: Language) -> bool {
     let prefix = format!("mesh/{}/", language.feature_tree_subdir());
     crate::template_registry::EMBEDDED_TEMPLATES
@@ -379,14 +393,26 @@ fn reject_mesh_rpc_in_unsupported_lang(
         .filter(|candidate| mesh_templates_exist_for(**candidate))
         .map(|candidate| candidate.canonical_name())
         .collect();
+    // The remedy is derived for the same reason the diagnosis is. This
+    // sentence used to read "generate this machine for `--lang cpp`",
+    // three lines under a comment promising the message names no
+    // spelling of its own — so a second backend gaining a mesh arm
+    // would have widened the "exists for" list and still sent every
+    // operator to C++.
+    let remedy = served
+        .iter()
+        .map(|lang| format!("`--lang {lang}`"))
+        .collect::<Vec<_>>()
+        .join(" / ");
     Err(GenerateError::UnsupportedFeature(format!(
         "<invoke type=\"sce:mesh-rpc\"> in '{}' has no {:?} codegen path \
          (mesh transport emission exists for: {}). \
-         Either generate this machine for `--lang cpp` or remove the \
+         Either generate this machine with {} or remove the \
          mesh-rpc invokes from the SCXML.",
         model.name,
         language,
-        served.join(", ")
+        served.join(", "),
+        remedy
     )))
 }
 
