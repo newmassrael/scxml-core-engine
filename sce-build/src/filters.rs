@@ -1228,6 +1228,29 @@ fn register_script_source_filters(
             })
         },
     );
+    // `<name> = <expr>`, executed as a script.
+    //
+    // A COMPOSED unit, and the reason it is a filter rather than two
+    // interpolations glued at the site: under the Lua target the evaluated
+    // half must join the LOWERED expression while the authored half joins the
+    // author's, and a site spelling that by hand is one edit away from
+    // lowering one of them and not the other. The location is a name — the
+    // same name in either language — so it lands in both halves.
+    let for_assign = Arc::clone(scope);
+    env.add_filter(
+        "to_script_source_assignment",
+        move |expr: String, location: String| -> Result<String, minijinja::Error> {
+            Ok(match target {
+                ScriptEngineTarget::EcmaScript => {
+                    cpp_script_source_ecmascript(&format!("{location} = {expr}"))
+                }
+                ScriptEngineTarget::Lua => cpp_script_source_lua(
+                    &format!("{location} = {}", to_lua_expr(expr.clone(), &for_assign)?),
+                    &format!("{location} = {expr}"),
+                ),
+            })
+        },
+    );
 }
 
 /// `::SCE::ScriptSource::ecmascript("…")` — the author's text, unlowered.

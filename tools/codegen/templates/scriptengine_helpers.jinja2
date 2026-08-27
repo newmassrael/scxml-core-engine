@@ -70,7 +70,7 @@
 
 {% for var in model.variables %}
 {% if var.expr %}
-        auto initExpr_{{ var.id }} = scriptEngine.evaluateExpression(sessionId_.value(), "{{ var.expr | escape_cpp }}").get();
+        auto initExpr_{{ var.id }} = scriptEngine.evaluateExpression(sessionId_.value(), {{ var.expr | to_script_source_expr }}).get();
         if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
             SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
@@ -150,7 +150,7 @@
         // Test 453: ECMAScript function literals must be stored as functions, not converted to C++
         // ARCHITECTURE.md Zero Duplication: Matches Interpreter behavior (StateMachine.cpp:1615-1635)
         {
-            auto scriptResult = scriptEngine.executeScript(sessionId_.value(), "{{ var.id }} = {{ var.expr | escape_cpp }}").get();
+            auto scriptResult = scriptEngine.executeScript(sessionId_.value(), {{ var.expr | to_script_source_assignment(var.id) }}).get();
             if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
                 std::string errorMsg = "Failed to assign function expression for '{{ var.id }}'";
                 SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
@@ -162,7 +162,7 @@
         // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
         // Test 277: expr evaluation failure must raise error.execution (no fallback)
         ::SCE::DataModelInitHelper::initializeVariableFromExpr(
-            scriptEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
+            scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.expr | to_script_source_expr }},
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
             });

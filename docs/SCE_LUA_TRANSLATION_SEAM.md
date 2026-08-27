@@ -681,6 +681,34 @@ not in conflict with this document's 38 — 38 counts CALL SITES, and one
 interpolation serves several. 29 is the number of template edits the migration
 actually needs.
 
+**Migration in progress: 29 → 23** (same day). Moved so far, all of them
+guards or `<data expr>` — the two shapes the seam document names as
+representative, and guards first because §scxml-5.9 truthiness is where the
+runtime rewriters' ECMA-262 divergences concentrate:
+
+| template | what moved |
+|---|---|
+| `process_transition.jinja2` | 3 guard sites → `to_script_source_guard` |
+| `actions/if.jinja2` | `<if>` and `<elseif>` guards |
+| `datamodel_macros.jinja2` | `<data expr>` → `initializeVariableFromExpr` |
+| `scriptengine_helpers.jinja2` | `<data expr>` ×2, plus the composed `id = expr` |
+
+`utility_methods.jinja2`'s `safeEvaluateGuard` moved with them — it is itself
+template-emitted, so the receiving signature is part of the same edit, and its
+three log lines now name `guardExpr.source()`.
+
+The composed one needed a filter of its own: `to_script_source_assignment(location)`
+builds `<name> = <expr>` with the evaluated half taking the LOWERED expression
+and the authored half the author's. Spelling that at the site would have been
+two interpolations glued together, one edit away from lowering one and not the
+other — the hand-assembly the pair filter exists to prevent.
+
+Verified in the same turn: the emitted artifact for `examples/ai_loop/ai_loop.scxml`
+carries **36** `::SCE::ScriptSource::ecmascript(...)` calls where it previously
+carried bare string literals, the full C++ tree builds, and
+`tests/forge/expected/inline_mixed_sm.inl` — the one committed C++ expectation —
+re-pinned to exactly that change and nothing else.
+
 Two corrections the scan needed, both measured rather than assumed:
 
 - **Word boundaries.** `trans.cond_cpp` is the *natively lowered* guard, a C++

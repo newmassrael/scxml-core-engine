@@ -204,7 +204,7 @@ void ensureScriptEngine() const {
         SCE_LOG_ERROR("AOT ensureScriptEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
     }
 
-    auto initExpr_rpm = scriptEngine.evaluateExpression(sessionId_.value(), "0").get();
+    auto initExpr_rpm = scriptEngine.evaluateExpression(sessionId_.value(), ::SCE::ScriptSource::ecmascript("0")).get();
     if (!::SCE::ScriptResultUtils::isSuccess(initExpr_rpm)) {
         SCE_LOG_ERROR("Failed to evaluate expression for variable: rpm");
     } else {
@@ -237,7 +237,7 @@ void initializeDataModel([[maybe_unused]] Engine& engine) {
     // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
     // Test 277: expr evaluation failure must raise error.execution (no fallback)
     ::SCE::DataModelInitHelper::initializeVariableFromExpr(
-        scriptEngine, sessionId_.value(), "rpm", "0",
+        scriptEngine, sessionId_.value(), "rpm", ::SCE::ScriptSource::ecmascript("0"),
         [&engine](const ::std::string& msg) {
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
         });
@@ -247,20 +247,24 @@ void initializeDataModel([[maybe_unused]] Engine& engine) {
 
 // W3C SCXML 5.9: Safe guard evaluation with error.execution on failure
 // ARCHITECTURE.md: Zero Duplication - Wraps shared GuardHelper with AOT-specific error handling
+// The guard arrives as a ScriptSource, not a string: it carries the
+// language its text is written in and the author's ECMAScript beside it.
+// Every log line below names `source()` — the author's own text — because
+// a lowered guard in a diagnostic points at a line nobody can find.
 template <typename Engine>
 bool safeEvaluateGuard(::SCE::IScriptEngine& jsEngine, const std::string& sessionId,
-                       const std::string& guardExpr, Engine& engine) const {
-    AOT_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);
+                       const ::SCE::ScriptSource& guardExpr, Engine& engine) const {
+    AOT_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr.source());
     auto result = ::SCE::GuardHelper::evaluateGuard(jsEngine, sessionId, guardExpr);
 
     if (!result.has_value()) {
         // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
-        SCE_LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", guardExpr);
+        SCE_LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", guardExpr.source());
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Guard evaluation failed"));
         return false;
     }
 
-    AOT_DEBUG("AOT safeEvaluateGuard: Guard '{}' evaluated to: {}", guardExpr, *result);
+    AOT_DEBUG("AOT safeEvaluateGuard: Guard '{}' evaluated to: {}", guardExpr.source(), *result);
     return *result;
 }
 
