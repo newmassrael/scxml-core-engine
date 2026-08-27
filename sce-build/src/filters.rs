@@ -1164,7 +1164,113 @@ fn to_in_predicate_go(cond_cpp: String) -> String {
 /// inline `<content>` an expression at all?" decide the *value*, and a
 /// backend answering it for itself is how the same document comes to
 /// carry a number in one generated machine and a string in another.
+/// The C++ seam filters: one call emits a whole `SCE::ScriptSource`.
+///
+/// The pair cannot be assembled at the template site. A site that spelled
+/// `ScriptSource::lua("{{ e | to_lua_expr }}", "{{ e | escape_cpp }}")` by
+/// hand would be one edit away from lowering one half and not the other, and
+/// the resulting artifact would name a language the author never wrote in
+/// every diagnostic it raised — the failure
+/// `docs/SCE_LUA_TRANSLATION_SEAM.md` calls "the seam cannot be a one-string
+/// signature". So the filter emits BOTH halves, or neither.
+///
+/// Which form comes out is the run's `--script-engine` selection, closed over
+/// here rather than read from the render context: a template that could ask
+/// would be a template that could ask *inconsistently*.
+fn register_script_source_filters(
+    env: &mut minijinja::Environment,
+    scope: &Arc<DocumentScope>,
+    target: crate::generator::ScriptEngineTarget,
+) {
+    use crate::generator::ScriptEngineTarget;
+
+    // Expressions and guards differ only in the lowering they take: a guard
+    // goes through the truthiness helper, an expression does not. Under the
+    // ECMAScript target the distinction disappears, because the author's text
+    // is the answer either way.
+    // The lowering half is fallible — the frontend refuses what it cannot
+    // parse — and that refusal is propagated rather than swallowed. A filter
+    // that fell back to the author's text on a parse error would emit an
+    // artifact half in each language and say nothing.
+    let for_expr = Arc::clone(scope);
+    env.add_filter(
+        "to_script_source_expr",
+        move |expr: String| -> Result<String, minijinja::Error> {
+            Ok(match target {
+                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(&expr),
+                ScriptEngineTarget::Lua => {
+                    cpp_script_source_lua(&to_lua_expr(expr.clone(), &for_expr)?, &expr)
+                }
+            })
+        },
+    );
+    let for_guard = Arc::clone(scope);
+    env.add_filter(
+        "to_script_source_guard",
+        move |expr: String| -> Result<String, minijinja::Error> {
+            Ok(match target {
+                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(&expr),
+                ScriptEngineTarget::Lua => {
+                    cpp_script_source_lua(&to_lua_guard(expr.clone(), &for_guard)?, &expr)
+                }
+            })
+        },
+    );
+    let for_script = Arc::clone(scope);
+    env.add_filter(
+        "to_script_source_script",
+        move |body: String| -> Result<String, minijinja::Error> {
+            Ok(match target {
+                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(&body),
+                ScriptEngineTarget::Lua => {
+                    cpp_script_source_lua(&to_lua_script(body.clone(), &for_script)?, &body)
+                }
+            })
+        },
+    );
+}
+
+/// `::SCE::ScriptSource::ecmascript("…")` — the author's text, unlowered.
+fn cpp_script_source_ecmascript(source: &str) -> String {
+    format!(
+        "::SCE::ScriptSource::ecmascript(\"{}\")",
+        escape_cpp(source.to_string())
+    )
+}
+
+/// `::SCE::ScriptSource::lua("…lowered…", "…source…")` — both halves, in the
+/// order the C++ named constructor takes them.
+fn cpp_script_source_lua(lowered: &str, source: &str) -> String {
+    format!(
+        "::SCE::ScriptSource::lua(\"{}\", \"{}\")",
+        escape_cpp(lowered.to_string()),
+        escape_cpp(source.to_string())
+    )
+}
+
 pub fn register_cpp_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    register_cpp_filters_for_engine(
+        env,
+        scope,
+        crate::generator::Language::Cpp.default_script_engine_target(),
+    )
+}
+
+/// [`register_cpp_filters`] with the run's engine selection named.
+///
+/// The two-function shape rather than a defaulted argument is the same one
+/// `generate` / `generate_with_options` already uses next door: Rust has no
+/// default arguments, and every existing caller means the default.
+pub fn register_cpp_filters_for_engine(
+    env: &mut minijinja::Environment,
+    scope: &Arc<DocumentScope>,
+    target: crate::generator::ScriptEngineTarget,
+) {
+    register_script_source_filters(env, scope, target);
+    register_cpp_filters_inner(env, scope)
+}
+
+fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     let for_content = Arc::clone(scope);
     env.add_filter("to_author_data_content", move |content: String| {
         to_author_data_content(content, &for_content)
