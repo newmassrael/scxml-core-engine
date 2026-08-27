@@ -160,6 +160,18 @@ impl Language {
     /// the scope named here no longer resolves and the depfile comes out
     /// empty. A divergence that renders is exactly the silent kind.
     pub fn forge_template_subdir(self) -> &'static str {
+        self.feature_tree_subdir()
+    }
+
+    /// The per-language directory name a *feature* template tree uses.
+    ///
+    /// `templates/forge/` and `templates/mesh/` both address backends by
+    /// this name, and they have to: a feature arm exists for a language
+    /// exactly when `<tree>/<name>/` does, so a second spelling would
+    /// make one tree's coverage unreadable from the other's shape.
+    /// Distinct from [`Self::template_subdir`], which is a *loader
+    /// scope* and answers the root for C++.
+    fn feature_tree_subdir(self) -> &'static str {
         match self {
             Language::Rust => "rust",
             Language::Cpp => "cpp",
@@ -326,27 +338,55 @@ pub(crate) fn render_error(e: minijinja::Error) -> GenerateError {
 
 // ── Mesh-rpc backend gate ────────────────────────────────────────
 //
-// SCE_MESH.md §9.5 (`<invoke type="sce:mesh-rpc">`) only has codegen
-// emission in the C++ mesh templates today. Other backends parse the
-// invoke happily (the parser is language-agnostic) but produce no
-// transport routing for it — the state's onentry would silently
-// ignore the invoke at runtime, which is exactly the "fail clearly"
-// inversion CLAUDE.md forbids. This helper turns the silent skip
-// into an explicit codegen-time refusal so an operator who picks
+// SCE_MESH.md §9.5 (`<invoke type="sce:mesh-rpc">`) has codegen
+// emission only where `templates/mesh/<lang>/` exists. Other backends
+// parse the invoke happily (the parser is language-agnostic) but
+// produce no transport routing for it — the state's onentry would
+// silently ignore the invoke at runtime, which is exactly the "fail
+// clearly" inversion CLAUDE.md forbids. This helper turns the silent
+// skip into an explicit codegen-time refusal so an operator who picks
 // the wrong `--lang` sees the gap immediately, not at runtime.
+//
+// The refusal is NOT retired the way `<sce:action>`'s was below: mesh
+// being C++-only is a stated design constraint, not an accident of
+// unfinished work — SCE_MESH.md's language-coverage rule and
+// ARCHITECTURE.md Principle 8 both say per-language mesh expansion is
+// case-by-case and not a parity obligation. So the gate stays and is
+// *split* instead: which languages it refuses is now read from the
+// embedded template tree rather than asserted by this function. Adding
+// `templates/mesh/<lang>/` is what lifts a refusal, so the gate and
+// the templates cannot drift into disagreeing — a hand-written
+// "C++-only" could outlive the tree it described.
+fn mesh_templates_exist_for(language: Language) -> bool {
+    let prefix = format!("mesh/{}/", language.feature_tree_subdir());
+    crate::template_registry::EMBEDDED_TEMPLATES
+        .iter()
+        .any(|(name, _)| name.starts_with(&prefix))
+}
+
 fn reject_mesh_rpc_in_unsupported_lang(
     model: &SCXMLModel,
-    language: &'static str,
+    language: Language,
 ) -> Result<(), GenerateError> {
-    if !model.has_mesh_rpc_invoke() {
+    if !model.has_mesh_rpc_invoke() || mesh_templates_exist_for(language) {
         return Ok(());
     }
+    // Named from the tree, so the operator is pointed at the backends
+    // that actually carry a mesh arm today rather than at a spelling
+    // this message happened to be written with.
+    let served: Vec<&'static str> = Language::ALL
+        .iter()
+        .filter(|candidate| mesh_templates_exist_for(**candidate))
+        .map(|candidate| candidate.canonical_name())
+        .collect();
     Err(GenerateError::UnsupportedFeature(format!(
-        "<invoke type=\"sce:mesh-rpc\"> in '{}' has no {} codegen path \
-         (mesh transport emission is currently C++-only). \
+        "<invoke type=\"sce:mesh-rpc\"> in '{}' has no {:?} codegen path \
+         (mesh transport emission exists for: {}). \
          Either generate this machine for `--lang cpp` or remove the \
          mesh-rpc invokes from the SCXML.",
-        model.name, language
+        model.name,
+        language,
+        served.join(", ")
     )))
 }
 
@@ -814,7 +854,7 @@ pub fn generate_with_options(
     template_dir: &Path,
     options: &StatechartCodegenOptions,
 ) -> Result<String, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
@@ -904,7 +944,7 @@ pub fn generate_with_templates(
     templates: &[(&str, &str)],
     no_std: bool,
 ) -> Result<String, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
@@ -1242,7 +1282,7 @@ fn render_c11(
     input_stem: &str,
     c_symbol_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::C11)?;
     // Neither host refusal here: the C11 backend carries
     // `sce_host_processor_registry_t` for §scxml-6.2.5 and
     // `sce_host_invoker_registry_t` + `sce_host_invocation_set_t` for
@@ -1373,7 +1413,7 @@ pub fn generate_kotlin(
     template_dir: &Path,
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
     // Neither host refusal here: the Kotlin runtime carries
     // `StateMachineEngine.registerEventProcessor` for §scxml-6.2.5 and
     // `registerInvoker` for §scxml-6.4.1, and the templates emit the `<send>`
@@ -1395,7 +1435,7 @@ pub fn generate_kotlin_with_templates(
     templates: &[(&str, &str)],
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
     // See `generate_kotlin` above: the Kotlin backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
@@ -1563,7 +1603,7 @@ fn render_kotlin(
 
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::Go)?;
     // Neither host refusal here any more: the Go runtime carries
     // `Engine.RegisterEventProcessor` for §scxml-6.2.5 and
     // `Engine.RegisterInvoker` for §scxml-6.4.1, and the templates emit the
@@ -1583,7 +1623,7 @@ pub fn generate_go_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::Go)?;
     // See `generate_go` above: the Go backend carries both host registries.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
@@ -1607,7 +1647,7 @@ pub fn generate_go_with_templates(
 
 /// Generate Python code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::Python)?;
     // Neither host refusal here: the Python runtime carries
     // `Engine.register_event_processor` for §scxml-6.2.5 and
     // `Engine.register_invoker` for §scxml-6.4.1, and the templates emit the
@@ -1626,7 +1666,7 @@ pub fn generate_python_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
-    reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
+    reject_mesh_rpc_in_unsupported_lang(model, Language::Python)?;
     // See `generate_python` above: the Python backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
@@ -2608,6 +2648,49 @@ mod tests {
             }
             Err(other) => panic!("expected UnsupportedFeature, got {other:?}"),
         }
+    }
+
+    /// The refusal set is derived from the template tree, not asserted.
+    ///
+    /// A backend is refused exactly when the embedded tree carries no
+    /// `mesh/<lang>/` arm for it, so adding that directory is what lifts
+    /// a refusal. The sibling tests above pin the *messages*; this one
+    /// pins the *rule*, which is the half a hand-written "C++-only"
+    /// string could outlive — the gate would keep refusing a backend the
+    /// tree had since learned to emit, and nothing would disagree.
+    #[test]
+    fn mesh_rpc_refusal_is_derived_from_the_template_tree() {
+        let model = parse(MESH_RPC_SCXML);
+        let (mut served, mut refused) = (0usize, 0usize);
+        for &language in Language::ALL {
+            let arm = language.feature_tree_subdir();
+            let verdict = reject_mesh_rpc_in_unsupported_lang(&model, language);
+            if mesh_templates_exist_for(language) {
+                served += 1;
+                assert!(
+                    verdict.is_ok(),
+                    "{language:?} has templates/mesh/{arm}/ but the gate refused it"
+                );
+            } else {
+                refused += 1;
+                assert!(
+                    verdict.is_err(),
+                    "{language:?} has no templates/mesh/{arm}/ arm, so codegen \
+                     would drop the invoke silently — the gate must refuse"
+                );
+            }
+        }
+        // Both bounds, because either side alone makes the equivalence
+        // vacuous: a tree with no mesh arm at all satisfies the loop by
+        // refusing everything, and one with every arm by refusing nothing.
+        assert!(
+            served >= 1,
+            "no backend has a mesh arm — this case read nothing"
+        );
+        assert!(
+            refused >= 1,
+            "every backend has a mesh arm — the gate is dead code"
+        );
     }
 
     // §scxml-G-7 `<sce:action>` is lowered by EVERY backend. A no-argument
