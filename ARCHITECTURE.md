@@ -463,17 +463,29 @@ interchangeable.
 
 | Engine | Standard | Selection | W3C IRP | ECMA-262 (`tests/ecmascript/ecma262_semantics.json`) |
 |--------|----------|-----------|---------|------|
-| QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` (default) | 202/202 | **58/58** |
-| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **32/58** |
+| QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` (default) | 202/202 | **98/98** |
+| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **75/98** |
+
+The ECMA-262 column is derived, not typed. Its denominator is the length of
+that table and the Lua row's numerator is that length minus the entries in
+`tests/ecmascript/lua_engine_divergences.json`, which is the list
+`ecmascript_semantics_test` holds the `lua` selection to in both directions —
+an undeclared disagreement and a declared one that has been repaired are both
+red. `sce-build/tests/ecma262_scoreboard_contract.rs` re-derives these two
+cells, because the column had been typed once: it read **58/58** and **32/58**
+after the shared table had grown to 98 cases, so both engines were being
+scored out of a denominator that no longer existed.
 
 The W3C column and the ECMA-262 column measure different things, and the gap
 between them is why the second column exists. The IRP suite never writes
 `0 && x`, `-7 % 3`, `1 == '1'` or a computed array index, so a full green
 there says nothing about whether expressions mean what the language says they
-mean. Measured 2026-08-14: selecting `lua` answers 26 of 58 wrong — silently,
-with the whole IRP suite passing. `ecmascript_semantics_test` runs that table
-through whichever engine the build selected, so the wrong answers now fail a
-test instead of a document.
+mean. Selecting `lua` answers a whole class of them wrong — silently, with the
+whole IRP suite passing — and the divergence list beside the table names every
+one of them with the ECMA-262 clause it breaks. The count is whatever that
+list holds; this paragraph deliberately does not repeat it, because the number
+it used to carry ("26 of 58", measured 2026-08-14) outlived two growths of the
+table.
 
 **ScriptEngineProvider**: Compile-time engine selection via `SCE_SCRIPT_ENGINE` CMake option. Provides `IScriptEngine` interface for engine-agnostic consumers.
 
@@ -481,7 +493,8 @@ test instead of a document.
 
 Reached only by `SCE_SCRIPT_ENGINE=lua`, and the reason that is no longer the
 default: it rewrites expression *text* rather than parsing it, so the answers
-it gets wrong (26 of the 58 ECMA-262 cases) are wrong by construction rather
+it gets wrong (every entry in `tests/ecmascript/lua_engine_divergences.json`)
+are wrong by construction rather
 than by omission — `0 && x` reads as Lua truthiness, `-7 % 3` as Lua's
 flooring remainder, `5 ^ 3` as Lua's exponentiation. The build-time frontend
 in `sce-build/src/ecmascript` is the parsing counterpart that the other five

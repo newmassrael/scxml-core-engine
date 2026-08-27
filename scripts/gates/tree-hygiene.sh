@@ -48,6 +48,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # `mesh_rpc_backend_contract` drive the real `sce-codegen` binary; the
 # other targets do not need it and are unaffected by its presence.
 #
+# `ecma262_scoreboard_contract` is here for the same reason and reads a wider
+# set still: `ARCHITECTURE.md`'s engine matrix and the two JSON files under
+# `tests/ecmascript/`. None of the three is in any workflow's `paths:` filter,
+# and the numbers it derives are exactly the kind that rot in prose — the
+# column it holds had been scored out of 58 for weeks after the table grew
+# to 98.
+#
 # `mesh_rpc_backend_contract` is here rather than left to the workspace
 # suite for the reason the whole list exists: what it reads is `SCE_MESH.md`
 # §9.5, `tools/codegen/templates/mesh/**` and a fixture under `tests/mesh/`,
@@ -82,4 +89,5 @@ cargo test -p sce-build --features cli \
     --test mutation_corpus_fits_its_lane \
     --test mutation_round_survives_the_next_push \
     --test mesh_rpc_backend_contract \
+    --test ecma262_scoreboard_contract \
     || sce_gate_fail "tree-wide hygiene gates"

@@ -23,20 +23,33 @@ import org.w3c.dom.Node
  * Lua 5.4, running SCXML expressions that were rewritten from ECMAScript.
  *
  * **This is not an ECMAScript engine, and a `datamodel="ecmascript"` document
- * does not run correctly on it.** Measured 2026-08-14 against the shared
- * table in `tests/ecmascript/ecma262_semantics.json`: 27 of its 58 cases are
- * answered differently from what ECMA-262 says, and the disagreements are not
- * exotic — `0 && x` comes back true, `1 == '1'` comes back false, `-7 % 3`
- * comes back 2, a computed array index is off by one. The C++ build measured
- * the same class at 26 of 58 and flipped its default engine away from Lua for
- * that reason. `EcmaScriptSemanticsTest` holds this paragraph to the
- * measurement, so it cannot go back to promising more than the engine does.
+ * does not run correctly on it.** Measured against the shared table in
+ * `tests/ecmascript/ecma262_semantics.json`, a class of its cases is answered
+ * differently from what ECMA-262 says, and the disagreements are not exotic —
+ * `0 && x` comes back true, `1 == '1'` comes back false, `-7 % 3` comes back
+ * 2, a computed array index is off by one. The C++ build measured the same
+ * class and flipped its default engine away from Lua for that reason; the
+ * cases it gets wrong are enumerated in
+ * `tests/ecmascript/lua_engine_divergences.json`, clause by clause.
+ *
+ * What holds this paragraph, precisely, so no more is read into it than is
+ * true: `EcmaScriptSemanticsTest.luaIsNotAnEcmaScriptEngineAndSaysSo` asserts
+ * that the failure set is NOT EMPTY and that this header still says "not an
+ * ECMAScript engine". It does not pin WHICH cases, or how many. This
+ * paragraph used to carry two counts — "27 of its 58" here and "26 of 58" for
+ * C++ — under a sentence claiming the test held them to the measurement; it
+ * did not, and the shared table had since grown to 98 cases, so both
+ * denominators named a table that no longer existed. No count is written here
+ * now. Registering this backend's divergence set the way C++ registers its
+ * own is what would let one be, and until then the honest statement is the
+ * shape, not a number.
  *
  * This header used to read "For AOSP/AAOS production, this replaces Rhino
  * with a faster native engine". It is faster, and that sentence sent a reader
  * building an AAOS product to an engine that answers their guards wrong.
  * For that product the engines that answer ECMA-262 are Rhino on the JVM and
- * QuickJS natively — both measured at 58 of 58 by the same test.
+ * QuickJS natively — both measured against every case in the shared table by
+ * the same test, with no failures allowed.
  *
  * What it remains good for is a document whose expressions stay inside what
  * the rewriter covers, on a device with no room for a JS engine. That is a
@@ -45,7 +58,7 @@ import org.w3c.dom.Node
  * Each session gets its own lua_State (variable isolation). ECMAScript
  * expressions from SCXML are transformed to Lua via
  * [EcmaScriptToLuaTransformer] before evaluation — a rewriter, not an
- * interpreter of the language, which is where the 27 come from.
+ * interpreter of the language, which is where the disagreements come from.
  */
 class LuaScriptEngine : ScxmlScriptEngine {
 
