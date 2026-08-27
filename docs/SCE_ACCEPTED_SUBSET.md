@@ -132,12 +132,32 @@ judged as the document it is, not by its parent's declaration. `sce:`
 extension elements are governed by §2 below, not by Appendix B.
 
 **What `ecmascript` currently means.** §B.2 obliges an implementation
-that accepts this value to support the third edition of ECMAScript. SCE
-does not ship an ECMAScript engine: an expression is **parsed** at
-generation time and emitted as Lua, which the injected `IScriptEngine`
-evaluates. It is a translation, not an ECMAScript implementation — but
-the boundary of what it translates is now declared, which is what this
-paragraph used to record as open.
+that accepts this value to support the third edition of ECMAScript. The
+answer depends on the backend, and this paragraph used to say otherwise
+("SCE does not ship an ECMAScript engine: an expression is **parsed** at
+generation time and emitted as Lua"). Measured 2026-08-27 —
+`docs/SCE_LUA_TRANSLATION_SEAM.md` carries the per-backend table:
+
+- **Rust, Go, Python, C11** receive Lua. The expression is **parsed** at
+  generation time and lowered by `sce-build/src/ecmascript/`, and the
+  injected engine evaluates that. It is a translation, not an ECMAScript
+  implementation — but the boundary of what it translates is declared
+  below, which is what this paragraph used to record as open.
+- **C++ and Kotlin** receive the author's ECMAScript source and hand it
+  to the injected engine unchanged, because their generated code takes
+  that engine by injection and cannot know at generation time which one
+  arrives. Both ship and default to a real ECMAScript engine — QuickJS
+  (`SCE_SCRIPT_ENGINE=quickjs`) and Rhino (`W3CTestBase.DEFAULT_ENGINE`)
+  — so on their default configuration a document IS evaluated as
+  ECMAScript, and the ECMA-262 case table
+  (`tests/ecmascript/ecma262_semantics.json`) is answered in full.
+  Selecting Lua on either instead reaches a runtime text rewriter whose
+  disagreements with ECMA-262 are enumerated in
+  `tests/ecmascript/lua_engine_divergences.json` and
+  `tests/ecmascript/kotlin_lua_divergences.json`.
+
+The manifest reports which of the two a given run produced, in
+`script_engine_language` (`SCE_ERROR_CONTRACT.md` §10.1).
 
 The frontend is `sce-build/src/ecmascript/`: a recursive-descent reader
 of the ECMAScript expression grammar (and, for `<script>` bodies and
