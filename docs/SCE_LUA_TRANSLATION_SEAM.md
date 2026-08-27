@@ -383,6 +383,25 @@ So the same rule holds on both: skip only the rewrite, keep the
 than through the engine directly, which is why the counts differ — the work
 is the same, distributed differently.
 
+**So the seam cannot be a one-string signature.** Measured 2026-08-28 at
+`LuaEngine.cpp:618-626` and `LuaScriptEngine.kt:151-155`: both engines run the
+undeclared-variable check on the LOWERED text and then build the diagnostic
+from the ORIGINAL — `"ReferenceError: " + expression + " is not defined"` in
+C++, `"ReferenceError: $expr is not defined"` in Kotlin. Step 2 of the five is
+therefore two strings, not one. An entry point that receives only pre-lowered
+Lua would report `ReferenceError: <lua text> is not defined`, naming a language
+the author never wrote, and the C++ debug log (`LuaEngine.cpp:632`, which
+prints `expression -> wrapped`) would lose the same half.
+
+That is not a message-formatting detail: `_event.data` on `error.execution`
+carries this text, so it is a wire-visible answer. The seam has to carry the
+author's source ALONGSIDE the lowered text — the pre-lowered call is
+`(lowered, source)`, and the rewriting call stays `(source)` with `lowered`
+computed. Both paths then converge on one shared tail holding steps 2–5, which
+is what keeps this from becoming a second implementation beside the first.
+⚠ The build-time frontend must therefore emit both halves, and the sourcemap
+surface is where that pairing already has a home.
+
 **So the order is: seam, then templates.** The seam is a contract about *what
 language the string is*, which means an engine that cannot evaluate that
 language must refuse rather than try — QuickJS handed Lua is the case, and the
