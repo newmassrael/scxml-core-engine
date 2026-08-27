@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "0744d870b7",
+  "embed_version": "04157dbdaf",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 275,
+  "symbol_count": 283,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -235,7 +235,7 @@
       "header": "common/GuardHelper.h",
       "kind": "function",
       "name": "SCE::GuardHelper::evaluateGuard",
-      "signature": "std::optional<bool> SCE::GuardHelper::evaluateGuard(IScriptEngine &, const std::string &, const std::string &)"
+      "signature": "std::optional<bool> SCE::GuardHelper::evaluateGuard(IScriptEngine &, const std::string &, const ScriptSource &)"
     },
     {
       "header": "common/ILoggerBackend.h",
@@ -1763,6 +1763,48 @@
       "signature": "std::unique_ptr<PlatformExecutionHelper> SCE::createPlatformExecutor()"
     },
     {
+      "header": "scripting/ScriptDialect.h",
+      "kind": "function",
+      "name": "SCE::ScriptDialect::bindTemporary",
+      "signature": "ScriptSource SCE::ScriptDialect::bindTemporary(const char *, const ScriptSource &)"
+    },
+    {
+      "header": "scripting/ScriptDialect.h",
+      "kind": "function",
+      "name": "SCE::ScriptDialect::elementAt",
+      "signature": "ScriptSource SCE::ScriptDialect::elementAt(const ScriptSource &, int64_t)"
+    },
+    {
+      "header": "scripting/ScriptDialect.h",
+      "kind": "function",
+      "name": "SCE::ScriptDialect::isArray",
+      "signature": "ScriptSource SCE::ScriptDialect::isArray(const ScriptSource &)"
+    },
+    {
+      "header": "scripting/ScriptDialect.h",
+      "kind": "function",
+      "name": "SCE::ScriptDialect::lengthOf",
+      "signature": "ScriptSource SCE::ScriptDialect::lengthOf(const ScriptSource &)"
+    },
+    {
+      "header": "scripting/ScriptDialect.h",
+      "kind": "function",
+      "name": "SCE::ScriptDialect::stringify",
+      "signature": "ScriptSource SCE::ScriptDialect::stringify(const ScriptSource &)"
+    },
+    {
+      "header": "scripting/ScriptDialect.h",
+      "kind": "function",
+      "name": "SCE::ScriptDialect::temporary",
+      "signature": "ScriptSource SCE::ScriptDialect::temporary(const char *, ScriptLanguage)"
+    },
+    {
+      "header": "scripting/ScriptDialect.h",
+      "kind": "function",
+      "name": "SCE::ScriptDialect::typeOf",
+      "signature": "ScriptSource SCE::ScriptDialect::typeOf(const ScriptSource &)"
+    },
+    {
       "header": "scripting/ScriptEngineProvider.h",
       "kind": "class",
       "members": [],
@@ -1821,19 +1863,19 @@
       "header": "scripting/ScriptResultUtils.h",
       "kind": "function",
       "name": "SCE::ScriptResultUtils::resultToScriptValueArray",
-      "signature": "std::vector<ScriptValue> SCE::ScriptResultUtils::resultToScriptValueArray(const ScriptResult &, IScriptEngine *, const std::string &, const std::string &)"
+      "signature": "std::vector<ScriptValue> SCE::ScriptResultUtils::resultToScriptValueArray(const ScriptResult &, IScriptEngine *, const std::string &, const ScriptSource &)"
     },
     {
       "header": "scripting/ScriptResultUtils.h",
       "kind": "function",
       "name": "SCE::ScriptResultUtils::resultToString",
-      "signature": "std::string SCE::ScriptResultUtils::resultToString(const ScriptResult &, IScriptEngine *, const std::string &, const std::string &)"
+      "signature": "std::string SCE::ScriptResultUtils::resultToString(const ScriptResult &, IScriptEngine *, const std::string &, const ScriptSource &)"
     },
     {
       "header": "scripting/ScriptResultUtils.h",
       "kind": "function",
       "name": "SCE::ScriptResultUtils::resultToStringArray",
-      "signature": "std::vector<std::string> SCE::ScriptResultUtils::resultToStringArray(const ScriptResult &, IScriptEngine *, const std::string &, const std::string &)"
+      "signature": "std::vector<std::string> SCE::ScriptResultUtils::resultToStringArray(const ScriptResult &, IScriptEngine *, const std::string &, const ScriptSource &)"
     },
     {
       "header": "scripting/ScriptResultUtils.h",
@@ -1846,6 +1888,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::ScriptSource"
+    },
+    {
+      "header": "scripting/ScriptSource.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ScriptSourceBuilder"
     },
     {
       "header": "scripting/ScriptSource.h",
