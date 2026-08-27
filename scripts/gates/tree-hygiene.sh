@@ -22,6 +22,19 @@
 # block appended past its `endif()` configures cleanly and fails at build
 # time, and a directory can acquire a CMakeLists.txt anywhere.
 #
+# `mutation_corpus_fits_its_lane` and `mutation_round_survives_the_next_push`
+# are here for the 2026-08-04 reason in its purest form: both judge
+# `.github/workflows/mutation-rounds.yml` — the first its job ceiling
+# against the slice size this repository keeps in
+# `scripts/gates/mutation-rounds.sh`, the second its concurrency group —
+# and the only workflow that ran either of them was
+# rust-workspace-tests.yml, whose `paths:` filter names its own workflow
+# file and not the lane it judges. So an edit to that ceiling or that group
+# was held to both rules by a suite the edit could not start. The first
+# also drives the mutation-rounds gate over the whole corpus, which reaches
+# every casefile `git ls-files` finds, so it is tree-wide by the ordinary
+# measure as well.
+#
 # tree-hygiene.yml declares no `paths:` filter, so the registry derives
 # "always" for this gate the same way it derives every other
 # workflow-backed trigger. Every target is named explicitly rather than
@@ -58,4 +71,6 @@ cargo test -p sce-build --features cli \
     --test cli_expression_refusal \
     --test cli_guard_emission \
     --test mutation_rounds_selection \
+    --test mutation_corpus_fits_its_lane \
+    --test mutation_round_survives_the_next_push \
     || sce_gate_fail "tree-wide hygiene gates"

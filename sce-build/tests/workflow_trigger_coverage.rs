@@ -100,6 +100,26 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // declared targets are files all over the tree, and it is a change to
     // one of THOSE that the selection has to keep getting right.
     "mutation_rounds_selection",
+    // Reads the lane's `timeout-minutes:` and then drives
+    // `scripts/gates/mutation-rounds.sh` over the whole corpus, which asks
+    // `git ls-files` which casefiles exist and `scripts/mutate --declares`
+    // what each one holds — so a casefile added anywhere changes both the
+    // schedule it reads and the case counts it checks that schedule against.
+    // The half a filter could name is the lane's own two files, and naming
+    // them is exactly what the suite carrying this test did not do:
+    // `rust-workspace-tests.yml` lists its own workflow and not
+    // `mutation-rounds.yml`, so an edit to the ceiling never started the
+    // test that checks the ceiling.
+    "mutation_corpus_fits_its_lane",
+    // Judges the `concurrency:` key of `.github/workflows/mutation-rounds.yml`,
+    // a property of the trigger machinery rather than of any source tree —
+    // the input class a `paths:` list cannot be keyed to at all. Same
+    // measurement as its neighbour above, and the same shape as the
+    // 2026-08-04 failure this registry was written for: the only workflow
+    // running it was `rust-workspace-tests.yml`, whose filter does not name
+    // the lane file it reads, so every edit to that group was held to this
+    // rule by a workflow the edit could not start.
+    "mutation_round_survives_the_next_push",
     // Asks `git ls-files` which trees cite the spec, so a citation added
     // to any file anywhere changes its verdict. A `paths:` filter over
     // the backend runtimes would cover today's answer and miss the one
