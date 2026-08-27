@@ -429,6 +429,41 @@ apply_sce_test_policies(event_data_readings_test)
 add_test(NAME EventDataReadings COMMAND event_data_readings_test)
 
 # ============================================================================
+# The script-engine language seam
+#
+# Separate target for the reason its two neighbours above are separate: it
+# names LuaEngine AND JSEngine as well as reading the provider, because no gate
+# configures -DSCE_SCRIPT_ENGINE=lua and the seam has two halves that only
+# exist together — an engine that can be handed pre-lowered Lua, and one that
+# refuses it. Measured through the provider alone, whichever half this build
+# did not select would be compiled by every build and run by none.
+#
+# See docs/SCE_LUA_TRANSLATION_SEAM.md: this is the entry point that has to
+# exist before C++ codegen can move across to build-time lowering.
+# ============================================================================
+add_executable(script_language_seam_test
+    engine/ScriptLanguageSeamTest.cpp
+)
+
+target_include_directories(script_language_seam_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(script_language_seam_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+apply_sce_test_policies(script_language_seam_test)
+
+add_test(NAME ScriptLanguageSeam COMMAND script_language_seam_test)
+
+# ============================================================================
 # 3. StateMachine Tests
 # ============================================================================
 add_executable(state_machine_tests
