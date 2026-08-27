@@ -100,10 +100,10 @@ public:
         }
     }
 
-    static bool evaluateContent(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &contentExpr,
+    static bool evaluateContent(IScriptEngine &jsEngine, const std::string &sessionId, const ScriptSource &contentExpr,
                                 std::string &outEventData, std::function<void(const std::string &)> onError = nullptr,
                                 std::optional<ScriptValue> *outTypedData = nullptr) {
-        if (contentExpr.empty()) {
+        if (contentExpr.text().empty()) {
             outEventData = "";
             return true;
         }
@@ -177,8 +177,11 @@ public:
      *     [&engine](const std::string& msg) { engine.raise(Event::Error_execution); });
      * ```
      */
+    /// The pair is (param name, param expression). Only the second half crosses
+    /// the boundary as text to evaluate; the name is a JSON key this helper
+    /// writes itself and never hands to an engine.
     static bool evaluateParams(IScriptEngine &jsEngine, const std::string &sessionId,
-                               const std::vector<std::pair<std::string, std::string>> &params,
+                               const std::vector<std::pair<std::string, ScriptSource>> &params,
                                std::string &outEventData, std::function<void(const std::string &)> onError = nullptr,
                                std::optional<ScriptValue> *outTypedData = nullptr) {
         if (params.empty()) {
@@ -199,11 +202,11 @@ public:
         bool first = true;
         for (const auto &param : params) {
             const std::string &paramName = param.first;
-            const std::string &paramExpr = param.second;
+            const ScriptSource &paramExpr = param.second;
 
             // §scxml-5.7: Empty location is invalid (structural error)
             // Must raise error.execution and prevent done.state event generation
-            if (paramExpr.empty()) {
+            if (paramExpr.text().empty()) {
                 if (onError) {
                     onError("Empty param location or expression: " + paramName);
                 }
@@ -237,7 +240,7 @@ public:
                 // §scxml-5.7: Invalid location or expression (runtime error)
                 // Must raise error.execution and ignore this param, but continue with others
                 if (onError) {
-                    onError("Invalid param location or expression: " + paramName + " = " + paramExpr);
+                    onError("Invalid param location or expression: " + paramName + " = " + paramExpr.source());
                 }
                 // Continue to next param without adding this one
             }

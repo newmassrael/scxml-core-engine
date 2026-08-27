@@ -65,7 +65,7 @@ public:
      * @return true if successful, false on error
      */
     static bool executeFinalizeWithEvent(IScriptEngine &jsEngine, const std::string &sessionId,
-                                         const std::string &finalizeScript, const std::string &eventName,
+                                         const ScriptSource &finalizeScript, const std::string &eventName,
                                          const std::string &eventData, const std::string &sendId = "",
                                          const std::string &origin = "", const std::string &originType = "",
                                          const std::string &invokeId = "") {

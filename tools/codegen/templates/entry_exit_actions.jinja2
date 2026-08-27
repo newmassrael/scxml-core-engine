@@ -446,9 +446,16 @@
                     // W3C SCXML 5.5: Evaluate <param> elements
                     this->ensureScriptEngine();
                     auto& scriptEngine = getScriptEngine();
-                    std::vector<std::pair<std::string, std::string>> params = {
+                    // The second half of each pair is text the engine evaluates,
+                    // so it is a ScriptSource and not a bare string: a vector
+                    // cannot convert its elements implicitly, which makes this
+                    // the one donedata site that has to name the language.
+                    // `ScriptSource::ecmascript` is the author's own text —
+                    // what this backend emits until the C++ templates move to
+                    // build-time lowering (docs/SCE_LUA_TRANSLATION_SEAM.md).
+                    std::vector<std::pair<std::string, ::SCE::ScriptSource>> params = {
 {% for param in state.donedata.params %}
-                        {"{{ param.name | escape_cpp }}", "{{ (param.location if param.location else param.expr) | escape_cpp }}"}{{ "," if not loop.last }}
+                        {"{{ param.name | escape_cpp }}", ::SCE::ScriptSource::ecmascript("{{ (param.location if param.location else param.expr) | escape_cpp }}")}{{ "," if not loop.last }}
 {% endfor %}
                     };
 

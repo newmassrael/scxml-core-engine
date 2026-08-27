@@ -113,7 +113,7 @@ public:
      * §scxml-5.2.2: Evaluate expr and assign to variable
      */
     static bool initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId,
-                                           const std::string &varId, const std::string &expr,
+                                           const std::string &varId, const ScriptSource &expr,
                                            std::function<void(const std::string &)> errorCallback);
 };
 

@@ -35,6 +35,8 @@
  */
 
 #include "SCXMLTypes.h"
+#include "core/ForeachHelper.h"
+#include "scripting/ScriptDialect.h"
 #include "scripting/ScriptEngineProvider.h"
 #include "scripting/ScriptSource.h"
 #include <cstdint>
@@ -268,3 +270,173 @@ TEST(ScriptLanguageSeam, TheProvidersEngineReportsTheLanguageTheBuildSelected) {
     // Whatever the selection, the engine must accept what it says it speaks.
     EXPECT_TRUE(engine.acceptsLanguage(engine.nativeLanguage()));
 }
+
+// ===========================================================================
+// Composition — the half of the seam the helpers needed
+//
+// The helpers between the templates and the engine do not only forward the
+// author's expression. Two of them GLUE onto it: `AssignmentExecutionHelper`
+// builds `location = (expr);` and runs it, and `ForeachHelper` asks
+// `(array) instanceof Array` before iterating. Glue written as ECMAScript
+// around a pre-lowered Lua expression is neither language, and on a
+// pre-lowered path there is no rewriter left to repair it.
+// ===========================================================================
+
+/**
+ * @brief A composed unit keeps its two halves in step.
+ *
+ * The evaluated text gains the lowered part, the authored text gains the
+ * author's — and the literal glue lands in both. If the builder pushed one
+ * part into both halves the diagnostic would quote a string nobody wrote,
+ * which is the failure the two-string seam exists to prevent.
+ */
+TEST(ScriptLanguageSeam, ComposingKeepsTheEvaluatedAndAuthoredHalvesApart) {
+    const SCE::ScriptSource lowered = SCE::ScriptSource::lua("arr[1]", "arr[0]");
+    const SCE::ScriptSource composed =
+        SCE::ScriptSourceBuilder(SCE::ScriptLanguage::Lua).add("x = (").add(lowered).add(");").build();
+
+    EXPECT_EQ(composed.language(), SCE::ScriptLanguage::Lua);
+    EXPECT_EQ(composed.text(), "x = (arr[1]);") << "the evaluated half did not take the LOWERED part";
+    EXPECT_EQ(composed.source(), "x = (arr[0]);") << "the authored half did not take the AUTHOR'S part";
+}
+
+/// A part in the other language is refused rather than mixed in.
+TEST(ScriptLanguageSeam, ComposingRefusesAPartInTheOtherLanguage) {
+    SCE::ScriptSourceBuilder builder(SCE::ScriptLanguage::Lua);
+    builder.add("x = ").add(SCE::ScriptSource::ecmascript("arr[0]"));
+
+    EXPECT_TRUE(builder.hasMismatch()) << "an ECMAScript part was accepted into a Lua unit";
+    EXPECT_EQ(builder.build().text(), "x = ") << "the mismatched part was mixed into the evaluated text anyway";
+}
+
+#if defined(SCE_ENABLE_LUA) && defined(SCE_ENABLE_QUICKJS)
+
+/**
+ * @brief The two spellings of one question answer the same thing.
+ *
+ * This is the case that makes the dialect table more than a lookup: each
+ * composed question is asked of BOTH engines, in each engine's own spelling,
+ * about the same value — so a Lua spelling that does not exist, or exists and
+ * means something else, disagrees with the ECMAScript one that W3C defines.
+ *
+ * Measured against the runtime this backend loads: `_isArray`, `_typeof` and
+ * `_scxml_index` are `ecma_semantics.lua`, `JSON.stringify` is
+ * `json_builtins.lua`, and `#` is Lua's own.
+ */
+TEST(ScriptLanguageSeam, EachComposedQuestionMeansTheSameInBothLanguages) {
+    auto &lua = SCE::LuaEngine::instance();
+    auto &quickjs = SCE::JSEngine::instance();
+    ASSERT_TRUE(quickjs.initialize());
+
+    const std::string luaSession = "seam_dialect_lua";
+    const std::string jsSession = "seam_dialect_js";
+    ASSERT_TRUE(lua.createSession(luaSession, ""));
+    ASSERT_TRUE(quickjs.createSession(jsSession, ""));
+
+    // The same array, each side written in its own language — this is the
+    // fixture, not the measurement.
+    ASSERT_TRUE(lua.executeScript(luaSession, SCE::ScriptSource::lua(ARRAY_SETUP, ARRAY_SETUP)).get().isSuccess());
+    ASSERT_TRUE(quickjs.executeScript(jsSession, "arr = [10, 20, 30]").get().isSuccess());
+
+    // The array expression, tagged as each engine will receive it.
+    const SCE::ScriptSource asLua = SCE::ScriptSource::lua("arr", "arr");
+    const SCE::ScriptSource asSource = SCE::ScriptSource::ecmascript("arr");
+
+    // isArray — `_isArray(arr)` against `(arr) instanceof Array`
+    auto luaIsArray = lua.evaluateExpression(luaSession, SCE::ScriptDialect::isArray(asLua)).get();
+    auto jsIsArray = quickjs.evaluateExpression(jsSession, SCE::ScriptDialect::isArray(asSource)).get();
+    ASSERT_TRUE(luaIsArray.isSuccess()) << "the Lua spelling of isArray did not evaluate: "
+                                        << luaIsArray.getErrorMessage();
+    ASSERT_TRUE(jsIsArray.isSuccess()) << jsIsArray.getErrorMessage();
+    EXPECT_EQ(luaIsArray.getValue<bool>(), true);
+    EXPECT_EQ(luaIsArray.getValue<bool>(), jsIsArray.getValue<bool>()) << "the two spellings of isArray disagree";
+
+    // lengthOf — `#(arr)` against `(arr).length`
+    auto luaLength = lua.evaluateExpression(luaSession, SCE::ScriptDialect::lengthOf(asLua)).get();
+    auto jsLength = quickjs.evaluateExpression(jsSession, SCE::ScriptDialect::lengthOf(asSource)).get();
+    ASSERT_TRUE(luaLength.isSuccess()) << "the Lua spelling of lengthOf did not evaluate: "
+                                       << luaLength.getErrorMessage();
+    ASSERT_TRUE(jsLength.isSuccess()) << jsLength.getErrorMessage();
+    EXPECT_EQ(asWholeNumber(luaLength.getInternalValue()), 3);
+    EXPECT_EQ(asWholeNumber(luaLength.getInternalValue()), asWholeNumber(jsLength.getInternalValue()))
+        << "the two spellings of lengthOf disagree";
+
+    // elementAt — counted from 0 in BOTH spellings; `_scxml_index` does the
+    // shift to Lua's 1-based storage itself, and a caller that pre-shifted
+    // would move the element twice.
+    auto luaFirst = lua.evaluateExpression(luaSession, SCE::ScriptDialect::elementAt(asLua, 0)).get();
+    auto jsFirst = quickjs.evaluateExpression(jsSession, SCE::ScriptDialect::elementAt(asSource, 0)).get();
+    ASSERT_TRUE(luaFirst.isSuccess()) << "the Lua spelling of elementAt did not evaluate: "
+                                      << luaFirst.getErrorMessage();
+    ASSERT_TRUE(jsFirst.isSuccess()) << jsFirst.getErrorMessage();
+    EXPECT_EQ(asWholeNumber(luaFirst.getInternalValue()), 10) << "element 0 is not the author's first element";
+    EXPECT_EQ(asWholeNumber(luaFirst.getInternalValue()), asWholeNumber(jsFirst.getInternalValue()))
+        << "the two spellings of elementAt disagree";
+
+    // typeOf — `_typeof(x)` against `typeof (x)`
+    auto luaType = lua.evaluateExpression(luaSession, SCE::ScriptDialect::typeOf(asLua)).get();
+    auto jsType = quickjs.evaluateExpression(jsSession, SCE::ScriptDialect::typeOf(asSource)).get();
+    ASSERT_TRUE(luaType.isSuccess()) << "the Lua spelling of typeOf did not evaluate: " << luaType.getErrorMessage();
+    ASSERT_TRUE(jsType.isSuccess()) << jsType.getErrorMessage();
+    EXPECT_EQ(luaType.getValue<std::string>(), "object");
+    EXPECT_EQ(luaType.getValue<std::string>(), jsType.getValue<std::string>())
+        << "the two spellings of typeOf disagree";
+
+    // stringify — the one wrapper that is the same text in both languages,
+    // because `JSON` is a real Lua table here.
+    auto luaJson = lua.evaluateExpression(luaSession, SCE::ScriptDialect::stringify(asLua)).get();
+    auto jsJson = quickjs.evaluateExpression(jsSession, SCE::ScriptDialect::stringify(asSource)).get();
+    ASSERT_TRUE(luaJson.isSuccess()) << "the Lua spelling of stringify did not evaluate: " << luaJson.getErrorMessage();
+    ASSERT_TRUE(jsJson.isSuccess()) << jsJson.getErrorMessage();
+    EXPECT_EQ(luaJson.getValue<std::string>(), jsJson.getValue<std::string>())
+        << "the two spellings of stringify disagree";
+
+    lua.destroySession(luaSession);
+    quickjs.destroySession(jsSession);
+}
+
+#endif  // SCE_ENABLE_LUA && SCE_ENABLE_QUICKJS
+
+#ifdef SCE_ENABLE_LUA
+
+/**
+ * @brief A helper on the generated path takes a tagged expression end to end.
+ *
+ * `ForeachHelper::evaluateForeachArray` is what both `<foreach>` entry points
+ * the C++ templates emit go through. What this measures is that the helper
+ * carries a `ScriptSource` from the template's side to the engine and back:
+ * the same call with the same array answers the same three elements whichever
+ * language the expression is tagged as.
+ *
+ * ⚠ It does NOT measure the `isArray` probe that helper composes, and saying
+ * so is the point. Measured 2026-08-28: replacing the probe with the
+ * ECMAScript-only spelling leaves this case GREEN, because the probe sits
+ * behind a short-circuit that a well-formed array never reaches —
+ * `arrayResult.isArray()` is already true for a Lua sequence, and for a keyed
+ * table the probe answers false either way (a Lua syntax error and an honest
+ * `false` are the same outcome here). The probe's language-correctness is
+ * therefore only observable in `EachComposedQuestionMeansTheSameInBothLanguages`,
+ * which asks it directly of both engines — and that case does go red.
+ */
+TEST(ScriptLanguageSeam, ForeachCarriesATaggedArrayExpressionEndToEnd) {
+    auto &engine = SCE::LuaEngine::instance();
+    const std::string sessionId = "seam_foreach_lowered_array";
+    ASSERT_TRUE(engine.createSession(sessionId, ""));
+    ASSERT_TRUE(engine.executeScript(sessionId, SCE::ScriptSource::lua(ARRAY_SETUP, ARRAY_SETUP)).get().isSuccess());
+
+    auto values =
+        SCE::Core::ForeachHelper::evaluateForeachArray(engine, sessionId, SCE::ScriptSource::lua("arr", "arr"));
+    ASSERT_TRUE(values.has_value()) << "the helper rejected a pre-lowered array expression outright";
+    EXPECT_EQ(values->size(), 3u) << "the lowered tag did not reach the engine intact";
+
+    // The other tag, same array, same answer: the helper is carrying the
+    // ScriptSource rather than reading one half of it.
+    auto asSource =
+        SCE::Core::ForeachHelper::evaluateForeachArray(engine, sessionId, SCE::ScriptSource::ecmascript("arr"));
+    ASSERT_TRUE(asSource.has_value()) << "the ECMAScript path stopped working";
+    EXPECT_EQ(asSource->size(), values->size()) << "the two tags disagree about the same array";
+
+    engine.destroySession(sessionId);
+}
+
+#endif  // SCE_ENABLE_LUA

@@ -181,7 +181,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine
 }
 
 bool SCE::DataModelInitHelper::initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId,
-                                                          const std::string &varId, const std::string &expr,
+                                                          const std::string &varId, const ScriptSource &expr,
                                                           std::function<void(const std::string &)> errorCallback) {
     // §scxml-5.3: Evaluate expr attribute and assign to variable
     // Test 277: expr evaluation failure must raise error.execution (no fallback to whitespace normalization)
@@ -193,7 +193,9 @@ bool SCE::DataModelInitHelper::initializeVariableFromExpr(IScriptEngine &jsEngin
 
     if (!evalJsResult.isSuccess()) {
         // §scxml-5.3: Evaluation failure raises error.execution, variable remains unbound
-        errorCallback("Failed to evaluate expr for variable " + varId + ": " + expr);
+        // The author's own text: this string reaches `_event.data` on
+        // error.execution, where lowered Lua would name a line nobody wrote.
+        errorCallback("Failed to evaluate expr for variable " + varId + ": " + expr.source());
         return false;
     }
 
@@ -207,6 +209,6 @@ bool SCE::DataModelInitHelper::initializeVariableFromExpr(IScriptEngine &jsEngin
         return false;
     }
 
-    SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} from expr: '{}'", varId, expr);
+    SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} from expr: '{}'", varId, expr.source());
     return true;
 }
