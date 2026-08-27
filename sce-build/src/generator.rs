@@ -60,6 +60,50 @@ pub(crate) fn register_symbol_artifact_global(env: &mut Environment<'_>) {
     );
 }
 
+/// Which language the generated artifact hands its script engine.
+///
+/// The seam's codegen input. `datamodel="ecmascript"` is a claim about a
+/// language and Lua is not that language, so a backend running the datamodel
+/// on Lua has to translate — and there are exactly two places to do it,
+/// build time or run time (`docs/SCE_LUA_TRANSLATION_SEAM.md`). This says
+/// which one THIS run chose, and the choice is a codegen input rather than a
+/// property of the backend because C++ and Kotlin genuinely have both.
+///
+/// The spellings are the manifest's `script_engine_language` vocabulary, so
+/// the value a host reads and the value the run selected cannot become two
+/// names for one answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptEngineTarget {
+    /// Emit the author's ECMAScript and let the engine deal with it —
+    /// natively, or through an input adapter it owns.
+    EcmaScript,
+    /// Emit Lua the build-time frontend produced. The artifact can then only
+    /// run on a Lua engine, which is the whole cost of this choice.
+    Lua,
+}
+
+impl ScriptEngineTarget {
+    /// The wire spelling, shared with `script_engine_language`.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            ScriptEngineTarget::EcmaScript => crate::manifest::SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT,
+            ScriptEngineTarget::Lua => crate::manifest::SCRIPT_ENGINE_LANGUAGE_LUA,
+        }
+    }
+
+    /// Parse the flag value. Accepts exactly the wire vocabulary, so a
+    /// caller cannot spell the selection one way and read it back another.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            crate::manifest::SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT => {
+                Some(ScriptEngineTarget::EcmaScript)
+            }
+            crate::manifest::SCRIPT_ENGINE_LANGUAGE_LUA => Some(ScriptEngineTarget::Lua),
+            _ => None,
+        }
+    }
+}
+
 /// Target language for code generation.
 ///
 /// `C11` is the embedded MCU backend per SCE Protocol-Synthesis RFC §synth-5-J-1.
@@ -247,10 +291,21 @@ impl Language {
     /// mesh-rpc refusal, which reads `templates/mesh/<lang>/` rather than
     /// asserting which backends have a mesh arm.
     pub fn script_engine_language(self) -> &'static str {
+        self.default_script_engine_target().wire_name()
+    }
+
+    /// The engine language this backend emits for when nobody asks for
+    /// another — today's derived answer, unchanged.
+    ///
+    /// A *default*, not a fact, since `--script-engine` exists: the run's
+    /// selection is what the manifest reports and what the templates render
+    /// against. Keeping the default derived means a backend that gains a
+    /// lowering arm moves its own default with it.
+    pub fn default_script_engine_target(self) -> ScriptEngineTarget {
         if self.lowers_expressions_at_build_time() {
-            crate::manifest::SCRIPT_ENGINE_LANGUAGE_LUA
+            ScriptEngineTarget::Lua
         } else {
-            crate::manifest::SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT
+            ScriptEngineTarget::EcmaScript
         }
     }
 
@@ -284,6 +339,138 @@ impl Language {
             .iter()
             .filter(|(name, _)| self.owns_template(name))
             .any(|(_, body)| strip_jinja_comments(body).contains(GUARD_LOWERING_FILTER))
+    }
+
+    /// Whether this backend can emit an artifact for @p target.
+    ///
+    /// **Derived, like every other answer on this seam.** A backend always
+    /// supports its own default. The other direction is supported only when
+    /// its templates can actually produce it — which for the Lua target means
+    /// EVERY site that hands the engine the author's text goes through the
+    /// pair filter, not merely that some site does.
+    ///
+    /// That "every" is the load-bearing word, and it is why this is a refusal
+    /// rather than a lint. `docs/SCE_LUA_TRANSLATION_SEAM.md` states the
+    /// hazard: *"Splitting a subset is not a smaller version of this change:
+    /// the engine would receive Lua from some sites and ECMAScript from
+    /// others, in one session"* — and the mixed artifact would carry no
+    /// diagnostic saying so. A half-migrated backend must therefore refuse the
+    /// flag, and the refusal lifts by itself when the last site moves, the way
+    /// the mesh-rpc refusal lifts when `templates/mesh/<lang>/` appears.
+    pub fn supports_script_engine_target(self, target: ScriptEngineTarget) -> bool {
+        if target == self.default_script_engine_target() {
+            return true;
+        }
+        match target {
+            ScriptEngineTarget::Lua => self.unmigrated_expression_sites().is_empty(),
+            // Nothing walks the other way yet: a backend that lowers has no
+            // arm that emits the author's source, and inventing one would be
+            // a second emission path for the four backends already correct.
+            ScriptEngineTarget::EcmaScript => false,
+        }
+    }
+
+    /// Template interpolations that still hand the engine the author's text
+    /// without routing it through the `(lowered, source)` pair filter.
+    ///
+    /// Counted by MODEL FIELD rather than by call shape, which is the lesson
+    /// the 38-site count paid for twice. A filter-keyed scan misses a site
+    /// that passes `{{ action.array }}` with no filter at all, and an
+    /// entry-point-keyed scan misses a helper nobody thought to list; but the
+    /// author's text can only reach a template through one of these fields, so
+    /// asking which interpolations mention one catches both shapes.
+    ///
+    /// Each entry is `"<template>: <interpolation>"`, so a refusal can name
+    /// what is left rather than only how much.
+    pub fn unmigrated_expression_sites(self) -> Vec<String> {
+        /// Fields whose value is text some engine will evaluate. Extending
+        /// the model with another one belongs here in the same commit.
+        const MODEL_EXPRESSION_FIELDS: &[&str] = &[
+            ".cond",
+            ".expr",
+            ".array",
+            ".typeexpr",
+            ".targetexpr",
+            ".sendidexpr",
+            ".delayexpr",
+            ".contentexpr",
+            ".srcexpr",
+            ".eventexpr",
+            ".location",
+        ];
+        /// What a migrated site routes through. One prefix covers the guard
+        /// and expression spellings both.
+        const PAIR_FILTER_PREFIX: &str = "to_script_source";
+
+        let mut sites = Vec::new();
+        for (name, body) in crate::template_registry::EMBEDDED_TEMPLATES.iter() {
+            if !self.owns_template(name) {
+                continue;
+            }
+            // ⚠ Ownership is not the same question as this one. C++ owns
+            // everything no other backend claims, and that complement
+            // includes `forge/` — which has its own per-language directories
+            // and whose `expr` / `cond` are FORGE AST fields, emitted as
+            // native code. Measured 2026-08-28:
+            // `forge/cpp/procedure.h.jinja2` renders `if ({{ tr.cond }})`
+            // directly and mentions no engine entry point at all. Counting
+            // those as script sites would hold the seam's refusal shut over
+            // expressions that never reach an engine.
+            if name.starts_with("forge/") {
+                continue;
+            }
+            // Line by line, because whether a site reaches the engine is a
+            // property of the LINE it lands on: every backend echoes the
+            // author's expression into a comment beside the code that uses
+            // it, and a scan that reads comments as code cannot tell output
+            // from documentation — the mistake this seam's first gate made.
+            for line in strip_jinja_comments(body).lines() {
+                let code = line.trim_start();
+                if code.starts_with("//") || code.starts_with('*') || code.starts_with("/*") {
+                    continue;
+                }
+                for interpolation in jinja_interpolations(line) {
+                    if !mentions_model_expression(interpolation, MODEL_EXPRESSION_FIELDS) {
+                        continue;
+                    }
+                    // A site that already carries the pair filter is migrated.
+                    if interpolation.contains(PAIR_FILTER_PREFIX) {
+                        continue;
+                    }
+                    sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()));
+                }
+            }
+        }
+        sites.sort();
+        sites.dedup();
+        sites
+    }
+
+    /// Template interpolations that DO route through the pair filter.
+    ///
+    /// The independent witness for [`Self::unmigrated_expression_sites`].
+    /// "No sites remain" and "the scan found nothing" are the same answer
+    /// from that function alone, and a gate that asked it twice would report
+    /// a broken scanner as a finished migration — offering the Lua target to
+    /// a backend that never moved a line. This counts the other side, so the
+    /// two can only agree when the scanner is working.
+    pub fn migrated_expression_sites(self) -> Vec<String> {
+        const PAIR_FILTER_PREFIX: &str = "to_script_source";
+
+        let mut sites = Vec::new();
+        for (name, body) in crate::template_registry::EMBEDDED_TEMPLATES.iter() {
+            if !self.owns_template(name) || name.starts_with("forge/") {
+                continue;
+            }
+            for interpolation in jinja_interpolations(&strip_jinja_comments(body)) {
+                if interpolation.contains(PAIR_FILTER_PREFIX) {
+                    sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()));
+                }
+            }
+        }
+        sites.sort();
+        sites.dedup();
+        sites
     }
 
     /// Whether `name` (a template path relative to the tree root) belongs to
@@ -423,6 +610,54 @@ fn strip_jinja_comments(body: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// Whether an interpolation reads one of the model's expression-bearing
+/// fields, matched at a word boundary.
+///
+/// The boundary is not decoration: `trans.cond_cpp` is the NATIVELY LOWERED
+/// guard — a C++ expression the script engine never sees — and a substring
+/// test for `.cond` reports it as an unmigrated script site. Counting a
+/// natively lowered guard as engine-bound would keep the seam's refusal
+/// standing forever over sites that were never on the wrong side of it.
+fn mentions_model_expression(interpolation: &str, fields: &[&str]) -> bool {
+    fields.iter().any(|field| {
+        let mut rest = interpolation;
+        while let Some(at) = rest.find(field) {
+            let after = &rest[at + field.len()..];
+            let boundary = after
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric() && c != '_');
+            if boundary {
+                return true;
+            }
+            rest = after;
+        }
+        false
+    })
+}
+
+/// Every `{{ … }}` interpolation in a template body, without the braces.
+///
+/// Deliberately not a regex: an interpolation can hold a quoted string with
+/// braces in it, and the migration scan above must not miss a site because
+/// its filter chain happened to be spelled unusually. Scanning for the
+/// delimiters answers the same question with no pattern to get wrong.
+fn jinja_interpolations(body: &str) -> Vec<&str> {
+    let mut found = Vec::new();
+    let mut rest = body;
+    while let Some(open) = rest.find("{{") {
+        let after = &rest[open + 2..];
+        match after.find("}}") {
+            Some(close) => {
+                found.push(&after[..close]);
+                rest = &after[close + 2..];
+            }
+            None => break,
+        }
+    }
+    found
 }
 
 pub(crate) fn render_error(e: minijinja::Error) -> GenerateError {
@@ -1223,9 +1458,30 @@ pub fn generate_cpp(
     input_stem: &str,
     cpp_namespace_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
+    generate_cpp_for_engine(
+        model,
+        template_dir,
+        input_stem,
+        cpp_namespace_prefix,
+        Language::Cpp.default_script_engine_target(),
+    )
+}
+
+/// [`generate_cpp`] with the run's engine selection named.
+///
+/// The seam's codegen input reaches the templates here and nowhere else: the
+/// filters close over it, so a template cannot ask — and therefore cannot ask
+/// inconsistently within one artifact.
+pub fn generate_cpp_for_engine(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    input_stem: &str,
+    cpp_namespace_prefix: Option<&str>,
+    script_engine: ScriptEngineTarget,
+) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_cpp_filters(&mut env, &document_scope(model));
+    filters::register_cpp_filters_for_engine(&mut env, &document_scope(model), script_engine);
     render_cpp(&mut env, model, input_stem, cpp_namespace_prefix)
 }
 
@@ -2440,6 +2696,17 @@ fn count_braces(line: &str, brace: char) -> i32 {
 mod tests {
     use super::*;
     use crate::parser::SCXMLParser;
+
+    /// Prints what the seam still owes, so the migration has a number that
+    /// comes from the tree rather than from a document.
+    #[test]
+    fn report_unmigrated_expression_sites() {
+        let sites = Language::Cpp.unmigrated_expression_sites();
+        eprintln!("cpp unmigrated expression sites: {}", sites.len());
+        for site in &sites {
+            eprintln!("  {site}");
+        }
+    }
 
     #[test]
     fn trailing_newline_is_added_only_when_missing() {

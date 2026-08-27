@@ -751,6 +751,17 @@ struct GenerateReport {
     /// A run that spans backends leaves this `None` and reports no engine
     /// language, because any single value would be wrong for somebody.
     target_language: Option<Language>,
+    /// The engine language this run SELECTED, when it selected one.
+    ///
+    /// `target_language` alone answered this while every backend had exactly
+    /// one arm. `--script-engine` gives C++ and Kotlin a real choice, so the
+    /// manifest has to report the run's selection rather than the backend's
+    /// default — a host that read the default would supply the wrong engine
+    /// for a machine generated with the flag, which is the same mis-supply
+    /// the field was introduced to prevent.
+    ///
+    /// `None` means the run did not ask, and the backend's default stands.
+    script_engine_target: Option<sce_build::generator::ScriptEngineTarget>,
 }
 
 struct RejectedDocument {
@@ -793,10 +804,16 @@ fn build_manifest<'a>(
         // naming a language for a machine that needs no engine, or
         // needing one and naming none, would be two answers to one
         // question.
+        // The run's SELECTION when it made one, the backend's default
+        // otherwise. Reporting the default over a selection would tell a host
+        // to supply the engine this machine was NOT generated for.
         script_engine_language: report
             .needs_script_engine
             .unwrap_or(false)
-            .then(|| target.map(Language::script_engine_language))
+            .then(|| match report.script_engine_target {
+                Some(selected) => Some(selected.wire_name()),
+                None => target.map(Language::script_engine_language),
+            })
             .flatten(),
         needs_event_scheduler: report.needs_event_scheduler.unwrap_or(false),
         needs_host_processor: report.needs_host_processor.unwrap_or(false),
@@ -810,6 +827,72 @@ fn build_manifest<'a>(
         deploy: DeployInfo::from_facts(report.deploy_facts.as_ref()),
         languages,
     }
+}
+
+/// Resolve `--script-engine` against what the backend can actually emit.
+///
+/// Returns `None` when the caller did not ask, which leaves the backend's
+/// default standing and keeps such a run byte-identical to one from before
+/// the flag existed.
+///
+/// The refusal follows the mesh-rpc shape in `sce-build/src/generator.rs`:
+/// name what was asked, name what this backend can do, and name what would
+/// lift the refusal — never emit a best effort. A backend half-migrated
+/// across the seam would otherwise produce an artifact that hands ONE engine
+/// two languages in one session, with no diagnostic anywhere saying so.
+fn resolve_script_engine_target(
+    lang: Language,
+    requested: Option<&str>,
+) -> Result<Option<sce_build::generator::ScriptEngineTarget>, String> {
+    use sce_build::generator::ScriptEngineTarget;
+
+    let Some(requested) = requested else {
+        return Ok(None);
+    };
+    let Some(target) = ScriptEngineTarget::parse(requested) else {
+        return Err(format!(
+            "ERROR: --script-engine '{requested}' is not a script engine language. \
+             Valid values: {}.",
+            sce_build::manifest::SCRIPT_ENGINE_LANGUAGES.join(", ")
+        ));
+    };
+    if lang.supports_script_engine_target(target) {
+        return Ok(Some(target));
+    }
+
+    let mut message = format!(
+        "ERROR: backend '{}' cannot emit for --script-engine {}. \
+         It emits for '{}'",
+        lang.canonical_name(),
+        target.wire_name(),
+        lang.default_script_engine_target().wire_name()
+    );
+    // Two different refusals, and naming the wrong one sends a reader to the
+    // wrong repair. A backend asked for LUA is part-way across a migration
+    // this can count; one asked for ECMASCRIPT has no source-emitting arm at
+    // all, and listing its lowered sites would read as "finish the migration"
+    // when the work is to build an arm that does not exist.
+    match target {
+        ScriptEngineTarget::Lua => {
+            let remaining = lang.unmigrated_expression_sites();
+            message.push_str(&format!(
+                ". {} template site(s) still hand the engine the author's text without the \
+                 (lowered, source) pair filter, and a partial migration would hand one engine \
+                 two languages in one session. Route each through `to_script_source_*` and this \
+                 refusal lifts by itself:\n  {}",
+                remaining.len(),
+                remaining.join("\n  ")
+            ));
+        }
+        ScriptEngineTarget::EcmaScript => {
+            message.push_str(
+                ", and has no template arm that emits the author's source. Nothing walks that \
+                 way yet: the four lowering backends were built to lower, and adding a \
+                 source-emitting arm to one of them is a template change, not a flag.",
+            );
+        }
+    }
+    Err(message)
 }
 
 /// Serialise `report` and write it as a single JSON line to stdout.
@@ -920,6 +1003,24 @@ struct GenerateArgs {
         long_help = LanguageRoute::Generate.flag_help("Target language"),
     )]
     language: String,
+    /// Which language the generated machine hands its script engine.
+    ///
+    /// `datamodel="ecmascript"` is a claim about a language and Lua is not
+    /// that language, so a backend running the datamodel on Lua has to
+    /// translate — at build time here, or at run time inside the engine's
+    /// input adapter. This is that choice, and it is a codegen INPUT because
+    /// C++ and Kotlin genuinely have both while the other four do not.
+    ///
+    /// Omit it and each backend emits for the engine it already emitted for,
+    /// so a run that does not ask is byte-identical to one before this flag
+    /// existed. The value is reported back on the manifest's
+    /// `script_engine_language`, which is what a host reads to know which
+    /// kind of engine to supply.
+    ///
+    /// A backend that cannot honour the request refuses rather than emitting
+    /// something half in each language. See docs/SCE_LUA_TRANSLATION_SEAM.md.
+    #[arg(long = "script-engine", value_name = "LANG")]
+    script_engine: Option<String>,
     /// Output directory
     #[arg(short, long, default_value = ".")]
     output_dir: String,
@@ -1377,6 +1478,25 @@ struct CheckArgs {
         long_help = check_language_flag_help(),
     )]
     language: Vec<String>,
+    /// Which language the generated machine would hand its script engine.
+    ///
+    /// Carried here because it is verdict-bearing on `generate`: a backend
+    /// that cannot emit for the requested engine REFUSES, and `check`'s
+    /// contract is that it reaches the verdict `generate` would. A verdict it
+    /// cannot be asked for is one it cannot reach.
+    ///
+    /// Single-document runs only, and the conflict is what says so rather
+    /// than a comment. `orchestrate` is the producer the document-set route
+    /// mirrors and it takes no engine selection yet, so accepting one here
+    /// would give `check` a verdict its own reference producer cannot be
+    /// asked for — and, worse, accepting it silently on a route that ignores
+    /// it. Extending the selection to `orchestrate` is what lifts this.
+    #[arg(
+        long = "script-engine",
+        value_name = "LANG",
+        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+    )]
+    script_engine: Option<String>,
     /// Additional directories searched (in declaration order) to
     /// resolve `<xi:include href="...">` and `<sce:use template="...">`
     /// fragments by name. Mirrors `generate`'s `-I`.
@@ -2731,6 +2851,10 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         forge,
         deploy,
         language,
+        // The document-set route renders every backend it was given; the
+        // single-document route below is where a selection is resolved and
+        // refused, so naming it here would be a second answer to one question.
+        script_engine: _,
         include_dir,
         strict_unresolved: _,
         lint: _,
@@ -2861,6 +2985,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         forge: _,
         deploy: _,
         language,
+        script_engine,
         include_dir,
         strict_unresolved,
         lint,
@@ -3109,15 +3234,31 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 .clone_from(&model.host_invoker_types);
 
             for lang in &langs {
+                // Reached before rendering, so `check` refuses what `generate`
+                // would refuse rather than reporting a verdict for an artifact
+                // that could never be produced.
+                let selected_engine =
+                    match resolve_script_engine_target(*lang, script_engine.as_deref()) {
+                        Ok(selected) => selected,
+                        Err(message) => {
+                            eprintln!("{message}");
+                            std::process::exit(1);
+                        }
+                    };
                 let template_dir = sce_build::find_template_dir_for(*lang);
                 let outcome = match lang {
                     Language::Rust => {
                         sce_build::generator::generate(&model, &template_dir, no_std).map(|_| ())
                     }
-                    Language::Cpp => {
-                        sce_build::generator::generate_cpp(&model, &template_dir, input_stem, None)
-                            .map(|_| ())
-                    }
+                    Language::Cpp => sce_build::generator::generate_cpp_for_engine(
+                        &model,
+                        &template_dir,
+                        input_stem,
+                        None,
+                        selected_engine
+                            .unwrap_or_else(|| Language::Cpp.default_script_engine_target()),
+                    )
+                    .map(|_| ()),
                     Language::Kotlin => {
                         sce_build::generator::generate_kotlin(&model, &template_dir, None)
                             .map(|_| ())
@@ -3166,6 +3307,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     let GenerateArgs {
         scxml,
         language,
+        script_engine,
         output_dir,
         as_child,
         parent_stem,
@@ -3222,8 +3364,17 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // `target_language` is set here, at the one place the run's backend is
     // known, so every exit path reports the engine language that backend
     // actually needs rather than a constant.
+    let script_engine_target = match resolve_script_engine_target(lang, script_engine.as_deref()) {
+        Ok(selected) => selected,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+    };
+
     let mut report = GenerateReport {
         target_language: Some(lang),
+        script_engine_target,
         ..GenerateReport::default()
     };
 
@@ -3918,8 +4069,18 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     }
                 }
                 Language::Cpp => {
-                    sce_build::generator::generate_cpp(m, &template_dir, stem, cpp_namespace_prefix)
-                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)))
+                    // The run's selection, or this backend's default when the
+                    // caller did not ask — resolved and refused already, so
+                    // reaching here means the backend can emit it.
+                    sce_build::generator::generate_cpp_for_engine(
+                        m,
+                        &template_dir,
+                        stem,
+                        cpp_namespace_prefix,
+                        script_engine_target
+                            .unwrap_or_else(|| Language::Cpp.default_script_engine_target()),
+                    )
+                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)))
                 }
                 Language::Kotlin => {
                     let mut code = sce_build::generator::generate_kotlin(
