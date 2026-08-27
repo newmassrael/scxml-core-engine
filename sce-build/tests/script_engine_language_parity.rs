@@ -1,0 +1,235 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! The manifest's `script_engine_language` is a claim about the ARTIFACT, so
+//! it is measured against the artifact.
+//!
+//! `needs_script_engine` tells a host it must supply an engine;
+//! `script_engine_language` tells it which kind. Until 2026-08-27 the second
+//! was a constant — `"lua"`, for every backend — under a comment asserting
+//! that "the lowering happens in `sce-build`, before any backend renders, so
+//! every language's generated machine evaluates the same Lua". Four backends
+//! do work that way. C++ and Kotlin do not: their generated code takes its
+//! engine by injection, cannot know at generation time which one arrives, and
+//! therefore hands over the author's ECMAScript *source* — which is exactly
+//! why each of them carries a runtime rewriter, and why those two rewriters
+//! are where the ECMA-262 divergences live. Both default to an ECMAScript
+//! engine (`SCE_SCRIPT_ENGINE=quickjs`, `W3CTestBase.DEFAULT_ENGINE="rhino"`),
+//! so a host obeying the manifest supplied the wrong engine for the two
+//! backends that most needed the right one.
+//!
+//! `docs/SCE_LUA_TRANSLATION_SEAM.md` carries the per-backend table. What is
+//! checked HERE is that the mapping on `Language::script_engine_language`
+//! still describes what each backend emits — and that is asked of the emitted
+//! text, not of the templates:
+//!
+//! * A backend that lowers at build time emits the frontend's own Lua, and
+//!   `_scxml_truthy(` — the helper that lowering introduces — appears in the
+//!   artifact.
+//! * A backend that hands over source never emits it.
+//!
+//! The evidence is that POSITIVE marker rather than the presence of the
+//! author's ECMAScript, and the first run of this gate is why: every backend
+//! echoes the original expression into a comment beside the guard
+//! (`/* W3C SCXML 3.13: cond="..." (lua eval) */` on C11), so searching for
+//! the ECMAScript spelling reported C11 — a lowering backend — as carrying
+//! source. A scanner that reads comments as code cannot tell a backend's
+//! output from its documentation.
+//!
+//! Reading the artifact rather than grepping the templates for `to_lua_guard`
+//! matters: a template could gain the filter at one site and keep source at
+//! another, and the half-converted backend would still look converted to a
+//! grep. The document's own text is the thing a host would have to evaluate.
+
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use sce_build::generator::Language;
+use sce_build::manifest::{
+    SCRIPT_ENGINE_LANGUAGES, SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT, SCRIPT_ENGINE_LANGUAGE_LUA,
+};
+
+/// A committed document with a guard that survives translation visibly: `&&`
+/// becomes `and` and `===` becomes `==`, so the ECMAScript spelling below
+/// appears only where the source was passed through. Named rather than
+/// generated, so a fixture that moves fails against a written-down answer
+/// instead of agreeing with itself. It carries no `<invoke>`, so every
+/// backend generates it.
+const FIXTURE: &str =
+    "integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml";
+
+/// What build-time lowering leaves behind, and a comment cannot.
+///
+/// `to_lua_guard` wraps a truthiness test in the frontend's own helper, so
+/// this substring is present exactly in the artifacts that carry lowered Lua.
+/// The author's ECMAScript is echoed into comments on every backend and is
+/// therefore useless as the discriminator — see the module note.
+const LOWERED_MARKER: &str = "_scxml_truthy(_event.data)";
+
+const SCHEMA: &str = "schemas/sce-manifest.v1.schema.json";
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build has a parent dir")
+        .to_path_buf()
+}
+
+fn codegen_bin() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
+}
+
+/// Generate `FIXTURE` for one backend and return `(every emitted byte, the
+/// manifest line)`.
+fn emit(lang: &str, tag: &str) -> (String, String) {
+    let out = repo_root().join("target").join(tag).join(lang);
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).expect("scratch dir");
+
+    let result = Command::new(codegen_bin())
+        .args([
+            "generate",
+            FIXTURE,
+            "-l",
+            lang,
+            "-o",
+            out.to_str().expect("utf-8 path"),
+            "--no-format",
+        ])
+        .current_dir(repo_root())
+        .output()
+        .expect("sce-codegen runs");
+    assert!(
+        result.status.success(),
+        "`sce-codegen generate -l {lang}` refused {FIXTURE}; this gate needs every backend \
+         to emit it.\nstderr:\n{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let mut text = String::new();
+    let mut stack = vec![out.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("scratch dir is readable") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if let Ok(body) = std::fs::read_to_string(&path) {
+                text.push_str(&body);
+                text.push('\n');
+            }
+        }
+    }
+    assert!(
+        !text.is_empty(),
+        "{lang}: generation wrote nothing readable, so there is no artifact to measure"
+    );
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let manifest = stdout
+        .lines()
+        .last()
+        .unwrap_or_else(|| panic!("{lang}: no manifest on stdout"))
+        .to_string();
+    (text, manifest)
+}
+
+#[test]
+fn every_backend_maps_into_the_wire_vocabulary() {
+    let vocabulary: BTreeSet<&str> = SCRIPT_ENGINE_LANGUAGES.iter().copied().collect();
+    assert_eq!(
+        vocabulary.len(),
+        SCRIPT_ENGINE_LANGUAGES.len(),
+        "the wire vocabulary lists a spelling twice"
+    );
+    for lang in Language::ALL {
+        assert!(
+            vocabulary.contains(lang.script_engine_language()),
+            "`{}` maps to `{}`, which is not in the wire vocabulary {:?} — so the manifest \
+             would emit a value the schema refuses.",
+            lang.canonical_name(),
+            lang.script_engine_language(),
+            SCRIPT_ENGINE_LANGUAGES
+        );
+    }
+}
+
+#[test]
+fn the_schema_admits_exactly_the_wire_vocabulary() {
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(repo_root().join(SCHEMA)).expect("schema"))
+            .expect("schema is JSON");
+    let declared: BTreeSet<String> = schema
+        .pointer("/properties/script_engine_language/enum")
+        .and_then(|e| e.as_array())
+        .unwrap_or_else(|| panic!("{SCHEMA} declares no enum for script_engine_language"))
+        .iter()
+        .map(|v| v.as_str().expect("enum entries are strings").to_string())
+        .collect();
+    let ours: BTreeSet<String> = SCRIPT_ENGINE_LANGUAGES
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    assert_eq!(
+        declared, ours,
+        "the manifest schema's `script_engine_language` enum and the producer's vocabulary \
+         disagree. The producer emits what the enum refuses, or the enum promises a value \
+         nothing produces — and this field's whole job is telling a host which engine to \
+         build."
+    );
+}
+
+/// The claim, measured on the emitted text of all six.
+#[test]
+fn the_reported_engine_language_matches_what_the_artifact_carries() {
+    let mut source_side = 0usize;
+    let mut lowered_side = 0usize;
+
+    for lang in Language::ALL {
+        let name = lang.canonical_name();
+        let (text, manifest) = emit(name, "script_engine_language_parity");
+        let carries_lowered_lua = text.contains(LOWERED_MARKER);
+        let reported = lang.script_engine_language();
+
+        if carries_lowered_lua {
+            lowered_side += 1;
+            assert_eq!(
+                reported, SCRIPT_ENGINE_LANGUAGE_LUA,
+                "`{name}` emits lowered Lua (`{LOWERED_MARKER}` is in its output), so its host \
+                 needs a Lua engine — but the manifest says `{reported}`."
+            );
+        } else {
+            source_side += 1;
+            assert_eq!(
+                reported, SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT,
+                "`{name}` emits no lowered Lua, so it hands the engine the author's ECMAScript \
+                 and its host must supply an ECMAScript engine — but the manifest says \
+                 `{reported}`. A host obeying that builds a Lua engine and hands it JavaScript."
+            );
+        }
+
+        // The manifest is the surface a host actually reads, so the value is
+        // read back off it rather than trusted from the mapping alone.
+        let parsed: serde_json::Value = serde_json::from_str(&manifest)
+            .unwrap_or_else(|e| panic!("{name}: manifest is not JSON ({e}): {manifest}"));
+        assert_eq!(
+            parsed
+                .get("script_engine_language")
+                .and_then(|v| v.as_str()),
+            Some(reported),
+            "`{name}`: the emitted manifest does not carry the engine language this backend \
+             needs.\nmanifest: {manifest}"
+        );
+    }
+
+    // Both sides must be populated. A sweep that put every backend on one
+    // side would pass every assertion above by asking the same question six
+    // times, and the split IS the finding this gate exists to hold.
+    assert!(
+        source_side >= 1 && lowered_side >= 1,
+        "the six backends landed {source_side} on the source side and {lowered_side} on the \
+         lowered side. Both sides existing is the fact this gate measures; if a change moved \
+         them all to one side, the mapping and the seam document both need rewriting rather \
+         than this floor relaxing."
+    );
+}

@@ -424,5 +424,17 @@ name = "mesh_rpc_backend_contract"
 path = "tests/mesh_rpc_backend_contract.rs"
 required-features = ["cli"]
 
+# Manifest `script_engine_language` ↔ what the artifact actually carries.
+# Generates one document on all six backends and reads the emitted text,
+# because the field is a claim about the artifact and was a constant until
+# 2026-08-27 — `"lua"` even for C++ and Kotlin, which hand the engine the
+# author's ECMAScript. Declared rather than auto-discovered because it drives
+# `sce-codegen`: with the feature off cargo skips it instead of leaving it to
+# dangle on an unset `CARGO_BIN_EXE_sce-codegen`.
+[[test]]
+name = "script_engine_language_parity"
+path = "tests/script_engine_language_parity.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

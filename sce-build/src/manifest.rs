@@ -37,12 +37,42 @@ pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 /// prose has said this for a while; what was missing was a place a
 /// program reads.
 ///
-/// Not per-backend: the lowering happens in `sce-build`, before any
+/// ⚠ It IS per-backend, and this constant used to deny that. The doc here
+/// read "Not per-backend: the lowering happens in `sce-build`, before any
 /// backend renders, so every language's generated machine evaluates the
-/// same Lua. Which Lua differs (`docs/SCE_ACCEPTED_SUBSET.md` records the
-/// go-lua standard-library divergence), and that is a separate question
+/// same Lua", and `script_engine_language` was hard-coded to Lua for every
+/// target. Measured 2026-08-27 and written up in
+/// `docs/SCE_LUA_TRANSLATION_SEAM.md`: four backends do receive lowered Lua
+/// (`to_lua_guard` / `to_lua_expr` in their templates), and **C++ and Kotlin
+/// do not** — they hand the engine the author's ECMAScript source, which is
+/// why each carries a runtime rewriter. So a C++ or Kotlin host obeying the
+/// manifest supplied a Lua engine for a machine that speaks ECMAScript to
+/// it, and both of those backends default to an ECMAScript engine
+/// (`SCE_SCRIPT_ENGINE=quickjs`, `W3CTestBase.DEFAULT_ENGINE="rhino"`).
+///
+/// Which Lua differs among the four (`docs/SCE_ACCEPTED_SUBSET.md` records
+/// the go-lua standard-library divergence), and that is a separate question
 /// from which language the source was translated into.
-pub const SCRIPT_ENGINE_LANGUAGE: &str = "lua";
+///
+/// The mapping lives on [`crate::generator::Language::script_engine_language`]
+/// so it has one home, and a test binds it to the templates.
+pub const SCRIPT_ENGINE_LANGUAGE_LUA: &str = "lua";
+
+/// The other answer: the engine is handed the author's ECMAScript.
+///
+/// Spelled here rather than at the two call sites so the wire vocabulary is
+/// one list, and so the schema's `enum` can be checked against it.
+pub const SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT: &str = "ecmascript";
+
+/// Every value the wire surface admits for `script_engine_language`.
+///
+/// A test asserts this equals the schema's `enum`, and that every
+/// [`crate::generator::Language`] maps into it — so a seventh backend, or a
+/// third engine language, cannot reach the wire without both lists moving.
+pub const SCRIPT_ENGINE_LANGUAGES: &[&str] = &[
+    SCRIPT_ENGINE_LANGUAGE_LUA,
+    SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT,
+];
 
 /// Stability status of the manifest wire surface.
 ///
@@ -195,16 +225,27 @@ pub struct Manifest<'a> {
     /// Omitted (not `[]`) on a pure-static machine.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub script_engine_causes: &'a [ScriptEngineCauseRecord],
-    /// Which language the engine this machine needs must evaluate —
-    /// [`SCRIPT_ENGINE_LANGUAGE`]. Present exactly when
+    /// Which language the engine this machine needs must evaluate, from
+    /// [`SCRIPT_ENGINE_LANGUAGES`]. Present exactly when
     /// [`Self::needs_script_engine`] is true; there is no engine to
     /// describe otherwise.
     ///
     /// `needs_script_engine` says a host must supply an engine. This says
-    /// what kind. A consumer reading only the flag, and the document's
-    /// `datamodel="ecmascript"`, would supply the wrong one — see
-    /// [`SCRIPT_ENGINE_LANGUAGE`] for why that reading is wrong and what
-    /// it cost.
+    /// what kind, and it is the TARGET BACKEND's answer, not the
+    /// document's: see
+    /// [`crate::generator::Language::script_engine_language`].
+    ///
+    /// Absent on a run that targets more than one backend. `check` sweeps
+    /// every language by default and the six do not agree, so one value
+    /// there would have to be wrong for somebody — the reason this field
+    /// was wrong for C++ and Kotlin in the first place. Carrying it per
+    /// [`LanguageVerdict`] is the shape that answers for a sweep; until
+    /// that lands, a sweep says nothing rather than something false.
+    ///
+    /// A consumer reading only the flag, and the document's
+    /// `datamodel="ecmascript"`, would supply the wrong engine — see
+    /// [`SCRIPT_ENGINE_LANGUAGE_LUA`] for why that reading is wrong, what
+    /// it cost, and what this field itself got wrong until 2026-08-27.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub script_engine_language: Option<&'static str>,
     /// Which driving entry point the emitted machine requires of its
@@ -598,7 +639,7 @@ mod tests {
             artifacts: Vec::new(),
             needs_script_engine: true,
             script_engine_causes: &[],
-            script_engine_language: Some(SCRIPT_ENGINE_LANGUAGE),
+            script_engine_language: Some(SCRIPT_ENGINE_LANGUAGE_LUA),
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
@@ -614,10 +655,21 @@ mod tests {
             line.contains("\"script_engine_language\":\"lua\""),
             "{line}"
         );
-        // Not ECMAScript, however the document spells its datamodel. The
-        // assertion is on the value and not merely on the key's presence,
-        // because a key naming the wrong language is worse than no key.
-        assert_ne!(SCRIPT_ENGINE_LANGUAGE, "ecmascript");
+        // The assertion is on the VALUE and not merely on the key's
+        // presence, because a key naming the wrong language is worse than
+        // no key — which is what this field did for two backends until
+        // 2026-08-27. Both spellings are wire vocabulary now, so what is
+        // asserted is that the value comes from that list rather than that
+        // it is never `ecmascript`: on a C++ or Kotlin target `ecmascript`
+        // is the true answer.
+        assert!(
+            SCRIPT_ENGINE_LANGUAGES.contains(&SCRIPT_ENGINE_LANGUAGE_LUA),
+            "the wire vocabulary lost a spelling this record emits"
+        );
+        assert_ne!(
+            SCRIPT_ENGINE_LANGUAGE_LUA,
+            SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT
+        );
     }
 
     /// A pure-static machine has no engine to describe, so naming one

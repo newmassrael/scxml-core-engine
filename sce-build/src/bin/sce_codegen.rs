@@ -743,6 +743,14 @@ struct GenerateReport {
     /// run. `None` for every deploy-unaware invocation, which is what
     /// keeps the manifest byte-identical for them.
     deploy_facts: Option<sce_build::DeployFacts>,
+    /// The single backend this run emitted for, when there is one.
+    ///
+    /// Carried because `script_engine_language` is the TARGET's answer and
+    /// not the document's: C++ and Kotlin hand their engine the author's
+    /// ECMAScript, the other four hand it Lua the build already lowered.
+    /// A run that spans backends leaves this `None` and reports no engine
+    /// language, because any single value would be wrong for somebody.
+    target_language: Option<Language>,
 }
 
 struct RejectedDocument {
@@ -757,10 +765,16 @@ struct RejectedDocument {
 /// `schemas/sce-manifest.v1.schema.json` for the wire schema. Both
 /// `generate` and `check` funnel through here so the two subcommands
 /// cannot drift into two shapes of the same record.
+/// `target` is the single backend this run emitted for, or `None` when it
+/// spanned several (`check` sweeps every language). The engine language is
+/// the TARGET's answer — C++ and Kotlin hand the engine ECMAScript while the
+/// other four hand it lowered Lua — so a sweep has no single one to report
+/// and says nothing rather than something false.
 fn build_manifest<'a>(
     report: &'a GenerateReport,
     kind: ManifestKind,
     languages: Option<Vec<LanguageVerdict>>,
+    target: Option<Language>,
 ) -> Manifest<'a> {
     Manifest {
         v: sce_build::manifest::MANIFEST_SCHEMA_VERSION,
@@ -782,7 +796,8 @@ fn build_manifest<'a>(
         script_engine_language: report
             .needs_script_engine
             .unwrap_or(false)
-            .then_some(sce_build::manifest::SCRIPT_ENGINE_LANGUAGE),
+            .then(|| target.map(Language::script_engine_language))
+            .flatten(),
         needs_event_scheduler: report.needs_event_scheduler.unwrap_or(false),
         needs_host_processor: report.needs_host_processor.unwrap_or(false),
         host_processor_causes: &report.host_processor_causes,
@@ -801,7 +816,7 @@ fn build_manifest<'a>(
 fn emit_generate_manifest(report: &GenerateReport) {
     outln!(
         "{}",
-        build_manifest(report, ManifestKind::Generate, None).to_line()
+        build_manifest(report, ManifestKind::Generate, None, report.target_language).to_line()
     );
 }
 
@@ -2268,6 +2283,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         // has no single model to read — the declaration is the SET's.
         host_processor_types: options.host_processor_types.clone(),
         host_invoker_types: options.host_invoker_types.clone(),
+        target_language: Some(lang),
         ..GenerateReport::default()
     };
     accumulate_host_requirements(&mut report, &scxml_path_bufs);
@@ -2286,7 +2302,13 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
 
     outln!(
         "{}",
-        build_manifest(&report, ManifestKind::Orchestrate, None).to_line()
+        build_manifest(
+            &report,
+            ManifestKind::Orchestrate,
+            None,
+            report.target_language,
+        )
+        .to_line()
     );
 }
 
@@ -2796,7 +2818,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
 
     outln!(
         "{}",
-        build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
+        build_manifest(&report, ManifestKind::Check, Some(verdicts), None).to_line()
     );
 }
 
@@ -3000,7 +3022,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 }
                 outln!(
                     "{}",
-                    build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
+                    build_manifest(&report, ManifestKind::Check, Some(verdicts), None).to_line()
                 );
                 return;
             }
@@ -3133,7 +3155,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 
     outln!(
         "{}",
-        build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
+        build_manifest(&report, ManifestKind::Check, Some(verdicts), None).to_line()
     );
 }
 
@@ -3196,7 +3218,14 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // Every stdout artifact, the `needs_script_engine` verdict, and
     // any W3C rejection are collected here and flushed as a single
     // JSON manifest at each function exit. Stays local — no globals.
-    let mut report = GenerateReport::default();
+    //
+    // `target_language` is set here, at the one place the run's backend is
+    // known, so every exit path reports the engine language that backend
+    // actually needs rather than a constant.
+    let mut report = GenerateReport {
+        target_language: Some(lang),
+        ..GenerateReport::default()
+    };
 
     // C++ formatter: created once and reused for all output files.
     let cpp_formatter = create_cpp_formatter(lang, format_style, no_format);
