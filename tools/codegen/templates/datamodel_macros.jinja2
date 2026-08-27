@@ -18,7 +18,7 @@
 {% if var.expr %}
                 // State {{ state_id }} variable '{{ var.id }}' from expr
                 ::SCE::DataModelInitHelper::initializeVariableFromExpr(
-                    scriptEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
+                    scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.expr | to_script_source_expr }},
                     [&engine](const ::std::string& msg) {
                         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
                     });

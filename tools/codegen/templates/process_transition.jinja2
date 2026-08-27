@@ -635,7 +635,7 @@ private:
                 if ({{ trans.native_payload_guard }}) SCE_LIKELY {
 {% elif model.needs_script_engine %}
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ trans.cond | escape_cpp }}", engine)) SCE_LIKELY {
+                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ trans.cond | to_script_source_guard }}, engine)) SCE_LIKELY {
 {% else %}
                 // W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
                 if ({{ 'true' if trans.cond_constant else 'false' }}) SCE_LIKELY {
@@ -702,7 +702,7 @@ private:
                 if ({{ transition.cond_cpp }}) {
 {% elif model.needs_script_engine %}
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ transition.cond | escape_cpp }}", engine)) {
+                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ transition.cond | to_script_source_guard }}, engine)) {
 {% else %}
                 // W3C SCXML 5.9: cond="{{ transition.cond }}" decided at build time
             if ({{ 'true' if transition.cond_constant else 'false' }}) {
@@ -717,7 +717,7 @@ private:
                 } else if ({{ transition.cond_cpp }}) {
 {% elif model.needs_script_engine and first_uses_script_engine %}
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                } else if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ transition.cond | escape_cpp }}", engine)) {
+                } else if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ transition.cond | to_script_source_guard }}, engine)) {
 {% else %}
                 // W3C SCXML 5.9: cond="{{ transition.cond }}" decided at build time
             } else if ({{ 'true' if transition.cond_constant else 'false' }}) {
