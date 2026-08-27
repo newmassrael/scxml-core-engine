@@ -3093,6 +3093,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
           "symbol": "validateConfiguration",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "removeConflictingTransitions",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

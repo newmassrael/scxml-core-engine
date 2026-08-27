@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b9b6d5a256b534ee1bf3d5ad94af0afa9df9e54bf19008d6dd27d12f1bc9a55e
+// template-hash: 1f4e4f9fb7a6afbcc11d24c73b03e4acaa51ec03610a45bb92197b670933aad7
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -958,6 +958,27 @@ impl Test417Policy {
         let mut filtered: TransitionList = TransitionList::new();
 
         for t1 in enabled {
+            // Appendix D selectTransitions: the enabled set is an ORDERED SET,
+            // and the same transition reached from two different region leaves
+            // is ONE element of it, not two. A transition written on a
+            // `<parallel>`, or on an ancestor above one, is selected once per
+            // region by the bubbling walk -- W3C test 403b turns on a
+            // `<parallel>`-level `<assign>` running exactly once. Selection
+            // stops at the first enabled transition of a state, so within one
+            // microstep a source contributes at most one transition and
+            // (source, target) identifies it.
+            //
+            // This is what the removed target/source criterion stood in for: a
+            // targetless duplicate is spelled source -> source, so that check
+            // happened to fire on it. Stated here it is the set semantics
+            // themselves, independent of how a targetless transition is spelled.
+            if filtered
+                .iter()
+                .any(|seen| seen.source == t1.source && seen.target == t1.target)
+            {
+                continue;
+            }
+
             let mut dominated = false;
             let mut to_remove: IndexList = IndexList::new();
 
@@ -969,68 +990,36 @@ impl Test417Policy {
                     self.compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
 
                 // Appendix D removeConflictingTransitions: two transitions conflict
-                // when their EXIT SETS intersect. A transition that exits nothing
-                // therefore conflicts with nothing and can never be preempted --
-                // which is exactly a targetless transition, whose
-                // Appendix D computeExitSet contribution the appendix defines as
-                // empty.
+                // when their EXIT SETS intersect. That is the whole test the
+                // appendix states, and it is now the whole test made here.
                 //
-                // The heuristics below stand in for an exit set this generator
-                // could not always compute, and every one of them reads a
-                // targetless transition as a self-transition on its own source.
-                // Left ungated, a targetless `<transition event="*">` in one region
-                // is preempted the moment a sibling region's transition exits the
-                // enclosing `<parallel>` -- which is what the domain filter above
-                // now makes a region-root external transition do, and what W3C test
-                // 403c marks "this transition never gets preempted, should fire
-                // twice".
-                if t1_exits.is_empty() || t2_exits.is_empty() {
+                // Three rules used to sit beside it -- a target/source equality
+                // check and a `<parallel>`-ancestor check in each direction --
+                // and none is in the appendix. They stood in for an exit set
+                // this generator could not compute: assembled from the source's
+                // own ancestor chain, a set could not name the sibling regions a
+                // transition leaving the `<parallel>` exits, so the intersection
+                // came back empty for transitions that plainly conflict.
+                // Appendix D computeExitSet reads the CONFIGURATION now, so the
+                // intersection answers on its own.
+                //
+                // A transition that exits nothing still conflicts with nothing
+                // and can never be preempted -- that is a targetless transition,
+                // which the appendix gives an empty exit set, and it is what W3C
+                // test 403c means by "this transition never gets preempted,
+                // should fire twice". The removed rules each read a targetless
+                // transition as a self-transition on its own source, which is
+                // why they needed an empty-exit-set gate ahead of them.
+                if !t1_exits.iter().any(|s1| t2_exits.contains(s1)) {
                     continue;
                 }
 
-                let mut has_conflict = t1_exits.iter().any(|s1| t2_exits.contains(s1));
-
-                // Appendix D removeConflictingTransitions: Target/source conflict — t1 enters a state that t2 leaves
-                // (or vice versa). Matches C++ `ConflictResolutionAlgorithms::removeConflictingTransitions`.
-                if !has_conflict && (t1.target == t2.source || t2.target == t1.source) {
-                    has_conflict = true;
-                }
-
-                // W3C SCXML 3.13: Parallel exit conflict — t1 exits a parallel ancestor of t2's source
-                if !has_conflict && !(t2.is_internal && t2.source == t2.target) {
-                    for &exit_state in &t1_exits {
-                        if Self::is_parallel_state(exit_state)
-                            && Self::is_descendant_of(t2.source, exit_state)
-                        {
-                            has_conflict = true;
-                            break;
-                        }
-                    }
-                }
-                if !has_conflict && !(t1.is_internal && t1.source == t1.target) {
-                    for &exit_state in &t2_exits {
-                        if Self::is_parallel_state(exit_state)
-                            && Self::is_descendant_of(t1.source, exit_state)
-                        {
-                            has_conflict = true;
-                            break;
-                        }
-                    }
-                }
-
-                if has_conflict {
-                    // Appendix D removeConflictingTransitions: Preemption rules
-                    if t1.target == t2.source {
-                        to_remove.push_bounded(idx);
-                    } else if t2.target == t1.source {
-                        dominated = true;
-                        break;
-                    } else if Self::is_descendant_of(t1.source, t2.source) {
-                        to_remove.push_bounded(idx);
-                    } else {
-                        dominated = true;
-                        break;
-                    }
+                // Appendix D removeConflictingTransitions: the descendant source wins
+                if Self::is_descendant_of(t1.source, t2.source) {
+                    to_remove.push_bounded(idx);
+                } else {
+                    dominated = true;
+                    break;
                 }
             }
 

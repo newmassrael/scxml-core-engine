@@ -88,16 +88,19 @@ struct ConflictResolutionAlgorithms {
      *
      * @tparam StateType State identifier type
      * @tparam GetParentFn Callable: (const StateType&) -> std::optional<StateType>
-     * @tparam IsParallelFn Callable: (const StateType&) -> bool
      * @param enabledTransitions All enabled transitions (in document order)
      * @param getParent Function to get parent state
-     * @param isParallelState Function to check if state is parallel
      * @return Filtered non-conflicting transition set (optimal transition set)
+     *
+     * @note No `isParallelState` predicate: the procedure asks nothing about
+     *       `<parallel>` states. It once did, to stand in for an exit set that
+     *       could not name a sibling region; Appendix D's computeExitSet names
+     *       them now, so the intersection below is the entire conflict test.
      */
-    template <typename StateType, typename GetParentFn, typename IsParallelFn>
+    template <typename StateType, typename GetParentFn>
     [[nodiscard]] static std::vector<TransitionDescriptor<StateType>>
     removeConflictingTransitions(const std::vector<TransitionDescriptor<StateType>> &enabledTransitions,
-                                 GetParentFn getParent, IsParallelFn isParallelState) {
+                                 GetParentFn getParent) {
         std::vector<TransitionDescriptor<StateType>> filteredTransitions;
 
         SCE_LOG_DEBUG("ConflictResolution::removeConflictingTransitions: Processing {} transitions",
@@ -131,72 +134,44 @@ struct ConflictResolutionAlgorithms {
                 const auto &t2 = filteredTransitions[i];
 
                 // §scxml-D-removeConflictingTransitions: two transitions conflict
-                // when their EXIT SETS intersect. A transition that exits nothing
-                // therefore conflicts with nothing and can never be preempted --
-                // which is exactly a targetless transition, whose
-                // §scxml-D-computeExitSet contribution the appendix defines as
-                // empty.
+                // when their EXIT SETS intersect. That is the whole test the
+                // appendix states, and it is now the whole test made here.
                 //
-                // The heuristics below stand in for an exit set this engine could
-                // not always compute, and every one of them reads a targetless
-                // transition as a self-transition on its own source. Left
-                // ungated, a targetless `<transition event="*">` sitting in one
-                // region was preempted whenever a sibling region's transition
-                // exited the enclosing `<parallel>` -- the case W3C test 403c
-                // marks "this transition never gets preempted, should fire twice".
-                if (t1.exitSet.empty() || t2.exitSet.empty()) {
+                // Three rules used to sit beside it -- a target/source equality
+                // check and a `<parallel>`-ancestor check in each direction --
+                // and none is in the appendix. They stood in for an exit set
+                // this engine could not compute: assembled from one region's own
+                // chain, a set could not name the sibling regions a transition
+                // leaving the `<parallel>` exits, so the intersection came back
+                // empty for transitions that plainly conflict and something had
+                // to say so. §scxml-D-computeExitSet now reads the CONFIGURATION
+                // in every engine, so the intersection answers on its own.
+                //
+                // Two consequences worth naming, because the removed rules made
+                // both of them invisible:
+                //  - A transition that exits nothing conflicts with nothing and
+                //    can never be preempted. That is exactly a targetless
+                //    transition -- the appendix guards computeExitSet with `if
+                //    t.target` -- and it is what W3C test 403c means by "this
+                //    transition never gets preempted, should fire twice". The
+                //    old rules each read a targetless transition as a
+                //    self-transition on its own source, which is why they needed
+                //    an empty-exit-set gate ahead of them to keep 403c green.
+                //  - Two transitions in different regions of one `<parallel>`
+                //    have domains in disjoint subtrees, so their exit sets are
+                //    disjoint and both survive. §scxml-3.4 requires exactly that.
+                if (!hasIntersection(t1.exitSet, t2.exitSet)) {
                     continue;
                 }
 
-                bool hasConflict = false;
-
-                // §scxml-D-removeConflictingTransitions: Check if exit sets intersect (conflict)
-                if (hasIntersection(t1.exitSet, t2.exitSet)) {
-                    hasConflict = true;
-                }
-
-                // §scxml-D-removeConflictingTransitions: Target/source conflict detection
-                if (!hasConflict) {
-                    if (t1.target == t2.source || t2.target == t1.source) {
-                        hasConflict = true;
-                    }
-                }
-
-                // §scxml-3.13: Parallel state conflict detection
-                if (!hasConflict && !(t2.isInternal && t2.source == t2.target)) {
-                    for (const auto &exitState : t1.exitSet) {
-                        if (isParallelState(exitState)) {
-                            if (HierarchicalAlgorithms::isDescendantOf(t2.source, exitState, getParent)) {
-                                hasConflict = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Check reverse: t2 exits parallel state that is ancestor of t1's source
-                if (!hasConflict && !(t1.isInternal && t1.source == t1.target)) {
-                    for (const auto &exitState : t2.exitSet) {
-                        if (isParallelState(exitState)) {
-                            if (HierarchicalAlgorithms::isDescendantOf(t1.source, exitState, getParent)) {
-                                hasConflict = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (hasConflict) {
-                    // §scxml-D-removeConflictingTransitions: Preemption rules
-                    if (t1.target == t2.source) {
-                        transitionsToRemove.push_back(i);
-                    } else if (t2.target == t1.source) {
-                        t1Preempted = true;
-                    } else if (HierarchicalAlgorithms::isDescendantOf(t1.source, t2.source, getParent)) {
-                        transitionsToRemove.push_back(i);
-                    } else {
-                        t1Preempted = true;
-                    }
+                // §scxml-D-removeConflictingTransitions: the descendant source
+                // wins. The appendix leaves the loop here rather than gathering
+                // more removals it would discard.
+                if (HierarchicalAlgorithms::isDescendantOf(t1.source, t2.source, getParent)) {
+                    transitionsToRemove.push_back(i);
+                } else {
+                    t1Preempted = true;
+                    break;
                 }
             }
 
@@ -334,8 +309,7 @@ public:
     static std::vector<TransitionDescriptor>
     removeConflictingTransitions(const std::vector<TransitionDescriptor> &enabledTransitions) {
         return ConflictResolutionAlgorithms::removeConflictingTransitions(
-            enabledTransitions, [](State s) { return StatePolicy::getParent(s); },
-            [](State s) { return StatePolicy::isParallelState(s); });
+            enabledTransitions, [](State s) { return StatePolicy::getParent(s); });
     }
 };
 
