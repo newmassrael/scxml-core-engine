@@ -48,6 +48,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # `mesh_rpc_backend_contract` drive the real `sce-codegen` binary; the
 # other targets do not need it and are unaffected by its presence.
 #
+# `script_engine_language_parity` is here because its fixture lives under
+# `integration_resources/`, which no workflow's `paths:` filter names — the
+# workspace lane starts for `sce-build/**` and `schemas/**` but not for the
+# document the gate generates. An edit to that document would otherwise change
+# what the gate measures without starting the lane that measures it.
+#
 # `ecma262_scoreboard_contract` is here for the same reason and reads a wider
 # set still: `ARCHITECTURE.md`'s engine matrix and the two JSON files under
 # `tests/ecmascript/`. None of the three is in any workflow's `paths:` filter,
@@ -90,4 +96,5 @@ cargo test -p sce-build --features cli \
     --test mutation_round_survives_the_next_push \
     --test mesh_rpc_backend_contract \
     --test ecma262_scoreboard_contract \
+    --test script_engine_language_parity \
     || sce_gate_fail "tree-wide hygiene gates"

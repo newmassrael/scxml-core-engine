@@ -139,11 +139,24 @@ Lua (`SCE_SCRIPT_ENGINE=quickjs`, `W3CTestBase.DEFAULT_ENGINE="rhino"`). This
 is the same root cause as the divergences, surfacing on a wire surface rather
 than in an answer.
 
-Not fixed here. It is a manifest shape change, so it goes through
-`SCE_ERROR_CONTRACT.md` §10 and `SCE_WIRE_CONTRACTS.md`, and the honest
-correction depends on the decision below: if the target engine becomes a
-codegen input, this field reports that input; if it does not, the field has to
-become per-backend.
+**Fixed 2026-08-27.** The field is now the target backend's answer, taken from
+`Language::script_engine_language`, and the wire vocabulary is
+`"lua" | "ecmascript"` (`SCRIPT_ENGINE_LANGUAGES`). The schema's `enum` was
+widened to match and its description — which had asserted the refuted "Not
+per-backend" claim — rewritten; `SCE_ERROR_CONTRACT.md` §10.1 gained the row
+it never had. A run that spans backends (`check` sweeps all six) omits the
+field rather than picking one language to be wrong about.
+
+`sce-build/tests/script_engine_language_parity.rs` holds it: it generates this
+document on all six backends and decides which side each is on **from the
+emitted artifact**, not from the templates. The marker is `_scxml_truthy(` —
+what build-time lowering leaves behind. It is deliberately not the author's
+ECMAScript, because the first run of that gate reported C11 as source-passing:
+every backend echoes the original expression into a comment beside the guard,
+so a scan that reads comments cannot tell output from documentation.
+
+Restoring the old constant turns that gate red naming `cpp`, which is the
+witness that it measures the thing it claims to.
 
 ## What is not yet decided
 

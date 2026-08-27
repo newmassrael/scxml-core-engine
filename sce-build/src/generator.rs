@@ -216,6 +216,38 @@ impl Language {
             Language::C11 => "c11",
         }
     }
+
+    /// Which language the script engine this backend's output needs must
+    /// evaluate — the value the manifest reports to a host.
+    ///
+    /// It is NOT the same on every backend, and the manifest said it was.
+    /// Four backends receive Lua that `sce-build`'s ECMAScript frontend
+    /// produced at generation time (`to_lua_guard` / `to_lua_expr` in the
+    /// templates). Two — C++ and Kotlin — receive the author's ECMAScript
+    /// *source* and hand it to the engine as it stands, because their
+    /// generated code takes its engine by injection and does not know at
+    /// generation time which one arrives. Their defaults are ECMAScript
+    /// engines: `SCE_SCRIPT_ENGINE=quickjs` (`sce/CMakeLists.txt`) and
+    /// `W3CTestBase.DEFAULT_ENGINE = "rhino"`.
+    ///
+    /// A host obeying a manifest that said `lua` for those two would supply
+    /// a Lua engine for a machine that hands it ECMAScript — the exact
+    /// mis-supply the field exists to prevent.
+    ///
+    /// `docs/SCE_LUA_TRANSLATION_SEAM.md` carries the per-backend table this
+    /// comes from, and `sce-build/tests/script_engine_language_parity.rs`
+    /// holds this mapping to the templates, so a backend that changes which
+    /// side of the seam it sits on cannot leave this answer behind.
+    pub fn script_engine_language(self) -> &'static str {
+        match self {
+            // Build-time lowering: the artifact carries Lua.
+            Language::Rust | Language::Go | Language::Python | Language::C11 => {
+                crate::manifest::SCRIPT_ENGINE_LANGUAGE_LUA
+            }
+            // Runtime evaluation of the author's own source.
+            Language::Cpp | Language::Kotlin => crate::manifest::SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT,
+        }
+    }
 }
 
 impl std::str::FromStr for Language {
