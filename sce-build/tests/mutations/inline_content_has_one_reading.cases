@@ -74,15 +74,22 @@ edit("tools/codegen/templates/c/scriptengine.jinja2",
         "end");''')
 PY
 
-# The two backends that evaluate the authored spelling. For them the
-# unread form differs from the read one by two quotes and nothing else,
-# so the presence check alone said yes to both of these — they SURVIVED
-# the first round of this casefile, and the `unread_form` assertion is
-# what the gate grew in answer.
+# The two backends that evaluate the authored spelling. The unread form
+# once differed from the read one by two quotes and nothing else, so the
+# presence check alone said yes to both of these — they SURVIVED the
+# first round of this casefile, and the `unread_form` assertion is what
+# the gate grew in answer.
+#
+# Re-aimed 2026-08-28: C++'s read form is now a `ScriptSource` named
+# constructor (`to_script_source_data_content`), not a quoted literal, so
+# for C++ the two forms no longer differ by quotes alone. The mutation
+# still lands the unread spelling — `ScriptSource` takes a bare string
+# implicitly, and `ScriptSource.h` says that is deliberate — so
+# `unread_form` is still what decides it. Kotlin's site is unchanged.
 
 mutation_case "cpp quotes the send content again" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     '''    "{{ action.content | to_author_data_content | escape_cpp }}",''',
+     '''    {{ action.content | to_script_source_data_content }},''',
      '''    "'{{ action.content | escape_cpp }}'",''')
 PY
 
@@ -180,8 +187,8 @@ PY
 
 mutation_case "cpp quotes an assign's inline text again" <<'PY'
 edit("tools/codegen/templates/actions/assign.jinja2",
-     '''    std::string expr = "{{ action.content | to_author_assign_content | replace('\\\\', '\\\\\\\\') | replace('"', '\\\\"') }}";''',
-     '''    std::string expr = "'{{ action.content | replace('"', '\\\\"') | replace("'", "\\\\'") }}'";''')
+     '''    ::SCE::ScriptSource expr = {{ action.content | to_script_source_assign_content }};''',
+     '''    ::SCE::ScriptSource expr = "'{{ action.content | replace('"', '\\\\"') | replace("'", "\\\\'") }}'";''')
 PY
 
 mutation_case "kotlin quotes an assign's inline text again" <<'PY'
