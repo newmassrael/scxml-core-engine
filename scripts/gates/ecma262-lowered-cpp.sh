@@ -101,7 +101,7 @@ selected="$(sed -n 's/^SCE_SCRIPT_ENGINE:STRING=//p' "$BUILD_DIR/CMakeCache.txt"
 # target would still build against a stale copy from an earlier run, which in a
 # throwaway tree means it would not build at all — but say so here, where the
 # cause is legible.
-for stem in ecma262_lowered ecma262_source; do
+for stem in ecma262_lowered ecma262_source ecma262_default; do
     [[ -f "$BUILD_DIR/tests/lowered_ecma262/$stem.scxml" ]] \
         || sce_gate_fail "the configure wrote no $stem.scxml — tools/generate_lowered_ecma262_fixture.py did not run"
 done
@@ -116,16 +116,28 @@ sce_gate_build "$BUILD_DIR" --target lowered_ecma262_test \
 # then be running its control twice.
 lowered_sm="$BUILD_DIR/tests/lowered_ecma262/generated/ecma262_lowered_sm.inl"
 source_sm="$BUILD_DIR/tests/lowered_ecma262/generated/ecma262_source_sm.inl"
+default_sm="$BUILD_DIR/tests/lowered_ecma262/generated/ecma262_default_sm.inl"
 lowered_pairs="$(grep -c 'ScriptSource::lua(' "$lowered_sm" 2>/dev/null || true)"
 source_pairs="$(grep -c 'ScriptSource::lua(' "$source_sm" 2>/dev/null || true)"
-lowered_pairs="${lowered_pairs:-0}"; source_pairs="${source_pairs:-0}"
+default_pairs="$(grep -c 'ScriptSource::lua(' "$default_sm" 2>/dev/null || true)"
+lowered_pairs="${lowered_pairs:-0}"; source_pairs="${source_pairs:-0}"; default_pairs="${default_pairs:-0}"
 if (( lowered_pairs == 0 )); then
     sce_gate_fail "the lowered artifact carries no ScriptSource::lua(...) call — it was generated without --script-engine lua, so both machines in this binary hand the engine ECMAScript and the control below compares one against itself"
 fi
 if (( source_pairs != 0 )); then
     sce_gate_fail "the control artifact carries $source_pairs ScriptSource::lua(...) call(s) — it was generated WITH --script-engine lua, so it is a second copy of the subject rather than a control"
 fi
-sce_gate_step "lowered artifact: $lowered_pairs ScriptSource::lua(...) pair(s); control: none"
+# The DERIVED default, read off the artifact rather than off the CMake source.
+# `sce_add_state_machine` gives a `-DSCE_SCRIPT_ENGINE=lua` tree `--script-engine
+# lua` when the caller names nothing, because an artifact built here can only run
+# on the engine this tree compiled in. That is a claim about what the build
+# PRODUCES, so it is asked of the product — and asked here as well as in the
+# suite, because "it was emitted lowered" and "it answers like the lowered one"
+# are two different readings and two artifacts can agree by both being wrong.
+if (( default_pairs != lowered_pairs )); then
+    sce_gate_fail "the artifact generated with NO SCRIPT_ENGINE_LANGUAGE carries $default_pairs ScriptSource::lua(...) call(s) against the explicitly-lowered one's $lowered_pairs — this tree selected a Lua engine and then emitted a machine for a different language, so sce_add_state_machine did not derive the target"
+fi
+sce_gate_step "lowered artifact: $lowered_pairs ScriptSource::lua(...) pair(s); derived default: $default_pairs; control: none"
 
 sce_gate_step "running the lowered artifact"
 LOG="$SCRATCH/ctest.log"

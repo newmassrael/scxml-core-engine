@@ -838,6 +838,85 @@ left the case green. It now asks the independent question
 (`migrated_expression_sites()` must be non-empty), and *that* catches it. A
 gate whose two halves share a source is not a gate.
 
+## Landed 2026-08-29 (third round): a Lua tree emits Lua, and what that does NOT do
+
+`sce_add_state_machine` derives the artifact's target language when the caller
+names none: a `-DSCE_SCRIPT_ENGINE=lua` tree gets `--script-engine lua`. An
+artifact built in a tree can only run on the engine that tree compiled in, so
+the language it hands that engine should be the one the engine speaks, whether
+or not the CMake call says so.
+
+Scoped to `LANGUAGE cpp`, and that scoping is the substance rather than caution:
+`SCE_SCRIPT_ENGINE` is a cache option on the C++ runtime library whose
+definition is PUBLIC on `sce_scripting`, so it describes the C++ tree and
+nothing else. A Rust, Go, Python or Kotlin artifact generated in the same tree
+runs against whatever engine ITS host supplies. Deriving for them would also
+hand `--script-engine lua` to a backend that may refuse it
+(`supports_script_engine_target`), turning an unrelated cache value into a build
+failure. `quickjs` stays UNSET rather than being spelled `ecmascript`, so a
+non-Lua tree emits what it emitted before this existed.
+
+**It is measured on the artifact, not asserted in a comment.** The lowered gate
+now builds the same document a THIRD time from a call that names nothing —
+`ecma262_default` — and two independent readings hold it: the gate counts its
+`ScriptSource::lua(...)` pairs from outside, and the suite
+(`ATreeThatSelectedLuaEmitsLuaWithoutBeingAsked`) asks whether it answers
+ECMA-262 case for case like the explicitly-lowered one. Two artifacts can agree
+by both being wrong, so "it was emitted lowered" and "it answers like the
+lowered one" are kept as different questions.
+
+Measured in the turn that landed it: **785 pairs asked-for-lua, 785 asked-for-
+nothing, 0 in the control.** Red witness, same turn: disabling the derivation
+makes the gate fail with `the artifact generated with NO SCRIPT_ENGINE_LANGUAGE
+carries 0 ScriptSource::lua(...) call(s) against the explicitly-lowered one's
+785`. The control's explicit `SCRIPT_ENGINE_LANGUAGE ecmascript` became
+LOAD-BEARING with this change — omit it now and the control becomes a second
+copy of the subject.
+
+### ⚠ The prescription this round carried was wrong, and the measurement says so
+
+The previous round's ledger said: make the flag the default so generated C++
+stops reaching the rewriter, **and then the 23 entries start leaving
+`lua_engine_divergences.json`.** Re-measured before implementing, the second
+half is false. The two suites holding the `runtime-rewriter` column reach the
+engine by routes no codegen default can touch:
+
+- `tests/engine/EcmaScriptSemanticsTest.cpp` carries **zero** `Generated::`
+  references — it calls `SCE::LuaEngine::instance()` directly, so it has no
+  generated machine to change;
+- `LoweredEcma262`'s control names `SCRIPT_ENGINE_LANGUAGE ecmascript`
+  explicitly (`tests/CMakeLists.txt`), which is what keeps it a control.
+
+So this step moves **zero rows**. Re-derive rather than trusting the paragraph:
+`grep -c "Generated::" tests/engine/EcmaScriptSemanticsTest.cpp` and
+`grep -n SCRIPT_ENGINE_LANGUAGE tests/CMakeLists.txt`.
+
+**The order is three steps, not one**, and naming it as one is what made the
+count look reachable:
+
+1. generated C++ in a Lua tree stops handing the engine ECMAScript — **this
+   round**, 0 rows;
+2. the C++ **Interpreter** gets a runtime lowering route, or the `lua`
+   selection is declared AOT-only. It has no build step, so it reaches the
+   adapter no matter what codegen emits;
+3. `EcmaScriptToLuaTransformer` is **retired** — `LuaEngine::acceptsLanguage`
+   stops admitting ECMAScript. Then `EcmaScriptSemanticsOnLuaEngine` has no
+   subject and the 23 rows go with it.
+
+Step 2 is the one with an unmeasured cost. The route this document already
+names is `sce-build`'s cdylib, and it is still not built: measured this round,
+`sce-build/Cargo.toml` declares `crate-type = ["rlib"]` only, `sce/src` links no
+Rust library, and the only C ABI in the crate is Forge's `extern_emit`. So the
+frontend that answers all 98 cases correctly has no way to be called at run
+time, which is the whole of step 2.
+
+⚠ And a residue this round could not close: the gates the lowered lane added
+are **not reachable by the mutation corpus**. `lua_engine_reads_ecmascript.cases`
+drives `ctest --test-dir build` — the developer's quickjs tree — where
+`LoweredEcma262` does not exist. Its witnesses are made by hand each round. The
+casefile's header used to say "no gate configures it", which stopped being true
+on 2026-08-29; it now says which suite it cannot reach and why.
+
 ## Landed 2026-08-29 (second round): the lane became a RATCHET
 
 The section below records the gate that first compiled and ran a lowered
@@ -1276,6 +1355,20 @@ asserts that no cache entry shadows it.
   build-time-translated text by this route. `sce-build`'s cdylib is the
   candidate answer — `Cargo.toml` records that there is no in-tree consumer of
   it today, and `sce-build-wasm` has already built that wrapping once.
+  **Re-measured 2026-08-29 and now the critical path, not a footnote**: this is
+  step 2 of the three the list needs to empty (see the third round above).
+  `sce-build/Cargo.toml` still declares `crate-type = ["rlib"]` only, nothing
+  under `sce/` links a Rust library, and the crate's only C ABI is Forge's
+  `extern_emit`. The frontend answers all 98 shared-table cases correctly and
+  has no way to be called at run time; closing that is what lets the rewriter
+  be retired instead of repaired.
+- ~~**Generated C++ in a Lua tree still hands the engine ECMAScript.**~~
+  **Done 2026-08-29 (third round)** — `sce_add_state_machine` derives
+  `--script-engine lua` for a `-DSCE_SCRIPT_ENGINE=lua` tree, measured on a
+  third artifact generated by a call that names nothing.
+  ⚠ It moves **zero** rows out of `lua_engine_divergences.json`, and the
+  reason is a measurement rather than a guess — both suites holding that column
+  reach the engine by routes a codegen default cannot touch.
 - ~~Whether the target engine becomes a codegen argument, a per-artifact
   variant, or a runtime-selected pair of emissions.~~ **Answered 2026-08-28:
   a codegen argument.** The other two were not chosen against so much as ruled
