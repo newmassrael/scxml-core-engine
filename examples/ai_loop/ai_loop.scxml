@@ -99,6 +99,34 @@
   an outer final exits all three regions at once, which is exactly the meaning
   wanted — a run ends as a whole.
 
+  ## Which side of the seam judges a ceiling
+
+  `budget` judges its own. The limit (`max_turns`), the count (`turns`) and
+  the verdict all live in this file: `within` counts each `turn.done`, crosses
+  to `spent` on the turn that reaches the limit, and `spent` raises
+  `run.exhausted` on entry. Reading the document therefore tells you when the
+  run ends, and the host is never asked.
+
+  That is one of two placements, and the other is equally SCXML. A host may
+  own the ceilings instead — a wall clock, a spend, an iteration cap measured
+  in a process this document cannot see — and report only WHICH one bound,
+  arriving as one event whose payload carries the host's word for it. The
+  document then names the outcome without ever having counted. Anything the
+  host measures has to ride that way, because a ceiling the document cannot
+  observe is not one it can judge.
+
+  The two are worth telling apart because they fail differently. A
+  document-owned ceiling is auditable but limited to what the document can
+  count; a host-owned one reaches anything the host measures but moves the
+  decision out of the file, so the document alone no longer says when a run
+  ends.
+
+  This example teaches the first, whole and self-contained, with a host that
+  serves it (`ai_loop_example.cpp`). It is not a copy of any deployment's
+  document. A ceiling that ended some real run is therefore not evidence about
+  this file, and this file is not evidence about that run — read one for the
+  other and both readings are wrong.
+
   ## Why a session is REPLACED rather than reconfigured
 
   The things a loop wants to improve about itself — the agent's base context,
