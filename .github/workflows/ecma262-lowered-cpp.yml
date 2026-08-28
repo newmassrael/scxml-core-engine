@@ -8,23 +8,33 @@ name: ECMA-262 through a Lua-lowered C++ artifact
 # `tests/CMakeLists.txt` carried the same sentence from the other side in three
 # places: "no gate configures -DSCE_SCRIPT_ENGINE=lua".
 #
-# What the job measures is BUILD-TIME lowering, and it measures it against the
-# RUN-TIME rewriter's own declared divergence list
-# (`tests/ecmascript/lua_engine_divergences.json`). The binary carries one
-# generated document twice: with `--script-engine lua`, where every declared
-# entry must answer the language because the rewriter is bypassed; and without,
-# where the entries must still diverge. The second is the control, and it is
-# what makes the first one's green mean something.
+# What the job measures is BUILD-TIME lowering, and it is that path's CONTRACT
+# rather than a measurement of it. `tests/ecmascript/lua_engine_divergences.json`
+# says per entry which routes into the Lua engine still answer a case
+# differently (`diverges_on`), and this job holds the `build-time-lowering` one
+# in BOTH directions: a case the lowered artifact gets wrong without being
+# declared is red, AND a case declared and answered correctly is red. The second
+# direction is what lets that list empty — before it, an entry could only leave
+# when the runtime rewriter was repaired, and the plan of record is to RETIRE
+# that rewriter for generated code rather than repair it.
+#
+# The population is the SHARED TABLE in full (`ecma262_semantics.json`), not the
+# divergence list. It used to be the list, which meant the table's other cases
+# were never asked through a lowered artifact at all: a path's divergences
+# cannot be enumerated by a list built from a different path's failures.
+#
+# The binary carries one generated document twice: with `--script-engine lua`,
+# where the rewriter is bypassed; and without, where it runs. The second is the
+# control, and it is what makes the first one's green mean something.
 #
 # `SCE_SCRIPT_ENGINE` is a compile-time cache option whose definition is PUBLIC
 # on `sce_scripting`, so this cannot ride in another job's tree — it configures
-# its own. Measured 2026-08-29 on the build machine: 7s configure, ~50s to build
-# the single target cold, under 1s to run.
+# its own.
 #
 # The `paths:` filter is narrow on purpose, and it is what
 # `tools/git-hooks/gate_registry.py` reads to decide whether a push runs this
 # gate. It names the seam's two halves — what generates the artifact and what
-# runs it — plus the two tables the fixture's population comes from.
+# runs it — plus the table the fixture expands and the list the harness reads.
 
 on:
   push:

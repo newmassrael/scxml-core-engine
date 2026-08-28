@@ -37,12 +37,25 @@
 //!   subtraction is only arithmetic if every declared entry answers a real
 //!   case, so that is checked before it is trusted.
 
+use sce_build::generator::{Language, ScriptEngineTarget};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 const SCOREBOARD_DOC: &str = "ARCHITECTURE.md";
 const CASES_JSON: &str = "tests/ecmascript/ecma262_semantics.json";
 const DIVERGENCES_JSON: &str = "tests/ecmascript/lua_engine_divergences.json";
+
+/// The two routes from `datamodel="ecmascript"` into a Lua engine, which is
+/// what each divergence entry's `diverges_on` names.
+///
+/// They are not a taste in vocabulary: each one is a different code path with
+/// a different suite holding it, and an entry that does not say which is
+/// checked by neither. `runtime-rewriter` is the engine's input adapter
+/// rewriting the author's text (`ecmascript_semantics_test`);
+/// `build-time-lowering` is `sce-build`'s frontend having emitted Lua already
+/// (`LoweredEcma262`).
+const PATH_RUNTIME_REWRITER: &str = "runtime-rewriter";
+const PATH_BUILD_TIME_LOWERING: &str = "build-time-lowering";
 
 /// Every declared-divergence list beside the shared table.
 ///
@@ -54,10 +67,65 @@ const DIVERGENCES_JSON: &str = "tests/ecmascript/lua_engine_divergences.json";
 /// and cannot fault. The Kotlin one is checked from HERE rather than only
 /// from its suite because this lane needs no JVM, so an orphan is caught on
 /// every push instead of only when the Kotlin gate is selected.
-const DIVERGENCE_LISTS: &[&str] = &[
-    DIVERGENCES_JSON,
-    "tests/ecmascript/kotlin_lua_divergences.json",
+/// Each list beside the backend whose engine it measures.
+///
+/// The backend is here because the set of paths a list may name is DERIVED
+/// from it rather than typed in the file: a list that could name a path
+/// nothing measures would be carrying a claim no lane can fault, which is the
+/// escape hatch this repository keeps paying for.
+const DIVERGENCE_LISTS: &[(&str, Language)] = &[
+    (DIVERGENCES_JSON, Language::Cpp),
+    (
+        "tests/ecmascript/kotlin_lua_divergences.json",
+        Language::Kotlin,
+    ),
 ];
+
+/// Which routes into a Lua engine exist for @p lang, derived from the same
+/// answers the code generator gives.
+///
+/// * `runtime-rewriter` exists while the backend hands the engine the AUTHOR'S
+///   ECMAScript — a Lua engine then has to adapt it, which is what the runtime
+///   rewriter is. A backend that lowers by default never reaches one.
+/// * `build-time-lowering` exists once the backend can actually emit a lowered
+///   artifact, which `supports_script_engine_target` already answers by
+///   counting the template sites still handing over source.
+///
+/// So the day the Kotlin templates cross the seam, this function returns two
+/// paths for Kotlin and its list goes red asking which path each of its 46
+/// entries is about — instead of keeping 46 answers that quietly became
+/// ambiguous.
+fn measurable_paths(lang: Language) -> BTreeSet<String> {
+    let mut paths = BTreeSet::new();
+    if lang.default_script_engine_target() == ScriptEngineTarget::EcmaScript {
+        paths.insert(PATH_RUNTIME_REWRITER.to_string());
+    }
+    if lang.supports_script_engine_target(ScriptEngineTarget::Lua) {
+        paths.insert(PATH_BUILD_TIME_LOWERING.to_string());
+    }
+    paths
+}
+
+/// The `paths` key a list declares.
+fn declared_paths(rel: &str) -> BTreeSet<String> {
+    json(rel)
+        .get("paths")
+        .and_then(|p| p.as_array())
+        .unwrap_or_else(|| {
+            panic!(
+                "{rel} has no `paths` array. It is the set an entry's \
+                 `diverges_on` may name, and without it any spelling would be \
+                 accepted — including one no suite measures."
+            )
+        })
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .unwrap_or_else(|| panic!("{rel} has a non-string in `paths`"))
+                .to_string()
+        })
+        .collect()
+}
 
 /// The matrix is found by its header rather than by position: a section that
 /// moves keeps its table, and a table that is renamed should fail here rather
@@ -219,7 +287,7 @@ fn every_declared_divergence_answers_a_real_case() {
         DIVERGENCE_LISTS.len()
     );
 
-    for list in DIVERGENCE_LISTS {
+    for (list, _) in DIVERGENCE_LISTS {
         let declared = divergences_in(list);
         assert!(
             !declared.is_empty(),
@@ -247,6 +315,75 @@ fn every_declared_divergence_answers_a_real_case() {
              answers a real case.\norphans: {orphans:?}",
             orphans.len()
         );
+    }
+}
+
+#[test]
+fn every_list_declares_the_paths_its_backend_actually_has() {
+    for (list, lang) in DIVERGENCE_LISTS {
+        let derived = measurable_paths(*lang);
+        assert!(
+            !derived.is_empty(),
+            "{lang:?} reaches a Lua engine by no route this contract knows, so {list} is a \
+             measurement of nothing. Either the backend stopped being able to run the \
+             datamodel on Lua — in which case the list should go — or a third route \
+             appeared and belongs in `measurable_paths`."
+        );
+        assert_eq!(
+            declared_paths(list),
+            derived,
+            "{list} declares `paths` that are not the routes `sce-build` derives for \
+             {lang:?}. This key is not a preference: each path names a code path with its \
+             own suite holding it, and the derivation is `default_script_engine_target` \
+             (does this backend hand the engine the author's text?) plus \
+             `supports_script_engine_target(Lua)` (can it emit a lowered artifact?). A \
+             backend that crosses the seam must take its divergence list with it."
+        );
+    }
+}
+
+#[test]
+fn every_declared_divergence_names_a_path_that_is_measured() {
+    for (list, lang) in DIVERGENCE_LISTS {
+        let allowed = declared_paths(list);
+        for (n, entry) in divergences_in(list).iter().enumerate() {
+            let (source, clause) = key(entry);
+            let named = format!("{list} entry {n} [{source}] ({clause})");
+
+            // Unclassified is RED, never a default. An entry with no
+            // `diverges_on` is exempt from EVERY per-path suite at once — it is
+            // not "about the runtime rewriter until someone says otherwise",
+            // it is a claim nothing checks. The same reasoning as the Lua
+            // codegen target, which refuses while any site is UNADJUDICATED
+            // rather than only while one is known-unmigrated.
+            let paths = entry.get("diverges_on").unwrap_or_else(|| {
+                panic!(
+                    "{named} carries no `diverges_on`. Two suites split this list by path \
+                     and an entry that names none is checked by neither."
+                )
+            });
+            let paths = paths
+                .as_array()
+                .unwrap_or_else(|| panic!("{named}: `diverges_on` is not an array"));
+            assert!(
+                !paths.is_empty(),
+                "{named} has an EMPTY `diverges_on`. Every path answers it, so it is not a \
+                 divergence any more — delete the entry rather than leaving it declaring \
+                 nothing."
+            );
+            for path in paths {
+                let path = path
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{named}: `diverges_on` holds a non-string"));
+                assert!(
+                    allowed.contains(path),
+                    "{named} names the path `{path}`, which {list} does not list under \
+                     `paths` (it declares {allowed:?} for {lang:?}). A path no lane \
+                     measures is a claim nothing can fault, which is the shape an \
+                     exemption takes when it is spelled as data."
+                );
+            }
+        }
     }
 }
 
@@ -292,7 +429,26 @@ fn an_engine_offered_as_ecmascript_is_scored_all_of_all() {
 #[test]
 fn the_lua_row_is_the_table_minus_the_declared_divergences() {
     let total = cases().len();
-    let declared = divergences().len();
+    // Only the entries declared on the RUNTIME REWRITER. The scoreboard row is
+    // what a consumer who picks `SCE_SCRIPT_ENGINE=lua` gets, and that consumer
+    // reaches the engine through its input adapter: C++ codegen hands over the
+    // author's ECMAScript unless the run asked for `--script-engine lua`. An
+    // entry that only build-time lowering gets wrong is not a case this row is
+    // scored on, so counting the whole list would understate the engine the
+    // cell is about.
+    let declared = divergences()
+        .iter()
+        .filter(|e| {
+            e.get("diverges_on")
+                .and_then(|p| p.as_array())
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .any(|p| p.as_str() == Some(PATH_RUNTIME_REWRITER))
+                })
+                .unwrap_or(false)
+        })
+        .count();
     let rows = rows_or_panic();
     let lua: Vec<&Row> = rows
         .iter()
@@ -309,8 +465,9 @@ fn the_lua_row_is_the_table_minus_the_declared_divergences() {
         lua[0].scored,
         total - declared,
         "the Lua row claims {}/{}, and {DIVERGENCES_JSON} declares {declared} of the \
-         {total} cases as answered differently — so the derived score is {}. This cell is \
-         not a measurement someone takes and types; it is what the list already says.",
+         {total} cases as answered differently ON `{PATH_RUNTIME_REWRITER}`, which is the \
+         path this row's consumer takes — so the derived score is {}. This cell is not a \
+         measurement someone takes and types; it is what the list already says.",
         lua[0].scored,
         lua[0].outof,
         total - declared

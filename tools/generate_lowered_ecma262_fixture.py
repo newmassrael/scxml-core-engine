@@ -2,35 +2,44 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Turn the declared runtime-rewriter divergences into an SCXML document that
-# asks each one as a `cond=` or an `expr=`.
+# Turn the shared ECMA-262 table into an SCXML document that asks every case as
+# a `cond=` or an `expr=`.
 #
-# Why this is generated rather than committed. The population is
+# WHAT THE POPULATION IS, and why it changed. This script used to expand
 # `tests/ecmascript/lua_engine_divergences.json` — the set the RUNTIME rewriter
-# answers differently from ECMA-262 — and a committed fixture would be a second
-# copy of it, one edit away from asking 22 questions while the list holds 23.
-# Generating it makes the list the only place the population lives: an entry
-# added there grows a case here on the same commit, and an entry removed takes
-# its case with it. That is what lets the count reach zero, which a fixture with
-# its own hand-maintained case list could not.
+# answers differently — into one state per entry. That made the fixture a
+# projection of the very list the harness then checked, with two consequences
+# neither of which was visible from a green run:
 #
-# What the document is FOR is the other half of the seam
-# (docs/SCE_LUA_TRANSLATION_SEAM.md): generated with `--script-engine lua` the
-# C++ artifact hands its engine text the BUILD-TIME frontend lowered, so the
-# rewriter these divergences belong to is bypassed and every one of them has to
-# answer the language. Generated without that flag the same document hands the
-# author's ECMAScript to the same engine, the rewriter runs, and the divergences
-# come back. So one document measures both sides of the seam, and which side is
-# under test is a codegen flag rather than a second fixture.
+#   1. The other 75 cases of the shared table were never asked through a
+#      build-time-lowered artifact at all. Build-time lowering could answer any
+#      of them wrongly and no gate would see it, because the population was
+#      built from the OTHER path's failures. A path's divergences cannot be
+#      enumerated by a list derived from a different path.
+#   2. Deleting an entry deleted its case. The list could only be checked
+#      against questions it had itself chosen, so an entry removed by mistake
+#      removed the question that would have caught the mistake.
+#
+# The population is now the shared table, in full, and the divergence list is
+# read only by the HARNESS — as the expectation about which cases lowering gets
+# wrong. That is the shape this file's own refusal already prescribed when the
+# list empties: *"Retire the gate or repoint it at the shared table in full."*
+#
+# What the document is FOR (docs/SCE_LUA_TRANSLATION_SEAM.md): generated with
+# `--script-engine lua` the C++ artifact hands its engine text the BUILD-TIME
+# frontend lowered, so the runtime rewriter is bypassed. Generated without that
+# flag the same document hands the author's ECMAScript to the same engine and
+# the rewriter runs. So one document measures both sides of the seam, and which
+# side is under test is a codegen flag rather than a second fixture.
 #
 # The expectations are deliberately NOT emitted. They stay in
 # `tests/ecmascript/ecma262_semantics.json`, which the C++ harness reads at run
 # time: a fixture that carried the expected answers would be compared against
 # itself, and the lowering under test would be judging its own homework.
 #
-# Refusal, not omission. A divergence entry this script cannot express is a
-# hard error — a skipped case reads as a passing one, and the escape hatch
-# would defeat the gate that owns it.
+# Refusal, not omission. A case this script cannot express is a hard error — a
+# skipped case reads as a passing one, and the escape hatch would defeat the
+# gate that owns it.
 
 from __future__ import annotations
 
@@ -40,25 +49,44 @@ import pathlib
 import sys
 from xml.sax.saxutils import escape, quoteattr
 
-# The answer alphabet for a `cond=` case. Three values rather than a boolean,
-# because "the guard was false" and "the guard raised" are different findings
-# and a boolean cannot hold both: a case expecting `false` would pass on an
-# expression that threw.
+# The answer alphabet for a `cond=` case: the guard held, or it did not.
 #
-# The positive guard decides TRUE, its negation decides FALSE, and the
-# unguarded fallthrough decides NEITHER. §scxml-5.9.1 makes a `cond` that
-# raises evaluate to false, so an expression the engine refuses fails BOTH
-# guards and lands on the fallthrough — which is the only way `NEITHER` can be
-# reached and is therefore a verdict, not a default.
-COND_TRUE = 1
-COND_FALSE = 2
-COND_NEITHER = 3
+# ⚠ There used to be a THIRD value, reached by asking the guard AND `!(source)`
+# and calling the unguarded fallthrough "neither held — the engine refused the
+# expression". That claim is false, and the gate found it by measuring:
+# `cond="a"` with `var a = 0` under the runtime rewriter answers false
+# CORRECTLY, and `cond="!(a)"` answers false too, because the rewriter hands
+# Lua `not a` and Lua counts 0 as true. Both guards false, fallthrough taken,
+# and the harness reported an engine refusal that had not happened — on three
+# cases at once (§7.1.2 ToBoolean of 0, '' and NaN).
+#
+# The defect is asking a DERIVED expression. `!a` is a divergence of its own
+# (§12.5.9) and the shared table already asks it as a case; folding it into
+# every other condition case's protocol made one entry's divergence show up as
+# three other entries' refusals.
+#
+# So the fixture asks only what the author wrote, and "could the engine
+# evaluate this at all" is answered by the probe below — which exists for
+# exactly that question, reaches the same entry point a `cond=` reaches, and
+# carries its own control in the harness.
+COND_HELD = 1
+COND_NOT_HELD = 2
 
-# Answer shapes the harness can compare. `empty` is absent on purpose: a
-# variable assigned null/undefined is omitted from the engine's JSON encoding,
-# which is indistinguishable from a case that never ran. Listing it here would
-# make that case pass by not being asked.
-RECORDABLE = ("bool", "number", "string")
+# Shared with `LoweredEcma262Test.cpp` and `ecma262_scoreboard_contract.rs`,
+# which carry the same number for the same reason: a table that shrank to
+# nothing would score every engine perfectly, and a fixture expanded from it
+# would pass by asking nothing.
+MIN_CASES = 55
+
+# Answer shapes the harness can compare.
+#
+# `empty` is here now, and admitting it took the recording protocol below
+# rather than a tolerance. A variable holding null/undefined is OMITTED from
+# the engine's JSON encoding, so "the answer is undefined" and "this case was
+# never asked" arrive as the same absence — which is why this shape used to be
+# refused. The sentinel-first ordering in `emit_value_case` separates them, so
+# the shape is now expressible rather than excluded.
+RECORDABLE = ("bool", "number", "string", "empty")
 
 
 def die(msg: str) -> None:
@@ -75,34 +103,8 @@ def load(path: pathlib.Path) -> dict:
         die(f"{path} is not JSON: {exc}")
 
 
-def join(cases: list[dict], divergences: list[dict]) -> list[tuple[int, dict]]:
-    """Pair each divergence entry with the shared table's case.
-
-    Keyed on (source, clause) because `source` alone is not unique — `a && b`
-    appears twice, once as a condition and once as a value, and the clause is
-    what tells them apart. A key matching zero or several cases is an error
-    here rather than a guess: the divergence list would be naming a case that
-    does not exist, or two.
-    """
-    index: dict[tuple[str, str], list[int]] = {}
-    for i, case in enumerate(cases):
-        index.setdefault((case["source"], case["clause"]), []).append(i)
-
-    paired: list[tuple[int, dict]] = []
-    for n, entry in enumerate(divergences):
-        key = (entry.get("source"), entry.get("clause"))
-        hits = index.get(key, [])
-        if len(hits) != 1:
-            die(
-                f"divergence {n} ({key[0]!r} / {key[1]!r}) names "
-                f"{len(hits)} case(s) in the shared table; it must name exactly one"
-            )
-        paired.append((n, cases[hits[0]]))
-    return paired
-
-
-# Where the probe below parks its result before it is recorded, and the value it
-# holds when the engine refused the expression.
+# Where the refusal probe parks its result, and the value it holds when the
+# engine could not evaluate the expression.
 #
 # A BARE name on purpose. §scxml-5.4 assignment takes two different routes:
 # a bare location is `evaluateExpression` then `setVariable`, and a dotted one is
@@ -116,29 +118,17 @@ def join(cases: list[dict], divergences: list[dict]) -> list[tuple[int, dict]]:
 PROBE_VAR = "probe"
 PROBE_UNEVALUATED = "<unevaluated>"
 
-
-def probe_var(n: int) -> str:
-    """Where a `cond=` case records whether the engine could evaluate it AT ALL.
-
-    §scxml-5.9.1 makes a `cond` that raises evaluate to false, so a guard
-    verdict of "false" covers two different findings: the engine answered
-    `false`, and the engine refused the expression. For an entry whose expected
-    answer IS false those are indistinguishable — and one of the declared
-    divergences turns out to sit exactly there.
-
-    So each condition case first resets a bare variable to a sentinel and then
-    assigns its own expression into it through the same entry point a guard
-    uses. §scxml-5.4 leaves the location unchanged when the expression fails, so
-    the sentinel surviving IS the refusal. The recorded value is deliberately
-    NOT compared against the expectation: the shared table's answer for these
-    entries is the answer a `cond=` gives, not the value form's (`a && b` is
-    `false` as a condition and `0` as a value).
-    """
-    return f"answers.v{n}"
+# What a case's answer slot holds before the case's own expression is asked.
+#
+# Same string as the probe's, and for the same reason — it is the mark of an
+# expression the engine would not evaluate. It has to be written BEFORE the
+# case's setup and expression so that the three outcomes are three different
+# readings; see `emit_value_case`.
+ANSWER_UNEVALUATED = PROBE_UNEVALUATED
 
 
 def answer_var(n: int) -> str:
-    """The datamodel path a case records into.
+    """The datamodel path a case records its answer into.
 
     One `<data>` object holds every answer, read back through the generated
     `answers()` accessor — the engine's own `JSON.stringify`, which is the only
@@ -150,12 +140,38 @@ def answer_var(n: int) -> str:
     return f"answers.d{n}"
 
 
+def probe_answer_var(n: int) -> str:
+    """Where a `cond=` case records whether the engine could evaluate it AT ALL.
+
+    §scxml-5.9.1 makes a `cond` that raises evaluate to false, so a guard
+    verdict of "false" covers two different findings: the engine answered
+    `false`, and the engine refused the expression. For an entry whose expected
+    answer IS false those are indistinguishable — and one of the declared
+    divergences turns out to sit exactly there.
+    """
+    return f"answers.v{n}"
+
+
+def reached_var(n: int) -> str:
+    """The mark that this case's state was actually entered.
+
+    Written as the FIRST action of the case's own state, before anything that
+    can fail. Without it, "the expression answered undefined", "the engine
+    refused the expression" and "this state was never reached" are one absence —
+    and the third is what a stale fixture, a machine that stopped early, or a
+    generator and harness that disagree about the population all look like. An
+    absence that can mean "we did not ask" is not an answer, so the harness
+    reads this before it reads anything else.
+    """
+    return f"answers.r{n}"
+
+
 def repr_js(text: str) -> str:
     """A single-quoted ECMAScript string literal for `text`.
 
-    Only ever called on this file's own sentinel, so escaping is a guard against
-    the sentinel being changed to something with a quote in it rather than a
-    general-purpose literal writer.
+    Only ever called on this file's own sentinels, so escaping is a guard
+    against a sentinel being changed to something with a quote in it rather
+    than a general-purpose literal writer.
     """
     escaped = text.replace("\\", "\\\\").replace("'", "\\'")
     return f"'{escaped}'"
@@ -185,57 +201,135 @@ def emit_onentry(body: list[str], out: list[str]) -> None:
 
 
 def emit_condition_case(n: int, case: dict, target: str, out: list[str]) -> None:
+    """Two states: one that probes, one that asks the guard.
+
+    The probe is not an extra: with a two-way guard the fallthrough alone
+    cannot tell "the expression is false" from "the engine would not evaluate
+    it", and §scxml-5.9.1 makes both arrive as a guard that did not hold. The
+    harness therefore refuses to read a condition case's verdict at all unless
+    the probe says the expression evaluated — which is what keeps a lowered
+    artifact emitting unparseable Lua from passing every case whose expected
+    answer is false.
+
+    The probe used to share the case's state, which forced this generator to
+    REFUSE any condition in the shared table's `side-effecting` group: the
+    probe evaluates the expression once, so the guards after it would see a
+    datamodel the probe had already changed. Measured on `++v == 2` with
+    `var v = 1`: probing first leaves `v` at 2, the positive guard then makes it
+    3 and answers false, and the negation makes it 4 and answers true — so the
+    fixture would have recorded FALSE for a case whose answer is true, without
+    anything being wrong with the engine.
+
+    Splitting the probe into its own state and re-running the setup in the
+    second gives the guards the datamodel the case describes. That retires the
+    refusal by construction rather than by exempting a group — an exemption
+    list is the shape `docs/SCE_LUA_TRANSLATION_SEAM.md` names as "a hole one
+    line wide", and here it would have silently excused the three cases in the
+    table that exercise evaluation order.
+    """
     source = case["source"]
-    var = answer_var(n)
-    # The probe runs BEFORE the guards, which is only sound while no condition
-    # case has a side effect — asserted in `build()` against the shared table's
-    # own `side-effecting` group rather than assumed here.
-    probe = [
-        f'      <assign location="{PROBE_VAR}" expr={quoteattr(repr_js(PROBE_UNEVALUATED))}/>',
-        f'      <assign location="{PROBE_VAR}" expr={quoteattr(source)}/>',
-        f'      <assign location="{probe_var(n)}" expr="{PROBE_VAR}"/>',
-    ]
+    out.append(f'  <state id="p{n}">')
+    emit_onentry(
+        setup_script(case)
+        + [
+            f'      <assign location="{PROBE_VAR}" expr={quoteattr(repr_js(PROBE_UNEVALUATED))}/>',
+            f'      <assign location="{PROBE_VAR}" expr={quoteattr(source)}/>',
+        ],
+        out,
+    )
+    out.append(f'    <transition target="d{n}"/>')
+    out.append("  </state>")
+
+    # `probe` is read into the answer object HERE rather than in the state that
+    # wrote it. §scxml-4 stops a block at the element that raised, so a probe
+    # assignment the engine refused would take the recording line down with it
+    # and the refusal would arrive as an absence indistinguishable from the
+    # state never running. Read in the NEXT block, the sentinel always makes it
+    # out, and reading a bare name cannot itself fail.
     out.append(f'  <state id="d{n}">')
-    emit_onentry(setup_script(case) + probe, out)
-    for cond, verdict in (
-        (source, COND_TRUE),
-        ("!(" + source + ")", COND_FALSE),
-        (None, COND_NEITHER),
-    ):
+    emit_onentry(
+        [
+            f'      <assign location="{reached_var(n)}" expr="1"/>',
+            f'      <assign location="{probe_answer_var(n)}" expr="{PROBE_VAR}"/>',
+        ]
+        + setup_script(case),
+        out,
+    )
+    for cond, verdict in ((source, COND_HELD), (None, COND_NOT_HELD)):
         guard = f" cond={quoteattr(cond)}" if cond is not None else ""
         out.append(
             f"    <transition{guard} target={quoteattr(target)}>"
-            f'<assign location="{var}" expr="{verdict}"/></transition>'
+            f'<assign location="{answer_var(n)}" expr="{verdict}"/></transition>'
         )
     out.append("  </state>")
 
 
 def emit_value_case(n: int, case: dict, target: str, out: list[str]) -> None:
+    """One state, and the ORDER of its four actions is the whole protocol.
+
+    An answer slot can end up in four different states and they are four
+    different findings, so each has to be reachable only one way:
+
+      1. `answers.rN` absent                — the state was never entered.
+      2. `answers.dN` holds the sentinel    — the setup or the expression was
+                                              refused; §scxml-4 stopped the
+                                              block, or §scxml-5.4 left the
+                                              location alone.
+      3. `answers.dN` absent, `rN` present  — the expression evaluated, to
+                                              null/undefined. This is the
+                                              `empty` answer, and it is the
+                                              reading that used to be
+                                              impossible: an engine's JSON
+                                              encoding omits such a key, so
+                                              without the sentinel written
+                                              first it was the same absence as
+                                              case 1.
+      4. `answers.dN` holds a value         — that value.
+
+    The sentinel therefore goes down BEFORE the setup, not between the setup
+    and the expression: a setup that raises must land on reading 2 rather than
+    on reading 3, where it would be reported as the answer `undefined`.
+    """
     source = case["source"]
     var = answer_var(n)
     out.append(f'  <state id="d{n}">')
     emit_onentry(
-        setup_script(case) + [f'      <assign location="{var}" expr={quoteattr(source)}/>'],
+        [
+            f'      <assign location="{reached_var(n)}" expr="1"/>',
+            f'      <assign location="{var}" expr={quoteattr(repr_js(ANSWER_UNEVALUATED))}/>',
+        ]
+        + setup_script(case)
+        + [f'      <assign location="{var}" expr={quoteattr(source)}/>'],
         out,
     )
     out.append(f"    <transition target={quoteattr(target)}/>")
     out.append("  </state>")
 
 
-def build(paired: list[tuple[int, dict]], divergences_rel: str, cases_rel: str) -> str:
+def first_state(cases: list[dict], n: int) -> str:
+    """The state a case is entered at — its probe state when it has one."""
+    return f"p{n}" if cases[n].get("form") == "condition" else f"d{n}"
+
+
+def build(cases: list[dict], cases_rel: str) -> str:
     out: list[str] = []
     out.append('<?xml version="1.0" encoding="UTF-8"?>')
     out.append("<!--")
     out.append("  GENERATED by tools/generate_lowered_ecma262_fixture.py — do not edit.")
     out.append("")
-    out.append(f"  One state per entry of {divergences_rel}, asking the")
-    out.append(f"  expression that entry names in the form {cases_rel} says it")
-    out.append("  takes. State `dN` asks divergence N and records into `answers.dN`.")
+    out.append(f"  One case per entry of {cases_rel}, asked in the form that")
+    out.append("  file says it takes. State `dN` asks case N and records into")
+    out.append("  `answers.dN`; a condition case is preceded by `pN`, which asks the")
+    out.append("  same expression once to find out whether the engine can evaluate it")
+    out.append("  at all. `answers.rN` marks that the case was reached.")
     out.append("")
     out.append("  The expected answers are NOT here: the harness reads them from the")
-    out.append("  shared table, so the lowering under test cannot mark its own work.")
+    out.append("  same table, so the lowering under test cannot mark its own work.")
+    out.append("  Nor is the divergence list here — the harness reads that too, as the")
+    out.append("  expectation about WHICH cases lowering gets wrong. A fixture shaped")
+    out.append("  by that list could only ever ask questions the list had chosen.")
     out.append("-->")
-    first = f"d{paired[0][0]}" if paired else "done"
+    first = first_state(cases, 0) if cases else "done"
     out.append(
         '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
         f'datamodel="ecmascript" initial="{first}">'
@@ -245,39 +339,24 @@ def build(paired: list[tuple[int, dict]], divergences_rel: str, cases_rel: str) 
     out.append(f'    <data id="{PROBE_VAR}" expr="\'\'"/>')
     out.append("  </datamodel>")
 
-    for pos, (n, case) in enumerate(paired):
-        target = f"d{paired[pos + 1][0]}" if pos + 1 < len(paired) else "done"
+    for n, case in enumerate(cases):
+        target = first_state(cases, n + 1) if n + 1 < len(cases) else "done"
         form = case.get("form")
         expect = case.get("expect", {})
         shape = next(iter(expect), None)
         if shape not in RECORDABLE:
             die(
-                f"divergence {n} ({case['source']!r}) expects a {shape!r} answer, "
-                f"which no datamodel variable can hold distinguishably from an "
-                f"absent one. Recordable shapes: {', '.join(RECORDABLE)}."
+                f"case {n} ({case['source']!r}) expects a {shape!r} answer, which "
+                f"this fixture has no reading for. Recordable shapes: "
+                f"{', '.join(RECORDABLE)}."
             )
         if form == "condition":
-            # The refusal probe runs before this case's guards, so a condition
-            # whose evaluation changes the datamodel would be asked twice and
-            # the guards would see the second state. Refused rather than
-            # tolerated: the shared table labels such cases itself, so the
-            # constraint is checked against its own vocabulary instead of a
-            # reviewer noticing.
-            if case.get("group") == "side-effecting":
-                die(
-                    f"divergence {n} ({case['source']!r}) is a condition in the "
-                    f"shared table's `side-effecting` group. The refusal probe "
-                    f"evaluates the expression once before the guards, so a "
-                    f"side effect would make the guards see a different "
-                    f"datamodel. Give the probe its own state before extending "
-                    f"the fixture to this shape."
-                )
             emit_condition_case(n, case, target, out)
         elif form == "value":
             emit_value_case(n, case, target, out)
         else:
             die(
-                f"divergence {n} ({case['source']!r}) has form {form!r}; "
+                f"case {n} ({case['source']!r}) has form {form!r}; "
                 f"this generator expresses 'condition' and 'value'"
             )
 
@@ -291,38 +370,27 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cases", required=True, type=pathlib.Path,
                     help="tests/ecmascript/ecma262_semantics.json")
-    ap.add_argument("--divergences", required=True, type=pathlib.Path,
-                    help="tests/ecmascript/lua_engine_divergences.json")
     ap.add_argument("-o", "--output", required=True, type=pathlib.Path,
                     help="SCXML document to write")
     args = ap.parse_args()
 
     cases = load(args.cases).get("cases")
-    divergences = load(args.divergences).get("divergences")
     if not isinstance(cases, list) or not cases:
         die(f"{args.cases} carries no `cases` array")
-    if not isinstance(divergences, list):
-        die(f"{args.divergences} carries no `divergences` array")
 
-    # An empty list is the axis's own end state — every divergence closed — and
-    # a fixture with no case would then be a suite that passes by asking
-    # nothing. Say so here rather than emit it: whoever empties the list should
-    # decide what this gate becomes, and be told by a failure rather than by a
-    # green run.
-    if not divergences:
+    # The same floor the suites that read this table carry, for the same
+    # reason: a table that shrank to nothing would score every engine
+    # perfectly, and a fixture expanded from it would pass by asking nothing.
+    if len(cases) < MIN_CASES:
         die(
-            f"{args.divergences} is empty. Every declared divergence is closed, "
-            f"so this fixture would ask nothing and pass. Retire the gate or "
-            f"repoint it at the shared table in full."
+            f"{args.cases} holds {len(cases)} case(s); the floor is {MIN_CASES}. "
+            f"A fixture this short is a smaller suite reported under the same name."
         )
 
-    paired = join(cases, divergences)
-    doc = build(paired,
-                divergences_rel=args.divergences.name,
-                cases_rel=args.cases.name)
+    doc = build(cases, cases_rel=args.cases.name)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(doc, encoding="utf-8")
-    print(f"wrote {args.output} — {len(paired)} case(s)")
+    print(f"wrote {args.output} — {len(cases)} case(s)")
     return 0
 
 

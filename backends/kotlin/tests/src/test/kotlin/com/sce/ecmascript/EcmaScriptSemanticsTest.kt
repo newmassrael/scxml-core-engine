@@ -53,6 +53,20 @@ private const val DIVERGENCES_PATH = "tests/ecmascript/kotlin_lua_divergences.js
 private const val ENGINE_PATH =
     "backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt"
 
+/**
+ * The `diverges_on` path this suite is the contract for.
+ *
+ * There are two routes from `datamodel="ecmascript"` into a Lua engine and they
+ * fail differently: the engine's own input adapter rewriting the author's text,
+ * which is what this suite exercises, and `sce-build`'s frontend having emitted
+ * Lua at build time, which nothing on this backend does yet. Spelled the same
+ * on all three readers of these lists — this one,
+ * `tests/engine/LoweredEcma262Test.cpp` and
+ * `sce-build/tests/ecma262_scoreboard_contract.rs`, which is where the
+ * vocabulary is held against what the code generator derives.
+ */
+private const val RUNTIME_REWRITER_PATH = "runtime-rewriter"
+
 /** What identifies one case, and one declared divergence against it. */
 private data class Key(val source: String, val clause: String)
 
@@ -220,12 +234,33 @@ class EcmaScriptSemanticsTest {
                 "against them in both directions, so without the file it measures nothing.",
         )
         val root = Json.parseToJsonElement(file.readText()).jsonObject
-        return root.getValue("divergences").jsonArray.map { entry ->
+        return root.getValue("divergences").jsonArray.mapNotNull { entry ->
             val obj = entry.jsonObject
-            Key(
+            val key = Key(
                 obj.getValue("source").jsonPrimitive.content,
                 obj.getValue("clause").jsonPrimitive.content,
             )
+            // Only the entries declared on THIS path. `diverges_on` splits the
+            // list by which route into the Lua engine still answers the case
+            // differently, and this suite reaches the engine through
+            // `EcmaScriptToLuaTransformer` — so it is the `runtime-rewriter`
+            // contract. Today that is the only path this backend has, and the
+            // filter is what keeps that from being an assumption: the day the
+            // Kotlin templates cross the seam and gain build-time lowering,
+            // an entry only that path gets wrong would otherwise be reported
+            // here as a rewriter divergence that has been repaired, and its
+            // deletion demanded.
+            //
+            // Unclassified is RED, not a default. An entry naming no path is
+            // exempt from every per-path suite at once.
+            val paths = obj["diverges_on"]
+            assertTrue(
+                paths != null,
+                "the entry ${quoted(key.source)} / ${quoted(key.clause)} in $DIVERGENCES_PATH " +
+                    "carries no `diverges_on`, so no per-path suite can tell whether it is about it.",
+            )
+            val onThisPath = paths!!.jsonArray.any { it.jsonPrimitive.content == RUNTIME_REWRITER_PATH }
+            if (onThisPath) key else null
         }.toSet()
     }
 
