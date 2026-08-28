@@ -599,9 +599,11 @@ fn a_literal_written_as_a_call_is_reported_with_neither_a_choice_nor_a_fix() {
 /// The corpus this repository authors is lint-clean, which is what
 /// `scripts/gates/example-codegen.sh` now enforces for refusals too.
 ///
-/// Asserted here rather than left to the shell gate because the gate
-/// has no CI counterpart: without this, a document that starts carrying
-/// a refused expression is caught only by whoever runs the gate locally.
+/// Asserted here as well as in the shell gate because that gate is
+/// `ci_only` — the registry gives it no push-time trigger, so it is
+/// judged in `example-codegen.yml` and nowhere else. Holding the same
+/// sweep in the workspace suite gives it a second lane, on a trigger set
+/// of its own, rather than one workflow deciding it alone.
 #[test]
 fn every_authored_document_is_free_of_refused_expressions() {
     let root = repo_root();
