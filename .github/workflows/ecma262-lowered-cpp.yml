@@ -1,0 +1,129 @@
+name: ECMA-262 through a Lua-lowered C++ artifact
+
+# The lane `docs/SCE_LUA_TRANSLATION_SEAM.md` ended without.
+#
+# The seam landed, the C++ templates crossed it, and `--script-engine lua -l cpp`
+# generated — but nothing COMPILED a lowered artifact and ran it, so the
+# ECMA-262 divergences the axis exists to close were never measured through it.
+# `tests/CMakeLists.txt` carried the same sentence from the other side in three
+# places: "no gate configures -DSCE_SCRIPT_ENGINE=lua".
+#
+# What the job measures is BUILD-TIME lowering, and it measures it against the
+# RUN-TIME rewriter's own declared divergence list
+# (`tests/ecmascript/lua_engine_divergences.json`). The binary carries one
+# generated document twice: with `--script-engine lua`, where every declared
+# entry must answer the language because the rewriter is bypassed; and without,
+# where the entries must still diverge. The second is the control, and it is
+# what makes the first one's green mean something.
+#
+# `SCE_SCRIPT_ENGINE` is a compile-time cache option whose definition is PUBLIC
+# on `sce_scripting`, so this cannot ride in another job's tree — it configures
+# its own. Measured 2026-08-29 on the build machine: 7s configure, ~50s to build
+# the single target cold, under 1s to run.
+#
+# The `paths:` filter is narrow on purpose, and it is what
+# `tools/git-hooks/gate_registry.py` reads to decide whether a push runs this
+# gate. It names the seam's two halves — what generates the artifact and what
+# runs it — plus the two tables the fixture's population comes from.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'sce/include/scripting/**'
+      - 'sce/src/scripting/**'
+      - 'sce/include/common/**'
+      - 'sce/CMakeLists.txt'
+      - 'sce-build/src/**'
+      - 'tools/codegen/templates/**'
+      - 'tools/generate_lowered_ecma262_fixture.py'
+      - 'tests/ecmascript/ecma262_semantics.json'
+      - 'tests/ecmascript/lua_engine_divergences.json'
+      - 'tests/engine/LoweredEcma262Test.cpp'
+      - 'tests/CMakeLists.txt'
+      - 'cmake/SCECodegen.cmake'
+      - 'scripts/gates/ecma262-lowered-cpp.sh'
+      - '.github/workflows/ecma262-lowered-cpp.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ecma262-lowered-cpp:
+    name: A Lua-lowered C++ artifact, compiled and run
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          g++ \
+          ninja-build \
+          lld \
+          ccache \
+          pkg-config \
+          libxml2-dev \
+          libspdlog-dev \
+          libfmt-dev \
+          libboost-dev \
+          libboost-system-dev \
+          libboost-thread-dev
+
+    - name: Setup Problem Matchers
+      run: |
+        echo "::add-matcher::.github/problem-matchers/gcc.json"
+        echo "::add-matcher::.github/problem-matchers/cmake.json"
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: |
+        # The Cargo cache restores all of `target`, but this step only builds
+        # the debug profile, so a release binary the cache still holds is not a
+        # product of this commit.
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
+        cargo build --bin sce-codegen --features cli -p sce-build
+
+    - name: Setup ccache
+      uses: actions/cache@v5
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-ecma262-lowered-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-ecma262-lowered-
+
+    # Configure, build and run are one gate, so the check has one spelling here
+    # and in the pre-push hook. The gate reads the selection back out of
+    # CMakeCache.txt and counts the `ScriptSource::lua(...)` pairs in the
+    # emitted artifact, so a tree that quietly configured another engine, or a
+    # target that quietly stopped lowering, fails with the cause named rather
+    # than as a wrong answer.
+    - name: Run the lowered-artifact gate
+      run: scripts/gate ecma262-lowered-cpp
