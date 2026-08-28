@@ -645,6 +645,49 @@ GATES: dict[str, dict] = {
         "cost_s": 110,
         "summary": "C++ ctest suite (engine + mesh), the non-c11 half",
     },
+    # The only gate that configures the OTHER value of SCE_SCRIPT_ENGINE.
+    #
+    # Every gate above builds the quickjs selection, which is what
+    # `tests/CMakeLists.txt` said three times in as many words — "no gate
+    # configures -DSCE_SCRIPT_ENGINE=lua" — and each of those comments named a
+    # file compiled by every build and run by none. This one compiles a C++
+    # artifact generated with `--script-engine lua` and runs it, which is the
+    # measurement `docs/SCE_LUA_TRANSLATION_SEAM.md` ended without.
+    #
+    # Its workflow declares a `paths:` filter, so the filter IS the trigger and
+    # there is no `narrows`/`extra` pair to keep in step with it. `sce/**` is
+    # deliberately NOT in that filter as a whole: the selection reaches only the
+    # scripting seam, the shared helpers the generated code calls, and the
+    # option's own CMakeLists.
+    "ecma262-lowered-cpp": {
+        "workflows": ["ecma262-lowered-cpp.yml"],
+        "runner_workflow": True,
+        "deps": ["codegen-build"],
+        # The scratch tree is thrown away on every run, so there is no warm
+        # case for this gate the way there is for one that reuses `build/`:
+        # `SCE_SCRIPT_ENGINE` is PUBLIC on `sce_scripting`, the selection is
+        # therefore a property of the whole tree, and a developer's `build/` is
+        # the quickjs one and must stay that way. What that costs is the sce
+        # libraries from cold on every invocation, which is minutes rather than
+        # the ~60s an already-built tree takes.
+        #
+        # 123s measured by `scripts/gate --measure` on the build machine
+        # 2026-08-29, with ccache warm. 86 of those seconds are the
+        # `sce_build_is_current` ctest FIXTURE, not the suite — the suite itself
+        # runs in 0.16s — so the number is dominated by a staleness check the
+        # tree makes every ctest case pay.
+        #
+        # So it is CI's, not the push's. A developer who wants it runs
+        # `scripts/gate ecma262-lowered-cpp` by name.
+        "ci_only": "it configures and builds a second tree from cold — the "
+                   "`lua` selection cannot share the quickjs `build/` because "
+                   "the option is PUBLIC on sce_scripting. "
+                   "ecma262-lowered-cpp.yml runs it, on a filter naming the "
+                   "seam's two halves and the two tables the fixture's "
+                   "population comes from.",
+        "cost_s": 123,
+        "summary": "ECMA-262 through a Lua-lowered C++ artifact",
+    },
     "w3c-c11": {
         "workflows": ["w3c-tests.yml"],
         "runner_workflow": True,

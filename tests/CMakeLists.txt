@@ -357,9 +357,14 @@ set_tests_properties(ShutDownEngineAnswers PROPERTIES TIMEOUT 60)
 # DOM read surface — §scxml-B-2-1's "corresponding DOM structure"
 #
 # Separate target from ecmascript_semantics_test on purpose: this one names
-# LuaEngine as well as reading the provider, because no gate configures
-# -DSCE_SCRIPT_ENGINE=lua and LuaDOMBinding would otherwise be compiled by
-# every build and run by none.
+# LuaEngine as well as reading the provider, because LuaDOMBinding would
+# otherwise be compiled by every build and run by none.
+#
+# The reason used to be stated as "no gate configures -DSCE_SCRIPT_ENGINE=lua",
+# and since 2026-08-29 one does — `ecma262-lowered-cpp`. That gate builds a
+# single target in a throwaway tree, so it does not run this one, and naming an
+# engine here is still what makes this case run in the quickjs tree every other
+# gate builds.
 # ============================================================================
 add_executable(dom_read_surface_test
     engine/DomReadSurfaceTest.cpp
@@ -395,9 +400,10 @@ add_test(NAME DomReadSurface COMMAND dom_read_surface_test)
 #
 # Separate target from dom_read_surface_test for the same reason that one is
 # separate from ecmascript_semantics_test: it names LuaEngine as well as
-# reading the provider, because no gate configures -DSCE_SCRIPT_ENGINE=lua.
+# reading the provider, so it runs in the quickjs tree the other gates build.
 # That engine kept a reading its four siblings had already lost, for exactly
-# as long as nothing ran it.
+# as long as nothing ran it. See the note on dom_read_surface_test for what
+# changed on 2026-08-29 and why it does not retire this shape.
 # ============================================================================
 add_executable(event_data_readings_test
     engine/EventDataReadingsTest.cpp
@@ -432,14 +438,17 @@ add_test(NAME EventDataReadings COMMAND event_data_readings_test)
 # The script-engine language seam
 #
 # Separate target for the reason its two neighbours above are separate: it
-# names LuaEngine AND JSEngine as well as reading the provider, because no gate
-# configures -DSCE_SCRIPT_ENGINE=lua and the seam has two halves that only
-# exist together — an engine that can be handed pre-lowered Lua, and one that
-# refuses it. Measured through the provider alone, whichever half this build
-# did not select would be compiled by every build and run by none.
+# names LuaEngine AND JSEngine as well as reading the provider, because the seam
+# has two halves that only exist together — an engine that can be handed
+# pre-lowered Lua, and one that refuses it. Measured through the provider alone,
+# whichever half this build did not select would be compiled by every build and
+# run by none. That is still true with `ecma262-lowered-cpp` in the registry:
+# that gate configures the lua selection, so it can never reach the refusing
+# half either.
 #
-# See docs/SCE_LUA_TRANSLATION_SEAM.md: this is the entry point that has to
-# exist before C++ codegen can move across to build-time lowering.
+# See docs/SCE_LUA_TRANSLATION_SEAM.md: this is the entry point that had to
+# exist before C++ codegen could move across to build-time lowering, and
+# `lowered_ecma262_test` below is what finally compiles and runs one.
 # ============================================================================
 add_executable(script_language_seam_test
     engine/ScriptLanguageSeamTest.cpp
@@ -462,6 +471,134 @@ target_link_libraries(script_language_seam_test
 apply_sce_test_policies(script_language_seam_test)
 
 add_test(NAME ScriptLanguageSeam COMMAND script_language_seam_test)
+
+# ============================================================================
+# ECMA-262 through a Lua-LOWERED C++ artifact, compiled and run
+#
+# The three targets above are separate from each other because "no gate
+# configures -DSCE_SCRIPT_ENGINE=lua". This one is the gate that does, and it
+# is the only target in the tree that exists ONLY under that selection: it
+# compiles a C++ artifact generated with `--script-engine lua` and runs it, so
+# the engine choice is not something it reads, it is something it requires.
+#
+# Which side of the seam it measures: BUILD-TIME lowering.
+# `tests/ecmascript/lua_engine_divergences.json` measures the RUN-TIME rewriter,
+# and the same file is the population here for the reason
+# docs/SCE_LUA_TRANSLATION_SEAM.md gives — a lowered artifact hands its engine
+# Lua, so the rewriter is bypassed and every entry has to answer the language.
+#
+# Two artifacts from ONE document, which is what makes the measurement
+# non-vacuous: `ecma262_lowered` crosses the seam and must answer ECMA-262;
+# `ecma262_source` is generated the way C++ always was and must still diverge on
+# every entry. A harness comparing nothing would report both perfect, and the
+# list says the second cannot be.
+#
+# The fixture is GENERATED rather than committed so that the divergence list is
+# the only place the population lives — see the generator's own header. It is
+# generated at CONFIGURE time because sce_add_state_machine needs the SCXML to
+# exist when it is called, and the inputs are registered as configure
+# dependencies so an edited list re-runs it.
+# ============================================================================
+string(TOLOWER "${SCE_SCRIPT_ENGINE}" _SCE_SELECTED_ENGINE)
+if(_SCE_SELECTED_ENGINE STREQUAL "lua")
+    # REQUIRED here and nowhere else: this target cannot be assembled without
+    # the fixture, and a silently skipped gate is the failure mode the whole
+    # lane exists to remove. A quickjs tree never reaches this branch.
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+    set(_SCE_LOWERED_FIXTURE_GENERATOR
+        "${CMAKE_SOURCE_DIR}/tools/generate_lowered_ecma262_fixture.py")
+    set(_SCE_ECMA262_CASES "${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_semantics.json")
+    set(_SCE_LUA_DIVERGENCES "${CMAKE_SOURCE_DIR}/tests/ecmascript/lua_engine_divergences.json")
+    set(_SCE_LOWERED_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/lowered_ecma262")
+
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${_SCE_LOWERED_FIXTURE_GENERATOR}"
+        "${_SCE_ECMA262_CASES}"
+        "${_SCE_LUA_DIVERGENCES}"
+    )
+
+    # Two names for one document. The machine name, the emitted header's name
+    # and the C++ namespace all come from the file stem, so generating the same
+    # bytes twice is what lets both artifacts live in one binary — cheaper and
+    # plainer than a namespace prefix over a shared header name, which would
+    # still collide on the include path.
+    foreach(_sce_fixture_stem ecma262_lowered ecma262_source)
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" "${_SCE_LOWERED_FIXTURE_GENERATOR}"
+                    --cases "${_SCE_ECMA262_CASES}"
+                    --divergences "${_SCE_LUA_DIVERGENCES}"
+                    -o "${_SCE_LOWERED_FIXTURE_DIR}/${_sce_fixture_stem}.scxml"
+            RESULT_VARIABLE _sce_fixture_rc
+            OUTPUT_VARIABLE _sce_fixture_out
+            ERROR_VARIABLE _sce_fixture_err
+        )
+        if(NOT _sce_fixture_rc EQUAL 0)
+            message(FATAL_ERROR
+                "the lowered ECMA-262 fixture could not be generated (rc=${_sce_fixture_rc}):\n"
+                "${_sce_fixture_err}")
+        endif()
+        message(STATUS "SCE: ${_sce_fixture_out}")
+    endforeach()
+
+    add_executable(lowered_ecma262_test
+        engine/LoweredEcma262Test.cpp
+    )
+
+    # The artifact under test. `--script-engine lua` is the whole subject of
+    # this lane, and it must agree with the SCE_SCRIPT_ENGINE this tree was
+    # configured with: a Lua-shaped artifact can only run on a Lua engine.
+    sce_add_state_machine(
+        TARGET lowered_ecma262_test
+        SCXML_FILE "${_SCE_LOWERED_FIXTURE_DIR}/ecma262_lowered.scxml"
+        OUTPUT_DIR "${_SCE_LOWERED_FIXTURE_DIR}/generated"
+        LANGUAGE cpp
+        SCRIPT_ENGINE_LANGUAGE lua
+    )
+
+    # The control, named explicitly rather than left to the backend's default.
+    # `ecmascript` is what C++ has always emitted, so omitting the argument
+    # would produce the same artifact — and would also make this call
+    # indistinguishable from one that had simply forgotten the flag, which is
+    # exactly the mistake the control exists to detect in the other target.
+    sce_add_state_machine(
+        TARGET lowered_ecma262_test
+        SCXML_FILE "${_SCE_LOWERED_FIXTURE_DIR}/ecma262_source.scxml"
+        OUTPUT_DIR "${_SCE_LOWERED_FIXTURE_DIR}/generated"
+        LANGUAGE cpp
+        SCRIPT_ENGINE_LANGUAGE ecmascript
+    )
+
+    target_include_directories(lowered_ecma262_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
+    target_link_libraries(lowered_ecma262_test
+        PRIVATE
+            sce_runtime
+            GTest::gtest_main
+            pthread
+    )
+
+    # Injected rather than resolved from the working directory, for the reason
+    # ecmascript_semantics_test states: the same tables under ctest, CI and an
+    # IDE run. Both are read at RUN time and neither is emitted by the fixture
+    # generator — a harness reading the generator's own idea of the population
+    # would be a gate whose two halves share a source.
+    target_compile_definitions(lowered_ecma262_test
+        PRIVATE
+            SCE_ECMA262_CASES_PATH="${_SCE_ECMA262_CASES}"
+            SCE_LUA_DIVERGENCES_PATH="${_SCE_LUA_DIVERGENCES}"
+    )
+
+    apply_sce_test_policies(lowered_ecma262_test)
+
+    add_test(NAME LoweredEcma262 COMMAND lowered_ecma262_test)
+    set_tests_properties(LoweredEcma262 PROPERTIES TIMEOUT 120)
+endif()
 
 # ============================================================================
 # 3. StateMachine Tests
