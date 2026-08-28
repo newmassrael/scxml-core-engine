@@ -448,14 +448,17 @@
                     auto& scriptEngine = getScriptEngine();
                     // The second half of each pair is text the engine evaluates,
                     // so it is a ScriptSource and not a bare string: a vector
-                    // cannot convert its elements implicitly, which makes this
-                    // the one donedata site that has to name the language.
-                    // `ScriptSource::ecmascript` is the author's own text —
-                    // what this backend emits until the C++ templates move to
-                    // build-time lowering (docs/SCE_LUA_TRANSLATION_SEAM.md).
+                    // cannot convert its elements implicitly.
+                    //
+                    // It goes through the pair filter like every other
+                    // hand-off. It briefly did NOT — it spelled
+                    // `ScriptSource::ecmascript(...)` inline — and that is a
+                    // template naming the language instead of asking the run,
+                    // which under `--script-engine lua` would have emitted
+                    // ECMAScript here while everything around it emitted Lua.
                     std::vector<std::pair<std::string, ::SCE::ScriptSource>> params = {
 {% for param in state.donedata.params %}
-                        {"{{ param.name | escape_cpp }}", ::SCE::ScriptSource::ecmascript("{{ (param.location if param.location else param.expr) | escape_cpp }}")}{{ "," if not loop.last }}
+                        {"{{ param.name | escape_cpp }}", {{ (param.location if param.location else param.expr) | to_script_source_expr }}}{{ "," if not loop.last }}
 {% endfor %}
                     };
 

@@ -466,7 +466,9 @@ impl Language {
                         // A message and a validation are not hand-offs, and
                         // counting them would hold the refusal shut forever
                         // over text no engine ever sees.
-                        ExpressionSiteRole::Message | ExpressionSiteRole::NotAHandOff => {}
+                        ExpressionSiteRole::Message
+                        | ExpressionSiteRole::Inert
+                        | ExpressionSiteRole::Unadjudicated => {}
                     }
                 }
             }
@@ -479,13 +481,12 @@ impl Language {
     /// Sites that mention a model expression, are not prose, and reach a
     /// callee this file does not know.
     ///
-    /// ⚠ The escape hatch's escape hatch. `classify_expression_site` reads an
-    /// unknown callee as [`ExpressionSiteRole::NotAHandOff`] — the same answer
-    /// it gives `validateForeachAttributes`, which is correct there and would
-    /// be a silent hole anywhere else. A helper nobody added to
-    /// `ENGINE_ENTRY_POINTS` would drop out of the migration population
-    /// without a word, which is exactly how the seam document's own table
-    /// came to miss five helpers.
+    /// ⚠ The escape hatch's escape hatch. A destination in neither
+    /// [`ENGINE_ENTRY_POINTS`] nor [`INERT_DESTINATIONS`] is one nobody has
+    /// judged, and judging it by silence would drop it out of the migration
+    /// population without a word — which is exactly how the seam document's
+    /// own table came to miss five helpers, and how this scan lost the
+    /// `<script>` body for a round.
     ///
     /// So the unknown callees are listed rather than assumed benign. Each one
     /// is a decision someone has to make once: it evaluates (add it to
@@ -532,7 +533,7 @@ impl Language {
                         continue;
                     }
                     if classify_expression_site(&lines, index, interpolation)
-                        == ExpressionSiteRole::NotAHandOff
+                        == ExpressionSiteRole::Unadjudicated
                     {
                         sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()));
                     }
@@ -727,18 +728,29 @@ enum ExpressionSiteRole {
     /// string, or any C++ string literal carrying other text besides the
     /// expression. The author's own text is exactly what belongs there.
     Message,
-    /// Reaches a callee that does not evaluate. Measured 2026-08-28:
+    /// Reaches a destination in [`INERT_DESTINATIONS`] — one adjudicated
+    /// against the tree as not evaluating. Measured 2026-08-28:
     /// `ForeachValidator::validateForeachAttributes` takes the array text and
     /// only asks whether it is empty (`ForeachValidator.h:27`), so lowering it
     /// would answer a question nobody asked.
-    NotAHandOff,
+    Inert,
+    /// None of the above: the destination is not in either list, so nobody has
+    /// yet said whether it evaluates.
+    ///
+    /// ⚠ Kept distinct from [`Self::Inert`] on purpose. Collapsing the two
+    /// makes "we checked and it does not evaluate" indistinguishable from "we
+    /// have not looked", and the second silently leaves the migration
+    /// population short — which is how this seam lost the `<script>` body for
+    /// a whole round.
+    Unadjudicated,
 }
 
 /// Callees that evaluate, or hand on to something that does.
 ///
 /// ⚠ Derived from `sce/include/scripting/` and `sce/include/common/` rather
 /// than from a document — the seam document's own table missed five helpers by
-/// being a list. A callee absent from here reads as [`ExpressionSiteRole::NotAHandOff`],
+/// being a list. A callee in neither this list nor [`INERT_DESTINATIONS`]
+/// reads as [`ExpressionSiteRole::Unadjudicated`],
 /// which is why `unclassified_expression_sites` exists to surface exactly that
 /// case instead of letting a missed helper pass as "not a hand-off".
 /// Macros that render their arguments into a diagnostic rather than evaluating
@@ -756,6 +768,48 @@ const DIAGNOSTIC_MACROS: &[&str] = &["SCE_LOG_", "AOT_DEBUG", "AOT_LOG"];
 /// as reaching nobody — and a site that reaches nobody is a site the migration
 /// never has to move.
 const CALL_WINDOW_LINES: usize = 3;
+
+/// Destinations that provably do not evaluate, each adjudicated against the
+/// tree rather than against its name.
+///
+/// The mirror of [`ENGINE_ENTRY_POINTS`], and the reason the unknown bucket
+/// can shrink to nothing honestly: a site is inert because its DESTINATION is
+/// known not to evaluate, not because someone listed the site. An allowlist of
+/// sites would be a hole — one more line and anything passes — which is the
+/// failure a sibling repository measured on its own exemption list the same
+/// day.
+const INERT_DESTINATIONS: &[&str] = &[
+    // Emptiness / shape checks on the author's text. Measured:
+    // `ForeachValidator.h:27` asks only whether the array attribute is empty.
+    "validateForeachAttributes",
+    "isValidLocation",
+    "getInvalidLocationErrorMessage",
+    // Inline text children are the content VALUE, not an expression. The
+    // template's own comment says it: "no evaluation, no script engine", and
+    // the clause it keeps is cited on the helper that implements it.
+    "emitContentLiteral",
+    // A NAME lookup, not an evaluator (`IScriptEngine.h`). The templates route
+    // `delayexpr` / `eventexpr` through it, which means only a bare variable
+    // name resolves — a §scxml-6.2 conformance question about C++ codegen that
+    // `docs/SCE_LUA_TRANSLATION_SEAM.md` deliberately carved out of this axis,
+    // because it is wrong under ANY engine and has nothing to do with which
+    // language the string is in.
+    "getVariable",
+    // Fields of a request handed to a HOST processor / invoker, not to a
+    // script engine. The content travels out of the machine.
+    "hostRequest.",
+    "hostInvoke.",
+    // The literal-content arm of an HTTP `<send>`: the body, not an
+    // expression. The `contentexpr` arm beside it is the evaluated one and is
+    // migrated.
+    "httpContent",
+    "performHttpSend",
+    // The literal `<content>` of a `<send>` becomes the event's data
+    // verbatim; `contentData` is where it lands. The evaluated arm goes
+    // through `DoneDataHelper::evaluateContent` instead, and that is where
+    // the clause is cited.
+    "contentData",
+];
 
 const ENGINE_ENTRY_POINTS: &[&str] = &[
     "evaluateExpression",
@@ -792,6 +846,17 @@ fn classify_expression_site(
         return ExpressionSiteRole::Message;
     }
 
+    // ⚠ A template that NAMES the language is an unmigrated hand-off, not a
+    // finished one. Spelling `ScriptSource::ecmascript(...)` inline answers
+    // the question `--script-engine` exists to ask, so under the Lua target
+    // that site would emit ECMAScript while everything around it emitted Lua —
+    // the mixed artifact, arriving through a constructor instead of a string.
+    // Measured 2026-08-28: the donedata param site did exactly this and read
+    // as inert, because the callee on its line was the constructor.
+    if line.contains("ScriptSource::ecmascript(") || line.contains("ScriptSource::lua(") {
+        return ExpressionSiteRole::EngineBound;
+    }
+
     // The window: this line and the few above it, which is where a multi-line
     // call keeps its callee. An engine entry point anywhere in reach wins,
     // because a call that both logs and evaluates is still a hand-off.
@@ -801,6 +866,18 @@ fn classify_expression_site(
         .any(|l| ENGINE_ENTRY_POINTS.iter().any(|entry| l.contains(entry)))
     {
         return ExpressionSiteRole::EngineBound;
+    }
+
+    // A destination known not to evaluate. Checked AFTER the engine entry
+    // points so a line carrying both is read as the hand-off it is, and over
+    // the SAME window — `emitContentLiteral(` sits a line above its argument
+    // exactly as `executeForeachWithActions(` does, and a one-line check here
+    // would leave an adjudicated site reading as unjudged forever.
+    if lines[start..=index]
+        .iter()
+        .any(|l| INERT_DESTINATIONS.iter().any(|inert| l.contains(inert)))
+    {
+        return ExpressionSiteRole::Inert;
     }
 
     // A diagnostic macro with no engine entry point in reach is a report.
@@ -814,7 +891,7 @@ fn classify_expression_site(
     {
         return ExpressionSiteRole::Message;
     }
-    ExpressionSiteRole::NotAHandOff
+    ExpressionSiteRole::Unadjudicated
 }
 
 /// Whether the interpolation sits in a C++ string literal that also carries

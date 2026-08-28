@@ -264,6 +264,44 @@ fn the_guard_filter_lowers_a_guard_not_a_bare_expression() {
     );
 }
 
+/// The C++ migration is complete, and "complete" is three facts, not one.
+///
+/// A gate that asserted only "the Lua target is supported" could be satisfied
+/// by a scanner that had stopped finding anything. So it asks all three: no
+/// site left behind, no site unjudged, and — the independent one — sites that
+/// demonstrably route through the pair filter.
+#[test]
+fn the_cpp_migration_is_complete_and_the_lua_target_is_offered() {
+    let remaining = Language::Cpp.unmigrated_expression_sites();
+    let unknown = Language::Cpp.unclassified_expression_sites();
+    let migrated = Language::Cpp.migrated_expression_sites();
+
+    assert!(
+        remaining.is_empty(),
+        "{} site(s) still hand the engine the author's text:\n  {}",
+        remaining.len(),
+        remaining.join("\n  ")
+    );
+    assert!(
+        unknown.is_empty(),
+        "{} site(s) reach a destination nobody has judged. Each needs one \
+         decision: add the callee to ENGINE_ENTRY_POINTS and migrate the site, \
+         or to INERT_DESTINATIONS with the evidence:\n  {}",
+        unknown.len(),
+        unknown.join("\n  ")
+    );
+    assert!(
+        migrated.len() >= 15,
+        "only {} C++ site(s) route through the pair filter, which reads as a \
+         scanner that stopped working rather than a finished migration",
+        migrated.len()
+    );
+    assert!(
+        Language::Cpp.supports_script_engine_target(ScriptEngineTarget::Lua),
+        "every site is accounted for and the Lua target is still refused"
+    );
+}
+
 /// `forge/` falls inside C++'s template ownership and outside this question.
 ///
 /// Ownership answers "whose templates are these"; this scan answers "which
