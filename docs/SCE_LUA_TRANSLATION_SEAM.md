@@ -838,6 +838,181 @@ left the case green. It now asks the independent question
 (`migrated_expression_sites()` must be non-empty), and *that* catches it. A
 gate whose two halves share a source is not a gate.
 
+## Landed 2026-08-29: a Lua-lowered C++ artifact is compiled and RUN
+
+`scripts/gate ecma262-lowered-cpp` (`.github/workflows/ecma262-lowered-cpp.yml`,
+`tests/engine/LoweredEcma262Test.cpp`, ctest `LoweredEcma262`). It configures a
+throwaway tree with `-DSCE_SCRIPT_ENGINE=lua`, builds one C++ artifact generated
+with `--script-engine lua`, and runs it. It is the only gate in the registry
+that configures that selection, which is what the three comments in
+`tests/CMakeLists.txt` said from the other side and no longer do.
+
+**Which side of the seam it measures: BUILD-TIME lowering.** Stated on the gate,
+in the workflow and in the harness, because the file it measures against —
+`lua_engine_divergences.json` — is the RUN-TIME rewriter's list, and the two are
+different code paths into the same engine.
+
+**Why that file is nevertheless the population.** Every entry names an
+expression the rewriter answers differently from ECMA-262, and a lowered
+artifact hands its engine Lua, so the rewriter is never reached and each entry
+has to answer the language. `tools/generate_lowered_ecma262_fixture.py` expands
+each entry into one state of an SCXML document, joined to
+`ecma262_semantics.json` for the `setup`/`form`/`expect` — so the population is
+that file and nothing else, an entry added there grows a case on the same
+commit, and an entry removed takes its case with it. The generator REFUSES an
+entry it cannot express rather than skipping it, and refuses an empty list
+rather than emitting a fixture that asks nothing.
+
+**The expectations are not generated.** The harness reads both committed tables
+at run time and recomputes the join itself. A harness reading the generator's
+own idea of the population would be the shape this document already names: *"A
+gate whose two halves share a source is not a gate."*
+
+**Two artifacts from one document, which is what makes the green mean
+something.** `ecma262_lowered` (with the flag) must answer every entry;
+`ecma262_source` (`--script-engine ecmascript`, what C++ has always emitted)
+must not. Measured in the turn that landed it, on the build machine:
+
+- lowered artifact: **170** `ScriptSource::lua(...)` pairs; control: **0**
+  (asserted by the gate, so a target that quietly stopped lowering fails with
+  the cause named rather than as a wrong answer);
+- `LoweredEcma262` green — **23 of 23** declared entries answered;
+- red witness, same turn: dropping `SCRIPT_ENGINE_LANGUAGE lua` from the
+  lowered target makes the gate refuse on the pair count, and running the suite
+  past that guard reports **22 of the 23** by name, each citing its clause
+  (`[5 ^ 3] as 125 … says {"number":6}`, `[-8 >> 1] as 9223372036854775804 …`,
+  `[a + ''] as "table: 0x…" …`).
+
+### The 23rd, and why the control is a floor rather than "all of them"
+
+`typeof missingVariable !== 'undefined'` (d14) comes out CORRECT through the
+source-passing artifact. Not because the rewriter gained it: §scxml-5.9.1 makes
+a `cond` the engine refused evaluate to FALSE, and false is this entry's
+ECMA-262 answer, so the refusal and the language coincide. Confirmed on the same
+tree — `ecmascript_semantics_test` reports it as *"failed to evaluate as a
+condition"*, not as a wrong answer.
+
+That is why `MIN_SOURCE_DIVERGENCES = 22` is a floor. The allowance is not an
+exemption, though: `EveryEntryTheSourceArtifactGetsRightIsAnEngineRefusal`
+asserts that an entry the control answers correctly must be one the engine
+REFUSED, so an entry the rewriter has actually repaired is red and the list must
+shrink. The probe that answers "refused?" is measured, and it has its own
+control on the same run (it must report both outcomes at least once, or it is
+not distinguishing anything).
+
+⚠ **The probe has to use the guard's own entry point.** Its first cut assigned
+the expression to `answers.vN` — a dotted location, which §scxml-5.4 routes
+through `executeScript`, which does NOT run `LuaEngine`'s undeclared-variable
+`ReferenceError` check. It therefore reported d14 as evaluable and the
+attribution came out backwards. A bare location routes through
+`evaluateExpression`, which is what a `cond=` reaches. The two `<assign>` routes
+are different engine entry points with different semantics, and which one a site
+takes is decided by whether its location has a dot in it.
+
+### What the gate does NOT do
+
+It does not empty `lua_engine_divergences.json`. That file is the runtime
+rewriter's measurement and `ecmascript_semantics_test` holds the engine to it in
+both directions; the rewriter still diverges on all 23 and the entries are
+correct. What this gate establishes is that the OTHER path answers them — so the
+emptying comes from retiring the rewriter for generated code, and the residue is
+the C++ **Interpreter**, which has no build step and reaches the adapter no
+matter what codegen emits (see below).
+
+### The entries it catches
+
+Derived, not typed — the gate's population is the file. Re-derive with the join
+the generator and the harness both make, rather than trusting this table:
+
+```sh
+python3 tools/generate_lowered_ecma262_fixture.py \
+  --cases tests/ecmascript/ecma262_semantics.json \
+  --divergences tests/ecmascript/lua_engine_divergences.json \
+  -o /tmp/fixture.scxml   # prints the case count; refuses on an entry it cannot express
+```
+
+| key | source | form | clause | needs |
+|---|---|---|---|---|
+| `d0` | `!a` | condition | 12.5.9 logical NOT | operand-boundaries |
+| `d1` | `a && b` | condition | 13.13.1 the AND yields its left operand when it is falsy | operand-boundaries |
+| `d2` | `a \|\| b` | condition | 13.13.1 the OR yields its right operand when the left is falsy | operand-boundaries |
+| `d3` | `a && b` | value | 13.13.1 the value is an operand, not a boolean | operand-boundaries |
+| `d4` | `a \|\| b` | value | 13.13.1 the value is an operand, not a boolean | operand-boundaries |
+| `d5` | `a ? 'yes' : 'no'` | value | 13.14 conditional uses ToBoolean | operand-boundaries |
+| `d6` | `true ? a : 'other'` | value | 13.14 a false consequent is still the result | operand-boundaries |
+| `d7` | `a + ''` | value | 7.1.1 ToPrimitive of an Array joins with commas | operand-boundaries |
+| `d8` | `1 == '1'` | condition | 7.2.15 number vs string coerces | operand-boundaries |
+| `d9` | `0 == false` | condition | 7.2.15 boolean is ToNumber'd | operand-boundaries |
+| `d10` | `'' == 0` | condition | 7.2.15 empty string is ToNumber 0 | operand-boundaries |
+| `d11` | `1 != '1'` | condition | 7.2.15 negation of the above | operand-boundaries |
+| `d12` | `a == null` | condition | 7.2.15 null and undefined equal each other | operand-boundaries |
+| `d13` | `-7 % 3` | value | 13.7 remainder truncates | operand-boundaries |
+| `d14` | `typeof missingVariable !== 'undefined'` | condition | 13.5.3 typeof of an unresolvable reference is 'undefined' | operand-boundaries |
+| `d15` | `++v` | value | 13.4.4 the operand is ToNumber'd, so this is not concatenation | operand-boundaries |
+| `d16` | `n` | value | 14.7.3 while, with continue skipping one iteration | statement-structure |
+| `d17` | `5 ^ 3` | value | 13.12 bitwise XOR | operand-boundaries |
+| `d18` | `-8 >> 1` | value | 13.9.2 signed right shift | operand-boundaries |
+| `d19` | `-8 >>> 28` | value | 13.9.3 unsigned right shift | operand-boundaries |
+| `d20` | `(a == 1) \| (b != 2)` | value | 13.12 booleans are ToInt32'd, so the result is a number | operand-boundaries |
+| `d21` | `+'3'` | value | 13.5.4 unary plus is ToNumber | operand-boundaries |
+| `d22` | `typeof JSON.parse('{"a":1}')` | value | 15.12.2 the result of parsing a JSON object is an object | chain-operand |
+
+### Three defects the gate found before it could be green
+
+None of them is about lowering. Each was in the way, and each is the kind of
+thing only a document that actually runs can find.
+
+1. **The §scxml-5.3 read accessors were unreachable.**
+   `state_machine.jinja2` emits `<var>()` on the POLICY, and `policy_` is
+   `protected` on `StaticExecutionEngine` — so every generated machine carried a
+   read surface no host could call, and nothing in the tree called one. The
+   machine class now forwards them. An accessor no caller can reach is not a
+   read surface; it is dead code that reads as one.
+
+2. **The author's text reached C++ string literals unescaped.**
+   `typeof JSON.parse('{"a":1}')` closed the literal early —
+   `error: expected ')' before 'a'`, reported against the SCXML line by the
+   `#line` map — in `actions/assign.jinja2`'s log lines. The braces are a second
+   half of the same defect and are worse: `SCE_LOG_*` expands to `fmt`, so
+   `{"a":1}` is a replacement field, and in a build with logging compiled out
+   the macro forwards to a variadic sink and nothing parses it. `escape_cpp` and
+   the new `escape_cpp_format` (C++ escaping plus brace doubling) are now
+   applied at every C++-owned site where a model expression lands inside a
+   literal — `assign`, `foreach`, `send` (typeexpr/targetexpr/eventexpr/
+   contentexpr/idlocation/delayexpr), `invoke_methods`, `entry_exit_actions`.
+   ⚠ Residue, measured and NOT fixed here: the same text also lands in `//`
+   comments (`process_transition.jinja2`, `actions/if.jinja2`) where a newline
+   would break the line, in `R"(...)"` raw strings (`datamodel_macros.jinja2:29`,
+   `scriptengine_helpers.jinja2:173`) where `)"` would close them early, and in
+   `actions/log.jinja2:19` where `action.expr` is interpolated as a C++
+   EXPRESSION rather than a string. Each needs a different escape, so each is
+   its own edit. Re-derive with
+   `grep -rnE '"[^"]*\{\{ *(action|invoke_info|param)\.[a-z_]*(expr|cond|array|location|content)' tools/codegen/templates/*.jinja2 tools/codegen/templates/actions/*.jinja2`.
+
+3. **`<assign>` to a non-bare location evaluated its expression TWICE.**
+   `AssignmentExecutionHelper::executeAssignment` evaluated before branching and
+   the complex path then re-evaluated inside `<loc> = (<expr>);`, discarding the
+   first result. Measured: `<assign location="answers.d15" expr="++v"/>` with
+   `v` at `'1'` recorded **3** where ECMA-262 13.4.4 and §scxml-5.4 say 2. The
+   evaluation now happens once, on whichever path is taken. It is the Single
+   Source of Truth both engines share, so the Interpreter carried it too, and
+   one fix answers for both — this is Zero Duplication paying out rather than
+   costing. `scripts/gate w3c-cpp` re-verified: 404 cases pass.
+
+### And one in the CMake surface the gate added
+
+`sce_add_state_machine`'s parse prefix is `SCE`, so a keyword named
+`SCRIPT_ENGINE` parses into `SCE_SCRIPT_ENGINE` — the tree's own engine-selection
+CACHE option. `cmake_parse_arguments` unsets the variable for a keyword the
+caller omitted, and unsetting a normal variable reveals the cache entry
+underneath, so **an omitted argument silently became "whatever engine this tree
+was configured with"**. Found while building the red witness: dropping the
+argument left the artifact fully lowered anyway, 170 pairs, because the tree was
+configured `-DSCE_SCRIPT_ENGINE=lua`. A gate cannot be shown to catch a lost
+flag while the flag cannot be lost. The keyword is now
+`SCRIPT_ENGINE_LANGUAGE` — the manifest's own field name — and the function
+asserts that no cache entry shadows it.
+
 ## What is not yet decided
 
 - ~~The six helper entry points.~~ **Done 2026-08-28** — and there were eight
@@ -851,11 +1026,18 @@ gate whose two halves share a source is not a gate.
   ⚠ The failure mode was never a build error: a site left behind compiles and
   quietly keeps the old behaviour, which is why the count — not the compiler —
   is the gate.
-- **Nothing yet RUNS a Lua-lowered C++ artifact.** It generates and the pairs
-  are right, but no gate configures `-DSCE_SCRIPT_ENGINE=lua` and compiles one,
-  so the ECMA-262 divergences this axis exists to close are not yet measured
-  through it. That is the next thing, and it is what would let
-  `lua_engine_divergences.json` start emptying.
+- ~~**Nothing yet RUNS a Lua-lowered C++ artifact.**~~ **Done 2026-08-29** —
+  `scripts/gate ecma262-lowered-cpp` configures `-DSCE_SCRIPT_ENGINE=lua`,
+  compiles an artifact generated with `--script-engine lua`, runs it, and holds
+  it to all 23 declared divergences with the un-lowered artifact beside it as
+  the control. See "Landed 2026-08-29" above.
+  ⚠ It does NOT empty `lua_engine_divergences.json`, and saying it would was
+  the wrong reading of this bullet. That file measures the RUNTIME rewriter,
+  which still diverges on all 23 and is correctly listed. What the gate
+  establishes is that the other path answers them; the emptying is a
+  consequence of the rewriter stopping being reached, which for generated code
+  means the `--script-engine lua` selection becoming the default and for the
+  Interpreter means the next bullet.
 - The C++ **Interpreter** has no build step at all, so it cannot receive
   build-time-translated text by this route. `sce-build`'s cdylib is the
   candidate answer — `Cargo.toml` records that there is no in-tree consumer of

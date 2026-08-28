@@ -15,6 +15,11 @@ build_mesh_test/
 # `SCE_SCRIPT_ENGINE=quickjs` is a supported configuration and needs its own
 # tree: the option is compile-time, so the two engines cannot share one.
 build_quickjs/
+# The other selection, for the same reason. `scripts/gate ecma262-lowered-cpp`
+# configures its own throwaway tree, so this entry is for a developer
+# reproducing that gate by hand — the tree's build-directory-name check
+# accepts `build_*` and nothing else, so the scratch dir has to be named.
+build_lua/
 /bin/
 lib/
 # ...but scripts/lib/ is source, not build output. The rule above is
