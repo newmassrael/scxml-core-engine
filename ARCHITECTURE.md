@@ -468,13 +468,26 @@ interchangeable.
 
 The ECMA-262 column is derived, not typed. Its denominator is the length of
 that table and the Lua row's numerator is that length minus the entries in
-`tests/ecmascript/lua_engine_divergences.json`, which is the list
-`ecmascript_semantics_test` holds the `lua` selection to in both directions —
-an undeclared disagreement and a declared one that has been repaired are both
-red. `sce-build/tests/ecma262_scoreboard_contract.rs` re-derives these two
-cells, because the column had been typed once: it read **58/58** and **32/58**
-after the shared table had grown to 98 cases, so both engines were being
-scored out of a denominator that no longer existed.
+`tests/ecmascript/lua_engine_divergences.json` **declared on the
+`runtime-rewriter` path**, which is the route this row's consumer takes: C++
+codegen hands the engine the author's ECMAScript unless the run asked for
+`--script-engine lua`. That list is what `ecmascript_semantics_test` holds the
+`lua` selection to in both directions — an undeclared disagreement and a
+declared one that has been repaired are both red.
+
+Each entry's `diverges_on` names the paths, because there are two routes into
+the same engine and they fail differently. The other one,
+`build-time-lowering`, is `sce-build`'s frontend having emitted Lua already,
+and `LoweredEcma262` is its contract — also both ways, which is what lets the
+list empty rather than only grow. A cell for that path is deliberately absent
+from this table: it would be a score for an artifact this repository does not
+yet emit by default, and the row a consumer reads must describe the engine they
+would actually get.
+
+`sce-build/tests/ecma262_scoreboard_contract.rs` re-derives these two cells,
+because the column had been typed once: it read **58/58** and **32/58** after
+the shared table had grown to 98 cases, so both engines were being scored out
+of a denominator that no longer existed.
 
 The W3C column and the ECMA-262 column measure different things, and the gap
 between them is why the second column exists. The IRP suite never writes

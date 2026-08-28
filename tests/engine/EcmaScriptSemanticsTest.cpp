@@ -278,6 +278,10 @@ std::string identify(const Case &testCase) {
 /// engine is not an ECMAScript engine" is a list a reader can check against
 /// the clauses it cites, and so that closing one is a deletion from data
 /// rather than an edit to a test.
+/// The path this suite is the contract for. One of the two `diverges_on`
+/// values; the other, `build-time-lowering`, belongs to `LoweredEcma262`.
+constexpr const char *RUNTIME_REWRITER_PATH = "runtime-rewriter";
+
 std::vector<std::string> loadDeclaredDivergences() {
     std::ifstream file(SCE_LUA_DIVERGENCES_PATH);
     if (!file.is_open()) {
@@ -289,6 +293,34 @@ std::vector<std::string> loadDeclaredDivergences() {
 
     std::vector<std::string> declared;
     for (const auto &entry : document.at("divergences")) {
+        // Only the entries declared on THIS path. `diverges_on` splits the list
+        // by which of the two routes into the Lua engine still answers the case
+        // differently — this suite reaches the engine through
+        // `EcmaScriptToLuaTransformer`, so it is the `runtime-rewriter`
+        // contract; `LoweredEcma262` is the `build-time-lowering` one. Reading
+        // the whole list here would make this suite report an entry that only
+        // build-time lowering gets wrong as a rewriter divergence that has been
+        // repaired, and demand its deletion.
+        //
+        // Unclassified is RED, not a default: an entry with no `diverges_on`
+        // would otherwise be silently exempt from BOTH suites, which is the
+        // escape hatch defeating the gate that owns it.
+        if (!entry.contains("diverges_on")) {
+            ADD_FAILURE() << "divergence [" << entry.value("source", std::string{}) << "] ("
+                          << entry.value("clause", std::string{}) << ") in " << SCE_LUA_DIVERGENCES_PATH
+                          << " carries no `diverges_on`, so neither this suite nor `LoweredEcma262` can tell "
+                             "whether it is about them";
+            continue;
+        }
+        bool onThisPath = false;
+        for (const auto &path : entry.at("diverges_on")) {
+            if (path.get<std::string>() == RUNTIME_REWRITER_PATH) {
+                onThisPath = true;
+            }
+        }
+        if (!onThisPath) {
+            continue;
+        }
         declared.push_back(entry.at("source").get<std::string>() + " | " + entry.at("clause").get<std::string>());
     }
     return declared;

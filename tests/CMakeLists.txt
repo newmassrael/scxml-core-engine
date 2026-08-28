@@ -481,23 +481,35 @@ add_test(NAME ScriptLanguageSeam COMMAND script_language_seam_test)
 # compiles a C++ artifact generated with `--script-engine lua` and runs it, so
 # the engine choice is not something it reads, it is something it requires.
 #
-# Which side of the seam it measures: BUILD-TIME lowering.
-# `tests/ecmascript/lua_engine_divergences.json` measures the RUN-TIME rewriter,
-# and the same file is the population here for the reason
-# docs/SCE_LUA_TRANSLATION_SEAM.md gives — a lowered artifact hands its engine
-# Lua, so the rewriter is bypassed and every entry has to answer the language.
+# Which side of the seam it measures: BUILD-TIME lowering, and it holds that
+# path in BOTH directions. `tests/ecmascript/lua_engine_divergences.json` says
+# per entry which paths into the Lua engine still answer it differently
+# (`diverges_on`), and this target is the contract for the `build-time-lowering`
+# one: a case lowering gets wrong without being declared is red, and a case
+# declared and answered CORRECTLY is red too. The second direction is what lets
+# that list empty.
+#
+# The population is the SHARED TABLE, in full — not the divergence list. It used
+# to be the list, which meant the other 75 cases were never asked through a
+# lowered artifact and deleting an entry deleted its own question. A path's
+# divergences cannot be enumerated by a list built from a different path's
+# failures.
 #
 # Two artifacts from ONE document, which is what makes the measurement
-# non-vacuous: `ecma262_lowered` crosses the seam and must answer ECMA-262;
-# `ecma262_source` is generated the way C++ always was and must still diverge on
-# every entry. A harness comparing nothing would report both perfect, and the
-# list says the second cannot be.
+# non-vacuous: `ecma262_lowered` crosses the seam and must answer the language
+# wherever it is not declared to diverge; `ecma262_source` is generated the way
+# C++ always was and must still bring the runtime rewriter's divergences back. A
+# harness comparing nothing would report both perfect, and the list says the
+# second cannot be.
 #
-# The fixture is GENERATED rather than committed so that the divergence list is
-# the only place the population lives — see the generator's own header. It is
+# The fixture is GENERATED rather than committed so that the shared table is the
+# only place the population lives — see the generator's own header. It is
 # generated at CONFIGURE time because sce_add_state_machine needs the SCXML to
 # exist when it is called, and the inputs are registered as configure
-# dependencies so an edited list re-runs it.
+# dependencies so an edited table re-runs it. The divergence list is a configure
+# dependency too, although the fixture no longer reads it: it is compiled in as
+# a PATH and read at run time, and re-running configure on an edit keeps a tree
+# from being rebuilt against a list it was not configured beside.
 # ============================================================================
 string(TOLOWER "${SCE_SCRIPT_ENGINE}" _SCE_SELECTED_ENGINE)
 if(_SCE_SELECTED_ENGINE STREQUAL "lua")
@@ -527,7 +539,6 @@ if(_SCE_SELECTED_ENGINE STREQUAL "lua")
         execute_process(
             COMMAND "${Python3_EXECUTABLE}" "${_SCE_LOWERED_FIXTURE_GENERATOR}"
                     --cases "${_SCE_ECMA262_CASES}"
-                    --divergences "${_SCE_LUA_DIVERGENCES}"
                     -o "${_SCE_LOWERED_FIXTURE_DIR}/${_sce_fixture_stem}.scxml"
             RESULT_VARIABLE _sce_fixture_rc
             OUTPUT_VARIABLE _sce_fixture_out
