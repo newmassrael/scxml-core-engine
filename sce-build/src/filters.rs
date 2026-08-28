@@ -1362,6 +1362,7 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
     register_event_wire_filters(env);
     env.add_filter("capitalize", capitalize_state);
     env.add_filter("escape_cpp", escape_cpp);
+    env.add_filter("escape_cpp_format", escape_cpp_format);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
@@ -1383,6 +1384,29 @@ fn capitalize_state(name: String) -> String {
 /// Escape C++ string literals (identical escaping rules to Rust).
 fn escape_cpp(text: String) -> String {
     escape_rust(text)
+}
+
+/// Escape the author's text for a C++ **format** string — `SCE_LOG_*`, which
+/// expands to `fmt`.
+///
+/// `escape_cpp` is not enough there, and neither half of the difference is
+/// theoretical. Measured 2026-08-29 on `typeof JSON.parse('{"a":1}')`:
+///
+/// * The `"` closed the literal early and the file did not compile —
+///   `error: expected ')' before 'a'`, reported against the SCXML line by the
+///   `#line` map, which is what `escape_cpp` fixes.
+/// * The `{` and `}` are a `fmt` replacement field. In a build with logging
+///   compiled out the macro forwards to a variadic sink and nothing parses
+///   them, so the defect is invisible exactly where most gates run; with
+///   logging on, `fmt` reads `{"a":1}` as a format specifier and the same
+///   artifact fails at the format-string check instead.
+///
+/// So a format string needs both, and doubling has to happen AFTER the C++
+/// escaping — `escape_rust` inserts no braces, so the order is safe either way
+/// today, and stating it keeps a future escape that does insert one from
+/// silently un-doubling.
+fn escape_cpp_format(text: String) -> String {
+    escape_cpp(text).replace('{', "{{").replace('}', "}}")
 }
 
 // ── C11 filters ─────────────────────────────────────────────────

@@ -147,8 +147,8 @@
                 {
                     ensureScriptEngine();
                     auto& scriptEngine = getScriptEngine();
-                    scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
-                    AOT_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                    scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
+                    AOT_DEBUG("Set idlocation {{ invoke_info.idlocation | escape_cpp_format }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
                 }
                 {% endif %}
 
@@ -182,7 +182,7 @@
                     {
                         ensureScriptEngine();
                         auto& scriptEngine = getScriptEngine();
-                        scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", std::string("{{ invoke_info.invoke_id }}")).get();
+                        scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", std::string("{{ invoke_info.invoke_id }}")).get();
                     }
                     {% endif %}
                     // SCE_MESH.md §9.6.2 inner payload. Currently empty —
@@ -244,7 +244,7 @@
                     {
                         ensureScriptEngine();
                         auto& scriptEngine = getScriptEngine();
-                        scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", _mesh_invoke_id_{{ invoke_info.invoke_id }}).get();
+                        scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", _mesh_invoke_id_{{ invoke_info.invoke_id }}).get();
                     }
                     {% endif %}
 
@@ -304,7 +304,7 @@
                         if (!::SCE::ScriptResultUtils::isSuccess(_srcexpr_result_{{ invoke_info.invoke_id }})) {
                             engine.raise(typename Engine::EventWithMetadata(
                                 Event::Error_execution,
-                                "mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr evaluation failed: {{ invoke_info.srcexpr }}"));
+                                "mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr evaluation failed: {{ invoke_info.srcexpr | escape_cpp }}"));
                             this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
                         } else {
                             std::string _resolved_src_{{ invoke_info.invoke_id }} =
@@ -370,8 +370,8 @@
                 {
                     ensureScriptEngine();
                     auto& scriptEngine = getScriptEngine();
-                    scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
-                    AOT_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                    scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
+                    AOT_DEBUG("Set idlocation {{ invoke_info.idlocation | escape_cpp_format }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
                 }
                 {% endif %}
 

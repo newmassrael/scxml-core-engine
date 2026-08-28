@@ -296,7 +296,7 @@
                             auto& scriptEngine = getScriptEngine();
                             auto pathResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(pathResult)) {
-                                SCE_LOG_ERROR("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr }}' evaluation failed");
+                                SCE_LOG_ERROR("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr | escape_cpp_format }}' evaluation failed");
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "srcexpr evaluation failed"));
                                 return;
                             }
@@ -316,7 +316,7 @@
                             auto& scriptEngine = getScriptEngine();
                             auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.contentexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
-                                SCE_LOG_ERROR("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr }}' evaluation failed");
+                                SCE_LOG_ERROR("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr | escape_cpp_format }}' evaluation failed");
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "contentexpr evaluation failed"));
                                 return;
                             }

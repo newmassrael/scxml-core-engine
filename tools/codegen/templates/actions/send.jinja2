@@ -58,7 +58,7 @@ ensureSessionId();
 {% if model.needs_script_engine or model.needs_event_origin %}
 this->ensureScriptEngine();
 auto& scriptEngine = getScriptEngine();
-::SCE::SendHelper::storeInIdLocation(scriptEngine, sessionId_.value(), "{{ action.idlocation }}", sendId);
+::SCE::SendHelper::storeInIdLocation(scriptEngine, sessionId_.value(), "{{ action.idlocation | escape_cpp }}", sendId);
 {% else %}
 #error "SCE codegen drift: `<send idlocation=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
@@ -73,12 +73,12 @@ std::string dynamicType;
     auto& scriptEngine = getScriptEngine();
     auto typeResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.typeexpr | to_script_source_expr }}).get();
     if (!::SCE::ScriptResultUtils::isSuccess(typeResult)) {
-        SCE_LOG_ERROR("Failed to evaluate typeexpr: {{ action.typeexpr }}");
+        SCE_LOG_ERROR("Failed to evaluate typeexpr: {{ action.typeexpr | escape_cpp_format }}");
         // W3C SCXML 6.2: Invalid typeexpr → use default SCXMLEventProcessor
         dynamicType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
     } else {
         dynamicType = ::SCE::ScriptResultUtils::resultToString(typeResult, &scriptEngine, sessionId_.value(), {{ action.typeexpr | to_script_source_expr }});
-        AOT_DEBUG("Evaluated typeexpr='{{ action.typeexpr }}' → type='{}'", dynamicType);
+        AOT_DEBUG("Evaluated typeexpr='{{ action.typeexpr | escape_cpp_format }}' → type='{}'", dynamicType);
     }
 {% else %}
 #error "SCE codegen drift: `<send typeexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
@@ -106,7 +106,7 @@ this->ensureScriptEngine();
 auto& scriptEngine = getScriptEngine();
 auto targetResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.targetexpr | to_script_source_expr }}).get();
 if (!::SCE::ScriptResultUtils::isSuccess(targetResult)) {
-    SCE_LOG_ERROR("Failed to evaluate targetexpr: {{ action.targetexpr }}");
+    SCE_LOG_ERROR("Failed to evaluate targetexpr: {{ action.targetexpr | escape_cpp_format }}");
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                                     "<send> targetexpr failed to evaluate"));
 }
@@ -210,7 +210,7 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
 {% if model.needs_script_engine or model.needs_event_origin %}
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
-    auto delayResult = scriptEngine.getVariable(sessionId_.value(), "{{ action.delayexpr }}").get();
+    auto delayResult = scriptEngine.getVariable(sessionId_.value(), "{{ action.delayexpr | escape_cpp }}").get();
     if (::SCE::ScriptResultUtils::isSuccess(delayResult)) {
         delayStr = ::SCE::ScriptResultUtils::resultToString(delayResult);
     }
@@ -566,9 +566,9 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
 {% if model.needs_script_engine or model.needs_event_origin %}
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
-    auto eventResult = scriptEngine.getVariable(sessionId_.value(), "{{ action.eventexpr }}").get();
+    auto eventResult = scriptEngine.getVariable(sessionId_.value(), "{{ action.eventexpr | escape_cpp }}").get();
     if (!::SCE::ScriptResultUtils::isSuccess(eventResult)) {
-        SCE_LOG_ERROR("Failed to get variable for eventexpr: {{ action.eventexpr }}");
+        SCE_LOG_ERROR("Failed to get variable for eventexpr: {{ action.eventexpr | escape_cpp_format }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                                         "<send> eventexpr failed to evaluate"));
     } else {
@@ -653,7 +653,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
 {% if model.needs_script_engine or model.needs_event_origin %}
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
-    auto delayResult = scriptEngine.getVariable(sessionId_.value(), "{{ action.delayexpr }}").get();
+    auto delayResult = scriptEngine.getVariable(sessionId_.value(), "{{ action.delayexpr | escape_cpp }}").get();
     if (::SCE::ScriptResultUtils::isSuccess(delayResult)) {
         delayStr = ::SCE::ScriptResultUtils::resultToString(delayResult);
     }
@@ -900,7 +900,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
     if (::SCE::ScriptResultUtils::isSuccess(contentResult)) {
         eventData = ::SCE::ScriptResultUtils::resultToString(contentResult);
     } else {
-        SCE_LOG_ERROR("Failed to evaluate content expr: {{ action.contentexpr }}");
+        SCE_LOG_ERROR("Failed to evaluate content expr: {{ action.contentexpr | escape_cpp_format }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                                         "<send> contentexpr failed to evaluate"));
         eventData = "";
