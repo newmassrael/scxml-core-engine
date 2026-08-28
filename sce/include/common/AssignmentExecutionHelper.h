@@ -102,23 +102,35 @@ public:
             return true;
         }
 
-        // §scxml-5.4: Standard evaluation + assignment strategy
-        // Step 1: Evaluate expression
-        SCE_LOG_DEBUG("AssignmentExecutionHelper: Evaluating expression: {}", expr.source());
-        auto evalResult = jsEngine.evaluateExpression(sessionId, expr).get();
-        if (!evalResult.isSuccess()) {
-            std::string errorMsg = "Expression evaluation failed: " + expr.source();
-            SCE_LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
-            errorCallback(errorMsg);
-            return false;
-        }
-
-        // Step 2: Assign to location
-        // Simple variable names use setVariable, complex paths use executeScript
+        // §scxml-5.4: Standard evaluation + assignment strategy.
+        //
+        // The expression is evaluated exactly ONCE, on whichever of the two
+        // paths below is taken. It used to be evaluated here, before the
+        // branch, and then evaluated a SECOND time inside the complex path as
+        // part of `<location> = (<expr>);` — the first result being discarded.
+        // For any expression with a side effect that is a wrong answer, not
+        // merely a wasted round trip: measured 2026-08-29 on
+        // `<assign location="answers.d15" expr="++v"/>` with `v` at `'1'`, the
+        // recorded value was 3 where §scxml-5.4 and ECMA-262 13.4.4 say 2.
+        // The shared ECMA-262 table has a `side-effecting` group precisely
+        // because this is observable, and no fixture had asked it through an
+        // <assign> to a non-bare location until one did.
+        //
+        // It affected both engines: this helper is the Single Source of Truth
+        // the Interpreter (`ActionExecutorImpl.cpp`) and every generated
+        // machine share, which is why one fix answers for both.
         if (std::regex_match(location.source(), std::regex("^[a-zA-Z_][a-zA-Z0-9_]*$"))) {
             // Simple variable name - use setVariable (matches Interpreter ActionExecutorImpl.cpp:160-169)
             // The engine is handed a NAME here, not text to evaluate, and a
             // bare identifier is the same name in either language.
+            SCE_LOG_DEBUG("AssignmentExecutionHelper: Evaluating expression: {}", expr.source());
+            auto evalResult = jsEngine.evaluateExpression(sessionId, expr).get();
+            if (!evalResult.isSuccess()) {
+                std::string errorMsg = "Expression evaluation failed: " + expr.source();
+                SCE_LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
+                errorCallback(errorMsg);
+                return false;
+            }
             SCE_LOG_DEBUG("AssignmentExecutionHelper: Simple variable - using setVariable for {}", location.source());
             auto setResult = jsEngine.setVariable(sessionId, location.source(), evalResult.getInternalValue()).get();
             if (!setResult.isSuccess()) {
@@ -136,7 +148,12 @@ public:
             SCE_LOG_DEBUG("AssignmentExecutionHelper: Complex path - executing script: {}", assignScript.source());
             auto scriptResult = jsEngine.executeScript(sessionId, assignScript).get();
             if (!scriptResult.isSuccess()) {
-                std::string errorMsg = "Complex path assignment failed: " + location.source();
+                // Names the expression as well as the location. With the
+                // pre-evaluation gone this is the ONLY diagnostic a failing
+                // complex-path assignment produces, and §scxml-5.4's error is
+                // about evaluating the expression at least as often as it is
+                // about the location.
+                std::string errorMsg = "Complex path assignment failed: " + location.source() + " = " + expr.source();
                 SCE_LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
                 errorCallback(errorMsg);
                 return false;
