@@ -908,7 +908,7 @@ fn interpolation_is_inside_prose(line: &str, interpolation: &str) -> bool {
     // Count quotes before the interpolation: an odd number means it opened a
     // literal that has not closed, so the interpolation is inside one.
     let before = &line[..at];
-    if before.matches('"').count() % 2 == 0 {
+    if before.matches('"').count().is_multiple_of(2) {
         return false;
     }
     let open = before.rfind('"').map(|i| i + 1).unwrap_or(0);
