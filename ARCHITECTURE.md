@@ -466,6 +466,18 @@ interchangeable.
 | QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` (default) | 202/202 | **98/98** |
 | Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **75/98** |
 
+⚠ **The Lua row is about the RUNTIME REWRITER, and since 2026-08-29 that is no
+longer everything the `lua` selection runs.** `sce_add_state_machine` now
+derives `--script-engine lua` for a `-DSCE_SCRIPT_ENGINE=lua` tree, so
+**generated C++ in such a tree is lowered at build time and answers 98/98** —
+it never reaches the rewriter. What still does is the **Interpreter**, which has
+no build step, and any artifact generated with `--script-engine ecmascript`
+explicitly. So read this row as the score for those, not for a C++ AOT build.
+A second row for the lowered path is deliberately absent: it would be a cell
+about an artifact shape rather than an engine, and this table is what a consumer
+reads when choosing an ENGINE. `LoweredEcma262` is where the lowered path's
+score lives, and it prints it on every green run.
+
 The ECMA-262 column is derived, not typed. Its denominator is the length of
 that table and the Lua row's numerator is that length minus the entries in
 `tests/ecmascript/lua_engine_divergences.json` **declared on the
