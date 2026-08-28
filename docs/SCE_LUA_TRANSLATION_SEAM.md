@@ -1362,6 +1362,52 @@ asserts that no cache entry shadows it.
   `extern_emit`. The frontend answers all 98 shared-table cases correctly and
   has no way to be called at run time; closing that is what lets the rewriter
   be retired instead of repaired.
+  **Its price is now measured — see below. This bullet is what that
+  measurement is for, and the choice is a person's, not this document's.**
+
+### The price of a C-callable lowering surface, measured 2026-08-29
+
+Measured with a THROWAWAY probe — five `#[no_mangle] extern "C"` wrappers over
+the frontend, built as a cdylib, then deleted. Nothing in the tree links Rust
+today and nothing does now. Re-derive rather than trusting the table; every row
+below names how.
+
+| question | measured | how to re-derive |
+|---|---|---|
+| crate shape available | `sce-build` is `rlib` ONLY | `grep crate-type sce-build/Cargo.toml` |
+| is the wasm wrapping reusable? | the SHAPE yes, the BINDINGS no | `sce-build-wasm/Cargo.toml` — a separate crate, `["cdylib","rlib"]`, depending on `sce-build`; its exports are `wasm_bindgen`, not C ABI |
+| surface to expose | **four** lowering fns, not three | `grep '^pub fn' sce-build/src/ecmascript/mod.rs` → `to_lua_condition` / `to_lua_value` / `to_lua_script` / `to_lua_location` |
+| what crosses the boundary | a scope, and it is **flat** | `DocumentScope` is one `BTreeSet<String>` (`sce-build/src/ecmascript/scope.rs:53`) — an opaque handle plus `declare` is enough; no model marshalling |
+| build time | **7.00s** to recompile `sce-build` and link the cdylib; **14.96s** including its cold deps | `cargo rustc -p sce-build --lib --release --crate-type cdylib`, release, warm cargo cache, build machine (32 cores) |
+| artifact size | **589 KB** with the C surface exported, against **380 KB** exporting nothing ⇒ the reachable lowering code is **~214 KB** | `ls -l target/release/libsce_build.so` for each; `nm -D --defined-only` reported exactly **5** dynamic symbols, so the linker kept only what the C surface reaches |
+| native deps inherited | `libgcc_s`, `libc`, the loader. **libxml2 is NOT** | `ldd target/release/libsce_build.so` — the `xsd` feature's C library is unreachable from the lowering entry points, so a C++ consumer does not inherit it. `sce-build-wasm` needs `default-features = false` for that reason; a native link would not |
+| who pays for it | **every C++ configure in the tree**, not just the `lua` selection | the natural link site is `sce_scripting` beside `lua54` (`sce/CMakeLists.txt:374`), guarded by `SCE_ENABLE_LUA`, which is `option(... ON)` at `sce/CMakeLists.txt:18`. Eight gates build a C++ target: `cpp-suite`, `w3c-cpp`, `w3c-c11`, `forge-cpp`, `lib`, `visualizer-wasm`, `w3c-python-bindings`, `ecma262-lowered-cpp` (`grep -l sce_gate_build scripts/gates/*.sh`) |
+
+⚠ **What the probe did NOT price, and a decision needs**:
+
+- **The scope obligation at run time.** The build-time caller builds a scope
+  from the whole model once (`DocumentScope::from_model`). An Interpreter's
+  scope grows as it runs — `var x` inside a `<script>` declares a name
+  mid-session, and `declare_chunk` is the frontend's own answer to that. Who
+  calls it, and when, is a semantics question this probe skipped by using
+  `DocumentScope::installed()`.
+- **Per-evaluation cost.** The probe measured a build, not a call. `LuaEngine`
+  already memoises on the incoming text; whether lowering-per-expression is
+  cheaper or dearer than rewriting-per-expression is unmeasured.
+- **The error channel and ownership contract.** The probe returned `NULL` for
+  every failure and leaked the distinction. A real surface has to carry
+  `ExprError` across, and `_event.data` on `error.execution` is where that text
+  is wire-visible.
+- **Whether the link is unconditional.** The table's last row is the largest
+  number in it: `SCE_ENABLE_LUA` is a capability, not a selection, so a link
+  placed beside `lua54` is paid by developers who never choose Lua. Scoping it
+  to `SCE_SCRIPT_ENGINE=lua` instead would contradict `LuaEngine` being
+  constructible whenever the capability is on — which is what
+  `EcmaScriptSemanticsOnLuaEngine` relies on to measure it at all.
+
+**No decision is recorded here on purpose.** The numbers are the deliverable;
+which way to go is a judgement about what a C++ consumer should carry, and this
+document's job is to make that judgement due rather than to make it.
 - ~~**Generated C++ in a Lua tree still hands the engine ECMAScript.**~~
   **Done 2026-08-29 (third round)** — `sce_add_state_machine` derives
   `--script-engine lua` for a `-DSCE_SCRIPT_ENGINE=lua` tree, measured on a
