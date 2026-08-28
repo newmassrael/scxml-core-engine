@@ -88,8 +88,8 @@ PY
 
 mutation_case "the cpp aot engine evaluates an invoke param in the child session" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     """                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();""",
-     """                            auto __sce_param = getScriptEngine().evaluateExpression(childSessionId, "{{ param.expr | escape_cpp }}").get();""")
+     """                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();""",
+     """                            auto __sce_param = getScriptEngine().evaluateExpression(childSessionId, {{ param.expr | to_script_source_expr }}).get();""")
 PY
 
 # ── C++ AOT: which names are added ─────────────────────────────────
