@@ -154,7 +154,12 @@ generation time and emitted as Lua"). Measured 2026-08-27 —
   Selecting Lua on either instead reaches a runtime text rewriter whose
   disagreements with ECMA-262 are enumerated in
   `tests/ecmascript/lua_engine_divergences.json` and
-  `tests/ecmascript/kotlin_lua_divergences.json`.
+  `tests/ecmascript/kotlin_lua_divergences.json`. Each entry there names
+  the PATH it is about (`diverges_on`): the runtime rewriter, or
+  `sce-build`'s build-time lowering, which a C++ run reaches by asking
+  for `--script-engine lua`. Two routes into one engine fail differently,
+  and a list that did not separate them could only ever shrink when the
+  rewriter was repaired.
 
 The manifest reports which of the two a given run produced, in
 `script_engine_language` (`SCE_ERROR_CONTRACT.md` §10.1).

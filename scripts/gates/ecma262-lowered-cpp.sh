@@ -14,14 +14,23 @@
 # refusing half of the language seam were compiled by every build and run by
 # none. This is the gate that configures it.
 #
-# WHICH SIDE OF THE SEAM IT MEASURES: build-time lowering.
-# `tests/ecmascript/lua_engine_divergences.json` measures the RUN-TIME rewriter,
-# and that file is nonetheless the population — every entry is an expression the
-# rewriter answers differently from ECMA-262, and a lowered artifact hands its
-# engine Lua so the rewriter is never reached. The binary carries the same
-# document generated BOTH ways for exactly that reason: the lowered one must
-# answer the language, the source-passing one must not, and the second is what
-# keeps the first from being a suite that measures nothing.
+# WHICH SIDE OF THE SEAM IT MEASURES: build-time lowering, and it is that
+# path's CONTRACT rather than a measurement of it.
+# `tests/ecmascript/lua_engine_divergences.json` says per entry which routes
+# into the Lua engine still answer a case differently (`diverges_on`), and this
+# gate holds the `build-time-lowering` one in BOTH directions — a case the
+# lowered artifact gets wrong without being declared is red, and so is a case
+# declared and answered correctly. The second direction is what lets that list
+# empty.
+#
+# The POPULATION is the shared table (`tests/ecmascript/ecma262_semantics.json`)
+# in full, not the divergence list. It used to be the list, which meant the
+# table's other cases were never asked through a lowered artifact at all: a
+# path's divergences cannot be enumerated by a list built from a different
+# path's failures. The binary carries the same document generated BOTH ways for
+# the reason the control always exists: the lowered one is the subject, the
+# source-passing one is what keeps its green from being a suite that measures
+# nothing.
 #
 # WHY A TREE OF ITS OWN: `SCE_SCRIPT_ENGINE` is a CMake cache option and the
 # definition it sets is PUBLIC on `sce_scripting`, so the selection is a property
@@ -120,23 +129,69 @@ sce_gate_step "lowered artifact: $lowered_pairs ScriptSource::lua(...) pair(s); 
 
 sce_gate_step "running the lowered artifact"
 LOG="$SCRATCH/ctest.log"
+JUNIT="$SCRATCH/ctest.xml"
+# `-V` rather than `--output-on-failure`: the suite prints a census line naming
+# what it measured, and a number that only exists on a red run is a number
+# nobody can cite from a green one.
 ctest --test-dir "$BUILD_DIR" -R '^LoweredEcma262$' \
-      --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
+      --verbose --no-tests=error --output-junit "$JUNIT" 2>&1 | tee "$LOG"
 ctest_status="${PIPESTATUS[0]}"
 (( ctest_status == 0 )) || sce_gate_fail "the lowered C++ artifact did not answer ECMA-262 through the build-time lowering"
 
-# `--no-tests=error` covers the zero case, and the exit status covers a failing
+# `--no-tests=error` covers the zero case and the exit status covers a failing
 # one. What neither covers is the case being SKIPPED while its fixture passes:
 # `LoweredEcma262` declares `sce_build_is_current` as a required fixture, so a
 # run of this regex is two ctest entries, and a run where only the fixture
 # executed would exit 0 over a suite that never asked anything.
 #
-# So the named case is asserted by name. An earlier version of this line
-# compared the total against 1 and failed on a green run for exactly that
-# reason — the fixture is a case as far as ctest's totals are concerned.
-grep -qE 'LoweredEcma262 [. ]*Passed' "$LOG" \
-    || sce_gate_fail "ctest reported no passing case named LoweredEcma262 — the run covered its fixture and not the suite"
-grep -qE '100% tests passed out of [0-9]+' "$LOG" \
-    || sce_gate_fail "ctest did not report a fully passing run, so something in the selected set failed without changing the exit status"
+# ⚠ This is asked of ctest's JUNIT XML, not of its summary line, and the reason
+# is measured rather than stylistic. The summary line's WORDING differs between
+# ctest versions: CI's prints `100% tests passed, 0 tests failed out of 2` and
+# the build machine's prints `100% tests passed out of 2`. A gate keyed on
+# either spelling is green on one machine and red on the other over the same
+# artifact — which is exactly what happened, in both directions, in two
+# successive rounds. A tool's human-readable summary is not a machine contract;
+# its `--output-junit` is.
+python3 - "$JUNIT" <<'PY' || sce_gate_fail "ctest's JUnit report does not show LoweredEcma262 as a case that ran and passed"
+import sys
+import xml.etree.ElementTree as ET
 
-sce_gate_step "the lowered artifact answered every declared divergence, and its source-passing control did not"
+path = sys.argv[1]
+try:
+    root = ET.parse(path).getroot()
+except (OSError, ET.ParseError) as exc:
+    print(f"cannot read ctest's JUnit report at {path}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+cases = root.iter("testcase")
+subject = None
+bad = []
+for case in cases:
+    name = case.get("name", "")
+    # A case is a failure when it says so, and it is ALSO a failure when it was
+    # skipped: a skip keeps ctest's exit status at 0 while asking nothing, which
+    # is the one hole the exit status leaves.
+    for tag in ("failure", "error", "skipped"):
+        if case.find(tag) is not None:
+            bad.append(f"{name}: {tag}")
+    if name == "LoweredEcma262":
+        subject = case
+
+if subject is None:
+    print("ctest's JUnit report carries no case named LoweredEcma262 — the run "
+          "covered its fixture and not the suite", file=sys.stderr)
+    raise SystemExit(1)
+if bad:
+    print("ctest reported these cases as not-passing: " + ", ".join(bad), file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+# The suite's own census, lifted out of the verbose log so a green run states
+# what it measured. `docs/SCE_LUA_TRANSLATION_SEAM.md` re-derives its numbers
+# from this line rather than from a paragraph someone typed.
+census="$(sed -n 's/.*\(LoweredEcma262 census: .*\)/\1/p' "$LOG" | head -1)"
+[[ -n "$census" ]] \
+    || sce_gate_fail "the suite printed no census line, so this run cannot say how large a population it asked"
+sce_gate_step "$census"
+
+sce_gate_step "build-time lowering diverges exactly where the divergence list declares it to, and the source-passing control does not"

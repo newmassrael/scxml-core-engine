@@ -35,123 +35,180 @@
     "The divergences that were not of that kind have been repaired rather than",
     "listed: member calls the shared runtime library already defined, a string",
     "literal no pass could see as a receiver, a computed index that was never",
-    "shifted, `Math.round`, and `\\uXXXX`. Those took 44 disagreements to 23."
+    "shifted, `Math.round`, and `\\uXXXX`. Those took 44 disagreements to 23.",
+    "",
+    "`diverges_on` says WHICH PATH into the engine the entry is about, and it",
+    "is the field that lets this list empty. `needs` says what closing an",
+    "entry would take — a cause. It does not say where the entry is still",
+    "wrong, and there are two different code paths that reach the same Lua:",
+    "",
+    "  runtime-rewriter     The generated artifact hands the engine the",
+    "                       AUTHOR'S ECMAScript and `EcmaScriptToLuaTransformer`",
+    "                       rewrites it on the spot. Held two-directionally by",
+    "                       `ecmascript_semantics_test`.",
+    "  build-time-lowering  `sce-build`'s ECMAScript frontend emitted Lua and",
+    "                       the artifact hands the engine that, so the rewriter",
+    "                       is never reached. Held two-directionally by the",
+    "                       `LoweredEcma262` suite, which asks the WHOLE shared",
+    "                       table rather than this list — a path's divergences",
+    "                       cannot be enumerated by a list built from the other",
+    "                       path's.",
+    "",
+    "So an entry stays here while ANY path still answers it differently, and",
+    "it LEAVES when `diverges_on` would be empty. That is the emptying this",
+    "list previously had no shape for: with one unmarked population, an entry",
+    "could only go when the rewriter was repaired, and the plan of record is",
+    "to RETIRE the rewriter for generated code rather than repair it. Marked",
+    "per path, the build-time column is a number that reaches zero on its own",
+    "terms, and each list's suite is red both ways — an undeclared divergence",
+    "and a declared one that has been repaired fail alike.",
+    "",
+    "`paths` below is the set an entry may name, and it is not decoration: a",
+    "value naming a path nothing measures would be a claim no lane can fault.",
+    "`ecma262_scoreboard_contract` compares it against what `sce-build`",
+    "derives for this backend (`Language::supports_script_engine_target`), so",
+    "the day C++ gains or loses a path, this key and the entries under it are",
+    "held to the change instead of outliving it."
   ],
+  "paths": ["runtime-rewriter", "build-time-lowering"],
   "divergences": [
     {
       "source": "!a",
       "clause": "12.5.9 logical NOT",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "a && b",
       "clause": "13.13.1 the AND yields its left operand when it is falsy",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "a || b",
       "clause": "13.13.1 the OR yields its right operand when the left is falsy",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "a && b",
       "clause": "13.13.1 the value is an operand, not a boolean",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "a || b",
       "clause": "13.13.1 the value is an operand, not a boolean",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "a ? 'yes' : 'no'",
       "clause": "13.14 conditional uses ToBoolean",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "true ? a : 'other'",
       "clause": "13.14 a false consequent is still the result",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "a + ''",
       "clause": "7.1.1 ToPrimitive of an Array joins with commas",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "1 == '1'",
       "clause": "7.2.15 number vs string coerces",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "0 == false",
       "clause": "7.2.15 boolean is ToNumber'd",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "'' == 0",
       "clause": "7.2.15 empty string is ToNumber 0",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "1 != '1'",
       "clause": "7.2.15 negation of the above",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "a == null",
       "clause": "7.2.15 null and undefined equal each other",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "-7 % 3",
       "clause": "13.7 remainder truncates",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "typeof missingVariable !== 'undefined'",
       "clause": "13.5.3 typeof of an unresolvable reference is 'undefined'",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "++v",
       "clause": "13.4.4 the operand is ToNumber'd, so this is not concatenation",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "n",
       "clause": "14.7.3 while, with continue skipping one iteration",
-      "needs": "statement-structure"
+      "needs": "statement-structure",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "5 ^ 3",
       "clause": "13.12 bitwise XOR",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "-8 >> 1",
       "clause": "13.9.2 signed right shift",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "-8 >>> 28",
       "clause": "13.9.3 unsigned right shift",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "(a == 1) | (b != 2)",
       "clause": "13.12 booleans are ToInt32'd, so the result is a number",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "+'3'",
       "clause": "13.5.4 unary plus is ToNumber",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "typeof JSON.parse('{\"a\":1}')",
       "clause": "15.12.2 the result of parsing a JSON object is an object",
-      "needs": "chain-operand"
+      "needs": "chain-operand",
+      "diverges_on": ["runtime-rewriter"]
     }
   ]
 }

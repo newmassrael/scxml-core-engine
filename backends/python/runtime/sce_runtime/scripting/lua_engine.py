@@ -22,7 +22,11 @@ every backend sits on the same footing. It does not
 Those two runtime rewriters are where the ECMA-262 divergences live
 (`tests/ecmascript/lua_engine_divergences.json`,
 `tests/ecmascript/kotlin_lua_divergences.json`). The four above them have
-none, which is the whole reason this distinction is worth spelling out.
+none, which is the whole reason this distinction is worth spelling out —
+and it is why each entry in those lists names the PATH it is about
+(`diverges_on`). C++ can now be asked for build-time lowering too
+(`--script-engine lua`), so "which rewriter" stopped being the same
+question as "which backend".
 
 Generated `*_sm.py` modules call `IScriptEngine.evaluate_expression(...)`
 with **Lua text** (already transformed at codegen time). The Lua engine

@@ -838,6 +838,228 @@ left the case green. It now asks the independent question
 (`migrated_expression_sites()` must be non-empty), and *that* catches it. A
 gate whose two halves share a source is not a gate.
 
+## Landed 2026-08-29 (second round): the lane became a RATCHET
+
+The section below records the gate that first compiled and ran a lowered
+artifact. It measured; it did not ratchet, and re-reading it against the tree
+turned up three defects that a green run could not have shown. Each is written
+here with what it cost, because each is a shape this repository keeps paying
+for.
+
+### 1. The gate could not be green, and then could not be green on the other machine
+
+`scripts/gate ecma262-lowered-cpp` ended by asserting a line of ctest's own
+summary. CI failed it over a log whose summary said every test passed:
+CI's ctest prints `100% tests passed, 0 tests failed out of 2`, the gate looked
+for `100% tests passed out of 2`. Correcting the regex to CI's spelling then
+made it red on the BUILD MACHINE, whose ctest prints the form without the comma.
+Measured both ways on 2026-08-29 — the same artifact, the same verdict inside
+the suite, opposite gate verdicts on two machines.
+
+**The defect is not the regex, it is asking a tool's human-readable summary a
+machine question.** The gate now reads `ctest --output-junit` and asks the XML:
+a `testcase` named `LoweredEcma262` must exist, and no case may carry
+`failure`, `error` or `skipped`. `skipped` is in that list because it is the one
+hole ctest's exit status leaves — a skipped case keeps the status at 0 while
+asking nothing. Re-derive the predicate rather than trusting this paragraph:
+feed it a report with the case passing, with it skipped, with it absent, and
+with its fixture failed; the four verdicts are 0, 1, 1, 1.
+
+### 2. The population excluded the role that could reach zero
+
+The suite asked the 23 entries of `lua_engine_divergences.json`, because the
+fixture was expanded FROM that list. So:
+
+- The shared table's **other 75 cases were never asked through a lowered
+  artifact at all.** Build-time lowering could answer any of them wrongly with
+  nothing in the tree to say so. A path's divergences cannot be enumerated by a
+  list built from a DIFFERENT path's failures — which is what that list is.
+- **Deleting an entry deleted its own question.** A list only ratchets while
+  something keeps asking what the list no longer claims.
+
+The generator's own refusal already prescribed the repair, in the branch it
+takes when the list empties: *"Retire the gate or repoint it at the shared table
+in full."* It is repointed. The population is `ecma262_semantics.json`, all of
+it, and the divergence list is read by the HARNESS as the expectation about
+which cases lowering gets wrong. The two halves of the gate no longer share a
+source.
+
+Repointing meant expressing two cases the generator had been REFUSING, and
+neither could be waved through — a skipped case reads as a passing one:
+
+- **`o.missing`, whose ECMA-262 answer is `undefined`.** An engine's JSON
+  encoding omits such a key, so "the answer is undefined" and "this case was
+  never asked" arrived as the same absence. The fixture now writes `answers.rN`
+  as the first action of every case and parks the sentinel in the answer slot
+  BEFORE the setup, which makes four readings out of one absence: not reached /
+  refused / evaluated-to-undefined / a value. The sentinel goes down before the
+  setup rather than after it so a setup that raises lands on *refused* instead
+  of being reported as the answer `undefined`.
+- **`++v == 2`, a condition with a side effect.** The refusal probe evaluated
+  the expression once in the same state as the guards, so the guards saw a
+  datamodel the probe had already moved: probing leaves `v` at 2, the positive
+  guard makes it 3 and answers false, the negation makes it 4 and answers true —
+  the fixture would have recorded FALSE for a case whose answer is true, with
+  nothing wrong with the engine. The probe now has its own state and the case
+  re-runs its setup. That retires the refusal by construction rather than by
+  exempting the shared table's `side-effecting` group, which would have been an
+  exemption list quietly excusing the three cases that exercise evaluation
+  order.
+
+### 2b. Found by the wider population: the fixture was asking a DERIVED expression
+
+The `cond=` protocol asked the guard, its NEGATION, and an unguarded
+fallthrough, and read the fallthrough as *"neither held, which only an
+expression the engine refused can produce."* That claim is false, and widening
+the population is what surfaced it: the control came back wrong on three cases
+the list does not name — §7.1.2 ToBoolean of `0`, `''` and `NaN`, each asked as
+`cond="a"`.
+
+What actually happened is that `cond="a"` with `var a = 0` answers false
+**correctly** under the runtime rewriter, and `cond="!(a)"` answers false too,
+because the rewriter hands Lua `not a` and Lua counts `0` as true. Both guards
+false, fallthrough taken, and the harness reported an engine refusal that had
+not happened — while the probe on the same run said the expression evaluated
+fine.
+
+**The defect is asking an expression the author did not write.** `!a` is a
+divergence in its own right (§12.5.9) and the shared table already asks it as a
+case; folding it into every other condition case's protocol made ONE entry's
+divergence surface as three other entries' refusals. Had those three been
+"declared" to make the gate green, the list would have recorded a property of
+the harness as a property of the engine.
+
+The fixture now asks only the author's expression — guard, or fallthrough — and
+"could the engine evaluate this at all" is the PROBE's question, which is what
+the probe was already for. `agrees` refuses to read a condition verdict unless
+the probe says the expression evaluated, so a lowered artifact emitting
+unparseable Lua still cannot pass a case whose expected answer is false. The
+probe is shown to distinguish both outcomes on the same run before its word is
+used.
+
+⚠ This also retired `MIN_SOURCE_DIVERGENCES` — a floor ("at least 22 of the
+declared entries must still come back") with an attribution test beside it for
+the entries the floor let through. The hole was exactly the shape of the
+allowance: a case the control got wrong while naming NO entry was counted by
+neither, which is how three of them sat unremarked. The control is now an
+EQUALITY in both directions, the same ratchet the lowered side has, so the
+`runtime-rewriter` column can shrink through this lane too.
+
+### 3. The list had no reachable end state, and now it does
+
+Every entry said `needs` — a CAUSE — and nothing said WHERE it was still wrong.
+With one unmarked population, an entry could only leave the file when the
+runtime rewriter was repaired, and the plan of record is to RETIRE that rewriter
+for generated code rather than repair it. **So the count this axis exists to
+drive to zero had no path to zero at all.**
+
+Each entry now carries `diverges_on`, naming the routes into the Lua engine that
+still answer it differently, and the file declares the `paths` an entry may
+name:
+
+| path | who reaches it | whose contract |
+|---|---|---|
+| `runtime-rewriter` | the artifact hands the engine the author's ECMAScript | `ecmascript_semantics_test` (the engine, direct) and `LoweredEcma262`'s CONTROL (the same engine, reached the way a document reaches it) |
+| `build-time-lowering` | `sce-build`'s frontend emitted Lua already | `LoweredEcma262` |
+
+An entry stays while ANY path answers it differently and LEAVES when
+`diverges_on` would be empty. Both suites now filter to their own path, so
+neither reports the other's divergence as one of its own that has been repaired.
+
+**`paths` is derived, not typed.** `ecma262_scoreboard_contract` computes it
+from the same answers the code generator gives — `runtime-rewriter` while
+`default_script_engine_target()` is `EcmaScript` (the backend hands the engine
+the author's text, so a Lua engine must adapt it), and `build-time-lowering`
+once `supports_script_engine_target(Lua)` (the backend can emit a lowered
+artifact) — and holds each file's key to it. C++ gets both; Kotlin gets one, and
+the day the Kotlin templates cross the seam its list goes red asking which path
+each of its 46 entries is about, instead of keeping 46 answers that quietly
+became ambiguous.
+
+**Unclassified is RED, not a default.** All three readers refuse an entry with
+no `diverges_on` rather than assuming the runtime path. Defaulting would make
+every future entry silently exempt from the OTHER suite — the escape hatch
+defeating the gate that owns it, which is the same failure the Lua codegen
+target already refuses on (it stays shut while any site is *unadjudicated*, not
+merely while one is known-unmigrated).
+
+**The scoreboard follows the split.** `ARCHITECTURE.md`'s Lua row is the table
+minus the entries declared on `runtime-rewriter` — the route that row's consumer
+takes, since C++ codegen hands over the author's text unless the run asked for
+`--script-engine lua`. The number is unchanged today; the derivation is now the
+one the cell means.
+
+### What the ratchet is, in one sentence
+
+`LoweredEcma262` holds BOTH paths in BOTH directions — the lowered artifact for
+`build-time-lowering`, its un-lowered control for `runtime-rewriter`. A case an
+artifact gets wrong without being declared is red, **and a case declared and
+answered correctly is red**. The second direction is what lets the file shrink,
+and it is the one the gate did not have.
+
+### Measured in the turn that landed it
+
+Re-derive rather than trusting these numbers — the gate prints its own census on
+every green run, which is why `-V` is in the ctest line: a number that exists
+only in a failure message is one nobody can cite from a green build.
+
+```
+LoweredEcma262 census: population=98 lowered-wrong=0 source-wrong=23 \
+  declared-build-time-lowering=0 declared-runtime-rewriter=23
+```
+
+- the lowered artifact carries **785** `ScriptSource::lua(...)` pairs against the
+  control's **0** — the 170 the section below reports was the 23-case fixture;
+- **build-time lowering answers all 98 cases**, so `build-time-lowering` is
+  declared on none of them. That column is a real, measured zero rather than an
+  unasked one, which is exactly what the old population could not have said;
+- the control gets **23** wrong and **23** are declared on `runtime-rewriter` —
+  the equality, not a floor with an allowance under it.
+
+⚠ Both halves of that line moved during the round and neither number was
+predicted correctly. The first census read `source-wrong=25` against 23
+declared, and reading it is what found the derived-guard defect (§2b); the count
+of pairs was 842 under the three-guard protocol and is 785 without it. Both are
+reasons the gate now prints its census on a GREEN run rather than only inside a
+failure message.
+
+**Two red witnesses, both made in the same turn, each from one break.**
+
+1. **The stale marking — the direction that empties the file.** Adding
+   `"build-time-lowering"` to one entry's `diverges_on` (`!a`, §12.5.9) turns
+   **exactly one** of the six cases red,
+   `TheLoweredArtifactDivergesExactlyWhereItIsDeclaredTo`, naming the entry:
+
+   ```
+   1 case(s) are declared to diverge on `build-time-lowering` and the lowered
+   artifact answers them CORRECTLY.
+     [!a] (12.5.9 logical NOT) — answered 1 (the guard held), and the engine
+     evaluated the expression, which IS what ECMA-262 says
+   ```
+
+   and telling the reader to drop the path, and to delete the entry if
+   `diverges_on` is then empty. The other five stayed green, so the attribution
+   is the entry and not the suite.
+
+2. **The population really grew.** Breaking the frontend's `typeof` lowering
+   (`_typeof(x)` → Lua's `type(x)`, `sce-build/src/ecmascript/lua.rs:153`) turns
+   the same case red from the other side, on three entries — and the middle one
+   is the witness that matters:
+
+   ```
+   [typeof missingVariable !== 'undefined'] … [declared, but only on: runtime-rewriter]
+   [typeof a] (13.5.3 typeof of an Array is 'object') — answered "table",
+       ECMA-262 says {"string":"object"}   [not in the divergence list at all]
+   [typeof JSON.parse('{"a":1}')] …        [declared, but only on: runtime-rewriter]
+   ```
+
+   `typeof a` is a case the OLD population never asked, so the old gate could
+   not have seen this break at all. The two beside it are the per-path
+   attribution working: entries declared on the runtime path only, now failing
+   on the build-time one, and named as such rather than counted.
+   `LoweringLosesNoAnswerTheRuntimeRewriterAlreadyHad` went red on the same run,
+   which is correct — the control answers those and lowering stopped doing so.
+
 ## Landed 2026-08-29: a Lua-lowered C++ artifact is compiled and RUN
 
 `scripts/gate ecma262-lowered-cpp` (`.github/workflows/ecma262-lowered-cpp.yml`,
@@ -1038,6 +1260,18 @@ asserts that no cache entry shadows it.
   consequence of the rewriter stopping being reached, which for generated code
   means the `--script-engine lua` selection becoming the default and for the
   Interpreter means the next bullet.
+- ~~**The lane measures; it does not ratchet.**~~ **Done 2026-08-29 (second
+  round)** — each entry names the PATHS it still diverges on, both suites
+  filter to their own, and each path is held in BOTH directions, so an entry
+  leaves the file when `diverges_on` would be empty. See "the lane became a
+  RATCHET" above; the population is the shared table in full, so the count that
+  reaches zero is a measured one rather than an unasked one.
+  ⚠ Still open, and it is the same residue as the bullet below: the build-time
+  column is measured at ZERO, so the file can now only shrink through the
+  RUNTIME column — and that column closes when the rewriter stops being
+  reached, not when it is repaired. Making `--script-engine lua` the default
+  for the `lua` selection is the move that would do it, and it is a decision
+  about what a C++ consumer gets rather than a repair.
 - The C++ **Interpreter** has no build step at all, so it cannot receive
   build-time-translated text by this route. `sce-build`'s cdylib is the
   candidate answer — `Cargo.toml` records that there is no in-tree consumer of
