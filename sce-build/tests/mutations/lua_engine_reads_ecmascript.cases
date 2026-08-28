@@ -3,12 +3,19 @@
 # Run with
 # `scripts/mutate sce-build/tests/mutations/lua_engine_reads_ecmascript.cases`.
 #
-# `SCE_SCRIPT_ENGINE=lua` is a listed, validated value of a cache entry, and no
-# gate configures it. The engine it selects is Lua 5.4 with
-# `EcmaScriptToLuaTransformer` rewriting the author's ECMAScript into Lua text,
-# so `EcmaScriptSemanticsOnLuaEngine` names that engine rather than asking the
-# provider — otherwise the transformer would be compiled by every build and
-# measured by none.
+# `SCE_SCRIPT_ENGINE=lua` is a listed, validated value of a cache entry. The
+# engine it selects is Lua 5.4 with `EcmaScriptToLuaTransformer` rewriting the
+# author's ECMAScript into Lua text, so `EcmaScriptSemanticsOnLuaEngine` names
+# that engine rather than asking the provider — otherwise the transformer would
+# be compiled by every build and measured by none.
+#
+# ⚠ This header used to add "and no gate configures it". That stopped being
+# true on 2026-08-29: `scripts/gate ecma262-lowered-cpp` configures a throwaway
+# `-DSCE_SCRIPT_ENGINE=lua` tree and runs `LoweredEcma262` in it. That suite is
+# NOT reachable from this casefile — `mutation_ctest` drives `--test-dir build`,
+# the developer's quickjs tree, where `LoweredEcma262` does not exist. So the
+# gates that lane added are witnessed by hand rather than by this corpus, and
+# that is an open residue, not a claim that they are unmutated.
 #
 # Measured 2026-08-18 against the shared ECMA-262 table, that engine answered
 # 44 of 98 expressions differently from the language. Twenty-one of those were
@@ -149,7 +156,8 @@ edit("tests/ecmascript/lua_engine_divergences.json",
     {
       "source": "'abc'.charAt(1)",
       "clause": "15.5.4.4 String.prototype.charAt",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
     {
       "source": "!a",""")
@@ -160,7 +168,8 @@ edit("tests/ecmascript/lua_engine_divergences.json",
      """    {
       "source": "5 ^ 3",
       "clause": "13.12 bitwise XOR",
-      "needs": "operand-boundaries"
+      "needs": "operand-boundaries",
+      "diverges_on": ["runtime-rewriter"]
     },
 """,
      "")

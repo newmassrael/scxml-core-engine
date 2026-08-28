@@ -130,6 +130,42 @@ function(sce_add_state_machine)
         set(SCE_LANGUAGE "cpp")
     endif()
 
+    # An artifact in this tree can only run on the engine this tree compiled
+    # in, so when the caller does not name a language for the artifact to hand
+    # its engine, take the one that engine SPEAKS.
+    #
+    # `SCE_SCRIPT_ENGINE` is a cache option on the C++ runtime library and the
+    # definition it sets is PUBLIC on `sce_scripting`, so the selection is a
+    # property of the whole C++ tree — and of nothing else. That is why this is
+    # scoped to `cpp`: a Rust, Go, Python or Kotlin artifact generated here runs
+    # against whatever engine ITS host supplies, and this cache entry says
+    # nothing about that host. Deriving for them would also hand
+    # `--script-engine lua` to a backend that may refuse it
+    # (`Language::supports_script_engine_target`), turning an unrelated cache
+    # value into a build failure.
+    #
+    # `quickjs` is deliberately left UNSET rather than spelled `ecmascript`:
+    # omitting the flag is what keeps a run byte-identical to one from before
+    # the flag existed, which is the rule `sce-codegen`'s own flag follows.
+    #
+    # ⚠ This changes what a `-DSCE_SCRIPT_ENGINE=lua` tree emits, and that is
+    # the point — such a tree used to hand its Lua engine the author's
+    # ECMAScript and take the runtime rewriter's answers, which
+    # `tests/ecmascript/lua_engine_divergences.json` enumerates case by case.
+    # It does NOT by itself empty that file. Measured 2026-08-29: the two suites
+    # holding that list reach the engine by routes this default cannot touch —
+    # `ecmascript_semantics_test` calls `LuaEngine::instance()` directly and
+    # carries no generated machine at all, and `LoweredEcma262`'s control names
+    # `SCRIPT_ENGINE_LANGUAGE ecmascript` explicitly so that it stays a control.
+    # The list empties when the rewriter is RETIRED; this is the step that
+    # removes generated C++ as its consumer.
+    if(NOT SCE_SCRIPT_ENGINE_LANGUAGE AND SCE_LANGUAGE STREQUAL "cpp")
+        string(TOLOWER "${SCE_SCRIPT_ENGINE}" _SCE_TREE_ENGINE_ID)
+        if(_SCE_TREE_ENGINE_ID STREQUAL "lua")
+            set(SCE_SCRIPT_ENGINE_LANGUAGE "lua")
+        endif()
+    endif()
+
     # Set default output directory
     if(NOT SCE_OUTPUT_DIR)
         set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

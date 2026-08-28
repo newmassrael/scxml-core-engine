@@ -241,7 +241,7 @@ def emit_condition_case(n: int, case: dict, target: str, out: list[str]) -> None
     out.append("  </state>")
 
     # `probe` is read into the answer object HERE rather than in the state that
-    # wrote it. §scxml-4 stops a block at the element that raised, so a probe
+    # wrote it. §scxml-4.9 stops a block at the element that raised, so a probe
     # assignment the engine refused would take the recording line down with it
     # and the refusal would arrive as an absence indistinguishable from the
     # state never running. Read in the NEXT block, the sentinel always makes it
@@ -272,7 +272,7 @@ def emit_value_case(n: int, case: dict, target: str, out: list[str]) -> None:
 
       1. `answers.rN` absent                — the state was never entered.
       2. `answers.dN` holds the sentinel    — the setup or the expression was
-                                              refused; §scxml-4 stopped the
+                                              refused; §scxml-4.9 stopped the
                                               block, or §scxml-5.4 left the
                                               location alone.
       3. `answers.dN` absent, `rN` present  — the expression evaluated, to
