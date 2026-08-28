@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9e85e11997494073a40bf661d9f24e2bc472fad7b57e93e3c87932bf8615ff0f
+// source-hash: 321b42acfe8cb266c51aff87d805eb471548c8d5250d5f0a5214385ef864d6e9
 // template-hash: 26e5b2b0aec9ad85a8375690dfa8db213377e6dd6bcde53d334d893cb6b448b2
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: examples/ai_loop/ai_loop.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: ai_loop.scxml:127 :: _machine
+// SCE-MAP: ai_loop.scxml:155 :: _machine
 
 package com.sce.integration.ai_loop
 
@@ -1178,11 +1178,11 @@ class AiLoopStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: ai_loop.scxml:127 :: _machine
+    // SCE-MAP: ai_loop.scxml:155 :: _machine
     override fun onEntry(state: AiLoopState, pathChild: AiLoopState?) {
         when (state) {
             is AiLoopState.Abandoned -> {
-                // SCE-MAP: ai_loop.scxml:465 :: abandoned :: _state_body
+                // SCE-MAP: ai_loop.scxml:493 :: abandoned :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("abandoned")) return
 
@@ -1195,19 +1195,19 @@ class AiLoopStateMachine(
                 }
             }
             is AiLoopState.Alive -> {
-                // SCE-MAP: ai_loop.scxml:478 :: alive :: _state_body
+                // SCE-MAP: ai_loop.scxml:506 :: alive :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("alive")) return
             }
             is AiLoopState.Blocked -> {
-                // SCE-MAP: ai_loop.scxml:520 :: blocked :: _state_body
+                // SCE-MAP: ai_loop.scxml:548 :: blocked :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("blocked")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Budget -> {
-                // SCE-MAP: ai_loop.scxml:492 :: budget :: _state_body
+                // SCE-MAP: ai_loop.scxml:520 :: budget :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("budget")) return
                 if (pathChild == null) {
@@ -1216,14 +1216,14 @@ class AiLoopStateMachine(
                 }
             }
             is AiLoopState.Cancelled -> {
-                // SCE-MAP: ai_loop.scxml:519 :: cancelled :: _state_body
+                // SCE-MAP: ai_loop.scxml:547 :: cancelled :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("cancelled")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Closing -> {
-                // SCE-MAP: ai_loop.scxml:377 :: closing :: _state_body
+                // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("closing")) return
 
@@ -1270,14 +1270,14 @@ class AiLoopStateMachine(
             }
             }
             is AiLoopState.Converged -> {
-                // SCE-MAP: ai_loop.scxml:516 :: converged :: _state_body
+                // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("converged")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Drive -> {
-                // SCE-MAP: ai_loop.scxml:208 :: drive :: _state_body
+                // SCE-MAP: ai_loop.scxml:236 :: drive :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("drive")) return
                 if (pathChild == null) {
@@ -1286,21 +1286,21 @@ class AiLoopStateMachine(
                 }
             }
             is AiLoopState.Exhausted -> {
-                // SCE-MAP: ai_loop.scxml:517 :: exhausted :: _state_body
+                // SCE-MAP: ai_loop.scxml:545 :: exhausted :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("exhausted")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Failed -> {
-                // SCE-MAP: ai_loop.scxml:518 :: failed :: _state_body
+                // SCE-MAP: ai_loop.scxml:546 :: failed :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failed")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Judging -> {
-                // SCE-MAP: ai_loop.scxml:316 :: judging :: _state_body
+                // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("judging")) return
 
@@ -1347,7 +1347,7 @@ class AiLoopStateMachine(
             }
             }
             is AiLoopState.Paused -> {
-                // SCE-MAP: ai_loop.scxml:423 :: paused :: _state_body
+                // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("paused")) return
 
@@ -1380,7 +1380,7 @@ class AiLoopStateMachine(
             }
             }
             is AiLoopState.Priming -> {
-                // SCE-MAP: ai_loop.scxml:263 :: priming :: _state_body
+                // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("priming")) return
 
@@ -1427,12 +1427,12 @@ class AiLoopStateMachine(
             }
             }
             is AiLoopState.Rebuilding -> {
-                // SCE-MAP: ai_loop.scxml:481 :: rebuilding :: _state_body
+                // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("rebuilding")) return
             }
             is AiLoopState.Reflecting -> {
-                // SCE-MAP: ai_loop.scxml:346 :: reflecting :: _state_body
+                // SCE-MAP: ai_loop.scxml:374 :: reflecting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("reflecting")) return
 
@@ -1468,7 +1468,7 @@ class AiLoopStateMachine(
             }
             }
             is AiLoopState.Reported -> {
-                // SCE-MAP: ai_loop.scxml:398 :: reported :: _state_body
+                // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("reported")) return
 
@@ -1477,7 +1477,7 @@ class AiLoopStateMachine(
                 raiseInternal(AiLoopEvent.Done.State.Running, EventMetadata.platform())
             }
             is AiLoopState.Restarting -> {
-                // SCE-MAP: ai_loop.scxml:366 :: restarting :: _state_body
+                // SCE-MAP: ai_loop.scxml:394 :: restarting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("restarting")) return
 
@@ -1513,7 +1513,7 @@ class AiLoopStateMachine(
             }
             }
             is AiLoopState.Run -> {
-                // SCE-MAP: ai_loop.scxml:205 :: run :: _state_body
+                // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("run")) return
                 // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
@@ -1533,7 +1533,7 @@ class AiLoopStateMachine(
                 }
             }
             is AiLoopState.Running -> {
-                // SCE-MAP: ai_loop.scxml:246 :: running :: _state_body
+                // SCE-MAP: ai_loop.scxml:274 :: running :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("running")) return
                 if (pathChild == null) {
@@ -1542,7 +1542,7 @@ class AiLoopStateMachine(
                 }
             }
             is AiLoopState.Screening -> {
-                // SCE-MAP: ai_loop.scxml:299 :: screening :: _state_body
+                // SCE-MAP: ai_loop.scxml:327 :: screening :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("screening")) return
 
@@ -1578,14 +1578,14 @@ class AiLoopStateMachine(
             }
             }
             is AiLoopState.Spent -> {
-                // SCE-MAP: ai_loop.scxml:501 :: spent :: _state_body
+                // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("spent")) return
 
             raiseInternal(AiLoopEvent.Run.Exhausted)
             }
             is AiLoopState.Stuck -> {
-                // SCE-MAP: ai_loop.scxml:406 :: stuck :: _state_body
+                // SCE-MAP: ai_loop.scxml:434 :: stuck :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("stuck")) return
 
@@ -1594,7 +1594,7 @@ class AiLoopStateMachine(
                 raiseInternal(AiLoopEvent.Done.State.Running, EventMetadata.platform())
             }
             is AiLoopState.Watch -> {
-                // SCE-MAP: ai_loop.scxml:477 :: watch :: _state_body
+                // SCE-MAP: ai_loop.scxml:505 :: watch :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("watch")) return
                 if (pathChild == null) {
@@ -1603,12 +1603,12 @@ class AiLoopStateMachine(
                 }
             }
             is AiLoopState.Within -> {
-                // SCE-MAP: ai_loop.scxml:493 :: within :: _state_body
+                // SCE-MAP: ai_loop.scxml:521 :: within :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("within")) return
             }
             is AiLoopState.Working -> {
-                // SCE-MAP: ai_loop.scxml:282 :: working :: _state_body
+                // SCE-MAP: ai_loop.scxml:310 :: working :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("working")) return
             }
@@ -1616,79 +1616,79 @@ class AiLoopStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: ai_loop.scxml:127 :: _machine
+    // SCE-MAP: ai_loop.scxml:155 :: _machine
     override fun onExit(state: AiLoopState) {
         when (state) {
             is AiLoopState.Abandoned -> {
-                // SCE-MAP: ai_loop.scxml:465 :: abandoned :: _state_body
+                // SCE-MAP: ai_loop.scxml:493 :: abandoned :: _state_body
                 activeStateIds.remove("abandoned")
             }
             is AiLoopState.Alive -> {
-                // SCE-MAP: ai_loop.scxml:478 :: alive :: _state_body
+                // SCE-MAP: ai_loop.scxml:506 :: alive :: _state_body
                 activeStateIds.remove("alive")
             }
             is AiLoopState.Blocked -> {
-                // SCE-MAP: ai_loop.scxml:520 :: blocked :: _state_body
+                // SCE-MAP: ai_loop.scxml:548 :: blocked :: _state_body
                 activeStateIds.remove("blocked")
             }
             is AiLoopState.Budget -> {
-                // SCE-MAP: ai_loop.scxml:492 :: budget :: _state_body
+                // SCE-MAP: ai_loop.scxml:520 :: budget :: _state_body
                 activeStateIds.remove("budget")
             }
             is AiLoopState.Cancelled -> {
-                // SCE-MAP: ai_loop.scxml:519 :: cancelled :: _state_body
+                // SCE-MAP: ai_loop.scxml:547 :: cancelled :: _state_body
                 activeStateIds.remove("cancelled")
             }
             is AiLoopState.Closing -> {
-                // SCE-MAP: ai_loop.scxml:377 :: closing :: _state_body
+                // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
                 activeStateIds.remove("closing")
             }
             is AiLoopState.Converged -> {
-                // SCE-MAP: ai_loop.scxml:516 :: converged :: _state_body
+                // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
                 activeStateIds.remove("converged")
             }
             is AiLoopState.Drive -> {
-                // SCE-MAP: ai_loop.scxml:208 :: drive :: _state_body
+                // SCE-MAP: ai_loop.scxml:236 :: drive :: _state_body
                 activeStateIds.remove("drive")
             }
             is AiLoopState.Exhausted -> {
-                // SCE-MAP: ai_loop.scxml:517 :: exhausted :: _state_body
+                // SCE-MAP: ai_loop.scxml:545 :: exhausted :: _state_body
                 activeStateIds.remove("exhausted")
             }
             is AiLoopState.Failed -> {
-                // SCE-MAP: ai_loop.scxml:518 :: failed :: _state_body
+                // SCE-MAP: ai_loop.scxml:546 :: failed :: _state_body
                 activeStateIds.remove("failed")
             }
             is AiLoopState.Judging -> {
-                // SCE-MAP: ai_loop.scxml:316 :: judging :: _state_body
+                // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
                 activeStateIds.remove("judging")
             }
             is AiLoopState.Paused -> {
-                // SCE-MAP: ai_loop.scxml:423 :: paused :: _state_body
+                // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
                 activeStateIds.remove("paused")
             }
             is AiLoopState.Priming -> {
-                // SCE-MAP: ai_loop.scxml:263 :: priming :: _state_body
+                // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
                 activeStateIds.remove("priming")
             }
             is AiLoopState.Rebuilding -> {
-                // SCE-MAP: ai_loop.scxml:481 :: rebuilding :: _state_body
+                // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
                 activeStateIds.remove("rebuilding")
             }
             is AiLoopState.Reflecting -> {
-                // SCE-MAP: ai_loop.scxml:346 :: reflecting :: _state_body
+                // SCE-MAP: ai_loop.scxml:374 :: reflecting :: _state_body
                 activeStateIds.remove("reflecting")
             }
             is AiLoopState.Reported -> {
-                // SCE-MAP: ai_loop.scxml:398 :: reported :: _state_body
+                // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
                 activeStateIds.remove("reported")
             }
             is AiLoopState.Restarting -> {
-                // SCE-MAP: ai_loop.scxml:366 :: restarting :: _state_body
+                // SCE-MAP: ai_loop.scxml:394 :: restarting :: _state_body
                 activeStateIds.remove("restarting")
             }
             is AiLoopState.Run -> {
-                // SCE-MAP: ai_loop.scxml:205 :: run :: _state_body
+                // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -1759,7 +1759,7 @@ class AiLoopStateMachine(
                 activeStateIds.remove("run")
             }
             is AiLoopState.Running -> {
-                // SCE-MAP: ai_loop.scxml:246 :: running :: _state_body
+                // SCE-MAP: ai_loop.scxml:274 :: running :: _state_body
                 // W3C SCXML 3.11: Record shallow history for where
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
                 historyStore["where"] = preTransitionActiveStates.filter { stateId ->
@@ -1769,27 +1769,27 @@ class AiLoopStateMachine(
                 activeStateIds.remove("running")
             }
             is AiLoopState.Screening -> {
-                // SCE-MAP: ai_loop.scxml:299 :: screening :: _state_body
+                // SCE-MAP: ai_loop.scxml:327 :: screening :: _state_body
                 activeStateIds.remove("screening")
             }
             is AiLoopState.Spent -> {
-                // SCE-MAP: ai_loop.scxml:501 :: spent :: _state_body
+                // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
                 activeStateIds.remove("spent")
             }
             is AiLoopState.Stuck -> {
-                // SCE-MAP: ai_loop.scxml:406 :: stuck :: _state_body
+                // SCE-MAP: ai_loop.scxml:434 :: stuck :: _state_body
                 activeStateIds.remove("stuck")
             }
             is AiLoopState.Watch -> {
-                // SCE-MAP: ai_loop.scxml:477 :: watch :: _state_body
+                // SCE-MAP: ai_loop.scxml:505 :: watch :: _state_body
                 activeStateIds.remove("watch")
             }
             is AiLoopState.Within -> {
-                // SCE-MAP: ai_loop.scxml:493 :: within :: _state_body
+                // SCE-MAP: ai_loop.scxml:521 :: within :: _state_body
                 activeStateIds.remove("within")
             }
             is AiLoopState.Working -> {
-                // SCE-MAP: ai_loop.scxml:282 :: working :: _state_body
+                // SCE-MAP: ai_loop.scxml:310 :: working :: _state_body
                 activeStateIds.remove("working")
             }
         }
@@ -1797,7 +1797,7 @@ class AiLoopStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: ai_loop.scxml:127 :: _machine
+    // SCE-MAP: ai_loop.scxml:155 :: _machine
     override fun executeTransitionActions(
         source: AiLoopState,
         event: AiLoopEvent?
@@ -1805,7 +1805,7 @@ class AiLoopStateMachine(
         when (source) {
         is AiLoopState.Judging -> when {
             (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> {
-                // SCE-MAP: ai_loop.scxml:334 :: judging :: _transition_2
+                // SCE-MAP: ai_loop.scxml:362 :: judging :: _transition_2
 
 
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
@@ -1853,7 +1853,7 @@ class AiLoopStateMachine(
         }
         is AiLoopState.Paused -> when {
             event is AiLoopEvent.Turn.Done -> {
-                // SCE-MAP: ai_loop.scxml:440 :: paused :: _transition_0
+                // SCE-MAP: ai_loop.scxml:468 :: paused :: _transition_0
 
 
             executeAssign("turns_since_reflect", "turns_since_reflect + 1")
@@ -1862,7 +1862,7 @@ class AiLoopStateMachine(
         }
         is AiLoopState.Reflecting -> when {
             event is AiLoopEvent.Reflect.Applied -> {
-                // SCE-MAP: ai_loop.scxml:351 :: reflecting :: _transition_0
+                // SCE-MAP: ai_loop.scxml:379 :: reflecting :: _transition_0
 
 
             executeAssign("start_prompt", "_event.data.start_prompt")
@@ -1874,7 +1874,7 @@ class AiLoopStateMachine(
             executeAssign("milestone", "_event.data.milestone")
             }
             event is AiLoopEvent.Reflect.None -> {
-                // SCE-MAP: ai_loop.scxml:357 :: reflecting :: _transition_1
+                // SCE-MAP: ai_loop.scxml:385 :: reflecting :: _transition_1
 
 
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
@@ -1922,13 +1922,13 @@ class AiLoopStateMachine(
         }
         is AiLoopState.Within -> when {
             event is AiLoopEvent.Turn.Done && safeEvaluateGuard("turns + 1 >= max_turns") -> {
-                // SCE-MAP: ai_loop.scxml:494 :: within :: _transition_0
+                // SCE-MAP: ai_loop.scxml:522 :: within :: _transition_0
 
 
             executeAssign("turns", "turns + 1")
             }
             event is AiLoopEvent.Turn.Done -> {
-                // SCE-MAP: ai_loop.scxml:497 :: within :: _transition_1
+                // SCE-MAP: ai_loop.scxml:525 :: within :: _transition_1
 
 
             executeAssign("turns", "turns + 1")
@@ -1937,7 +1937,7 @@ class AiLoopStateMachine(
         }
         is AiLoopState.Working -> when {
             event is AiLoopEvent.Turn.Done -> {
-                // SCE-MAP: ai_loop.scxml:283 :: working :: _transition_0
+                // SCE-MAP: ai_loop.scxml:311 :: working :: _transition_0
 
 
             executeAssign("turns_since_reflect", "turns_since_reflect + 1")
