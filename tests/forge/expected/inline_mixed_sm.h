@@ -281,6 +281,13 @@ public:
         this->policy_.setBasicHttpAccessUri(::std::move(accessUri));
     }
 
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+    /// §scxml-5.3: what `rpm` is holding now — see the policy's accessor
+    /// for what `nullopt` means.
+    ::std::optional<int64_t> rpm() const {
+        return this->policy_.rpm();
+    }
+
 };
 
 // W3C SCXML: Compile-time StatePolicy interface verification
