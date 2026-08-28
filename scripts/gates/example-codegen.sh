@@ -31,11 +31,15 @@
 # machine to raise `error.execution` instead — so it is reported on every
 # run and fatal only here, where the author has no conformance excuse for
 # writing one. `sce-build/tests/cli_expression_refusal.rs` asserts the
-# same sweep from Rust, because this gate has no CI counterpart.
+# same sweep from Rust, so the refusal has a check that runs with the
+# workspace tests rather than only where this gate runs.
 #
-# No CI counterpart, which is why the registry carries an explicit local
-# trigger with the reason next to it rather than leaving the gate silently
-# always-on or silently never-on.
+# This gate is `ci_only`: the registry gives it no push-time trigger,
+# because generating from every authored document is work proportional to
+# the corpus (99s measured against a declared 4s — the widest gap in the
+# table). `example-codegen.yml` is what runs it, and it calls
+# `scripts/gate example-codegen` rather than restating these commands, so
+# the check has one spelling for both callers.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
