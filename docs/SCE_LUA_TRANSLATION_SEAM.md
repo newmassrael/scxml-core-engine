@@ -715,7 +715,54 @@ with 9 sites unadjudicated, any one of which might evaluate. The escape hatch
 would have defeated the gate that owns it. The gate case had the same bug and
 now asks the same two questions.
 
-### The 9 still to adjudicate
+### Adjudicated 2026-08-28: both lists are empty, and the target opens
+
+`--script-engine lua -l cpp` now **generates**. Measured in the turn that
+claimed it, on `examples/ai_loop/ai_loop.scxml`: manifest
+`"script_engine_language":"lua"`, and **61** `ScriptSource::lua(...)` calls in
+the artifact whose two halves are genuinely different text —
+
+```
+ScriptSource::lua("_scxml_add(restarts, 1)",        "restarts + 1")
+ScriptSource::lua("_scxml_truthy(_event.data.done)", "_event.data.done")
+ScriptSource::lua("(_scxml_add(turns, 1) >= max_turns)", "turns + 1 >= max_turns")
+```
+
+— the evaluated half lowered by the build-time frontend, the authored half the
+author's own ECMAScript, in one call, from one filter.
+
+Getting there needed the counting fixed **three more times**, each found by
+adjudicating a site rather than by reading the number:
+
+1. ⚠ **`.content` was not in the field list**, so the `<script>` BODY — the
+   most obvious hand-off in SCXML — was invisible. The scan said 0 while
+   `actions/script.jinja2` still passed a bare literal to `executeScript`.
+2. **A multi-line call keeps its callee on an earlier line.** This document
+   already records paying for that shape once ("33 rather than 38"); the scan
+   repeated it, and `executeForeachWithActions(` two lines above its
+   `{{ action.array }}` read as reaching nobody. Fixed with a 3-line window —
+   which the INERT list needed too, for `emitContentLiteral(`.
+3. ⚠⚠ **A template that spells `ScriptSource::ecmascript(...)` inline is an
+   UNMIGRATED hand-off, not a finished one.** The donedata param site did
+   exactly that: under the Lua target it would have emitted ECMAScript while
+   everything around it emitted Lua — the mixed artifact, arriving through a
+   constructor instead of a string, and reading as inert because the callee on
+   its line *was* the constructor.
+
+**Inert is adjudicated, not assumed.** `INERT_DESTINATIONS` is the mirror of
+`ENGINE_ENTRY_POINTS`: a site is inert because its DESTINATION is known not to
+evaluate — `validateForeachAttributes` (emptiness only, `ForeachValidator.h:27`),
+`emitContentLiteral` (the template's own comment: "no evaluation, no script
+engine"), `isValidLocation`, `getVariable` (a NAME lookup — the §scxml-6.2
+question this document carved out), and the host-request fields that travel out
+of the machine. Keyed on the destination rather than on a list of sites,
+because an allowlist of sites is a hole one line wide.
+
+And `Inert` is kept distinct from `Unadjudicated`. Collapsing them makes "we
+checked" indistinguishable from "we have not looked" — which is precisely how
+the `<script>` body went missing for a round.
+
+### The 9 that were adjudicated (historical)
 
 Each needs one decision: the callee evaluates (add it to `ENGINE_ENTRY_POINTS`
 and route the site through `to_script_source_*`) or it does not (say so where
@@ -798,15 +845,17 @@ gate whose two halves share a source is not a gate.
 - ~~Whether the target engine becomes a codegen argument.~~ **Decided and
   landed 2026-08-28**: `--script-engine`, defaulting to each backend's derived
   answer. See "the target engine is a codegen input" below.
-- **The 29 C++ template sites.** Every one still emits the author's ECMAScript,
-  which the implicit `ScriptSource` reading preserves exactly, and
-  `--script-engine lua` on C++ is refused until the last one moves. Route each
-  through `to_script_source_*`; `sce-codegen generate -l cpp --script-engine
-  lua` prints the remaining list.
-  ⚠ The migration's failure mode is NOT a build error: a site left behind
-  compiles and quietly keeps the old behaviour. Count progress by sites the
-  scan still names, and check each moved site for a hand-written ECMAScript
-  wrapper that should have gone through `ScriptDialect`.
+- ~~The 29 C++ template sites.~~ **Done 2026-08-28** — every engine-bound site
+  routes through `to_script_source_*`, both scan lists are empty, and
+  `--script-engine lua -l cpp` generates. See "Adjudicated 2026-08-28" below.
+  ⚠ The failure mode was never a build error: a site left behind compiles and
+  quietly keeps the old behaviour, which is why the count — not the compiler —
+  is the gate.
+- **Nothing yet RUNS a Lua-lowered C++ artifact.** It generates and the pairs
+  are right, but no gate configures `-DSCE_SCRIPT_ENGINE=lua` and compiles one,
+  so the ECMA-262 divergences this axis exists to close are not yet measured
+  through it. That is the next thing, and it is what would let
+  `lua_engine_divergences.json` start emptying.
 - The C++ **Interpreter** has no build step at all, so it cannot receive
   build-time-translated text by this route. `sce-build`'s cdylib is the
   candidate answer — `Cargo.toml` records that there is no in-tree consumer of
