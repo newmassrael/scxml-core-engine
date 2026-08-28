@@ -861,6 +861,25 @@ public:
         this->policy_.setBasicHttpAccessUri(::std::move(accessUri));
 {% endif %}
     }
+{% if model.readable_variables %}
+
+    {# §scxml-5.3: the read accessors are DEFINED on the policy, beside the
+       session handle they need, and forwarded here because `policy_` is
+       protected on StaticExecutionEngine. Without this block the accessors
+       compile into every machine and are callable by nobody — measured
+       2026-08-29, when the first host that wanted to read a <data> variable
+       back could not. An accessor no caller can reach is not a read surface;
+       it is dead code that reads as one. #}
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+    {% set CPP_READ_TYPE = {'int': 'int64_t', 'string': '::std::string', 'bool': 'bool', 'json': '::std::string'} %}
+    {% for var in model.readable_variables %}
+    /// §scxml-5.3: what `{{ var.id }}` is holding now — see the policy's accessor
+    /// for what `nullopt` means.
+    ::std::optional<{{ CPP_READ_TYPE[var.type] }}> {{ var.id }}() const {
+        return this->policy_.{{ var.id }}();
+    }
+    {% endfor %}
+{% endif %}
 
 {# ── SCE_MESH.md §14 rule 12 / §16.5 per-`<parallel>` role members ── #}
 {% set _role_stats = namespace(has_root=false, has_nonroot=false) %}
