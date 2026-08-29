@@ -27,6 +27,7 @@
 
 package com.sce.ecmascript
 
+import com.sce.runtime.ScriptSource
 import com.sce.scripting.lua.EcmaScriptToLuaTransformer
 import com.sce.scripting.lua.LuaScriptEngine
 import kotlinx.serialization.json.Json
@@ -104,7 +105,7 @@ class LoweredEcma262Test {
             }
         }
 
-        val declared = loadDeclaredKeys("unreachable")
+        val declared = loadDeclaredKeys("rewriter_mangles")
 
         // Ordered before anything else: a run where the rewriter started
         // touching a case prints it in the shape the file takes, rather than
@@ -114,11 +115,12 @@ class LoweredEcma262Test {
         assertTrue(
             undeclared.isEmpty(),
             "${undeclared.size} emitted case(s) are CHANGED by " +
-                "`EcmaScriptToLuaTransformer` without being declared unreachable in " +
-                "$LOWERED_PATH. Whatever the engine answers for them is an answer about " +
-                "the rewriter's handling of Lua text, not about the frontend's output, " +
-                "so they cannot be counted as a lowering result. These are the entries " +
-                "to add:\n" +
+                "`EcmaScriptToLuaTransformer` without being declared in " +
+                "`rewriter_mangles` of $LOWERED_PATH. That list is what says the lowered " +
+                "entry point is load-bearing rather than decorative: for these cases the " +
+                "two arms are not the same code path, and a case that quietly joined them " +
+                "would make this suite's control weaker without anything saying so. These " +
+                "are the entries to add:\n" +
                 undeclared.joinToString(",\n") {
                     "    { \"source\": ${jsonQuoted(it.source)}, " +
                         "\"clause\": ${jsonQuoted(it.clause)} }"
@@ -127,15 +129,15 @@ class LoweredEcma262Test {
                 undeclared.joinToString("\n") { "  [${it.source}] ${changed[it]}" },
         )
 
-        val nowReachable = declared.filterNot { it in changed.keys }
+        val nowUntouched = declared.filterNot { it in changed.keys }
         assertTrue(
-            nowReachable.isEmpty(),
-            "${nowReachable.size} case(s) declared unreachable in $LOWERED_PATH now pass " +
-                "through the rewriter unchanged, so this suite CAN ask them. Remove them " +
-                "from `unreachable` — a list that keeps a case it no longer describes is " +
-                "an exemption nothing can fault, and every entry it keeps is one fewer " +
-                "case this backend is measured on.\n" +
-                nowReachable.joinToString("\n") { "  ${it.source}  (${it.clause})" },
+            nowUntouched.isEmpty(),
+            "${nowUntouched.size} case(s) declared in `rewriter_mangles` of $LOWERED_PATH " +
+                "now pass through the rewriter unchanged. Remove them — a list that keeps " +
+                "a case it no longer describes cannot be trusted in the other direction " +
+                "either, and each entry it keeps overstates how much the lowered entry " +
+                "point is doing.\n" +
+                nowUntouched.joinToString("\n") { "  ${it.source}  (${it.clause})" },
         )
     }
 
@@ -157,18 +159,24 @@ class LoweredEcma262Test {
     fun theFrontendsLuaAnswersEcma262OnThisBackend() {
         val cases = loadSharedTable()
         val emitted = loadEmission(cases)
-        val unreachable = loadDeclaredKeys("unreachable")
+        val unaskable = loadDeclaredKeys("unaskable")
 
-        // The escape hatch is bounded by what it leaves behind. `unreachable`
-        // is an exemption from the measurement, so a list that grew to cover
-        // the table would leave a suite that passes by asking nothing — the
-        // same floor the shared table itself carries, applied to the cases
-        // actually put to the engine rather than to the ones on disk.
-        val asked = cases.filterNot { it.key in unreachable }
+        // The escape hatch is bounded by what it leaves behind. `unaskable` is
+        // an exemption from the measurement, so a list that grew to cover the
+        // table would leave a suite that passes by asking nothing — the same
+        // floor the shared table itself carries, applied to the cases actually
+        // put to the engine rather than to the ones on disk.
+        //
+        // It is EMPTY today, and that is the point of the lowered entry point:
+        // every case reaches the engine as the frontend wrote it, so nothing
+        // is exempt. The array stays because emptiness has to be a measured
+        // state rather than an absent one — a missing array would read as "no
+        // exemptions" for a suite that had stopped checking.
+        val asked = cases.filterNot { it.key in unaskable }
         assertTrue(
             asked.size >= SHARED_TABLE_FLOOR,
             "only ${asked.size} of ${cases.size} case(s) are still asked on the lowered " +
-                "route; ${unreachable.size} are declared unreachable in $LOWERED_PATH and " +
+                "route; ${unaskable.size} are declared unaskable in $LOWERED_PATH and " +
                 "the floor is $SHARED_TABLE_FLOOR. An exemption list this wide is not a " +
                 "measurement with a residue, it is a suite that has stopped measuring.",
         )
@@ -177,7 +185,7 @@ class LoweredEcma262Test {
         val failures = mutableMapOf<Key, String>()
 
         cases.forEachIndexed { index, case ->
-            if (case.key in unreachable) return@forEachIndexed
+            if (case.key in unaskable) return@forEachIndexed
             val emission = emitted[index]
             val sessionId = "lowered_ecma262_case_$index"
             engine.createSession(sessionId)
@@ -185,7 +193,10 @@ class LoweredEcma262Test {
                 engine.setupSystemVariables(sessionId, "lowered_ecma262")
                 if (emission.setup.isNotEmpty()) {
                     try {
-                        engine.executeScript(sessionId, emission.setup)
+                        engine.executeScript(
+                            sessionId,
+                            ScriptSource.lua(emission.setup, case.setup),
+                        )
                     } catch (failure: Exception) {
                         failures[case.key] = "setup did not run: ${failure.message}" +
                             "\n    emitted: ${emission.setup}"
@@ -194,7 +205,10 @@ class LoweredEcma262Test {
                 }
                 val answered =
                     try {
-                        engine.evaluateExpr(sessionId, emission.expression)
+                        engine.evaluateExpr(
+                            sessionId,
+                            ScriptSource.lua(emission.expression, case.source),
+                        )
                     } catch (failure: Exception) {
                         failures[case.key] = "failed to evaluate: ${failure.message}" +
                             "\n    emitted: ${emission.expression}"

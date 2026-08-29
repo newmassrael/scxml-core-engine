@@ -75,7 +75,8 @@
     "with a different repair. Merging them would give one array two meanings",
     "and no reader could tell which an entry carried."
   ],
-  "unreachable": [
+  "unaskable": [],
+  "rewriter_mangles": [
     { "source": "o.k", "clause": "13.3.2 member access on an object literal" },
     { "source": "o['a b']", "clause": "13.3.3 computed member access with a non-identifier key" },
     { "source": "o.missing", "clause": "13.3.2 a property that is not there reads as undefined" },
