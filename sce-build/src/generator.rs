@@ -375,10 +375,33 @@ impl Language {
                 self.unmigrated_expression_sites().is_empty()
                     && self.unclassified_expression_sites().is_empty()
             }
-            // Nothing walks the other way yet: a backend that lowers has no
-            // arm that emits the author's source, and inventing one would be
-            // a second emission path for the four backends already correct.
-            ScriptEngineTarget::EcmaScript => false,
+            // The other direction, DERIVED rather than refused outright.
+            //
+            // This arm was a flat `false`, on the reading that "a backend that
+            // lowers has no arm that emits the author's source". That was true
+            // while every backend had exactly one arm, and the pair filters
+            // refuted it: a backend whose guard site is
+            // `to_script_source_guard` emits `ScriptSource::ecmascript(...)`
+            // or `ScriptSource::lua(...)` according to the run's selection, so
+            // it has BOTH arms. C++ and Kotlin are that shape today, and what
+            // the flat `false` hid is that their support for this target was
+            // being answered by the `target == default` line above it — a
+            // POLICY, not a capability.
+            //
+            // The difference is not academic. `runtime-rewriter` in the
+            // divergence lists means "the artifact can hand the engine the
+            // author's ECMAScript", and reading that off the DEFAULT makes the
+            // path vanish the moment a default moves — which would strip the
+            // declared path from every entry and demand their deletion while
+            // the engine still answered them exactly as before. A count that
+            // reaches zero by moving a default is not the count this axis is
+            // driving to zero.
+            //
+            // So: a backend can emit the author's source unless its templates
+            // lower UNCONDITIONALLY, which is what the guard-filter scan
+            // already answers. Rust, Go, Python and C11 keep `false` — their
+            // guard site is `to_lua_guard` and there is no second arm to take.
+            ScriptEngineTarget::EcmaScript => !self.lowers_expressions_at_build_time(),
         }
     }
 
