@@ -20,9 +20,30 @@ on:
           - error
           - off
 
+# This lane is not superseded by the push that follows it.
+#
+# Measured 2026-08-29 over this lane's own last 25 runs: a 28.3 min median
+# success against a 18.9 min median gap between pushes to `main`, so it cannot
+# finish between two of them — and it declares no `paths:` filter, so every
+# push reaches it. 13 of those 25 runs ended `cancelled`, the worst ratio in
+# the tree. `cpp-suite.yml` recorded THIS lane's ratio in prose on the same day
+# it repaired its own and left this one alone; prose is the reason it survived
+# that day.
+#
+# `false` rather than a per-commit key, deliberately: a newly queued run still
+# cancels a PENDING one, so `false` saves the run IN FLIGHT and the LATEST
+# commit and defers the ones between. That is the right trade for a lane whose
+# answer is about a BRANCH — this one re-asks the whole conformance corpus
+# against whatever the tree now holds. `mutation-rounds.yml` keys on
+# `github.sha` because its answer is about a COMMIT: selection is by change
+# set, and nothing re-selects it.
+#
+# Held by `sce-build/tests/ci_supersession_policy.rs`, which classifies EVERY
+# workflow in this directory and reds one nobody classified; the derivation and
+# the command that re-takes the measurement live there.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ============================================================

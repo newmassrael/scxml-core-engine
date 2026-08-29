@@ -49,6 +49,17 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // gate exists for, which is exactly what a `paths:` filter written over
     // today's script list would stop it seeing.
     "build_jobs_has_one_owner",
+    // Reads every `.yml` in `.github/workflows/` and asks whether each lane's
+    // supersession setting matches its measured duration, so a workflow added
+    // anywhere changes what it reads — and an unclassified one is the case it
+    // exists for. A `paths:` filter cannot carry it for a second reason
+    // besides: a gate inherits its workflow's filter as its hook triggers, so
+    // naming `.github/workflows/**` on the lane that runs the workspace suite
+    // classified every workflow path for a `ci_only` gate the hook is never
+    // offered, taking away the full run that editing an unfiltered lane's own
+    // file is supposed to buy (`unfiltered-workflow-self` in
+    // tools/git-hooks/gate_registry.py).
+    "ci_supersession_policy",
     "cmake_option_guard_scope",
     "codegen_binary_resolution",
     "committed_sourcemap_drift",

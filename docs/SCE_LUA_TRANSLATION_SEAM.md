@@ -1184,7 +1184,7 @@ must not. Measured in the turn that landed it, on the build machine:
   (`[5 ^ 3] as 125 … says {"number":6}`, `[-8 >> 1] as 9223372036854775804 …`,
   `[a + ''] as "table: 0x…" …`).
 
-### The 23rd, and why the control is a floor rather than "all of them"
+### The 23rd, and why the control was first written as a floor
 
 `typeof missingVariable !== 'undefined'` (d14) comes out CORRECT through the
 source-passing artifact. Not because the rewriter gained it: §scxml-5.9.1 makes
@@ -1193,13 +1193,65 @@ ECMA-262 answer, so the refusal and the language coincide. Confirmed on the same
 tree — `ecmascript_semantics_test` reports it as *"failed to evaluate as a
 condition"*, not as a wrong answer.
 
-That is why `MIN_SOURCE_DIVERGENCES = 22` is a floor. The allowance is not an
-exemption, though: `EveryEntryTheSourceArtifactGetsRightIsAnEngineRefusal`
-asserts that an entry the control answers correctly must be one the engine
-REFUSED, so an entry the rewriter has actually repaired is red and the list must
-shrink. The probe that answers "refused?" is measured, and it has its own
-control on the same run (it must report both outcomes at least once, or it is
-not distinguishing anything).
+That is why the control was first written as a FLOOR — `MIN_SOURCE_DIVERGENCES
+= 22`, "at least 22 of the declared entries must still come back" — with an
+attribution test beside it for the entry the floor let through.
+
+⚠ **Both of those names are gone, and this paragraph went on citing them for a
+day.** Re-derived on 2026-08-29: `grep -rn MIN_SOURCE_DIVERGENCES` finds only
+this file and one comment recording the retirement, and
+`EveryEntryTheSourceArtifactGetsRightIsAnEngineRefusal` is not a test in the
+tree at all. What replaced them is
+`LoweredEcma262.TheSourcePassingArtifactDivergesExactlyWhereItIsDeclaredTo`, an
+EQUALITY in both directions — the same ratchet the lowered side has, and the
+reason the `runtime-rewriter` column can shrink through this lane too. A floor
+with an allowance had a hole exactly the shape of the allowance; an equality has
+nowhere to hide. The account of it is §"2b. Found by the wider population"
+above. The probe that answers "refused?" is measured, and it has its own control
+on the same run.
+
+⚠⚠ **That control used to COUNT the table, and a control whose zero is
+forbidden forbids the finish line.** Its first form swept the shared table's own
+condition cases and required at least one refusal and at least one evaluation
+among them. On 2026-08-29 the refusal count reached **zero** — not through a
+defect but through the repair this whole axis is for: `LuaEngine::loweredTextOf`
+began offering every closed expression to the frontend parser, so the engine
+stopped refusing anything in the table. The control failed, and it failed on the
+run that had made it obsolete. The population a control counts is not the thing
+the control is about: the question is whether the PROBE distinguishes, and the
+table is only where the outcomes used to come from by accident.
+
+So both outcomes are now produced on purpose, by two states the fixture opens
+with, ahead of the population and independent of it — `answers.missing.deep`,
+which raises in ECMA-262 and in Lua alike because a member OF an absent object
+cannot be read, and the literal `1`, which nothing can refuse. Both go through
+the bare-name probe, so both ask the entry point a `cond=` asks.
+
+⚠ **The readings are census fields, because an assertion that is deleted leaves
+no trace and a census field does.** `assertProbeDistinguishes` is called from
+the two ratchet tests; delete both calls and every test in the file still
+passes, over a probe nothing controls. `scripts/gate ecma262-lowered-cpp` reads
+`lowered-control-refused` / `lowered-control-evaluable` and the `source-`
+pair off the census line and fails when any is missing or reads the wrong way,
+so the control cannot leave quietly. Re-derive from a green run rather than
+from this paragraph:
+
+```sh
+scripts/gate ecma262-lowered-cpp 2>&1 | sed -n 's/.*\(LoweredEcma262 census: .*\)/\1/p'
+```
+
+⚠ **"Delete both calls" is the SHAPE of the hole, not a runnable mutation, and
+the difference cost a red witness.** `assertProbeDistinguishes` lives in this
+file's anonymous namespace and the tree builds `-Werror`, so removing its two
+callers makes it an unused function and the target does not compile — a
+mutation the compiler refuses proves nothing. The witness that does run puts
+the suite in the same state by a different route: neuter its two `EXPECT`s
+(`EXPECT_EQ(reading(CONTROL_REFUSED), reading(CONTROL_REFUSED))`) and break the
+probe in the fixture (`CONTROL_REFUSED_EXPR = "1"`). Measured 2026-08-29 on the
+build machine, that pair reports `[  PASSED  ] 7 tests` and `100% tests passed
+out of 2` while the gate exits 1 on *"the lowered artifact's refusal control
+read '1', not the unevaluated sentinel"* — the suite green and the gate red on
+one run, which is the whole claim this census field exists to make.
 
 ⚠ **The probe has to use the guard's own entry point.** Its first cut assigned
 the expression to `answers.vN` — a dotted location, which §scxml-5.4 routes
@@ -1313,6 +1365,87 @@ configured `-DSCE_SCRIPT_ENGINE=lua`. A gate cannot be shown to catch a lost
 flag while the flag cannot be lost. The keyword is now
 `SCRIPT_ENGINE_LANGUAGE` — the manifest's own field name — and the function
 asserts that no cache entry shadows it.
+
+## Landed 2026-08-29 (fourth round): the axis's judge could be cancelled, and the vendored surface had drifted
+
+Two things this axis had produced without noticing, both found in CI rather
+than in the tree.
+
+### The C surface the seam added is a vendored API, and the manifest said 283
+
+`embed/MANIFEST.json` is the API-surface record consumers vendoring `embed/`
+diff before re-syncing. The lowering seam's C entry points
+(`scripts/gate embed-vendor` names them) are public headers under
+`embed/include/scripting/`, so adding them changed that surface — and the
+manifest was not regenerated with them. `Embed Vendor Smoke` went red on
+`9192789c88` and again on `e74dc3a001`, saying `symbol_count: 283 -> 292`.
+
+Re-derived in the turn that repaid it, and this is the command rather than the
+number:
+
+```sh
+scripts/package_embed.sh            # or scripts/emit_embed_manifest.sh
+git diff --stat embed/MANIFEST.json
+```
+
+Nine symbols, no removals: `sce_lower_condition`, `sce_lower_free`,
+`sce_lower_location`, `sce_lower_script`, `sce_lower_value`,
+`sce_scope_declare`, `sce_scope_declare_chunk`, `sce_scope_free`,
+`sce_scope_new` — exactly the C-callable lowering surface §"The price of a
+C-callable lowering surface" measured. ⚠ The regeneration is only reproducible
+against the clang the manifest records: `clang_version` is a manifest field,
+and the emit script defaults to `clang++-19` for that reason.
+
+### The lane that judges this axis was cut by every push
+
+`ecma262-lowered-cpp.yml` ran `cancel-in-progress: true`, so a push arriving
+while it was working killed it. That is the right setting for a lane that
+answers in a minute and the wrong one for this one: measured 2026-08-29 it
+needs a **22.6 min median** against a **18.9 min median gap between pushes to
+`main`** (n=39 gaps), so it cannot finish between two of them. It was cancelled
+on `9192789c88` and `1a1f1169f8`, both times by a mid-session push 17 and 14
+minutes behind the run it took down.
+
+⚠ **Its cancellation RATIO hides this** — 2 of its last 11 runs, which reads
+like a short lane's rate. The narrow `paths:` filter is why: it decides which
+pushes reach the lane, not what happens to the two that do. The **duration** is
+the rule; the ratio is corroboration, and only for a lane with a wide filter.
+
+⚠⚠ **A global run window says something else again.** Read from
+`gh run list --limit 300`, every lane under twenty minutes showed ZERO
+cancellations, which made "ever cancelled" look like a clean discriminator. Per
+workflow — `gh run list --workflow=<file> --limit 25` — even a 0.4-minute lane
+has been cancelled three times. A global window is dominated by whichever lanes
+ran most recently and under-samples the rest. The per-workflow query is the one
+the table is built from.
+
+Three lanes were over the line and all three are now `cancel-in-progress: false`:
+this one, `w3c-tests.yml` (28.3 min, 13 of 25 cancelled) and
+`rust-workspace-tests.yml` (32.4 min, 11 of 25). `cpp-suite.yml` had already
+gone that way on the same day and its comment had recorded the other two
+lanes' ratios **in prose**, which is why they survived it.
+
+So the rule is a predicate now, not a paragraph:
+`sce-build/tests/ci_supersession_policy.rs` carries every workflow's measured
+median, derives the required setting from it, and reds a workflow no row
+measures — an unclassified lane is not a pass. It runs from `tree-hygiene.sh`,
+whose workflow declares no `paths:` filter and therefore starts for every
+workflow edit.
+
+⚠ It does NOT ride `rust-workspace-tests.yml`'s filter, and the attempt is
+worth recording: adding `.github/workflows/**` there made the hook's
+`unfiltered-workflow-self` case fail. A gate inherits its workflow's `paths:`
+as its hook triggers, `workspace-tests` is `ci_only`, and the hook is never
+offered a `ci_only` gate — so the glob would have classified every workflow
+path as known while selecting nothing to check it, taking away the full-run
+fail-safe that editing an unfiltered lane is supposed to buy.
+
+`false` and not a per-commit key, deliberately: a newly queued run still
+cancels a PENDING one, so `false` saves the run in flight and the latest commit
+and defers the ones between. That is correct for a lane whose answer is about a
+BRANCH — these re-ask a fixed population against whatever the tree now holds.
+`mutation-rounds.yml` keys on `github.sha` because its answer is about a
+COMMIT: selection is by change set and nothing re-selects it.
 
 ## What is not yet decided
 

@@ -58,9 +58,34 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# This lane is not superseded by the push that follows it.
+#
+# Its verdict is about the one list this axis exists to empty, and it needs
+# twenty-odd minutes to reach it. Measured 2026-08-29: a 22.6 min median
+# success against a 18.9 min median gap between pushes to `main`, so it cannot
+# finish between two of them and `cancel-in-progress: true` made it report only
+# when the person stopped pushing.
+#
+# ⚠ Its cancellation RATIO does not show this — 2 of its last 11 runs, which
+# reads like a short lane's rate. The narrow `paths:` filter above is why: it
+# narrows WHICH pushes reach this lane, and does nothing about two that do.
+# Both cancellations were exactly that, mid-session pushes 17 and 14 minutes
+# behind the run they took down (`9192789c88`, `1a1f1169f8`). The duration is
+# the rule here and the ratio is not. What holds this setting is
+# `sce-build/tests/ci_supersession_policy.rs`, which classifies EVERY workflow
+# in this directory and reds one nobody classified; the derivation, the
+# measurement and the command that re-takes it live there.
+#
+# `false` rather than a per-commit key, deliberately: a newly queued run still
+# cancels a PENDING one, so `false` saves the run IN FLIGHT and the LATEST
+# commit and defers the ones between. That is the right trade for a lane whose
+# answer is about a BRANCH — this one re-asks the whole shared table against
+# whatever the tree now holds. `mutation-rounds.yml` keys on `github.sha`
+# because its answer is about a COMMIT: selection is by change set, and nothing
+# re-selects it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ecma262-lowered-cpp:
