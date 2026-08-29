@@ -32,12 +32,26 @@
     "would be measuring the thing this route exists to remove.",
     "",
     "`divergences` — the case DOES reach the engine unchanged, and the answer",
-    "is still not what ECMA-262 says. These are the real findings, and every",
-    "one of today's is the same defect: the emitted setup assigns without `var`",
-    "(`Var1 = 1`, `total = 0`), so the session's declared-identifier guard —",
-    "which learns names from the rewriter's handling of `var` — never learns",
-    "them, and reading the variable afterwards raises a ReferenceError the",
-    "frontend's own scope analysis had already ruled out.",
+    "is still not what ECMA-262 says. These are the real findings, and the",
+    "array is EMPTY today.",
+    "",
+    "⚠ It held two, and the reason they left is worth more than the two.",
+    "This file said they were a defect of the LOWERED route — the emitted",
+    "setup assigns without `var` (`Var1 = 1`, `total = 0`), so a guard that",
+    "learns names from the rewriter's handling of `var` never learns them.",
+    "That reading was wrong about where the defect lived. The guard",
+    "(`LuaScriptEngine.isUndeclaredSimpleVariable`) asked only whether the",
+    "SESSION had declared a name, while its C++ sibling",
+    "(`SCE::isUndeclaredIdentifier`) also asks the Lua interpreter whether the",
+    "name is a live global. `executeScript` files nothing in `declaredVars` on",
+    "either route, so the same two cases were declared divergences in",
+    "`kotlin_lua_divergences.json` as well — the ROUTE was never what they had",
+    "in common. Giving the Kotlin guard the global lookup its C++ sibling",
+    "already had closed them in both files at once.",
+    "",
+    "The lesson to keep: a defect that shows up on one route is not thereby a",
+    "defect OF that route. Both lists named these two, and nothing compared",
+    "the two lists until something had to.",
     "",
     "BOTH ARRAYS EMPTY IS THE TERMINAL STATE, and there is a path to it: the",
     "lowered seam. `IScriptEngine` carries it on the C++ side already — an",
@@ -75,8 +89,5 @@
     { "source": "xs.reverse().join(',')", "clause": "15.4.4.8 Array.prototype.reverse" },
     { "source": "JSON.parse(JSON.stringify([7,8]))[1]", "clause": "15.12.2 / 15.12.3 the two are inverses over this datamodel's values" }
   ],
-  "divergences": [
-    { "source": "Var1", "clause": "13.15.2 compound assignment" },
-    { "source": "total", "clause": "14.7.4 the for statement" }
-  ]
+  "divergences": []
 }
