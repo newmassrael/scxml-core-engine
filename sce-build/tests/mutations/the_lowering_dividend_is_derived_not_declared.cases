@@ -1,0 +1,126 @@
+# Mutation cases for "how much of Kotlin's 46 the build-time seam buys back".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_lowering_dividend_is_derived_not_declared.cases`.
+#
+# `tests/ecmascript/kotlin_lua_divergences.json` lists the 46 cases this
+# backend's Lua engine answers differently from ECMA-262, all of them on one
+# path because `runtime-rewriter` is the only route the generated Kotlin has.
+# What the list could not say is what the OTHER route already answers, which is
+# the question anybody deciding whether to fund the lowered seam asks first:
+# how many of these would stop existing if translation moved to build time?
+#
+# The answer is 39 of 46, and the reason it is worth a casefile is that it is
+# the exact shape of number this repository has been wrong about four times —
+# "27 of its 58" over a table of 98, a `58/58` scoreboard, a gate's own comment
+# saying "58-case", a divergence list's prose naming an entry its array did not
+# hold. Every one of them was a count that lived somewhere nothing re-derived.
+#
+# So the verdicts are not judged here, they are DERIVED — each from
+# `kotlin_lowered_ecma262.json`, which `LoweredEcma262Test` holds against the
+# running Lua engine in both directions. These cases are the control on that
+# derivation: they model the four ways the number could go back to being typed,
+# plus the day the field should stop existing.
+#
+# ⚠ The sixth round could not buy this control: its suite is Gradle's and
+# `scripts/mutate` has no Gradle runner, so its two reds were applied and
+# reverted by hand. This lane is `cargo`, which is why the same reasoning gets
+# a durable casefile here.
+
+mutation_tests -p sce-build --test kotlin_lowering_dividend
+mutation_targets sce-build/src/generator.rs
+mutation_runtime_targets tests/ecmascript/kotlin_lua_divergences.json docs/SCE_LUA_TRANSLATION_SEAM.md
+
+# ── A verdict is talked into the exempting value ───────────────────
+#
+# `unmeasured` is the one verdict that takes an entry OUT of the measurement:
+# it says the lowered route cannot ask this case at all. So it is the value a
+# label drifts toward when somebody wants a disagreement to go away, and the
+# derivation is what makes that impossible — the case is either declared
+# `unreachable` in the lowered file, where `LoweredEcma262Test` defends it in
+# both directions against the engine, or it is not.
+
+mutation_case "a verdict is talked into the exempting value" <<'PY'
+edit("tests/ecmascript/kotlin_lua_divergences.json",
+     '{ "source": "!a", "clause": "12.5.9 logical NOT", "diverges_on": ["runtime-rewriter"], "build_time_frontend": "answers" }',
+     '{ "source": "!a", "clause": "12.5.9 logical NOT", "diverges_on": ["runtime-rewriter"], "build_time_frontend": "unmeasured" }')
+PY
+
+# ── The field becomes quietly optional ─────────────────────────────
+#
+# An entry with no verdict is not an entry with no answer: the value a missing
+# field silently means is `unmeasured`, because that is what "this lane did not
+# measure it" reads as. An escape hatch reached by OMISSION is one nobody has
+# to justify, which is the failure `diverges_on` already refuses one key above
+# this one. Unclassified is red, not a default.
+
+mutation_case "the verdict field is quietly optional" <<'PY'
+edit("tests/ecmascript/kotlin_lua_divergences.json",
+     '"clause": "12.5.9 logical NOT", "diverges_on": ["runtime-rewriter"], "build_time_frontend": "answers" }',
+     '"clause": "12.5.9 logical NOT", "diverges_on": ["runtime-rewriter"] }')
+PY
+
+# ── The tally drifts from the list it summarises ───────────────────
+#
+# The count is what a reader takes away, and it is stored beside the list
+# rather than computed by whoever reads it — which is exactly the arrangement
+# that was wrong every previous time. It survives only while something
+# re-counts the entries under it.
+
+mutation_case "the stated tally drifts from the entries under it" <<'PY'
+edit("tests/ecmascript/kotlin_lua_divergences.json",
+     '"measured": { "answers": 39, "diverges": 2, "unmeasured": 5 }',
+     '"measured": { "answers": 38, "diverges": 2, "unmeasured": 5 }')
+PY
+
+# ── The document keeps a number the tree has moved past ────────────
+#
+# The lists are read by suites; the seam document is read by whoever is
+# deciding what to build next, so it is the copy most worth holding to the tree
+# and the least likely to be re-derived by hand. This is the failure that
+# actually happened to the sentence this table replaces — "the frontend answers
+# all 98 cases" outlived the measurement it was made from.
+
+mutation_case "the seam document keeps a number the list has moved past" <<'PY'
+edit("docs/SCE_LUA_TRANSLATION_SEAM.md",
+     "| `answers` | 39 |",
+     "| `answers` | 38 |")
+PY
+
+# ── A verdict this lane derives is not a spelling the file admits ──
+#
+# The vocabulary is declared in the file rather than only in the lane, the same
+# way `paths` is, so that neither side can hold a value the other cannot. A
+# renamed key leaves the lane deriving `unmeasured` for five entries the file
+# would then reject as misspellings — and, worse in the other direction, leaves
+# a declared value nothing can ever assign.
+
+mutation_case "the declared vocabulary drops a value the lane derives" <<'PY'
+edit("tests/ecmascript/kotlin_lua_divergences.json",
+     '"unmeasured": "The case cannot be put',
+     '"unmeasurable": "The case cannot be put')
+PY
+
+# ── The seam opens and the field survives it ───────────────────────
+#
+# This is the case for the assertion that has nothing to measure today, and it
+# is the one that keeps `build_time_frontend` from becoming permanent. The
+# field exists ONLY because `build-time-lowering` is not yet a path this
+# backend has, so the answer cannot be written where it belongs — in
+# `diverges_on`, beside the path it is about. Opening the Lua target makes the
+# field a second vocabulary for a fact `diverges_on` can now carry, and two
+# spellings of one fact drift.
+#
+# Mutating the generator rather than the lane's own helper on purpose: the
+# condition being modelled is the real one, and `mutation_tests` names this
+# binary alone, so the red that comes back is this gate's and not another
+# suite's opinion about the same edit.
+
+mutation_case "the seam opens and the field survives as a second vocabulary" <<'PY'
+edit("sce-build/src/generator.rs",
+     """            ScriptEngineTarget::Lua => {
+                self.unmigrated_expression_sites().is_empty()
+                    && self.unclassified_expression_sites().is_empty()
+            }""",
+     """            ScriptEngineTarget::Lua => true,""")
+PY
