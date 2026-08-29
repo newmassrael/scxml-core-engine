@@ -2419,10 +2419,12 @@ so the engine cannot tell which column it was handed and the run would pass
 with the seam absent.
 
 The corpus that WOULD answer it is the third row: the 98 lowered expressions,
-89 of which differ. It has three readers —
+89 of which differ. On the day this was measured it had three readers —
 `backends/go/lua/ecma262_semantics_test.go`,
 `backends/python/tests/ecmascript/test_ecma262_semantics.py` and
-`sce-build/tests/ecmascript_semantics.rs` — and **none on Kotlin**.
+`sce-build/tests/ecmascript_semantics.rs` — and **none on Kotlin**. The round
+below added the fourth; the `grep` in the fence is what answers how many there
+are today, and this sentence is dated rather than current on purpose.
 
 ```sh
 python3 - <<'PY'
@@ -2521,11 +2523,13 @@ ls sce-build/tests/mutations/*.cases
 
 ### What this measurement leaves open
 
-- **Nothing asks whether Kotlin's Lua answers the lowered 98.** 89 of those
-  expressions differ from their source, three backends read them, and this one
-  does not. Until it does, "the frontend already answers all 98" is a statement
-  about `sce-build` plus somebody else's Lua, not about this engine's. This is
-  the step the C++ side took first, and it needs no template to move.
+- ~~**Nothing asks whether Kotlin's Lua answers the lowered 98.**~~ CLOSED by
+  the round below. 89 of those expressions differ from their source, three
+  backends read them, and this one did not; until it did, "the frontend
+  already answers all 98" was a statement about `sce-build` plus somebody
+  else's Lua, not about this engine's. `LoweredEcma262Test` now asks it, and
+  the answer was not the one this bullet assumed — the question splits in two,
+  because most of the emission reaches the engine and some of it cannot.
 - **The 35 sites have no ratchet.** `supports_script_engine_target` derives a
   BOOLEAN, and the two lists behind it are only consulted to compute it, so a
   Kotlin template that gains a 36th site changes nothing anybody reads. The C++
@@ -2539,3 +2543,101 @@ ls sce-build/tests/mutations/*.cases
   40 cases short, and one more count in prose about THIS table found stale.
   Repaired the way the engine's own KDoc was: by naming the file instead of
   restating its size.
+
+## Landed 2026-08-29 (sixth round): Kotlin reads the emission, and the answer splits in two
+
+`backends/kotlin/tests/src/test/kotlin/com/sce/ecmascript/LoweredEcma262Test.kt`
+is the fourth reader of `tests/ecmascript/ecma262_emitted_lua.json` and the
+first on this backend. The question the section above left open — does THIS
+engine's Lua answer the table when it is handed what the frontend emitted —
+now has an answer, and it is not a single number, because the question turned
+out to contain a precondition nobody had asserted.
+
+| | count |
+|---|---:|
+| shared table | 98 |
+| emitted expressions that differ from their source | 89 |
+| declared `unreachable`: the emission cannot reach the engine intact | 12 |
+| **asked** on the lowered route | **86** |
+| **answered as ECMA-262 says** | **84** |
+| declared `divergences`: reached the engine, still wrong | 2 |
+
+```sh
+python3 - <<'PY'
+import json
+d = json.load(open('tests/ecmascript/kotlin_lowered_ecma262.json'))
+s = json.load(open('tests/ecmascript/ecma262_semantics.json'))['cases']
+u, v = len(d['unreachable']), len(d['divergences'])
+print('table', len(s), 'unreachable', u, 'divergences', v,
+      'asked', len(s) - u, 'answered', len(s) - u - v)
+PY
+grep -rl ecma262_emitted_lua --include='*.kt' --include='*.go' \
+    --include='*.py' --include='*.rs' .
+```
+
+### The precondition, which is why the answer is two numbers and not one
+
+This backend has NO lowered entry point. Every method on `LuaScriptEngine` —
+`evaluateExpr`, `evaluateCondition`, `executeScript`, `executeForeach` — runs
+`EcmaScriptToLuaTransformer` over its argument first, because the generated
+Kotlin hands it the author's ECMAScript at every site. So a suite that feeds
+the emission to `evaluateExpr` is running `rewriter(lowered)`, and wherever
+the rewriter changes anything it reports ITS answer while claiming to measure
+the frontend's.
+
+That is not a hypothetical. `DomReadSurfaceTest` and `EventDataReadingsTest`
+both say in their own comments that the Lua engine "is handed what the
+frontend lowered", and neither can be: both go through the same rewriting
+entry point. What makes their result mean anything is exactly this property,
+and nothing was asserting it. `LoweredEcma262Test` asserts it first, before it
+measures anything — the set of cases the rewriter CHANGES is enumerated, not
+counted, and held in BOTH directions.
+
+The 12 are destructive rather than cosmetic: a Lua table key `{["k"] = 1}`
+comes out `{{"k"} = 1}`, a one-based `a[1]` is shifted again to `a[2]`, and
+`table.concat(xs, ",")` becomes `_concat(table, xs, ",")`.
+
+### The 2 divergences are one defect
+
+Both reached the engine unchanged and both raise `ReferenceError`. The emitted
+setup assigns without `var` — `Var1 = 1`, `total = 0` — so the session's
+declared-identifier guard, which learns names from the rewriter's handling of
+`var`, never learns them, and reading the variable afterwards raises an error
+the frontend's own scope analysis had already ruled out. A lowered entry point
+closes this by construction: it would trust the frontend's scope analysis
+instead of re-deriving it from `var`.
+
+Both arrays empty is the terminal state and there is a path to it — the same
+seam `IScriptEngine` already carries on the C++ side. Neither array can be
+emptied by editing the file: each is held in both directions, so an entry that
+stops describing the backend fails as loudly as one that starts.
+
+### The suite was shown red before it was believed
+
+| mutation | what it models | verdict |
+|---|---|---|
+| `expression` → `source` in `loadEmission` | the suite quietly stops reading the emission and measures the author's ECMAScript instead | RED — 34 undeclared changes, 42 undeclared divergences |
+| one more entry in `unreachable` | the exemption list is widened to make a failure go away | RED — 1 case "now pass(es) through the rewriter unchanged" |
+
+The second is the one that matters for an escape hatch: the list cannot be
+grown past what it describes, and the count of cases still ASKED carries the
+same floor the shared table does, so an exemption list that swallowed the
+corpus would leave a suite that passes by asking nothing.
+
+### What this leaves open
+
+- **The declarations were wrong when they were written from reasoning.** The
+  first run of this suite refuted its own declaration file in three places —
+  a case the rewriter destroys that was not listed, a divergence the file's
+  prose NAMED (`total`) and its array did not hold, and a prose count of
+  "today's two" over an array of one. Re-derived and repaired in the same
+  turn; recorded here because the prose named the missing entry and nothing
+  compared the two halves of the same file.
+- **The mutation harness has no Gradle runner**, so this suite cannot carry a
+  durable casefile the way a `cargo` or `ctest` suite can. The two reds above
+  were applied and reverted by hand. `scripts/mutate` grows a third runner or
+  this backend keeps buying its control one round at a time.
+- **No gate holds "every backend that runs Lua answers the lowered route".**
+  Four readers of the emission plus one artifact route (`ecma262-lowered-cpp`)
+  is a population five wide, derived from nobody. That gate is what would have
+  found this gap in the first place, and it is the next thing to build.
