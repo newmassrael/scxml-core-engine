@@ -151,6 +151,15 @@ constexpr int64_t COND_NOT_HELD = 2;
 /// Must match `PROBE_UNEVALUATED` in tools/generate_lowered_ecma262_fixture.py.
 constexpr const char *UNEVALUATED = "<unevaluated>";
 
+/// The two slots the fixture's probe controls record into.
+///
+/// Must match `CONTROL_REFUSED_VAR` / `CONTROL_EVALUABLE_VAR` there. They carry
+/// the probe's discriminating power as DECLARED effects: one expression that
+/// cannot be evaluated (a member of an absent object) and one that cannot be
+/// refused (a literal).
+constexpr const char *CONTROL_REFUSED = "ctlRefused";
+constexpr const char *CONTROL_EVALUABLE = "ctlEvaluable";
+
 /// The two paths from `datamodel="ecmascript"` into a Lua engine. This is the
 /// `diverges_on` vocabulary, spelled here because this suite IS the second
 /// path's contract; `ecma262_scoreboard_contract.rs` holds the same two names
@@ -488,6 +497,78 @@ bool agrees(const Answer &answer, const Case &c) {
     return false;
 }
 
+/// What one probe control recorded, spelled the one way the census prints it
+/// and the assertions below read it.
+///
+/// A slot the run never wrote reads as `<absent>` rather than as an absence:
+/// both assertions below are about a VALUE, and a missing field that quietly
+/// satisfied either of them would be the hole they exist to close.
+std::string controlReading(const json &answers, const char *slot) {
+    if (!answers.is_object() || !answers.contains(slot)) {
+        return "<absent>";
+    }
+    const json &value = answers.at(slot);
+    return value.is_string() ? value.get<std::string>() : value.dump();
+}
+
+/// The refusal probe, shown to report BOTH outcomes on this artifact's run.
+///
+/// `agrees` refuses to read a condition verdict whose probe says the engine
+/// could not evaluate the expression, so a probe stuck on one answer decides a
+/// whole test by itself: stuck on "refused" makes every condition case a
+/// divergence, stuck on "evaluated" makes a genuine refusal read as the answer
+/// `false`.
+///
+/// ⚠ This used to be a COUNT over the shared table — at least one refusal and
+/// at least one evaluation among the table's own condition cases. On
+/// 2026-08-29 the refusal count reached ZERO, because the engine's lowering
+/// seam had grown to answer every guard in the table, and the control failed
+/// on a repair. A control whose zero is forbidden forbids the finish line, and
+/// the population it was counting is not the thing it is about. The fixture
+/// now opens with two states that produce the outcomes on PURPOSE — a member
+/// of an absent object, which raises in ECMA-262 and in Lua alike, and a
+/// literal, which nothing can refuse — so what is asked here is a declared
+/// effect rather than an accident of the corpus.
+void assertProbeDistinguishes(const json &answers, const std::string &label) {
+    ASSERT_TRUE(answers.is_object()) << label << ": the run recorded no answer object at all";
+
+    const auto reading = [&answers](const char *slot) { return controlReading(answers, slot); };
+
+    EXPECT_EQ(reading(CONTROL_REFUSED), std::string(UNEVALUATED))
+        << label
+        << ": the fixture probes `answers.missing.deep`, which cannot be evaluated — reading a "
+           "member of an absent object raises in ECMA-262 and in Lua alike — and the probe "
+           "reported `"
+        << reading(CONTROL_REFUSED)
+        << "`. The probe is therefore not reporting §scxml-5.9.1 refusals at all, and every guard the "
+           "engine would not parse reads below as the answer `false`.";
+
+    EXPECT_NE(reading(CONTROL_EVALUABLE), std::string(UNEVALUATED))
+        << label
+        << ": the fixture probes the literal `1`, which nothing can refuse, and the probe reported it "
+           "as unevaluated. The probe is therefore stuck on refusal, and every condition case below is "
+           "a divergence by construction.";
+}
+
+/// The condition verdicts are a population, and an empty one measures nothing.
+///
+/// Separate from [`assertProbeDistinguishes`] because it is a different
+/// question: that one asks whether the probe can tell the two apart, this one
+/// asks whether any condition case survived it to be judged. Its zero is
+/// reachable only by the engine refusing every guard in the table, which is a
+/// finding rather than a finish line.
+void assertConditionVerdictsExist(const json &answers, const std::vector<Case> &cases, const std::string &label) {
+    size_t evaluable = 0;
+    for (const auto &c : cases) {
+        if (c.asCondition && probeSaysEvaluable(answers, c)) {
+            ++evaluable;
+        }
+    }
+    EXPECT_GT(evaluable, 0u) << label
+                             << ": the engine refused every condition case in the shared table, so no "
+                                "condition verdict below was read and that half of this test measured nothing";
+}
+
 std::string describe(const Answer &answer, const Case &c) {
     switch (answer.reading) {
     case Reading::NotReached:
@@ -593,9 +674,20 @@ TEST(LoweredEcma262, EveryCaseWasActuallyAsked) {
         declaredLowering += c.divergesOnLowering() ? 1 : 0;
         declaredRewriter += c.divergesOnRewriter() ? 1 : 0;
     }
+    // The probe controls are printed here for the same reason the counts are,
+    // and for one more. `assertProbeDistinguishes` reads them in the two tests
+    // below, where a green run says nothing about them at all — so deleting
+    // that call would leave every condition verdict resting on a probe nobody
+    // asks about, and every suite in this file would still pass. Printed here
+    // they are a claim the GATE can hold: the census must carry both readings,
+    // for both artifacts, with the refusal side still refusing.
     std::cout << "LoweredEcma262 census: population=" << cases.size() << " lowered-wrong=" << loweredWrong
               << " source-wrong=" << sourceWrong << " declared-" << PATH_BUILD_TIME_LOWERING << "=" << declaredLowering
-              << " declared-" << PATH_RUNTIME_REWRITER << "=" << declaredRewriter << std::endl;
+              << " declared-" << PATH_RUNTIME_REWRITER << "=" << declaredRewriter
+              << " lowered-control-refused=" << controlReading(lowered, CONTROL_REFUSED)
+              << " lowered-control-evaluable=" << controlReading(lowered, CONTROL_EVALUABLE)
+              << " source-control-refused=" << controlReading(source, CONTROL_REFUSED)
+              << " source-control-evaluable=" << controlReading(source, CONTROL_EVALUABLE) << std::endl;
 }
 
 /**
@@ -626,6 +718,13 @@ TEST(LoweredEcma262, TheLoweredArtifactDivergesExactlyWhereItIsDeclaredTo) {
     ASSERT_FALSE(cases.empty());
 
     const json answers = runMachine<::SCE::Generated::ecma262_lowered::ecma262_lowered>("the lowered artifact");
+
+    // The probe decides which condition verdicts are read here too, and it is a
+    // DIFFERENT run of it: this artifact was lowered at build time, so a probe
+    // that stopped distinguishing on this side would be invisible to the
+    // control on the source-passing side.
+    assertProbeDistinguishes(answers, "the lowered artifact");
+    assertConditionVerdictsExist(answers, cases, "the lowered artifact");
 
     std::vector<std::string> undeclared;
     std::vector<std::string> repaired;
@@ -797,30 +896,12 @@ TEST(LoweredEcma262, TheSourcePassingArtifactDivergesExactlyWhereItIsDeclaredTo)
 
     const json answers = runMachine<::SCE::Generated::ecma262_source::ecma262_source>("the source-passing artifact");
 
-    // The probe's own control, and it has to run BEFORE any verdict below is
+    // The probe's own control, and it has to hold BEFORE any verdict below is
     // used: `agrees` refuses a condition case whose probe says the engine could
     // not evaluate it, so a probe stuck on one answer would decide this whole
-    // test by itself. "Everything was refused" would make every condition case
-    // a divergence; "nothing was refused" would make a genuine refusal read as
-    // an answer. It must be shown to DISTINGUISH, on this same run.
-    size_t evaluable = 0;
-    size_t refused = 0;
-    for (const auto &c : cases) {
-        if (!c.asCondition) {
-            continue;
-        }
-        if (probeSaysEvaluable(answers, c)) {
-            ++evaluable;
-        } else {
-            ++refused;
-        }
-    }
-    EXPECT_GT(evaluable, 0u) << "the refusal probe reported every condition case as refused, so it is not "
-                                "distinguishing anything and every condition case below is a divergence by "
-                                "construction";
-    EXPECT_GT(refused, 0u) << "the refusal probe reported every condition case as evaluable, so it cannot be "
-                              "reporting §scxml-5.9.1 refusals at all, and a guard the engine would not parse "
-                              "reads here as the answer `false`";
+    // test by itself.
+    assertProbeDistinguishes(answers, "the source-passing artifact");
+    assertConditionVerdictsExist(answers, cases, "the source-passing artifact");
 
     std::vector<std::string> undeclared;
     std::vector<std::string> repaired;
