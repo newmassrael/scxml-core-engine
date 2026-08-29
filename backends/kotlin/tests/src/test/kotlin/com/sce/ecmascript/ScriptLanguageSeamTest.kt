@@ -397,12 +397,7 @@ class ScriptLanguageSeamTest {
      */
     @Test
     fun theLanguageContractIsNotAnEngineDetail() {
-        val engines = File("backends/kotlin").walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
-            .filterNot { "/build/" in it.path }
-            .map { it to it.readText() }
-            .filter { (_, body) -> IMPLEMENTS_ENGINE.containsMatchIn(body) }
-            .toList()
+        val engines = engineSources()
 
         assertTrue(
             engines.size >= ENGINE_FLOOR,
@@ -443,9 +438,22 @@ class ScriptLanguageSeamTest {
      * adds to the list — so what is asserted is a property every member must
      * have, and an unclassified member is red rather than exempt.
      *
-     * The population is the file's own members, split at the class-level `fun`
-     * declarations, and the sweep carries a floor: a walk that stopped finding
-     * rewrites would pass this test by examining nothing.
+     * **The population is ENGINES, derived the same way
+     * [theLanguageContractIsNotAnEngineDetail] derives its own** — every Kotlin
+     * source under `backends/kotlin` declaring a [ScxmlScriptEngine]
+     * implementation — and then the members of each. It named one file by path
+     * until 2026-08-30, which would have missed a second engine that adopted
+     * the rewriter. ⚠ The obvious widening, "every file that calls the
+     * rewriter", is wrong and was measured to be: `LoweredEcma262Test` calls it
+     * on purpose, because comparing the rewritten arm against the lowered one
+     * IS its measurement. Deriving the population as *engines* keeps that file
+     * out by what it is, rather than by an exemption entry — which is the
+     * escape hatch this gate exists to refuse.
+     *
+     * Within each engine the split is at the class-level `fun` declarations,
+     * and the sweep carries two floors: the engine count, and the rewriter
+     * calls the seam branch itself holds. A walk that stopped finding either
+     * would pass this test by examining nothing.
      *
      * ⚠ What it deliberately does NOT catch, measured 2026-08-30: a branch that
      * is still written and no longer decides anything. Turning the condition
@@ -458,40 +466,41 @@ class ScriptLanguageSeamTest {
      */
     @Test
     fun everyRewriteIsReachedThroughTheSeamBranch() {
-        val engine =
-            File("backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt")
+        val engines = engineSources()
         assertTrue(
-            engine.isFile,
-            "LuaScriptEngine.kt was not found from ${File(".").absolutePath} — this test " +
-                "measures that file, and a path that stopped resolving would pass by " +
-                "examining nothing",
+            engines.size >= ENGINE_FLOOR,
+            "found ${engines.size} implementation(s) of ScxmlScriptEngine under " +
+                "backends/kotlin (from ${File(".").absolutePath}) and this backend ships " +
+                "at least $ENGINE_FLOOR. A sweep that stopped finding the tree would pass " +
+                "this test by examining nothing.",
         )
 
-        val body = engine.readText()
+        val rewrites = engines.sumOf { (_, body) -> REWRITE_CALL.findAll(body).count() }
         assertTrue(
-            REWRITE_CALL.findAll(body).count() >= REWRITE_FLOOR,
-            "found ${REWRITE_CALL.findAll(body).count()} rewriter call(s) in " +
-                "${engine.path} and the seam branch alone holds $REWRITE_FLOOR " +
-                "(`loweredTextOf`, `loweredScriptOf`). Fewer means the rewriter moved and " +
+            rewrites >= REWRITE_FLOOR,
+            "found $rewrites rewriter call(s) across ${engines.size} engine(s) and the " +
+                "seam branch alone holds $REWRITE_FLOOR (`loweredTextOf`, " +
+                "`loweredScriptOf`). Fewer means the rewriter moved out of the engines and " +
                 "this sweep is no longer looking at it.",
         )
 
-        val members = mutableListOf<Pair<String, StringBuilder>>()
-        for (line in body.lineSequence()) {
-            val declaration = MEMBER_DECLARATION.find(line)
-            if (declaration != null) members.add(declaration.groupValues[1] to StringBuilder())
-            members.lastOrNull()?.second?.append(line)?.append('\n')
+        val unguarded = engines.flatMap { (file, body) ->
+            val members = mutableListOf<Pair<String, StringBuilder>>()
+            for (line in body.lineSequence()) {
+                val declaration = MEMBER_DECLARATION.find(line)
+                if (declaration != null) members.add(declaration.groupValues[1] to StringBuilder())
+                members.lastOrNull()?.second?.append(line)?.append('\n')
+            }
+            members
+                .filter { (_, text) -> REWRITE_CALL.containsMatchIn(text) }
+                .filterNot { (_, text) -> LANGUAGE_BRANCH.containsMatchIn(text) }
+                .map { (name, _) -> "${file.path}: $name" }
         }
-
-        val unguarded = members
-            .filter { (_, text) -> REWRITE_CALL.containsMatchIn(text) }
-            .filterNot { (_, text) -> LANGUAGE_BRANCH.containsMatchIn(text) }
-            .map { (name, _) -> name }
 
         assertTrue(
             unguarded.isEmpty(),
-            "${unguarded.size} member(s) of ${engine.path} call the ECMAScript-to-Lua " +
-                "rewriter without asking what language the text is in: " +
+            "${unguarded.size} engine member(s) call the ECMAScript-to-Lua rewriter " +
+                "without asking what language the text is in: " +
                 "${unguarded.joinToString(", ")}. An entry point that rewrites " +
                 "unconditionally cannot be handed Lua the build-time frontend already " +
                 "produced — it rewrites it a second time, which shifts a correct index off " +
@@ -499,6 +508,22 @@ class ScriptLanguageSeamTest {
                 "`loweredTextOf` / `loweredScriptOf`.",
         )
     }
+
+    /**
+     * Every Kotlin source under `backends/kotlin` that declares itself a
+     * [ScxmlScriptEngine], with its text.
+     *
+     * Shared by the two source-reading cases so the population they judge
+     * cannot become two different answers to "which engines does this backend
+     * ship" — the same reason the seam has one branch and not two.
+     */
+    private fun engineSources(): List<Pair<File, String>> =
+        File("backends/kotlin").walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .filterNot { "/build/" in it.path }
+            .map { it to it.readText() }
+            .filter { (_, body) -> IMPLEMENTS_ENGINE.containsMatchIn(body) }
+            .toList()
 
     private companion object {
         /** A class that declares itself an engine, however it spells the supertype list. */
