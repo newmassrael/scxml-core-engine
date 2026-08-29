@@ -239,6 +239,52 @@ TEST(ScriptLanguageSeam, ALoweringCachedAgainstAnOlderScopeIsNotReused) {
 }
 
 /**
+ * @brief The same, one grammar up: a `<script>` chunk follows the scope too.
+ *
+ * `loweredScriptOf` asks `sce_lower_script` before the rewriter, so a chunk's
+ * lowering depends on the scope exactly as an expression's does — and
+ * `scriptExecCache` is keyed on the author's text, so a hit on a chunk lowered
+ * against an older scope would serve the rewriter's answer forever.
+ *
+ * A chunk hoists its own `var` bindings, which is why the discriminator has to
+ * be a name the chunk only READS: `b` is what the scope decides, and `r` is
+ * the chunk's own. The first execution is the control as well as the setup —
+ * if it already answered 0, no re-lowering had to happen for the assertion
+ * below to pass.
+ */
+TEST(ScriptLanguageSeam, AScriptLoweringCachedAgainstAnOlderScopeIsNotReused) {
+    auto &engine = SCE::LuaEngine::instance();
+    const std::string sessionId = "seam_script_cache_follows_the_scope";
+    ASSERT_TRUE(engine.createSession(sessionId, ""));
+
+    ASSERT_TRUE(engine.setVariable(sessionId, "a", ScriptValue{static_cast<int64_t>(0)}).get().isSuccess());
+
+    // `b` is undeclared, so the frontend refuses the whole chunk and the
+    // rewriter answers it: Lua's `a and b` counts 0 as truthy and yields `b`,
+    // which is nil.
+    const SCE::ScriptSource chunk = SCE::ScriptSource::ecmascript("var r = a && b;");
+    ASSERT_TRUE(engine.executeScript(sessionId, chunk).get().isSuccess());
+
+    auto before = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("r")).get();
+    const bool alreadyRight = before.isSuccess() && std::holds_alternative<int64_t>(before.getInternalValue()) &&
+                              std::get<int64_t>(before.getInternalValue()) == 0;
+    ASSERT_FALSE(alreadyRight) << "the chunk was already answered correctly with `b` undeclared, so this test "
+                                  "cannot tell a re-lowering from a cache hit";
+
+    ASSERT_TRUE(engine.setVariable(sessionId, "b", ScriptValue{static_cast<int64_t>(2)}).get().isSuccess());
+
+    ASSERT_TRUE(engine.executeScript(sessionId, chunk).get().isSuccess());
+    auto after = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("r")).get();
+    ASSERT_TRUE(after.isSuccess()) << after.getErrorMessage();
+    EXPECT_EQ(asWholeNumber(after.getInternalValue()), 0)
+        << "ECMA-262 13.13.1 yields the LEFT operand when it is falsy, so `r` is 0. The same chunk "
+           "text answered differently before `b` was declared, so answering it the same way twice "
+           "means the chunk compiled against the older scope was reused.";
+
+    engine.destroySession(sessionId);
+}
+
+/**
  * @brief §scxml-5.9's ReferenceError names what the author wrote.
  *
  * The check runs on the lowered text — that is the only text an engine can

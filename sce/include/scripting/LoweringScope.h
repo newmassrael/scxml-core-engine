@@ -87,6 +87,15 @@ public:
     /// The frontend's Lua for a value expression, or nothing if it refuses.
     std::optional<std::string> lowerValue(const std::string &source) const;
 
+    /// The frontend's Lua for a statement sequence, or nothing if it refuses.
+    ///
+    /// A chunk brings its own names with it — `var` bindings are hoisted into
+    /// the chunk's frame before anything resolves — so this asks LESS of the
+    /// scope than [`lowerValue`] does. What it still asks the scope for is the
+    /// names the chunk only READS: a `<data id>` the document declared, or a
+    /// variable an earlier `<script>` introduced.
+    std::optional<std::string> lowerScript(const std::string &source) const;
+
     /// How many times a name has been offered to this scope.
     ///
     /// A counter rather than a set comparison, and it counts OFFERS rather

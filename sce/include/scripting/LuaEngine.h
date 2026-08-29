@@ -162,8 +162,8 @@ private:
             // by the frontend once a `<script>` has declared it. Without this,
             // whichever evaluation came first would pin its answer for the
             // life of the session and the later declaration could never reach
-            // it. Only the expression cache carries it — `scriptExecCache`
-            // holds text `loweredScriptOf` lowers without consulting a scope.
+            // it. `ScriptExecInfo` carries the same field for the same
+            // reason — both lowerings now ask the scope.
             uint64_t scopeGeneration = 0;
         };
 
@@ -175,6 +175,13 @@ private:
         struct ScriptExecInfo {
             int chunkRef;
             ScriptLanguage language = ScriptLanguage::ECMAScript;
+
+            // As `ExprExecInfo::scopeGeneration`. A chunk hoists its own `var`
+            // bindings, so its lowering asks the scope only about the names it
+            // READS — but that is enough to change: `x = a + 1;` is refused
+            // and rewritten while `a` is unknown, and parsed once a `<data
+            // id>` has declared it.
+            uint64_t scopeGeneration = 0;
         };
 
         std::unordered_map<std::string, ScriptExecInfo> scriptExecCache;
@@ -200,7 +207,7 @@ private:
     // holding the wrong session's would lower an expression this one cannot
     // evaluate.
     std::string loweredTextOf(const ScriptSource &expression, const LoweringScope &scope);
-    std::string loweredScriptOf(const ScriptSource &script);
+    std::string loweredScriptOf(const ScriptSource &script, const LoweringScope &scope);
 
     // === Internal implementation ===
     ScriptResult executeScriptInternal(const std::string &sessionId, const ScriptSource &script);

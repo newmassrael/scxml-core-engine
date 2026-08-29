@@ -559,9 +559,29 @@ std::string LuaEngine::loweredTextOf(const ScriptSource &expression, const Lower
     return transformer_.transform(expression.text());
 }
 
-std::string LuaEngine::loweredScriptOf(const ScriptSource &script) {
+std::string LuaEngine::loweredScriptOf(const ScriptSource &script, const LoweringScope &scope) {
     if (script.language() == ScriptLanguage::Lua) {
         return script.text();
+    }
+    // The same seam as `loweredTextOf`, one grammar up. A `<script>` body is a
+    // STATEMENT sequence, and the divergences that outlived the expression
+    // seam were all of that shape: `EcmaScriptToLuaTransformer::transformScript`
+    // replaces text without a parse, so `continue` becomes `_ = continue` and a
+    // `return` lands in statement position. No scope can reach those, because
+    // the scope only decides which NAMES resolve.
+    //
+    // A chunk asks less of the scope than an expression does — `var` bindings
+    // are hoisted into the chunk's own frame before anything resolves
+    // (`resolve::script`), so a self-contained body is answered even by an
+    // empty scope. What it still asks about is the names it only READS, which
+    // is why this takes the session's scope like its neighbour rather than a
+    // constant.
+    //
+    // Refusal is the fallback here too, and is what makes this safe to adopt:
+    // a body the parser will not read comes back as nothing and the rewriter
+    // answers exactly as before, so a script this misses stays as it was.
+    if (auto lowered = scope.lowerScript(script.text())) {
+        return *lowered;
     }
     return transformer_.transformScript(script.text());
 }
@@ -621,16 +641,18 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     // Fast path: if this script was successfully executed before in this session,
     // skip transformer and chunk cache lookup entirely. A cached entry from the
     // other language is a miss: the same text lowers differently.
+    const uint64_t scopeGeneration = it->second->loweringScope.generation();
     auto &scriptExec = it->second->scriptExecCache;
     auto sit = scriptExec.find(script.text());
-    if (sit != scriptExec.end() && sit->second.language == script.language()) {
+    if (sit != scriptExec.end() && sit->second.language == script.language() &&
+        sit->second.scopeGeneration == scopeGeneration) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, sit->second.chunkRef);
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
         return luaResultToScriptResult(L, status);
     }
 
     // Slow path: first-time execution for this script in this session
-    std::string luaScript = loweredScriptOf(script);
+    std::string luaScript = loweredScriptOf(script, it->second->loweringScope);
 
     // The author's own text on the left, so a log line names what was written
     // rather than what it became.
@@ -642,7 +664,7 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     }
 
     // Cache for fast path on subsequent calls
-    scriptExec[script.text()] = {it->second->chunkCache.at(luaScript).ref, script.language()};
+    scriptExec[script.text()] = {it->second->chunkCache.at(luaScript).ref, script.language(), scopeGeneration};
 
     int status = lua_pcall(L, 0, LUA_MULTRET, 0);
 

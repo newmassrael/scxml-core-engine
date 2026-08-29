@@ -163,37 +163,37 @@ PY
 
 # ── The declared list is held to BOTH directions ────────────────────
 #
-# A one-sided verdict rots. These two cases are the sides: one adds a
-# divergence that has been repaired, the other removes one that is still live.
-# The count reached 44 while a comment said 26 precisely because nothing asked
-# the second question.
+# A one-sided verdict rots: the count reached 44 while a comment said 26
+# precisely because nothing asked the second question. The two directions are
+#
+#   (a) an observed disagreement that is NOT on the list, and
+#   (b) an entry on the list that no longer disagrees.
+#
+# ⚠ There used to be two cases here, one per direction, and BOTH edited the
+# list. On 2026-08-29 the list reached ZERO and the (a) case went stale in the
+# most literal way available: its mutation was "remove a live entry", and there
+# was no entry left to remove. An empty list cannot witness (a) by being
+# edited, and a case that cannot apply reads as SURVIVED rather than as absent.
+#
+# It is not replaced by another list edit, because (a) is now carried by the
+# two SEAM cases below: each of them makes the engine really disagree with the
+# shared table while this list stays empty, which is the (a) failure in its
+# natural form rather than a simulation of it. That is the same principle the
+# rounding and escape cases followed out of this file — a case moves to
+# whatever now owns its question, and only (b) is still a question about the
+# list's own text.
 
 mutation_case "a repaired divergence stays on the declared list" <<'PY'
 edit("tests/ecmascript/lua_engine_divergences.json",
-     """  "divergences": [
-    {
-      "source": "n",""",
+     """  "divergences": []""",
      """  "divergences": [
     {
       "source": "!a",
       "clause": "12.5.9 logical NOT",
       "needs": "operand-boundaries",
       "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "n",""")
-PY
-
-mutation_case "a live divergence is left off the declared list" <<'PY'
-edit("tests/ecmascript/lua_engine_divergences.json",
-     """    {
-      "source": "n",
-      "clause": "14.7.3 while, with continue skipping one iteration",
-      "needs": "statement-structure",
-      "diverges_on": ["runtime-rewriter"]
     }
-""",
-     "")
+  ]""")
 PY
 
 # ── The seam offers expressions to the frontend at all ──────────────
@@ -220,6 +220,28 @@ PY
 mutation_case "the seam stops offering expressions to the frontend" <<'PY'
 edit("sce/src/scripting/LuaEngine.cpp",
      """    if (auto lowered = scope.lowerValue(expression.text())) {
+        return *lowered;
+    }""",
+     """    (void)scope;""")
+PY
+
+# ── The script path offers STATEMENTS to the frontend ───────────────
+#
+# The sibling of the case above, one grammar up, and it is the one that took
+# this repository's divergence list to zero. `EcmaScriptToLuaTransformer::
+# transformScript` replaces text without a parse, so a `continue` becomes
+# `_ = continue` and the loop it belongs to stops skipping an iteration — a
+# defect no scope can reach, because a scope only decides which NAMES resolve.
+# `LuaEngine::loweredScriptOf` asks `sce_lower_script` first, and the shared
+# table's `while`/`continue` case is what turns red when it stops.
+#
+# ⚠ `(void)scope;` again, and for the same reason: without it the parameter is
+# unused and `-Werror` refuses the mutated build, which would report this as
+# INCONCLUSIVE rather than as evidence either way.
+
+mutation_case "the script path stops offering statements to the frontend" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     """    if (auto lowered = scope.lowerScript(script.text())) {
         return *lowered;
     }""",
      """    (void)scope;""")
