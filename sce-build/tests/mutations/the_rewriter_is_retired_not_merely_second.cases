@@ -43,6 +43,7 @@ mutation_runtime_targets sce/sce_base_sources.cmake
 mutation_runtime_targets docs/SCE_LUA_TRANSLATION_SEAM.md
 mutation_runtime_targets scripts/measure-lowering-per-call.sh
 mutation_runtime_targets .github/workflows/tree-hygiene.yml
+mutation_runtime_targets scripts/gates/tree-hygiene.sh
 
 # --- the subject: a caller comes back -------------------------------------
 #
@@ -152,17 +153,36 @@ PY
 
 # ⚠⚠⚠ The pin arm cannot run in a shallow clone, and CI clones shallow by
 # default — measured 2026-08-29, when the first form of this check went red on
-# three lanes for a tree that was correct. The miss is now CLASSIFIED (the
+# four lanes for a tree that was correct. The miss is now CLASSIFIED (the
 # checkout must PROVE it is shallow) rather than read as "the commit is gone",
-# and the two cases below are what stop that classification from becoming an
-# exemption: the first runs where clones are full, so a fallback made
-# unconditional would let a bogus sha through and show up here; the second
-# takes full history away from the one lane where the arm is real.
+# and the cases below are what stop that classification from becoming an
+# exemption. `the pin names a commit this repository does not carry` runs
+# where clones are full, so a fallback made unconditional would let a bogus
+# sha through and show up there.
+#
+# ⚠⚠⚠⚠ The other three take away the PRECONDITION, one hop each. The lane
+# where the arm is real is not a name in the check, it is derived: a gate
+# script says which slug runs this test, a workflow job says which slug it
+# runs, and the job says how it checks out. A case per hop, because a
+# derivation is exactly as strong as its weakest one and a hop nothing breaks
+# is a hop nobody is verifying.
 
 mutation_case "the lane that verifies the pin stops fetching history" <<'PY'
 edit(".github/workflows/tree-hygiene.yml",
      "      with:\n"
      "        fetch-depth: 0\n",
+     "")
+PY
+
+mutation_case "the lane stops running the gate that runs this test" <<'PY'
+edit(".github/workflows/tree-hygiene.yml",
+     "      run: scripts/gate tree-hygiene\n",
+     "      run: true  # gate removed\n")
+PY
+
+mutation_case "the gate that owns this test stops selecting it" <<'PY'
+edit("scripts/gates/tree-hygiene.sh",
+     "    --test lowering_decision_ledger \\\n",
      "")
 PY
 

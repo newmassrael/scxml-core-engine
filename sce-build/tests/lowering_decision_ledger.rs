@@ -81,11 +81,20 @@
 //! behind each number still exists and still emits the census the
 //! document quotes, which is the half that rots silently.
 
+mod common;
+
+use common::workflow::{gate_slugs_invoked, job_text, split_workflow, workflow_texts};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// The document that carries the ledger.
 const LEDGER_DOC: &str = "docs/SCE_LUA_TRANSLATION_SEAM.md";
+
+/// The name a gate script spells this binary by, as `--test <name>`.
+///
+/// Written once because two things read it: the derivation of which lanes
+/// verify the pin, and the message that says none do.
+const SELF_TEST: &str = "lowering_decision_ledger";
 
 /// Markers delimiting the machine-readable block.
 const OPEN_MARKER: &str = "<!-- D1-LEDGER";
@@ -311,6 +320,92 @@ fn command_lines(src: &str) -> Vec<String> {
     }
     if !current.is_empty() {
         out.push(current);
+    }
+    out
+}
+
+/// Whether a command line PASSES `--test <name>` to cargo.
+///
+/// Adjacent words rather than a substring, for the reason
+/// `passes_cargo_feature` below spells out: a gate script explains what it
+/// runs as often as it runs it, and prose naming a test is not the test
+/// being selected. `command_lines` has already cut the comments; this is
+/// what keeps `--test lowering_decision_ledger_v2` from answering for
+/// `lowering_decision_ledger`.
+fn selects_cargo_test(line: &str, name: &str) -> bool {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    words.windows(2).any(|w| w[0] == "--test" && w[1] == name)
+}
+
+/// Does a workflow's header — everything above `jobs:` — fire on push?
+///
+/// Both spellings, because `on:` takes a mapping and a list and this must
+/// not read a lane as manual-only just because it was written the short way.
+fn fires_on_push(header: &str) -> bool {
+    command_lines(header).iter().any(|l| {
+        let t = l.trim();
+        t == "push:" || (t.starts_with("on:") && t.contains("push"))
+    })
+}
+
+/// `(workflow file, job id, asks for full history)` for every push-triggered
+/// job that runs a gate whose script runs THIS test.
+///
+/// Derived in three hops, none of them a hardcoded name: `scripts/gates/`
+/// says which slug runs this binary, a workflow job says which slug it runs,
+/// and the job's own text says how it checks out. The middle hop is why the
+/// walk is per JOB rather than per file — `mutation-rounds.yml` asks for full
+/// history in the job that SELECTS casefiles and clones shallow in the job
+/// that runs them, so a file-wide read would credit the round job with a
+/// setting it does not have.
+fn jobs_running_this_tests_gate() -> Vec<(String, String, bool)> {
+    let root = repo_root();
+
+    // Hop 1 — the slugs. `scripts/gates/<slug>.sh` IS the slug, which is the
+    // registry's own convention (`gate_registry_contract` holds it).
+    let dir = root.join("scripts/gates");
+    let mut slugs: BTreeSet<String> = BTreeSet::new();
+    for entry in std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().is_none_or(|x| x != "sh") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+        if command_lines(&text)
+            .iter()
+            .any(|l| selects_cargo_test(l, SELF_TEST))
+        {
+            slugs.insert(
+                path.file_stem()
+                    .expect("a gate script has a stem")
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+
+    // Hops 2 and 3 — the jobs that run one of those slugs, and their depth.
+    let mut out: Vec<(String, String, bool)> = Vec::new();
+    for (file, text) in workflow_texts(&root) {
+        let (header, jobs) = split_workflow(&text);
+        if !fires_on_push(&header) {
+            continue;
+        }
+        for job in &jobs {
+            let lines = command_lines(&job_text(job));
+            let runs_it = lines
+                .iter()
+                .any(|l| gate_slugs_invoked(l).iter().any(|s| slugs.contains(s)));
+            if !runs_it {
+                continue;
+            }
+            let full_history = lines.iter().any(|l| l.contains("fetch-depth: 0"));
+            out.push((file.clone(), job.id.clone(), full_history));
+        }
     }
     out
 }
@@ -1258,19 +1353,47 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         //    same defect `passes_cargo_feature` was written for, reproduced
         //    one function away from its own warning, so this strips `#`
         //    comments the way that scanner does before it looks.
-        let lane = read(".github/workflows/tree-hygiene.yml");
+        //    ⚠⚠⚠⚠⚠⚠ And the lane is DERIVED, not named. The first form
+        //    hardcoded `tree-hygiene.yml` and asserted one half of the
+        //    precondition — that the lane fetches history. The other half
+        //    went unmeasured: a lane that stops RUNNING this test satisfies
+        //    a fetch-depth assertion perfectly while verifying nothing, so
+        //    deleting `scripts/gate tree-hygiene` from that file would have
+        //    left the pin checked nowhere and every check here green. The
+        //    same form also declared that lane "the one place the pin arm is
+        //    real", and re-measuring refuted it:
+        //    `rust-workspace-tests.yml` fetches full history for its own
+        //    pinned-harness read and runs this test in its workspace sweep.
+        //    So what is asked here is the whole precondition, off the tree —
+        //    which gate script runs this test, which push-triggered job runs
+        //    that gate, and whether every one of them asks for full history.
+        let lanes = jobs_running_this_tests_gate();
         assert!(
-            command_lines(&lane)
-                .iter()
-                .any(|l| l.contains("fetch-depth: 0")),
-            "row `{}`: `.github/workflows/tree-hygiene.yml` no longer asks for \
-             full history IN CODE. That lane runs this test on every push and \
-             is the one place the pin arm below is real — a shallow checkout \
-             cannot resolve the pin, and this check classifies that miss \
-             rather than failing on it. Without full history there, the pin is \
-             verified nowhere and the classification becomes an exemption. A \
-             comment naming the setting is not the setting.",
+            !lanes.is_empty(),
+            "row `{}`: no push-triggered job runs a gate whose script names \
+             `--test {SELF_TEST}`. The pin arm below classifies a shallow \
+             checkout rather than failing on it, so it is real only where \
+             some lane runs this test with full history. With no such lane \
+             the classification stops being a classification and becomes an \
+             exemption that nothing can turn red.",
             row.id
+        );
+        let shallow: Vec<String> = lanes
+            .iter()
+            .filter(|(_, _, full_history)| !full_history)
+            .map(|(file, job, _)| format!("  {file} job `{job}`"))
+            .collect();
+        assert!(
+            shallow.is_empty(),
+            "row `{}`: {} job(s) run this test's gate without asking for full \
+             history IN CODE:\n{}\nA shallow checkout cannot resolve the pin, \
+             and the arm below classifies that miss rather than failing on it \
+             — so in those lanes the pin is verified by nothing. Add \
+             `fetch-depth: 0` to the checkout, or stop running the gate there. \
+             A comment naming the setting is not the setting.",
+            row.id,
+            shallow.len(),
+            shallow.join("\n")
         );
 
         let (found, kind) = git_at_root(&["cat-file", "-t", sha]);
