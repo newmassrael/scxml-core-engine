@@ -69,6 +69,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # lane that edit cannot start. This workflow declares no filter, so it runs
 # on exactly the pushes such an edit arrives in.
 #
+# `lowering_decision_ledger` is here for the sharper half of the same reason.
+# It reads every tracked CMake file to hold the premise the D1 ledger's one
+# OPEN row rests on — that nothing links a Rust artifact yet, which is why the
+# cost of linking one cannot be measured before the decision. The file that
+# would break that premise does not exist today, so a filter over the current
+# tree names the answer and not the case.
+#
 # `scope_obligation` lowers every expression in every committed *.scxml once
 # per scope stage, so a document added anywhere changes what it reads. Its
 # reason for being here is sharper than the sweep, though: the census it
@@ -99,6 +106,7 @@ cargo test -p sce-build --features cli \
     --test ecmascript_semantics \
     --test ecmascript_acceptance_parity \
     --test scope_obligation \
+    --test lowering_decision_ledger \
     --test cli_expression_refusal \
     --test cli_guard_emission \
     --test mutation_rounds_selection \
