@@ -113,6 +113,33 @@ target_link_libraries(benchmark_luaengine
         Threads::Threads
 )
 
+# ECMAScript lowering, per call.
+#
+# The C++ half of the price in docs/SCE_LUA_TRANSLATION_SEAM.md; the Rust
+# half is `cargo run --release --example lowering_per_call -p sce-build`,
+# and scripts/measure-lowering-per-call.sh runs both on one host so the
+# two columns are comparable. It reads the same shared table the
+# LoweredEcma262 ratchet does, named here rather than copied, so the two
+# measurements cannot drift onto different populations.
+add_executable(benchmark_ecma_lowering_per_call
+    EcmaLoweringPerCallBenchmark.cpp
+)
+target_compile_definitions(benchmark_ecma_lowering_per_call
+    PRIVATE
+        SCE_ECMA262_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_semantics.json"
+)
+target_include_directories(benchmark_ecma_lowering_per_call
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/third_party/nlohmann_json/include
+)
+target_link_libraries(benchmark_ecma_lowering_per_call
+    PRIVATE
+        sce_runtime
+        benchmark::benchmark
+        benchmark::benchmark_main
+        Threads::Threads
+)
+
 # Memory Footprint Benchmarks
 add_executable(benchmark_memory_footprint
     MemoryFootprintBenchmark.cpp
