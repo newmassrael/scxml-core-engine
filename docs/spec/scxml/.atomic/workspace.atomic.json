@@ -4419,11 +4419,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-          "symbol": "EcmaScriptToLuaTransformer::transformArrayLiterals",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/scripting/JSEngine.cpp",
           "symbol": "JSEngine::hasVariable",
           "kind": "references"
@@ -11434,11 +11429,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-          "symbol": "EcmaScriptToLuaTransformer::transformOperators",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/scripting/JSEngine.cpp",
           "symbol": "JSEngine::reset",
           "kind": "implements"
@@ -16157,6 +16147,18 @@
       "target_kind": "section",
       "target_id": "scxml-5.8",
       "reason": "module renamed to src/ffi.rs when the probe became the surface"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-4.6",
+      "reason": "the rewriter was deleted; array-literal lowering is the frontend's, already bound here as sce-build/src/ecmascript/lua.rs"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2",
+      "reason": "the rewriter was deleted; operator lowering is the frontend's, already bound here as sce-build/src/ecmascript/parser.rs and lua.rs"
     }
   ],
   "frames": {},

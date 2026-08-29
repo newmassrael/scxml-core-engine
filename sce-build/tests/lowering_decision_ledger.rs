@@ -1223,34 +1223,93 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
             row.id, row.status
         );
 
-        // 1. The pin is a real commit.
+        // 1. The pin is a real commit — WHERE THE CHECKOUT CAN SEE ONE.
         //
         //    ⚠ `git cat-file -t` and not `git show`. `git show <sha>:<path>`
         //    answers "no such commit" and "that commit has no such path" with
         //    the SAME sentence, and this repository has already read one for
         //    the other once and reverted a correct diagnosis over it.
-        let (found, kind) = git_at_root(&["cat-file", "-t", sha]);
+        //
+        //    ⚠⚠ Measured 2026-08-29, by CI refuting the first form of this
+        //    check: `actions/checkout` clones with `fetch-depth: 1`, so the
+        //    pinned commit — the tip's own parent that day — was simply not
+        //    in the object store, and the arm went red on three lanes for a
+        //    tree that was correct. A shallow checkout cannot answer this
+        //    question, and a check that reads "cannot answer" as "the answer
+        //    is no" is measuring the clone rather than the ledger.
+        //
+        //    ⚠⚠⚠ So the miss is CLASSIFIED rather than excused: the only way
+        //    past this arm is for the repository to PROVE it is shallow. A
+        //    full clone that cannot resolve the pin is still red, which is
+        //    what `the pin names a commit this repository does not carry`
+        //    reproduces — that case runs locally, where clones are full, and
+        //    it is what stops this branch from becoming a free pass.
+        //    ⚠⚠⚠⚠ And the lane assertion is made HERE, unconditionally,
+        //    rather than inside the shallow branch where it is needed. A
+        //    guard that only runs in the case it guards is a guard no
+        //    mutation can reach: clones are full locally, so a check written
+        //    inside that branch would never execute where cases are judged,
+        //    and deleting it would read as SURVIVED.
+        //    ⚠⚠⚠⚠⚠ And it reads the lane's CODE, not its text. The first
+        //    form of this assertion searched the whole file — and the comment
+        //    written beside the checkout, explaining why `fetch-depth: 0` is
+        //    there, satisfied it on its own: the mutation that deletes the
+        //    setting and leaves the paragraph standing SURVIVED. That is the
+        //    same defect `passes_cargo_feature` was written for, reproduced
+        //    one function away from its own warning, so this strips `#`
+        //    comments the way that scanner does before it looks.
+        let lane = read(".github/workflows/tree-hygiene.yml");
         assert!(
-            found && kind == "commit",
-            "row `{}` pins its number to `{sha}`, which this repository does \
-             not carry as a commit (`git cat-file -t` said {:?}). A pin that \
-             resolves to nothing makes the number un-re-derivable, which is \
-             the exact defect the ledger exists to refuse.",
-            row.id,
-            if found { kind.as_str() } else { "failure" }
+            command_lines(&lane)
+                .iter()
+                .any(|l| l.contains("fetch-depth: 0")),
+            "row `{}`: `.github/workflows/tree-hygiene.yml` no longer asks for \
+             full history IN CODE. That lane runs this test on every push and \
+             is the one place the pin arm below is real — a shallow checkout \
+             cannot resolve the pin, and this check classifies that miss \
+             rather than failing on it. Without full history there, the pin is \
+             verified nowhere and the classification becomes an exemption. A \
+             comment naming the setting is not the setting.",
+            row.id
         );
 
-        // 2. That commit still holds everything the measurement rested on, so
-        //    a reader can check it out and run the probe again.
-        for path in DEPARTED_WITH_REWRITER {
-            let (ok, listed) = git_at_root(&["ls-tree", "--name-only", sha, "--", path]);
-            assert!(
-                ok && listed == *path,
-                "row `{}`: `{path}` is not in the tree of `{sha}`, so the pin \
-                 does not hold the subject the number was measured on. Pin a \
-                 commit that does — the number cannot be re-derived from one \
-                 that never had it.",
+        let (found, kind) = git_at_root(&["cat-file", "-t", sha]);
+        if found {
+            assert_eq!(
+                kind, "commit",
+                "row `{}` pins its number to `{sha}`, which this repository \
+                 carries as a {kind} rather than a commit. A pin that is not \
+                 a commit cannot be checked out, so the number cannot be \
+                 re-derived from it.",
                 row.id
+            );
+
+            // 2. That commit still holds everything the measurement rested
+            //    on, so a reader can check it out and run the probe again.
+            for path in DEPARTED_WITH_REWRITER {
+                let (ok, listed) = git_at_root(&["ls-tree", "--name-only", sha, "--", path]);
+                assert!(
+                    ok && listed == *path,
+                    "row `{}`: `{path}` is not in the tree of `{sha}`, so the \
+                     pin does not hold the subject the number was measured on. \
+                     Pin a commit that does — the number cannot be re-derived \
+                     from one that never had it.",
+                    row.id
+                );
+            }
+        } else {
+            let (ok, shallow) = git_at_root(&["rev-parse", "--is-shallow-repository"]);
+            assert!(
+                ok && shallow == "true",
+                "row `{}` pins its number to `{sha}`, which this repository \
+                 does not carry as a commit — and this clone is NOT shallow \
+                 (`git rev-parse --is-shallow-repository` said {:?}), so the \
+                 object is genuinely absent rather than merely unfetched. A \
+                 pin that resolves to nothing makes the number \
+                 un-re-derivable, which is the exact defect the ledger exists \
+                 to refuse.",
+                row.id,
+                if ok { shallow.as_str() } else { "failure" }
             );
         }
 
