@@ -6,6 +6,19 @@
 # becomes callable at run time, MINUS what leaves with the rewriter it
 # replaces.
 #
+# ⚠⚠⚠ RETIRED — THE OUT HALF CANNOT BE WEIGHED IN THIS TREE ANY MORE.
+#
+# The subtrahend was the object file of `EcmaScriptToLuaTransformer.cpp`,
+# and that translation unit was DELETED once nothing reached it. The swap
+# this priced HAPPENED: the OUT half was paid rather than estimated, and
+# there is no object left to weigh.
+#
+# The D1 ledger keeps the number as a MEASUREMENT rather than a remembered
+# figure by pinning the commit that still holds the subject: the
+# `swap-net-footprint` row's check is `retired-measurement:<sha>`, and
+# sce-build/tests/lowering_decision_ledger.rs requires that commit to still
+# contain every departed file. Check it out and run this script there.
+#
 # `docs/SCE_LUA_TRANSLATION_SEAM.md` priced this as an ADDITION — the
 # cdylib's reachable lowering code, +214 KB — and that is the wrong
 # shape. `EcmaScriptToLuaTransformer` is the run-time adapter the

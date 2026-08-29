@@ -1628,7 +1628,7 @@ fallback at all, and that needs its own witness rather than this one's silence.
 
 **That witness was built the same day, and building it cost more than deleting
 three call sites.** The `retire-rewriter` row and its
-`retirement:rewriter-uncalled` check are the standing half. The moving half was
+`retirement:rewriter-deleted` check are the standing half. The moving half was
 what the removal EXPOSED: with no rewriter behind it, a refusal became the
 engine's answer, and six cases across two suites went red — every one of them a
 name the frontend had never been told about.
@@ -1924,29 +1924,42 @@ cache already covers.
   claim — **nothing takes the fallback at all** — and this document already
   said, in "An empty list is not a retired rewriter", that it *"needs its own
   witness rather than this one's silence"*. The `retire-rewriter` row is that
-  witness, and `retirement:rewriter-uncalled` is what re-derives it: every
-  tracked C++ file, swept, with the retired unit's own files as the positive
-  control that the sweep can still find the name where it is.
+  witness, and `retirement:rewriter-deleted` is what re-derives it: every
+  tracked C++ file, swept, and none of them reaching the rewriter in code.
   ⚠ **It swept the engine's two directories for a day, and that boundary was
   measured and replaced the next.** `sce/src` and `sce/include` are what the
   library is built from, so the boundary read as principled. What it actually
   did was leave `tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp` — the one
-  file outside them that really does construct the rewriter, in order to price
+  file outside them that really did construct the rewriter, in order to price
   it — not exempted but INVISIBLE: the sweep never opened it, nothing in the
   tree said whether it was an instrument or a caller, and a second file
-  joining it would have been just as quiet. The boundary is now a
-  CLASSIFICATION over the whole tree: a tracked C++ file either IS the retired
-  unit, or is named in `REWRITER_INSTRUMENTS` with the reason it is an
-  instrument, or must not reach the rewriter. Unclassified is RED, and every
-  entry is itself asserted — tracked, and still reaching the rewriter — so an
-  exemption cannot outlive its subject and go on covering whatever appears at
-  that path later.
-  ⚠ **Retired is not deleted, and the row says which one this is.**
-  `sce/src/scripting/EcmaScriptToLuaTransformer.cpp` is still listed in
-  `sce/sce_base_sources.cmake` and still compiles; the check REQUIRES it to
-  still be there, because a sweep for a name the tree no longer carries
-  reports zero for the wrong reason. Deleting it is a later round, and the
-  row is what will have to be rewritten when that round comes.
+  joining it would have been just as quiet. The boundary became a
+  CLASSIFICATION over the whole tree, and the deletion then collapsed the
+  classification too: with the unit and its one instrument both gone, no
+  tracked C++ file may reach the rewriter for any reason and no exemption of
+  any shape is left.
+  ⚠⚠ **Deleting the unit deleted the control, and that is the interesting
+  half.** While the unit existed, the sweep's positive control was its own
+  files: the predicate that reports zero had to report THEM, or it had stopped
+  being able to see the name at all. "No file names X" is also the answer a
+  sweep gives when it read nothing, so a check that lost its control while
+  keeping its claim now passes for the same reason an unread tree does. What
+  buys it back is the PROSE. The engine, its suites and this document still
+  explain what the rewriter was, so a sweep that is really opening files finds
+  the name in RAW text many times over while finding it in CODE never, and the
+  check asserts the raw half against a floor. ⚠ That floor CAN be driven to
+  zero — by deleting every comment that remembers the rewriter — and that is
+  precisely when this row has to be rewritten rather than quietly relaxed: with
+  no mention anywhere, nothing in the tree can show that the sweep still reads.
+  ⚠⚠⚠ **Two measurements retired with the subject rather than with the code.**
+  `per-call-cost` timed the rewriter against the frontend and `swap-net-footprint`
+  weighed the object file that has now gone; neither can be re-measured here.
+  They keep their numbers and their `measurement` kind, and their check becomes
+  a `retired-measurement:` carrying the commit that still holds the subject — a
+  pin the gate resolves with `git cat-file -t` and `git ls-tree`, requiring the
+  named commit to hold every departed file and this tree to hold none of them. A reader who wants the number back
+  checks that commit out and runs the probe, which is why both probes are kept
+  and why each one says so in its own header.
 
 ### D1 at a glance: five closed by measurement, two closed by decision
 
@@ -2018,13 +2031,13 @@ someone has read the warning.
 
 | id | status | kind | the number | check | evidence |
 |---|---|---|---|---|---|
-| `per-call-cost` | CLOSED | measurement | 577ns against 1085ns cold — parsing is **1.88x faster**; the rewriter's whole advantage is a memo worth **89x** | `census:LoweringPerCall` | `scripts/measure-lowering-per-call.sh` |
+| `per-call-cost` | CLOSED | measurement | 577ns against 1085ns cold — parsing is **1.88x faster**; the rewriter's whole advantage is a memo worth **89x**. ⚠ RETIRED: the second side of this comparison was deleted with the rewriter, so the number cannot be re-measured in this tree — the pinned commit still holds the probe and the subject, and the check requires both | `retired-measurement:59eb7f96022fa4a10330fbfd70c05b45671af443` | `scripts/measure-lowering-per-call.sh` |
 | `scope-obligation` | CLOSED | measurement | **301** of 1120 sites diverge with no scope; **298** of them are discharged by `<data id>` alone, before anything runs; residue **3**, named rather than counted | `census:ScopeObligation` | `scripts/measure-scope-obligation.sh` |
 | `error-channel` | CLOSED | counting | **15** distinguishable failures against **0** — so the FFI carries a code plus a string, and the code already exists | `derive:expression-alphabet=15` | `sce-build/src/forge/diagnostic.rs` |
-| `swap-net-footprint` | CLOSED | measurement | the link is a SWAP, not an addition: **+223.7 KB** in, **−76.0 KB** out ⇒ **net +147.8 KB**, so pricing it as an addition overstates by **34%**. The rewriter's **2262** tracked lines leave with it | `derive:rewriter-footprint=2262` | `scripts/measure-lowering-footprint.sh` |
+| `swap-net-footprint` | CLOSED | measurement | the link is a SWAP, not an addition: **+223.7 KB** in, **−76.0 KB** out ⇒ **net +147.8 KB**, so pricing it as an addition overstates by **34%**. The rewriter's **2262** tracked lines have now LEFT — the OUT half was actually paid. ⚠ RETIRED: the object this weighed no longer exists in the tree, so the number is re-derivable only at the pinned commit, which the check requires to still hold it | `retired-measurement:59eb7f96022fa4a10330fbfd70c05b45671af443` | `scripts/measure-lowering-footprint.sh` |
 | `scope-answer` | CLOSED | measurement | **0** sites diverge once the caller has read every `<data id>` AND every document-level `<script>` — both readable before the first macrostep — so the surface needs `declare` + `declare_chunk` and NO execution-time scope | `derive:scope-ladder=LoadTime` | `sce-build/src/ecmascript/scope.rs` |
 | `link-beside-lua` | CLOSED | decision | the owner chose to LINK, beside `SCE_ENABLE_LUA`, and retire the rewriter. Priced on the shape chosen: a staticlib costs **474.6 KB** of stripped image, not the **223.7 KB** the cdylib delta reported — that baseline already held Rust's runtime and a C++ image does not | `decision:linked-beside-lua` | `sce/CMakeLists.txt` |
-| `retire-rewriter` | CLOSED | decision | the second half of that decision, carried out: of every tracked C++ file, **zero** reach `EcmaScriptToLuaTransformer` other than the **2** that ARE it and the instruments `REWRITER_INSTRUMENTS` declares — a list carrying no free number because the check asserts each entry still reaches the rewriter, so it can only shrink by being edited. The fallback is gone from all three sites — `loweredTextOf`, `loweredScriptOf`, `reset` — and refusal is the engine's own answer (§scxml-5.9.1) rather than a second translator's cue. The unit is retired, NOT deleted: it is still compiled by `sce/sce_base_sources.cmake`, and the check requires that, because a sweep for an absent name reports zero for the wrong reason | `retirement:rewriter-uncalled` | `sce/src/scripting/LuaEngine.cpp` |
+| `retire-rewriter` | CLOSED | decision | the second half of that decision, carried out to the end: **zero** tracked C++ files reach `EcmaScriptToLuaTransformer` in code, and the unit is now DELETED — nothing is named after it, `sce/sce_base_sources.cmake` no longer lists it, and no exemption of any shape is left. The fallback is gone from all three sites — `loweredTextOf`, `loweredScriptOf`, `reset` — and refusal is the engine's own answer (§scxml-5.9.1) rather than a second translator's cue. ⚠ Deleting the unit deleted the control that made the zero mean something, so the check buys it back from the PROSE: the files that still explain the rewriter in comments must stay above a floor, because a sweep that read nothing answers zero the same way | `retirement:rewriter-deleted` | `sce/src/scripting/LuaEngine.cpp` |
 
 <!-- /D1-LEDGER -->
 

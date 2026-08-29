@@ -79,7 +79,7 @@ target_include_directories(sce_base
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
     # include/scripting is PRIVATE: sce_base's own .cpp files need it to
     # resolve unqualified short-name headers (XMLDOMWrapper/SessionRegistry/
-    # ScriptResultUtils/EcmaScriptToLuaTransformer), but tier-respecting
+    # ScriptResultUtils), but tier-respecting
     # embed consumers link sce_base without inheriting the scripting flat
     # path. Matches sce/CMakeLists.txt — a tier-scoped path stays tier-scoped
     # even in the lightweight embed package.

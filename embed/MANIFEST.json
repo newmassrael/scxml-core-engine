@@ -1655,12 +1655,6 @@
       "name": "SCE::DOMBinding"
     },
     {
-      "header": "scripting/EcmaScriptToLuaTransformer.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::EcmaScriptToLuaTransformer"
-    },
-    {
       "header": "scripting/GenericClassBinder.h",
       "kind": "class",
       "members": [],
