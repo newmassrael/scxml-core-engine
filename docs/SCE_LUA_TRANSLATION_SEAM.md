@@ -1960,6 +1960,21 @@ cache already covers.
   named commit to hold every departed file and this tree to hold none of them. A reader who wants the number back
   checks that commit out and runs the probe, which is why both probes are kept
   and why each one says so in its own header.
+  ⚠⚠⚠⚠ **A shallow clone cannot answer that question, and the gate says so
+  rather than answering for it.** `actions/checkout` fetches depth 1, so on
+  2026-08-29 the pin — the tip's own parent that day — was absent from four
+  CI lanes and the arm went red for a tree that was correct. A check that
+  reads *cannot answer* as *the answer is no* is measuring the clone, not the
+  ledger. The miss is now CLASSIFIED: the only way past the arm is for the
+  repository to PROVE it is shallow, and a full clone that cannot resolve the
+  pin is still red. ⚠⚠⚠⚠⚠ That classification would be an exemption if no
+  lane ever ran with full history, so the precondition is asserted, whole and
+  DERIVED rather than named: which `scripts/gates/` script selects
+  `--test lowering_decision_ledger`, which push-triggered job runs that gate,
+  and whether every one of those jobs asks for `fetch-depth: 0` in code. Half
+  a precondition is the failure this repository has already paid for — a lane
+  that stops RUNNING the test satisfies a fetch-depth assertion perfectly
+  while verifying nothing.
 
 ### D1 at a glance: five closed by measurement, two closed by decision
 

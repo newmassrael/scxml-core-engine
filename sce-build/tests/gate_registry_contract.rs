@@ -21,7 +21,7 @@
 
 mod common;
 
-use common::workflow::{job_text, split_workflow};
+use common::workflow::{gate_slugs_invoked, job_text, split_workflow, workflow_texts};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1588,52 +1588,6 @@ fn reach_of(text: &str, root: &Path, depth: usize) -> Reach {
         }
     }
     reach
-}
-
-/// The gate slugs a command line runs, as `scripts/gate <slug> [<slug> …]`.
-fn gate_slugs_invoked(line: &str) -> Vec<String> {
-    let words: Vec<&str> = line.split_whitespace().collect();
-    let Some(at) = words
-        .iter()
-        .position(|w| *w == "scripts/gate" || w.ends_with("/scripts/gate"))
-    else {
-        return Vec::new();
-    };
-    words[at + 1..]
-        .iter()
-        // A flag, a redirection or a pipe ends the slug list: what follows is
-        // the runner's own vocabulary, not a gate's name.
-        .take_while(|w| !w.starts_with(['-', '>', '|', '&']))
-        .map(|w| w.trim_matches(['"', '\''].as_slice()).to_string())
-        .collect()
-}
-
-/// Every workflow as `(file name, text)`, sorted for stable diagnostics.
-fn workflow_texts(root: &Path) -> Vec<(String, String)> {
-    let dir = root.join(".github/workflows");
-    let mut out: Vec<(String, String)> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "yml" || x == "yaml"))
-        .map(|p| {
-            let name = p
-                .file_name()
-                .expect("a workflow file has a name")
-                .to_string_lossy()
-                .into_owned();
-            let text = std::fs::read_to_string(&p)
-                .unwrap_or_else(|e| panic!("read {}: {}", p.display(), e));
-            (name, text)
-        })
-        .collect();
-    out.sort();
-    assert!(
-        out.len() > 5,
-        "found {} workflow(s); the directory read is broken, not the tree",
-        out.len()
-    );
-    out
 }
 
 #[test]

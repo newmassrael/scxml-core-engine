@@ -119,6 +119,57 @@ pub fn split_workflow(text: &str) -> (String, Vec<Job>) {
     (header, jobs)
 }
 
+/// The gate slugs a command line runs, as `scripts/gate <slug> [<slug> …]`.
+///
+/// Published here rather than kept by one suite because the question "which
+/// gate does this job run" is now asked by three: the registry contract, the
+/// tooling axis, and the lowering ledger's check that the lane running its
+/// own gate can still resolve a pinned commit.
+pub fn gate_slugs_invoked(line: &str) -> Vec<String> {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let Some(at) = words
+        .iter()
+        .position(|w| *w == "scripts/gate" || w.ends_with("/scripts/gate"))
+    else {
+        return Vec::new();
+    };
+    words[at + 1..]
+        .iter()
+        // A flag, a redirection or a pipe ends the slug list: what follows is
+        // the runner's own vocabulary, not a gate's name.
+        .take_while(|w| !w.starts_with(['-', '>', '|', '&']))
+        .map(|w| w.trim_matches(['"', '\''].as_slice()).to_string())
+        .collect()
+}
+
+/// Every workflow as `(file name, text)`, sorted for stable diagnostics.
+pub fn workflow_texts(root: &std::path::Path) -> Vec<(String, String)> {
+    let dir = root.join(".github/workflows");
+    let mut out: Vec<(String, String)> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "yml" || x == "yaml"))
+        .map(|p| {
+            let name = p
+                .file_name()
+                .expect("a workflow file has a name")
+                .to_string_lossy()
+                .into_owned();
+            let text = std::fs::read_to_string(&p)
+                .unwrap_or_else(|e| panic!("read {}: {}", p.display(), e));
+            (name, text)
+        })
+        .collect();
+    out.sort();
+    assert!(
+        out.len() > 5,
+        "found {} workflow(s); the directory read is broken, not the tree",
+        out.len()
+    );
+    out
+}
+
 /// A job's whole text: the keys declared before its steps, then the steps.
 pub fn job_text(job: &Job) -> String {
     let mut out = job.prelude.clone();
