@@ -1382,7 +1382,7 @@ below names how.
 | surface to expose | **four** lowering fns, not three | `grep '^pub fn' sce-build/src/ecmascript/mod.rs` → `to_lua_condition` / `to_lua_value` / `to_lua_script` / `to_lua_location` |
 | what crosses the boundary | a scope, and it is **flat** | `DocumentScope` is one `BTreeSet<String>` (`sce-build/src/ecmascript/scope.rs:53`) — an opaque handle plus `declare` is enough; no model marshalling |
 | build time | **7.00s** to recompile `sce-build` and link the cdylib; **14.96s** including its cold deps | `cargo rustc -p sce-build --lib --release --crate-type cdylib`, release, warm cargo cache, build machine (32 cores) |
-| artifact size | **589 KB** with the C surface exported, against **380 KB** exporting nothing ⇒ the reachable lowering code is **~214 KB** | ask CARGO where it put the artifact rather than naming a profile directory (see the note below the table), then `stat -c %s` it; `nm -D --defined-only` reported exactly **5** dynamic symbols, so the linker kept only what the C surface reaches |
+| artifact size | ~~589 KB / 380 KB ⇒ ~214 KB~~ **Re-derived 2026-08-29: 634.5 KB against 410.8 KB ⇒ +223.7 KB**, and this is now the IN half of a NET — see `swap-net-footprint` in the D1 ledger | **`scripts/measure-lowering-footprint.sh`**, which builds the cdylib with and without `--features ffi-probe` and asks cargo for both paths. ⚠ The first figure came from a throwaway probe that was deleted, so it could not be re-run and it was LOW: those wrappers returned `NULL`, which lets the linker drop the emitter the measurement exists to weigh. The probe is now committed, behind an off-by-default feature, and hands the lowered string back |
 | native deps inherited | `libgcc_s`, `libc`, the loader. **libxml2 is NOT** | `ldd` the same path — the `xsd` feature's C library is unreachable from the lowering entry points, so a C++ consumer does not inherit it. `sce-build-wasm` needs `default-features = false` for that reason; a native link would not |
 | who pays for it | **every C++ configure in the tree**, not just the `lua` selection | the natural link site is `sce_scripting` beside `lua54` (`sce/CMakeLists.txt:374`), guarded by `SCE_ENABLE_LUA`, which is `option(... ON)` at `sce/CMakeLists.txt:18`. Eight gates build a C++ target: `cpp-suite`, `w3c-cpp`, `w3c-c11`, `forge-cpp`, `lib`, `visualizer-wasm`, `w3c-python-bindings`, `ecma262-lowered-cpp` (`grep -l sce_gate_build scripts/gates/*.sh`) |
 
@@ -1510,6 +1510,29 @@ cache already covers.
   benchmark, exactly as this bullet predicted. See "The error channel, counted"
   below.** 15 codes against 0. ⚠ The OWNERSHIP half of this bullet is still
   open and is stated at the end of that section.
+- ~~**The size of what a C++ consumer takes on.**~~ **Re-priced 2026-08-29 as
+  a SWAP, and the first version had the wrong SHAPE rather than a wrong
+  number.** It priced the link as an ADDITION — the cdylib's reachable
+  lowering code — when the frontend becoming callable at run time is what
+  retires `EcmaScriptToLuaTransformer`, whose translation unit is listed
+  UNCONDITIONALLY in `sce/sce_base_sources.cmake` and so is compiled by every
+  C++ configure in the tree: the same population the link would be paid by,
+  which is what makes a net a subtraction rather than two unrelated numbers.
+  Measured: **+223.7 KB** in, **−76.0 KB** out, **net +147.8 KB**. Re-derive
+  with `scripts/measure-lowering-footprint.sh`.
+  ⚠ The tracked source that leaves is **2262 lines** — `.cpp` 2127 plus `.h`
+  135. A count of "2262 + 135" is the header twice; the `.cpp` has gone
+  1775 → 1872 → 1929 → 2127 and was never 2262. Kotlin's own rewriter (1175
+  lines) is a separate path and does not leave with this one, and neither
+  does `ecma_semantics.lua`: four language runtimes need that shim, and so
+  does lowered Lua.
+- ~~**What the scope residue actually asks a C surface for.**~~
+  **Answered 2026-08-29 — see "The scope obligation" below.** The residue was
+  three NAMES and is now a count of **zero**: all three are names a
+  document-level `<script>` introduces, W3C SCXML 5.8 evaluates those at load
+  time, and the stage ladder had them arriving *after* `<assign>`. With the
+  order corrected the census reads `load_time_diverging=0`, so the surface
+  needs `declare` + `declare_chunk` and no scope that tracks execution.
 - **Whether the link is unconditional.** The table's last row is the largest
   number in it: `SCE_ENABLE_LUA` is a capability, not a selection, so a link
   placed beside `lua54` is paid by developers who never choose Lua. Scoping it
@@ -1556,6 +1579,8 @@ stops being a ledger.
 | `per-call-cost` | CLOSED | measurement | 577ns against 1085ns cold — parsing is **1.88x faster**; the rewriter's whole advantage is a memo worth **89x** | `census:LoweringPerCall` | `scripts/measure-lowering-per-call.sh` |
 | `scope-obligation` | CLOSED | measurement | **301** of 1120 sites diverge with no scope; **298** of them are discharged by `<data id>` alone, before anything runs; residue **3**, named rather than counted | `census:ScopeObligation` | `scripts/measure-scope-obligation.sh` |
 | `error-channel` | CLOSED | counting | **15** distinguishable failures against **0** — so the FFI carries a code plus a string, and the code already exists | `derive:expression-alphabet=15` | `sce-build/src/forge/diagnostic.rs` |
+| `swap-net-footprint` | CLOSED | measurement | the link is a SWAP, not an addition: **+223.7 KB** in, **−76.0 KB** out ⇒ **net +147.8 KB**, so pricing it as an addition overstates by **34%**. The rewriter's **2262** tracked lines leave with it | `derive:rewriter-footprint=2262` | `scripts/measure-lowering-footprint.sh` |
+| `scope-answer` | CLOSED | measurement | **0** sites diverge once the caller has read every `<data id>` AND every document-level `<script>` — both readable before the first macrostep — so the surface needs `declare` + `declare_chunk` and NO execution-time scope | `derive:scope-ladder=LoadTime` | `sce-build/src/ecmascript/scope.rs` |
 | `link-is-unconditional` | OPEN | judgement | — | `precondition:rust-is-not-linked` | `sce-build/Cargo.toml` |
 
 <!-- /D1-LEDGER -->
@@ -1574,8 +1599,9 @@ subject is precisely the defect this file recorded once already, when "159 of
 
 The subject's own price is already in the table above and needs no second
 experiment: **7.00s** to rebuild `sce-build` and link the cdylib (14.96s
-including cold deps) at **589 KB**, paid by the eight gates that build a C++
-target. The other side of the trade is priced too, and it is not in seconds:
+including cold deps), and **net +147.8 KB** once what leaves with the rewriter
+is subtracted — paid by the eight gates that build a C++ target. The other
+side of the trade is priced too, and it is not in seconds:
 scoping the link to `SCE_SCRIPT_ENGINE=lua` would take
 `EcmaScriptSemanticsOnLuaEngine` its subject in every default build — verified,
 that suite is `#ifdef SCE_ENABLE_LUA` at
@@ -1688,27 +1714,59 @@ build-time caller has.
 |---|---|---|
 | nothing — an FFI with no scope handle | **301** of 1120 (26.9%) | 116 of 225 |
 | plus every `<data id>` | **3** (0.3%) | 3 |
-| plus every write target (`<assign location>`, `<send idlocation>`, `<foreach>`) | **3** (0.3%) | 3 |
+| plus every DOCUMENT-LEVEL `<script>` | **0** | 0 |
+| plus every write target (`<assign location>`, `<send idlocation>`, `<foreach>`) | **0** | 0 |
 
 ```
 ScopeObligation census: documents=225 sites=1120 installed_diverging=301
   installed_documents=116 datamodel_diverging=3 datamodel_documents=3
-  write_targets_diverging=3 write_targets_documents=3
+  load_time_diverging=0 load_time_documents=0
+  write_targets_diverging=0 write_targets_documents=0
 ```
 
-**What it means for the decision.** The obligation is real — a C surface that
-took only a source string would be wrong about a quarter of the corpus — but it
-is **nearly all discharged before anything runs**. 298 of the 301 are answered
-by the `<data id>` declarations alone, and W3C SCXML 5.3's early binding puts
-every one of those in the datamodel before the first macrostep, so a run-time
-caller can build that scope once, from the model it already holds, with no
-mid-session maintenance at all. Write targets discharge **zero** more: not one
-site in the corpus depends on a name that only an `<assign>` brings into
-existence. So the FFI needs a scope handle and a `declare` — not a scope that
-tracks execution.
+⚠⚠ **The third row did not exist when this was first measured, and its
+absence is why the answer read as a residue.** `ScopeStage` absorbed
+document-level `<script>` declarations at `Everything` — the LAST stage —
+so a name W3C SCXML 5.8 puts in the datamodel at load time was modelled as
+arriving after an `<assign>` that runs mid-execution. In a ladder whose whole
+purpose is the ORDER, that is the defect, and it had the exact shape this file
+retired once already: a real number about the wrong subject. The stage now sits
+between `DataModel` and `WriteTargets`, where the specification puts it, and
+the count that was three is zero.
 
-**The residue is 3 sites, and they are named rather than counted**, because a
-residue nobody can enumerate is a residue nobody has classified:
+⚠ Note what did NOT change: the same three sites still diverge at `DataModel`,
+and they are still listed below. What changed is that they are now the
+population a SECOND pre-run call answers, rather than a remainder a caller
+could only reach by running the document.
+
+**What it means for the decision, and it is an ANSWER rather than a residue.**
+The obligation is real — a C surface that took only a source string would be
+wrong about a quarter of the corpus — but **all of it is discharged before
+anything runs**, from two sources a caller reads out of the model it already
+holds:
+
+1. every `<data id>`, which W3C SCXML 5.3's early binding puts in the datamodel
+   before the first macrostep — **298 of the 301**;
+2. every document-level `<script>`, which W3C SCXML 5.8 evaluates at document
+   load time, also before the first macrostep — **the remaining 3**.
+
+So the C surface needs exactly two declaring calls, `declare` and
+`declare_chunk`, both made once before anything runs, and **no scope that
+tracks execution**: write targets discharge zero further sites, because not one
+expression in the corpus depends on a name only an `<assign>` brings into
+existence. That is the whole shape of the scope obligation, and the count that
+says so is `load_time_diverging=0`.
+
+⚠ **A zero is the answer here, which is what makes a FALSE zero the expensive
+failure**, so it is asserted by `scope_obligation_census` and the instrument is
+held open by `every_stage_boundary_is_observable` — four controls now, one per
+boundary, including a document-level `<script>` that the census could not see
+at all before the stage existed.
+
+**The 3 that the second call answers, named rather than counted**, because a
+population nobody can enumerate is a population nobody has classified. All
+three are the same thing — a name a top-level `<script>` introduces — which is
+why one entry point covers them:
 
 | document | site | source | without the chunk |
 |---|---|---|---|

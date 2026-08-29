@@ -54,6 +54,7 @@ use sce_build::parser::SCXMLParser;
 const STAGES: &[ScopeStage] = &[
     ScopeStage::Installed,
     ScopeStage::DataModel,
+    ScopeStage::LoadTime,
     ScopeStage::WriteTargets,
     ScopeStage::Everything,
 ];
@@ -62,6 +63,7 @@ fn stage_name(stage: ScopeStage) -> &'static str {
     match stage {
         ScopeStage::Installed => "installed",
         ScopeStage::DataModel => "datamodel",
+        ScopeStage::LoadTime => "load_time",
         ScopeStage::WriteTargets => "write_targets",
         ScopeStage::Everything => "everything",
     }
@@ -172,9 +174,19 @@ fn walk() -> Census {
                     continue;
                 }
                 here += 1;
-                if *stage == ScopeStage::WriteTargets {
+                // Collected at DataModel, which is where the residue now
+                // lives: a caller holding every `<data id>` and nothing
+                // else. That set is exactly what the second entry point
+                // — `declare_chunk` over the document-level `<script>`s
+                // — buys, so enumerating it here names the ANSWER rather
+                // than a leftover. It used to be collected at
+                // WriteTargets, when a load-time name was reached only
+                // by running the document; with the stages in their real
+                // order that list is empty, and an empty list would have
+                // read as "measured nothing".
+                if *stage == ScopeStage::DataModel {
                     census.residue.push(format!(
-                        "{}: {} {:?}\n      holding write targets: {got}\n      holding everything:    {want}",
+                        "{}: {} {:?}\n      holding <data id> only: {got}\n      holding everything:     {want}",
                         path.strip_prefix(repo_root()).unwrap_or(&path).display(),
                         site.site,
                         site.source,
@@ -198,11 +210,12 @@ fn walk() -> Census {
 
 /// A document written so that exactly one stage boundary decides whether
 /// its `cond` lowers.
-fn control(datamodel: &str, body: &str, cond: &str) -> SCXMLModel {
+fn control(datamodel: &str, toplevel: &str, body: &str, cond: &str) -> SCXMLModel {
     let document = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="a">
   {datamodel}
+  {toplevel}
   <state id="a">
     {body}
     <transition cond="{cond}" target="b"/>
@@ -233,17 +246,33 @@ fn every_stage_boundary_is_observable() {
     let by_data = control(
         r#"<datamodel><data id="counter" expr="0"/></datamodel>"#,
         "",
+        "",
         "counter &gt; 0",
     );
-    // `<assign location>` — crossed between DataModel and WriteTargets.
+    // A DOCUMENT-LEVEL `<script>` — crossed between DataModel and
+    // LoadTime. This is the boundary the census could not see at all
+    // until the stage existed, and it is the one the residue of three
+    // sits on: every one of them is a name a top-level `<script>`
+    // introduces, which W3C SCXML 5.8 puts in the datamodel before the
+    // first macrostep.
+    let by_toplevel_script = control(
+        "",
+        r#"<script>var loaded = 1;</script>"#,
+        "",
+        "loaded &gt; 0",
+    );
+    // `<assign location>` — crossed between LoadTime and WriteTargets.
     let by_write = control(
+        "",
         "",
         r#"<onentry><assign location="written" expr="1"/></onentry>"#,
         "written &gt; 0",
     );
-    // `<script>` top-level declaration — crossed between WriteTargets and
-    // Everything.
+    // A `<script>` INSIDE A STATE — crossed between WriteTargets and
+    // Everything. Not the same boundary as the document-level one above,
+    // and keeping both is what stops the two collapsing into one.
     let by_script = control(
+        "",
         "",
         r#"<onentry><script>var declared = 1;</script></onentry>"#,
         "declared &gt; 0",
@@ -257,13 +286,19 @@ fn every_stage_boundary_is_observable() {
             ScopeStage::DataModel,
         ),
         (
+            "document-level <script>",
+            &by_toplevel_script,
+            ScopeStage::DataModel,
+            ScopeStage::LoadTime,
+        ),
+        (
             "<assign location>",
             &by_write,
-            ScopeStage::DataModel,
+            ScopeStage::LoadTime,
             ScopeStage::WriteTargets,
         ),
         (
-            "<script> declaration",
+            "in-state <script> declaration",
             &by_script,
             ScopeStage::WriteTargets,
             ScopeStage::Everything,
@@ -354,6 +389,7 @@ fn scope_obligation_census() {
         "ScopeObligation census: documents={} sites={} \
          installed_diverging={} installed_documents={} \
          datamodel_diverging={} datamodel_documents={} \
+         load_time_diverging={} load_time_documents={} \
          write_targets_diverging={} write_targets_documents={}",
         census.documents,
         census.sites,
@@ -361,17 +397,43 @@ fn scope_obligation_census() {
         census.documents_touched["installed"],
         census.diverging["datamodel"],
         census.documents_touched["datamodel"],
+        census.diverging["load_time"],
+        census.documents_touched["load_time"],
         census.diverging["write_targets"],
         census.documents_touched["write_targets"],
     );
 
-    // The residue is what a scope handle maintained through every write
-    // still gets wrong, so it is the exact population `declare_chunk`
-    // exists for. It is named, not just counted: a run-time caller has to
-    // be judged against these, and three lines a reader can check are
-    // worth more than a total nobody can open.
+    // THE ANSWER, and the reason this stage was added. Everything a
+    // run-time caller needs it can have BEFORE the first macrostep:
+    // `<data id>` by early binding (W3C SCXML 5.3) and a document-level
+    // `<script>` by load-time evaluation (W3C SCXML 5.8). If that is
+    // true of the whole corpus, the obligation needs a `declare` and a
+    // `declare_chunk` and NO execution-time scope tracking at all — and
+    // this is the assertion that says so rather than a paragraph
+    // claiming it.
+    //
+    // ⚠ A zero here is an ANSWER, so a blind instrument would forge one.
+    // `every_stage_boundary_is_observable` is what stops that: it holds
+    // the DataModel -> LoadTime boundary open with a document that
+    // crosses it, so a `from_model_upto` that ignored the new stage
+    // fails there before this reads zero.
+    assert_eq!(
+        census.diverging["load_time"], 0,
+        "{} site(s) still diverge once the caller has read every `<data id>` \
+         and every document-level `<script>`. Both are available before the \
+         first macrostep, so a residue here would mean a run-time caller \
+         needs scope maintained THROUGH execution — which is a different \
+         C surface from the one this ledger prices. The sites: {:?}",
+        census.diverging["load_time"], census.residue,
+    );
+
+    // What the SECOND entry point buys, named rather than counted: the
+    // sites a caller holding every `<data id>` still gets wrong, and
+    // which one `declare_chunk` over the document-level `<script>`s
+    // answers. A reader can open all of them.
     println!(
-        "ScopeObligation residue ({} site(s) reachable only by `declare_chunk`):",
+        "ScopeObligation residue ({} site(s) `declare` alone cannot reach, \
+         all answered by `declare_chunk`):",
         census.residue.len()
     );
     for entry in &census.residue {
@@ -379,7 +441,16 @@ fn scope_obligation_census() {
     }
     assert_eq!(
         census.residue.len(),
-        census.diverging["write_targets"],
+        census.diverging["datamodel"],
         "the residue list and the count it is meant to enumerate disagree"
+    );
+
+    // The stages nest, so this is implied by the LoadTime zero above.
+    // It is asserted anyway because it is the sentence a decision reads:
+    // NOTHING in this corpus needs a scope that tracks execution.
+    assert_eq!(
+        census.diverging["write_targets"], 0,
+        "a site diverges at write_targets that did not diverge at load_time, \
+         which the nesting makes impossible — the ladder's order is wrong"
     );
 }

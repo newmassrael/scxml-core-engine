@@ -25,6 +25,14 @@ pub mod conformance;
 /// module docs for what that signature cost.
 pub mod ecmascript;
 pub mod ecmascript_acceptance;
+/// A measurement probe for the C-callable lowering surface, behind an
+/// off-by-default feature. It exists so the largest number in
+/// `docs/SCE_LUA_TRANSLATION_SEAM.md`'s D1 ledger can be re-derived
+/// instead of cited from a probe that was deleted. Compiling it decides
+/// nothing: no CMake target links a Rust artifact and the crate stays
+/// `crate-type = ["rlib"]`.
+#[cfg(feature = "ffi-probe")]
+pub mod ffi_probe;
 pub mod filters;
 pub mod forge;
 #[cfg(not(target_arch = "wasm32"))]
