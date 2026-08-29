@@ -614,12 +614,51 @@ class LuaScriptEngine : ScxmlScriptEngine {
         return name.all { it.isLetterOrDigit() || it == '_' || it == '$' }
     }
 
+    /**
+     * §scxml-5.9: does this expression read a name ECMAScript would call
+     * undeclared? JavaScript throws `ReferenceError`; Lua answers `nil`.
+     *
+     * ⚠ **Three questions, not one, and this asked only the second.** C++'s
+     * `isUndeclaredIdentifier` (`sce/src/scripting/LuaEngine.cpp`) asks
+     * whether the name is a Lua keyword, whether the session DECLARED it, and
+     * whether it is a live Lua GLOBAL — undeclared only if all three say no.
+     * This copy had the middle one and a hard-coded list standing in for the
+     * third, so a name that exists in the interpreter but never went through
+     * [setVariable] read as undeclared.
+     *
+     * That is not a corner. `executeScript` files nothing in `declaredVars` —
+     * only [setVariable], [assign] and [executeForeach] do — so a document
+     * whose `<script>` assigns `Var1 = 1` and then reads `Var1` got a
+     * `ReferenceError` for a variable sitting in the global table. Two of the
+     * shared table's cases are exactly that shape (`13.15.2 compound
+     * assignment`, `14.7.4 the for statement`), and they were declared
+     * divergences on BOTH routes into this engine — the rewriter's and the
+     * frontend's — because the defect was never on that seam at all.
+     *
+     * The global lookup also RETIRES the list. Every non-keyword name it held
+     * — `math`, `In`, `JSON`, `_scxml_truthy`, `Object` … — is registered as a
+     * global by [registerBuiltins], so the interpreter already knew them and a
+     * second copy of that knowledge could only drift. What a lookup cannot
+     * answer is a keyword: `true`, `false` and `nil` are literals rather than
+     * globals, so those stay, spelled as Lua's own keyword set the way C++
+     * spells it.
+     */
     private fun isUndeclaredSimpleVariable(luaExpr: String, session: Session): Boolean {
         val trimmed = luaExpr.trim()
         if (trimmed.isEmpty()) return false
         if (!isSimpleVariableName(trimmed)) return false
-        if (trimmed.startsWith("_") || trimmed in BUILTINS) return false
-        return trimmed !in session.declaredVars
+        if (trimmed.startsWith("_")) return false
+        if (trimmed in LUA_KEYWORDS) return false
+        if (trimmed in session.declaredVars) return false
+        return !isLuaGlobal(session.handle, trimmed)
+    }
+
+    /** Whether @p name currently holds a non-nil value in the global table. */
+    private fun isLuaGlobal(handle: Long, name: String): Boolean {
+        LuaNative.getGlobal(handle, name)
+        val present = !LuaNative.isNil(handle, -1)
+        LuaNative.pop(handle, 1)
+        return present
     }
 
     /**
@@ -799,11 +838,21 @@ class LuaScriptEngine : ScxmlScriptEngine {
 
         private fun loadEcmaSemantics(): String = ECMA_SEMANTICS
 
-        private val BUILTINS = setOf(
-            "true", "false", "nil", "math", "string", "table", "type",
-            "tostring", "tonumber", "pairs", "ipairs", "print",
-            "In", "_scxml_truthy", "_typeof", "_isArray", "_indexOf", "_concat",
-            "parseInt", "parseFloat", "JSON", "_NULL", "_UNDEFINED", "Object", "debug"
+        /**
+         * Lua's own keywords — the names a global lookup cannot answer for.
+         *
+         * This replaced a list that mixed keywords with globals (`math`,
+         * `In`, `JSON`, `Object`, `_scxml_truthy` …). Those are registered by
+         * [registerBuiltins], so the interpreter is the one place that knows
+         * them and [isUndeclaredSimpleVariable] now asks it. `true`, `false`
+         * and `nil` are literals rather than globals, and neither is `and` or
+         * `end`, so the keyword set is what stays behind — the same 22 names
+         * `SCE::isUndeclaredIdentifier` spells in C++, kept as one list rather
+         * than the subset this engine happened to meet.
+         */
+        private val LUA_KEYWORDS = setOf(
+            "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if",
+            "in", "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while"
         )
 
         // §scxml-B-2-1's DOM read surface — DOM Level 1 Core, not the two

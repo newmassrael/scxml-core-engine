@@ -2665,9 +2665,9 @@ Each entry now carries a `build_time_frontend` verdict. This is the split:
 | verdict | entries | what it means for the seam |
 |---|---:|---|
 | `answers` | 39 | the frontend's Lua reached this backend's Lua engine and ECMA-262's answer came back — **the seam retires these** |
-| `diverges` | 2 | reached the engine unchanged and was still answered wrong; the seam does not buy these back, the frontend defect does |
+| `diverges` | 0 | reached the engine unchanged and was still answered wrong; the seam does not buy these back, the frontend defect does |
 | `unmeasured` | 5 | the rewriter mangles the frontend's own Lua on the way in, so the lowered route cannot ask them yet |
-| **total** | **46** | every entry is in exactly one verdict |
+| **total** | **44** | every entry is in exactly one verdict |
 
 ```sh
 python3 - <<'PY'
@@ -2685,12 +2685,19 @@ print(collections.Counter(e['build_time_frontend'] for e in d['divergences']))
 PY
 ```
 
-**39 of 46, or 85%, is what moving Kotlin's translation to build time is worth
+**39 of 44, or 89%, is what moving Kotlin's translation to build time is worth
 on this table** — and it is worth saying the other way round too, because it is
-the half a proposal would have hidden: **7 of the 46 the seam does NOT close on
-its own.** Two are a frontend defect (both the same one: the emitted setup
-assigns without `var`, so the session's declared-identifier guard never learns
-the name), and five are cases the seam has to open before anyone can even ask.
+the half a proposal would have hidden: **5 of the 44 the seam does NOT close on
+its own**, and they are the cases the seam has to open before anyone can even
+ask what it would do with them.
+
+⚠ **The table read 39 / 2 / 5 over 46 for the first hours of its existence,
+and the two that left are the reason the next section exists.** They were
+declared as a defect of the LOWERED route. They were not; they were a defect of
+this engine's undeclared-variable guard, visible on both routes, and the round
+below closed them in both files with one edit. A verdict pointing at a route is
+a claim about where a defect lives, and this one was wrong the first time it
+was written.
 
 ### The verdict is derived, not judged
 
@@ -2765,13 +2772,133 @@ and a case that opens the Lua target is the only thing that can show it alive.
   not "probably fine": the rewriter mangles the frontend's own Lua for them, so
   the only way to learn what the lowered route does is to build the lowered
   route. They are the cases most likely to move the 39 in either direction.
-- **The 2 `diverges` are a frontend defect that is still open.** Both are the
-  same one — the emitted setup assigns without `var`, so the session's
-  declared-identifier guard never learns the name. Naming it in two files is
-  not fixing it, and nothing in this round did.
+- ~~**The 2 `diverges` are a frontend defect that is still open.**~~ CLOSED by
+  the round below, and the diagnosis in this bullet was wrong. It was not the
+  frontend's `var`-less setup: it was this engine's guard asking one of the
+  three questions its C++ sibling asks. Kept struck through rather than
+  deleted, because "naming it in two files is not fixing it" was right about
+  the shape and wrong about the cause, and the round after it found the cause
+  by comparing the two files rather than by re-reading either.
 - **The C++ list keeps no such field, deliberately.**
   `lua_engine_divergences.json` does not need one: C++ HAS both paths, so
   `diverges_on` already carries
   the same fact where it belongs. That asymmetry is the reason this field is
   written as temporary, and `the_field_retires_when_the_seam_opens` is what
   makes "temporary" a claim something can fault.
+
+## Landed 2026-08-29 (eighth round): 46 → 44, and the seam was not what closed them
+
+The round above split the 46 to price the lowered seam. Pricing it meant
+reading the two lists side by side for the first time, and the reading found
+something neither list could have said alone: **the same two cases,
+`13.15.2 compound assignment` (`Var1`) and `14.7.4 the for statement`
+(`total`), were declared in BOTH.** In
+`kotlin_lua_divergences.json` as runtime-rewriter divergences, and in
+`kotlin_lowered_ecma262.json` as the lowered route's only two.
+
+A defect that shows up on both routes is not a defect of either. That is the
+whole finding, and it refutes what the previous round wrote down: the lowered
+file's own prose blamed the frontend's `var`-less emission and said "a lowered
+entry point closes this by construction". It would not have. Both routes go
+through the same guard, and the guard was the defect.
+
+### The guard asked two of three questions
+
+`LuaScriptEngine.isUndeclaredSimpleVariable` decided whether a name is one
+ECMAScript would call undeclared. Its C++ sibling `SCE::isUndeclaredIdentifier`
+(`sce/src/scripting/LuaEngine.cpp`) asks three things and answers "undeclared"
+only when all three say no:
+
+| question | C++ | Kotlin, before |
+|---|---|---|
+| is it a Lua keyword? | 22-name keyword set | a mixed list, keywords and globals together |
+| did the session DECLARE it? | `declaredVars` | `declaredVars` |
+| is it a live Lua GLOBAL? | `lua_getglobal`, non-nil | **not asked** |
+
+`executeScript` files nothing in `declaredVars` — only `setVariable`, `assign`
+and `executeForeach` do — so a document whose `<script>` runs `Var1 = 1` and
+then reads `Var1` got `ReferenceError` for a variable sitting in the global
+table. Adding the lookup closed both cases in both files with one edit.
+
+**The lookup also retired the list.** Every non-keyword name it carried —
+`math`, `In`, `JSON`, `Object`, `_scxml_truthy`, … — is registered as a global
+by `registerBuiltins`, so the interpreter already knew them and the second copy
+could only drift. What stays is Lua's keyword set, because `true`, `false` and
+`nil` are literals rather than globals and a lookup cannot answer for them.
+
+### The witnesses, both directions, in the turn that claimed it
+
+The red came first and it was the lists' own second direction — the one added
+so they could SHRINK, firing for the first time:
+
+```
+2 declared divergence(s) no longer describe this engine.
+  Var1  (13.15.2 compound assignment)
+  total  (14.7.4 the for statement)
+```
+
+…from `EcmaScriptSemanticsTest`, and the same two from `LoweredEcma262Test`
+about the lowered route. Two lists, one edit, one pair of names. Then both
+green with the entries removed, on `--no-build-cache --rerun-tasks` so the
+result is this run's and not a restored JUnit XML.
+
+Then the other direction, bought by hand because `scripts/mutate` still has no
+Gradle runner: neutering the lookup (`return true || !isLuaGlobal(…)`) brings
+both suites back red, naming the same pair and saying why —
+
+```
+2 expression(s) disagree with ECMA-262 on LuaScriptEngine without being declared to.
+  [Var1] failed to evaluate: ReferenceError: Var1 is not defined
+  [total] failed to evaluate: ReferenceError: total is not defined
+```
+
+That is what makes "the lookup closed them" a measurement rather than a
+coincidence of the same round: with it the entries are unremovable, without it
+they are undeclared divergences, and nothing else moved between the two runs.
+
+### What this does to the count, and what it does not
+
+`kotlin_lua_divergences.json` is **44 entries**, and
+`kotlin_lowered_ecma262.json`'s `divergences` array is **empty** — the first of
+its two arrays to reach the terminal state this seam is working toward.
+`build_time_frontend` is now 39 `answers`, 0 `diverges`, 5 `unmeasured`.
+
+⚠ **The 5 `unmeasured` are untouched, and the lowered entry point is still the
+only thing that can move them.** This round did not build it. What it did was
+remove a reason to build it that turned out to be false — two of the seven
+cases the seam was credited with closing were never the seam's to close.
+
+### Found while verifying: no CI lane measures this engine above expressions
+
+Changing an engine means running the lane that engine is in, so this round ran
+the Kotlin suite on Lua — `./gradlew :sce-kotlin-tests:test
+-Psce.script.engine=lua`. **361 tests, 2 failing**, and neither is new:
+`SendParamPayloadTest` (W3C SCXML 6.2, a repeated `<param>` name loses one of
+its values) and `XmlDataIsADomTreeTest` (W3C SCXML B.2, a `<data>` element's
+XML does not arrive as a document). An A/B against the guard's previous form
+reproduced both unchanged, so they predate this round.
+
+They had been invisible because `scripts/gates/w3c-kotlin.sh` runs `rhino` and
+`quickjs` only, and stood a sentence in place of running the third: *"Lua is
+deliberately absent. It passes this suite (measured: 230 cases)."* The
+exclusion is right — running Lua there would assert SCE offers it for the
+ECMAScript datamodel, which is what `luaIsNotAnEcmaScriptEngineAndSaysSo`
+denies. The sentence was not: the suite holds 361 cases, not 230, and Lua does
+not pass it.
+
+So the ECMA-262 table and the two divergence lists cover this engine's
+EXPRESSIONS, and nothing covers the 226 generated machines it runs. The repair
+is not to widen the array — that makes the conformance claim the gate must not
+make — but to give Lua a declared-failure list held in both directions, the way
+`kotlin_lua_divergences.json` holds its expressions. That list does not exist,
+and the gate now says so where the next person to widen the array will read it.
+
+### The count in prose is gone, because it was wrong within the day
+
+`kotlin_lua_divergences.json` said "the set is the 46 entries below" in three
+places. It was 46 for about four hours. Those sentences now name no number and
+say why; `build_time_frontend.measured` is the only place a count lives, and
+`kotlin_lowering_dividend` re-derives it from the list under it on every push.
+That is the fifth time a typed count in this repository outlived its
+measurement — and the first time the replacement was already in place when it
+happened, so the gate reported it instead of a person noticing.
