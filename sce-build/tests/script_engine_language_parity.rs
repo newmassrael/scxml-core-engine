@@ -45,7 +45,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::generator::Language;
+use sce_build::generator::{Language, ScriptEngineTarget};
 use sce_build::manifest::{
     SCRIPT_ENGINE_LANGUAGES, SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT, SCRIPT_ENGINE_LANGUAGE_LUA,
 };
@@ -139,6 +139,138 @@ fn emit(lang: &str, tag: &str) -> (String, String) {
         .unwrap_or_else(|| panic!("{lang}: no manifest on stdout"))
         .to_string();
     (text, manifest)
+}
+
+/// Ask one backend for an explicit target; `None` is a refusal, `Some` is
+/// every byte it emitted.
+///
+/// Unlike [`emit`] this does NOT assert success — a refusal is one of the two
+/// answers the case below compares against — and it returns the ARTIFACT,
+/// because "did the CLI accept" is not an independent reading of
+/// `supports_script_engine_target`: the CLI derives its refusal from that same
+/// function, and a gate whose two halves share a source is not a gate.
+/// Measured 2026-08-30: with the ECMAScript arm forced to `true`, all twelve
+/// combinations were accepted, so an accept/refuse comparison alone had
+/// nothing left to disagree with.
+fn asks_for(lang: &str, target: &str, tag: &str) -> Option<String> {
+    let out = repo_root().join("target").join(tag).join(lang);
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).expect("scratch dir");
+
+    let result = Command::new(codegen_bin())
+        .args([
+            "generate",
+            FIXTURE,
+            "-l",
+            lang,
+            "-o",
+            out.to_str().expect("utf-8 path"),
+            "--script-engine",
+            target,
+            "--no-format",
+        ])
+        .current_dir(repo_root())
+        .output()
+        .expect("sce-codegen runs");
+    if !result.status.success() {
+        return None;
+    }
+
+    let mut text = String::new();
+    let mut stack = vec![out.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("scratch dir is readable") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if let Ok(body) = std::fs::read_to_string(&path) {
+                text.push_str(&body);
+                text.push('\n');
+            }
+        }
+    }
+    assert!(
+        !text.is_empty(),
+        "{lang}/{target}: generation reported success and wrote nothing readable, so there \
+         is no artifact to measure"
+    );
+    Some(text)
+}
+
+/// A target a backend ACCEPTS is a target its artifact is actually in.
+///
+/// `supports_script_engine_target` is what a host reads before it supplies an
+/// engine, so a backend that accepts `--script-engine ecmascript` has to emit
+/// the author's source and one that accepts `lua` has to emit lowered Lua. The
+/// reading is the ARTIFACT — `LOWERED_MARKER`, what build-time lowering leaves
+/// behind and a comment cannot — because the CLI's own refusal is derived from
+/// the very predicate under test. An accept/refuse comparison would be that
+/// predicate agreeing with itself; the marker is the independent half.
+///
+/// This case exists because the ECMAScript arm of that function was a flat
+/// `false` until 2026-08-30 and nothing here would have faulted it. C++ and
+/// Kotlin were answered `true` by the `target == default` line above it, so a
+/// CAPABILITY question was being settled by a POLICY — and
+/// `ecma262_scoreboard_contract` derives the `runtime-rewriter` path from this
+/// answer, so a path that vanished when a default moved would take a
+/// divergence list's entries with it while the engine still answered every one
+/// of them exactly as before.
+///
+/// The refusal side is not decoration: four backends lower unconditionally and
+/// have no arm that emits the author's source, so a green run is four measured
+/// refusals beside eight measured artifacts, never a sweep that found nothing.
+#[test]
+fn the_targets_a_backend_claims_are_the_targets_it_generates_for() {
+    let mut emitted = 0usize;
+    let mut refused = 0usize;
+
+    for lang in Language::ALL {
+        let name = lang.canonical_name();
+        for target in [ScriptEngineTarget::EcmaScript, ScriptEngineTarget::Lua] {
+            let wire = target.wire_name();
+            let claimed = lang.supports_script_engine_target(target);
+            let artifact = asks_for(name, wire, "seam-target-parity");
+            assert_eq!(
+                claimed,
+                artifact.is_some(),
+                "`{name}` says supports_script_engine_target({wire}) = {claimed} and \
+                 `sce-codegen generate -l {name} --script-engine {wire}` {}. The refusal is \
+                 the contract a host reads before it supplies an engine.",
+                if artifact.is_some() {
+                    "succeeded"
+                } else {
+                    "refused"
+                }
+            );
+
+            let Some(text) = artifact else {
+                refused += 1;
+                continue;
+            };
+            emitted += 1;
+
+            let lowered = text.contains(LOWERED_MARKER);
+            let wanted = target == ScriptEngineTarget::Lua;
+            assert_eq!(
+                lowered,
+                wanted,
+                "`{name}` accepted `--script-engine {wire}` and emitted an artifact that \
+                 {} `{LOWERED_MARKER}`. Accepting a target means emitting FOR it: a backend \
+                 whose templates only lower cannot honour the ECMAScript request, and one \
+                 that hands over source cannot honour the Lua request — either way the host \
+                 supplies the engine the manifest named and the machine speaks the other \
+                 language, with no diagnostic anywhere.",
+                if lowered { "carries" } else { "does not carry" }
+            );
+        }
+    }
+
+    assert!(
+        emitted > 0 && refused > 0,
+        "this case measured {emitted} emission(s) and {refused} refusal(s). Both sides have \
+         to be non-empty or it is asserting one answer against itself: today four backends \
+         refuse the ECMAScript target and two accept it."
+    );
 }
 
 #[test]

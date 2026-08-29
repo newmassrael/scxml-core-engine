@@ -3339,3 +3339,41 @@ sweep.
   `w3c-kotlin` runs on Rhino and QuickJS — two engines that refuse Lua. So the
   flip needs the suite to generate per engine first, which is also what would
   let `lua` join `KOTLIN_ENGINES` and close that gate's own standing note.
+
+### The one thing that made the flip unsafe, removed — and it changes nothing yet
+
+`ecma262_scoreboard_contract`'s `measurable_paths` derived `runtime-rewriter`
+from `default_script_engine_target` — a POLICY — and now derives it from
+`supports_script_engine_target(EcmaScript)`, a CAPABILITY. That is what closes
+the false route to zero described above: the path a divergence entry declares
+must not vanish because a codegen default moved, since moving one changes no
+answer either suite gives.
+
+`supports_script_engine_target`'s ECMAScript arm was a flat `false` under the
+comment *"a backend that lowers has no arm that emits the author's source"*.
+The pair filters refuted that: a backend whose guard site is
+`to_script_source_guard` emits `ScriptSource::ecmascript(...)` or
+`ScriptSource::lua(...)` by the run's selection, so C++ and Kotlin have BOTH
+arms. It is now `!lowers_expressions_at_build_time()`.
+
+⚠⚠ **Measured, and stated rather than implied: that edit is a NO-OP in this
+tree.** Forcing the arm back to `false` leaves every lane green, because the
+`target == default` line above it already answers `true` for the two backends
+that have both arms. Its value is entirely in what it makes SURVIVE — the
+Kotlin default flip — and it will not be observable until that flip happens.
+Recorded here because a change nothing can fault is a change a reader should
+be told is unfaultable, not one to describe as a repair.
+
+⚠⚠⚠ **What the round DID buy is a gate, and its first form was tautological.**
+`the_targets_a_backend_claims_are_the_targets_it_generates_for` first compared
+the predicate against whether the CLI accepted the flag — and the CLI derives
+its refusal from that same predicate. Measured 2026-08-30 by forcing the arm to
+`true`: **all twelve combinations were accepted**, and only the case's
+non-empty-refusals floor noticed. It now reads the ARTIFACT for
+`_scxml_truthy(`, which is the independent half, and the same break fails on
+the substance instead:
+
+```
+`rust` accepted `--script-engine ecmascript` and emitted an artifact that
+carries `_scxml_truthy(_event.data)`.
+```

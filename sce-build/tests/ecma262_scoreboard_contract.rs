@@ -89,9 +89,20 @@ const DIVERGENCE_LISTS: &[(&str, Language)] = &[
 /// Which routes into a Lua engine exist for @p lang, derived from the same
 /// answers the code generator gives.
 ///
-/// * `runtime-rewriter` exists while the backend hands the engine the AUTHOR'S
-///   ECMAScript — a Lua engine then has to adapt it, which is what the runtime
-///   rewriter is. A backend that lowers by default never reaches one.
+/// * `runtime-rewriter` exists while the backend CAN hand the engine the
+///   AUTHOR'S ECMAScript — a Lua engine then has to lower it on the spot,
+///   which is what that path names. Read from
+///   `supports_script_engine_target(EcmaScript)` — a capability — and NOT from
+///   `default_script_engine_target`, which is a policy.
+///
+///   ⚠ It was read from the default until 2026-08-30, and that is a hole this
+///   axis nearly fell into. The suites holding this path reach the engine by a
+///   DIRECT evaluate (`grep -c Generated` on either
+///   `EcmaScriptSemanticsTest` answers 0), so no codegen default can move one
+///   of their answers — but moving one WOULD have stripped the path from the
+///   legal set, made every entry declaring it illegal, and had the reader
+///   delete entries the engine still answers differently. The count this axis
+///   drives to zero must not have a route to zero that changes no answer.
 /// * `build-time-lowering` exists once the backend can actually emit a lowered
 ///   artifact, which `supports_script_engine_target` already answers by
 ///   counting the template sites still handing over source.
@@ -102,7 +113,7 @@ const DIVERGENCE_LISTS: &[(&str, Language)] = &[
 /// ambiguous.
 fn measurable_paths(lang: Language) -> BTreeSet<String> {
     let mut paths = BTreeSet::new();
-    if lang.default_script_engine_target() == ScriptEngineTarget::EcmaScript {
+    if lang.supports_script_engine_target(ScriptEngineTarget::EcmaScript) {
         paths.insert(PATH_RUNTIME_REWRITER.to_string());
     }
     if lang.supports_script_engine_target(ScriptEngineTarget::Lua) {
