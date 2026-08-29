@@ -1962,8 +1962,13 @@ cache already covers.
   and why each one says so in its own header.
   ⚠⚠⚠⚠ **A shallow clone cannot answer that question, and the gate says so
   rather than answering for it.** `actions/checkout` fetches depth 1, so on
-  2026-08-29 the pin — the tip's own parent that day — was absent from four
-  CI lanes and the arm went red for a tree that was correct. A check that
+  2026-08-29 the pin — the tip's own parent that day — was absent wherever a
+  lane cloned shallow, and the arm went red for a tree that was correct: TWO
+  of the four lanes red at that commit were this arm (`tree-hygiene`, and
+  `mutation-rounds`, where it surfaced as `baseline is not green (1 failing)`
+  rather than as itself), while the other two were the deleted translation
+  unit's own residue — two unbacked ledger bindings and the embed manifest's
+  symbol count. Counting red lanes is not counting causes. A check that
   reads *cannot answer* as *the answer is no* is measuring the clone, not the
   ledger. The miss is now CLASSIFIED: the only way past the arm is for the
   repository to PROVE it is shallow, and a full clone that cannot resolve the
