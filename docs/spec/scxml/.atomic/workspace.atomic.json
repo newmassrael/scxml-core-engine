@@ -7193,6 +7193,14 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
           "symbol": "executeScript",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/ecmascript/scope.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/ffi_probe.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

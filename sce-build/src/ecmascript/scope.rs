@@ -80,8 +80,8 @@ pub enum ScopeStage {
     DataModel,
     /// Plus what a DOCUMENT-LEVEL `<script>` declares at its top level.
     ///
-    /// W3C SCXML 5.8 has the processor evaluate top-level scripts at
-    /// document load time, so these names arrive BEFORE the first
+    /// A processor evaluates top-level scripts at document load time
+    /// (§scxml-5.8), so these names arrive BEFORE the first
     /// macrostep — the same point early binding puts `<data id>` in the
     /// datamodel, and before any `<assign>` has run. A run-time caller
     /// therefore reaches this stage from the model alone, in the same

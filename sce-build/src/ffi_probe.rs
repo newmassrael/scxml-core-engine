@@ -90,9 +90,9 @@ pub unsafe extern "C" fn sce_scope_declare(scope: *mut DocumentScope, name: *con
 }
 
 /// Declare what a document-level `<script>` chunk introduces — the
-/// remaining three sites. W3C SCXML 5.8 evaluates those at load time, so
-/// a run-time caller can make this call before the first macrostep and
-/// never maintain scope again.
+/// remaining three sites. A processor evaluates those at document load
+/// time (§scxml-5.8), so a run-time caller can make this call before
+/// the first macrostep and never maintain scope again.
 ///
 /// # Safety
 /// `scope` must come from [`sce_scope_new`] and not yet be freed.
