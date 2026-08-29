@@ -358,9 +358,19 @@ jobs:
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
 
     steps:
+    # `fetch-depth: 0` because a case is only judged where its precondition
+    # holds. `the_rewriter_is_retired_not_merely_second`'s pin case makes a
+    # ledger row name a commit the repository does not carry, and the arm it
+    # aims at classifies a SHALLOW clone rather than reading "cannot resolve"
+    # as "not there" — so on a depth-1 checkout that arm steps aside and the
+    # mutation reports SURVIVED. Measured 2026-08-29: 13/14 caught, and the
+    # one that did not was this. The casefile's own comment says the case
+    # "runs where clones are full"; this is what makes that true of the job
+    # that judges it, rather than only of a developer's tree.
     - name: Checkout Repository
       uses: actions/checkout@v6
       with:
+        fetch-depth: 0
         submodules: recursive
 
     - name: Install Rust Toolchain
