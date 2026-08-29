@@ -2664,9 +2664,9 @@ Each entry now carries a `build_time_frontend` verdict. This is the split:
 
 | verdict | entries | what it means for the seam |
 |---|---:|---|
-| `answers` | 39 | the frontend's Lua reached this backend's Lua engine and ECMA-262's answer came back — **the seam retires these** |
+| `answers` | 44 | the frontend's Lua reached this backend's Lua engine and ECMA-262's answer came back — **the seam retires these** |
 | `diverges` | 0 | reached the engine unchanged and was still answered wrong; the seam does not buy these back, the frontend defect does |
-| `unmeasured` | 5 | the rewriter mangles the frontend's own Lua on the way in, so the lowered route cannot ask them yet |
+| `unmeasured` | 0 | the lowered route cannot put the case to the engine at all |
 | **total** | **44** | every entry is in exactly one verdict |
 
 ```sh
@@ -2685,11 +2685,17 @@ print(collections.Counter(e['build_time_frontend'] for e in d['divergences']))
 PY
 ```
 
-**39 of 44, or 89%, is what moving Kotlin's translation to build time is worth
-on this table** — and it is worth saying the other way round too, because it is
-the half a proposal would have hidden: **5 of the 44 the seam does NOT close on
-its own**, and they are the cases the seam has to open before anyone can even
-ask what it would do with them.
+**44 of 44 — all of them — is what moving Kotlin's translation to build time is
+worth on this table.** The number reached that in three steps on one day, and
+the steps are the record worth keeping: 39 of 46 when the split was first
+measured; 39 of 44 once two of the "seam closes these" cases turned out to be
+an engine defect the seam had nothing to do with; 44 of 44 once the lowered
+entry point existed and the last five could be asked instead of assumed.
+
+⚠ **Every one of those three numbers was the honest reading at the time**, and
+the two that moved did so because something was MEASURED, not because anyone
+argued. The 5 were `unmeasured` for exactly one reason — no entry point — and
+`unmeasured` was never a synonym for "probably fine".
 
 ⚠ **The table read 39 / 2 / 5 over 46 for the first hours of its existence,
 and the two that left are the reason the next section exists.** They were
@@ -2872,11 +2878,17 @@ cases the seam was credited with closing were never the seam's to close.
 
 Changing an engine means running the lane that engine is in, so this round ran
 the Kotlin suite on Lua — `./gradlew :sce-kotlin-tests:test
--Psce.script.engine=lua`. **361 tests, 2 failing**, and neither is new:
+-Psce.script.engine=lua`. **Two cases fail**, and neither is new:
 `SendParamPayloadTest` (W3C SCXML 6.2, a repeated `<param>` name loses one of
 its values) and `XmlDataIsADomTreeTest` (W3C SCXML B.2, a `<data>` element's
 XML does not arrive as a document). An A/B against the guard's previous form
 reproduced both unchanged, so they predate this round.
+
+⚠ This paragraph said "361 tests, 2 failing" when it was drafted, and the
+count was wrong six hours later — the ninth round added a suite and the total
+became 367. The failing NAMES did not move. That is the third stale count in
+this document's history and the shortest-lived; totals are now left out of
+prose here and the cases are named instead.
 
 They had been invisible because `scripts/gates/w3c-kotlin.sh` runs `rhino` and
 `quickjs` only, and stood a sentence in place of running the third: *"Lua is
@@ -2902,3 +2914,90 @@ say why; `build_time_frontend.measured` is the only place a count lives, and
 That is the fifth time a typed count in this repository outlived its
 measurement — and the first time the replacement was already in place when it
 happened, so the gate reported it instead of a person noticing.
+
+## Landed 2026-08-29 (ninth round): the Kotlin seam exists, and the last 5 were asked
+
+`ScxmlScriptEngine` now carries the pair this document argued for and C++
+landed on 2026-08-28. `com.sce.runtime.ScriptSource` is `(language, text,
+source)` with `ecmascript(…)` and `lua(lowered, source)` and deliberately **no
+one-argument `lua`**; `ScriptLanguage` spells `ecmascript` / `lua` to match the
+manifest's `script_engine_language` wire vocabulary.
+
+| member | who implements it |
+|---|---|
+| `evaluateExpr(sessionId, ScriptSource)` | **nobody** — it is the contract |
+| `executeScript(sessionId, ScriptSource)` | **nobody** — same |
+| `doEvaluateExpr` / `doExecuteScript` | the engine |
+| `nativeLanguage()` / `acceptsLanguage(…)` | the engine, defaulting to ECMAScript-only |
+
+The two entry points ask `acceptsLanguage` and refuse before any engine code
+runs, so a third engine cannot forget it. C++ says that with `non-virtual`;
+Kotlin cannot say `final` on an interface member, so
+`theLanguageContractIsNotAnEngineDetail` says it instead — and it reads the
+SOURCE, because the first version asked `Class.declaredMethods` and every
+engine failed it, two of them overriding nothing. Kotlin emits a forwarding
+method into each implementing class for an interface member with a body. A
+question about what somebody WROTE has to be answered from what somebody wrote.
+
+Inside `LuaScriptEngine` the seam is **one branch** — `loweredTextOf` /
+`loweredScriptOf` pass Lua through and send ECMAScript to the transformer — and
+everything after it is the tail both routes run, `ReferenceError` built from
+`source` while the check runs on the lowered text.
+
+### What the last five answered
+
+`LoweredEcma262Test` now hands the emission over as `ScriptSource.lua(emitted,
+authored)`, so the twelve cases the rewriter mangles are asked instead of
+exempted. **All 98 cases of the shared table pass on the lowered route**, the
+five that `kotlin_lua_divergences.json` had labelled `unmeasured` among them.
+The verdict split is therefore **44 `answers`, 0 `diverges`, 0 `unmeasured`**.
+
+The declaration file changed shape to match, because one array had come to
+carry two meanings:
+
+| array | means | count |
+|---|---|---:|
+| `rewriter_mangles` | the rewriter changes the frontend's own Lua for this case, so the two arms are genuinely different code paths | 12 |
+| `unaskable` | the lowered route cannot put the case to the engine at all | **0** |
+| `divergences` | asked on the lowered route, answered wrong | **0** |
+
+`unreachable` was renamed rather than kept, because after the entry point
+landed the name was false: those cases are reachable now. What remains true
+about them is that the rewriter mangles them — which is not an exemption, it is
+the evidence that the lowered arm is load-bearing.
+
+### The red that proves the arm is real
+
+Green here would be worthless without it, since a suite that quietly went
+through the rewriter would also pass. Neutering the branch — `if (false &&
+expr.language == ScriptLanguage.Lua)` — turns two suites red at once:
+
+```
+lowered `a[1]` must read the author's FIRST element … expected: <10> but was: <20>
+6 of the 98 emitted expression(s) … disagree with ECMA-262 …
+    a[0], xs.join('-'), xs.sort().join(','), xs.slice(1).join(','),
+    xs.reverse().join(','), JSON.parse(JSON.stringify([7,8]))[1]
+```
+
+Two things worth reading in that. The control case shifts by exactly one
+element, which is the defect a re-rewritten index actually causes. And **6, not
+12** — the rewriter changes twelve of the emissions and only six of those
+changes alter the answer, so "the rewriter touches it" and "the rewriter breaks
+it" are different facts, and `rewriter_mangles` is the first of the two.
+
+### What this does NOT do
+
+- **No template emits `ScriptSource.lua(...)`.** Generated Kotlin still hands
+  the engine the author's text at every site, so
+  `Language::Kotlin.supports_script_engine_target(Lua)` is still false, the
+  divergence list is still one path, and `the_field_retires_when_the_seam_opens`
+  is still quiet. C++ was in exactly this position for a day: the seam exists,
+  nothing crosses it in anger. The template sites are the next step.
+- **The 44 are unchanged as runtime-rewriter divergences.** Every one of them
+  is still answered wrong by the engine when it is handed the author's text,
+  which is what generated Kotlin still does. What the round measured is that
+  all 44 would stop existing the moment the templates cross.
+- `executeForeach`, `assign` and `evaluateCondition` take no `ScriptSource`
+  yet. They are the sites a template migration would need next, and until they
+  move a lowered artifact could not be whole — which is exactly why
+  `supports_script_engine_target` counts sites rather than trusting this note.

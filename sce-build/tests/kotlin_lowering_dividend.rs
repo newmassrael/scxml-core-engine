@@ -76,8 +76,14 @@ const VERDICT_ANSWERS: &str = "answers";
 /// answered wrong — `kotlin_lowered_ecma262.json`'s `divergences`.
 const VERDICT_DIVERGES: &str = "diverges";
 
-/// The verdict for a case the rewriter mangles on the way in, so the lowered
-/// route cannot ask it — `kotlin_lowered_ecma262.json`'s `unreachable`.
+/// The verdict for a case the lowered route cannot put to the engine at all —
+/// `kotlin_lowered_ecma262.json`'s `unaskable`.
+///
+/// That array is EMPTY since the lowered entry point landed, so no entry
+/// carries this today. It stays in the vocabulary rather than being deleted:
+/// the value is what a future route without an entry point would need, and a
+/// verdict this lane can derive but the file does not admit is rejected as a
+/// misspelling by `every_entry_says_what_the_build_time_frontend_answers`.
 const VERDICT_UNMEASURED: &str = "unmeasured";
 
 /// The anchor the seam document carries above the table this lane re-derives.
@@ -310,7 +316,7 @@ fn every_entry_says_what_the_build_time_frontend_answers() {
 /// is how a measurement quietly shrinks.
 #[test]
 fn every_verdict_is_the_lowered_measurement_re_derived() {
-    let unreachable = lowered_keys("unreachable");
+    let unreachable = lowered_keys("unaskable");
     let diverging = lowered_keys("divergences");
 
     let wrong: Vec<String> = divergences()

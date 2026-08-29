@@ -15,6 +15,8 @@ import com.sce.runtime.IoProcessorDescriptor
 import com.sce.runtime.SceXmlDom
 import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
+import com.sce.runtime.ScriptLanguage
+import com.sce.runtime.ScriptSource
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
 import org.w3c.dom.Node
@@ -144,15 +146,57 @@ class LuaScriptEngine : ScxmlScriptEngine {
         return evaluateLuaBoolean(session, luaExpr, expr)
     }
 
-    override fun evaluateExpr(sessionId: String, expr: String): Any? {
+    /**
+     * This engine's own language, stated rather than documented.
+     *
+     * `EcmaScriptToLuaTransformer` is the ADAPTER that lets it accept the
+     * author's ECMAScript as well, which is why [acceptsLanguage] is true for
+     * both — and why a case this engine answers differently from ECMA-262 is a
+     * fact about that adapter, enumerated in
+     * `tests/ecmascript/kotlin_lua_divergences.json`, not a fact about Lua.
+     */
+    override fun nativeLanguage(): ScriptLanguage = ScriptLanguage.Lua
+
+    override fun acceptsLanguage(language: ScriptLanguage): Boolean = true
+
+    /**
+     * The seam, and it is ONE BRANCH — everything after it is the tail both
+     * routes run.
+     *
+     * Lua the frontend already emitted passes through untouched; the author's
+     * ECMAScript goes to the rewriter. The `ReferenceError` below is then
+     * built from [ScriptSource.source] while the check runs on the lowered
+     * text, which is the two-string requirement `ScriptSource` exists for: a
+     * document that wrote `nosuchvar[0]` must not be told about
+     * `nosuchvar[1]`.
+     */
+    private fun loweredTextOf(expr: ScriptSource): String =
+        if (expr.language == ScriptLanguage.Lua) {
+            expr.text
+        } else {
+            transformer.transform(expr.text)
+        }
+
+    /** As [loweredTextOf], for a whole script rather than one expression. */
+    private fun loweredScriptOf(script: ScriptSource): String =
+        if (script.language == ScriptLanguage.Lua) {
+            script.text
+        } else {
+            transformer.transformScript(script.text)
+        }
+
+    override fun evaluateExpr(sessionId: String, expr: String): Any? =
+        doEvaluateExpr(sessionId, ScriptSource.ecmascript(expr))
+
+    override fun doEvaluateExpr(sessionId: String, expr: ScriptSource): Any? {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
 
-        val luaExpr = transformer.transform(expr)
+        val luaExpr = loweredTextOf(expr)
 
         // Check undeclared simple variable (W3C SCXML compliance: JS throws ReferenceError)
         if (isUndeclaredSimpleVariable(luaExpr, session)) {
-            throw ScriptEngineException("ReferenceError: $expr is not defined")
+            throw ScriptEngineException("ReferenceError: ${expr.source} is not defined")
         }
 
         val L = session.handle
@@ -172,17 +216,20 @@ class LuaScriptEngine : ScxmlScriptEngine {
             if (assignStatus == 0) return null
             val err = LuaNative.getError(L)
             LuaNative.pop(L, 1)
-            throw ScriptEngineException("Expression evaluation failed: '$expr' (Lua: $err)")
+            throw ScriptEngineException("Expression evaluation failed: '${expr.source}' (Lua: $err)")
         }
 
-        throw ScriptEngineException("Expression evaluation failed: '$expr'")
+        throw ScriptEngineException("Expression evaluation failed: '${expr.source}'")
     }
 
-    override fun executeScript(sessionId: String, script: String) {
+    override fun executeScript(sessionId: String, script: String) =
+        doExecuteScript(sessionId, ScriptSource.ecmascript(script))
+
+    override fun doExecuteScript(sessionId: String, script: ScriptSource) {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
 
-        val luaScript = transformer.transformScript(script)
+        val luaScript = loweredScriptOf(script)
         val err = LuaNative.doString(session.handle, luaScript)
         if (err != null) {
             throw ScriptEngineException("Script execution failed: $err")

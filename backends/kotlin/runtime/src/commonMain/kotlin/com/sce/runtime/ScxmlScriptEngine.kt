@@ -95,6 +95,98 @@ interface ScxmlScriptEngine {
      */
     fun executeScript(sessionId: String, script: String)
 
+    // ── The language seam ─────────────────────────────────────────
+    //
+    // Two routes reach a Lua engine from `datamodel="ecmascript"`, and they
+    // fail differently: the engine's own input adapter rewriting the author's
+    // text, and `sce-build`'s frontend having emitted Lua at build time. The
+    // three members below are what lets the second one exist here at all.
+    // `docs/SCE_LUA_TRANSLATION_SEAM.md` carries the argument; C++'s
+    // `IScriptEngine` landed the same shape on 2026-08-28.
+
+    /**
+     * The language this engine evaluates natively.
+     *
+     * The engine-side mirror of the manifest's `script_engine_language`. An
+     * ECMAScript engine answers [ScriptLanguage.ECMAScript] and needs nothing
+     * else; a Lua engine answers [ScriptLanguage.Lua] and says so, which is
+     * what makes "this backend ships an engine that is not ECMAScript" a fact
+     * the code states rather than a fact its documentation claims.
+     */
+    fun nativeLanguage(): ScriptLanguage = ScriptLanguage.ECMAScript
+
+    /**
+     * Whether this engine can be handed text in @p language.
+     *
+     * True for the native language, and for any language the engine owns an
+     * ADAPTER for. A Lua engine with an ECMAScript rewriter accepts both; an
+     * ECMAScript engine accepts only ECMAScript, which is what makes
+     * QuickJS-handed-Lua a refusal rather than a syntax error in someone
+     * else's language.
+     */
+    fun acceptsLanguage(language: ScriptLanguage): Boolean = language == nativeLanguage()
+
+    /**
+     * §scxml-5.3: Evaluate an expression that knows what language it is in.
+     *
+     * ⚠ **Do not override this.** It is the contract, not an engine detail:
+     * the refusal below has to happen for every engine, and an engine that
+     * implemented this member could forget it. What an engine implements is
+     * [doEvaluateExpr]. C++ spells the same rule by making its entry points
+     * non-virtual; Kotlin cannot say `final` on an interface member, so the
+     * rule is stated here and `theLanguageContractIsNotAnEngineDetail` in
+     * `ScriptLanguageSeamTest` is what holds it.
+     */
+    fun evaluateExpr(sessionId: String, expr: ScriptSource): Any? {
+        refuseUnlessAccepted(expr)
+        return doEvaluateExpr(sessionId, expr)
+    }
+
+    /**
+     * §scxml-5.8: Execute a script that knows what language it is in.
+     *
+     * ⚠ Not for overriding, for the reason [evaluateExpr] gives. Engines
+     * implement [doExecuteScript].
+     */
+    fun executeScript(sessionId: String, script: ScriptSource) {
+        refuseUnlessAccepted(script)
+        doExecuteScript(sessionId, script)
+    }
+
+    /**
+     * The engine's own evaluation, reached only for a language it accepts.
+     *
+     * The default runs the AUTHOR'S text through the `String` entry point,
+     * which is exactly what every engine did before this seam existed. That
+     * default is only ever reached with [ScriptLanguage.ECMAScript] — an
+     * engine that has not overridden this has not overridden
+     * [acceptsLanguage] either, so it accepts nothing else — and an engine
+     * that wants the lowered arm overrides it.
+     */
+    fun doEvaluateExpr(sessionId: String, expr: ScriptSource): Any? =
+        evaluateExpr(sessionId, expr.source)
+
+    /** The engine's own execution. See [doEvaluateExpr]. */
+    fun doExecuteScript(sessionId: String, script: ScriptSource) {
+        executeScript(sessionId, script.source)
+    }
+
+    /**
+     * The refusal both entry points make before any engine code runs.
+     *
+     * A message about the LANGUAGES, not about the text: an engine handed Lua
+     * it cannot read would otherwise report a syntax error in a language its
+     * author never wrote, which is the diagnostic this whole seam exists to
+     * stop producing.
+     */
+    private fun refuseUnlessAccepted(unit: ScriptSource) {
+        if (acceptsLanguage(unit.language)) return
+        throw ScriptEngineException(
+            "this engine evaluates ${nativeLanguage().wireName} and was handed " +
+                "${unit.language.wireName}, which it has no adapter for: ${unit.text}"
+        )
+    }
+
     /**
      * §scxml-5.3: Set a variable in the datamodel.
      *
