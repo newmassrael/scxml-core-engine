@@ -6481,6 +6481,11 @@
           "file": "sce-build/src/filters.rs",
           "symbol": "to_author_assign_content",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "assign",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
