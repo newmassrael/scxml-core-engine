@@ -135,13 +135,19 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # of what `luaIsNotAnEcmaScriptEngineAndSaysSo` establishes.
 #
 # ⚠ What this comment ALSO said until 2026-08-29 — "It passes this suite
-# (measured: 230 cases)" — was false, and the count was stale twice over. Run
-# on 2026-08-29 (`./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua`):
-# 361 tests, 2 failing — `SendParamPayloadTest` (W3C SCXML 6.2, a repeated
-# `<param>` name loses one of its values) and `XmlDataIsADomTreeTest` (W3C
-# SCXML B.2, a `<data>` element's XML does not arrive as a document). Both
-# predate that day's engine changes; an A/B against the engine's previous
-# undeclared-variable guard reproduced them unchanged.
+# (measured: 230 cases)" — was false. Run that day with
+# `./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua`, TWO cases fail:
+# `SendParamPayloadTest` (W3C SCXML 6.2, a repeated `<param>` name loses one of
+# its values) and `XmlDataIsADomTreeTest` (W3C SCXML B.2, a `<data>` element's
+# XML does not arrive as a document). Both predate that day's engine changes;
+# an A/B against the engine's previous undeclared-variable guard reproduced
+# them unchanged.
+#
+# No total is written here on purpose. The one that was ("230 cases") was stale
+# by 131, and the replacement drafted the same morning ("361 tests") was stale
+# by six before the day ended — a suite gains cases, which is what a healthy
+# one does. The FAILING CASES are named instead: those two names are what a
+# reader can act on, and a name does not rot the way a denominator does.
 #
 # ⚠⚠ So NO CI LANE MEASURES THIS ENGINE ABOVE THE EXPRESSION LEVEL. The
 # ECMA-262 table and the divergence lists cover its expressions; the 226
