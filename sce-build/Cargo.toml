@@ -81,6 +81,14 @@ default = ["xsd"]
 xsd = ["libxml"]
 cli = ["clap", "object"]
 
+# The C-callable lowering surface, as a MEASUREMENT PROBE only — see
+# `src/ffi_probe.rs`. Off by default and named by nothing except
+# `scripts/measure-lowering-footprint.sh`, because the point of it is to
+# make the D1 ledger's largest number re-derivable, not to ship a
+# surface. Enabling it does not link anything into a C++ build: no CMake
+# target links a Rust artifact and this crate stays rlib-only.
+ffi-probe = []
+
 # JSON Schema derivation for the conformance manifest. Dev-only so release
 # builds and downstream consumers don't pick up the extra dependency — the
 # schema is a CI drift guard, not runtime data. The `drift_guard` test in

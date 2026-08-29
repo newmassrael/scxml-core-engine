@@ -210,6 +210,36 @@ fn expression_codes(src: &str) -> usize {
     })
 }
 
+/// The variant names of a fieldless enum, in declaration order.
+///
+/// Order is the payload here, not a convenience: `ScopeStage` is a
+/// ladder whose whole meaning is which name arrives before which.
+fn enum_variant_names(src: &str, opener: &str) -> Vec<String> {
+    let mut inside = false;
+    let mut names = Vec::new();
+    for line in src.lines() {
+        if !inside {
+            if line.trim_start().starts_with(opener) {
+                inside = true;
+            }
+            continue;
+        }
+        if line == "}" {
+            return names;
+        }
+        let trimmed = line.trim();
+        if line.starts_with("    ")
+            && trimmed
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
+        {
+            names.push(trimmed.trim_end_matches(',').to_string());
+        }
+    }
+    panic!("`{opener}` is not closed by a `}}` at column 0");
+}
+
 fn enum_variants(src: &str, opener: &str, is_variant: impl Fn(&str) -> bool) -> usize {
     let mut inside = false;
     let mut count = 0usize;
@@ -395,6 +425,125 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
              that produces the census, not a neighbouring script.",
             row.id,
             row.evidence
+        );
+        return;
+    }
+
+    if let Some(want) = row.check.strip_prefix("derive:rewriter-footprint=") {
+        let want: usize = want
+            .parse()
+            .unwrap_or_else(|_| panic!("row `{}` declares a non-numeric line count", row.id));
+        let cpp = "sce/src/scripting/EcmaScriptToLuaTransformer.cpp";
+        let hdr = "sce/include/scripting/EcmaScriptToLuaTransformer.h";
+        for path in [cpp, hdr] {
+            assert!(
+                tracked.contains(path),
+                "row `{}` prices the swap on `{path}`, which git no longer tracks. \
+                 If the rewriter has retired, the swap has HAPPENED and this row \
+                 is a historical note, not a price — rewrite it.",
+                row.id
+            );
+        }
+        let lines = read(cpp).lines().count() + read(hdr).lines().count();
+        assert_eq!(
+            lines, want,
+            "row `{}` says {want} tracked line(s) leave with the rewriter; the two \
+             files now hold {lines}. The number a decision is taken on has moved.",
+            row.id
+        );
+
+        // The half that makes the net a SUBTRACTION rather than two
+        // unrelated figures: both sides have to be paid by the same
+        // population. The rewriter is compiled by every C++ configure
+        // because its translation unit is listed unconditionally — put
+        // it behind `$<$<BOOL:${SCE_ENABLE_LUA}>:...>` the way
+        // `LuaEngine.cpp` is and the OUT half stops matching the IN
+        // half's population, which is exactly the defect this row was
+        // written to remove.
+        let sources = read("sce/sce_base_sources.cmake");
+        let listed = sources
+            .lines()
+            .map(|l| l.split('#').next().unwrap_or(""))
+            .find(|l| l.contains("EcmaScriptToLuaTransformer.cpp"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "row `{}`: `sce/sce_base_sources.cmake` no longer lists the \
+                     rewriter, so it is not compiled by every C++ configure and \
+                     the net's two halves no longer share a population",
+                    row.id
+                )
+            });
+        assert!(
+            !listed.contains("$<"),
+            "row `{}`: the rewriter is now listed behind a generator expression \
+             (`{}`), so some C++ configures do not compile it. The OUT half is \
+             then paid by a narrower population than the IN half, and the net \
+             stops being a subtraction.",
+            row.id,
+            listed.trim()
+        );
+
+        // The IN half is measured by building an off-by-default feature,
+        // and `clippy-check.yml` runs `--workspace --all-targets` WITHOUT
+        // `--all-features`. So unless a lane names the feature, nothing
+        // compiles the probe — and a probe that stops compiling makes
+        // this row's number un-re-derivable, which is the precise defect
+        // it was committed to remove.
+        let compiled_by: Vec<&String> = tracked
+            .iter()
+            .filter(|p| p.starts_with("scripts/gates/") || p.starts_with(".github/workflows/"))
+            .filter(|p| read(p).contains("ffi-probe"))
+            .collect();
+        assert!(
+            !compiled_by.is_empty(),
+            "row `{}`: no gate script or workflow names the `ffi-probe` feature, \
+             so no lane compiles the probe `{}` builds. The probe would rot \
+             unnoticed and this row's number would go back to being a figure \
+             nobody can reproduce.",
+            row.id,
+            row.evidence
+        );
+        return;
+    }
+
+    if let Some(stage) = row.check.strip_prefix("derive:scope-ladder=") {
+        let src = read("sce-build/src/ecmascript/scope.rs");
+        let ladder: Vec<String> = enum_variant_names(&src, "pub enum ScopeStage {");
+        let at = |name: &str| {
+            ladder.iter().position(|v| v == name).unwrap_or_else(|| {
+                panic!(
+                    "row `{}`: `ScopeStage` has no `{name}` — the ladder is {ladder:?}",
+                    row.id
+                )
+            })
+        };
+        let (data, here, writes) = (at("DataModel"), at(stage), at("WriteTargets"));
+        assert!(
+            data < here && here < writes,
+            "row `{}`: `{stage}` sits at {here} in the ladder, not strictly \
+             between `DataModel` ({data}) and `WriteTargets` ({writes}). The \
+             answer rests on a load-time name arriving BEFORE a name an \
+             `<assign>` writes — W3C SCXML 5.8 against a mid-execution write — \
+             and a ladder in another order measured three sites where there \
+             are none.",
+            row.id
+        );
+
+        // Where the stage sits is half of it; the other half is what is
+        // absorbed there. A `LoadTime` variant that nothing reads would
+        // leave the ladder looking right and the census reading three.
+        let gate = src
+            .lines()
+            .map(str::trim)
+            .find(|l| l.starts_with("if stage >=") && l.contains("ScopeStage::"))
+            .unwrap_or_else(|| panic!("row `{}`: no stage gate in `from_model_upto`", row.id));
+        assert!(
+            gate.contains(&format!("ScopeStage::{stage}")),
+            "row `{}`: `from_model_upto` admits the document-level `<script>`s \
+             at `{}` rather than at `{stage}`. The stage exists and nothing \
+             reaches it.",
+            row.id,
+            gate,
         );
         return;
     }

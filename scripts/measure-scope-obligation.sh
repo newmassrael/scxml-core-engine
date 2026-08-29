@@ -72,15 +72,27 @@ f = {k: int(v) for k, v in (kv.split("=", 1) for kv in m.group(1).split() if "="
 sites = f["sites"]
 installed = f["installed_diverging"]
 datamodel = f["datamodel_diverging"]
+load_time = f["load_time_diverging"]
 writes = f["write_targets_diverging"]
 
 print()
 print(f"  Of {sites} expression site(s) in {f['documents']} document(s):")
 print(f"    {installed:5d} ({100*installed/sites:.1f}%) lower differently with NO document read")
 print(f"    {datamodel:5d} ({100*datamodel/sites:.1f}%) still do once every <data id> is declared")
-print(f"    {writes:5d} ({100*writes/sites:.1f}%) still do once every write target is declared too")
+print(f"    {load_time:5d} ({100*load_time/sites:.1f}%) still do once every document-level <script> is too")
+print(f"    {writes:5d} ({100*writes/sites:.1f}%) still do once every write target is declared as well")
 print()
-print(f"  So reading the datamodel alone discharges {installed - datamodel} of the {installed}")
-print(f"  site(s) an FFI with no scope handle would be wrong about, and write")
-print(f"  targets discharge {datamodel - writes} more. The remaining {writes} need `declare_chunk`.")
+print(f"  `declare` over <data id> discharges {installed - datamodel} of the {installed} site(s) an FFI")
+print(f"  with no scope handle would be wrong about; `declare_chunk` over the")
+print(f"  document-level <script>s discharges the remaining {datamodel - load_time}.")
+print()
+if load_time == 0:
+    print("  ANSWER: both sources are readable from the model BEFORE the first")
+    print("  macrostep (W3C SCXML 5.3 early binding, 5.8 load-time scripts), so a")
+    print("  run-time caller needs `declare` + `declare_chunk` and NO scope that")
+    print(f"  tracks execution — write targets add {load_time - writes} beyond that.")
+else:
+    print(f"  ⚠ {load_time} site(s) remain after both pre-run sources. A run-time")
+    print("  caller would need scope maintained THROUGH execution, which is a")
+    print("  different C surface from the one the ledger prices.")
 PY

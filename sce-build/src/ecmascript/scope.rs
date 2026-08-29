@@ -78,13 +78,30 @@ pub enum ScopeStage {
     /// before the first macrostep, so a run-time caller can reach this
     /// stage from the model alone, before running anything.
     DataModel,
+    /// Plus what a DOCUMENT-LEVEL `<script>` declares at its top level.
+    ///
+    /// W3C SCXML 5.8 has the processor evaluate top-level scripts at
+    /// document load time, so these names arrive BEFORE the first
+    /// macrostep — the same point early binding puts `<data id>` in the
+    /// datamodel, and before any `<assign>` has run. A run-time caller
+    /// therefore reaches this stage from the model alone, in the same
+    /// pass, without executing the document.
+    ///
+    /// ⚠ This stage did not exist when the census was first taken, and
+    /// its absence is why the residue read as three sites a caller could
+    /// only reach by running. `global_scripts` were absorbed at
+    /// [`Self::Everything`] instead, which put a load-time name AFTER a
+    /// run-time one in a ladder whose whole purpose is the order.
+    LoadTime,
     /// Plus the names a `<assign location>`, `<send idlocation>` or
     /// `<foreach item>`/`<foreach index>` brings into existence by
     /// writing to it. These appear as the document *runs*.
     WriteTargets,
-    /// Plus what a `<script>` or `<finalize>` body declares at its top
-    /// level. These appear when that chunk executes, which is the latest
-    /// any name in this datamodel can arrive.
+    /// Plus what a `<script>` or `<finalize>` body INSIDE A STATE
+    /// declares at its top level. These appear when that chunk executes,
+    /// which is the latest any name in this datamodel can arrive — a
+    /// document-level `<script>` is not one of them and is settled at
+    /// [`Self::LoadTime`].
     Everything,
 }
 
@@ -115,7 +132,7 @@ impl DocumentScope {
         for var in &model.variables {
             scope.declare(&var.id);
         }
-        if stage >= ScopeStage::Everything {
+        if stage >= ScopeStage::LoadTime {
             for script in &model.global_scripts {
                 scope.declare_chunk(&script.content);
             }
