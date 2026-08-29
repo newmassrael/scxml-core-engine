@@ -153,7 +153,9 @@ PY
 
 # ⚠⚠⚠ The pin arm cannot run in a shallow clone, and CI clones shallow by
 # default — measured 2026-08-29, when the first form of this check went red on
-# four lanes for a tree that was correct. The miss is now CLASSIFIED (the
+# the two lanes that clone shallow (`tree-hygiene`, and `mutation-rounds`,
+# where it read as `baseline is not green (1 failing)` rather than as itself)
+# for a tree that was correct. The miss is now CLASSIFIED (the
 # checkout must PROVE it is shallow) rather than read as "the commit is gone",
 # and the cases below are what stop that classification from becoming an
 # exemption. `the pin names a commit this repository does not carry` runs
