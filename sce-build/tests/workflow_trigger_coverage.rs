@@ -58,6 +58,18 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // answer it already knows and miss the case it exists for.
     "datamodel_read_accessor",
     "diagnostic_corpus_schema",
+    // Asks `git ls-files` which tracked file BINDS the path of a
+    // divergence list, because the one failure the list's own suites
+    // cannot see is a list nothing opens any more — an unread list scores
+    // its engine perfect in both directions. A reader is a compile
+    // definition or a `const val`, and the next one will arrive in a file
+    // that does not exist today, so a `paths:` filter written over the
+    // tree as it stands enumerates the readers the gate already knows and
+    // by construction cannot name the one whose arrival or departure it
+    // exists to catch. It reads `ARCHITECTURE.md`'s engine matrix and the
+    // two JSON files under `tests/ecmascript/` besides, and no workflow's
+    // filter names any of the three.
+    "ecma262_scoreboard_contract",
     // Compiles every `cond` / `expr` / `<script>` in every committed
     // document through the ECMAScript frontend, so a document added
     // anywhere changes what it reads — and it is the gate that says a
