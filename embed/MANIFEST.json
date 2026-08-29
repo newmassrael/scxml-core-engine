@@ -3,7 +3,7 @@
   "embed_version": "5ad003aa4a",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 292,
+  "symbol_count": 291,
   "symbols": [
     {
       "header": "GuardUtils.h",
