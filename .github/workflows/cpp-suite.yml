@@ -9,20 +9,83 @@ name: C++ Test Suite
 # by a gate and not by CI, because no workflow configured the main tree at all:
 # the C++ conformance job builds the single `w3c_test_cli` target.
 #
-# No `paths:` filter, for the reason `w3c-tests.yml` has none: a filter is a
-# statement about a runner paid by the minute, and the pre-push hook is where
-# this suite's real trigger set lives (`gate_registry.py`, `extra`).
+# ⚠ This block used to say: "No `paths:` filter, for the reason `w3c-tests.yml`
+# has none: a filter is a statement about a runner paid by the minute, and the
+# pre-push hook is where this suite's real trigger set lives." That argument was
+# about an ALLOW-list, and it still holds against one. What it did not survive
+# is a measurement nobody had taken.
+#
+# Re-measured 2026-08-29, and the re-measurement moved two of the three
+# numbers the first version carried — which is precisely why this block says
+# to re-derive rather than to trust it. Over the last 20 runs of this
+# workflow: **15 cancelled, 5 success**, the successes taking 34m28s /
+# 40m03s / 44m48s / 51m00s / 91m39s. With `cancel-in-progress: true` and no
+# filter, any push inside that window kills the run: `dc90d6f5`, `7c0c1a1b`
+# and `5414c56b` — three consecutive commits of one working session —
+# produced ZERO verdicts here, and the fourth (`49e1c537`) reported only
+# because the session stopped pushing. A lane whose verdict depends on when a
+# person stops typing is not measuring the tree, and a lane cancelled three
+# times in four reads exactly like a lane that passes — which is the failure
+# this repository's gates exist to refuse.
+#
+# What this lane OWNS is the non-c11 half of the ctest partition: **184 of
+# 435** registered cases on the build machine. Both figures are machine-
+# dependent (the mesh transports are most of the difference, and
+# `scripts/gates/cpp-suite.sh` carries the floor and the reason), so the
+# instruction is the command, not the number. `ctest -N` reports its own
+# total, so no filter is needed — and none should be used, because a filter
+# is what destroys the payload a re-derivation exists to read:
+#
+#   ctest --test-dir build -N -LE c11    # tail: "Total Tests: 184" here
+#   ctest --test-dir build -N            # tail: "Total Tests: 435" here
+#
+# ⚠ The first version of this block reused "159 of 382" — the figures from
+# the 2026-08-12 incident recorded at the top of this file — as though they
+# were this lane's size. They are not: 159 is how many cases were then run by
+# NO gate at all. A number lifted from a neighbouring measurement reads
+# exactly like a measured one, which is why every figure above now names the
+# command that produces it.
+#
+# Re-derive the run ratio the same way:
+#
+#   gh run list --workflow=cpp-suite.yml --limit 20 \
+#     --json conclusion --jq '[.[].conclusion] | group_by(.)
+#            | map({(.[0]): length}) | add'
+#
+# Two changes, and they answer different halves:
+#
+# 1. `paths-ignore`, NOT `paths`. A deny-list says "these paths cannot affect
+#    this suite"; an allow-list says "only these run it". The deny-list fails
+#    SAFE — a directory nobody classified still triggers the lane — while an
+#    allow-list fails SILENT, which is the shape the old comment was right to
+#    refuse. Only three entries, each of which cannot reach a C++ target.
+# 2. `cancel-in-progress: false`. The filter alone does not fix this: two CODE
+#    pushes inside 40 minutes still starve it. Superseding a run is the right
+#    default for a lane that finishes in two minutes and the wrong one for a
+#    lane that needs ninety. The cost accepted here is overlapping runs, and it
+#    is accepted deliberately: a verdict that arrives late is worth more than a
+#    verdict that never arrives.
+#
+# HOW TO CONFIRM IT NOW ANSWERS. Two readings, because one is not enough:
+#   - the ratio above should move off 15/20 as runs accumulate, and
+#   - a docs-only push must create NO new run for this workflow at all —
+#     `gh run list --workflow=cpp-suite.yml --limit 3 --json headSha` should not
+#     name a commit whose diff touches only ignored paths.
 
 on:
   push:
     branches: [ main, develop ]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   cpp-suite:

@@ -627,12 +627,18 @@ GATES: dict[str, dict] = {
     "cpp-suite": {
         "workflows": ["cpp-suite.yml"],
         "runner_workflow": True,
-        "narrows": "the lane declares no `paths:` filter, for the same reason "
-                   "`w3c-cpp`'s does not: that is a statement about a runner "
-                   "paid by the minute, not about what the suite reads. This "
-                   "one builds the whole C++ tree, so its real inputs are the "
-                   "engine, its tests, the mesh sources and the CMake "
-                   "definitions that register them.",
+        "narrows": "the lane declares no `paths:` ALLOW filter, for the same "
+                   "reason `w3c-cpp`'s does not: that is a statement about a "
+                   "runner paid by the minute, not about what the suite "
+                   "reads. This one builds the whole C++ tree, so its real "
+                   "inputs are the engine, its tests, the mesh sources and "
+                   "the CMake definitions that register them. Since "
+                   "2026-08-29 it DOES declare a `paths-ignore:` deny list "
+                   "(docs/**, **/*.md, .claude/**), which narrows nothing "
+                   "this table claims: a deny list still starts the lane for "
+                   "every path it does not name, so the catch-all reading "
+                   "above holds. What the deny list changes is per-change "
+                   "delegation, and `ci_owed` is where that is read.",
         "extra": ["sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
                   "examples/**", "resources/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
@@ -921,10 +927,30 @@ def glob_to_regex(glob: str) -> re.Pattern:
 
 
 def workflow_paths(repo_root: Path, name: str) -> list[str]:
-    """The deduped `paths:` globs a workflow declares under `on:`.
+    """The deduped ALLOW-side (`paths:`) globs a workflow declares under `on:`.
 
     A workflow with no `paths:` filter runs on every push, so it returns the
     catch-all — the honest translation of "CI always runs this".
+
+    ⚠ Allow-side ONLY, and the asymmetry is deliberate rather than an
+    oversight. A `paths-ignore:` workflow really does start on every push in
+    this sense: there is no path list CI checks a change INTO. What it has is
+    a list it checks changes OUT of, which is a different question with a
+    different reader — `workflow_ignored_paths` below — because the two are
+    consumed in different places. `narrows` asks this one ("is CI's trigger
+    the catch-all, so the local table may state the real inputs instead?")
+    and the answer stays yes. `ci_owed` asks the other ("will CI actually
+    start for THIS change?"), and that is where a deny-list bites.
+
+    Reading a deny-list as "unfiltered" here and stopping would have made the
+    narrowing self-test pass by blindness the moment the first `paths-ignore`
+    landed: `.github/workflows/cpp-suite.yml` acquired one on 2026-08-29 and
+    every check in this file went on reporting the lane as unfiltered.
+    `sce-build/tests/workflow_trigger_coverage.rs` already counted it
+    ("`paths-ignore` counts: it is the same filter with the sense flipped"),
+    so two readers of one file disagreed about whether it was filtered, and
+    nothing held them in step. `both_filter_readers_agree` in the self-test
+    below is now what does.
     """
     wf = repo_root / ".github" / "workflows" / name
     if not wf.is_file():
@@ -945,6 +971,55 @@ def workflow_paths(repo_root: Path, name: str) -> list[str]:
     if not globs:
         return ["**"]
     return list(dict.fromkeys(globs))
+
+
+def workflow_ignored_paths(repo_root: Path, name: str) -> list[str]:
+    """The deduped DENY-side (`paths-ignore:`) globs a workflow declares.
+
+    Empty means "nothing is excluded", which is what every workflow without
+    the key says. A missing workflow also returns empty: the safe reading is
+    that nothing is excluded, so no caller may conclude CI will skip.
+
+    GitHub Actions refuses `paths` and `paths-ignore` on the same event, so
+    this and `workflow_paths` are never both narrowing at once.
+    """
+    wf = repo_root / ".github" / "workflows" / name
+    if not wf.is_file():
+        return []
+    text = wf.read_text(encoding="utf-8")
+    on_block = re.search(r"^on:\n(.*?)(?=^\S)", text, re.S | re.M)
+    if not on_block:
+        return []
+    globs: list[str] = []
+    for block in re.finditer(r"^(\s+)paths-ignore:\s*\n((?:\1\s+-.*\n|\s*#.*\n)*)",
+                             on_block.group(1), re.M):
+        for line in block.group(2).splitlines():
+            line = line.strip()
+            if line.startswith("- "):
+                globs.append(line[2:].strip().strip("'\""))
+    return list(dict.fromkeys(globs))
+
+
+def workflow_starts_for(repo_root: Path, name: str, changed: list[str]) -> bool:
+    """Whether CI would start `name` for this change set.
+
+    `workflow_paths` answers what a workflow is triggered BY in general;
+    this answers whether a particular push starts it, which is the only
+    form of the question `ci_owed` can honestly delegate on. A gate whose
+    workflow does not start is not "owned by CI" — for that push it is not
+    run anywhere, which `drop_ci_only` calls a gate that was deleted.
+    """
+    if not changed:
+        return False
+    ignore = [glob_to_regex(g) for g in workflow_ignored_paths(repo_root, name)]
+    allow = workflow_paths(repo_root, name)
+    allow_pats = None if allow == ["**"] else [glob_to_regex(g) for g in allow]
+    for path in changed:
+        if any(p.match(path) for p in ignore):
+            continue
+        if allow_pats is None or any(p.match(path) for p in allow_pats):
+            return True
+    return False
 
 
 # Assembled rather than spelled so this file does not match itself when a
@@ -1255,9 +1330,50 @@ def ci_owed(repo_root: Path, changed: list[str]) -> list[str]:
     hook prints this list so the delegation is stated at the moment it
     happens, in the same terminal, naming the workflow that now owns each
     verdict.
+
+    ⚠ A gate is only listed when a workflow carrying it would actually START
+    for this change. Reaching a gate and delegating it are two different
+    claims, and until 2026-08-29 nothing separated them, because no workflow
+    had ever declared a `paths-ignore:`. `cpp-suite.yml` then acquired one
+    and this list went on promising a `cpp-suite` verdict for a docs-only
+    push that CI had just been told to skip — a promise nobody could see
+    break, since the whole purpose of the line is to be the last word before
+    the push. `drop_ci_only` already names what that would be: "a gate
+    excluded from the push and absent from CI is a gate that was deleted."
+    The exclusion is per-change, so the check has to be too.
+
+    Reported rather than silently dropped is deliberate: `ci_unowed` below
+    hands the hook the gates a change reaches that NEITHER side will run, so
+    a deny-list that quietly removes coverage is visible at the same moment
+    in the same terminal rather than inferred later from a lane that stopped
+    reporting.
     """
     reached, _ = matched(repo_root, changed)
-    return run_order({s for s in reached if GATES[s].get("ci_only")})
+    return run_order({
+        s for s in reached
+        if GATES[s].get("ci_only")
+        and any(workflow_starts_for(repo_root, wf, changed)
+                for wf in GATES[s].get("workflows", []))
+    })
+
+
+def ci_unowed(repo_root: Path, changed: list[str]) -> list[str]:
+    """`ci_only` gates this change reaches that NO workflow will start for.
+
+    The residue of `ci_owed`, and the reason a deny-list cannot remove
+    coverage in silence. A gate here is run by neither the push nor CI, so
+    the change is going out unjudged by it. That is sometimes exactly right
+    — a README cannot break a C++ ctest suite — and the point is that it is
+    said out loud rather than discovered when a lane has been quiet for
+    eight pushes.
+    """
+    reached, _ = matched(repo_root, changed)
+    return run_order({
+        s for s in reached
+        if GATES[s].get("ci_only")
+        and not any(workflow_starts_for(repo_root, wf, changed)
+                    for wf in GATES[s].get("workflows", []))
+    })
 
 
 def drop_ci_only(selected) -> set[str]:
@@ -1725,6 +1841,70 @@ def self_test(repo_root: Path) -> int:
                 f"field is where the reader learns what CI runs that the "
                 f"hook does not")
 
+    # `both_filter_readers_agree`. One workflow file, two readers: this one
+    # and `declares_path_filter` in
+    # `sce-build/tests/workflow_trigger_coverage.rs`, which counts
+    # `paths-ignore` because it is "the same filter with the sense flipped".
+    # Until 2026-08-29 no workflow declared one, so the disagreement was
+    # latent; `cpp-suite.yml` then acquired a deny-list and this file went on
+    # calling the lane unfiltered. Two sources that agree only because
+    # neither has been asked the hard case cannot be a check — the reader
+    # here has to see the same three shapes the Rust one does.
+    cases += 1
+    for wf in sorted(p.name for p in (repo_root / ".github" / "workflows").glob("*.yml")):
+        allow = workflow_paths(repo_root, wf)
+        ignore = workflow_ignored_paths(repo_root, wf)
+        text = (repo_root / ".github" / "workflows" / wf).read_text(encoding="utf-8")
+        on = re.search(r"^on:\n(.*?)(?=^\S)", text, re.S | re.M)
+        spells_ignore = bool(on) and any(
+            line.strip() == "paths-ignore:" for line in on.group(1).splitlines())
+        if spells_ignore and not ignore:
+            failures.append(
+                f"filters: {wf} spells `paths-ignore:` under `on:` and this "
+                f"file reads no globs out of it — the deny-list is invisible "
+                f"to every caller, which is how a skipped lane reads as a "
+                f"passing one")
+        if ignore and allow != ["**"]:
+            failures.append(
+                f"filters: {wf} declares both `paths:` and `paths-ignore:` — "
+                f"GitHub Actions refuses that pairing, so one of the two is "
+                f"not doing what its author believes")
+
+    # `a_deny_list_cannot_remove_coverage_in_silence`. A `ci_only` gate is
+    # excluded from the push on the promise that CI runs it; a `paths-ignore`
+    # on its workflow is the one way that promise can lapse without anything
+    # being deleted. The rule is not "no deny-list" — a README genuinely
+    # cannot break a C++ ctest suite — it is that the lapse has a NAME, so
+    # `ci_unowed` must report exactly the gates `ci_owed` stops claiming.
+    # Held as a partition rather than as two lists, because two lists drift
+    # and a partition cannot: every reached ci_only gate is in exactly one.
+    cases += 1
+    for probe in (["docs/SCE_LUA_TRANSLATION_SEAM.md"],
+                  ["README.md"],
+                  ["sce/src/scripting/LuaEngine.cpp"],
+                  ["examples/cmake_function/README.md"]):
+        reached, _ = matched(repo_root, probe)
+        ci_gates = {s for s in reached if GATES[s].get("ci_only")}
+        owed = set(ci_owed(repo_root, probe))
+        unowed = set(ci_unowed(repo_root, probe))
+        if owed | unowed != ci_gates:
+            failures.append(
+                f"ci-owed: for {probe} the owed/unowed split lost "
+                f"{sorted(ci_gates - (owed | unowed))} — a gate the change "
+                f"reaches that neither list accounts for is one nobody is "
+                f"told about")
+        if owed & unowed:
+            failures.append(
+                f"ci-owed: for {probe} {sorted(owed & unowed)} is reported "
+                f"as both owed and unowed")
+        for slug in owed:
+            if not any(workflow_starts_for(repo_root, wf, probe)
+                       for wf in GATES[slug].get("workflows", [])):
+                failures.append(
+                    f"ci-owed: {slug} is promised to CI for {probe} but no "
+                    f"workflow carrying it starts for that change — the hook "
+                    f"would name a verdict that never arrives")
+
     # A recorded reason is checked, not believed. `commit-hook:<command>`
     # claims the commit hook reaches the same verdict, so the command has to
     # be in it; a reason naming a workflow that no longer exists is stale.
@@ -1991,6 +2171,12 @@ def main() -> int:
                     help="print the gates this change reaches that only CI "
                          "runs, one 'slug workflow' pair per line, instead "
                          "of the gates the push runs")
+    ap.add_argument("--ci-unowed", action="store_true",
+                    help="print the gates this change reaches that NEITHER "
+                         "the push nor CI will run, one 'slug workflow' pair "
+                         "per line — the residue of --ci-owed, and the only "
+                         "place a path filter that removes coverage is said "
+                         "out loud")
     ap.add_argument("--mapping", action="store_true",
                     help="print the table as JSON, so a consumer reads the "
                          "registry instead of parsing this file's source")
@@ -2071,6 +2257,12 @@ def main() -> int:
 
     if args.ci_owed:
         for slug in ci_owed(repo_root, changed):
+            workflows = ",".join(GATES[slug].get("workflows") or ["?"])
+            print(f"{slug} {workflows}")
+        return 0
+
+    if args.ci_unowed:
+        for slug in ci_unowed(repo_root, changed):
             workflows = ",".join(GATES[slug].get("workflows") or ["?"])
             print(f"{slug} {workflows}")
         return 0
