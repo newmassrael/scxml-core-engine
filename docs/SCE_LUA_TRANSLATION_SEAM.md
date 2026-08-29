@@ -1608,6 +1608,24 @@ Every row's check has since been shown red by a mutation: the ladder reordered,
 the load-time stage orphaned, the feature dropped, the rewriter put behind a
 generator expression, and its line count moved.
 
+⚠⚠⚠ **And the same defect was then found a second time, in the row added to
+record the decision — by running the mutation rather than by re-reading the
+code.** `decision:linked-beside-lua` rests on `LuaEngine` actually CALLING the
+surface, and the first form of that check searched the whole of
+`LuaEngine.cpp` for `sce_lower_value(`. On 2026-08-29 the call was deleted from
+`LuaEngine::loweredTextOf` and the paragraph explaining it left standing,
+exactly as a careless revert would leave it: the C++ suite went red on eleven
+expressions and **this ledger stayed green**. Two lessons, and the second is the
+one worth carrying. First, the repair is the same one language over — the check
+now reads CODE, with commentary and the contents of string literals cut away by
+`cpp_code_only`, and `a_mentioned_call_is_not_a_made_call` pins the boundary.
+Second, and this is why the paragraph above was not enough: **a lesson recorded
+beside one check does not reach the next check written.** The prose warning had
+been in this file for a day, three paragraphs above the row whose check
+repeated the defect. What caught it was mutating the new row, so the rule is
+that a row is not closed until its own mutation has been run — not until
+someone has read the warning.
+
 <!-- D1-LEDGER v1
      columns: id | status | kind | number | check | evidence
      Parsed by sce-build/tests/lowering_decision_ledger.rs.
