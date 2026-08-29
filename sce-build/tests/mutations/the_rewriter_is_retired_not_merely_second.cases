@@ -11,40 +11,46 @@
 # retiring the rewriter is the claim that nothing takes the fallback at all,
 # and that needs its own witness rather than this one's silence."*
 #
-# The `retire-rewriter` row is that witness and `retirement:rewriter-uncalled`
-# is what re-derives it. These cases are what make it a gate rather than a
-# sentence: three mutate the SUBJECT and must be caught, and four mutate the
-# GATE and must be caught by the parts of it that exist for exactly that.
+# The `retire-rewriter` row is that witness and `retirement:rewriter-deleted`
+# is what re-derives it. The unit is now GONE — header, source and the
+# benchmark that priced it — so the row's claim moved from "nothing calls it"
+# to "it is not here, and nothing could".
 #
-# ⚠ The subject cases are written as a REVERT, not as an invention. The member
-# and the include below are how the engine actually stood before the
-# retirement, so a careless revert — the shape this repository has already paid
-# for once, when a call was deleted and the paragraph explaining it left
-# standing — is what they reproduce.
+# ⚠ Deleting the unit deleted the sweep's positive control. While it existed,
+# the predicate that reports zero had to report the unit's OWN files or it had
+# stopped being able to see the name at all. "No file names X" is also what a
+# sweep answers when it read nothing, so the control had to be bought back:
+# the tree still explains the rewriter in comments, and the check requires
+# those raw mentions to stay above a floor. The cases below aim at that seam
+# more than at anything else, because it is the one that can go quietly blind.
 #
-# ⚠⚠ Two of the gate cases keep the first honest. "No file names X" is the
-# answer a sweep gives when it read nothing, and it is indistinguishable from
-# a completed retirement. The floors are what tell them apart, and a
-# population filter that matches nothing — or one narrowed back to the two
-# directories it used to read — is how the sweep would come to read nothing.
-#
-# ⚠⚠⚠ The last two are about the CLASSIFICATION, which is what the sweep's
-# boundary became. `tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp` really
-# does construct the rewriter, and for a day it was outside the swept
-# directories — not exempted, INVISIBLE, with nothing in the tree saying which
-# it was. It is now a declared instrument, and a declaration is only worth
-# more than a directory if it is itself asserted: one case appears as an
-# unclassified caller where the old boundary would have hidden it, and one
-# leaves the entry standing over a file that no longer reaches the rewriter,
-# which is how a list stops describing the tree and starts hiding it.
+# ⚠⚠ Two measurements retired WITH the subject rather than with the code:
+# `per-call-cost` timed the rewriter against the frontend, `swap-net-footprint`
+# weighed its object file. Neither can be re-measured here, so both carry a
+# `retired-measurement:` pin — a commit that must still hold every departed
+# file while this tree holds none of them, plus the probe, kept and marked.
+# Three cases below aim at that check, one per way the pin can go false.
 
 mutation_tests -p sce-build --test lowering_decision_ledger
 mutation_targets sce-build/tests/lowering_decision_ledger.rs
-# Read at run time, not compiled in: the gate sweeps the tree's C++ sources by
-# opening them, so a change to one of them is invisible to a rebuild check.
+# Read at run time, not compiled in: the gate opens the tree's C++ sources,
+# the ledger document, a CMake list and the retired probes, so a change to
+# any of them is invisible to a rebuild check.
 mutation_runtime_targets sce/include/scripting/LuaEngine.h
 mutation_runtime_targets sce/src/scripting/LuaEngine.cpp
 mutation_runtime_targets tests/engine/LoweredEcma262Test.cpp
+mutation_runtime_targets sce/sce_base_sources.cmake
+mutation_runtime_targets docs/SCE_LUA_TRANSLATION_SEAM.md
+mutation_runtime_targets scripts/measure-lowering-per-call.sh
+
+# --- the subject: a caller comes back -------------------------------------
+#
+# Written as a REVERT, not as an invention. The member and the include are how
+# the engine actually stood before the retirement, so a careless revert — the
+# shape this repository has already paid for once, when a call was deleted and
+# the paragraph explaining it left standing — is what they reproduce. With the
+# unit deleted these no longer even compile, which is the point: the row's
+# failure is a build break as well as a false claim.
 
 mutation_case "the engine takes the rewriter back as a member" <<'PY'
 edit("sce/include/scripting/LuaEngine.h",
@@ -62,17 +68,39 @@ edit("sce/src/scripting/LuaEngine.cpp",
      '#include "scripting/LuaDOMBinding.h"')
 PY
 
-mutation_case "the engine sweep is pointed at a directory that does not exist" <<'PY'
-edit("sce-build/tests/lowering_decision_ledger.rs",
-     'p.starts_with("sce/src/") || p.starts_with("sce/include/")',
-     'p.starts_with("sce/srcs/") || p.starts_with("sce/includes/")')
-PY
-
 mutation_case "a caller appears where the old boundary would have hidden it" <<'PY'
 edit("tests/engine/LoweredEcma262Test.cpp",
      '#include "scripting/ScriptEngineProvider.h"',
      '#include "scripting/EcmaScriptToLuaTransformer.h"\n'
      '#include "scripting/ScriptEngineProvider.h"')
+PY
+
+# --- the subject: the deletion is only half done ---------------------------
+#
+# A translation unit named by the build but absent from the tree is not a
+# completed deletion, it is a configure that cannot run. The row claims the
+# unit went; this is the half that would be left behind by deleting the files
+# and forgetting the list.
+
+mutation_case "the build list names a translation unit that is gone" <<'PY'
+edit("sce/sce_base_sources.cmake",
+     "    src/scripting/SessionRegistry.cpp\n",
+     "    src/scripting/SessionRegistry.cpp\n"
+     "    src/scripting/EcmaScriptToLuaTransformer.cpp\n")
+PY
+
+# --- the gate: a sweep that stopped reading --------------------------------
+#
+# "No file names X" is the answer a sweep gives when it read nothing, and with
+# the unit deleted that answer is also the row's claim. The floors are what
+# tell them apart: a population filter that matches nothing, or one narrowed
+# back to the two directories the sweep used to read, is how it would come to
+# read nothing while still reporting success.
+
+mutation_case "the engine sweep is pointed at a directory that does not exist" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     'p.starts_with("sce/src/") || p.starts_with("sce/include/")',
+     'p.starts_with("sce/srcs/") || p.starts_with("sce/includes/")')
 PY
 
 mutation_case "the sweep narrows back to the engine's own directories" <<'PY'
@@ -87,10 +115,21 @@ edit("sce-build/tests/lowering_decision_ledger.rs",
      '            population.len() >= TRACKED_CPP_FLOOR,')
 PY
 
-mutation_case "an instrument entry outlives the instrument it named" <<'PY'
+# ⚠⚠⚠ The one that matters most. The mention control is the ONLY thing left
+# standing between "no file reaches the rewriter" and "no file was read", now
+# that the unit whose own files used to prove the predicate can see is gone.
+# Blind the control and the claim keeps reporting success over an unread tree.
+
+mutation_case "the control that proves the sweep reads goes blind" <<'PY'
 edit("sce-build/tests/lowering_decision_ledger.rs",
-     '    "tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp",',
-     '    "sce/src/scripting/LuaEngine.cpp",')
+     '            .filter(|p| read(p).contains(REWRITER))\n'
+     '            .collect();\n'
+     '        assert!(\n'
+     '            mentions.len() >= REWRITER_MENTION_FLOOR,',
+     '            .filter(|_p| false)\n'
+     '            .collect();\n'
+     '        assert!(\n'
+     '            mentions.len() >= REWRITER_MENTION_FLOOR,')
 PY
 
 mutation_case "an include with no call stops counting as reaching it" <<'PY'
@@ -102,4 +141,28 @@ edit("sce-build/tests/lowering_decision_ledger.rs",
      '    return false;\n'
      '    #[allow(unreachable_code)]\n'
      '    code.lines().enumerate().any(|(n, line)| {')
+PY
+
+# --- the gate: the pin under a retired measurement -------------------------
+#
+# A number whose subject has left the tree is re-derivable only if some commit
+# still holds the subject. Each case here breaks one leg of that: the commit,
+# the departure, and the probe that says which commit to go to.
+
+mutation_case "the pin names a commit this repository does not carry" <<'PY'
+edit("docs/SCE_LUA_TRANSLATION_SEAM.md",
+     '`retired-measurement:59eb7f96022fa4a10330fbfd70c05b45671af443` | `scripts/measure-lowering-per-call.sh`',
+     '`retired-measurement:0000000000000000000000000000000000000000` | `scripts/measure-lowering-per-call.sh`')
+PY
+
+mutation_case "a departed path is claimed for a file that is still here" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     '    "tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp",',
+     '    "sce/src/scripting/LuaEngine.cpp",')
+PY
+
+mutation_case "the retired probe stops saying that it is retired" <<'PY'
+edit("scripts/measure-lowering-per-call.sh",
+     "# `retired-measurement:<sha>`, and sce-build/tests/lowering_decision_ledger.rs",
+     "# a pin recorded elsewhere, and sce-build/tests/lowering_decision_ledger.rs")
 PY

@@ -101,7 +101,6 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - `Logger` + backends (spdlog optional) — Runtime logging infrastructure
 - `UniqueIdGenerator` — Thread-safe unique ID generation
 - `ScriptResultUtils`, `EventDataHelper`, `GuardUtils` — Value manipulation
-- `EcmaScriptToLuaTransformer` — the retired ECMAScript-to-Lua text rewriter; still compiled, no longer reached by the engine
 - `XMLDOMWrapper`, `SessionRegistry` — DOM and session utilities
 - `TypeRegistry`, `JsonUtils` — Runtime type and JSON support
 
@@ -499,8 +498,8 @@ rewriter's `_ = continue`.
 98-case shared table rather than every program a consumer can write.
 Retirement was the separate claim, and it now has the separate witness it
 needed: the seam doc's `retire-rewriter` row sweeps every tracked C++ file
-for anything that reaches `EcmaScriptToLuaTransformer` and finds none the
-classification does not already name. What
+for anything that reaches `EcmaScriptToLuaTransformer` and finds none — the
+unit itself has since been deleted, so there is nothing left to reach. What
 the frontend refuses is refused (§scxml-5.9.1); nothing answers it instead.
 
 ⚠ **This cell was the DIRECT route only, until the same day closed the other
@@ -554,21 +553,26 @@ table.
 
 **ScriptEngineProvider**: Compile-time engine selection via `SCE_SCRIPT_ENGINE` CMake option. Provides `IScriptEngine` interface for engine-agnostic consumers.
 
-### EcmaScriptToLuaTransformer — RETIRED
+### EcmaScriptToLuaTransformer — DELETED
 
-**Nothing reaches it but the instrument that priced it.** `LuaEngine` lowers
-the author's ECMAScript with `sce-build`'s frontend (`LoweringScope` →
-`SceLowering.h`) and refuses what that frontend refuses; the seam doc's
-`retire-rewriter` row is the gate that holds the tree to it, and
-`sce-build/tests/mutations/the_rewriter_is_retired_not_merely_second.cases`
-puts the caller back and requires the row to go red. The sweep is over every
-tracked C++ file rather than the engine's own directories, because a
-directory boundary does not exempt what lies outside it — it hides it. A file
-is the retired unit, or a declared instrument (today: the per-call benchmark,
-which constructs the rewriter to time it), or must not reach it; unclassified
-is red. The translation unit is still listed in `sce/sce_base_sources.cmake`
-and still compiles — retired is not deleted, and deleting it is its own
-round, which takes the benchmark with it.
+**It is gone: header, source, and the benchmark that priced its retirement.**
+`LuaEngine` lowers the author's ECMAScript with `sce-build`'s frontend
+(`LoweringScope` → `SceLowering.h`) and refuses what that frontend refuses;
+the seam doc's `retire-rewriter` row is the gate that holds the tree to it,
+and `sce-build/tests/mutations/the_rewriter_is_retired_not_merely_second.cases`
+puts a caller back and requires the row to go red. The sweep reads every
+tracked C++ file rather than the engine's own directories, because a directory
+boundary does not exempt what lies outside it — it hides it; there is now no
+exemption of any shape, since nothing may reach a unit that is not there.
+
+⚠ **Deleting it deleted the sweep's control, and that is worth knowing before
+touching this row.** The unit's own files used to be the proof that the
+predicate could still see the name at all; "no file names it" is otherwise
+what a sweep answers when it read nothing. What replaces them is the prose —
+the comments in this file, in `LuaEngine`, in the engine suites — which the
+check requires to stay above a floor. Deleting that history is allowed and
+turns the row red on purpose, because it takes the last evidence that the
+sweep reads.
 
 Why it was retired: it rewrote expression *text* rather than parsing it, so
 the answers it got wrong were wrong by construction rather than by omission —

@@ -130,6 +130,27 @@ fn tracked_files() -> BTreeSet<String> {
         .collect()
 }
 
+/// Run `git` at the repository root; report whether it succeeded and what it
+/// printed.
+///
+/// ⚠ Two questions need two commands here, and the reason is a defect this
+/// repository walked into: `git show <sha>:<path>` answers "there is no such
+/// commit" and "that commit has no such path" with the SAME sentence, and one
+/// was read for the other. `git cat-file -t` is asked about the COMMIT and
+/// `git ls-tree` about the PATH, so a failure says which of the two it is.
+fn git_at_root(args: &[&str]) -> (bool, String) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root())
+        .args(args)
+        .output()
+        .expect("git runs");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).trim().to_string(),
+    )
+}
+
 fn read(rel: &str) -> String {
     let path = repo_root().join(rel);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {rel}: {e}"))
@@ -603,6 +624,7 @@ const CHECK_KINDS: &[&str] = &[
     "decision:",
     "precondition:",
     "retirement:",
+    "retired-measurement:",
 ];
 
 /// The rewriter the `retire-rewriter` row is about.
@@ -933,101 +955,6 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         return;
     }
 
-    if let Some(want) = row.check.strip_prefix("derive:rewriter-footprint=") {
-        let want: usize = want
-            .parse()
-            .unwrap_or_else(|_| panic!("row `{}` declares a non-numeric line count", row.id));
-        let cpp = "sce/src/scripting/EcmaScriptToLuaTransformer.cpp";
-        let hdr = "sce/include/scripting/EcmaScriptToLuaTransformer.h";
-        for path in [cpp, hdr] {
-            assert!(
-                tracked.contains(path),
-                "row `{}` prices the swap on `{path}`, which git no longer tracks. \
-                 If the rewriter has retired, the swap has HAPPENED and this row \
-                 is a historical note, not a price — rewrite it.",
-                row.id
-            );
-        }
-        let lines = read(cpp).lines().count() + read(hdr).lines().count();
-        assert_eq!(
-            lines, want,
-            "row `{}` says {want} tracked line(s) leave with the rewriter; the two \
-             files now hold {lines}. The number a decision is taken on has moved.",
-            row.id
-        );
-
-        // The half that makes the net a SUBTRACTION rather than two
-        // unrelated figures: both sides have to be paid by the same
-        // population. The rewriter is compiled by every C++ configure
-        // because its translation unit is listed unconditionally — put
-        // it behind `$<$<BOOL:${SCE_ENABLE_LUA}>:...>` the way
-        // `LuaEngine.cpp` is and the OUT half stops matching the IN
-        // half's population, which is exactly the defect this row was
-        // written to remove.
-        let sources = read("sce/sce_base_sources.cmake");
-        let listed = sources
-            .lines()
-            .map(|l| l.split('#').next().unwrap_or(""))
-            .find(|l| l.contains("EcmaScriptToLuaTransformer.cpp"))
-            .unwrap_or_else(|| {
-                panic!(
-                    "row `{}`: `sce/sce_base_sources.cmake` no longer lists the \
-                     rewriter, so it is not compiled by every C++ configure and \
-                     the net's two halves no longer share a population",
-                    row.id
-                )
-            });
-        assert!(
-            !listed.contains("$<"),
-            "row `{}`: the rewriter is now listed behind a generator expression \
-             (`{}`), so some C++ configures do not compile it. The OUT half is \
-             then paid by a narrower population than the IN half, and the net \
-             stops being a subtraction.",
-            row.id,
-            listed.trim()
-        );
-
-        // The IN half is measured by building an off-by-default feature,
-        // and `clippy-check.yml` runs `--workspace --all-targets` WITHOUT
-        // `--all-features`. So unless a lane PASSES the feature, nothing
-        // compiles the probe — and a probe that stops compiling makes
-        // this row's number un-re-derivable, which is the precise defect
-        // it was committed to remove.
-        //
-        // ⚠ "Passes", not "mentions", and the difference was measured
-        // rather than reasoned. This asked whether the text `ffi`
-        // occurred anywhere in a gate file, and the comment in
-        // `tree-hygiene.sh` that explains why the feature is there said
-        // it too — so deleting the feature from the cargo invocation and
-        // leaving that paragraph standing kept this GREEN while nothing
-        // built the probe. A gate blind in the one case it exists for is
-        // not a gate, and `passes_cargo_feature` reads arguments.
-        let gate_files: Vec<&String> = tracked
-            .iter()
-            .filter(|p| p.starts_with("scripts/gates/") || p.starts_with(".github/workflows/"))
-            .collect();
-        let compiled_by: Vec<&&String> = gate_files
-            .iter()
-            .filter(|p| passes_cargo_feature(&read(p), "ffi"))
-            .collect();
-        let merely_named: Vec<&&String> = gate_files
-            .iter()
-            .filter(|p| read(p).contains("ffi"))
-            .collect();
-        assert!(
-            !compiled_by.is_empty(),
-            "row `{}`: no gate script or workflow PASSES `--features ffi` \
-             to cargo, so no lane compiles the probe `{}` builds. The probe \
-             would rot unnoticed and this row's number would go back to being \
-             a figure nobody can reproduce. Files that merely NAME the feature, \
-             which is not the same thing and does not compile it: {:?}",
-            row.id,
-            row.evidence,
-            merely_named,
-        );
-        return;
-    }
-
     if let Some(stage) = row.check.strip_prefix("derive:scope-ladder=") {
         let src = read("sce-build/src/ecmascript/scope.rs");
         let ladder: Vec<String> = enum_variant_names(&src, "pub enum ScopeStage {");
@@ -1144,7 +1071,47 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
             row.id
         );
 
-        // 4. Something CALLS it. A linked library nothing reaches is
+        // 4. It is BUILT with the feature that makes the C surface exist.
+        //    `sce-build`'s `ffi` is off by default, so a link that forgets
+        //    it produces a staticlib holding no `sce_lower_value` at all and
+        //    the failure arrives as an undefined symbol at the far end of a
+        //    C++ build.
+        //
+        //    ⚠ "Passes", not "mentions", and the difference was measured
+        //    rather than reasoned. This assertion lived on the footprint row
+        //    and asked whether the text `ffi` occurred anywhere under
+        //    `scripts/gates/`; the comment in `tree-hygiene.sh` explaining
+        //    why the feature is named there satisfied it on its own, so
+        //    deleting the feature from the cargo invocation and leaving that
+        //    paragraph standing kept the row GREEN while nothing built the
+        //    surface. That row has since retired with its subject, and the
+        //    guarantee moved HERE — onto the CMake that performs the build
+        //    rather than a lane that mentions it, which is where it should
+        //    have been: every C++ configure runs this, and no lane has to
+        //    remember to.
+        let cmake_files: Vec<&String> = tracked
+            .iter()
+            .filter(|p| p.starts_with("cmake/") && p.ends_with(".cmake"))
+            .collect();
+        let builds_with: Vec<&&String> = cmake_files
+            .iter()
+            .filter(|p| passes_cargo_feature(&read(p), "ffi"))
+            .collect();
+        let merely_named: Vec<&&String> = cmake_files
+            .iter()
+            .filter(|p| read(p).contains("ffi"))
+            .collect();
+        assert!(
+            !builds_with.is_empty(),
+            "row `{}`: no file under `cmake/` PASSES `--features ffi` to \
+             cargo, so nothing builds the C surface this row says the engine \
+             links against. Files that merely NAME the feature, which is not \
+             the same thing and does not compile it: {:?}",
+            row.id,
+            merely_named
+        );
+
+        // 5. Something CALLS it. A linked library nothing reaches is
         //    discarded by the linker, so a row resting on the link alone
         //    would be a row that cannot fail — the population would have
         //    a role in it that can never be zero.
@@ -1235,7 +1202,100 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         return;
     }
 
-    if row.check == "retirement:rewriter-uncalled" {
+    if let Some(sha) = row.check.strip_prefix("retired-measurement:") {
+        // A retired measurement is STILL a measurement, and rewriting its
+        // kind would hide that the number came from a probe that ran. What
+        // changed is that its subject left the working tree, so the probe
+        // cannot be re-run HERE — and this check is what keeps that from
+        // being a sentence nobody re-derives.
+        assert_eq!(
+            row.kind, "measurement",
+            "row `{}` carries a retired-measurement check with kind `{}`. The \
+             number was measured; a retired measurement is a measurement whose \
+             subject has gone, not a decision.",
+            row.id, row.kind
+        );
+        assert_eq!(
+            row.status, "CLOSED",
+            "row `{}` is {} and carries a retired-measurement check. A subject \
+             that has left the tree cannot be measured again here, so the row \
+             cannot be open on the promise of a re-run.",
+            row.id, row.status
+        );
+
+        // 1. The pin is a real commit.
+        //
+        //    ⚠ `git cat-file -t` and not `git show`. `git show <sha>:<path>`
+        //    answers "no such commit" and "that commit has no such path" with
+        //    the SAME sentence, and this repository has already read one for
+        //    the other once and reverted a correct diagnosis over it.
+        let (found, kind) = git_at_root(&["cat-file", "-t", sha]);
+        assert!(
+            found && kind == "commit",
+            "row `{}` pins its number to `{sha}`, which this repository does \
+             not carry as a commit (`git cat-file -t` said {:?}). A pin that \
+             resolves to nothing makes the number un-re-derivable, which is \
+             the exact defect the ledger exists to refuse.",
+            row.id,
+            if found { kind.as_str() } else { "failure" }
+        );
+
+        // 2. That commit still holds everything the measurement rested on, so
+        //    a reader can check it out and run the probe again.
+        for path in DEPARTED_WITH_REWRITER {
+            let (ok, listed) = git_at_root(&["ls-tree", "--name-only", sha, "--", path]);
+            assert!(
+                ok && listed == *path,
+                "row `{}`: `{path}` is not in the tree of `{sha}`, so the pin \
+                 does not hold the subject the number was measured on. Pin a \
+                 commit that does — the number cannot be re-derived from one \
+                 that never had it.",
+                row.id
+            );
+        }
+
+        // 3. And this tree no longer holds them. Without this the row could
+        //    sit as a historical note over a subject that quietly came back,
+        //    which is a live price left unmeasured — the shape this ledger
+        //    was built to catch.
+        for path in DEPARTED_WITH_REWRITER {
+            assert!(
+                !tracked.contains(*path),
+                "row `{}`: `{path}` is tracked again, so its subject is back \
+                 in the working tree and this row is no longer historical. \
+                 Re-measure it and give it a live check, or say why it cannot \
+                 be measured — a retired-measurement row over a present \
+                 subject is a number nobody is re-deriving.",
+                row.id
+            );
+        }
+
+        // 4. The probe itself is KEPT, and says so where a person meets it.
+        //    Evidence that is gone leaves the row citing nothing; evidence
+        //    that is present and silent invites a run that cannot succeed in
+        //    this tree, and costs whoever tries it the time to find out.
+        assert!(
+            tracked.contains(&row.evidence),
+            "row `{}` cites `{}` as the probe behind its number, and git does \
+             not track it. The measurement is retired, not erased — the script \
+             is how the number can be re-derived at the pin above.",
+            row.id,
+            row.evidence
+        );
+        let probe = read(&row.evidence);
+        assert!(
+            probe.contains("retired-measurement:"),
+            "row `{}`: `{}` does not name `retired-measurement:` anywhere, so \
+             nothing in the script tells a reader that its subject left the \
+             tree at a named commit. It will be run, it will fail, and the \
+             reason will be somewhere else.",
+            row.id,
+            row.evidence
+        );
+        return;
+    }
+
+    if row.check == "retirement:rewriter-deleted" {
         assert_eq!(
             row.kind, "decision",
             "row `{}` carries a retirement check with kind `{}`. A retirement \
@@ -1244,36 +1304,41 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
             row.id, row.kind
         );
 
-        // 1. The retired unit is still in the tree, and still spells the
-        //    name this sweep looks for.
+        // 1. The unit is GONE, and nothing compiles it.
         //
-        //    ⚠ This is the assertion that makes the sweep below mean
-        //    something. "No file names X" is trivially true of an X nothing
-        //    carries, so a rename or a deletion would report the retirement
-        //    as complete for a reason that has nothing to do with callers.
-        //    Retirement is also not deletion yet: the translation unit is
-        //    still listed in `sce/sce_base_sources.cmake` and still compiles.
+        //    ⚠ This inverts what stood here while the row said `uncalled`.
+        //    Then the unit had to still exist, because "no file names X" is
+        //    trivially true of an X nothing carries and a deletion would have
+        //    reported the retirement complete for a reason with nothing to do
+        //    with callers. Deletion is now the claim, so the requirement flips
+        //    — and the control that requirement was buying has to be bought
+        //    somewhere else instead, which is what step 3 is.
         let unit: Vec<&str> = tracked
             .iter()
             .map(|p| p.as_str())
             .filter(|p| is_cpp_source(p) && file_stem_of(p).starts_with(REWRITER))
             .collect();
         assert!(
-            unit.len() >= 2,
-            "row `{}`: the retired unit is {} tracked C++ file(s) named after \
-             `{REWRITER}`, and it has to be at least two — the header that \
-             declares it and the source that defines it. Fewer means the unit \
-             was renamed or deleted, and the sweep below would then report \
-             zero callers of a name the tree no longer carries.",
+            unit.is_empty(),
+            "row `{}`: {} tracked C++ file(s) are still named after \
+             `{REWRITER}`:\n  {}\nThe row claims the unit was DELETED, not \
+             merely left uncalled. If it came back, this row is the one that \
+             has to be rewritten — the `retirement:rewriter-uncalled` shape it \
+             replaced is what a returned-but-uncalled unit needs.",
             row.id,
-            unit.len()
+            unit.len(),
+            unit.join("\n  ")
         );
+        let sources = read("sce/sce_base_sources.cmake");
         assert!(
-            unit.iter()
-                .any(|p| cpp_code_only(&read(p)).contains(&format!("class {REWRITER}"))),
-            "row `{}`: no file of the retired unit declares `class {REWRITER}` \
-             in code. The sweep's subject is that class; without it this row \
-             is asking about a name nothing defines.",
+            !sources
+                .lines()
+                .map(|l| l.split('#').next().unwrap_or(""))
+                .any(|l| l.contains(REWRITER)),
+            "row `{}`: `sce/sce_base_sources.cmake` still lists `{REWRITER}`, \
+             so every C++ configure is still told to compile a translation \
+             unit this tree no longer has. A build that cannot run is not a \
+             completed deletion.",
             row.id
         );
 
@@ -1287,10 +1352,11 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         //    nothing in the tree said whether it was an instrument or a
         //    caller, and a second file joining it would have been as quiet.
         //
-        //    What replaces the boundary is a CLASSIFICATION. A tracked C++
-        //    file either IS the retired unit, or is a declared instrument
-        //    below, or must not reach the rewriter. Unclassified is red,
-        //    which is the only shape an exemption is allowed to take here.
+        //    That boundary was replaced by a classification, and the deletion
+        //    then collapsed the classification too: with the unit and its one
+        //    instrument both gone, no tracked C++ file may reach the rewriter
+        //    for any reason, and there is no exemption of any shape left to
+        //    hide behind.
         let population: Vec<&str> = tracked
             .iter()
             .map(|p| p.as_str())
@@ -1325,69 +1391,64 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
             engine.len()
         );
 
-        // 3. The positive control, on the tree rather than on a fixture: the
-        //    same predicate that will report zero below must report the
-        //    retired unit's own files. If it does not, it has stopped being
-        //    able to see the name at all.
-        let unit_seen: Vec<&&str> = unit.iter().filter(|p| reaches_rewriter(&read(p))).collect();
-        assert_eq!(
-            unit_seen.len(),
-            unit.len(),
-            "row `{}`: the sweep sees {} of the retired unit's {} own file(s). \
-             The predicate cannot find the name where the name certainly is, \
-             so its answer about the engine below is not evidence of anything.",
+        // 3. THE CONTROL, and the whole reason this row is not vacuous.
+        //
+        //    ⚠⚠⚠ While the unit existed, the control was its own files: the
+        //    predicate that reports zero below had to report THEM, or it had
+        //    stopped being able to see the name at all. Deleting the unit
+        //    deleted that control, and a check that lost its control while
+        //    keeping its claim is a check that now passes for the same reason
+        //    an unread tree does.
+        //
+        //    What buys it back is the PROSE. The engine, its suites and this
+        //    repository's documents still explain what the rewriter was and
+        //    why it went, so a sweep that is really opening files finds the
+        //    name in RAW text many times over while finding it in CODE never.
+        //    The raw half is asserted first: it is what turns a silent reader
+        //    into a red one.
+        //
+        //    ⚠ This CAN legitimately reach zero — by deleting every comment
+        //    that remembers the rewriter. That is allowed, and it is exactly
+        //    when this row has to be rewritten rather than quietly relaxed:
+        //    with no mention anywhere, nothing in the tree can show that the
+        //    sweep still reads, and the only control left would be the
+        //    fixtures in `a_remembered_rewriter_is_not_a_reached_one`.
+        let mentions: Vec<&str> = population
+            .iter()
+            .copied()
+            .filter(|p| read(p).contains(REWRITER))
+            .collect();
+        assert!(
+            mentions.len() >= REWRITER_MENTION_FLOOR,
+            "row `{}`: only {} tracked C++ file(s) mention `{REWRITER}` in raw \
+             text, below the floor of {REWRITER_MENTION_FLOOR}. Every one of \
+             them is prose — the history of a deleted unit — and they are this \
+             sweep's only proof that it is opening files at all. Without them \
+             the zero below is indistinguishable from a sweep that read \
+             nothing, so this row must be rewritten rather than left standing.",
             row.id,
-            unit_seen.len(),
-            unit.len()
+            mentions.len()
         );
 
-        // 4. The declared instruments, each asserted rather than trusted. A
-        //    path listed must be tracked AND must still reach the rewriter,
-        //    so the list can only shrink by being edited. An entry that
-        //    outlives what it exempts is how a list stops describing the
-        //    tree and starts hiding it: the day a caller appeared at that
-        //    path, a sentence about a file that no longer does what it says
-        //    would be what let it through.
-        for (path, why) in REWRITER_INSTRUMENTS {
-            assert!(
-                tracked.contains(*path),
-                "row `{}`: `{path}` is declared an instrument that reaches \
-                 `{REWRITER}` ({why}), and no such file is tracked. A \
-                 declaration about a file that is not there exempts nothing \
-                 and hides that it exempts nothing.",
-                row.id
-            );
-            assert!(
-                reaches_rewriter(&read(path)),
-                "row `{}`: `{path}` is declared an instrument that reaches \
-                 `{REWRITER}` ({why}), and it no longer does. Delete the \
-                 entry, so that the day a caller appears at that path it is \
-                 unclassified and therefore red.",
-                row.id
-            );
-        }
-
-        // 5. The claim itself: everything the two classes above do not name.
+        // 4. The claim itself. No classification is left: with the unit gone
+        //    there is nothing a file could legitimately reach, so there is no
+        //    instrument list here any more and no exemption of any shape.
         let callers: Vec<&str> = population
             .iter()
             .copied()
-            .filter(|p| !unit.contains(p))
-            .filter(|p| !REWRITER_INSTRUMENTS.iter().any(|(i, _)| i == p))
             .filter(|p| reaches_rewriter(&read(p)))
             .collect();
         assert!(
             callers.is_empty(),
-            "row `{}`: {} tracked C++ file(s) reach `{REWRITER}` while being \
-             neither the retired unit nor a declared instrument:\n  {}\nThe \
-             row claims the rewriter is retired, which is the claim that \
-             NOTHING takes the fallback — not that the frontend is tried \
-             first. A file here either calls it or includes its header; both \
-             are a second translator still being carried. If one of them is \
-             an instrument rather than a caller, say so in \
-             `REWRITER_INSTRUMENTS` — unclassified is red on purpose.",
+            "row `{}`: {} tracked C++ file(s) reach `{REWRITER}` in code:\n  \
+             {}\nThe unit is deleted, so a file that names the type or \
+             includes its header cannot compile — this is a build break as \
+             well as a false row. The {} file(s) that merely MENTION it in \
+             comments are the control above and are not this.",
             row.id,
             callers.len(),
-            callers.join("\n  ")
+            callers.join("\n  "),
+            mentions.len()
         );
         return;
     }
@@ -1400,25 +1461,22 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
     );
 }
 
-/// Files allowed to reach the retired rewriter, and why each one is.
+/// What left the working tree when the rewriter was deleted.
 ///
-/// ⚠ Not an exemption list of the kind the gates here refuse. Every entry is
-/// itself asserted: the path must be tracked and must STILL reach the
-/// rewriter, so a line cannot outlive its subject and go on covering
-/// whatever later appears at that path. The reason lives beside the path
-/// rather than in a comment because the check quotes it in its own failure,
-/// which is the only place a reader meets it at the moment it matters.
+/// ⚠ This is the population two RETIRED measurement rows rest on, and every
+/// entry is asserted from both sides: the pinned commit's tree must still
+/// hold it (so the number the row carries can be re-derived by checking that
+/// commit out) and this tree must NOT (so a row cannot sit as a historical
+/// note over a subject that quietly came back).
 ///
-/// The one entry is an INSTRUMENT: it constructs the rewriter in order to
-/// time it against the frontend, which is how the retirement was priced at
-/// all. The deletion round this row is a step towards deletes that benchmark
-/// with the unit, and this line is where that consequence shows up.
-const REWRITER_INSTRUMENTS: &[(&str, &str)] = &[(
+/// The benchmark is here for the reason the ledger keeps saying out loud: it
+/// was the INSTRUMENT that priced the retirement, it constructed the rewriter
+/// to do so, and an instrument outlives its subject only as rot.
+const DEPARTED_WITH_REWRITER: &[&str] = &[
+    "sce/include/scripting/EcmaScriptToLuaTransformer.h",
+    "sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
     "tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp",
-    "the benchmark that priced the retirement: it constructs the rewriter to \
-     time its memo caches against the frontend, so it is an instrument \
-     pointed at the unit rather than a caller on the engine's path",
-)];
+];
 
 /// A floor for the engine sweep, well under the count on the day it was
 /// written (349) and well over anything a broken filter would return.
@@ -1429,6 +1487,17 @@ const ENGINE_SOURCE_FLOOR: usize = 200;
 /// C++ file (1937, the committed generated trees included) and well over
 /// anything a broken filter would return.
 const TRACKED_CPP_FLOOR: usize = 1000;
+
+/// A floor for the raw-text mentions that are the deletion sweep's only
+/// remaining control.
+///
+/// Ten tracked C++ files still explain the rewriter in comments on the day
+/// the unit was deleted — the engine's two scripting headers, `LuaEngine`
+/// itself, four engine suites, a benchmark, the C backend's DOM binding, and
+/// `SceLowering.h`. The floor is half of that: high enough that a sweep which
+/// stopped reading cannot clear it, low enough that trimming prose does not
+/// fail a round that changed nothing about callers.
+const REWRITER_MENTION_FLOOR: usize = 5;
 
 fn is_cpp_source(path: &str) -> bool {
     matches!(

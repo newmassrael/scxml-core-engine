@@ -4,6 +4,25 @@
 #
 # The per-call price of the two ECMAScript->Lua paths, on ONE host.
 #
+# ⚠⚠⚠ RETIRED — THIS CANNOT RUN IN THIS TREE, AND THAT IS NOT A BUG.
+#
+# The C++ half timed `EcmaScriptToLuaTransformer`, and that unit was DELETED
+# once the frontend answered everything it used to. Its benchmark
+# (tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp) went with it, so
+# `benchmark_ecma_lowering_per_call` is no longer a target this tree can
+# build and the comparison below has one side.
+#
+# The number the D1 ledger carries stays a MEASUREMENT rather than becoming
+# a remembered figure, because the ledger pins the commit that still holds
+# both the probe and its subject: the `per-call-cost` row's check is
+# `retired-measurement:<sha>`, and sce-build/tests/lowering_decision_ledger.rs
+# requires that commit to still contain every departed file. To re-derive
+# the number, check that commit out and run this script there.
+#
+# The script is kept rather than deleted for exactly that reason: it is HOW
+# the number was made, and a measurement whose method is only in a diff is
+# the /tmp defect described below with extra steps.
+#
 # NOT A GATE. Nothing here asserts a bound and nothing returns non-zero for
 # a slow number: this machine is shared between sessions and the same 21
 # gates have been measured at 529s and at 1161s, so a timing assertion would
