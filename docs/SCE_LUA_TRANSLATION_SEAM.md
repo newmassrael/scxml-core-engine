@@ -1495,7 +1495,40 @@ frontend refuses. What the list measures is the 98-case shared table; retiring
 the rewriter is the claim that nothing takes the fallback at all, and that
 needs its own witness rather than this one's silence.
 
-⚠⚠ **One of the list's own two witnesses could not survive the list emptying,
+#### What the script seam turned out to be worth: a whole entry point
+
+It was adopted to close one divergence. What it actually closed was the route a
+DOCUMENT takes, which nothing had noticed was uncovered.
+
+`ecma262-lowered-cpp` had been RED since the seam first landed, for five
+pushes, and its census line said `source-wrong=14` against a direct-evaluate
+suite reporting zero — one shared table, one declared path, two numbers. The
+difference was not a second path. It was this:
+
+- that fixture records all 98 of its answers with `<assign
+  location="answers.dNN">`, and a member location is not a bare identifier;
+- `AssignmentExecutionHelper` sends a non-bare location down its COMPLEX path,
+  which builds `<location> = (<expr>);` and hands it to `executeScript` rather
+  than evaluating the expression;
+- the seam was on `loweredTextOf` and not on `loweredScriptOf`, so every such
+  assignment fell straight back to the rewriter.
+
+`5 ^ 3` answering 125 is the fingerprint: the rewriter only parenthesises
+bitwise operands and leaves `^` to Lua, where it is exponentiation. **Measured
+after routing `loweredScriptOf` through `sce_lower_script`: the same lane's
+census reads `source-wrong=0`.**
+
+⚠ The lesson is about WHERE a seam goes, not about this bug. An engine has more
+than one entry point for the same author text, and a seam on one of them is
+invisible to a suite that uses the other. `ecmascript_semantics_test` could not
+have found this, and did not: it evaluates the expression itself. What found it
+was a second suite reaching the same engine the way a document does — which is
+what `LoweredEcma262`'s own header says it exists for.
+`ScriptLanguageSeam`'s `AMemberLocationAssignmentReachesTheFrontend` now holds
+that entry point directly, so the coverage no longer needs a whole lane behind
+it.
+
+⚠⚠ One of the list's own two witnesses could not survive the list emptying,
 and that is worth stating rather than quietly fixing.** The corpus held the
 list to both directions with two mutations: add an entry that has been
 repaired, and remove one that is still live. The second is not expressible

@@ -500,13 +500,16 @@ still linked and still answers anything the frontend refuses, and this cell
 scores the 98-case shared table rather than every program a consumer can
 write. Retirement is a separate claim and needs its own witness.
 
-⚠ **And this cell is the DIRECT route.** The same engine reached through a
-generated `--script-engine ecmascript` document is measured separately by
-`LoweredEcma262`, which reported `source-wrong=14` on 2026-08-29 and is RED on
-it — its answers there include Lua's own `^` and `>>`, so that route appears to
-reach neither the frontend nor the rewriter. Until that is understood, do not
-read this cell as covering a document-driven artifact; the lane's census line
-is the number to ask, and it prints on every run.
+⚠ **This cell was the DIRECT route only, until the same day closed the other
+one.** The engine reached through a generated `--script-engine ecmascript`
+document is measured separately by `LoweredEcma262`, and it reported
+`source-wrong=14` while this cell read 98/98. The gap was one entry point, not
+one more path: a `<assign>` whose location is not a bare identifier is run as a
+SCRIPT (`AssignmentExecutionHelper`'s complex path), and the seam was on
+`loweredTextOf` only — so `5 ^ 3` came back 125, Lua's exponentiation. Putting
+the seam on `loweredScriptOf` took that census to `source-wrong=0`. Ask the
+lane's census line rather than this cell for the document route; it prints on
+every run.
 A second row for the lowered path is deliberately absent: it would be a cell
 about an artifact shape rather than an engine, and this table is what a consumer
 reads when choosing an ENGINE. `LoweredEcma262` is where the lowered path's
