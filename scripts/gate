@@ -85,7 +85,19 @@ PYEOF
         # Named gates still get their dependency closure and the derived
         # order — asking for `forge-cpp` alone must not run it against a
         # generator that was never built.
-        mapfile -t ORDER < <(python3 - "$REGISTRY" "${SLUGS[@]}" <<'PYEOF'
+        #
+        # ⚠ Captured into a variable and THEN split, rather than read straight
+        # into `mapfile` through a process substitution. `mapfile < <(cmd)`
+        # reports `mapfile`'s status, never `cmd`'s, so the resolver below
+        # could refuse an unknown slug with exit 2 and leave `ORDER` empty —
+        # and an empty `ORDER` is the "no gate applies" path, which exits 0.
+        # Measured 2026-08-29: `scripts/gate clang-format` — a slug that does
+        # not exist — printed `unknown slug(s)` on stderr and returned SUCCESS,
+        # so a lane or a person asking for a gate by a name with a typo in it
+        # was told the gate had passed. That is the escape hatch this
+        # repository writes its gates against, in the runner that owns all of
+        # them.
+        if ! ORDER_TEXT="$(python3 - "$REGISTRY" "${SLUGS[@]}" <<'PYEOF'
 import runpy, sys
 mod = runpy.run_path(sys.argv[1])
 want = set(sys.argv[2:])
@@ -102,7 +114,21 @@ while grew:
                 want.add(d); grew = True
 print("\n".join(mod["run_order"](want)))
 PYEOF
-)
+)"; then
+            exit 2
+        fi
+        while IFS= read -r _slug; do
+            [[ -n "$_slug" ]] && ORDER+=("$_slug")
+        done <<<"$ORDER_TEXT"
+        # A name the registry knows always resolves to at least itself, so an
+        # empty order here is the resolver having answered nothing rather than
+        # the change set having selected nothing — the one case below that
+        # must NOT be read as "nothing to verify".
+        if (( ${#ORDER[@]} == 0 )); then
+            printf 'gate: %s resolved to no gate at all; the registry answered nothing for a name it accepted\n' \
+                "${SLUGS[*]}" >&2
+            exit 2
+        fi
         ;;
     *)
         printf 'gate: nothing to do — pass a slug, --all, --changed-from or --list\n' >&2
