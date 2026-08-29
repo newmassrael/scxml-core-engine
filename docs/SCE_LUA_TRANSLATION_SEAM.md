@@ -1430,6 +1430,14 @@ LoweringPerCall census: population=98 frontend_steady_ns=577
   cold_ratio=1.88 memo_speedup=88.8
 ```
 
+⚠ **What a re-run should look like, so a reproducer does not read noise as a
+contradiction.** Two runs on the same host minutes apart gave `577/1185/1085/12`
+and `568/1208/1075/12` — under 2% on every column, and `cold_ratio` 1.88 against
+1.89. This machine is shared between sessions, so treat a figure as agreeing
+when the RATIO holds; the absolute nanoseconds are the part that moves. A run
+that reports `cold_ratio` below 1 has measured something else — almost certainly
+the rewriter warm, which is the trap named below.
+
 **Parsing is 1.88x FASTER than rewriting on a cold call.** The intuition that a
 parser must cost more than a text pass is refuted here: the rewriter runs a
 sequence of full-string scans and rebuilds, and that is dearer than one parse.
