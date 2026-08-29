@@ -19,7 +19,7 @@ namespace SCE {
 enum class ScriptLanguage {
     /// The author's own text, as written in the SCXML document under
     /// `datamodel="ecmascript"`. An engine that does not evaluate ECMAScript
-    /// must adapt it (`EcmaScriptToLuaTransformer`) or refuse.
+    /// must lower it (`sce-build`'s ECMAScript frontend) or refuse.
     ECMAScript,
     /// Lua that `sce-build`'s ECMAScript frontend already produced, via the
     /// `to_lua_*` filters. Nothing further is to be rewritten.

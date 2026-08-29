@@ -26,11 +26,36 @@
 mutation_ctest --test-dir build -R '^(DomReadSurface)$'
 mutation_targets sce/src/scripting/XMLDOMWrapper.cpp sce/src/scripting/DOMBinding.cpp
 mutation_targets sce/src/scripting/LuaDOMBinding.cpp sce/src/scripting/JSEngine.cpp
-mutation_targets sce/src/scripting/EcmaScriptToLuaTransformer.cpp
 # The suite each case reds, measured: `DomReadSurface`,
-# `DomReadSurfaceOnLuaEngine` and `LuaTransformerReceiver` are the three test
+# `DomReadSurfaceOnLuaEngine` and `EcmaScriptMemberChain` are the three test
 # suites in the one ctest test this selector names.
 mutation_oracles tests/engine/DomReadSurfaceTest.cpp
+
+# ── Two cases left this file on 2026-08-29, and why ────────────────
+#
+# `sce/src/scripting/EcmaScriptToLuaTransformer.cpp` was a target here, and two
+# cases broke it: the receiver walk-back that made `var1.childNodes.length`
+# come out as `var1.#childNodes`, and the DOM method list that the emitter and
+# the frontend hold as one vocabulary. The rewriter is RETIRED — nothing in the
+# engine reaches it, which the seam document's `retire-rewriter` row asserts and
+# `the_rewriter_is_retired_not_merely_second.cases` mutates — so breaking it can
+# no longer change what this suite sees. Both cases would have reported
+# SURVIVED, silently, with nothing in this file or in the test having changed:
+# the failure `the_frontend_now_owns_rounding_and_escapes.cases` names, where a
+# seam elsewhere takes the work away and a verdict flips on its own.
+#
+# The property went to the place that now decides it, not to nothing:
+# `the_frontend_now_owns_the_dom_vocabulary.cases`, over
+# `sce-build/tests/ecmascript_builtin_vocabulary.rs`, which asks the frontend
+# directly whether a DOM call binds its receiver and whether an unsupported one
+# is refused.
+#
+# ⚠ Residue, written rather than left as a gap: no case reaches the frontend's
+# DOM vocabulary through THIS suite's C++ oracle. `cmake/SCEBuildLowering.cmake`
+# builds the Rust staticlib with `execute_process` at CONFIGURE time, so a build
+# does not depend on the Rust sources and an edit to them would not reach a
+# compiled C++ test at all — a mutation aimed here would be invisible for a
+# reason that has nothing to do with the defect.
 
 # ── What the seam reports ──────────────────────────────────────────
 #
@@ -101,39 +126,3 @@ edit("sce/src/scripting/LuaDOMBinding.cpp",
             lua_setfield(L, -2, "__index");""")
 PY
 
-# ── The receiver a member access binds ─────────────────────────────
-#
-# ECMAScript's `.length` and `.indexOf(` apply to the whole chain before them.
-# Walking back over word characters alone finds only the last link, which is
-# what made `var1.childNodes.length` come out as `var1.#childNodes`.
-
-mutation_case "the receiver walk-back stops at the last link" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """        if (isWordChar(previous)) {
-            while (start > 0 && isWordChar(s[start - 1])) {
-                --start;
-            }""",
-     """        if (isWordChar(previous)) {
-            while (start > 0 && isWordChar(s[start - 1])) {
-                --start;
-            }
-            break;""")
-PY
-
-# ── The methods the frontend lowers ────────────────────────────────
-#
-# The transformer's list and `sce_build::ecmascript::builtins::DOM_METHODS` are
-# one vocabulary: a name the frontend lowers to a colon call and this list does
-# not know is emitted as a field call, which reaches the binding with no
-# receiver and dies at run time.
-
-# ⚠ The anchor is the clang-formatted text, because the commit hook reformats
-# this file and an anchor written before that ran is stale by the time a gate
-# reads it — measured 2026-08-18, this casefile was reported INCONCLUSIVE by
-# `mutation-cases` and the push was rejected for it.
-mutation_case "the transformer forgets two of the DOM methods" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """    static constexpr const char *kDomMethods[] = {"getAttribute", "getElementsByTagName", "getTagName", "hasAttribute",
-                                                  "hasChildNodes"};""",
-     """    static constexpr const char *kDomMethods[] = {"getAttribute", "getElementsByTagName", "getTagName"};""")
-PY

@@ -1,0 +1,105 @@
+# Mutation cases for "the rewriter is retired, not merely second".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_rewriter_is_retired_not_merely_second.cases`.
+#
+# `docs/SCE_LUA_TRANSLATION_SEAM.md` records two halves of one decision. The
+# first — LINK `sce-build`'s ECMAScript frontend beside `lua54` — landed with
+# its own row and its own check, and it was true for a day while every
+# expression the frontend refused still went to `EcmaScriptToLuaTransformer`.
+# The document said so itself: *"An empty list is not a retired rewriter …
+# retiring the rewriter is the claim that nothing takes the fallback at all,
+# and that needs its own witness rather than this one's silence."*
+#
+# The `retire-rewriter` row is that witness and `retirement:rewriter-uncalled`
+# is what re-derives it. These cases are what make it a gate rather than a
+# sentence: three mutate the SUBJECT and must be caught, and four mutate the
+# GATE and must be caught by the parts of it that exist for exactly that.
+#
+# ⚠ The subject cases are written as a REVERT, not as an invention. The member
+# and the include below are how the engine actually stood before the
+# retirement, so a careless revert — the shape this repository has already paid
+# for once, when a call was deleted and the paragraph explaining it left
+# standing — is what they reproduce.
+#
+# ⚠⚠ Two of the gate cases keep the first honest. "No file names X" is the
+# answer a sweep gives when it read nothing, and it is indistinguishable from
+# a completed retirement. The floors are what tell them apart, and a
+# population filter that matches nothing — or one narrowed back to the two
+# directories it used to read — is how the sweep would come to read nothing.
+#
+# ⚠⚠⚠ The last two are about the CLASSIFICATION, which is what the sweep's
+# boundary became. `tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp` really
+# does construct the rewriter, and for a day it was outside the swept
+# directories — not exempted, INVISIBLE, with nothing in the tree saying which
+# it was. It is now a declared instrument, and a declaration is only worth
+# more than a directory if it is itself asserted: one case appears as an
+# unclassified caller where the old boundary would have hidden it, and one
+# leaves the entry standing over a file that no longer reaches the rewriter,
+# which is how a list stops describing the tree and starts hiding it.
+
+mutation_tests -p sce-build --test lowering_decision_ledger
+mutation_targets sce-build/tests/lowering_decision_ledger.rs
+# Read at run time, not compiled in: the gate sweeps the tree's C++ sources by
+# opening them, so a change to one of them is invisible to a rebuild check.
+mutation_runtime_targets sce/include/scripting/LuaEngine.h
+mutation_runtime_targets sce/src/scripting/LuaEngine.cpp
+mutation_runtime_targets tests/engine/LoweredEcma262Test.cpp
+
+mutation_case "the engine takes the rewriter back as a member" <<'PY'
+edit("sce/include/scripting/LuaEngine.h",
+     "    // Engine state\n",
+     "    // Expression transformer\n"
+     "    EcmaScriptToLuaTransformer transformer_;\n"
+     "\n"
+     "    // Engine state\n")
+PY
+
+mutation_case "the engine includes the retired header again" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     '#include "scripting/LuaDOMBinding.h"',
+     '#include "scripting/EcmaScriptToLuaTransformer.h"\n'
+     '#include "scripting/LuaDOMBinding.h"')
+PY
+
+mutation_case "the engine sweep is pointed at a directory that does not exist" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     'p.starts_with("sce/src/") || p.starts_with("sce/include/")',
+     'p.starts_with("sce/srcs/") || p.starts_with("sce/includes/")')
+PY
+
+mutation_case "a caller appears where the old boundary would have hidden it" <<'PY'
+edit("tests/engine/LoweredEcma262Test.cpp",
+     '#include "scripting/ScriptEngineProvider.h"',
+     '#include "scripting/EcmaScriptToLuaTransformer.h"\n'
+     '#include "scripting/ScriptEngineProvider.h"')
+PY
+
+mutation_case "the sweep narrows back to the engine's own directories" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     '            .filter(|p| is_cpp_source(p))\n'
+     '            .collect();\n'
+     '        assert!(\n'
+     '            population.len() >= TRACKED_CPP_FLOOR,',
+     '            .filter(|p| is_cpp_source(p) && p.starts_with("sce/"))\n'
+     '            .collect();\n'
+     '        assert!(\n'
+     '            population.len() >= TRACKED_CPP_FLOOR,')
+PY
+
+mutation_case "an instrument entry outlives the instrument it named" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     '    "tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp",',
+     '    "sce/src/scripting/LuaEngine.cpp",')
+PY
+
+mutation_case "an include with no call stops counting as reaching it" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     '    let raw: Vec<&str> = src.lines().collect();\n'
+     '    code.lines().enumerate().any(|(n, line)| {',
+     '    let raw: Vec<&str> = src.lines().collect();\n'
+     '    let _ = &raw;\n'
+     '    return false;\n'
+     '    #[allow(unreachable_code)]\n'
+     '    code.lines().enumerate().any(|(n, line)| {')
+PY

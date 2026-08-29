@@ -7,7 +7,6 @@
 #include "core/LogMacros.h"
 #include "events/EventRaiserService.h"
 #include "runtime/DataContentHelpers.h"
-#include "scripting/EcmaScriptToLuaTransformer.h"
 #include "scripting/LuaDOMBinding.h"
 #include "scripting/ScriptResult.h"
 #include "scripting/SessionRegistry.h"
@@ -16,7 +15,8 @@
 // (included by LuaEngine.h), which is where the C surface and its one
 // preprocessor branch live. This file therefore has no `#ifdef` for it: a
 // build that links no frontend gets a scope that refuses every expression,
-// and refusal already means "keep the answer you had".
+// and `acceptsLanguage` declines ECMAScript there rather than accepting it in
+// order to refuse it one call at a time.
 
 extern "C" {
 #include <lauxlib.h>
@@ -155,6 +155,25 @@ static bool isUndeclaredSimpleVariable(const std::string &expr, const std::unord
     return isUndeclaredIdentifier(baseName, declaredVars, L);
 }
 
+// Every string key of the global table, once.
+//
+// `lua_next` is the only way to enumerate a table and it is fragile in one
+// specific way: `lua_tostring` on a NUMBER key rewrites that key in place and
+// the traversal then loses its position. So the type is checked before the
+// key is read, which also happens to be the filter this wants — a global whose
+// name is not a string is not a name any datamodel can spell.
+static void forEachGlobalName(lua_State *L, const std::function<void(const char *)> &visit) {
+    lua_pushglobaltable(L);
+    lua_pushnil(L);
+    while (lua_next(L, -2) != 0) {
+        if (lua_type(L, -2) == LUA_TSTRING) {
+            visit(lua_tostring(L, -2));
+        }
+        lua_pop(L, 1);  // the value; the key stays for the next step
+    }
+    lua_pop(L, 1);  // the global table
+}
+
 // === Singleton ===
 
 LuaEngine &LuaEngine::instance() {
@@ -217,8 +236,10 @@ void LuaEngine::reset() {
     // Clear SessionRegistry (invoke mappings, file paths, event dispatchers)
     SessionRegistry::instance().reset();
 
-    // Clear expression transformation cache
-    transformer_.clearCache();
+    // No translation cache to clear. The lowering the engine now uses is the
+    // frontend's, and it is memoised per session by `chunkCache` /
+    // `scriptExecCache`, which `shutdown()` above has already dropped with the
+    // sessions that owned them.
 
     initialize();
     SCE_LOG_DEBUG("LuaEngine: reset() completed");
@@ -274,6 +295,12 @@ bool LuaEngine::createSession(const std::string &sessionId, const std::string &p
     }
 
     registerBuiltins(ctx->L, sessionId);
+
+    // Taken here and nowhere else: after the runtime has installed everything
+    // it installs and before the document has run anything. Every later
+    // reading of the global table is read against this.
+    forEachGlobalName(ctx->L, [&ctx](const char *name) { ctx->runtimeGlobals.emplace(name); });
+
     sessions_[sessionId] = std::move(ctx);
 
     // §scxml-6.4: Register parent-child relationship in SessionRegistry
@@ -524,7 +551,7 @@ int LuaEngine::loadCachedChunk(lua_State *L, const std::string &code,
 // not to translating ECMAScript, so both paths converge on the same tail below
 // rather than growing a second, simpler implementation. Those four keep their
 // own clauses, cited where they are implemented in evaluateExpressionInternal.
-std::string LuaEngine::loweredTextOf(const ScriptSource &expression, const LoweringScope &scope) {
+std::optional<std::string> LuaEngine::loweredTextOf(const ScriptSource &expression, const LoweringScope &scope) {
     // Already lowered by sce-build's ECMAScript frontend. Running the rewriter
     // over the frontend's own output would shift an index the frontend already
     // made 1-based a second time (`transformArrayIndexing`), an off-by-one with
@@ -532,10 +559,10 @@ std::string LuaEngine::loweredTextOf(const ScriptSource &expression, const Lower
     if (expression.language() == ScriptLanguage::Lua) {
         return expression.text();
     }
-    // The author's ECMAScript, offered to the frontend's PARSER before the
-    // rewriter's text pass gets it. The owner's decision on 2026-08-29 was to
-    // link the frontend and retire `EcmaScriptToLuaTransformer`, and what
-    // decides how much of it has been retired is the SCOPE this asks against.
+    // The author's ECMAScript, answered by the frontend's PARSER. The owner's
+    // decision on 2026-08-29 was to link the frontend and retire
+    // `EcmaScriptToLuaTransformer`, and what decides what the frontend can
+    // answer is the SCOPE this asks against.
     //
     // It began empty, which asked "can you answer this without me naming
     // anything?" and so selected exactly the CLOSED expressions — 11 of the 23
@@ -548,18 +575,17 @@ std::string LuaEngine::loweredTextOf(const ScriptSource &expression, const Lower
     // undefined, `!a` is ToBoolean's negation — none of it reachable by a pass
     // that replaces text without knowing where an operand ends.
     //
-    // Refusal is still the fallback and still a normal answer. A name the
+    // Refusal is a normal answer, and it is now the LAST answer. A name the
     // session has not declared, or text the parser will not read, comes back
-    // as nothing and the rewriter answers exactly as it did before, so an
-    // expression this misses stays *diverging* rather than becoming newly
-    // wrong.
-    if (auto lowered = scope.lowerValue(expression.text())) {
-        return *lowered;
-    }
-    return transformer_.transform(expression.text());
+    // as nothing and the caller raises `error.execution`; nothing rewrites the
+    // text instead. That second translator is what this seam was built to
+    // retire, and while it stood, an expression it could not read was answered
+    // WRONGLY rather than refused — `-7 % 3` as 2, `5 ^ 3` as 125 — with no
+    // diagnostic anywhere.
+    return scope.lowerValue(expression.text());
 }
 
-std::string LuaEngine::loweredScriptOf(const ScriptSource &script, const LoweringScope &scope) {
+std::optional<std::string> LuaEngine::loweredScriptOf(const ScriptSource &script, const LoweringScope &scope) {
     if (script.language() == ScriptLanguage::Lua) {
         return script.text();
     }
@@ -577,13 +603,44 @@ std::string LuaEngine::loweredScriptOf(const ScriptSource &script, const Lowerin
     // is why this takes the session's scope like its neighbour rather than a
     // constant.
     //
-    // Refusal is the fallback here too, and is what makes this safe to adopt:
-    // a body the parser will not read comes back as nothing and the rewriter
-    // answers exactly as before, so a script this misses stays as it was.
-    if (auto lowered = scope.lowerScript(script.text())) {
-        return *lowered;
+    // Refusal is the answer here too. A body the parser will not read comes
+    // back as nothing and the caller raises `error.execution` rather than
+    // handing the text to a pass that would replace `continue` with
+    // `_ = continue` and call the result Lua.
+    return scope.lowerScript(script.text());
+}
+
+// W3C SCXML §scxml-5.9.1: an expression the datamodel cannot evaluate places
+// `error.execution` on the internal queue. That is the specification's whole
+// answer, and it is the one the engine now gives — the refusal is reported,
+// not repaired.
+//
+// The author's own text, never the lowering: this message travels out on
+// `_event.data`, and there is no lowering to name anyway.
+//
+// The frontend distinguishes fifteen failures and this carries none of them,
+// because the C surface it is reached through answers a pointer or null. That
+// is the `error-channel` row of `docs/SCE_LUA_TRANSLATION_SEAM.md` and it is
+// the next thing this boundary is owed; what it is NOT is a reason to keep
+// guessing at the text, which is what the previous answer did.
+void LuaEngine::offerToScope(LuaSessionContext &session, const std::string &name) {
+    if (name.empty() || !session.offeredToScope.insert(name).second) {
+        return;
     }
-    return transformer_.transformScript(script.text());
+    session.loweringScope.declare(name);
+}
+
+void LuaEngine::offerDocumentGlobalsToScope(LuaSessionContext &session) {
+    forEachGlobalName(session.L, [&session](const char *name) {
+        if (session.runtimeGlobals.count(name) == 0) {
+            offerToScope(session, name);
+        }
+    });
+}
+
+ScriptResult LuaEngine::refusedToLower(const ScriptSource &source, const char *role) {
+    return ScriptResult::createError("SCE's ECMAScript frontend does not accept this " + std::string(role) + ": " +
+                                     source.source());
 }
 
 std::future<ScriptResult> LuaEngine::doExecuteScript(const std::string &sessionId, const ScriptSource &script) {
@@ -611,8 +668,13 @@ std::future<ScriptResult> LuaEngine::doValidateExpression(const std::string &ses
         return p.get_future();
     }
 
-    std::string luaExpr = loweredTextOf(expression, it->second->loweringScope);
-    std::string wrapped = "return " + luaExpr;
+    auto lowered = loweredTextOf(expression, it->second->loweringScope);
+    if (!lowered) {
+        std::promise<ScriptResult> refused;
+        refused.set_value(refusedToLower(expression, "expression"));
+        return refused.get_future();
+    }
+    std::string wrapped = "return " + *lowered;
 
     lua_State *L = it->second->L;
     int status = loadCachedChunk(L, wrapped, it->second->chunkCache);
@@ -652,7 +714,11 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     }
 
     // Slow path: first-time execution for this script in this session
-    std::string luaScript = loweredScriptOf(script, it->second->loweringScope);
+    auto loweredScript = loweredScriptOf(script, it->second->loweringScope);
+    if (!loweredScript) {
+        return refusedToLower(script, "script");
+    }
+    const std::string &luaScript = *loweredScript;
 
     // The author's own text on the left, so a log line names what was written
     // rather than what it became.
@@ -673,18 +739,35 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     // about them — the `declare_chunk` half of the scope, and the half that
     // reaches the variables no `<data id>` names.
     //
-    // Only for text that ARRIVED as ECMAScript. Lua text comes from a
-    // generated artifact, which lowered its expressions at build time and
-    // never asks this engine to lower one, so handing that chunk to an
-    // ECMAScript parser would be asking a question nothing answers.
-    //
     // Only after a successful run, because a chunk that raised declared
-    // whatever it reached and this cannot say where it stopped. Claiming the
-    // names of a chunk that did not finish would let the frontend resolve a
-    // variable the session does not hold, and refusal — the answer it gives
-    // now — is the safe one.
-    if (status == LUA_OK && script.language() == ScriptLanguage::ECMAScript) {
-        it->second->loweringScope.declareChunk(script.text());
+    // whatever it reached and this cannot say where it stopped — but that is
+    // the ONLY thing the two doors share here, and each is asked of the
+    // authority that can answer it.
+    //
+    // ECMAScript text is asked of the frontend's own parser, which reads the
+    // chunk's top level (§scxml-5.8) and is the same reader that will later
+    // lower expressions against those names.
+    //
+    // Lua text has no ECMAScript parse to ask, and it used to be skipped
+    // entirely on the reasoning that a generated artifact lowers at build time
+    // and never asks this engine for a lowering. That reasoning is about a
+    // DOCUMENT, and the engine's contract is about a SESSION: it accepts both
+    // languages into one global namespace, so a name the Lua door introduced
+    // is a name the ECMAScript door must resolve. Lua's own global table is
+    // what can say which names those are.
+    //
+    // ⚠ The two are NOT one call with a different argument, and neither
+    // subsumes the other. `var x;` binds a name to undefined — the parser
+    // reports it and Lua's global table does not, because assigning nil is how
+    // Lua REMOVES a global. A chunk the frontend's parser refuses declares
+    // nothing through `declareChunk` and its globals are still in the table.
+    // Collapsing this into one reader would silently drop one of those.
+    if (status == LUA_OK) {
+        if (script.language() == ScriptLanguage::ECMAScript) {
+            it->second->loweringScope.declareChunk(script.text());
+        } else {
+            offerDocumentGlobalsToScope(*it->second);
+        }
     }
 
     return luaResultToScriptResult(L, status);
@@ -729,7 +812,11 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     }
 
     // Slow path: first-time evaluation for this expression in this session
-    std::string luaExpr = loweredTextOf(expression, it->second->loweringScope);
+    auto loweredExpr = loweredTextOf(expression, it->second->loweringScope);
+    if (!loweredExpr) {
+        return refusedToLower(expression, "expression");
+    }
+    const std::string &luaExpr = *loweredExpr;
 
     // W3C SCXML: Detect undeclared simple variable references
     // JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
@@ -853,10 +940,10 @@ ScriptResult LuaEngine::setVariableInternal(const std::string &sessionId, const 
 
     // §scxml-5.3: the same declaration, told to the ECMAScript frontend. This
     // is the `<data id>` half of the scope the D1 ledger's census measured —
-    // without it the frontend refuses every expression naming this variable
-    // and the rewriter answers instead, which is where the declared
-    // divergences come from.
-    it->second->loweringScope.declare(name);
+    // without it the frontend refuses every expression naming this variable,
+    // and refusal is now the engine's last answer rather than the rewriter's
+    // cue.
+    offerToScope(*it->second, name);
 
     // Track pre-initialized variables for invoke param/namelist support
     // §scxml-6.4.2: DataModelInitializer skips re-initialization of pre-initialized variables
@@ -899,6 +986,13 @@ std::future<ScriptResult> LuaEngine::setVariableAsDOM(const std::string &session
         lua_pushnil(L);
     }
     lua_setglobal(L, name.c_str());
+
+    // §scxml-5.3: a `<data>` whose content is XML is still a `<data id>`, and
+    // the frontend has to be told about it by the same rule as any other. It
+    // was not, and nothing said so while a rewriter answered without resolving
+    // names: all 39 DOM reads in the shared table are `var1.<member>`, and
+    // every one of them named a variable the frontend had never heard of.
+    offerToScope(*it->second, name);
 
     std::promise<ScriptResult> p;
     p.set_value(ScriptResult::createSuccess(true));

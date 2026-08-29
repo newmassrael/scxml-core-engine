@@ -312,9 +312,9 @@ std::optional<std::vector<std::string>> loadDeclaredDivergences() {
     for (const auto &entry : document.at("divergences")) {
         // Only the entries declared on THIS path. `diverges_on` splits the list
         // by which of the two routes into the Lua engine still answers the case
-        // differently — this suite reaches the engine through
-        // `EcmaScriptToLuaTransformer`, so it is the `runtime-rewriter`
-        // contract; `LoweredEcma262` is the `build-time-lowering` one. Reading
+        // differently — this suite hands the engine the author's ECMAScript and
+        // has it lowered at run time, so it is the `runtime-rewriter` contract;
+        // `LoweredEcma262` is the `build-time-lowering` one. Reading
         // the whole list here would make this suite report an entry that only
         // build-time lowering gets wrong as a rewriter divergence that has been
         // repaired, and demand its deletion.
@@ -379,11 +379,18 @@ TEST(EcmaScriptSemantics, TheSelectedEngineAnswersWhatEcmaScriptAnswers) {
 /// compiled by every build and measured by none — while remaining a listed,
 /// validated value of the cache entry that a consumer may choose.
 ///
-/// What it measures is the emission in `EcmaScriptToLuaTransformer`, not the
-/// semantics: `ecma_semantics.lua` is a shared runtime asset that this engine
-/// already loads and that the code generator's Lua backends already call, so
-/// a disagreement here says the transformer wrote a bare Lua operator where
-/// the shared definition of the ECMAScript one was in scope.
+/// What it measures is the EMISSION, not the semantics: `ecma_semantics.lua`
+/// is a shared runtime asset that this engine already loads and that the code
+/// generator's Lua backends already call, so a disagreement here says a bare
+/// Lua operator was emitted where the shared definition of the ECMAScript one
+/// was in scope.
+///
+/// It measured `EcmaScriptToLuaTransformer`'s emission until that rewriter was
+/// retired, and it is the same question of the frontend that replaced it. The
+/// engine has no second answer now, so a case this suite cannot get is a case
+/// the engine REFUSES — which `disagreements` reports as a disagreement like
+/// any other, and which is the honest reading: a refusal is not an answer that
+/// happens to match.
 ///
 /// The verdict has two sides, because a one-sided one rots. Asking only
 /// "nothing new disagrees" lets the declared list keep claiming a divergence
