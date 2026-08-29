@@ -50,7 +50,7 @@ pub mod resolve;
 pub mod scope;
 
 pub use crate::forge::error::ExprError;
-pub use scope::DocumentScope;
+pub use scope::{DocumentScope, ScopeStage};
 
 /// An ECMAScript expression.
 ///

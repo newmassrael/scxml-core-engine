@@ -48,6 +48,46 @@ use std::collections::BTreeSet;
 use super::{Expr, Stmt};
 use crate::model::{Action, Invoke, SCXMLModel, State};
 
+/// How much of a document has been read into a scope.
+///
+/// A build-time caller always reads all of it — the model is on disk
+/// before the first expression is lowered, so [`ScopeStage::Everything`]
+/// is the only stage [`DocumentScope::from_model`] can mean. A caller
+/// that lowers *while the document runs* does not have that: at the
+/// moment the first `<transition cond>` is evaluated, a `<script>` further
+/// down has not run and an `<assign>` further down has not written. Its
+/// scope grows through these stages in order.
+///
+/// The variants are ordered by containment: each admits everything the
+/// one before it does. That is what makes a difference between two of
+/// them attributable — a site that lowers differently at
+/// [`ScopeStage::WriteTargets`] than at [`ScopeStage::Everything`] does
+/// so because of a `<script>` declaration and nothing else.
+///
+/// This exists because "who maintains the scope, and when" is the open
+/// question against a run-time lowering surface, and a question asked in
+/// prose gets answered in prose. Naming the stages lets it be counted:
+/// see `sce-build/tests/scope_obligation.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ScopeStage {
+    /// Nothing of the document has been read — only what SCE installs.
+    /// This is what a C surface with no scope handle would offer.
+    Installed,
+    /// Plus every `<data id>`, at document level and in any state. The
+    /// specification's early binding puts all of them in the datamodel
+    /// before the first macrostep, so a run-time caller can reach this
+    /// stage from the model alone, before running anything.
+    DataModel,
+    /// Plus the names a `<assign location>`, `<send idlocation>` or
+    /// `<foreach item>`/`<foreach index>` brings into existence by
+    /// writing to it. These appear as the document *runs*.
+    WriteTargets,
+    /// Plus what a `<script>` or `<finalize>` body declares at its top
+    /// level. These appear when that chunk executes, which is the latest
+    /// any name in this datamodel can arrive.
+    Everything,
+}
+
 /// The set of names a document's expressions may refer to.
 #[derive(Debug, Clone, Default)]
 pub struct DocumentScope {
@@ -58,15 +98,30 @@ impl DocumentScope {
     /// The scope `model`'s own declarations produce, on top of the names
     /// SCE installs.
     pub fn from_model(model: &SCXMLModel) -> Self {
+        Self::from_model_upto(model, ScopeStage::Everything)
+    }
+
+    /// The scope a caller has once it has read `model` as far as `stage`.
+    ///
+    /// [`Self::from_model`] is this at [`ScopeStage::Everything`], which
+    /// is the only stage a build-time caller is ever in. The earlier
+    /// stages exist for the caller that does not have the whole document
+    /// yet, and for measuring how much that costs.
+    pub fn from_model_upto(model: &SCXMLModel, stage: ScopeStage) -> Self {
         let mut scope = Self::installed();
+        if stage == ScopeStage::Installed {
+            return scope;
+        }
         for var in &model.variables {
             scope.declare(&var.id);
         }
-        for script in &model.global_scripts {
-            scope.declare_chunk(&script.content);
+        if stage >= ScopeStage::Everything {
+            for script in &model.global_scripts {
+                scope.declare_chunk(&script.content);
+            }
         }
         for state in model.states.values() {
-            scope.absorb_state(state);
+            scope.absorb_state(state, stage);
         }
         scope
     }
@@ -156,13 +211,16 @@ impl DocumentScope {
             .collect()
     }
 
-    fn absorb_state(&mut self, state: &State) {
+    fn absorb_state(&mut self, state: &State, stage: ScopeStage) {
         for var in &state.datamodel {
             self.declare(&var.id);
         }
+        if stage < ScopeStage::WriteTargets {
+            return;
+        }
         for transition in &state.transitions {
             for action in &transition.actions {
-                self.absorb_action(action);
+                self.absorb_action(action, stage);
             }
         }
         for block in state
@@ -171,14 +229,17 @@ impl DocumentScope {
             .chain(state.on_exit_blocks.iter())
         {
             for action in block {
-                self.absorb_action(action);
+                self.absorb_action(action, stage);
             }
         }
         for action in &state.initial_transition_actions {
-            self.absorb_action(action);
+            self.absorb_action(action, stage);
         }
         for action in &state.initial_history_default_actions {
-            self.absorb_action(action);
+            self.absorb_action(action, stage);
+        }
+        if stage < ScopeStage::Everything {
+            return;
         }
         for invoke in &state.invokes {
             // A `<finalize>` body is a chunk of this document, run in this
@@ -190,7 +251,7 @@ impl DocumentScope {
         }
     }
 
-    fn absorb_action(&mut self, action: &Action) {
+    fn absorb_action(&mut self, action: &Action, stage: ScopeStage) {
         match action.action_type.as_str() {
             // The location an `<assign>` writes. A name that did not
             // exist before now does.
@@ -202,7 +263,11 @@ impl DocumentScope {
                 self.declare_location(&action.item);
                 self.declare_location(&action.index);
             }
-            "script" if !action.is_cpp_function && !action.is_kt_function => {
+            "script"
+                if stage >= ScopeStage::Everything
+                    && !action.is_cpp_function
+                    && !action.is_kt_function =>
+            {
                 self.declare_chunk(&action.content);
             }
             _ => {}
@@ -213,11 +278,11 @@ impl DocumentScope {
             .chain(action.then_actions.iter())
             .chain(action.else_actions.iter())
         {
-            self.absorb_action(nested);
+            self.absorb_action(nested, stage);
         }
         for branch in &action.elseif_branches {
             for nested in &branch.actions {
-                self.absorb_action(nested);
+                self.absorb_action(nested, stage);
             }
         }
     }

@@ -1497,24 +1497,12 @@ cache already covers.
   worth 89x. Re-derive with `scripts/measure-lowering-per-call.sh`, which is
   in the tree precisely because the first version of this bullet cited a
   number from a deleted `/tmp` probe and was wrong by 2x.
-- **The scope obligation at run time.** The build-time caller builds a scope
-  from the whole model once (`DocumentScope::from_model`). An Interpreter's
-  scope grows as it runs — `var x` inside a `<script>` declares a name
-  mid-session, and `declare_chunk` is the frontend's own answer to that. Who
-  calls it, and when, is a semantics question this probe skipped by using
-  `DocumentScope::installed()`.
-  **HOW TO MEASURE IT** — this one is not a stopwatch, it is a correctness
-  count, so measure it as a divergence set. Lower every expression in every
-  committed document twice: once against `DocumentScope::from_model` and once
-  against `DocumentScope::installed()`, and count the pairs that differ. That
-  number is exactly the population a run-time caller must maintain the scope
-  FOR; if it is zero, the obligation is theoretical and the FFI needs no scope
-  handle at all. `sce-build`'s own corpus walk (`cli_expression_refusal`,
-  `ecmascript_acceptance_parity`) already enumerates that population, so the
-  probe is a filter over an existing sweep rather than new machinery. Then
-  extend it: for each document with a `<script>` that declares, re-lower the
-  expressions AFTER `declare_chunk` and count what changes — that second number
-  is the cost of getting the timing wrong.
+- ~~**The scope obligation at run time.**~~ **Measured 2026-08-29 — see "The
+  scope obligation, counted" below.** The obligation is real (301 of 1120
+  sites), but **298 of those 301 are discharged by reading the datamodel
+  alone**, which a run-time caller can do once, before running anything. The
+  residue is **3 sites in 3 documents**, and they are named rather than
+  counted. Re-derive with `scripts/measure-scope-obligation.sh`.
 - **The error channel and ownership contract.** The probe returned `NULL` for
   every failure and leaked the distinction. A real surface has to carry
   `ExprError` across, and `_event.data` on `error.execution` is where that text
@@ -1551,6 +1539,92 @@ cache already covers.
 **No decision is recorded here on purpose.** The numbers are the deliverable;
 which way to go is a judgement about what a C++ consumer should carry, and this
 document's job is to make that judgement due rather than to make it.
+
+### The scope obligation, counted 2026-08-29
+
+The second of the four, and the one that could have been answered "no
+obligation" — which is why the way it is measured matters more than the
+number.
+
+**Re-derive it with one command; do not cite this table.**
+
+```sh
+scripts/measure-scope-obligation.sh
+```
+
+A build-time caller reads the whole document before it lowers anything, so it
+always holds the full scope. A caller that lowers *while the document runs*
+does not: when the first `<transition cond>` is evaluated, a `<script>` further
+down has not executed and an `<assign>` further down has not written. The
+frontend now names those stages — `ScopeStage`, in
+`sce-build/src/ecmascript/scope.rs` — and the probe lowers every expression in
+every tracked document once per stage, comparing each against the stage a
+build-time caller has.
+
+| what the caller has read | sites disagreeing with a full scope | documents |
+|---|---|---|
+| nothing — an FFI with no scope handle | **301** of 1120 (26.9%) | 116 of 225 |
+| plus every `<data id>` | **3** (0.3%) | 3 |
+| plus every write target (`<assign location>`, `<send idlocation>`, `<foreach>`) | **3** (0.3%) | 3 |
+
+```
+ScopeObligation census: documents=225 sites=1120 installed_diverging=301
+  installed_documents=116 datamodel_diverging=3 datamodel_documents=3
+  write_targets_diverging=3 write_targets_documents=3
+```
+
+**What it means for the decision.** The obligation is real — a C surface that
+took only a source string would be wrong about a quarter of the corpus — but it
+is **nearly all discharged before anything runs**. 298 of the 301 are answered
+by the `<data id>` declarations alone, and W3C SCXML 5.3's early binding puts
+every one of those in the datamodel before the first macrostep, so a run-time
+caller can build that scope once, from the model it already holds, with no
+mid-session maintenance at all. Write targets discharge **zero** more: not one
+site in the corpus depends on a name that only an `<assign>` brings into
+existence. So the FFI needs a scope handle and a `declare` — not a scope that
+tracks execution.
+
+**The residue is 3 sites, and they are named rather than counted**, because a
+residue nobody can enumerate is a residue nobody has classified:
+
+| document | site | source | without the chunk |
+|---|---|---|---|
+| `resources/302/test302.scxml` | `<transition cond>` | `Var1 == 1` | `Var1 is not declared by this document` |
+| `resources/304/test304.scxml` | `<transition cond>` | `Var1 == 1` | `Var1 is not declared by this document` |
+| `resources/452/test452.scxml` | `<assign expr>` | `new testobject();` | `testobject is not declared by this document` |
+
+Two of the three are the W3C tests written to check exactly this — that a
+`<script>` declaration reaches the datamodel — so the population is not an
+accident of this corpus, it is the specification's own witness for the feature.
+That is the case `declare_chunk` has to exist for, and it is the whole of it.
+
+⚠⚠ **A zero here would have been a decision, which is what makes a FALSE zero
+the expensive failure.** Every way this measurement could go blind produces one
+— a staging argument that is ignored, a glob that matches nothing, a parse that
+fails everywhere — and a blind instrument reports "no obligation" in exactly the
+words a real absence would. So the stage boundaries are not merely printed, each
+is held open by a document written to cross it
+(`every_stage_boundary_is_observable`). **Verified by mutation in the turn that
+landed this**: widening `from_model_upto`'s stage to `Everything` — a change the
+compiler accepts and which the census cannot feel — made the census report
+`installed_diverging=0` and still pass, while the control failed with *"no site
+lowers differently between installed and datamodel"*. The census is the
+deliverable; the control is what makes it evidence.
+
+⚠ **The probe is a filter over the acceptance sweep, not a second walk.**
+`ecmascript_acceptance::sites` was extracted from `refusals` for this — the walk
+reaches fourteen call sites, and a copy of it would have drifted from the
+original without saying so. `refusals` is now that walk plus a verdict, which is
+also why it did not need re-testing separately.
+
+⚠ **Found while measuring, and it was a red already on `main`.** The sibling
+script this one is modelled on, `scripts/measure-lowering-per-call.sh`, printed
+its census header from `/proc/loadavg` directly, which
+`sce-build/tests/build_jobs_has_one_owner` refuses: that arithmetic has one
+home. It had been failing since the commit that added it. Repaired by sourcing
+`scripts/lib/sce_build_jobs.sh` and reporting the free-core count it computes,
+which is the more useful header anyway — the figures it heads are only
+comparable between runs taken under similar load.
 - ~~**Generated C++ in a Lua tree still hands the engine ECMAScript.**~~
   **Done 2026-08-29 (third round)** — `sce_add_state_machine` derives
   `--script-engine lua` for a `-DSCE_SCRIPT_ENGINE=lua` tree, measured on a
