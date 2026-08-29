@@ -1,0 +1,44 @@
+# Mutation cases for "a divergence list nothing opens measures nothing".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_list_nothing_opens_measures_nothing.cases`.
+#
+# `every_declared_divergence_answers_a_real_case` used to require each
+# divergence list to declare at least one entry, reasoning that an empty list
+# "silently scores that engine perfect". The danger was real and the subject was
+# wrong, and the difference is the north star: the plan of record is to retire
+# the runtime rewriter, and the terminal state of that work is a divergence list
+# with nothing left in it. A gate that fails on the finish line cannot be
+# reached — a counter whose zero is forbidden is not a counter.
+#
+# The non-emptiness was not doing the work either. Each list's suite is red in
+# BOTH directions: an undeclared divergence fails, and so does a declared one
+# that has been repaired. A list emptied to silence a red run turns the suite
+# red from the other side. What neither direction catches is a list nothing
+# OPENS any more — then the suite measures nothing and whatever the file says
+# scores the engine perfect. So that is what the gate checks now, empty list or
+# not, and these cases are what say it can fail.
+#
+# The second case is the boundary, and it is the same one this repository has
+# now paid for three times in three languages: a file NAMED is not a file
+# OPENED. `EcmaScriptSemanticsTest.cpp` prints the list's path twice to tell an
+# author where to edit, so a sweep that accepted any mention would take a
+# diagnostic ABOUT the file as proof that the file is still opened.
+
+mutation_tests -p sce-build --test ecma262_scoreboard_contract
+mutation_targets sce-build/tests/ecma262_scoreboard_contract.rs
+# Read at run time: the binding the C++ suite reaches the list through is a
+# compile definition in a CMake file the test opens by path.
+mutation_runtime_targets tests/CMakeLists.txt
+
+mutation_case "the suite's binding of the divergence list is redirected" <<'PY'
+edit("tests/CMakeLists.txt",
+     'SCE_LUA_DIVERGENCES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/lua_engine_divergences.json"',
+     'SCE_LUA_DIVERGENCES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/divergences_moved.json"')
+PY
+
+mutation_case "a path merely mentioned is counted as a path opened" <<'PY'
+edit("sce-build/tests/ecma262_scoreboard_contract.rs",
+     "        Some(at) => code[..at].contains('='),",
+     "        Some(at) => at < code.len(),")
+PY

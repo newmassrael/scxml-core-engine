@@ -70,11 +70,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # on exactly the pushes such an edit arrives in.
 #
 # `lowering_decision_ledger` is here for the sharper half of the same reason.
-# It reads every tracked CMake file to hold the premise the D1 ledger's one
-# OPEN row rests on — that nothing links a Rust artifact yet, which is why the
-# cost of linking one cannot be measured before the decision. The file that
-# would break that premise does not exist today, so a filter over the current
-# tree names the answer and not the case.
+# It reads every tracked CMake file, `sce/src/scripting/LuaEngine.cpp` and the
+# prose of `docs/SCE_LUA_TRANSLATION_SEAM.md` to hold the D1 rows to the tree,
+# so what selects it is an edit anywhere those three shapes live. It was here
+# first for a premise — that nothing linked a Rust artifact yet — and that
+# premise was made false on 2026-08-29 by the link the ledger now records,
+# which is exactly the case a filter written over the tree of the day would
+# have missed: it names the answer and not the case.
 #
 # `scope_obligation` lowers every expression in every committed *.scxml once
 # per scope stage, so a document added anywhere changes what it reads. Its

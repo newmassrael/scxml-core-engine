@@ -50,11 +50,19 @@
 //!     tripwire is not tested by the thing it is watching for; this one
 //!     was only found because the row it guarded was being replaced.
 //!
-//! Two structural rules matter as much as the checks.
+//! Three structural rules matter as much as the checks.
 //!
 //! An unrecognised status, kind or check is RED, never skipped. A ledger
 //! whose unclassified rows pass is not a ledger; it is a list with an
 //! exemption in it.
+//!
+//! A check name the document SPELLS must be one a row declares
+//! (`a_check_named_in_prose_is_a_check_a_row_declares`). Naming a check
+//! promises that some gate re-derives the sentence beside it, and the
+//! promise outlived its row once already: the section under the table went
+//! on citing the precondition above for a day after the decision row
+//! replaced it, saying a Rust link would turn the gate red — and the link
+//! landed with no row left to turn.
 //!
 //! And the table may not become a second copy of the prose list above
 //! it. The bullets under "What the probe did NOT price" are the
@@ -491,6 +499,126 @@ fn a_mentioned_call_is_not_a_made_call() {
     assert!(
         cpp_code_only(after_an_apostrophe).contains("sce_lower_value("),
         "an apostrophe in a comment must not hide the code below it"
+    );
+}
+
+/// The prefixes a check identifier can open with.
+///
+/// One per shape `check_row` implements. A kind added there without a
+/// line here would let the document spell it and promise nothing, which
+/// is the failure this list exists inside.
+const CHECK_KINDS: &[&str] = &["census:", "derive:", "decision:", "precondition:"];
+
+/// Every check identifier the document SPELLS, with the line it is on.
+///
+/// Backticked spans only, and fenced code blocks are skipped: a shell
+/// transcript quoting a check name is showing a command, not making a
+/// promise about this table.
+fn check_names_spelled(doc: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut fenced = false;
+    for (n, line) in doc.lines().enumerate() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        // Odd segments of a backtick split are the spans INSIDE backticks.
+        for span in line.split('`').skip(1).step_by(2) {
+            let span = span.trim();
+            if CHECK_KINDS
+                .iter()
+                .any(|k| span.starts_with(k) && span.len() > k.len())
+            {
+                out.push((n + 1, span.to_string()));
+            }
+        }
+    }
+    out
+}
+
+/// A check name in prose is a promise that some gate re-derives the
+/// sentence beside it, so a name no row declares is a promise nothing
+/// keeps.
+///
+/// Measured rather than reasoned, like everything else here. The section
+/// under the table went on naming `precondition:rust-is-not-linked` for a
+/// day after the row declaring it was replaced by the decision row. What
+/// the sentence promised was specific — the day anything in the tree links
+/// a Rust artifact, the gate turns red and the row has to be
+/// re-adjudicated — and the tree linked one that same afternoon, with no
+/// row left to turn. Nothing was red, because a retired check reads
+/// exactly like a live one.
+///
+/// This is the third instance of one defect in this file, and it is worth
+/// naming as such: `swap-net-footprint` was satisfied by the paragraph
+/// explaining its feature, `decision:linked-beside-lua` by the paragraph
+/// explaining its call, and now the document's own prose by a check that
+/// had gone. Each time the repair was to read the thing that decides
+/// instead of the thing that describes it.
+#[test]
+fn a_check_named_in_prose_is_a_check_a_row_declares() {
+    let doc = read(LEDGER_DOC);
+    let declared: BTreeSet<String> = ledger_rows(&doc).into_iter().map(|r| r.check).collect();
+    let spelled = check_names_spelled(&doc);
+
+    // Arity floor. Every row spells its own check inside the block, so a
+    // sweep that reads fewer names than there are rows has stopped
+    // reading the document rather than found it clean — and an empty
+    // sweep passes every assertion below it.
+    assert!(
+        spelled.len() >= declared.len(),
+        "{LEDGER_DOC} declares {} check(s) in its rows but this sweep found {} \
+         spelled anywhere in the file. The rows themselves spell theirs, so \
+         fewer means the sweep is no longer reading what it checks.",
+        declared.len(),
+        spelled.len()
+    );
+
+    let stale: Vec<String> = spelled
+        .iter()
+        .filter(|(_, name)| !declared.contains(name))
+        .map(|(n, name)| format!("  {LEDGER_DOC}:{n}: `{name}`"))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "{} check name(s) are spelled in {LEDGER_DOC} that no ledger row \
+         declares:\n{}\nA check name is a promise that some gate re-derives \
+         the sentence beside it. A retired one reads exactly like a live one, \
+         so the sentence goes on being trusted while nothing can fault it — \
+         which is what happened to the precondition the OPEN row carried. \
+         Either restore the row, or say what happened without spelling the \
+         name as an identifier.",
+        stale.len(),
+        stale.join("\n")
+    );
+}
+
+/// The boundary the sweep above rests on, pinned so a later
+/// simplification cannot widen or narrow it silently.
+#[test]
+fn a_name_in_a_fence_is_not_a_promise() {
+    let spelled = check_names_spelled(
+        "prose naming `census:Live` once\n\
+         ```sh\n\
+         echo `census:InAFence`\n\
+         ```\n\
+         and `derive:thing=3` after it\n",
+    );
+    let names: Vec<&str> = spelled.iter().map(|(_, n)| n.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["census:Live", "derive:thing=3"],
+        "a fenced block shows a command; only prose makes the promise"
+    );
+
+    // A bare kind is not an identifier: the document may say what shape a
+    // check has without claiming a particular one exists.
+    assert!(
+        check_names_spelled("the `precondition:` shape is kept\n").is_empty(),
+        "a kind with no token names no check"
     );
 }
 
