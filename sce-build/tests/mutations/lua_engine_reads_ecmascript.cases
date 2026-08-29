@@ -21,12 +21,24 @@
 # 44 of 98 expressions differently from the language. Twenty-one of those were
 # not divergences of meaning at all: they were shared runtime definitions the
 # transformer never named, and text it emitted that is not Lua. Each case below
-# restores one of them. The remaining 23 are declared, case by case, in
+# restores one of them. The remaining 23 were declared, case by case, in
 # `tests/ecmascript/lua_engine_divergences.json`, and the last two cases here
 # are what holds that file to both directions.
+#
+# ⚠ That 23 is now 12, and the change is what made one of those two cases go
+# stale. On 2026-08-29 `LuaEngine::loweredTextOf` began offering the author's
+# ECMAScript to `sce-build`'s frontend PARSER against an EMPTY scope, so every
+# CLOSED expression is answered there and never reaches the rewriter. Eleven
+# entries left the file, `5 ^ 3` among them, and the case anchored on it
+# matched nothing — which reads as SURVIVED. It is re-aimed at `++v`, which
+# names a variable and so is still the rewriter's. The seam that did this has
+# a case of its own below: it is now the engine's first answer, and a corpus
+# that mutates only the rewriter would stop covering the path most expressions
+# take.
 
 mutation_ctest --test-dir build -R '^(ECMAScriptSemantics)$'
 mutation_targets sce/src/scripting/EcmaScriptToLuaTransformer.cpp
+mutation_targets sce/src/scripting/LuaEngine.cpp
 # Read at run time rather than compiled in: the declared list is a fixture the
 # test opens by the path CMake injects.
 mutation_runtime_targets tests/ecmascript/lua_engine_divergences.json
@@ -166,11 +178,40 @@ PY
 mutation_case "a live divergence is left off the declared list" <<'PY'
 edit("tests/ecmascript/lua_engine_divergences.json",
      """    {
-      "source": "5 ^ 3",
-      "clause": "13.12 bitwise XOR",
+      "source": "++v",
+      "clause": "13.4.4 the operand is ToNumber'd, so this is not concatenation",
       "needs": "operand-boundaries",
       "diverges_on": ["runtime-rewriter"]
     },
 """,
      "")
+PY
+
+# ── The seam offers CLOSED expressions to the frontend ──────────────
+#
+# `LuaEngine::loweredTextOf` asks `sce_lower_value` before the rewriter, against
+# an EMPTY scope: an expression naming no variable is parsed, everything else is
+# refused with NULL and falls through as before. Deleting the call while leaving
+# the paragraph that explains it standing is the shape a careless revert has,
+# and it puts eleven expressions back on the rewriter — `1 == '1'` stops
+# coercing, `-7 % 3` stops truncating, `-8 >>> 28` stops parsing at all.
+#
+# ⚠ `(void)closedLoweringScope();` is what keeps the mutation COMPILING. Without
+# it the helper is unused, `-Werror` refuses the build, and a mutation the
+# compiler refused proves nothing either way.
+#
+# ⚠⚠ This case also stands in for a check that could not see it. The D1 ledger's
+# `decision:linked-beside-lua` row asserts `LuaEngine` still calls the surface,
+# and until 2026-08-29 it searched the whole FILE — so this exact mutation left
+# the ledger green while the suite went red. The row now reads code with
+# commentary cut away; this case is the witness that keeps saying so.
+
+mutation_case "the seam stops offering closed expressions to the frontend" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     """    if (char *lowered = sce_lower_value(expression.text().c_str(), closedLoweringScope())) {
+        std::string text(lowered);
+        sce_lower_free(lowered);
+        return text;
+    }""",
+     """    (void)closedLoweringScope();""")
 PY
