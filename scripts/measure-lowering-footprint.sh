@@ -15,7 +15,7 @@
 #
 # TWO HALVES, MEASURED THE SAME WAY WHEREVER POSSIBLE.
 #
-#   IN  — build `sce-build` as a cdylib twice, once with the `ffi-probe`
+#   IN  — build `sce-build` as a cdylib twice, once with the `ffi`
 #         feature (which exports the four lowering entry points plus the
 #         scope handle) and once without. The difference is what the
 #         linker kept because the C surface reaches it.
@@ -76,8 +76,8 @@ bare="$(cdylib_path | tail -1)"
 [ -n "$bare" ] || { echo "cargo reported no .so for the bare build" >&2; exit 1; }
 bare_bytes="$(stat -c %s "$bare")"
 
-echo "measure-lowering-footprint: building it with --features ffi-probe" >&2
-probed="$(cdylib_path --features ffi-probe | tail -1)"
+echo "measure-lowering-footprint: building it with --features ffi" >&2
+probed="$(cdylib_path --features ffi | tail -1)"
 [ -n "$probed" ] || { echo "cargo reported no .so for the probed build" >&2; exit 1; }
 probed_bytes="$(stat -c %s "$probed")"
 

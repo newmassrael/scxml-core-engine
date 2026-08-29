@@ -373,6 +373,31 @@ if(SCE_HAS_SCRIPTING)
     endif()
     if(SCE_ENABLE_LUA)
         target_link_libraries(sce_scripting PUBLIC lua54)
+
+        # sce-build's ECMAScript frontend, called from LuaEngine's seam.
+        #
+        # The owner's decision, 2026-08-29: link it and retire
+        # `EcmaScriptToLuaTransformer`. This is the first half — the
+        # rewriter is still compiled and is still the fallback for every
+        # expression the frontend refuses.
+        #
+        # `NOT EMSCRIPTEN` because the staticlib cargo builds here is for
+        # the host, and the visualizer's wasm link would take it as
+        # object files of the wrong architecture. The wasm build reaches
+        # the same frontend through `sce-build-wasm` instead.
+        #
+        # PUBLIC rather than PRIVATE: LuaEngine.cpp includes
+        # `scripting/SceLowering.h`, which SCE::Lowering carries as an
+        # interface include directory, and a consumer building against an
+        # installed sce_scripting resolves the same symbols.
+        if(NOT EMSCRIPTEN)
+            include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SCEBuildLowering.cmake)
+            target_link_libraries(sce_scripting PUBLIC SCE::Lowering)
+            # The definition and the link are set together, in one place,
+            # so LuaEngine.cpp cannot call a symbol that was not linked.
+            # A wasm build reaches neither line and keeps the rewriter.
+            target_compile_definitions(sce_scripting PUBLIC SCE_HAS_LOWERING_FFI)
+        endif()
     endif()
 
     # Compile-time script engine selection for ScriptEngineProvider

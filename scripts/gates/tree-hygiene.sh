@@ -84,16 +84,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # is what keeps that census honest, so it is precisely a NEW document — the
 # thing a `paths:` filter over today's trees cannot name — that this gate
 # must not miss.
-# `ffi-probe` is here so that SOMETHING compiles it. It is the probe
-# `scripts/measure-lowering-footprint.sh` builds to measure the IN half of
-# the D1 ledger's swap, it is off by default, and `clippy-check.yml` runs
-# `--workspace --all-targets` without `--all-features` — so without this
-# no lane touches it. A probe nothing compiles is a probe that rots, and a
-# rotted probe is exactly the defect it was committed to remove: the first
-# version of that measurement cited a figure from a throwaway nobody could
-# re-run. Enabling the feature here compiles the surface; it does not link
-# it into anything, and no CMake target links a Rust artifact.
-cargo test -p sce-build --features cli,ffi-probe \
+# `ffi` is here so that SOMETHING in the Rust lanes compiles the C
+# surface. It is off by default and `clippy-check.yml` runs `--workspace
+# --all-targets` without `--all-features`, so without this no Rust lane
+# touches it — and a surface nothing compiles is one that rots. The C++
+# build does compile it now (`cmake/SCEBuildLowering.cmake`), but a
+# breakage found there is found by a 30-minute lane; found here it is
+# found in seconds.
+cargo test -p sce-build --features cli,ffi \
+    --test ffi_header_parity \
     --test roadmap_marker_gate \
     --test scope_terminology \
     --test workflow_trigger_coverage \

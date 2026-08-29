@@ -81,13 +81,17 @@ default = ["xsd"]
 xsd = ["libxml"]
 cli = ["clap", "object"]
 
-# The C-callable lowering surface, as a MEASUREMENT PROBE only — see
-# `src/ffi_probe.rs`. Off by default and named by nothing except
-# `scripts/measure-lowering-footprint.sh`, because the point of it is to
-# make the D1 ledger's largest number re-derivable, not to ship a
-# surface. Enabling it does not link anything into a C++ build: no CMake
-# target links a Rust artifact and this crate stays rlib-only.
-ffi-probe = []
+# The C-callable lowering surface — see `src/ffi.rs`. It began as a
+# measurement probe; the owner's 2026-08-29 decision to link the frontend
+# and retire `EcmaScriptToLuaTransformer` made it the surface, and the
+# name follows the fact rather than its history.
+#
+# Off by default because the code generator does not need it: `cargo
+# build --bin sce-codegen` compiles none of this. The C++ build turns it
+# on through `cmake/SCEBuildLowering.cmake`, and
+# `scripts/measure-lowering-footprint.sh` does for the D1 ledger's size
+# row.
+ffi = []
 
 # JSON Schema derivation for the conformance manifest. Dev-only so release
 # builds and downstream consumers don't pick up the extra dependency — the

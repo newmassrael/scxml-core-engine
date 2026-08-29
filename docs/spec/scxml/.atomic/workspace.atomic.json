@@ -7199,7 +7199,11 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/ffi_probe.rs",
+          "file": "sce-build/src/ffi.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/SceLowering.h",
           "kind": "references"
         }
       ],
@@ -16105,6 +16109,12 @@
       "target_kind": "section",
       "target_id": "scxml-D-computeExitSet",
       "reason": "ConcurrentRegion::computeExitSet deleted: the appendix computes the exit set over the configuration, which a region does not have; StateMachine owns it now"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.8",
+      "reason": "module renamed to src/ffi.rs when the probe became the surface"
     }
   ],
   "frames": {},
