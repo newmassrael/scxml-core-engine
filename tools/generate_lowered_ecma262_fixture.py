@@ -126,6 +126,34 @@ PROBE_UNEVALUATED = "<unevaluated>"
 # readings; see `emit_value_case`.
 ANSWER_UNEVALUATED = PROBE_UNEVALUATED
 
+# The probe's discriminating power, asked as two DECLARED effects rather than
+# read off whatever the shared table happens to contain.
+#
+# The harness refuses to read a condition case's verdict unless the probe says
+# the expression evaluated, so a probe stuck on one answer would decide the
+# whole suite by itself. That was guarded by counting the table's own
+# refusals and requiring at least one — and on 2026-08-29 the count reached
+# ZERO, because the engine's lowering seam had grown to answer every guard in
+# the table. A control whose zero is forbidden is not a control: it made the
+# finish line unreachable and turned a repair into a red.
+#
+# So the two outcomes are now produced on purpose. Neither depends on a case:
+#
+#   * `answers.missing` is nil in an object nothing has written that key into,
+#     so reading a member OF it raises — a TypeError in ECMA-262 and an
+#     "index a nil value" in Lua, on either artifact and under either
+#     lowering. The probe assignment therefore fails and the sentinel
+#     survives, which is exactly what a refusal looks like.
+#   * `1` is a literal. Nothing can refuse it.
+#
+# Both go through the BARE-name probe, so both ask the same entry point a
+# `cond=` guard asks (§scxml-5.4 / `evaluateExpression`) — a control taken
+# through the other entry point would not be about this probe at all.
+CONTROL_REFUSED_EXPR = "answers.missing.deep"
+CONTROL_EVALUABLE_EXPR = "1"
+CONTROL_REFUSED_VAR = "answers.ctlRefused"
+CONTROL_EVALUABLE_VAR = "answers.ctlEvaluable"
+
 
 def answer_var(n: int) -> str:
     """The datamodel path a case records its answer into.
@@ -306,6 +334,43 @@ def emit_value_case(n: int, case: dict, target: str, out: list[str]) -> None:
     out.append("  </state>")
 
 
+def emit_probe_controls(target: str, out: list[str]) -> None:
+    """The two states that make the probe prove it distinguishes.
+
+    Each control is the same two-state shape a condition case uses, and for the
+    same reason: §scxml-4.9 stops a block at the element that raised, so a
+    probe read in the block that wrote it would go down with the refusal it
+    exists to report. Reading it in the NEXT state is what lets the sentinel
+    get out.
+
+    They are emitted BEFORE the cases, and the run STARTS in the first of them,
+    so what the probe is shown to do is decided ahead of the population rather
+    than by it. That ordering is the whole repair: the control this replaced
+    swept the case list, so the day the engine stopped refusing anything in the
+    table the control had no refusal left to find.
+    """
+    for name, expr, slot in (
+        ("ctlRefused", CONTROL_REFUSED_EXPR, CONTROL_REFUSED_VAR),
+        ("ctlEvaluable", CONTROL_EVALUABLE_EXPR, CONTROL_EVALUABLE_VAR),
+    ):
+        out.append(f'  <state id="{name}Probe">')
+        emit_onentry(
+            [
+                f'      <assign location="{PROBE_VAR}" expr={quoteattr(repr_js(PROBE_UNEVALUATED))}/>',
+                f'      <assign location="{PROBE_VAR}" expr={quoteattr(expr)}/>',
+            ],
+            out,
+        )
+        out.append(f'    <transition target="{name}Read"/>')
+        out.append("  </state>")
+
+        out.append(f'  <state id="{name}Read">')
+        emit_onentry([f'      <assign location="{slot}" expr="{PROBE_VAR}"/>'], out)
+        nxt = "ctlEvaluableProbe" if name == "ctlRefused" else target
+        out.append(f"    <transition target={quoteattr(nxt)}/>")
+        out.append("  </state>")
+
+
 def first_state(cases: list[dict], n: int) -> str:
     """The state a case is entered at — its probe state when it has one."""
     return f"p{n}" if cases[n].get("form") == "condition" else f"d{n}"
@@ -323,6 +388,13 @@ def build(cases: list[dict], cases_rel: str) -> str:
     out.append("  same expression once to find out whether the engine can evaluate it")
     out.append("  at all. `answers.rN` marks that the case was reached.")
     out.append("")
+    out.append("  The run OPENS with two controls for that probe, `answers.ctlRefused`")
+    out.append("  and `answers.ctlEvaluable`, which make it show both outcomes on")
+    out.append("  purpose. Counting the table's own refusals used to do that job, and")
+    out.append("  the count reached zero the day the engine stopped refusing anything")
+    out.append("  in the table — a control whose zero is forbidden forbids the finish")
+    out.append("  line, so the outcomes are declared here instead.")
+    out.append("")
     out.append("  The expected answers are NOT here: the harness reads them from the")
     out.append("  same table, so the lowering under test cannot mark its own work.")
     out.append("  Nor is the divergence list here — the harness reads that too, as the")
@@ -332,12 +404,14 @@ def build(cases: list[dict], cases_rel: str) -> str:
     first = first_state(cases, 0) if cases else "done"
     out.append(
         '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
-        f'datamodel="ecmascript" initial="{first}">'
+        'datamodel="ecmascript" initial="ctlRefusedProbe">'
     )
     out.append("  <datamodel>")
     out.append('    <data id="answers" expr="{}"/>')
     out.append(f'    <data id="{PROBE_VAR}" expr="\'\'"/>')
     out.append("  </datamodel>")
+
+    emit_probe_controls(first, out)
 
     for n, case in enumerate(cases):
         target = first_state(cases, n + 1) if n + 1 < len(cases) else "done"
