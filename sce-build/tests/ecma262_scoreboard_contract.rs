@@ -36,6 +36,11 @@
 //! * The `lua` row is the table minus the declared divergences. That
 //!   subtraction is only arithmetic if every declared entry answers a real
 //!   case, so that is checked before it is trusted.
+//! * A divergence list may be EMPTY — that is the terminal state this whole
+//!   seam is working towards, and a gate that fails on the finish line can
+//!   never be reached. What it may not be is UNREAD: an emptying list is an
+//!   answer only while the suite that holds it still opens it, so that is
+//!   the condition, and `readers_of` carries the reasoning.
 
 use sce_build::generator::{Language, ScriptEngineTarget};
 use std::collections::BTreeSet;
@@ -188,6 +193,155 @@ fn divergences() -> Vec<serde_json::Value> {
     divergences_in(DIVERGENCES_JSON)
 }
 
+/// Files tracked by git, so an untracked scratch copy cannot answer for the
+/// tree.
+fn tracked_files() -> Vec<String> {
+    let out = std::process::Command::new("git")
+        .args(["ls-files"])
+        .current_dir(repo_root())
+        .output()
+        .expect("git ls-files runs");
+    assert!(out.status.success(), "git ls-files failed");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// The comment syntax of a file the suites are built from, or `None` for a
+/// file this sweep does not read.
+fn comment_opener(path: &str) -> Option<&'static str> {
+    if path.ends_with("CMakeLists.txt") || path.ends_with(".cmake") {
+        return Some("#");
+    }
+    if path.ends_with(".gradle")
+        || path.ends_with(".gradle.kts")
+        || path.ends_with(".kt")
+        || path.ends_with(".kts")
+        || path.ends_with(".cpp")
+        || path.ends_with(".h")
+        || path.ends_with(".hpp")
+    {
+        return Some("//");
+    }
+    None
+}
+
+/// Does this line BIND @p rel to a name, rather than mention it?
+///
+/// Two discriminations, and both were measured against the tree rather than
+/// guessed. A comment naming the list is not a reader — `tests/CMakeLists.txt`
+/// and three files under `tests/engine/` describe it in prose. Neither is a
+/// DIAGNOSTIC naming it: `EcmaScriptSemanticsTest.cpp` prints the path twice
+/// to tell an author where to edit, and a message about a file is the clearest
+/// possible case of mentioning without opening. What both real readers have
+/// and no mention does is an assignment — a CMake compile definition
+/// (`SCE_LUA_DIVERGENCES_PATH="…"`) and a Kotlin `const val … = "…"` — so the
+/// binding is what this looks for. `a_path_in_a_message_is_not_a_path_opened`
+/// pins the boundary.
+fn binds_path(path: &str, line: &str, rel: &str) -> bool {
+    let Some(opener) = comment_opener(path) else {
+        return false;
+    };
+    let code = line.split(opener).next().unwrap_or("");
+    match code.find(rel) {
+        Some(at) => code[..at].contains('='),
+        None => false,
+    }
+}
+
+/// The files that OPEN a divergence list, from the suites that hold it.
+///
+/// ## Why this replaced "the list may not be empty"
+///
+/// This loop used to require every list to declare at least one divergence,
+/// on the reasoning that an empty one "silently scores that engine perfect".
+/// The reasoning was right about the danger and wrong about the subject, and
+/// the difference matters because **emptying these lists is the north star**:
+/// the plan of record is to retire the runtime rewriter, and the terminal
+/// state of that work is a divergence list with nothing left in it. A gate
+/// that fails on the finish line is a gate that can never be reached — the
+/// question to ask of any counter is whether a path to zero exists, and here
+/// it did not.
+///
+/// Nor was the non-emptiness doing the work. Each list's suite is red in BOTH
+/// directions: an undeclared divergence fails, and so does a declared one that
+/// has been repaired. So a list emptied by someone silencing a red run turns
+/// the suite red from the other side, and a list that is empty because the
+/// engine answers every case is simply true. The one failure neither direction
+/// catches is a list **nothing opens any more** — then the suite is not
+/// measuring, and whatever the file says scores the engine perfect. That is
+/// the residue, so that is what is checked, and unlike the old form it is
+/// checked whether the list is empty or not.
+///
+/// `sce-build/` is excluded on purpose: this file names both lists, and a lane
+/// that may answer its own question asks nothing.
+fn readers_of(rel: &str) -> Vec<String> {
+    let mut hits = Vec::new();
+    for path in tracked_files() {
+        if path.starts_with("sce-build/") || comment_opener(&path).is_none() {
+            continue;
+        }
+        // Tolerant: a tracked file this cannot decode is not a suite source,
+        // and the emptiness assertion below still fires if every reader goes.
+        let Ok(src) = std::fs::read_to_string(repo_root().join(&path)) else {
+            continue;
+        };
+        for (n, line) in src.lines().enumerate() {
+            if binds_path(&path, line, rel) {
+                hits.push(format!("{path}:{}", n + 1));
+            }
+        }
+    }
+    hits
+}
+
+/// The boundary `binds_path` holds, pinned with the tree's own lines so a
+/// later simplification to a substring search fails here first.
+#[test]
+fn a_path_in_a_message_is_not_a_path_opened() {
+    let rel = DIVERGENCES_JSON;
+    let bound = [
+        (
+            "tests/CMakeLists.txt",
+            "        SCE_LUA_DIVERGENCES_PATH=\"${CMAKE_SOURCE_DIR}/tests/ecmascript/lua_engine_divergences.json\"",
+        ),
+        (
+            "backends/kotlin/tests/src/test/kotlin/X.kt",
+            "private const val P = \"tests/ecmascript/lua_engine_divergences.json\"",
+        ),
+    ];
+    for (path, line) in bound {
+        assert!(binds_path(path, line, rel), "should bind: {line}");
+    }
+
+    let mentioned = [
+        // Both lifted from `tests/engine/EcmaScriptSemanticsTest.cpp`: a
+        // message telling an author where to edit opens nothing.
+        (
+            "tests/engine/EcmaScriptSemanticsTest.cpp",
+            "        << \"cannot read it. If it is the second, `tests/ecmascript/lua_engine_divergences.json` is where it is\\n\"",
+        ),
+        // A comment, in each of the two syntaxes this sweep reads.
+        (
+            "tests/CMakeLists.txt",
+            "# path in BOTH directions. `tests/ecmascript/lua_engine_divergences.json` says",
+        ),
+        (
+            "tests/engine/LoweredEcma262Test.cpp",
+            "    // `tests/ecmascript/lua_engine_divergences.json` is the list, and x = 1",
+        ),
+        // A file shape the suites are not built from.
+        (
+            "docs/SCE_LUA_TRANSLATION_SEAM.md",
+            "the path = tests/ecmascript/lua_engine_divergences.json",
+        ),
+    ];
+    for (path, line) in mentioned {
+        assert!(!binds_path(path, line, rel), "should NOT bind: {line}");
+    }
+}
+
 /// One row of the engine matrix: the engine's name and the `N/M` it claims.
 #[derive(Debug)]
 struct Row {
@@ -289,11 +443,16 @@ fn every_declared_divergence_answers_a_real_case() {
 
     for (list, _) in DIVERGENCE_LISTS {
         let declared = divergences_in(list);
+
+        // An EMPTY list is legal, and it is the point. See `readers_of`.
+        let readers = readers_of(list);
         assert!(
-            !declared.is_empty(),
-            "{list} declares nothing. Each list is what its suite compares an engine \
-             against in both directions, so an empty one silently scores that engine \
-             perfect — the claim these files were written to stop being made in prose."
+            !readers.is_empty(),
+            "no file in the suites that hold these lists opens {list}. An unopened \
+             list is compared against nothing, and it scores its engine perfect \
+             whatever it contains — which is the claim these files were written to \
+             stop being made in prose. Restore the reader, or retire the list with \
+             the backend it measures."
         );
 
         let seen: BTreeSet<(String, String)> = declared.iter().map(key).collect();
