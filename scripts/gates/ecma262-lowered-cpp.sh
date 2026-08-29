@@ -206,4 +206,31 @@ census="$(sed -n 's/.*\(LoweredEcma262 census: .*\)/\1/p' "$LOG" | head -1)"
     || sce_gate_fail "the suite printed no census line, so this run cannot say how large a population it asked"
 sce_gate_step "$census"
 
+# The probe controls, held HERE and not only by the suite's own EXPECTs.
+#
+# Every condition verdict in that suite is gated on a probe: `agrees` refuses to
+# read one whose probe says the engine could not evaluate the expression. A
+# probe stuck on one answer therefore decides the whole measurement — stuck on
+# "refused" makes every condition case a divergence, stuck on "evaluated" makes
+# a genuine §scxml-5.9.1 refusal read as the answer `false`. The suite asserts
+# it distinguishes; what the suite cannot assert is that it still ASKS. Delete
+# the two `assertProbeDistinguishes` calls and every test in the file still
+# passes over a probe nobody controls.
+#
+# So the readings are census fields, and a green run has to carry them. The
+# refusal side must still read the sentinel — the fixture probes a member of an
+# absent object, which raises in ECMA-262 and in Lua alike — and the evaluable
+# side must read anything else, because the fixture probes a literal.
+for artifact in lowered source; do
+    refused="$(sed -n "s/.*[[:space:]]${artifact}-control-refused=\([^[:space:]]*\).*/\1/p" <<<"$census")"
+    evaluable="$(sed -n "s/.*[[:space:]]${artifact}-control-evaluable=\([^[:space:]]*\).*/\1/p" <<<"$census")"
+    [[ -n "$refused" && -n "$evaluable" ]] \
+        || sce_gate_fail "the census names no probe control for the $artifact artifact — the suite stopped reporting whether the probe every condition verdict rests on can tell a refusal from an answer"
+    [[ "$refused" == "<unevaluated>" ]] \
+        || sce_gate_fail "the $artifact artifact's refusal control read '$refused', not the unevaluated sentinel — the probe is not reporting §scxml-5.9.1 refusals, so a guard the engine would not parse reads as the answer false"
+    [[ "$evaluable" != "<unevaluated>" ]] \
+        || sce_gate_fail "the $artifact artifact's evaluable control read the unevaluated sentinel over a literal — the probe is stuck on refusal, so every condition case is a divergence by construction"
+done
+sce_gate_step "the refusal probe reported both outcomes on both artifacts, on this run"
+
 sce_gate_step "build-time lowering diverges exactly where the divergence list declares it to, and the source-passing control does not"
