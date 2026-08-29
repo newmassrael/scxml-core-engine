@@ -138,12 +138,15 @@ class LuaScriptEngine : ScxmlScriptEngine {
         session.declaredVars.addAll(listOf("_sessionid", "_name", "_ioprocessors", "_event"))
     }
 
-    override fun evaluateCondition(sessionId: String, expr: String): Boolean {
+    override fun evaluateCondition(sessionId: String, expr: String): Boolean =
+        doEvaluateCondition(sessionId, ScriptSource.ecmascript(expr))
+
+    override fun doEvaluateCondition(sessionId: String, expr: ScriptSource): Boolean {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
 
-        val luaExpr = transformer.transform(expr, EcmaScriptToLuaTransformer.ExpressionContext.Guard)
-        return evaluateLuaBoolean(session, luaExpr, expr)
+        val luaExpr = loweredTextOf(expr, EcmaScriptToLuaTransformer.ExpressionContext.Guard)
+        return evaluateLuaBoolean(session, luaExpr, expr.source)
     }
 
     /**
@@ -170,11 +173,15 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * document that wrote `nosuchvar[0]` must not be told about
      * `nosuchvar[1]`.
      */
-    private fun loweredTextOf(expr: ScriptSource): String =
+    private fun loweredTextOf(
+        expr: ScriptSource,
+        context: EcmaScriptToLuaTransformer.ExpressionContext =
+            EcmaScriptToLuaTransformer.ExpressionContext.General,
+    ): String =
         if (expr.language == ScriptLanguage.Lua) {
             expr.text
         } else {
-            transformer.transform(expr.text)
+            transformer.transform(expr.text, context)
         }
 
     /** As [loweredTextOf], for a whole script rather than one expression. */
@@ -259,7 +266,10 @@ class LuaScriptEngine : ScxmlScriptEngine {
         return name in session.declaredVars
     }
 
-    override fun assign(sessionId: String, location: String, expr: String) {
+    override fun assign(sessionId: String, location: String, expr: String) =
+        doAssign(sessionId, location, ScriptSource.ecmascript(expr))
+
+    override fun doAssign(sessionId: String, location: String, expr: ScriptSource) {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
 
@@ -268,27 +278,38 @@ class LuaScriptEngine : ScxmlScriptEngine {
             throw ScriptEngineException("Cannot assign to system variable: $location")
         }
 
-        val luaExpr = transformer.transform(expr)
+        val luaExpr = loweredTextOf(expr)
         val L = session.handle
 
-        // C++ AssignmentExecutionHelper 3-path strategy
-        if (isSystemVariableReference(luaExpr)) {
+        // C++ AssignmentExecutionHelper 3-path strategy.
+        //
+        // W3C SCXML 5.10 names `_event`, `_sessionid` and the rest — it names
+        // them in the AUTHOR'S language, so the question "is this expression a
+        // system variable reference" is asked of `source()` and not of whatever
+        // a lowering spells them as. C++ states the same rule in
+        // `docs/SCE_LUA_TRANSLATION_SEAM.md`: shape questions stay on the
+        // author's text.
+        if (isSystemVariableReference(expr.source)) {
             // Path 1: System variable reference — use script execution
             val err = LuaNative.doString(L, "$location = $luaExpr")
-            if (err != null) throw ScriptEngineException("Assignment failed: $location = $expr ($err)")
+            if (err != null) {
+                throw ScriptEngineException("Assignment failed: $location = ${expr.source} ($err)")
+            }
         } else if (isSimpleVariableName(location)) {
             // Path 2: Simple variable — evaluate + setGlobal
             val status = LuaNative.loadAndCall(L, "return $luaExpr", 1)
             if (status != 0) {
                 val err = LuaNative.getError(L)
                 LuaNative.pop(L, 1)
-                throw ScriptEngineException("Assignment failed: $location = $expr ($err)")
+                throw ScriptEngineException("Assignment failed: $location = ${expr.source} ($err)")
             }
             LuaNative.setGlobal(L, location)
         } else {
             // Path 3: Complex path — use script execution
             val err = LuaNative.doString(L, "$location = ($luaExpr)")
-            if (err != null) throw ScriptEngineException("Assignment failed: $location = $expr ($err)")
+            if (err != null) {
+                throw ScriptEngineException("Assignment failed: $location = ${expr.source} ($err)")
+            }
         }
         session.declaredVars.add(location.split('.')[0])
     }
@@ -335,6 +356,11 @@ class LuaScriptEngine : ScxmlScriptEngine {
     override fun executeForeach(
         sessionId: String, array: String, item: String,
         index: String, body: () -> Unit
+    ) = doExecuteForeach(sessionId, ScriptSource.ecmascript(array), item, index, body)
+
+    override fun doExecuteForeach(
+        sessionId: String, array: ScriptSource, item: String,
+        index: String, body: () -> Unit
     ) {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
@@ -345,19 +371,19 @@ class LuaScriptEngine : ScxmlScriptEngine {
             throw ScriptEngineException("Illegal foreach index variable name: '$index'")
 
         val L = session.handle
-        val luaArray = transformer.transform(array)
+        val luaArray = loweredTextOf(array)
 
         // Evaluate array expression
         val status = LuaNative.loadAndCall(L, "return $luaArray", 1)
         if (status != 0) {
             val err = LuaNative.getError(L)
             LuaNative.pop(L, 1)
-            throw ScriptEngineException("Foreach array evaluation failed: $array ($err)")
+            throw ScriptEngineException("Foreach array evaluation failed: ${array.source} ($err)")
         }
 
         if (!LuaNative.isTable(L, -1)) {
             LuaNative.pop(L, 1)
-            throw ScriptEngineException("Foreach expression is not an array: $array")
+            throw ScriptEngineException("Foreach expression is not an array: ${array.source}")
         }
 
         // W3C SCXML 4.6: foreach auto-declares item/index variables
