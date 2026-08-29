@@ -864,6 +864,18 @@ INERT = [
     # therefore runs for every change. Listed by name rather than as
     # `docs/**`, because a document under `docs/` that IS a path-scoped
     # gate's input and has no trigger would then be skipped in silence.
+    #
+    # ⚠ What that choice COSTS, measured 2026-08-29 and previously unpriced:
+    # every other document under `docs/` is unclassified, so editing one
+    # takes the Rule 1 branch and reaches ALL 34 gates. For the SSOT this
+    # axis edits every round that is 10 local gates plus 24 handed to CI, of
+    # which CI actually starts 8 — the rest now print under `--ci-unowed`.
+    # Re-derive before acting on it, since both counts move with the table:
+    #   printf 'docs/SCE_LUA_TRANSLATION_SEAM.md\n' > /tmp/c
+    #   python3 tools/git-hooks/gate_registry.py --changed-from /tmp/c --explain
+    # The fix is NOT to add `docs/**` here — that is the silence the comment
+    # above refuses. It is to give the documents that drive no gate their own
+    # named entries, one at a time, each a claim somebody checked.
     "docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md",
     "LICENSE*",
     # Local tooling. The one gate that reads these, `roadmap_marker_gate`,
