@@ -19,8 +19,10 @@
  * names both in each entry's `diverges_on`:
  *
  *   - `runtime-rewriter` — the artifact hands the engine the AUTHOR'S
- *     ECMAScript and `EcmaScriptToLuaTransformer` rewrites it on the spot.
- *     `ecmascript_semantics_test` holds that path in both directions.
+ *     ECMAScript and the engine lowers it on the spot. The path keeps the
+ *     rewriter's name because that is what used to do the lowering; since
+ *     `EcmaScriptToLuaTransformer` was retired the frontend does, at run
+ *     time. `ecmascript_semantics_test` holds that path in both directions.
  *   - `build-time-lowering` — `sce-build`'s frontend emitted Lua and the
  *     artifact hands the engine that. THIS suite holds that path, in both
  *     directions, and that is what makes the list able to empty: an entry
@@ -821,12 +823,13 @@ TEST(LoweredEcma262, LoweringLosesNoAnswerTheRuntimeRewriterAlreadyHad) {
  * `ScriptSource::lua(...)` pairs from the outside as well, so "it was lowered"
  * and "it answers like the lowered one" are two independent readings.
  *
- * ⚠ This is the step that removes generated C++ as a consumer of
- * `EcmaScriptToLuaTransformer`. It does NOT empty
+ * ⚠ This is the step that removed generated C++ as a consumer of
+ * `EcmaScriptToLuaTransformer`. It did NOT empty
  * `tests/ecmascript/lua_engine_divergences.json` — measured 2026-08-29, both
  * suites holding that list reach the engine by routes no codegen default can
- * touch. The list empties when the rewriter is retired, and this is what makes
- * retiring it possible without taking generated code down with it.
+ * touch, so the list emptied when the frontend answered all 98 and the
+ * rewriter was retired separately. What this step bought was retiring it
+ * without taking generated code down with it.
  */
 TEST(LoweredEcma262, ATreeThatSelectedLuaEmitsLuaWithoutBeingAsked) {
     const auto &cases = population();

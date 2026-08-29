@@ -242,45 +242,53 @@ TEST(ScriptLanguageSeam, ALoweringCachedAgainstAnOlderScopeIsNotReused) {
 /**
  * @brief The same, one grammar up: a `<script>` chunk follows the scope too.
  *
- * `loweredScriptOf` asks `sce_lower_script` before the rewriter, so a chunk's
- * lowering depends on the scope exactly as an expression's does — and
- * `scriptExecCache` is keyed on the author's text, so a hit on a chunk lowered
- * against an older scope would serve the rewriter's answer forever.
+ * A chunk's lowering depends on the scope exactly as an expression's does, and
+ * `scriptExecCache` is keyed on the author's TEXT — so an answer that outlived
+ * the scope it was made against would be served forever under the same key.
  *
  * A chunk hoists its own `var` bindings, which is why the discriminator has to
  * be a name the chunk only READS: `b` is what the scope decides, and `r` is
- * the chunk's own. The first execution is the control as well as the setup —
- * if it already answered 0, no re-lowering had to happen for the assertion
- * below to pass.
+ * the chunk's own.
+ *
+ * ⚠ **What this case can observe narrowed when the rewriter was retired, and
+ * saying so is the point.** It used to compare two SUCCESSFUL answers: the
+ * frontend refused the chunk, `EcmaScriptToLuaTransformer` answered it wrongly
+ * (Lua's `a and b` counts 0 as truthy and yields `b`, which is nil), and a
+ * cache hit was visible as that wrong answer surviving. With no second
+ * translator behind the refusal, the frontend's scope-dependence has exactly
+ * two outcomes — refused, or lowered — so a refusal is what the first
+ * execution now produces, and what must not be remembered. Both directions
+ * still fail loudly: a refusal that is cached leaves the second execution
+ * refusing, and a scope that never hears about `b` never lets it succeed at
+ * all. A two-way form would need a name the frontend lowers DIFFERENTLY rather
+ * than not at all — an author `<data id>` shadowing an installed global is the
+ * only such shape, and it is not what this case is about.
  */
-TEST(ScriptLanguageSeam, AScriptLoweringCachedAgainstAnOlderScopeIsNotReused) {
+TEST(ScriptLanguageSeam, AChunkRefusedAgainstAnOlderScopeIsAskedAgain) {
     auto &engine = SCE::LuaEngine::instance();
     const std::string sessionId = "seam_script_cache_follows_the_scope";
     ASSERT_TRUE(engine.createSession(sessionId, ""));
 
     ASSERT_TRUE(engine.setVariable(sessionId, "a", ScriptValue{static_cast<int64_t>(0)}).get().isSuccess());
 
-    // `b` is undeclared, so the frontend refuses the whole chunk and the
-    // rewriter answers it: Lua's `a and b` counts 0 as truthy and yields `b`,
-    // which is nil.
+    // `b` is undeclared, so the frontend refuses the whole chunk — and the
+    // engine refuses with it rather than handing the text to a pass that
+    // cannot read it.
     const SCE::ScriptSource chunk = SCE::ScriptSource::ecmascript("var r = a && b;");
-    ASSERT_TRUE(engine.executeScript(sessionId, chunk).get().isSuccess());
-
-    auto before = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("r")).get();
-    const bool alreadyRight = before.isSuccess() && std::holds_alternative<int64_t>(before.getInternalValue()) &&
-                              std::get<int64_t>(before.getInternalValue()) == 0;
-    ASSERT_FALSE(alreadyRight) << "the chunk was already answered correctly with `b` undeclared, so this test "
-                                  "cannot tell a re-lowering from a cache hit";
+    ASSERT_FALSE(engine.executeScript(sessionId, chunk).get().isSuccess())
+        << "`b` is undeclared, so this chunk cannot be lowered and the first execution is the "
+           "control: if it already succeeded, the assertion below could not tell a re-lowering "
+           "from a cache hit";
 
     ASSERT_TRUE(engine.setVariable(sessionId, "b", ScriptValue{static_cast<int64_t>(2)}).get().isSuccess());
 
-    ASSERT_TRUE(engine.executeScript(sessionId, chunk).get().isSuccess());
+    ASSERT_TRUE(engine.executeScript(sessionId, chunk).get().isSuccess())
+        << "the same chunk text was refused before `b` was declared. Refusing it again means the "
+           "refusal was remembered under a key that does not carry the scope it was made against";
     auto after = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("r")).get();
     ASSERT_TRUE(after.isSuccess()) << after.getErrorMessage();
     EXPECT_EQ(asWholeNumber(after.getInternalValue()), 0)
-        << "ECMA-262 13.13.1 yields the LEFT operand when it is falsy, so `r` is 0. The same chunk "
-           "text answered differently before `b` was declared, so answering it the same way twice "
-           "means the chunk compiled against the older scope was reused.";
+        << "ECMA-262 13.13.1 yields the LEFT operand when it is falsy, so `r` is 0";
 
     engine.destroySession(sessionId);
 }

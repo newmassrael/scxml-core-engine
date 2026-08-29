@@ -1622,11 +1622,43 @@ entry as `now agrees with ECMA-262` and NOT ONE newly undeclared disagreement,
 so `tests/ecmascript/lua_engine_divergences.json` is EMPTY and
 `ARCHITECTURE.md`'s Lua cell reads 98/98.
 
-⚠ **An empty list is not a retired rewriter.** `EcmaScriptToLuaTransformer` is
-still linked, still the fallback, and still the answer for anything the
-frontend refuses. What the list measures is the 98-case shared table; retiring
-the rewriter is the claim that nothing takes the fallback at all, and that
-needs its own witness rather than this one's silence.
+⚠ **An empty list is not a retired rewriter.** What the list measures is the
+98-case shared table; retiring the rewriter is the claim that nothing takes the
+fallback at all, and that needs its own witness rather than this one's silence.
+
+**That witness was built the same day, and building it cost more than deleting
+three call sites.** The `retire-rewriter` row and its
+`retirement:rewriter-uncalled` check are the standing half. The moving half was
+what the removal EXPOSED: with no rewriter behind it, a refusal became the
+engine's answer, and six cases across two suites went red — every one of them a
+name the frontend had never been told about.
+
+- **All 39 DOM reads.** `setVariableAsDOM` wrote a global and told the scope
+  nothing, so `var1.nodeType` named a variable the frontend had never heard of.
+  A plain missing call, invisible for as long as something answered without
+  resolving names.
+- **A name a LUA `<script>` introduced.** The scope learned from `<data id>`
+  and from an ECMAScript chunk's parse, and the Lua door was skipped on the
+  reasoning that a generated artifact lowers at build time and never asks for a
+  lowering. That reasoning is about a DOCUMENT; the engine's contract is about
+  a SESSION, and it accepts both languages into one namespace. `arr = {10, 20,
+  30}` as Lua left `arr[1]` as ECMAScript unresolvable. Lua's own global table
+  is now what answers, read against a baseline taken at session creation so
+  that `string` and `math` do not leak into an ECMAScript datamodel.
+- **Two tests whose SUBJECT was the rewriter**, repointed rather than deleted.
+  One asserted that a member access binds the whole chain before it — a real
+  property, now the parser's — on a setup written in Lua table syntax and
+  handed over as ECMAScript, which only ever ran because a text pass forwards
+  what it cannot read. The other compared two successful answers where one came
+  from the rewriter; with nothing behind the refusal, the frontend's
+  scope-dependence has exactly two outcomes, so it now asserts that a refusal
+  is not remembered.
+
+⚠⚠ **The reason all six were invisible is worth keeping.** A fallback that
+answers everything makes a missing declaration unobservable — not rare, not
+intermittent, *unobservable*, because the only thing that would have shown it
+is a refusal that never happened. Removing the fallback is what turned six
+silent gaps into six red tests in one run.
 
 #### What the script seam turned out to be worth: a whole entry point
 
@@ -1883,12 +1915,45 @@ cache already covers.
   suite's subject away in every default build, and every row it holds would
   stop being measured anywhere. That is the trade, and it is a correctness cost
   against a build-time one.
+- **Whether the retirement actually happened.** The bullet above records the
+  DECISION; this one is the other half of it, and it was added the day the
+  answer stopped being "not yet". The `link-beside-lua` row holds the tree to
+  the link, and a link is a build-system fact: it can be true while every
+  expression in the tree still reaches the rewriter, which is precisely what
+  the first half of the decision left standing. Retirement is a different
+  claim — **nothing takes the fallback at all** — and this document already
+  said, in "An empty list is not a retired rewriter", that it *"needs its own
+  witness rather than this one's silence"*. The `retire-rewriter` row is that
+  witness, and `retirement:rewriter-uncalled` is what re-derives it: every
+  tracked C++ file, swept, with the retired unit's own files as the positive
+  control that the sweep can still find the name where it is.
+  ⚠ **It swept the engine's two directories for a day, and that boundary was
+  measured and replaced the next.** `sce/src` and `sce/include` are what the
+  library is built from, so the boundary read as principled. What it actually
+  did was leave `tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp` — the one
+  file outside them that really does construct the rewriter, in order to price
+  it — not exempted but INVISIBLE: the sweep never opened it, nothing in the
+  tree said whether it was an instrument or a caller, and a second file
+  joining it would have been just as quiet. The boundary is now a
+  CLASSIFICATION over the whole tree: a tracked C++ file either IS the retired
+  unit, or is named in `REWRITER_INSTRUMENTS` with the reason it is an
+  instrument, or must not reach the rewriter. Unclassified is RED, and every
+  entry is itself asserted — tracked, and still reaching the rewriter — so an
+  exemption cannot outlive its subject and go on covering whatever appears at
+  that path later.
+  ⚠ **Retired is not deleted, and the row says which one this is.**
+  `sce/src/scripting/EcmaScriptToLuaTransformer.cpp` is still listed in
+  `sce/sce_base_sources.cmake` and still compiles; the check REQUIRES it to
+  still be there, because a sweep for a name the tree no longer carries
+  reports zero for the wrong reason. Deleting it is a later round, and the
+  row is what will have to be rewritten when that round comes.
 
-### D1 at a glance: five closed by measurement, one closed by decision
+### D1 at a glance: five closed by measurement, two closed by decision
 
 Four things had to be priced before a person could choose whether `sce-build`
-grows a C-callable lowering surface. All four were, and two more numbers
-arrived while they were being checked, so the table below carries six rows.
+grows a C-callable lowering surface. All four were, two more numbers arrived
+while they were being checked, and the decision the four informed then split
+into two rows — the link and the retirement — so the table below carries seven.
 
 **The choice was then made.** On 2026-08-29 the owner chose to LINK the
 frontend and retire `EcmaScriptToLuaTransformer`; the `link-beside-lua` row
@@ -1898,6 +1963,11 @@ CMake file links it, the link sits inside `if(SCE_ENABLE_LUA)` rather than
 behind the engine selection, and `LuaEngine` actually calls it. The last is
 there because a linked library nothing reaches is discarded by the linker,
 which would leave the row unable to fail.
+
+**And the second half of that decision has its own row**, because the two can
+be true separately and were: for the whole of the day the link landed, the
+frontend was called FIRST and the rewriter answered everything it refused.
+`retire-rewriter` is the claim that the second call is gone.
 
 ⚠ **This table is not a second copy of the sections above — it is the
 machine-readable one.** `sce-build/tests/lowering_decision_ledger.rs` parses
@@ -1954,6 +2024,7 @@ someone has read the warning.
 | `swap-net-footprint` | CLOSED | measurement | the link is a SWAP, not an addition: **+223.7 KB** in, **−76.0 KB** out ⇒ **net +147.8 KB**, so pricing it as an addition overstates by **34%**. The rewriter's **2262** tracked lines leave with it | `derive:rewriter-footprint=2262` | `scripts/measure-lowering-footprint.sh` |
 | `scope-answer` | CLOSED | measurement | **0** sites diverge once the caller has read every `<data id>` AND every document-level `<script>` — both readable before the first macrostep — so the surface needs `declare` + `declare_chunk` and NO execution-time scope | `derive:scope-ladder=LoadTime` | `sce-build/src/ecmascript/scope.rs` |
 | `link-beside-lua` | CLOSED | decision | the owner chose to LINK, beside `SCE_ENABLE_LUA`, and retire the rewriter. Priced on the shape chosen: a staticlib costs **474.6 KB** of stripped image, not the **223.7 KB** the cdylib delta reported — that baseline already held Rust's runtime and a C++ image does not | `decision:linked-beside-lua` | `sce/CMakeLists.txt` |
+| `retire-rewriter` | CLOSED | decision | the second half of that decision, carried out: of every tracked C++ file, **zero** reach `EcmaScriptToLuaTransformer` other than the **2** that ARE it and the instruments `REWRITER_INSTRUMENTS` declares — a list carrying no free number because the check asserts each entry still reaches the rewriter, so it can only shrink by being edited. The fallback is gone from all three sites — `loweredTextOf`, `loweredScriptOf`, `reset` — and refusal is the engine's own answer (§scxml-5.9.1) rather than a second translator's cue. The unit is retired, NOT deleted: it is still compiled by `sce/sce_base_sources.cmake`, and the check requires that, because a sweep for an absent name reports zero for the wrong reason | `retirement:rewriter-uncalled` | `sce/src/scripting/LuaEngine.cpp` |
 
 <!-- /D1-LEDGER -->
 

@@ -30,10 +30,16 @@
 #     string, which is a wrong VALUE rather than a parse error — the shape a
 #     golden comparison catches and an eyeball does not.
 #
-# ⚠⚠ What no case covers, here or there: the rewriter's own rounding and escape
-# handling is still live for an OPEN expression, and the shared table samples
-# neither feature open. Closing that means adding open cases to
-# `tests/ecmascript/ecma262_semantics.json`, which six backend readers answer.
+# ⚠⚠ ~~What no case covers, here or there: the rewriter's own rounding and
+# escape handling is still live for an OPEN expression.~~ **Closed on
+# 2026-08-29 by the retirement rather than by a case.** Nothing in the engine
+# reaches the rewriter now, open expression or closed, so there is no second
+# implementation of either clause left to be uncovered. What remains true is
+# the observation underneath it: the shared table samples neither feature with
+# an OPEN expression, so what the frontend does with `Math.round(x)` and a
+# `\uXXXX` escape inside one is asked by no golden comparison. Closing that
+# means adding open cases to `tests/ecmascript/ecma262_semantics.json`, which
+# six backend readers answer.
 
 mutation_tests -p sce-build --features cli --test ecmascript_semantics
 mutation_targets sce-build/src/ecmascript/lua.rs

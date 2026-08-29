@@ -247,17 +247,28 @@ TEST(DomReadSurface, TheSelectedEngineAnswersDomLevel1Core) {
 /// The receiver of a member access is the whole chain before it.
 ///
 /// This lives here because the DOM traversal is what exposed it — every
-/// traversal is a chain — but the repair is in
-/// `EcmaScriptToLuaTransformer` and reaches further than the DOM, so it
-/// gets a witness that does not depend on a DOM being bound. Before it,
-/// `xs.inner.length` transformed to `xs.#inner`, which is not Lua, and
-/// `xs.inner.indexOf(2)` to `xs._indexOf(inner, 2)`, which asked a
-/// different receiver and said nothing.
-TEST(LuaTransformerReceiver, AMemberAccessBindsTheWholeChainBeforeIt) {
+/// traversal is a chain — but the property reaches further than the DOM,
+/// so it gets a witness that does not depend on a DOM being bound.
+///
+/// It was written against `EcmaScriptToLuaTransformer`, whose passes
+/// found a receiver by scanning word characters backwards and so bound
+/// the wrong one: `xs.inner.length` became `xs.#inner`, which is not
+/// Lua, and `xs.inner.indexOf(2)` became `xs._indexOf(inner, 2)`, which
+/// asked a different receiver and said nothing. That rewriter is retired
+/// and the property now belongs to the frontend's parser, where a
+/// receiver is a subtree rather than a span of characters.
+///
+/// ⚠ The SETUP is what carried the retirement, and it is not cosmetic.
+/// It used to be `xs = { inner = { 10, 20, 30 } }` — Lua table syntax,
+/// handed to the engine as ECMAScript, which only ever ran because the
+/// rewriter passed text it could not read through unchanged. A parser
+/// refuses it, correctly: it is not ECMAScript. The setup below is the
+/// same object written in the language the call claims.
+TEST(EcmaScriptMemberChain, AMemberAccessBindsTheWholeChainBeforeIt) {
     auto &engine = SCE::LuaEngine::instance();
     const std::string sessionId = "lua_receiver";
     ASSERT_TRUE(engine.createSession(sessionId, ""));
-    auto setup = engine.executeScript(sessionId, "xs = { inner = { 10, 20, 30 } }").get();
+    auto setup = engine.executeScript(sessionId, "var xs = { inner: [10, 20, 30] };").get();
     ASSERT_TRUE(setup.isSuccess()) << setup.getErrorMessage();
 
     struct Probe {

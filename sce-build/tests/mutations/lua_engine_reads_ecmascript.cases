@@ -4,10 +4,10 @@
 # `scripts/mutate sce-build/tests/mutations/lua_engine_reads_ecmascript.cases`.
 #
 # `SCE_SCRIPT_ENGINE=lua` is a listed, validated value of a cache entry. The
-# engine it selects is Lua 5.4 with `EcmaScriptToLuaTransformer` rewriting the
-# author's ECMAScript into Lua text, so `EcmaScriptSemanticsOnLuaEngine` names
-# that engine rather than asking the provider — otherwise the transformer would
-# be compiled by every build and measured by none.
+# engine it selects is Lua 5.4 with `sce-build`'s ECMAScript frontend lowering
+# the author's ECMAScript at run time, so `EcmaScriptSemanticsOnLuaEngine` names
+# that engine rather than asking the provider — otherwise the seam would be
+# compiled by every build and measured by none.
 #
 # ⚠ This header used to add "and no gate configures it". That stopped being
 # true on 2026-08-29: `scripts/gate ecma262-lowered-cpp` configures a throwaway
@@ -45,7 +45,6 @@
 # frontend, and each is recorded where it happened rather than here.
 
 mutation_ctest --test-dir build -R '^(ECMAScriptSemantics)$'
-mutation_targets sce/src/scripting/EcmaScriptToLuaTransformer.cpp
 mutation_targets sce/src/scripting/LuaEngine.cpp
 # Read at run time rather than compiled in: the declared list is a fixture the
 # test opens by the path CMake injects.
@@ -55,87 +54,29 @@ mutation_runtime_targets tests/ecmascript/lua_engine_divergences.json
 # test this selector names.
 mutation_oracles tests/engine/EcmaScriptSemanticsTest.cpp
 
-# ── A string literal has to be visible as a receiver ────────────────
+# ── Five cases left this file with the rewriter ─────────────────────
 #
-# Every pass finds the receiver of a member access by scanning word characters
-# backwards. A placeholder those scans stop at is a receiver no pass can see,
-# so `'abc'.length` reached Lua as itself and `'a,b'.split(',')` reached it as
-# `'a,b'.#split(',')` — neither of which Lua will parse.
-
-mutation_case "the string literal placeholder stops every receiver scan" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """std::string placeholderFor(const std::string &prefix, size_t index) {
-    return prefix + std::to_string(index) + "_";
-}""",
-     """std::string placeholderFor(const std::string &prefix, size_t index) {
-    return "\\x01" + prefix + std::to_string(index) + "\\x01";
-}""")
-PY
-
-# ── The definitions the shared library already carries ──────────────
+# `sce/src/scripting/EcmaScriptToLuaTransformer.cpp` was a target here and five
+# cases broke it: the string-literal placeholder that made a literal invisible
+# as a receiver, the shared-definition map, `concat`'s fold, `push`'s length,
+# and the index base. On 2026-08-29 the rewriter was RETIRED — nothing in the
+# engine reaches it, which the seam document's `retire-rewriter` row asserts and
+# `the_rewriter_is_retired_not_merely_second.cases` mutates — so breaking it can
+# no longer change what this suite sees, and all five would have reported
+# SURVIVED.
 #
-# `ecma_semantics.lua` is loaded by this engine and called by the code
-# generator's Lua backends for the same source. A method missing from the table
-# below is not rewritten at all: the definition sits in the same interpreter,
-# unnamed.
+# Four followed their subject to `sce-build/src/ecmascript/lua.rs` and live in
+# `the_frontend_now_owns_the_member_surface.cases`, judged by the frontend's own
+# golden over the same shared table. The fifth is retired rather than moved: a
+# placeholder that defeats a backward scan is a defect a PARSER cannot have, so
+# there is no frontend mutation to aim at it, and inventing one would be a case
+# about nothing.
 #
-# ⚠ This case named `substring` and `charAt` until 2026-08-29, and the seam
-# below made it unobservable: the table asks both only of a string LITERAL
-# (`'abcdef'.substring(1, 3)`), which is closed, so the frontend answers it and
-# the rewriter's map is never consulted. `sort` and `reverse` are asked of `xs`
-# (`xs.sort().join(',')`), which names a variable and is therefore still the
-# rewriter's. Same subject — a member method whose shared definition the map
-# has to name — through the path that still reaches it.
-
-mutation_case "two array methods lose the shared definition that implements them" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """    {"sort", "_scxml_sort"},
-    {"reverse", "_scxml_reverse"},
-""",
-     "")
-PY
-
-# ── concat appends every argument §15-4-4-4 ─────────────────────────
-#
-# The shared `_concat` takes one other value, so the arguments are folded
-# through it. Passing them to a single call drops all but the first, and
-# answers a shorter array rather than refusing.
-
-mutation_case "concat keeps only its first argument" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """                        folded = "_concat(" + folded + ", " + trim(argument) + ")";
-                    }""",
-     """                        folded = "_concat(" + folded + ", " + trim(argument) + ")";
-                        break;
-                    }""")
-PY
-
-# ── push answers the new length §15-4-4-7 ───────────────────────────
-#
-# `table.insert` answers nothing, so the receiver is held in a local and the
-# length returned. Inserting alone leaves the expression undefined.
-
-mutation_case "push answers nothing where the length was promised" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """                    result +=
-                        "(function() local __t = " + receiver + " table.insert(__t, " + args + ") return #__t end)()";""",
-     """                    result += "table.insert(" + receiver + ", " + args + ")";""")
-PY
-
-# ── A computed index is still zero-based §13-3-3 ────────────────────
-#
-# Only integer literals were shifted. Treating every other index as an
-# assignment target leaves the read alone, and Lua then answers a neighbouring
-# element — a wrong value, not an error.
-
-mutation_case "a computed index is read one element short" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """    if (next >= input.size() || input[next] != '=') {
-        return false;
-    }
-    return next + 1 >= input.size() || input[next + 1] != '=';""",
-     """    return true;""")
-PY
+# ⚠ That is the third time in one day that this file has lost cases the same
+# way, and the count is the point. The header above already names the mechanism
+# — a seam takes the corpus's grip at the moment it takes the work — and the
+# retirement is that mechanism running to completion. Nothing here was weakened;
+# the code each case named stopped being on any path.
 
 # ── Rounding and unicode escapes moved with their owner ─────────────
 #
@@ -198,11 +139,18 @@ PY
 
 # ── The seam offers expressions to the frontend at all ──────────────
 #
-# `LuaEngine::loweredTextOf` asks the frontend before the rewriter, and every
-# expression it answers is one the rewriter never sees. Deleting the call while
-# leaving the paragraph that explains it standing is the shape a careless revert
-# has, and it puts the whole table back on the rewriter — `1 == '1'` stops
-# coercing, `-7 % 3` stops truncating, `a && b` stops yielding its left operand.
+# `LuaEngine::loweredTextOf` asks the frontend, and since the rewriter was
+# retired that is the ONLY thing it asks: deleting the call leaves the engine
+# refusing every ECMAScript expression rather than answering it worse. Doing so
+# while leaving the paragraph that explains it standing is the shape a careless
+# revert has.
+#
+# ⚠ The mutation changed with the retirement, and the direction it changed is
+# worth keeping. It used to put the whole shared table back on the rewriter —
+# `1 == '1'` stopped coercing, `-7 % 3` stopped truncating — so the suite went
+# red on WRONG ANSWERS. Now it goes red on refusals. Both are red; only the
+# second one is a failure a person reading the output cannot mistake for a
+# semantics bug, which is the trade this seam was retired for.
 #
 # ⚠ `(void)scope;` is what keeps the mutation COMPILING. Without it the
 # parameter is unused, `-Werror` refuses the build, and a mutation the compiler
@@ -219,21 +167,20 @@ PY
 
 mutation_case "the seam stops offering expressions to the frontend" <<'PY'
 edit("sce/src/scripting/LuaEngine.cpp",
-     """    if (auto lowered = scope.lowerValue(expression.text())) {
-        return *lowered;
-    }""",
-     """    (void)scope;""")
+     "    return scope.lowerValue(expression.text());",
+     """    (void)scope;
+    return std::nullopt;""")
 PY
 
 # ── The script path offers STATEMENTS to the frontend ───────────────
 #
 # The sibling of the case above, one grammar up, and it is the one that took
 # this repository's divergence list to zero. `EcmaScriptToLuaTransformer::
-# transformScript` replaces text without a parse, so a `continue` becomes
-# `_ = continue` and the loop it belongs to stops skipping an iteration — a
+# transformScript` replaced text without a parse, so a `continue` became
+# `_ = continue` and the loop it belonged to stopped skipping an iteration — a
 # defect no scope can reach, because a scope only decides which NAMES resolve.
-# `LuaEngine::loweredScriptOf` asks `sce_lower_script` first, and the shared
-# table's `while`/`continue` case is what turns red when it stops.
+# `LuaEngine::loweredScriptOf` asks `sce_lower_script`, and the shared table's
+# `while`/`continue` case is what turns red when it stops.
 #
 # ⚠ `(void)scope;` again, and for the same reason: without it the parameter is
 # unused and `-Werror` refuses the mutated build, which would report this as
@@ -241,8 +188,7 @@ PY
 
 mutation_case "the script path stops offering statements to the frontend" <<'PY'
 edit("sce/src/scripting/LuaEngine.cpp",
-     """    if (auto lowered = scope.lowerScript(script.text())) {
-        return *lowered;
-    }""",
-     """    (void)scope;""")
+     "    return scope.lowerScript(script.text());",
+     """    (void)scope;
+    return std::nullopt;""")
 PY

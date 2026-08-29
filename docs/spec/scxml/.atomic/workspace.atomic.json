@@ -6292,6 +6292,11 @@
         {
           "file": "sce/include/scripting/LoweringScope.h",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::setVariableAsDOM",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7451,6 +7456,25 @@
         {
           "file": "sce-build/src/filters.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/LoweringScope.h",
+          "symbol": "LoweringScope",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/LuaEngine.h",
+          "symbol": "loweredTextOf",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/SceLowering.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::offerToScope",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

@@ -47,10 +47,16 @@ mutation_oracles tests/engine/EcmaScriptSemanticsTest.cpp
 # careless revert has, and a check satisfied by the paragraph beside a call is
 # a defect this repository has now paid for three times.
 
+# ⚠ Anchored with the line above it, not on the call alone. Every door that
+# puts a name in a session's namespace now goes through `offerToScope`, so
+# there is more than one of these calls and a bare anchor no longer says which
+# site it means — `<data id>` here, the XML-content `<data>` next door.
 mutation_case "a data item declaration never reaches the frontend's scope" <<'PY'
 edit("sce/src/scripting/LuaEngine.cpp",
-     "    it->second->loweringScope.declare(name);",
-     "")
+     """    offerToScope(*it->second, name);
+
+    // Track pre-initialized variables for invoke param/namelist support""",
+     """    // Track pre-initialized variables for invoke param/namelist support""")
 PY
 
 # ── The `<script>` half of the scope ────────────────────────────────
@@ -62,10 +68,11 @@ PY
 
 mutation_case "a script's declarations never reach the frontend's scope" <<'PY'
 edit("sce/src/scripting/LuaEngine.cpp",
-     """    if (status == LUA_OK && script.language() == ScriptLanguage::ECMAScript) {
-        it->second->loweringScope.declareChunk(script.text());
-    }""",
-     "")
+     """        if (script.language() == ScriptLanguage::ECMAScript) {
+            it->second->loweringScope.declareChunk(script.text());
+        } else {""",
+     """        if (script.language() == ScriptLanguage::ECMAScript) {
+        } else {""")
 PY
 
 # ── The cache is keyed on the scope as well as the language ─────────
