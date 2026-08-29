@@ -1355,19 +1355,64 @@ asserts that no cache entry shadows it.
   build-time-translated text by this route. `sce-build`'s cdylib is the
   candidate answer — `Cargo.toml` records that there is no in-tree consumer of
   it today, and `sce-build-wasm` has already built that wrapping once.
-  **Re-measured 2026-08-29 and now the critical path, not a footnote**: this is
-  step 2 of the three the list needs to empty (see the third round above).
-  `sce-build/Cargo.toml` still declares `crate-type = ["rlib"]` only, nothing
-  under `sce/` links a Rust library, and the crate's only C ABI is Forge's
-  `extern_emit`. The frontend answers all 98 shared-table cases correctly and
-  has no way to be called at run time; closing that is what lets the rewriter
-  be retired instead of repaired.
+  **Re-measured on the morning of 2026-08-29 and then overtaken the same day**:
+  this was step 2 of the three the list needs to empty (see the third round
+  above). At that reading `sce-build/Cargo.toml` declared `crate-type =
+  ["rlib"]` only, nothing under `sce/` linked a Rust library, and the crate's
+  only C ABI was Forge's `extern_emit` — the frontend answered all 98
+  shared-table cases correctly and had no way to be called at run time. That is
+  what closing it was for; it is now closed, by the surface `SceLowering.h`
+  declares and the link `sce/CMakeLists.txt` makes.
   **Its price was measured in full and the choice has since been made — see
   "D1 at a glance: five closed by measurement, one closed by decision" below.
   The owner chose to link, on 2026-08-29, and `LuaEngine` now sends every
   CLOSED expression to the frontend's parser instead of to the rewriter. That
   took `tests/ecmascript/lua_engine_divergences.json` from 23 entries to 12 —
   the first time that list has emptied rather than grown.**
+
+### Measured after the seam landed: it took the corpus's grip with the work
+
+The seam was landed with one new mutation case beside it and the rest of
+`lua_engine_reads_ecmascript.cases` left alone. Run in FULL the next day, that
+casefile came back **7 of 10 CAUGHT, 3 SURVIVED** — and not one of the three
+mutations had stopped being a defect. Each had stopped being OBSERVABLE.
+
+The three broke the rewriter's handling of `substring`/`charAt`, of
+`Math.round`, and of `\uXXXX`. The shared table asks all three only of CLOSED
+expressions — `'abcdef'.substring(1, 3)`, `Math.round(2.5)`, `'é'` — and a
+closed expression is precisely what the seam now answers in the frontend. Break
+the rewriter there and the engine's answer does not move.
+
+**This is the failure mode a retiring component creates, and it is silent.**
+Nothing in the casefile changed, nothing in the suite changed, and a verdict
+flipped from CAUGHT to SURVIVED because work moved somewhere else. The
+distinguishing question is not "make the mutation stronger" — it is **who
+answers this expression now**. Three repairs, in the order to try them:
+
+1. **Re-aim at an open expression**, when the subject is still the rewriter's.
+   `sort` and `reverse` are asked of `xs`, which names a variable, so the case
+   about a member method's shared definition kept its subject and changed its
+   example.
+2. **Follow the subject to its new owner.** `Math.round` and `\uXXXX` moved to
+   `the_frontend_now_owns_rounding_and_escapes.cases`, against
+   `sce-build --test ecmascript_semantics` — 2 of 2 CAUGHT there, red on
+   `emitted_lua_answers_what_ecmascript_answers`. A case follows the behaviour;
+   it is not deleted and not replaced.
+3. **When neither is possible, say what the table does not sample.** The
+   rewriter's rounding and escape handling is still live for an OPEN
+   expression, and `tests/ecmascript/ecma262_semantics.json` samples neither
+   feature open. That is the residue, and closing it is an expansion six
+   backend readers answer.
+
+⚠ So: **a round that moves a seam must re-run the casefiles aimed at what the
+seam took work away from**, in the same round. The corpus cannot report this on
+its own — a casefile is only judged when it changes, and none of these changed.
+
+⚠⚠ And the frontend's cases cannot ride the ctest runner.
+`cmake/SCEBuildLowering.cmake` builds the staticlib with `execute_process` at
+CONFIGURE time and imports it, so `cmake --build` does not rebuild it after a
+Rust edit: a frontend mutation driven through ctest never reaches the binary
+and is reported INCONCLUSIVE. The cargo runner is what reaches it.
 
 ### The price of a C-callable lowering surface, measured 2026-08-29
 
@@ -1557,15 +1602,17 @@ cache already covers.
   prescription this bullet used to carry measured the wrong subject.** It said:
   configure one tree with `SCE_ENABLE_LUA=ON` and one with `OFF`, build the same
   target from cold, take the difference. Re-derived 2026-08-29 and withdrawn —
-  that experiment prices `lua54` and two translation units, which every
-  developer already pays for, while nothing in the tree links a Rust artifact
-  for it to price. Both sides of the actual trade are already costed; see
-  "D1 at a glance" below. What remains is the second half, which was never a
+  that experiment priced `lua54` and two translation units, which every
+  developer already pays for, while nothing in the tree linked a Rust artifact
+  for it to price — a premise the link has since made false, deliberately, and
+  the paragraph under "D1 at a glance" is where that is worked out. Both sides
+  of the actual trade are already costed; see that section. What remains is the
+  second half, which was never a
   number: does any in-tree consumer construct `LuaEngine` in a tree whose
   SELECTION is not lua?
   `EcmaScriptSemanticsOnLuaEngine` does — it is `#ifdef SCE_ENABLE_LUA`, not
   `SCE_SCRIPT_ENGINE_LUA` — so scoping the link to the selection would take that
-  suite's subject away in every default build, and the 23 rows it holds would
+  suite's subject away in every default build, and every row it holds would
   stop being measured anywhere. That is the trade, and it is a correctness cost
   against a build-time one.
 
@@ -1642,17 +1689,30 @@ someone has read the warning.
 
 <!-- /D1-LEDGER -->
 
-**Why the fourth carries no number, and it is not that nobody has run it yet.**
-The bullet above prescribes: configure one tree with `SCE_ENABLE_LUA=ON` and one
-with `OFF`, build the same target from cold, take the difference. Re-derived
-2026-08-29, **that experiment does not contain its subject.** `SCE_ENABLE_LUA`
-today guards `lua54` and two translation units (`sce/CMakeLists.txt:304-305`,
-`374`); no tracked CMake file links a Rust artifact at all, and `sce-build` is
-still `crate-type = ["rlib"]`. So the ON/OFF delta prices the Lua capability as
-it already stands — a bill every developer already pays — and says nothing about
-the cdylib whose link is the thing being decided. A real number about the wrong
-subject is precisely the defect this file recorded once already, when "159 of
-382" was reused as the `cpp-suite` lane's size.
+**Why the ON/OFF experiment was withdrawn — and what has since made it
+measurable.** The bullet above prescribed: configure one tree with
+`SCE_ENABLE_LUA=ON` and one with `OFF`, build the same target from cold, take
+the difference. Re-derived on the morning of 2026-08-29, **that experiment did
+not contain its subject.** `SCE_ENABLE_LUA` guarded `lua54` and two translation
+units (`sce/CMakeLists.txt:304-305`); no tracked CMake file linked a Rust
+artifact at all, and `sce-build` was `crate-type = ["rlib"]` with no in-tree
+consumer of any other shape. So the ON/OFF delta priced the Lua capability as
+it already stood — a bill every developer already pays — and said nothing about
+the surface whose link was the thing being decided. A real number about the
+wrong subject is precisely the defect this file recorded once already, when
+"159 of 382" was reused as the `cpp-suite` lane's size.
+
+⚠ **That premise is false as of the afternoon of the same day, and it was made
+false on purpose.** The link landed inside `if(SCE_ENABLE_LUA)`, so the ON/OFF
+delta now does contain the surface — it would price the staticlib together with
+`lua54`, which is the capability as it now stands. It is not re-run, because
+the decision it existed to inform has been taken, and what the chosen shape
+costs is the `link-beside-lua` row's own number, measured on the staticlib that
+was actually linked rather than on a cdylib delta. What the withdrawal leaves
+behind is the shape rather than the sentence: a premise that holds a row OPEN
+has to be re-derived before the row is read, and the handler for one is kept in
+`sce-build/tests/lowering_decision_ledger.rs` — with the reason it did not fire
+when this link arrived — so the next premise is held the same way.
 
 The subject's own price is already in the table above and needs no second
 experiment: **7.00s** to rebuild `sce-build` and link the cdylib (14.96s
@@ -1663,19 +1723,34 @@ scoping the link to `SCE_SCRIPT_ENGINE=lua` would take
 `EcmaScriptSemanticsOnLuaEngine` its subject in every default build — verified,
 that suite is `#ifdef SCE_ENABLE_LUA` at
 `tests/engine/EcmaScriptSemanticsTest.cpp:356`, not `SCE_SCRIPT_ENGINE_LUA` —
-and the 23 divergence rows it holds would stop being measured anywhere.
+and every divergence row it holds would stop being measured anywhere. How many
+rows that is stays deliberately unwritten here: it is
+`tests/ecmascript/lua_engine_divergences.json`'s own length, it moved twice in
+one day (44 to 23 to 12), and a count restated beside the file that owns it is
+the defect the whole of D1 was written against.
 
-**So neither side is missing a figure, and no measurement is outstanding. What
-is left is a judgement about what a C++ consumer should carry, and it is a
-person's to make — this document does not make it.**
-`precondition:rust-is-not-linked` is what keeps that honest rather than merely
-stated: the day anything in the tree links a Rust artifact, this row's premise
-is false, the gate turns red, and the row has to be re-adjudicated instead of
-standing as prose nobody re-reads.
+**Neither side was missing a figure, so what remained was a judgement about
+what a C++ consumer should carry — and on 2026-08-29 the owner made it: LINK
+the frontend, beside `SCE_ENABLE_LUA`, and retire the rewriter.** The
+`link-beside-lua` row records the decision and `decision:linked-beside-lua`
+holds the tree to it — the surface exists, a CMake file links it, the link sits
+inside the capability rather than behind the engine selection, and `LuaEngine`
+actually calls it. That last clause carries the row: a linked library nothing
+reaches is discarded by the linker, so without it the row would describe a
+build-system fact with no behaviour behind it and could not fail.
 
-**No decision is recorded here on purpose.** The numbers are the deliverable;
-which way to go is a judgement about what a C++ consumer should carry, and this
-document's job is to make that judgement due rather than to make it.
+⚠ **A check name spelled in this document is a promise that some gate
+re-derives the sentence beside it, so a retired one may not be left standing.**
+That is not a style rule. This section went on naming the precondition check
+the OPEN row used to carry for a day after that row was replaced, promising
+that the day anything in the tree linked a Rust artifact the gate would turn
+red and the row would have to be re-adjudicated — and the tree linked one that
+same afternoon, with no row left to turn. The name is not repeated here,
+because repeating it is the defect;
+`sce-build/tests/lowering_decision_ledger.rs` keeps it, beside the reason it
+did not fire. `a_check_named_in_prose_is_a_check_a_row_declares` now reads
+every check identifier this file spells and fails on one no row declares, so
+the promise cannot outlive its row a second time.
 
 ### The error channel, counted 2026-08-29
 

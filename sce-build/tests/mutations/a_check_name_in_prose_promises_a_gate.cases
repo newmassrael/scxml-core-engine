@@ -1,0 +1,46 @@
+# Mutation cases for "a check name in prose is a check a row declares".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_check_name_in_prose_promises_a_gate.cases`.
+#
+# The D1 ledger's rows each declare a `check`, and the gate re-derives every
+# row's sentence from the tree. What nothing held was the DOCUMENT AROUND the
+# table. A check name spelled in prose reads as a live gate — it is the same
+# identifier, in the same backticks — and for a day the section under the table
+# went on naming the precondition the OPEN row used to carry, after that row had
+# been replaced by the decision row. The sentence promised something specific:
+# the day anything in the tree links a Rust artifact, the gate turns red and the
+# row must be re-adjudicated. The tree linked one that same afternoon. Nothing
+# turned red, because no row carried that check any more.
+#
+# This is the third time one defect has been found in this file, and the shape
+# is worth naming: a check satisfied by the paragraph that explains it
+# (`swap-net-footprint`), a check satisfied by the paragraph beside the call
+# (`decision:linked-beside-lua`), and now a paragraph promising a check that had
+# gone. The first two were caught by mutating the row; this one was caught by
+# re-deriving the paragraph. Both cases below exist so it is caught by the gate
+# instead.
+#
+# The second case is the one that keeps the first honest. A sweep reading
+# nothing reports a clean document, so the floor compares what it found against
+# what the rows declare — every row spells its own check inside the block, so
+# fewer names than rows means the sweep stopped reading rather than found the
+# file clean.
+
+mutation_tests -p sce-build --test lowering_decision_ledger
+mutation_targets sce-build/tests/lowering_decision_ledger.rs
+# Read at run time rather than compiled in: the ledger is a table inside a
+# document the test opens by path.
+mutation_runtime_targets docs/SCE_LUA_TRANSLATION_SEAM.md
+
+mutation_case "a retired check name is left standing in the prose" <<'PY'
+edit("docs/SCE_LUA_TRANSLATION_SEAM.md",
+     "The name is not repeated here,",
+     "The name, `precondition:rust-is-not-linked`, is not repeated here,")
+PY
+
+mutation_case "the prose sweep reads outside the backticks and finds nothing" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     "for span in line.split('`').skip(1).step_by(2) {",
+     "for span in line.split('`').skip(2).step_by(2) {")
+PY
