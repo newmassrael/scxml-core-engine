@@ -76,9 +76,16 @@ severity = "warn"
 #                                This is R3's real value, strict from the start
 #                                because the migrator only emits ledger-present
 #                                ids (tools/mnemosyne-adoption/migrate_citations).
-#   severity_binding = "warn"    Path B (Spec <-> Code bidirectional binding via
-#                                Section.implementations) is a later round; keep
-#                                it advisory so unbacked citations do not fail.
+#   severity_binding             Path B (Spec <-> Code bidirectional binding via
+#                                Section.implementations). This legend deliberately
+#                                does NOT carry the value: it read `"warn"` — "keep
+#                                it advisory so unbacked citations do not fail" —
+#                                for as long as the assignment below read `reject`,
+#                                and a reader who trusted it spent a round treating
+#                                a CitationUnbound as a tool fault rather than as
+#                                the gate working. The assignment is the SSOT, for
+#                                the same reason the coverage comment below refuses
+#                                to restate its tallies: a duplicated value drifts.
 #   comment_only     = true      only citations inside comments are scanned;
 #                                string-literal text is ignored.
 # `section_namespace = "scxml"` (below) makes this gate check only §scxml-<id>
