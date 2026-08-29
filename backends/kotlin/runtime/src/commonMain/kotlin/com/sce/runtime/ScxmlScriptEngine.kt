@@ -100,9 +100,17 @@ interface ScxmlScriptEngine {
     // Two routes reach a Lua engine from `datamodel="ecmascript"`, and they
     // fail differently: the engine's own input adapter rewriting the author's
     // text, and `sce-build`'s frontend having emitted Lua at build time. The
-    // three members below are what lets the second one exist here at all.
+    // members below are what lets the second one exist here at all.
     // `docs/SCE_LUA_TRANSLATION_SEAM.md` carries the argument; C++'s
     // `IScriptEngine` landed the same shape on 2026-08-28.
+    //
+    // ⚠ A count of them is deliberately not written here. Every entry point
+    // that carries the author's text needs an arm, not a chosen few, and the
+    // three that landed second — `evaluateCondition`, `assign`,
+    // `executeForeach` — were missing for a day while a sentence here said the
+    // seam existed. What answers "are they all covered" is a predicate over the
+    // engine, not a number in a comment: `ScriptLanguageSeamTest`'s
+    // `everyRewriteIsReachedThroughTheSeamBranch`.
 
     /**
      * The language this engine evaluates natively.
@@ -172,7 +180,80 @@ interface ScxmlScriptEngine {
     }
 
     /**
-     * The refusal both entry points make before any engine code runs.
+     * §scxml-5.9: Evaluate a guard that knows what language it is in.
+     *
+     * ⚠ Not for overriding, for the reason [evaluateExpr] gives. Engines
+     * implement [doEvaluateCondition].
+     *
+     * A guard is not a smaller expression: this backend's Lua engine hands its
+     * rewriter a `Guard` context the general path does not use, so a seam built
+     * only on [evaluateExpr] would leave every `cond` in a generated machine on
+     * the rewriting route — which is the majority of what a state machine asks
+     * an engine.
+     */
+    fun evaluateCondition(sessionId: String, expr: ScriptSource): Boolean {
+        refuseUnlessAccepted(expr)
+        return doEvaluateCondition(sessionId, expr)
+    }
+
+    /** The engine's own guard evaluation. See [doEvaluateExpr]. */
+    fun doEvaluateCondition(sessionId: String, expr: ScriptSource): Boolean =
+        evaluateCondition(sessionId, expr.source)
+
+    /**
+     * §scxml-5.3: Assign from an expression that knows what language it is in.
+     *
+     * ⚠ Not for overriding, for the reason [evaluateExpr] gives. Engines
+     * implement [doAssign].
+     *
+     * Only [expr] carries a language. [location] is a datamodel location, and
+     * §scxml-5.4 spells one in the datamodel's own terms rather than in the
+     * expression language's — so it stays a `String` on both arms, and the
+     * shape questions asked of it are asked of what the author wrote.
+     */
+    fun assign(sessionId: String, location: String, expr: ScriptSource) {
+        refuseUnlessAccepted(expr)
+        doAssign(sessionId, location, expr)
+    }
+
+    /** The engine's own assignment. See [doEvaluateExpr]. */
+    fun doAssign(sessionId: String, location: String, expr: ScriptSource) {
+        assign(sessionId, location, expr.source)
+    }
+
+    /**
+     * §scxml-4.6: Iterate an array expression that knows what language it is in.
+     *
+     * ⚠ Not for overriding, for the reason [evaluateExpr] gives. Engines
+     * implement [doExecuteForeach].
+     *
+     * [item] and [index] are datamodel locations, not expressions, so they stay
+     * `String` for the reason [assign] gives.
+     */
+    fun executeForeach(
+        sessionId: String,
+        array: ScriptSource,
+        item: String,
+        index: String,
+        body: () -> Unit,
+    ) {
+        refuseUnlessAccepted(array)
+        doExecuteForeach(sessionId, array, item, index, body)
+    }
+
+    /** The engine's own iteration. See [doEvaluateExpr]. */
+    fun doExecuteForeach(
+        sessionId: String,
+        array: ScriptSource,
+        item: String,
+        index: String,
+        body: () -> Unit,
+    ) {
+        executeForeach(sessionId, array.source, item, index, body)
+    }
+
+    /**
+     * The refusal every guarded entry point makes before any engine code runs.
      *
      * A message about the LANGUAGES, not about the text: an engine handed Lua
      * it cannot read would otherwise report a syntax error in a language its

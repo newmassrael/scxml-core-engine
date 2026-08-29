@@ -382,6 +382,15 @@ against C++'s three, and the same W3C semantics riding on them.
 | `:224` | `assign` | `return` wrapping at `:234` |
 | `:301` | `executeForeach` | the array expression; `return` wrapping at `:304` |
 
+⚠ **That table is the 2026-08-28 measurement and it is now history.** All five
+entry points take a `ScriptSource`, and the five transform calls have collapsed
+into the **two** that live inside the seam branch — see "Landed 2026-08-30"
+below. Do not re-derive from these line numbers: what answers "which members
+still rewrite unconditionally" is
+`ScriptLanguageSeamTest.everyRewriteIsReachedThroughTheSeamBranch`, which reads
+the file rather than this table, and which names the offending member when the
+answer is not "none".
+
 So the same rule holds on both: skip only the rewrite, keep the
 `ReferenceError` check and the `return` wrapping. The extra two sites
 (`assign`, `executeForeach`) are places C++ reaches through helpers rather
@@ -3001,3 +3010,71 @@ it" are different facts, and `rewriter_mangles` is the first of the two.
   yet. They are the sites a template migration would need next, and until they
   move a lowered artifact could not be whole — which is exactly why
   `supports_script_engine_target` counts sites rather than trusting this note.
+  **Closed 2026-08-30 — see the next section.**
+
+## Landed 2026-08-30 (tenth round): the last three entry points, and a predicate instead of a count
+
+The three the ninth round named are on the seam. `ScxmlScriptEngine` now
+guards five entry points, not two:
+
+| entry point | takes | hook | why it could not be folded into `evaluateExpr` |
+|---|---|---|---|
+| `evaluateExpr` | `ScriptSource` | `doEvaluateExpr` | — |
+| `executeScript` | `ScriptSource` | `doExecuteScript` | — |
+| `evaluateCondition` | `ScriptSource` | `doEvaluateCondition` | a guard reaches the rewriter with `ExpressionContext.Guard`, its own cache and its own wrapping; §scxml-5.9 `cond` is also the entry point a generated machine calls most |
+| `assign` | `location: String`, `ScriptSource` | `doAssign` | §scxml-5.4: the engine evaluates AND stores, over three assignment paths |
+| `executeForeach` | `ScriptSource`, `item`/`index`, body | `doExecuteForeach` | §scxml-4.6: the expression must evaluate to a COLLECTION, and a non-collection is `error.execution` rather than a wrong value |
+
+`location`, `item` and `index` stay `String` deliberately. They are datamodel
+locations, not expressions — §scxml-5.4 spells one in the datamodel's terms —
+so they carry no language and the shape questions asked of them are asked of
+what the author wrote. That is also why `isSystemVariableReference` moved onto
+`source()`: §scxml-5.10 names `_event`, not whatever a lowering spells it as,
+which is the rule C++ already states above.
+
+### A predicate, because a count in a comment is what went wrong here twice
+
+The interface's own header said the seam existed while three of its five entry
+points still rewrote unconditionally, and the table two sections up named five
+transform call sites by line number that had all moved. Both are the same
+failure: a fact about the tree, written where nothing re-derives it.
+
+`ScriptLanguageSeamTest.everyRewriteIsReachedThroughTheSeamBranch` is the
+replacement. It splits `LuaScriptEngine.kt` at its class-level `fun`
+declarations and asserts that **every member calling the rewriter also asks
+what language the text is in**. It is not a list of approved call sites: the
+failure this repository keeps paying for is the sixth entry point nobody adds
+to the list, so an unclassified member is red rather than exempt. It carries a
+floor — the branch itself holds two rewriter calls — so a sweep that stopped
+finding the rewriter fails instead of passing on an empty population.
+
+### Witnesses, all re-made in the round that claims them
+
+Green: `./gradlew :sce-kotlin-tests:test --tests
+"com.sce.ecmascript.ScriptLanguageSeamTest"` — 10 cases, 10 passed, four of
+them new (guard arm, assign arm, foreach arm, the predicate).
+
+Red, three breaks, each attributable and each leaving the cases it does not
+touch green:
+
+| break | red |
+|---|---|
+| `doEvaluateCondition` calls `transformer.transform` directly again | the guard arm **and** the predicate, which names `doEvaluateCondition` |
+| `evaluateCondition(…, ScriptSource)` drops `refuseUnlessAccepted` | the refusal case: `Rhino.evaluateCondition … it said: Guard evaluation failed: 'a[0]'` — Rhino silently evaluated the SOURCE half instead of refusing |
+| `loweredTextOf`'s branch neutered to `… && false` | all four expression arms — `evaluateExpr`, guard, assign, foreach — and **not** the script arm, which goes through `loweredScriptOf` |
+
+The third one is worth keeping: the predicate stays GREEN under it, because the
+branch is still written. That is the honest limit of a source-reading gate, and
+it is why the behavioural arms are not redundant with it — one names the member
+that has no arm, the others name the arm that stopped working.
+
+### What this still does NOT do
+
+No template emits `ScriptSource.lua(...)`, so
+`Language::Kotlin.supports_script_engine_target(Lua)` is still false and the
+44 are still runtime-rewriter divergences. What changed is that the engine
+side no longer has a hole for a template migration to fall through: every
+route a generated machine takes into this engine can now be handed lowered
+Lua. The template sites are the next step, and the day they cross,
+`the_field_retires_when_the_seam_opens` and `ecma262_scoreboard_contract` both
+go red and direct the migration.

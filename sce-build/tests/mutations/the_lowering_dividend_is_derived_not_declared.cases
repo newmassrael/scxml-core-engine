@@ -1,16 +1,20 @@
-# Mutation cases for "how much of Kotlin's 46 the build-time seam buys back".
+# Mutation cases for "how much of Kotlin's divergence list the build-time seam
+# buys back".
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/the_lowering_dividend_is_derived_not_declared.cases`.
 #
-# `tests/ecmascript/kotlin_lua_divergences.json` lists the 46 cases this
-# backend's Lua engine answers differently from ECMA-262, all of them on one
-# path because `runtime-rewriter` is the only route the generated Kotlin has.
-# What the list could not say is what the OTHER route already answers, which is
-# the question anybody deciding whether to fund the lowered seam asks first:
-# how many of these would stop existing if translation moved to build time?
+# `tests/ecmascript/kotlin_lua_divergences.json` lists the cases this backend's
+# Lua engine answers differently from ECMA-262, all of them on one path because
+# `runtime-rewriter` is the only route the generated Kotlin has. What the list
+# could not say is what the OTHER route already answers, which is the question
+# anybody deciding whether to fund the lowered seam asks first: how many of
+# these would stop existing if translation moved to build time?
 #
-# The answer is 39 of 46, and the reason it is worth a casefile is that it is
+# ⚠ **The answer is not written here.** It lives in that file's
+# `build_time_frontend.measured`, `kotlin_lowering_dividend` re-derives it on
+# every push, and it moved twice on 2026-08-29 alone. The reason it is worth a
+# casefile is that it is
 # the exact shape of number this repository has been wrong about four times —
 # "27 of its 58" over a table of 98, a `58/58` scoreboard, a gate's own comment
 # saying "58-case", a divergence list's prose naming an entry its array did not
@@ -66,11 +70,29 @@ PY
 # rather than computed by whoever reads it — which is exactly the arrangement
 # that was wrong every previous time. It survives only while something
 # re-counts the entries under it.
+#
+# ⚠ **The anchor is DERIVED, and that is a repair.** Until 2026-08-30 this case
+# spelled `"answers": 39` literally, and on 2026-08-29 the tally moved 39 → 44
+# in three commits. The anchor then matched nothing, the harness reported
+# INCONCLUSIVE, and `Mutation Rounds` was red on `ef6513194b` — a casefile whose
+# whole subject is "a count that lived somewhere nothing re-derived" had itself
+# become one. The body reads the number out of the file and mutates THAT, so the
+# case follows the tally wherever it goes and stays about the clause instead of
+# about a particular value.
 
 mutation_case "the stated tally drifts from the entries under it" <<'PY'
-edit("tests/ecmascript/kotlin_lua_divergences.json",
-     '"measured": { "answers": 39, "diverges": 2, "unmeasured": 5 }',
-     '"measured": { "answers": 38, "diverges": 2, "unmeasured": 5 }')
+import re
+
+PATH = "tests/ecmascript/kotlin_lua_divergences.json"
+found = re.search(r'"measured": \{ "answers": (\d+),', open(PATH).read())
+if not found:
+    raise SystemExit(
+        "%s no longer states a `measured.answers` tally in the shape this case "
+        "mutates. That field IS the clause under test, so its disappearance is a "
+        "finding, not something to work around." % PATH
+    )
+edit(PATH, found.group(0),
+     '"measured": { "answers": %d,' % (int(found.group(1)) + 1))
 PY
 
 # ── The document keeps a number the tree has moved past ────────────
@@ -81,10 +103,22 @@ PY
 # actually happened to the sentence this table replaces — "the frontend answers
 # all 98 cases" outlived the measurement it was made from.
 
+#
+# ⚠ Derived for the same reason the case above it is, and it went stale on the
+# same day: the document's row said 39 while the list said 44.
+
 mutation_case "the seam document keeps a number the list has moved past" <<'PY'
-edit("docs/SCE_LUA_TRANSLATION_SEAM.md",
-     "| `answers` | 39 |",
-     "| `answers` | 38 |")
+import re
+
+PATH = "docs/SCE_LUA_TRANSLATION_SEAM.md"
+found = re.search(r"\| `answers` \| (\d+) \|", open(PATH).read())
+if not found:
+    raise SystemExit(
+        "%s no longer carries the `answers` row of the dividend table. That row "
+        "IS the clause under test — the document's copy of a number the list "
+        "owns — so its disappearance is a finding." % PATH
+    )
+edit(PATH, found.group(0), "| `answers` | %d |" % (int(found.group(1)) + 1))
 PY
 
 # ── A verdict this lane derives is not a spelling the file admits ──
