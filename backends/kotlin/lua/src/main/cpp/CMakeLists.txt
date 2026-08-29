@@ -22,6 +22,7 @@ list(FILTER LUA_SOURCES EXCLUDE REGEX "luac\\.c$")
 add_library(sce_lua_jni SHARED
     ${LUA_SOURCES}
     lua_jni.cpp
+    lowering_jni.cpp
 )
 
 target_include_directories(sce_lua_jni PRIVATE
@@ -41,3 +42,27 @@ endif()
 set_source_files_properties(${LUA_SOURCES} PROPERTIES
     COMPILE_FLAGS "-w"
 )
+
+# ── sce-build's ECMAScript frontend, linked beside lua54 ──────────────
+#
+# The same decision the C++ engine took on 2026-08-29 (the `link-beside-lua`
+# and `retire-rewriter` rows of `docs/SCE_LUA_TRANSLATION_SEAM.md`), one
+# language over: the engine that accepts ECMAScript reaches a PARSER instead
+# of a pass that replaces text without knowing where an operand ends.
+# `cmake/SCEBuildLowering.cmake` already knows how to build and name that
+# staticlib, so this links the same artifact rather than describing it twice.
+#
+# Not optional, and that is the substance rather than caution. A library built
+# without the frontend would answer the shared ECMA-262 table from
+# `EcmaScriptToLuaTransformer` alone — a SECOND set of answers under one
+# engine name, only one of which `tests/ecmascript/kotlin_lua_divergences.json`
+# describes. One artifact, one answer; `theFrontendIsLinked` refuses a build
+# that reached here without it.
+if(NOT DEFINED SCE_REPO_ROOT)
+    message(FATAL_ERROR
+        "SCE_REPO_ROOT must be set. This library links sce-build's lowering "
+        "surface through cmake/SCEBuildLowering.cmake, which is located from "
+        "the repository root rather than relative to this file.")
+endif()
+include(${SCE_REPO_ROOT}/cmake/SCEBuildLowering.cmake)
+target_link_libraries(sce_lua_jni PRIVATE SCE::Lowering)

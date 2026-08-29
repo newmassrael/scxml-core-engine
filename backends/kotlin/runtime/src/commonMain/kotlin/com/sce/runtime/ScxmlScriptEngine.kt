@@ -206,19 +206,31 @@ interface ScxmlScriptEngine {
      * ⚠ Not for overriding, for the reason [evaluateExpr] gives. Engines
      * implement [doAssign].
      *
-     * Only [expr] carries a language. [location] is a datamodel location, and
-     * §scxml-5.4 spells one in the datamodel's own terms rather than in the
-     * expression language's — so it stays a `String` on both arms, and the
-     * shape questions asked of it are asked of what the author wrote.
+     * BOTH halves carry a language, and [location] did not until 2026-08-29.
+     * The argument for keeping it a `String` was that §scxml-5.4 spells a
+     * location in the datamodel's own terms rather than the expression
+     * language's — true of what the AUTHOR writes, and not true of what
+     * reaches an engine: [LuaScriptEngine.doAssign] splices the location into
+     * `"$location = $expr"` and runs the result as Lua, so `Var1[0]` written
+     * in ECMAScript addressed the wrong element of a 1-based table. C++ had
+     * already said so — `to_script_source_location` exists because
+     * `AssignmentExecutionHelper` glues the location in front of `=` — and one
+     * backend disagreeing with the other about which strings are executable is
+     * the shape this seam keeps paying for.
+     *
+     * The shape questions are still asked of [ScriptSource.source]: whether
+     * the target is a system variable, and what a diagnostic calls it, are
+     * questions about what the author wrote.
      */
-    fun assign(sessionId: String, location: String, expr: ScriptSource) {
+    fun assign(sessionId: String, location: ScriptSource, expr: ScriptSource) {
+        refuseUnlessAccepted(location)
         refuseUnlessAccepted(expr)
         doAssign(sessionId, location, expr)
     }
 
     /** The engine's own assignment. See [doEvaluateExpr]. */
-    fun doAssign(sessionId: String, location: String, expr: ScriptSource) {
-        assign(sessionId, location, expr.source)
+    fun doAssign(sessionId: String, location: ScriptSource, expr: ScriptSource) {
+        assign(sessionId, location.source, expr.source)
     }
 
     /**

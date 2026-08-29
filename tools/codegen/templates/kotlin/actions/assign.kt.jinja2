@@ -12,9 +12,9 @@
    would, read once by `to_author_assign_content` so this backend and the
    lowering ones agree about whether `21` is a number. Quoting it made it
    the string "21". #}
-            engine.assign(sid, "{{ action.location | escape_kotlin }}", "{{ action.content | to_author_assign_content | escape_kotlin }}")
+            engine.assign(sid, {{ action.location | to_script_source_location }}, {{ action.content | to_script_source_assign_content }})
 {% elif action.expr %}
-            engine.assign(sid, "{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
+            engine.assign(sid, {{ action.location | to_script_source_location }}, {{ action.expr | to_script_source_expr }})
 {% endif %}
 {% else %}
 {% if not action.location %}
@@ -25,9 +25,9 @@
    would, read once by `to_author_assign_content` so this backend and the
    lowering ones agree about whether `21` is a number. Quoting it made it
    the string "21". #}
-            executeAssign("{{ action.location | escape_kotlin }}", "{{ action.content | to_author_assign_content | escape_kotlin }}")
+            executeAssign({{ action.location | to_script_source_location }}, {{ action.content | to_script_source_assign_content }})
 {% elif action.expr %}
-            executeAssign("{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
+            executeAssign({{ action.location | to_script_source_location }}, {{ action.expr | to_script_source_expr }})
 {% endif %}
 {% endif %}
 {% elif action.location and action.expr %}

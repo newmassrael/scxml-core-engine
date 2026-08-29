@@ -3276,10 +3276,14 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                             .unwrap_or_else(|| Language::Cpp.default_script_engine_target()),
                     )
                     .map(|_| ()),
-                    Language::Kotlin => {
-                        sce_build::generator::generate_kotlin(&model, &template_dir, None)
-                            .map(|_| ())
-                    }
+                    Language::Kotlin => sce_build::generator::generate_kotlin_for_engine(
+                        &model,
+                        &template_dir,
+                        None,
+                        selected_engine
+                            .unwrap_or_else(|| Language::Kotlin.default_script_engine_target()),
+                    )
+                    .map(|_| ()),
                     Language::Go => {
                         sce_build::generator::generate_go(&model, &template_dir).map(|_| ())
                     }
@@ -4100,10 +4104,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)))
                 }
                 Language::Kotlin => {
-                    let mut code = sce_build::generator::generate_kotlin(
+                    // The run's selection, or this backend's default when the
+                    // caller did not ask — resolved and refused already, so
+                    // reaching here means the backend can emit it.
+                    let mut code = sce_build::generator::generate_kotlin_for_engine(
                         m,
                         &template_dir,
                         kotlin_package_prefix,
+                        script_engine_target
+                            .unwrap_or_else(|| Language::Kotlin.default_script_engine_target()),
                     )
                     .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
                     // Mirror `generate-w3c`'s KotlinBackend::process_child: the

@@ -382,7 +382,7 @@ impl Language {
         }
     }
 
-    /// Template interpolations that still hand the engine the author's text
+    /// Template expressions that still hand the engine the author's text
     /// without routing it through the `(lowered, source)` pair filter.
     ///
     /// Counted by MODEL FIELD rather than by call shape, which is the lesson
@@ -390,38 +390,21 @@ impl Language {
     /// that passes `{{ action.array }}` with no filter at all, and an
     /// entry-point-keyed scan misses a helper nobody thought to list; but the
     /// author's text can only reach a template through one of these fields, so
-    /// asking which interpolations mention one catches both shapes.
+    /// asking which expressions mention one catches both shapes.
     ///
-    /// Each entry is `"<template>: <interpolation>"`, so a refusal can name
-    /// what is left rather than only how much.
+    /// Each entry is `"<template>: <span>"`, so a refusal can name what is
+    /// left rather than only how much.
     pub fn unmigrated_expression_sites(self) -> Vec<String> {
-        /// Fields whose value is text some engine will evaluate. Extending
-        /// the model with another one belongs here in the same commit.
-        const MODEL_EXPRESSION_FIELDS: &[&str] = &[
-            ".cond",
-            ".expr",
-            ".array",
-            ".typeexpr",
-            ".targetexpr",
-            ".sendidexpr",
-            ".delayexpr",
-            ".contentexpr",
-            ".srcexpr",
-            ".eventexpr",
-            ".location",
-            // ⚠ `<assign>` / `<data>` inline content. Added 2026-08-28 after
-            // adjudicating the sites this list had produced: the content arm
-            // of `actions/assign.jinja2` renders through
-            // `to_author_assign_content` and hands the result to
-            // `executeAssignment`, which is every bit the hand-off the `expr`
-            // arm beside it is — and this list had no field that matched it,
-            // so the scan reported the arm as absent rather than as done.
-            ".content",
-        ];
-        /// What a migrated site routes through. One prefix covers the guard
-        /// and expression spellings both.
-        const PAIR_FILTER_PREFIX: &str = "to_script_source";
+        self.expression_sites_with_role(ExpressionSiteRole::EngineBound)
+    }
 
+    /// Every expression site this backend owns, paired with the role it plays.
+    ///
+    /// ONE walk, read three ways below. The three answers used to carry three
+    /// copies of this loop and three transcriptions of the field list, which
+    /// is the shape that lets a scan and its own independent witness disagree
+    /// about what they scanned.
+    fn expression_sites(self) -> Vec<(String, ExpressionSiteRole)> {
         let mut sites = Vec::new();
         for (name, body) in crate::template_registry::EMBEDDED_TEMPLATES.iter() {
             if !self.owns_template(name) {
@@ -439,43 +422,27 @@ impl Language {
             if name.starts_with("forge/") {
                 continue;
             }
-            // Line by line, because whether a site reaches the engine is a
-            // property of the LINE it lands on: every backend echoes the
-            // author's expression into a comment beside the code that uses
-            // it, and a scan that reads comments as code cannot tell output
-            // from documentation — the mistake this seam's first gate made.
+            // Comments are stripped first, because a scan that reads them as
+            // code cannot tell a backend's behaviour from its documentation —
+            // the mistake this seam's first gate made.
             let stripped = strip_jinja_comments(body);
             let lines: Vec<&str> = stripped.lines().collect();
-            for (index, line) in lines.iter().copied().enumerate() {
-                let code = line.trim_start();
-                if code.starts_with("//") || code.starts_with('*') || code.starts_with("/*") {
-                    continue;
-                }
-                for interpolation in jinja_interpolations(line) {
-                    if !mentions_model_expression(interpolation, MODEL_EXPRESSION_FIELDS) {
-                        continue;
-                    }
-                    // A site that already carries the pair filter is migrated.
-                    if interpolation.contains(PAIR_FILTER_PREFIX) {
-                        continue;
-                    }
-                    match classify_expression_site(&lines, index, interpolation) {
-                        ExpressionSiteRole::EngineBound => {
-                            sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()))
-                        }
-                        // A message and a validation are not hand-offs, and
-                        // counting them would hold the refusal shut forever
-                        // over text no engine ever sees.
-                        ExpressionSiteRole::Message
-                        | ExpressionSiteRole::Inert
-                        | ExpressionSiteRole::Unadjudicated => {}
-                    }
-                }
+            for (span, role) in template_expression_sites(&lines) {
+                sites.push((format!("{name}: {span}"), role));
             }
         }
         sites.sort();
         sites.dedup();
         sites
+    }
+
+    /// The sites playing @p role, each named `"<template>: <span>"`.
+    fn expression_sites_with_role(self, role: ExpressionSiteRole) -> Vec<String> {
+        self.expression_sites()
+            .into_iter()
+            .filter(|(_, actual)| *actual == role)
+            .map(|(site, _)| site)
+            .collect()
     }
 
     /// Sites that mention a model expression, are not prose, and reach a
@@ -492,60 +459,10 @@ impl Language {
     /// is a decision someone has to make once: it evaluates (add it to
     /// `ENGINE_ENTRY_POINTS`) or it does not (say so where it is used).
     pub fn unclassified_expression_sites(self) -> Vec<String> {
-        const MODEL_EXPRESSION_FIELDS: &[&str] = &[
-            ".cond",
-            ".expr",
-            ".array",
-            ".typeexpr",
-            ".targetexpr",
-            ".sendidexpr",
-            ".delayexpr",
-            ".contentexpr",
-            ".srcexpr",
-            ".eventexpr",
-            ".location",
-            // ⚠ `<assign>` / `<data>` inline content. Added 2026-08-28 after
-            // adjudicating the sites this list had produced: the content arm
-            // of `actions/assign.jinja2` renders through
-            // `to_author_assign_content` and hands the result to
-            // `executeAssignment`, which is every bit the hand-off the `expr`
-            // arm beside it is — and this list had no field that matched it,
-            // so the scan reported the arm as absent rather than as done.
-            ".content",
-        ];
-
-        let mut sites = Vec::new();
-        for (name, body) in crate::template_registry::EMBEDDED_TEMPLATES.iter() {
-            if !self.owns_template(name) || name.starts_with("forge/") {
-                continue;
-            }
-            let stripped = strip_jinja_comments(body);
-            let lines: Vec<&str> = stripped.lines().collect();
-            for (index, line) in lines.iter().copied().enumerate() {
-                let code = line.trim_start();
-                if code.starts_with("//") || code.starts_with('*') || code.starts_with("/*") {
-                    continue;
-                }
-                for interpolation in jinja_interpolations(line) {
-                    if !mentions_model_expression(interpolation, MODEL_EXPRESSION_FIELDS)
-                        || interpolation.contains("to_script_source")
-                    {
-                        continue;
-                    }
-                    if classify_expression_site(&lines, index, interpolation)
-                        == ExpressionSiteRole::Unadjudicated
-                    {
-                        sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()));
-                    }
-                }
-            }
-        }
-        sites.sort();
-        sites.dedup();
-        sites
+        self.expression_sites_with_role(ExpressionSiteRole::Unadjudicated)
     }
 
-    /// Template interpolations that DO route through the pair filter.
+    /// Template expressions that DO route through the pair filter.
     ///
     /// The independent witness for [`Self::unmigrated_expression_sites`].
     /// "No sites remain" and "the scan found nothing" are the same answer
@@ -554,22 +471,7 @@ impl Language {
     /// a backend that never moved a line. This counts the other side, so the
     /// two can only agree when the scanner is working.
     pub fn migrated_expression_sites(self) -> Vec<String> {
-        const PAIR_FILTER_PREFIX: &str = "to_script_source";
-
-        let mut sites = Vec::new();
-        for (name, body) in crate::template_registry::EMBEDDED_TEMPLATES.iter() {
-            if !self.owns_template(name) || name.starts_with("forge/") {
-                continue;
-            }
-            for interpolation in jinja_interpolations(&strip_jinja_comments(body)) {
-                if interpolation.contains(PAIR_FILTER_PREFIX) {
-                    sites.push(format!("{name}: {{{{ {} }}}}", interpolation.trim()));
-                }
-            }
-        }
-        sites.sort();
-        sites.dedup();
-        sites
+        self.expression_sites_with_role(ExpressionSiteRole::Migrated)
     }
 
     /// Whether `name` (a template path relative to the tree root) belongs to
@@ -719,7 +621,7 @@ fn strip_jinja_comments(body: &str) -> String {
 /// alone cannot tell them apart, and one that counted all three could never
 /// reach zero. That matters here because the count IS the refusal: if it can
 /// never reach zero, `--script-engine lua` can never be offered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ExpressionSiteRole {
     /// Handed across the boundary for an engine to evaluate. The migration's
     /// population.
@@ -734,6 +636,28 @@ enum ExpressionSiteRole {
     /// only asks whether it is empty (`ForeachValidator.h:27`), so lowering it
     /// would answer a question nobody asked.
     Inert,
+    /// Rendered as TARGET-LANGUAGE code rather than handed over as text.
+    ///
+    /// Derived, not listed: the expression lands OUTSIDE every string literal
+    /// on its line, so what the backend's own compiler reads is a program
+    /// fragment. `{{ action.array }}.forEach { … }` and
+    /// `{{ action.location | to_camel_case }} = {{ action.expr }}` are the
+    /// Kotlin backend's "static" arms — the ones a machine with no script
+    /// engine takes — and no engine exists in them to be handed two languages.
+    ///
+    /// ⚠ Ranked BELOW every hand-off, and that ordering is the whole safety
+    /// of it: a line that reaches an engine entry point, spells a
+    /// `ScriptSource` constructor, or sits inside a literal is classified
+    /// there first. What is left is text the compiler must accept as its own
+    /// syntax, which the author's ECMAScript is not free to be.
+    NativeEmission,
+    /// Already routed through the `(lowered, source)` pair filter.
+    ///
+    /// The independent witness's population — see
+    /// [`Language::migrated_expression_sites`] for why counting this side
+    /// separately is what keeps a broken scanner from reading as a finished
+    /// migration.
+    Migrated,
     /// None of the above: the destination is not in either list, so nobody has
     /// yet said whether it evaluates.
     ///
@@ -744,6 +668,36 @@ enum ExpressionSiteRole {
     /// a whole round.
     Unadjudicated,
 }
+
+/// Fields whose value is text some engine will evaluate. Extending the model
+/// with another one belongs here in the same commit.
+///
+/// Module scope rather than function scope because three answers read it and
+/// a per-function copy is free to fall behind the others.
+const MODEL_EXPRESSION_FIELDS: &[&str] = &[
+    ".cond",
+    ".expr",
+    ".array",
+    ".typeexpr",
+    ".targetexpr",
+    ".sendidexpr",
+    ".delayexpr",
+    ".contentexpr",
+    ".srcexpr",
+    ".eventexpr",
+    ".location",
+    // ⚠ `<assign>` / `<data>` inline content. Added 2026-08-28 after
+    // adjudicating the sites this list had produced: the content arm of
+    // `actions/assign.jinja2` renders through `to_author_assign_content` and
+    // hands the result to `executeAssignment`, which is every bit the
+    // hand-off the `expr` arm beside it is — and this list had no field that
+    // matched it, so the scan reported the arm as absent rather than as done.
+    ".content",
+];
+
+/// What a migrated site routes through. One prefix covers every spelling of
+/// the pair filter — guard, expression, script, content, location, assignment.
+const PAIR_FILTER_PREFIX: &str = "to_script_source";
 
 /// Callees that evaluate, or hand on to something that does.
 ///
@@ -767,7 +721,20 @@ const DIAGNOSTIC_MACROS: &[&str] = &["SCE_LOG_", "AOT_DEBUG", "AOT_LOG"];
 /// its `{{ action.array }}`, so a one-line window reads that array expression
 /// as reaching nobody — and a site that reaches nobody is a site the migration
 /// never has to move.
-const CALL_WINDOW_LINES: usize = 3;
+const CALL_WINDOW_LINES: usize = 6;
+
+/// Jinja keywords that open, close or switch a branch.
+///
+/// The window above may not cross one. A callee in a DIFFERENT arm of the same
+/// `{% if %}` is not this site's callee, and reading it as one is not a
+/// theoretical hazard: measured 2026-08-29, `kotlin/actions/_render.kt.jinja2`
+/// renders the engine arm's `evaluateExpr(...)` three lines above the static
+/// arm's `println({{ action.expr | to_kotlin_string_expr }})`, and a window
+/// that walked past `{% else %}` reported the static arm — a machine with no
+/// script engine at all — as an unmigrated hand-off.
+const JINJA_BRANCH_KEYWORDS: &[&str] = &[
+    "if ", "elif ", "else", "endif", "for ", "endfor", "macro ", "endmacro", "block ", "endblock",
+];
 
 /// Destinations that provably do not evaluate, each adjudicated against the
 /// tree rather than against its name.
@@ -809,9 +776,38 @@ const INERT_DESTINATIONS: &[&str] = &[
     // through `DoneDataHelper::evaluateContent` instead, and that is where
     // the clause is cited.
     "contentData",
+    // ── Kotlin ──
+    //
+    // §scxml-B-2-8-1's ladder, which has no expression rung on the engine a
+    // Lua-target artifact actually runs. Adjudicated 2026-08-29 against
+    // `LuaScriptEngine.parseDataValueInternal`: XML becomes a DOM, JSON
+    // becomes the value, anything else becomes the space-normalized string —
+    // the 2026-08-17 round removed the `loadAndCall("return " .. data)` rung
+    // for the reason recorded there, that a payload is data and not a program.
+    // So the text handed here is never evaluated in the engine's language, and
+    // lowering it would answer a question nobody asks.
+    //
+    // ⚠ The Rhino and QuickJS implementations DO still carry an expression
+    // rung ("Step 2: Try as JS expression"), which is a §scxml-B-2-8-1
+    // conformance defect in those two engines and NOT a language-seam
+    // question: they are ECMAScript engines, so the text they evaluate is the
+    // author's own either way. The divergence is recorded in
+    // `docs/SCE_LUA_TRANSLATION_SEAM.md` rather than repaired by lowering.
+    "parseDataValue",
+    // A `<send>`'s literal `<content>` and the HTTP body, on the Kotlin side:
+    // the children ARE the value, travelling out of the machine as text.
+    "scheduleHttpSend",
+    "HostSendRequest",
+    // An event's PAYLOAD. §scxml-B-2's first reading — content that opens with
+    // `<` is an XML document — is a value the receiver's binding turns into a
+    // DOM, so the source text is what has to arrive; the evaluated arm beside
+    // it goes through `evaluateSendContent`, which is an entry point and is
+    // checked first.
+    "EventMetadata.external(",
 ];
 
 const ENGINE_ENTRY_POINTS: &[&str] = &[
+    // ── C++ (`sce/include/scripting/`, `sce/include/common/`) ──
     "evaluateExpression",
     "executeScript",
     "validateExpression",
@@ -829,20 +825,314 @@ const ENGINE_ENTRY_POINTS: &[&str] = &[
     "evaluateContent",
     "evaluateParams",
     "executeFinalizeWithEvent",
+    // ── Kotlin ──
+    //
+    // Two populations, and both belong here. The first is
+    // `ScxmlScriptEngine`'s own boundary — the methods that take a
+    // `ScriptSource` (or the `String` overload that means `ecmascript`) and
+    // hand it to an engine. `kotlin_engine_entry_points_are_derived` holds
+    // this half to that interface file, so a method that gains a
+    // `ScriptSource` parameter and is forgotten here fails rather than
+    // silently dropping its sites out of the migration population.
+    "evaluateExpr",
+    "evaluateCondition",
+    ".assign(",
+    "executeForeach",
+    // The second is the helpers the KOTLIN TEMPLATES generate around it,
+    // which are hand-offs by composition: each opens a session and calls one
+    // of the four above. They are named here rather than derived because they
+    // do not exist until a machine is generated.
+    "executeAssign(",
+    "executeScriptBlock(",
+    "evaluateSendContent(",
 ];
 
-/// Which of the three roles this interpolation plays on `line`.
-fn classify_expression_site(
+/// Every expression site in one template, with the role each plays.
+///
+/// Two shapes reach an engine, and for a whole round this scan could only see
+/// the first:
+///
+/// * a `{{ … }}` interpolation naming a model field, and
+/// * a `{% set NAME = … %}` that binds the author's text to a NAME the
+///   template emits somewhere else.
+///
+/// ⚠ The second is not hypothetical and was not cheap. Measured 2026-08-29:
+/// `entry_exit_actions.jinja2` binds `donedata_content_source` from
+/// `state.donedata.content.text` and emits it into
+/// `DoneDataHelper::evaluateContent`, so a `--script-engine lua` C++ artifact
+/// carried `ScriptSource::lua("(\"a\" .. \"b\")", …)` on one line and the
+/// author's `Var1 + 'z'` on another — the mixed artifact this whole refusal
+/// exists to prevent, produced by a backend both scan lists reported as
+/// finished. A name is all it took to launder a site out of the population.
+///
+/// So the scan follows the alias. A binding is a site when its value carries
+/// the author's text AND its name is emitted; it is classified over the union
+/// of its own line's window and every emission's, because the callee may sit
+/// at either end — `evaluateSendContent(` is spelled in the binding, and
+/// `DoneDataHelper::evaluateContent(` around the emission.
+///
+/// A binding whose name is NEVER emitted is not a site, and that is a
+/// derivation rather than an exemption: `{% set content_is_xml = (action.content
+/// | trim) is startingwith('<') %}` decides which arm renders, and the arms
+/// are what this scan already reads.
+fn template_expression_sites(lines: &[&str]) -> Vec<(String, ExpressionSiteRole)> {
+    let bindings = jinja_set_bindings(lines);
+    let laundering = laundering_alias_names(&bindings);
+    let emitted = emitted_alias_names(lines, &bindings);
+
+    let mut sites = Vec::new();
+
+    // 1. Direct interpolations.
+    for (index, line) in lines.iter().copied().enumerate() {
+        if line_is_prose(line) {
+            continue;
+        }
+        for interpolation in jinja_interpolations(line) {
+            if !mentions_model_expression(interpolation, MODEL_EXPRESSION_FIELDS) {
+                continue;
+            }
+            let span = format!("{{{{ {} }}}}", interpolation.trim());
+            if interpolation.contains(PAIR_FILTER_PREFIX) {
+                sites.push((span, ExpressionSiteRole::Migrated));
+                continue;
+            }
+            let needle = format!("{{{{{interpolation}}}}}");
+            sites.push((span, classify_expression_site(lines, index, &needle)));
+        }
+    }
+
+    // 2. Bindings that launder the author's text through a name the template
+    //    emits. Judged over both ends, because either can hold the callee.
+    for binding in &bindings {
+        if !laundering.contains(&binding.name) || !emitted.contains(&binding.name) {
+            continue;
+        }
+        let span = binding.span.trim().to_string();
+        if binding.value.contains(PAIR_FILTER_PREFIX) {
+            sites.push((span, ExpressionSiteRole::Migrated));
+            continue;
+        }
+        // Where the binding's own verdict is COMPLETE, and where it is not.
+        //
+        // A binding that CONCATENATES A CALL is composing emitted source: the
+        // callee, the quotes and the argument order are all decided on that
+        // line, so its verdict is the whole answer, `Unadjudicated` included.
+        // Anything else — a bare filter chain, or a choice between two
+        // literals — is an alias for a VALUE and says nothing about where the
+        // value goes; reading its silence as `Unadjudicated` would paint the
+        // site red on the strength of the statement's shape rather than of its
+        // destination, which is what `http_target_cpp` measured on 2026-08-29:
+        // it mentions `targetexpr` only in a CONDITION and emits a C++
+        // variable name, at five call sites that are already adjudicated.
+        let mut roles = Vec::new();
+        let at_binding = classify_expression_site(lines, binding.line, binding.span);
+        let composes_a_call = value_composes_a_call(binding.value);
+        if composes_a_call || at_binding != ExpressionSiteRole::Unadjudicated {
+            roles.push(at_binding);
+        }
+        for (index, line) in lines.iter().copied().enumerate() {
+            if line_is_prose(line) {
+                continue;
+            }
+            for interpolation in jinja_interpolations(line) {
+                if !mentions_name(interpolation, &binding.name) {
+                    continue;
+                }
+                let needle = format!("{{{{{interpolation}}}}}");
+                roles.push(classify_expression_site(lines, index, &needle));
+            }
+        }
+        sites.push((span, resolve_alias_role(&roles)));
+    }
+
+    sites
+}
+
+/// A comment line in the rendered output, which is documentation rather than
+/// behaviour. Every backend echoes the author's expression beside the code
+/// that uses it, and a scan that read those as hand-offs could never reach
+/// zero.
+fn line_is_prose(line: &str) -> bool {
+    let code = line.trim_start();
+    code.starts_with("//") || code.starts_with('*') || code.starts_with("/*")
+}
+
+/// One `{% set NAME = VALUE %}` occurrence.
+struct JinjaBinding<'a> {
+    name: String,
+    value: &'a str,
+    /// The whole `{% … %}` span, delimiters included — the needle a line
+    /// search finds, and what a refusal prints.
+    span: &'a str,
+    line: usize,
+}
+
+/// Every `{% set … %}` in the template.
+///
+/// `set` and nothing else. `{% if %}` and `{% for %}` TEST a value; `set`
+/// BINDS one, and only a bound value can be emitted somewhere the test was
+/// not. Widening this to every statement would report each
+/// `{% if action.expr %}` as a site and hold the refusal shut forever.
+fn jinja_set_bindings<'a>(lines: &[&'a str]) -> Vec<JinjaBinding<'a>> {
+    let mut bindings = Vec::new();
+    for (index, line) in lines.iter().copied().enumerate() {
+        let mut rest = line;
+        let mut offset = 0usize;
+        while let Some(open) = rest.find("{%") {
+            let after = &rest[open + 2..];
+            let Some(close) = after.find("%}") else { break };
+            let inner = &after[..close];
+            let span_start = offset + open;
+            let span_end = span_start + 2 + close + 2;
+            let span = &line[span_start..span_end];
+            // `{%-` / `-%}` whitespace control is part of the delimiter, not
+            // of the statement.
+            let statement = inner
+                .trim()
+                .trim_start_matches('-')
+                .trim_end_matches('-')
+                .trim();
+            if let Some(assignment) = statement.strip_prefix("set ") {
+                // `==` is a comparison inside a larger expression, not the
+                // binding's own `=`.
+                if let Some((name, value)) = assignment.split_once('=') {
+                    if !value.starts_with('=') {
+                        bindings.push(JinjaBinding {
+                            name: name.trim().to_string(),
+                            value,
+                            span,
+                            line: index,
+                        });
+                    }
+                }
+            }
+            offset = span_end;
+            rest = &line[offset..];
+        }
+    }
+    bindings
+}
+
+/// Names bound to a value that carries the author's text, transitively.
+///
+/// A fixpoint, because a template is free to bind one alias from another —
+/// and a scan that followed only one hop would lose the site at the second.
+fn laundering_alias_names(bindings: &[JinjaBinding<'_>]) -> std::collections::BTreeSet<String> {
+    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    loop {
+        let before = names.len();
+        for binding in bindings {
+            if names.contains(&binding.name) {
+                continue;
+            }
+            let carries = mentions_model_expression(binding.value, MODEL_EXPRESSION_FIELDS)
+                || names.iter().any(|n| mentions_name(binding.value, n));
+            if carries {
+                names.insert(binding.name.clone());
+            }
+        }
+        if names.len() == before {
+            return names;
+        }
+    }
+}
+
+/// Names that reach the rendered artifact, directly or through another
+/// binding that does.
+fn emitted_alias_names(
     lines: &[&str],
-    index: usize,
-    interpolation: &str,
-) -> ExpressionSiteRole {
+    bindings: &[JinjaBinding<'_>],
+) -> std::collections::BTreeSet<String> {
+    let mut emitted: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for line in lines.iter().copied() {
+        if line_is_prose(line) {
+            continue;
+        }
+        for interpolation in jinja_interpolations(line) {
+            for binding in bindings {
+                if mentions_name(interpolation, &binding.name) {
+                    emitted.insert(binding.name.clone());
+                }
+            }
+        }
+    }
+    loop {
+        let before = emitted.len();
+        for binding in bindings {
+            if !emitted.contains(&binding.name) {
+                continue;
+            }
+            for other in bindings {
+                if mentions_name(binding.value, &other.name) {
+                    emitted.insert(other.name.clone());
+                }
+            }
+        }
+        if emitted.len() == before {
+            return emitted;
+        }
+    }
+}
+
+/// Whether @p text names @p name at a word boundary.
+fn mentions_name(text: &str, name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    let mut from = 0usize;
+    while let Some(at) = text[from..].find(name) {
+        let start = from + at;
+        let end = start + name.len();
+        let before_ok = start == 0 || {
+            let c = bytes[start - 1] as char;
+            !c.is_alphanumeric() && c != '_' && c != '.'
+        };
+        let after_ok = end == bytes.len() || {
+            let c = bytes[end] as char;
+            !c.is_alphanumeric() && c != '_'
+        };
+        if before_ok && after_ok {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
+/// One role for a binding judged at several places.
+///
+/// `EngineBound` first, because ONE hand-off makes the whole binding one.
+/// `Unadjudicated` next, because an unknown destination is red by design and
+/// must not be talked out of it by a sibling emission that happens to be
+/// benign — rule the same shape as the unclassified list itself. The three
+/// benign roles rank below both, and a binding with no emission at all cannot
+/// reach here.
+fn resolve_alias_role(roles: &[ExpressionSiteRole]) -> ExpressionSiteRole {
+    for candidate in [
+        ExpressionSiteRole::EngineBound,
+        ExpressionSiteRole::Unadjudicated,
+        ExpressionSiteRole::Inert,
+        ExpressionSiteRole::Message,
+    ] {
+        if roles.contains(&candidate) {
+            return candidate;
+        }
+    }
+    ExpressionSiteRole::NativeEmission
+}
+
+/// Which of the roles this expression plays on `line`.
+///
+/// @p needle is the whole delimited span — `{{ … }}` or `{% set … %}` — so a
+/// line search finds exactly what the scan is judging.
+fn classify_expression_site(lines: &[&str], index: usize, needle: &str) -> ExpressionSiteRole {
     let line = lines[index];
     // A string literal carrying anything besides the interpolation is prose
     // with a value in it — a log line, an error message, a comment rendered
     // into the artifact. Checked FIRST because a message can sit on the very
     // same line as a hand-off.
-    if interpolation_is_inside_prose(line, interpolation) {
+    if expression_is_inside_prose(line, needle) {
         return ExpressionSiteRole::Message;
     }
 
@@ -853,14 +1143,21 @@ fn classify_expression_site(
     // the mixed artifact, arriving through a constructor instead of a string.
     // Measured 2026-08-28: the donedata param site did exactly this and read
     // as inert, because the callee on its line was the constructor.
-    if line.contains("ScriptSource::ecmascript(") || line.contains("ScriptSource::lua(") {
+    //
+    // Both spellings, because both backends on this side of the seam have one:
+    // C++ scopes with `::`, Kotlin with `.`.
+    if line.contains("ScriptSource::ecmascript(")
+        || line.contains("ScriptSource::lua(")
+        || line.contains("ScriptSource.ecmascript(")
+        || line.contains("ScriptSource.lua(")
+    {
         return ExpressionSiteRole::EngineBound;
     }
 
     // The window: this line and the few above it, which is where a multi-line
     // call keeps its callee. An engine entry point anywhere in reach wins,
     // because a call that both logs and evaluates is still a hand-off.
-    let start = index.saturating_sub(CALL_WINDOW_LINES);
+    let start = call_window_start(lines, index);
     if lines[start..=index]
         .iter()
         .any(|l| ENGINE_ENTRY_POINTS.iter().any(|entry| l.contains(entry)))
@@ -891,36 +1188,157 @@ fn classify_expression_site(
     {
         return ExpressionSiteRole::Message;
     }
+
+    // Outside every string literal on the line, so the backend's own compiler
+    // reads it as a program fragment rather than an engine reading it as text.
+    // Last of the positive answers, so a hand-off, an adjudicated destination
+    // and a diagnostic each claim the site before this can.
+    if !expression_is_inside_string_literal(line, needle) {
+        return ExpressionSiteRole::NativeEmission;
+    }
     ExpressionSiteRole::Unadjudicated
 }
 
-/// Whether the interpolation sits in a C++ string literal that also carries
-/// other text.
+/// Where the callee search may start: [`CALL_WINDOW_LINES`] back, or the top
+/// of this template branch, whichever is nearer.
+fn call_window_start(lines: &[&str], index: usize) -> usize {
+    let floor = index.saturating_sub(CALL_WINDOW_LINES);
+    let mut start = index;
+    while start > floor {
+        let candidate = start - 1;
+        if line_opens_a_branch(lines[candidate]) {
+            return start;
+        }
+        start = candidate;
+    }
+    floor
+}
+
+/// Whether this line changes the template's branch context.
+///
+/// ⚠ Not "mentions a branch keyword". A branch a line OPENS AND CLOSES is
+/// still one line of one arm: `target = {% if x %}_rt{% else %}"…"{% endif %},`
+/// is a single argument of the call four lines above it, and treating it as a
+/// boundary cut that call's own name out of reach — measured 2026-08-29 on
+/// `kotlin/actions/send.kt.jinja2`, which left `HostSendRequest`'s `content`
+/// argument reporting as a callee nobody had judged.
+fn line_opens_a_branch(line: &str) -> bool {
+    let mut opens = 0usize;
+    let mut closes = 0usize;
+    let mut switches = 0usize;
+    let mut rest = line;
+    while let Some(open) = rest.find("{%") {
+        let after = &rest[open + 2..];
+        let Some(close) = after.find("%}") else { break };
+        let statement = after[..close]
+            .trim()
+            .trim_start_matches('-')
+            .trim_end_matches('-')
+            .trim_start();
+        for keyword in JINJA_BRANCH_KEYWORDS {
+            if !statement.starts_with(keyword) {
+                continue;
+            }
+            if keyword.starts_with("end") {
+                closes += 1;
+            } else if *keyword == "else" || *keyword == "elif " {
+                switches += 1;
+            } else {
+                opens += 1;
+            }
+            break;
+        }
+        rest = &after[close + 2..];
+    }
+    opens != closes || (switches > 0 && opens == 0)
+}
+
+/// Whether a `{% set %}` value composes a CALL in the emitted language.
+///
+/// The marker is a `(` inside one of the value's own quoted literals: that is
+/// text going into the artifact, and a callee spelled there is this binding's
+/// callee. A `(` outside the quotes belongs to the template — a filter's
+/// argument list, or a parenthesised sub-expression — and says nothing about
+/// where the value lands. `'evaluateSendContent(' ~ (x | f) ~ ')'` composes
+/// one; `'"' ~ (x | f) ~ '"'` does not, and reading the filter's own
+/// parentheses as a call painted the `<send>` XML arm red on 2026-08-29.
+fn value_composes_a_call(value: &str) -> bool {
+    let mut quote: Option<char> = None;
+    for ch in value.chars() {
+        match quote {
+            None => {
+                if ch == '\'' || ch == '"' {
+                    quote = Some(ch);
+                }
+            }
+            Some(open) => {
+                if ch == open {
+                    quote = None;
+                } else if ch == '(' {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Whether the expression sits inside a string literal of the emitted code.
+///
+/// A `{% set %}` span is never inside one: it is the template's own statement
+/// syntax, and the quotes it carries are Jinja's, not the artifact's.
+fn expression_is_inside_string_literal(line: &str, needle: &str) -> bool {
+    if needle.starts_with("{%") {
+        return true;
+    }
+    let Some(at) = line.find(needle) else {
+        return false;
+    };
+    // An odd number of quotes before it means one opened and has not closed.
+    !line[..at].matches('"').count().is_multiple_of(2)
+}
+
+/// Whether the expression sits in a string literal that also carries other
+/// text.
 ///
 /// `"{{ x }}"` is a value being passed. `"failed: {{ x }}"` is a sentence with
 /// a value in it. The difference is whether anything else survives inside the
-/// quotes once the interpolation is removed.
-fn interpolation_is_inside_prose(line: &str, interpolation: &str) -> bool {
-    let needle = format!("{{{{{interpolation}}}}}");
-    let Some(at) = line.find(&needle) else {
-        return false;
-    };
-    // Count quotes before the interpolation: an odd number means it opened a
-    // literal that has not closed, so the interpolation is inside one.
-    let before = &line[..at];
-    if before.matches('"').count().is_multiple_of(2) {
+/// quotes once the expression is removed.
+fn expression_is_inside_prose(line: &str, needle: &str) -> bool {
+    if !expression_is_inside_string_literal(line, needle) {
         return false;
     }
-    let open = before.rfind('"').map(|i| i + 1).unwrap_or(0);
+    let Some(at) = line.find(needle) else {
+        return false;
+    };
+    let before = &line[..at];
+    let quote = before.rfind('"');
+    let open = quote.map(|i| i + 1).unwrap_or(0);
     let after_start = at + needle.len();
     let close = line[after_start..]
         .find('"')
         .map(|i| after_start + i)
         .unwrap_or(line.len());
     let literal = &line[open..close];
-    // Whatever the literal holds besides this interpolation. Jinja control
+    // ⚠ A C++ RAW string carries its own delimiters INSIDE the quotes, and
+    // reading `(` and `)` as "other text in the literal" made every
+    // `R"({{ var.content }})"` site report as prose. Measured 2026-08-29:
+    // `scriptengine_helpers.jinja2` hands `<data>` inline content to
+    // `evaluateExpression` in exactly that form, twice, and both read as log
+    // lines — so a `--script-engine lua` artifact evaluated the author's
+    // ECMAScript there while the `expr` arm beside it was lowered.
+    let raw = quote.is_some_and(|i| line[..i].ends_with('R'));
+    let literal = if raw {
+        literal
+            .strip_prefix('(')
+            .and_then(|inner| inner.strip_suffix(')'))
+            .unwrap_or(literal)
+    } else {
+        literal
+    };
+    // Whatever the literal holds besides this expression. Jinja control
     // blocks do not count — `{% if %}` around a value is still one value.
-    let remainder: String = literal.replace(&needle, "");
+    let remainder: String = literal.replace(needle, "");
     let remainder = strip_jinja_statements(&remainder);
     !remainder.trim().is_empty()
 }
@@ -2126,6 +2544,26 @@ pub fn generate_kotlin(
     template_dir: &Path,
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
+    generate_kotlin_for_engine(
+        model,
+        template_dir,
+        package_prefix,
+        Language::Kotlin.default_script_engine_target(),
+    )
+}
+
+/// [`generate_kotlin`] with the run's engine selection named.
+///
+/// The seam's codegen input reaches the templates here and nowhere else, for
+/// the same reason it does on the C++ side: the filters close over it, so a
+/// template cannot ask — and therefore cannot ask inconsistently within one
+/// artifact.
+pub fn generate_kotlin_for_engine(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    package_prefix: Option<&str>,
+    script_engine: ScriptEngineTarget,
+) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
     // Neither host refusal here: the Kotlin runtime carries
     // `StateMachineEngine.registerEventProcessor` for §scxml-6.2.5 and
@@ -2135,7 +2573,7 @@ pub fn generate_kotlin(
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_kotlin_filters(&mut env, &document_scope(model));
+    filters::register_kotlin_filters_for_engine(&mut env, &document_scope(model), script_engine);
     register_kotlin_dynamic_filters(&mut env, model);
     render_kotlin(&mut env, model, package_prefix)
 }

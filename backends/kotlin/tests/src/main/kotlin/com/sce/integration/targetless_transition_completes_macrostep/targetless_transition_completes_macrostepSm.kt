@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 23347f5c092342ad5655a09f8c78eecec8de3c0705a0affd88f1ecbcd658f869
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -207,42 +207,42 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'quiet' with expr
         try {
-            val initResult_quiet = engine.evaluateExpr(sid, "0")
+            val initResult_quiet = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "quiet", initResult_quiet)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='quiet'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'armed' with expr
         try {
-            val initResult_armed = engine.evaluateExpr(sid, "0")
+            val initResult_armed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "armed", initResult_armed)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='armed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'chained' with expr
         try {
-            val initResult_chained = engine.evaluateExpr(sid, "0")
+            val initResult_chained = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "chained", initResult_chained)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='chained'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'polished' with expr
         try {
-            val initResult_polished = engine.evaluateExpr(sid, "0")
+            val initResult_polished = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "polished", initResult_polished)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='polished'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'answered' with expr
         try {
-            val initResult_answered = engine.evaluateExpr(sid, "0")
+            val initResult_answered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "answered", initResult_answered)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='answered'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'entries' with expr
         try {
-            val initResult_entries = engine.evaluateExpr(sid, "0")
+            val initResult_entries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "entries", initResult_entries)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='entries'> expr failed to evaluate")
@@ -266,7 +266,15 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -291,12 +299,28 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -304,7 +328,12 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -316,7 +345,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -409,19 +438,19 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
 
     private fun processNullIdle(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard("armed == 1") -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Settled, TargetlessTransitionCompletesMacrostepState.Idle)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed == 1")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Settled, TargetlessTransitionCompletesMacrostepState.Idle)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullRecycled(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard("entries < 2") -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Recycled, TargetlessTransitionCompletesMacrostepState.Recycled)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("entries < 2")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Recycled, TargetlessTransitionCompletesMacrostepState.Recycled)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullSettled(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard("polished == 0") -> TransitionResult.Internal
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("polished == 0")) -> TransitionResult.Internal
         else -> TransitionResult.Ignored
     }
 
@@ -460,7 +489,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 if (!activeStateIds.add("recycled")) return
 
 
-            executeAssign("entries", "entries + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("entries"), com.sce.runtime.ScriptSource.ecmascript("entries + 1"))
             }
             is TargetlessTransitionCompletesMacrostepState.Settled -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:125 :: settled :: _state_body
@@ -502,13 +531,13 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:93 :: idle :: _transition_1
 
 
-            executeAssign("quiet", "quiet + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("quiet"), com.sce.runtime.ScriptSource.ecmascript("quiet + 1"))
             }
             event is TargetlessTransitionCompletesMacrostepEvent.Arm -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:100 :: idle :: _transition_2
 
 
-            executeAssign("armed", "1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("armed"), com.sce.runtime.ScriptSource.ecmascript("1"))
             }
             event is TargetlessTransitionCompletesMacrostepEvent.Ping -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:107 :: idle :: _transition_3
@@ -519,22 +548,22 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:111 :: idle :: _transition_4
 
 
-            executeAssign("answered", "answered + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("answered"), com.sce.runtime.ScriptSource.ecmascript("answered + 1"))
             }
-            event == null && safeEvaluateGuard("armed == 1") -> {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed == 1")) -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:86 :: idle :: _transition_0
 
 
-            executeAssign("chained", "chained + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("chained"), com.sce.runtime.ScriptSource.ecmascript("chained + 1"))
             }
             else -> {}
         }
         is TargetlessTransitionCompletesMacrostepState.Settled -> when {
-            event == null && safeEvaluateGuard("polished == 0") -> {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("polished == 0")) -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:126 :: settled :: _transition_0
 
 
-            executeAssign("polished", "polished + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("polished"), com.sce.runtime.ScriptSource.ecmascript("polished + 1"))
             }
             else -> {}
         }

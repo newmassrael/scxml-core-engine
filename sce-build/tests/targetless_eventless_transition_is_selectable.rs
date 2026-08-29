@@ -43,6 +43,25 @@ fn kotlin_of(content: &str, label: &str) -> String {
     generate_kotlin(&model, Path::new(&template_dir()), None).expect("Kotlin codegen succeeds")
 }
 
+/// How the emitted machine spells a guard call on the author's @p expr.
+///
+/// ⚠ Not a convenience. These cases are about the SELECTION SURFACE — whether
+/// a targetless eventless transition is offered at all — and they were written
+/// against the literal `safeEvaluateGuard("polished == 0")`, which is an
+/// argument SPELLING and not their subject. On 2026-08-29 the Kotlin templates
+/// crossed the translation seam and every guard started carrying a
+/// `ScriptSource` instead of a bare string; four cases about selection went red
+/// over a change that moved no selection. A case that fails for a reason
+/// outside its own clause is a case whose next reader repairs the wrong thing.
+///
+/// So the spelling lives here, once, and each case asks its own question
+/// through it. The author's text is still what appears — it is the `source`
+/// half of the pair — so the expression is still named where a reader can see
+/// it.
+fn guard_call(expr: &str) -> String {
+    format!("safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript(\"{expr}\"))")
+}
+
 /// A document whose only eventless transition in `settled` is targetless: it
 /// runs content and leaves the machine where it is. `idle` reaches `settled`
 /// with an ordinary targeted eventless transition, so the emitted machine has
@@ -105,7 +124,10 @@ fn a_targetless_eventless_transition_reaches_the_null_selection_surface() {
          document spells.\n{code}"
     );
     assert!(
-        code.contains("safeEvaluateGuard(\"polished == 0\") -> TransitionResult.Internal"),
+        code.contains(&format!(
+            "{} -> TransitionResult.Internal",
+            guard_call("polished == 0")
+        )),
         "and the handler must offer it as an in-place microstep — the same \
          answer this backend gives an event-driven targetless transition.\n{code}"
     );
@@ -125,7 +147,7 @@ fn the_action_surface_carried_it_all_along() {
     let code = kotlin_of(BOTH_KINDS, "both_kinds.scxml");
 
     assert!(
-        code.contains("event == null && safeEvaluateGuard(\"polished == 0\")"),
+        code.contains(&format!("event == null && {}", guard_call("polished == 0"))),
         "the transition's content is emitted under the null-event arm, which is \
          what made the missing selection silent rather than a compile error.\n{code}"
     );
@@ -142,9 +164,11 @@ fn a_targeted_eventless_transition_still_selects_as_a_state_change() {
     let code = kotlin_of(BOTH_KINDS, "both_kinds.scxml");
 
     assert!(
-        code.contains(
-            "safeEvaluateGuard(\"armed == 1\") -> TransitionResult.External(BothKindsScxmlState.Settled, BothKindsScxmlState.Idle)"
-        ),
+        code.contains(&format!(
+            "{} -> TransitionResult.External(BothKindsScxmlState.Settled, \
+             BothKindsScxmlState.Idle)",
+            guard_call("armed == 1")
+        )),
         "a transition that names a target must still exit and enter.\n{code}"
     );
 }
@@ -166,7 +190,10 @@ fn a_leaf_inherits_its_ancestors_targetless_eventless_transition() {
          reach the ancestor's transition.\n{code}"
     );
     assert!(
-        code.contains("safeEvaluateGuard(\"polished == 0\") -> TransitionResult.Internal"),
+        code.contains(&format!(
+            "{} -> TransitionResult.Internal",
+            guard_call("polished == 0")
+        )),
         "and the ancestor's handler must offer it as an in-place microstep.\n{code}"
     );
 }

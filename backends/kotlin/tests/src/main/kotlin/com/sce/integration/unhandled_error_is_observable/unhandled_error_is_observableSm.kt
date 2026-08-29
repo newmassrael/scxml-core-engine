@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 88c46d955f89d1b6f7eb00aaedced29c5fbacc4db8ed4464fa38145a023ef16c
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -201,35 +201,35 @@ class UnhandledErrorIsObservableStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, "0")
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'booms' with expr
         try {
-            val initResult_booms = engine.evaluateExpr(sid, "0")
+            val initResult_booms = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "booms", initResult_booms)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='booms'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'caught' with expr
         try {
-            val initResult_caught = engine.evaluateExpr(sid, "0")
+            val initResult_caught = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "caught", initResult_caught)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='caught'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'detail' with expr
         try {
-            val initResult_detail = engine.evaluateExpr(sid, "'none'")
+            val initResult_detail = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'none'"))
             engine.setVariable(sid, "detail", initResult_detail)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='detail'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'heards' with expr
         try {
-            val initResult_heards = engine.evaluateExpr(sid, "0")
+            val initResult_heards = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "heards", initResult_heards)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='heards'> expr failed to evaluate")
@@ -253,7 +253,15 @@ class UnhandledErrorIsObservableStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -278,12 +286,28 @@ class UnhandledErrorIsObservableStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -291,7 +315,12 @@ class UnhandledErrorIsObservableStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -303,7 +332,7 @@ class UnhandledErrorIsObservableStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -459,7 +488,7 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_0
 
 
-            executeAssign("booms", "booms + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("booms"), com.sce.runtime.ScriptSource.ecmascript("booms + 1"))
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
@@ -469,10 +498,10 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:94 :: guarded :: _transition_1
 
 
-            executeAssign("caught", "caught + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("caught"), com.sce.runtime.ScriptSource.ecmascript("caught + 1"))
 
 
-            executeAssign("detail", "_event.name")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("detail"), com.sce.runtime.ScriptSource.ecmascript("_event.name"))
             }
             else -> {}
         }
@@ -481,7 +510,7 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:55 :: idle :: _transition_0
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             event is UnhandledErrorIsObservableEvent.Whisper -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:58 :: idle :: _transition_1
@@ -496,13 +525,13 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:80 :: idle :: _transition_2
 
 
-            executeAssign("heards", "heards + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("heards"), com.sce.runtime.ScriptSource.ecmascript("heards + 1"))
             }
             event is UnhandledErrorIsObservableEvent.Boom -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:83 :: idle :: _transition_3
 
 
-            executeAssign("booms", "booms + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("booms"), com.sce.runtime.ScriptSource.ecmascript("booms + 1"))
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)

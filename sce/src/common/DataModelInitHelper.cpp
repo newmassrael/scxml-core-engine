@@ -78,9 +78,15 @@ bool SCE::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
 }
 
 bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const std::string &sessionId,
-                                                  const std::string &varId, const std::string &content,
+                                                  const std::string &varId, const ScriptSource &contentSource,
                                                   std::function<void(const std::string &)> errorCallback) {
     // §scxml-5.2.2 & B.2: Initialize datamodel variable with inline content or expression
+
+    // The AUTHOR's half answers every reading but the expression one: whether
+    // the children are XML, and what the string value is when they are not an
+    // expression, are questions about the document rather than about the
+    // engine's language.
+    const std::string &content = contentSource.source();
 
     if (content.empty()) {
         // §scxml-B-2-2 test 445: Empty content - create variable with undefined value
@@ -118,9 +124,12 @@ bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const
         return true;
     }
 
-    // §scxml-B-2: Non-XML content - try evaluating as JavaScript expression first
+    // §scxml-B-2: Non-XML content - try evaluating as an expression first
     // ARCHITECTURE.md Zero Duplication: Matches StateMachine.cpp:1772-1778 (try eval first)
-    auto evalResult = jsEngine.evaluateExpression(sessionId, content);
+    //
+    // The LOWERED half goes to the engine. Under the ECMAScript target the two
+    // halves are the same string, so this is the author's text as before.
+    auto evalResult = jsEngine.evaluateExpression(sessionId, contentSource);
     evalResult.wait();
     auto evalJsResult = evalResult.get();
 
@@ -172,8 +181,14 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine
         return false;
     }
 
-    // Initialize with loaded content
-    bool initSuccess = initializeVariable(jsEngine, sessionId, varId, content, errorCallback);
+    // Initialize with loaded content.
+    //
+    // `ScriptSource::ecmascript` and not a lowered pair, because the file is
+    // read at RUN time: nothing at build time saw this text, so there is no
+    // Lua half to pair with it. A Lua engine lowers it through the same
+    // frontend at its own boundary — the run-time seat this seam keeps for
+    // exactly the text a build cannot see. §scxml-5.2.2.
+    bool initSuccess = initializeVariable(jsEngine, sessionId, varId, ScriptSource::ecmascript(content), errorCallback);
     if (initSuccess) {
         SCE_LOG_DEBUG("DataModelInitHelper: Loaded {} from external file: {}", varId, src);
     }

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -215,14 +215,14 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'token' with expr
         try {
-            val initResult_token = engine.evaluateExpr(sid, "'parent'")
+            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'parent'"))
             engine.setVariable(sid, "token", initResult_token)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'only_here' with expr
         try {
-            val initResult_onlyHere = engine.evaluateExpr(sid, "'sole'")
+            val initResult_onlyHere = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'sole'"))
             engine.setVariable(sid, "only_here", initResult_onlyHere)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<data id='only_here'> expr failed to evaluate")
@@ -246,7 +246,15 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -271,12 +279,28 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -284,7 +308,12 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -296,7 +325,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -541,7 +570,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, "1/0")
+                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("1/0"))
                     } catch (_: Exception) {
                         raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
                     }
@@ -617,7 +646,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, "token")
+                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("token"))
                     } catch (_: Exception) {
                         raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
                     }
@@ -659,7 +688,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, "only_here")
+                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("only_here"))
                     } catch (_: Exception) {
                         raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
                     }
@@ -701,7 +730,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["declared"] = engineInv.evaluateExpr(sidInv, "'carried'")
+                        invokeParams["declared"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("'carried'"))
                     } catch (_: Exception) {
                         raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='declared'> expr failed to evaluate")
                     }
@@ -722,7 +751,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, "'leaked'")
+                        invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("'leaked'"))
                     } catch (_: Exception) {
                         raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='nowhere'> expr failed to evaluate")
                     }

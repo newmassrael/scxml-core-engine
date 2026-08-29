@@ -12,7 +12,7 @@
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, "{{ action.array | escape_kotlin }}", "{{ action.item }}", "{{ action.index }}") {
+                    engine.executeForeach(sid, {{ action.array | to_script_source_expr }}, "{{ action.item }}", "{{ action.index }}") {
 {% for body_action in action.actions %}
 {% set action = body_action %}
 {% set _in_foreach_body = True %}

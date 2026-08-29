@@ -27,7 +27,7 @@
                 httpParams["{{ param.name | escape_kotlin }}"] = listOf("{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
                 try {
-                    val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, "{{ param.expr | escape_kotlin }}")
+                    val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, {{ param.expr | to_script_source_expr }})
                     // W3C SCXML C.2: the param crosses as text. `toString()` is
                     // the platform's spelling of the value; this is the document's.
                     httpParams["{{ param.name | escape_kotlin }}"] = listOf(valueToWireString(v))
@@ -59,7 +59,7 @@
                 // W3C SCXML C.2: Dynamic content expression
                 val httpContent: String
                 try {
-                    val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, "{{ action.contentexpr | escape_kotlin }}")
+                    val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, {{ action.contentexpr | to_script_source_expr }})
                     httpContent = v?.toString() ?: ""
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate")
@@ -72,7 +72,7 @@
                 // W3C SCXML C.2: Dynamic delay for HTTP send
                 val delayStr: String
                 try {
-                    val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, "{{ action.delayexpr | escape_kotlin }}")
+                    val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, {{ action.delayexpr | to_script_source_expr }})
                     delayStr = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")

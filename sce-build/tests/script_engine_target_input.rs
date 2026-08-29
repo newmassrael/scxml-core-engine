@@ -324,3 +324,84 @@ fn the_migration_scan_leaves_the_forge_tree_alone() {
         forge
     );
 }
+
+/// Kotlin crossed the seam on 2026-08-29, and the same two questions are asked
+/// of it here.
+///
+/// Not a copy of the C++ case above with a name changed. The two backends
+/// reach the seam by different routes — C++ through a `::SCE::ScriptSource`
+/// its templates spell, Kotlin through `com.sce.runtime.ScriptSource` its own
+/// runtime carries — and a scan that worked for one and not the other is what
+/// this file's history is made of. A backend that HAS crossed and still
+/// refuses is a refusal nobody can explain; one that has NOT and accepts is
+/// the mixed artifact.
+#[test]
+fn kotlin_offers_the_lua_target_exactly_when_no_site_is_left_behind() {
+    assert_eq!(
+        Language::Kotlin.default_script_engine_target(),
+        ScriptEngineTarget::EcmaScript,
+        "crossing the seam gave Kotlin a LOWERED ARM, not a new default. Its \
+         hosts take the engine by injection and default to Rhino \
+         (`W3CTestBase.DEFAULT_ENGINE`), so a manifest that answered `lua` here \
+         would send every existing consumer a Lua engine for a machine that \
+         hands it ECMAScript — the exact mis-supply the field exists to prevent."
+    );
+
+    let remaining = Language::Kotlin.unmigrated_expression_sites();
+    let unknown = Language::Kotlin.unclassified_expression_sites();
+    assert_eq!(
+        Language::Kotlin.supports_script_engine_target(ScriptEngineTarget::Lua),
+        remaining.is_empty() && unknown.is_empty(),
+        "the Lua target is offered exactly when NO site is left behind and NO \
+         site is unadjudicated — {} unmigrated:\n  {}\n{} unclassified:\n  {}",
+        remaining.len(),
+        remaining.join("\n  "),
+        unknown.len(),
+        unknown.join("\n  ")
+    );
+
+    // The independent witness, for the reason the C++ case gives: "no site is
+    // unmigrated" and "the scan read nothing" are the same answer from that
+    // scan alone.
+    let migrated = Language::Kotlin.migrated_expression_sites();
+    assert!(
+        !migrated.is_empty(),
+        "no Kotlin site is unmigrated AND none routes through the pair filter, \
+         which is what a scanner reading nothing looks like — not a finished \
+         migration"
+    );
+}
+
+/// The scan reaches a `{% set %}` binding, on both backends that have one.
+///
+/// A POSITIVE assertion, and it has to be one. Losing the alias walk makes
+/// both scan lists SHORTER, so every "no sites remain" case beside it stays
+/// green while the refusal they feed starts offering the Lua target to a
+/// backend that launders the author's text through a name. That is not
+/// hypothetical: measured 2026-08-29, `entry_exit_actions.jinja2` bound
+/// `<donedata>`'s content to a name and emitted it into
+/// `DoneDataHelper::evaluateContent`, and the artifact carried
+/// `ScriptSource::lua(…)` on one line and the author's ECMAScript on another
+/// while this file reported the migration finished.
+///
+/// Derived rather than listed: what it asserts is "at least one migrated site
+/// is a binding", so moving which binding that is does not touch this file.
+#[test]
+fn the_scan_reaches_expressions_bound_by_a_set_statement() {
+    for lang in [Language::Cpp, Language::Kotlin] {
+        let bindings: Vec<String> = lang
+            .migrated_expression_sites()
+            .into_iter()
+            .filter(|site| site.contains("{% set "))
+            .collect();
+        assert!(
+            !bindings.is_empty(),
+            "{}'s migrated sites include no `{{% set %}}` binding. Both backends \
+             bind the author's text to a name and emit it somewhere else — C++ \
+             for `<donedata>`'s content, Kotlin for a `<send>`'s — so an empty \
+             answer here means the scan stopped following the alias, and every \
+             site it stops seeing drops out of the refusal it feeds.",
+            lang.canonical_name()
+        );
+    }
+}
