@@ -32,15 +32,10 @@ import com.sce.scripting.RhinoScriptEngine
 import com.sce.scripting.lua.LuaScriptEngine
 import com.sce.scripting.quickjs.QuickJSScriptEngine
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
-import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -67,9 +62,6 @@ private const val ENGINE_PATH =
  */
 private const val RUNTIME_REWRITER_PATH = "runtime-rewriter"
 
-/** What identifies one case, and one declared divergence against it. */
-private data class Key(val source: String, val clause: String)
-
 /**
  * One case an engine answered differently from ECMA-262.
  *
@@ -81,36 +73,6 @@ private data class Key(val source: String, val clause: String)
  */
 private data class Divergence(val source: String, val clause: String, val message: String) {
     val key: Key get() = Key(source, clause)
-}
-
-/** One row of the shared table. */
-private class Case(
-    val setup: String,
-    val source: String,
-    val asCondition: Boolean,
-    val clause: String,
-    val expected: Answer,
-)
-
-/** The single answer a row names: exactly one of these shapes. */
-private sealed interface Answer {
-    fun describe(): String
-
-    class Bool(val value: Boolean) : Answer {
-        override fun describe() = value.toString()
-    }
-
-    class Num(val value: Double) : Answer {
-        override fun describe() = value.toString()
-    }
-
-    class Text(val value: String) : Answer {
-        override fun describe() = "\"$value\""
-    }
-
-    object Empty : Answer {
-        override fun describe() = "null or undefined"
-    }
 }
 
 class EcmaScriptSemanticsTest {
@@ -164,7 +126,7 @@ class EcmaScriptSemanticsTest {
                 "$DIVERGENCES_PATH has not caught up with it. If it is the second, these " +
                 "are the entries to add:\n" +
                 undeclared.joinToString(",\n") {
-                    "    { \"source\": ${quoted(it.source)}, \"clause\": ${quoted(it.clause)} }"
+                    "    { \"source\": ${jsonQuoted(it.source)}, \"clause\": ${jsonQuoted(it.clause)} }"
                 } +
                 "\n\nWhat each one answered:\n" +
                 undeclared.joinToString("\n") { "  ${it.message}" },
@@ -185,7 +147,7 @@ class EcmaScriptSemanticsTest {
         assertTrue(
             declared.isNotEmpty(),
             "$DIVERGENCES_PATH declares nothing, and nothing disagreed. If Lua now answers " +
-                "all ${loadCases().size} ECMA-262 cases that is good news and it makes this " +
+                "all ${loadSharedTable().size} ECMA-262 cases that is good news and it makes this " +
                 "test wrong: rewrite the doc comment on LuaScriptEngine and turn this into " +
                 "`measure(...)` beside the other two.",
         )
@@ -256,17 +218,13 @@ class EcmaScriptSemanticsTest {
             val paths = obj["diverges_on"]
             assertTrue(
                 paths != null,
-                "the entry ${quoted(key.source)} / ${quoted(key.clause)} in $DIVERGENCES_PATH " +
+                "the entry ${jsonQuoted(key.source)} / ${jsonQuoted(key.clause)} in $DIVERGENCES_PATH " +
                     "carries no `diverges_on`, so no per-path suite can tell whether it is about it.",
             )
             val onThisPath = paths!!.jsonArray.any { it.jsonPrimitive.content == RUNTIME_REWRITER_PATH }
             if (onThisPath) key else null
         }.toSet()
     }
-
-    /** JSON-quoted, so a failure prints entries that can be pasted as-is. */
-    private fun quoted(value: String): String =
-        "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     private fun measure(engineName: String, create: () -> ScxmlScriptEngine) {
         val failures = collectFailures(create)
@@ -275,7 +233,7 @@ class EcmaScriptSemanticsTest {
         // answers nothing, and the first failure alone cannot tell them apart.
         assertTrue(
             failures.isEmpty(),
-            "${failures.size} of ${loadCases().size} expressions disagree with ECMA-262, " +
+            "${failures.size} of ${loadSharedTable().size} expressions disagree with ECMA-262, " +
                 "evaluated by $engineName.\n" +
                 "An engine offered for `datamodel=\"ecmascript\"` answers what that " +
                 "language answers; one that does not is not a choice a consumer can " +
@@ -285,15 +243,10 @@ class EcmaScriptSemanticsTest {
     }
 
     private fun collectFailures(create: () -> ScxmlScriptEngine): List<Divergence> {
-        val cases = loadCases()
-
-        // A floor, not an equality: adding a case must not have to touch this
-        // number, but a table that stopped being read must not pass either.
-        assertTrue(
-            cases.size >= 55,
-            "the shared ECMA-262 table produced only ${cases.size} case(s), " +
-                "so this is not measuring the corpus it claims to",
-        )
+        // `loadSharedTable` carries the arity floor: a table that stopped
+        // being read must not pass, and asserting it in one place keeps this
+        // suite and `LoweredEcma262Test` on the same corpus by construction.
+        val cases = loadSharedTable()
 
         val engine = create()
         val failures = mutableListOf<Divergence>()
@@ -327,7 +280,7 @@ class EcmaScriptSemanticsTest {
         return failures
     }
 
-    private fun evaluate(engine: ScxmlScriptEngine, sessionId: String, case: Case): List<Divergence> {
+    private fun evaluate(engine: ScxmlScriptEngine, sessionId: String, case: Ecma262Case): List<Divergence> {
         fun diverged(message: String) = listOf(Divergence(case.source, case.clause, message))
 
         if (case.asCondition) {
@@ -359,74 +312,22 @@ class EcmaScriptSemanticsTest {
             } catch (failure: Exception) {
                 return diverged("[${case.source}] failed to evaluate: ${failure.message} (${case.clause})")
             }
-        return if (matches(value, case.expected)) {
+        return if (answerMatches(value, case.expected)) {
             emptyList()
         } else {
             diverged(
-                "[${case.source}] answered ${describe(value)}, ECMAScript says " +
+                "[${case.source}] answered ${describeValue(value)}, ECMAScript says " +
                     "${case.expected.describe()} (${case.clause})",
             )
         }
     }
 
     /**
-     * An engine may hold a whole number as an integer or as a double, and
-     * ECMA-262 has one Number type — so both spellings answer a `number` case.
-     * The same rule the C++ reader applies, for the same reason.
+     * The row, the answer shapes, the number comparison and the shared
+     * table's own floor live in `SharedEcma262Table.kt` beside this file:
+     * `LoweredEcma262Test` asks the same table a different question — what
+     * this backend's Lua answers for what the FRONTEND emitted — and a copy
+     * of the reading in each suite would drift toward whichever one edits it,
+     * exactly when a disagreement between the two is the interesting result.
      */
-    private fun matches(actual: Any?, expected: Answer): Boolean = when (expected) {
-        is Answer.Bool -> actual is Boolean && actual == expected.value
-        is Answer.Num -> actual is Number && abs(actual.toDouble() - expected.value) < 1e-9
-        is Answer.Text -> actual is String && actual == expected.value
-        Answer.Empty -> actual == null || isUndefined(actual)
-    }
-
-    /**
-     * Rhino hands back its own singleton for `undefined` rather than a Kotlin
-     * `null`, and the table treats null and undefined as one answer because
-     * ECMAScript's `==` equates them and SCXML's datamodel cannot tell an
-     * absent property from a null one.
-     */
-    private fun isUndefined(value: Any): Boolean =
-        value.javaClass.name == "org.mozilla.javascript.Undefined" || value.toString() == "undefined"
-
-    private fun describe(value: Any?): String = when (value) {
-        null -> "null"
-        is String -> "\"$value\""
-        else -> "$value (${value.javaClass.simpleName})"
-    }
-
-    private fun loadCases(): List<Case> {
-        // The tests run from the repository root (`tasks.test { workingDir }`),
-        // so the shared table is named by the same path its other readers use.
-        val table = File("tests/ecmascript/ecma262_semantics.json")
-        assertTrue(
-            table.isFile,
-            "the shared ECMA-262 table is missing at ${table.absolutePath}; " +
-                "this test measures nothing without it",
-        )
-        val root = Json.parseToJsonElement(table.readText()).jsonObject
-        return root.getValue("cases").jsonArray.map { entry ->
-            val obj = entry.jsonObject
-            Case(
-                setup = obj["setup"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                source = obj.getValue("source").jsonPrimitive.content,
-                asCondition = obj.getValue("form").jsonPrimitive.content == "condition",
-                clause = obj.getValue("clause").jsonPrimitive.content,
-                expected = parseAnswer(obj.getValue("expect").jsonObject, obj),
-            )
-        }
-    }
-
-    private fun parseAnswer(expect: JsonObject, row: JsonObject): Answer {
-        expect["bool"]?.let { return Answer.Bool(it.jsonPrimitive.boolean) }
-        expect["number"]?.let { return Answer.Num(it.jsonPrimitive.double) }
-        expect["string"]?.let { return Answer.Text(it.jsonPrimitive.content) }
-        // `empty` carries no value of its own — its presence IS the answer.
-        expect["empty"]?.let { return Answer.Empty }
-        // A case whose expectation cannot be read is not a case that passes.
-        throw IllegalStateException(
-            "case ${row.getValue("source").jsonPrimitive.content} names no expected answer",
-        )
-    }
 }
