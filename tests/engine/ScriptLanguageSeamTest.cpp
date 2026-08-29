@@ -35,6 +35,7 @@
  */
 
 #include "SCXMLTypes.h"
+#include "common/AssignmentExecutionHelper.h"
 #include "core/ForeachHelper.h"
 #include "scripting/ScriptDialect.h"
 #include "scripting/ScriptEngineProvider.h"
@@ -280,6 +281,54 @@ TEST(ScriptLanguageSeam, AScriptLoweringCachedAgainstAnOlderScopeIsNotReused) {
         << "ECMA-262 13.13.1 yields the LEFT operand when it is falsy, so `r` is 0. The same chunk "
            "text answered differently before `b` was declared, so answering it the same way twice "
            "means the chunk compiled against the older scope was reused.";
+
+    engine.destroySession(sessionId);
+}
+
+/**
+ * @brief An `<assign>` to a member location reaches the frontend.
+ *
+ * This is the route a DOCUMENT takes, and it is not the route a direct
+ * `evaluateExpression` takes. `AssignmentExecutionHelper` sends a location that
+ * is not a bare identifier down its complex path, which builds
+ * `<location> = (<expr>);` and runs it as a SCRIPT — so the seam has to be on
+ * `loweredScriptOf`, and while it was only on `loweredTextOf` every such
+ * assignment silently fell back to the rewriter.
+ *
+ * That was not hypothetical. Measured 2026-08-29 on the `ecma262-lowered-cpp`
+ * lane: `source-wrong=14` against a direct-evaluate suite reporting zero, on
+ * one shared table, because that fixture records all 98 of its answers with
+ * `<assign location="answers.dNN">` and every one of them took this path.
+ *
+ * `5 ^ 3` is the discriminator because the two readings differ by the LANGUAGE
+ * rather than by a detail: ECMA-262 13.12 makes `^` bitwise XOR, so the answer
+ * is 6, while Lua's `^` is exponentiation and answers 125. The rewriter leaves
+ * `^` to Lua — it parenthesises bitwise operands and nothing more — so 125 is
+ * precisely "the frontend was never asked".
+ */
+TEST(ScriptLanguageSeam, AMemberLocationAssignmentReachesTheFrontend) {
+    auto &engine = SCE::LuaEngine::instance();
+    const std::string sessionId = "seam_member_assign_reaches_the_frontend";
+    ASSERT_TRUE(engine.createSession(sessionId, ""));
+
+    // `<data id="answers" expr="{}"/>`, by the route a document takes: the
+    // chunk runs, and §scxml-5.8 declares what its top level introduced.
+    ASSERT_TRUE(engine.executeScript(sessionId, SCE::ScriptSource::ecmascript("var answers = {};")).get().isSuccess());
+
+    bool raised = false;
+    ASSERT_TRUE(SCE::AssignmentExecutionHelper::executeAssignment(
+        engine, sessionId, SCE::ScriptSource::ecmascript("answers.d53"), SCE::ScriptSource::ecmascript("5 ^ 3"),
+        [&raised](const std::string &) { raised = true; }))
+        << "the complex-path assignment failed outright";
+    ASSERT_FALSE(raised);
+
+    auto answer = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("answers.d53")).get();
+    ASSERT_TRUE(answer.isSuccess()) << answer.getErrorMessage();
+    EXPECT_EQ(asWholeNumber(answer.getInternalValue()), 6)
+        << "ECMA-262 13.12 makes `5 ^ 3` bitwise XOR, which is 6. Lua reads `^` as exponentiation "
+           "and answers 125, and the rewriter leaves `^` to Lua — so anything but 6 says this "
+           "assignment never reached the frontend, and the seam is missing from the script path "
+           "again.";
 
     engine.destroySession(sessionId);
 }
