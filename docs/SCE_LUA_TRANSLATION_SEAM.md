@@ -1379,31 +1379,117 @@ below names how.
 | surface to expose | **four** lowering fns, not three | `grep '^pub fn' sce-build/src/ecmascript/mod.rs` → `to_lua_condition` / `to_lua_value` / `to_lua_script` / `to_lua_location` |
 | what crosses the boundary | a scope, and it is **flat** | `DocumentScope` is one `BTreeSet<String>` (`sce-build/src/ecmascript/scope.rs:53`) — an opaque handle plus `declare` is enough; no model marshalling |
 | build time | **7.00s** to recompile `sce-build` and link the cdylib; **14.96s** including its cold deps | `cargo rustc -p sce-build --lib --release --crate-type cdylib`, release, warm cargo cache, build machine (32 cores) |
-| artifact size | **589 KB** with the C surface exported, against **380 KB** exporting nothing ⇒ the reachable lowering code is **~214 KB** | `ls -l target/release/libsce_build.so` for each; `nm -D --defined-only` reported exactly **5** dynamic symbols, so the linker kept only what the C surface reaches |
-| native deps inherited | `libgcc_s`, `libc`, the loader. **libxml2 is NOT** | `ldd target/release/libsce_build.so` — the `xsd` feature's C library is unreachable from the lowering entry points, so a C++ consumer does not inherit it. `sce-build-wasm` needs `default-features = false` for that reason; a native link would not |
+| artifact size | **589 KB** with the C surface exported, against **380 KB** exporting nothing ⇒ the reachable lowering code is **~214 KB** | ask CARGO where it put the artifact rather than naming a profile directory (see the note below the table), then `stat -c %s` it; `nm -D --defined-only` reported exactly **5** dynamic symbols, so the linker kept only what the C surface reaches |
+| native deps inherited | `libgcc_s`, `libc`, the loader. **libxml2 is NOT** | `ldd` the same path — the `xsd` feature's C library is unreachable from the lowering entry points, so a C++ consumer does not inherit it. `sce-build-wasm` needs `default-features = false` for that reason; a native link would not |
 | who pays for it | **every C++ configure in the tree**, not just the `lua` selection | the natural link site is `sce_scripting` beside `lua54` (`sce/CMakeLists.txt:374`), guarded by `SCE_ENABLE_LUA`, which is `option(... ON)` at `sce/CMakeLists.txt:18`. Eight gates build a C++ target: `cpp-suite`, `w3c-cpp`, `w3c-c11`, `forge-cpp`, `lib`, `visualizer-wasm`, `w3c-python-bindings`, `ecma262-lowered-cpp` (`grep -l sce_gate_build scripts/gates/*.sh`) |
+
+⚠ **Ask cargo for the artifact path; do not spell a profile directory.** The
+first version of this table re-derived its two size rows with
+`ls -l target/<profile>/libsce_build.so`, and `codegen_binary_resolution` turned
+the tree-hygiene lane RED over exactly that: *"a second copy of the search is
+also a second copy of the profile ORDER — which is what decides whether a stale
+binary outranks a fresh one."* The gate is right, and it is worth recording that
+the sentence which broke it was written to satisfy the rule that evidence must
+be re-derivable. A re-derivation that hard-codes a layout is a second locator.
+Cargo already knows where it put the file, so ask it:
+
+```sh
+cargo rustc -p sce-build --lib --release --crate-type cdylib \
+  --message-format=json 2>/dev/null \
+  | python3 -c 'import sys,json
+for line in sys.stdin:
+    m = json.loads(line)
+    for f in m.get("filenames") or []:
+        if f.endswith(".so"): print(f)'
+```
+
+### Per-call cost, measured 2026-08-29 — and the assumption was backwards
+
+The first of the four unpriced items, decided by the owner as the one to
+measure next. Same 98 sources from the shared table, N=1000, **one host, one
+load window** (a cross-machine comparison is not one — the first attempt timed
+C++ locally and Rust on the build machine and had to be redone).
+
+| path | ns/call | cache |
+|---|---|---|
+| `sce-build` frontend — PARSE then emit Lua | **1112** | none at all |
+| `EcmaScriptToLuaTransformer` — COLD text rewrite | **1535** | miss |
+| `EcmaScriptToLuaTransformer` — WARM | **20** | its own memo hit |
+
+**Parsing is ~1.4x FASTER than rewriting on a cold call.** The intuition that a
+parser must cost more than a text pass is refuted here: the rewriter runs a
+sequence of full-string scans and rebuilds, and that is dearer than one parse.
+
+⚠⚠ **The trap this measurement walked into first, and it is the third time on
+this axis.** `EcmaScriptToLuaTransformer` keeps THREE `mutable` memo caches
+inside itself — `generalCache_` / `guardCache_` / `scriptCache_`
+(`sce/include/scripting/EcmaScriptToLuaTransformer.h:130-132`) — so a probe that
+reuses one instance measures a hash lookup and reports **22-35 ns/call**. That
+is a floor, not a cost, exactly as an unexported cdylib's 380 KB was. A fresh
+instance per pass is what makes every call a miss. Re-derive by constructing the
+transformer INSIDE the timed loop; if the number is two digits, the cache is
+answering.
+
+**What it means for the decision.** A runtime lowering path is not slower per
+translation — it is faster. What it does not have is the rewriter's memo, and
+the 20-vs-1112 gap is entirely that memo, not the algorithm. The frontend would
+need one of the same shape, which is the cheapest part of the work: `LuaEngine`
+already keys a per-session chunk cache on the incoming text one layer above.
 
 ⚠ **What the probe did NOT price, and a decision needs**:
 
+- ~~**Per-evaluation cost.**~~ **Measured 2026-08-29 — see the table above.**
+  Parsing is 1.4x faster cold; the whole of the rewriter's advantage is its memo.
 - **The scope obligation at run time.** The build-time caller builds a scope
   from the whole model once (`DocumentScope::from_model`). An Interpreter's
   scope grows as it runs — `var x` inside a `<script>` declares a name
   mid-session, and `declare_chunk` is the frontend's own answer to that. Who
   calls it, and when, is a semantics question this probe skipped by using
   `DocumentScope::installed()`.
-- **Per-evaluation cost.** The probe measured a build, not a call. `LuaEngine`
-  already memoises on the incoming text; whether lowering-per-expression is
-  cheaper or dearer than rewriting-per-expression is unmeasured.
+  **HOW TO MEASURE IT** — this one is not a stopwatch, it is a correctness
+  count, so measure it as a divergence set. Lower every expression in every
+  committed document twice: once against `DocumentScope::from_model` and once
+  against `DocumentScope::installed()`, and count the pairs that differ. That
+  number is exactly the population a run-time caller must maintain the scope
+  FOR; if it is zero, the obligation is theoretical and the FFI needs no scope
+  handle at all. `sce-build`'s own corpus walk (`cli_expression_refusal`,
+  `ecmascript_acceptance_parity`) already enumerates that population, so the
+  probe is a filter over an existing sweep rather than new machinery. Then
+  extend it: for each document with a `<script>` that declares, re-lower the
+  expressions AFTER `declare_chunk` and count what changes — that second number
+  is the cost of getting the timing wrong.
 - **The error channel and ownership contract.** The probe returned `NULL` for
   every failure and leaked the distinction. A real surface has to carry
   `ExprError` across, and `_event.data` on `error.execution` is where that text
   is wire-visible.
+  **HOW TO MEASURE IT** — count what would be LOST, not what it would cost.
+  `ExprError`'s variants are the alphabet a C surface has to preserve
+  (`grep -c 'ExprError::' sce-build/src/ecmascript/*.rs` for the sites, and the
+  enum for the arms); against that, count the distinct messages the rewriter's
+  path puts on `_event.data` today. If the frontend's alphabet is strictly
+  richer the FFI must carry a code plus a string, not a boolean, and the
+  question is settled without a benchmark. The ownership half is a leak test,
+  not a design question: run the probe's four entry points over the corpus under
+  ASan/LSan and require zero bytes still reachable — with a `free` entry point
+  the contract is trivially satisfiable, and the measurement exists to say the
+  caller actually called it.
 - **Whether the link is unconditional.** The table's last row is the largest
   number in it: `SCE_ENABLE_LUA` is a capability, not a selection, so a link
   placed beside `lua54` is paid by developers who never choose Lua. Scoping it
   to `SCE_SCRIPT_ENGINE=lua` instead would contradict `LuaEngine` being
   constructible whenever the capability is on — which is what
   `EcmaScriptSemanticsOnLuaEngine` relies on to measure it at all.
+  **HOW TO MEASURE IT** — the cost is wall-clock on the eight C++ gates, so
+  measure it there and nowhere else. Configure one tree with `SCE_ENABLE_LUA=ON`
+  and one with `OFF`, build the same target in each from cold, and take the
+  difference; that is what every developer who never chooses Lua would pay. Then
+  ask the second half, which is not a number: does any in-tree consumer
+  construct `LuaEngine` in a tree whose SELECTION is not lua?
+  `EcmaScriptSemanticsOnLuaEngine` does — it is `#ifdef SCE_ENABLE_LUA`, not
+  `SCE_SCRIPT_ENGINE_LUA` — so scoping the link to the selection would take that
+  suite's subject away in every default build, and the 23 rows it holds would
+  stop being measured anywhere. That is the trade, and it is a correctness cost
+  against a build-time one.
 
 **No decision is recorded here on purpose.** The numbers are the deliverable;
 which way to go is a judgement about what a C++ consumer should carry, and this

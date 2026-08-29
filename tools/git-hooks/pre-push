@@ -180,6 +180,28 @@ if (( gate_rc == 0 )); then
         done <<<"$OWED"
         printf '    Read them before building on this push.\n' >&2
     fi
+
+    # The residue of the line above, and the half that can actually lose a
+    # verdict. `--ci-owed` names gates CI will run; these are gates the
+    # change REACHES that neither the push nor CI will run, because a
+    # workflow's `paths:`/`paths-ignore:` filter keeps it from starting.
+    # That is often correct — a README cannot break a C++ ctest suite — and
+    # the point is only that it is said here rather than inferred later from
+    # a lane that quietly stopped reporting. A notice, like the block above:
+    # failures swallowed, `gate_rc` untouched.
+    UNOWED="$(python3 "$REPO_ROOT/tools/git-hooks/gate_registry.py" \
+                  --changed-from "$CHANGED_FILE" --ci-unowed 2>/dev/null || true)"
+    if [[ -n "$UNOWED" ]]; then
+        printf '\n==> pre-push: reached but run by NOBODY (filtered out of CI):\n' >&2
+        while read -r slug workflow; do
+            [[ -z "$slug" ]] && continue
+            printf '      %-22s %s\n' "$slug" "$workflow" >&2
+        done <<<"$UNOWED"
+        printf '    If one of these can see this change, its filter is wrong.\n' >&2
+        printf '    A path no rule classifies reaches EVERY gate, so on that\n' >&2
+        printf '    branch the list is wide by construction — read it against\n' >&2
+        printf '    the selection reason above before treating it as loss.\n' >&2
+    fi
 fi
 
 exit $gate_rc
