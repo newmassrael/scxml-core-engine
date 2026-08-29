@@ -1,0 +1,69 @@
+# Mutation cases for "a slug the registry does not carry is not a quiet pass".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_unknown_gate_slug_is_not_a_pass.cases`.
+#
+# `scripts/gate` owns every gate in this tree, and it had the escape hatch its
+# own gates are written against. Named invocation resolved the slug set with
+# `mapfile -t ORDER < <(python3 …)`, and a process substitution's status is
+# not `mapfile`'s: the resolver printed `unknown slug(s)` and exited 2, the
+# array came back empty, and an empty array is the "no gate applies" path —
+# which exits 0, correctly, for a change set that selected nothing.
+#
+# Found 2026-08-29 by walking into it. `scripts/gate clang-format` was run to
+# check formatting before a commit; that lane is a workflow with no gate
+# script, so the slug does not exist. It printed `unknown slug(s)` and returned
+# SUCCESS, and the run was one keystroke away from being recorded as a gate
+# that had passed.
+#
+# ⚠ **The first version of this file aimed one case at each half of the repair
+# and both SURVIVED.** That was not a weak test — it was two guards that each
+# catch the unknown slug on their own, so removing either one leaves the other
+# standing and no single-point mutation is observable. The honest case is
+# therefore the whole defect, restored: the swallowing AND the exit path it
+# made reachable, which is what the code looked like when it was measured.
+# Widening a mutation until it is observable is right when the alternative is
+# a case that can never be red; narrowing the repair to make a case fit would
+# have been the wrong direction.
+#
+# The second case is what keeps the first honest from the other side.
+# `scripts/gate` refuses for several reasons before it ever resolves a name,
+# so the test asserts that it REACHED the resolver before asserting what the
+# resolver did — and a case that silenced the resolver's own message would
+# otherwise leave that assertion untested.
+
+mutation_tests -p sce-build --test gate_registry_contract
+mutation_targets sce-build/tests/gate_registry_contract.rs
+# Read at run time, and EXECUTED: the case runs the script and judges its exit
+# status, so a change to it is invisible to a rebuild check.
+mutation_runtime_targets scripts/gate
+
+mutation_case "the resolver's refusal is swallowed and the empty order exits 0" <<'PY'
+edit("scripts/gate",
+     '''        if ! ORDER_TEXT="$(python3 - "$REGISTRY" "${SLUGS[@]}" <<'PYEOF\'''',
+     '''        mapfile -t ORDER < <(python3 - "$REGISTRY" "${SLUGS[@]}" <<'PYEOF\'''')
+edit("scripts/gate",
+     '''PYEOF
+)"; then
+            exit 2
+        fi
+        while IFS= read -r _slug; do
+            [[ -n "$_slug" ]] && ORDER+=("$_slug")
+        done <<<"$ORDER_TEXT"''',
+     '''PYEOF
+)''')
+edit("scripts/gate",
+     '''        if (( ${#ORDER[@]} == 0 )); then
+            printf 'gate: %s resolved to no gate at all; the registry answered nothing for a name it accepted\\n' \\
+                "${SLUGS[*]}" >&2
+            exit 2
+        fi
+        ;;''',
+     '''        ;;''')
+PY
+
+mutation_case "the resolver refuses without saying which slug it did not know" <<'PY'
+edit("scripts/gate",
+     '    print("gate: unknown slug(s): " + ", ".join(sorted(unknown)), file=sys.stderr)',
+     '    print("gate: cannot resolve", file=sys.stderr)')
+PY

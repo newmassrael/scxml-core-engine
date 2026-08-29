@@ -1834,3 +1834,46 @@ fn a_suite_that_can_skip_is_run_by_a_job_that_forbids_skipping() {
         unmeasured.join("\n")
     );
 }
+
+/// A name the registry does not carry is a FAILURE, not an empty run.
+///
+/// The runner has one exit path for "no gate applies", and it is exit 0
+/// because that is the honest answer when a change set selects nothing. A
+/// named invocation used to reach the same path by a completely different
+/// route: `mapfile -t ORDER < <(python3 …)` reports `mapfile`'s status and
+/// never the resolver's, so the resolver refused an unknown slug with exit 2,
+/// left `ORDER` empty, and fell into "nothing to verify".
+///
+/// Measured 2026-08-29, by walking into it: `scripts/gate clang-format` — a
+/// slug this tree has never had, because that lane is a workflow with no gate
+/// script — printed `unknown slug(s)` on stderr and returned SUCCESS. A typo
+/// in a lane, in a hook or in a person's hand was reported as a gate that
+/// passed, by the runner that owns every gate in the tree.
+///
+/// The stderr check is not decoration. `scripts/gate` refuses for several
+/// reasons before it ever resolves a name, and a non-zero status alone would
+/// be satisfied by any of them — this case has to know it REACHED the
+/// resolver, or it is asserting that the script can fail rather than that it
+/// fails here.
+#[test]
+fn a_slug_the_registry_does_not_carry_is_not_a_quiet_pass() {
+    let out = Command::new(repo_root().join("scripts/gate"))
+        .arg("no-such-gate-this-tree-has-never-had")
+        .current_dir(repo_root())
+        .output()
+        .expect("scripts/gate runs");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unknown slug"),
+        "`scripts/gate` did not reach its slug resolver — it refused for some \
+         earlier reason, so this case says nothing about what an unknown slug \
+         does.\nstderr: {stderr}"
+    );
+    assert!(
+        !out.status.success(),
+        "`scripts/gate` said `unknown slug` and exited SUCCESSFULLY. Every \
+         caller — a hook, a lane, a person — reads the status, so a name with \
+         a typo in it is reported as a gate that ran and passed."
+    );
+}
