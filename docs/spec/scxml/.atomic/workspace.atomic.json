@@ -10456,6 +10456,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/host_processor.py",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "generate_kotlin_for_engine",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11733,6 +11738,16 @@
           "file": "backends/go/runtime/helpers.go",
           "symbol": "IScriptEngine",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "INERT_DESTINATIONS",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DataModelInitHelper.h",
+          "symbol": "initializeVariable",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -12273,6 +12288,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/payload_reading.py",
           "symbol": "payload_reading_of_text",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "INERT_DESTINATIONS",
           "kind": "references"
         }
       ],

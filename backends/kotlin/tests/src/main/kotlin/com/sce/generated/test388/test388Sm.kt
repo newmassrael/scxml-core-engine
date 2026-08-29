@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -204,7 +204,7 @@ class Test388StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, "0")
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test388Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -228,7 +228,15 @@ class Test388StateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -253,12 +261,28 @@ class Test388StateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(Test388Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -266,7 +290,12 @@ class Test388StateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -278,7 +307,7 @@ class Test388StateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -422,17 +451,17 @@ class Test388StateMachine(
     private fun processS0(
         event: Test388Event
     ): TransitionResult<Test388State> = when {
-        event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test388State.S1, Test388State.S0)
+        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test388State.S1, Test388State.S0)
 
-        event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test388State.S2, Test388State.S0)
-
-        // W3C SCXML 3.12.1: Prefix match for "entering"
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test388State.Fail, Test388State.S0)
-
-        event is Test388Event.Entering.S011 && safeEvaluateGuard("Var1 == 3") -> TransitionResult.External(Test388State.Pass, Test388State.S0)
+        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test388State.S2, Test388State.S0)
 
         // W3C SCXML 3.12.1: Prefix match for "entering"
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard("Var1 == 3") -> TransitionResult.External(Test388State.Fail, Test388State.S0)
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test388State.Fail, Test388State.S0)
+
+        event is Test388Event.Entering.S011 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionResult.External(Test388State.Pass, Test388State.S0)
+
+        // W3C SCXML 3.12.1: Prefix match for "entering"
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionResult.External(Test388State.Fail, Test388State.S0)
 
         event is Test388Event.Timeout -> TransitionResult.External(Test388State.Fail, Test388State.S0)
 
@@ -465,7 +494,7 @@ class Test388StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign("Var1", "Var1 + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
             }
             is Test388State.S01 -> {
                 // SCE-MAP: test388.scxml:41 :: s01 :: _state_body
@@ -589,7 +618,7 @@ class Test388StateMachine(
     ) {
         when (source) {
         is Test388State.S0 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -598,7 +627,7 @@ class Test388StateMachine(
             else -> {}
         }
         is Test388State.S01 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -607,7 +636,7 @@ class Test388StateMachine(
             else -> {}
         }
         is Test388State.S011 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -616,7 +645,7 @@ class Test388StateMachine(
             else -> {}
         }
         is Test388State.S012 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -625,7 +654,7 @@ class Test388StateMachine(
             else -> {}
         }
         is Test388State.S02 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -634,7 +663,7 @@ class Test388StateMachine(
             else -> {}
         }
         is Test388State.S021 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -643,7 +672,7 @@ class Test388StateMachine(
             else -> {}
         }
         is Test388State.S022 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 

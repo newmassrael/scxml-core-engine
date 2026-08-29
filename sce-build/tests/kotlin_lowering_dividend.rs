@@ -64,9 +64,18 @@ const DIVERGENCES_JSON: &str = "tests/ecmascript/kotlin_lua_divergences.json";
 const LOWERED_JSON: &str = "tests/ecmascript/kotlin_lowered_ecma262.json";
 const SEAM_DOC: &str = "docs/SCE_LUA_TRANSLATION_SEAM.md";
 
-/// The key `build_time_frontend` lives under on each entry, and the top-level
-/// block that declares its vocabulary and tally.
+/// The key `build_time_frontend` USED to live under on each entry.
+///
+/// Retired 2026-08-29 when the seam opened. It survives here as the name of
+/// the thing that must not come back — see the second half of
+/// `every_entry_says_what_the_build_time_frontend_answers`.
 const FIELD: &str = "build_time_frontend";
+
+/// The two routes into this backend's Lua engine, which is what an entry's
+/// `diverges_on` names — and, since the seam opened, what carries the verdict
+/// this lane re-derives.
+const PATH_RUNTIME_REWRITER: &str = "runtime-rewriter";
+const PATH_BUILD_TIME_LOWERING: &str = "build-time-lowering";
 
 /// The verdict a case gets when the frontend's Lua reached the engine and the
 /// engine answered what ECMA-262 says.
@@ -176,60 +185,61 @@ fn derived_verdict(
     }
 }
 
-/// The vocabulary the file declares, which is what an entry's verdict may be.
+/// The vocabulary this lane derives, which is what an entry's verdict may be.
 ///
-/// Declared rather than hard-coded here for the same reason `paths` is: a
-/// value this lane knows and the file does not (or the reverse) is a spelling
-/// one side accepts and the other cannot fault.
+/// Hard-coded here since the seam opened, and that is a change of OWNER rather
+/// than a loss of one. While the verdict lived in its own field the file
+/// declared the spellings, so the file and this lane could not accept
+/// different ones; now the verdict IS the entry's `diverges_on`, whose legal
+/// values are the `paths` array — already derived from the backend by
+/// `ecma262_scoreboard_contract::every_list_declares_the_paths_its_backend_actually_has`.
+/// Declaring the three words twice would be the second vocabulary this
+/// migration removed.
 fn declared_values() -> BTreeSet<String> {
-    json(DIVERGENCES_JSON)
-        .get(FIELD)
-        .and_then(|b| b.get("values"))
-        .and_then(|v| v.as_object())
-        .unwrap_or_else(|| {
-            panic!(
-                "{DIVERGENCES_JSON} has no `{FIELD}.values` object. It is the set an \
-                 entry's verdict may name, and without it any spelling would be \
-                 accepted — including one no lane measures."
-            )
-        })
-        .keys()
-        .cloned()
+    [VERDICT_ANSWERS, VERDICT_DIVERGES, VERDICT_UNMEASURED]
+        .iter()
+        .map(|s| s.to_string())
         .collect()
 }
 
-/// The tally the file states, which this lane holds to the list under it.
-fn declared_tally() -> BTreeMap<String, i64> {
-    json(DIVERGENCES_JSON)
-        .get(FIELD)
-        .and_then(|b| b.get("measured"))
-        .and_then(|v| v.as_object())
-        .unwrap_or_else(|| {
-            panic!(
-                "{DIVERGENCES_JSON} has no `{FIELD}.measured` object. The count is the \
-                 thing a reader takes away, and one that is not re-derived is exactly \
-                 the prose count this whole file exists to have stopped writing."
-            )
-        })
+/// The verdict an entry SAYS, read off the paths it names.
+///
+/// The mapping is the migration `the_field_retires_when_the_seam_opens`
+/// prescribed: an entry the build-time frontend answers is wrong on the
+/// runtime rewriter alone; an entry the frontend gets wrong too is wrong on
+/// both. `unmeasured` has no shape here — a case the lowered route cannot ask
+/// is not a set of paths — so an entry can never spell it, which is exactly
+/// right now that the lowered entry point exists and every case is askable.
+fn declared_verdict(entry: &serde_json::Value) -> Option<&'static str> {
+    let paths: BTreeSet<String> = entry
+        .get("diverges_on")?
+        .as_array()?
         .iter()
-        .map(|(k, v)| {
-            (
-                k.clone(),
-                v.as_i64().unwrap_or_else(|| {
-                    panic!("{DIVERGENCES_JSON} `{FIELD}.measured.{k}` is a number")
-                }),
-            )
-        })
-        .collect()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
+    let runtime_only: BTreeSet<String> = [PATH_RUNTIME_REWRITER.to_string()].into_iter().collect();
+    let both: BTreeSet<String> = [
+        PATH_BUILD_TIME_LOWERING.to_string(),
+        PATH_RUNTIME_REWRITER.to_string(),
+    ]
+    .into_iter()
+    .collect();
+    if paths == runtime_only {
+        Some(VERDICT_ANSWERS)
+    } else if paths == both {
+        Some(VERDICT_DIVERGES)
+    } else {
+        None
+    }
 }
 
 /// What the list itself counts, per verdict, including the verdicts that are
-/// declared but unused — a vocabulary entry at zero is a real answer and has
+/// derivable but unused — a vocabulary entry at zero is a real answer and has
 /// to appear in the tally rather than be omitted from it.
 fn actual_tally() -> BTreeMap<String, i64> {
     let mut counts: BTreeMap<String, i64> = declared_values().into_iter().map(|v| (v, 0)).collect();
     for entry in divergences() {
-        if let Some(v) = entry.get(FIELD).and_then(|v| v.as_str()) {
+        if let Some(v) = declared_verdict(&entry) {
             *counts.entry(v.to_string()).or_insert(0) += 1;
         }
     }
@@ -251,55 +261,51 @@ fn seam_is_open() -> bool {
 /// justify.
 #[test]
 fn every_entry_says_what_the_build_time_frontend_answers() {
-    let values = declared_values();
+    let unreadable: Vec<String> = divergences()
+        .iter()
+        .filter(|e| declared_verdict(e).is_none())
+        .map(|e| {
+            let (s, c) = key(e);
+            let paths = e
+                .get("diverges_on")
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "absent".to_string());
+            format!("  {s}  ({c}) → {paths}")
+        })
+        .collect();
     assert!(
-        values.contains(VERDICT_ANSWERS)
-            && values.contains(VERDICT_DIVERGES)
-            && values.contains(VERDICT_UNMEASURED),
-        "{DIVERGENCES_JSON} declares `{FIELD}.values` as {values:?}, and this lane \
-         derives {VERDICT_ANSWERS:?}, {VERDICT_DIVERGES:?} and {VERDICT_UNMEASURED:?} \
-         from the lowered measurement. A verdict this lane can produce and the file \
-         does not admit would be rejected as a misspelling; one the file admits and \
-         this lane cannot produce is a value nothing can ever assign."
+        unreadable.is_empty(),
+        "{} entr(ies) in {DIVERGENCES_JSON} name a `diverges_on` this lane cannot read \
+         as a verdict. Since the seam opened there are exactly two shapes an entry can \
+         have: [{PATH_RUNTIME_REWRITER:?}] means the build-time frontend answers this \
+         case and the seam retires it, and both paths mean the frontend gets it wrong \
+         too. A third shape is a claim about the lowered route that \
+         {LOWERED_JSON} never measured.\n{}",
+        unreadable.len(),
+        unreadable.join("\n"),
     );
 
-    let missing: Vec<String> = divergences()
+    // Neither vocabulary survives the other. The retired field would be a
+    // second spelling of the verdict, free to disagree with the paths beside
+    // it — which is the drift `the_field_retires_when_the_seam_opens` fired to
+    // end, and which nothing else would notice if it crept back one entry at a
+    // time.
+    let revived: Vec<String> = divergences()
         .iter()
-        .filter(|e| e.get(FIELD).and_then(|v| v.as_str()).is_none())
+        .filter(|e| e.get(FIELD).is_some())
         .map(|e| {
             let (s, c) = key(e);
             format!("  {s}  ({c})")
         })
         .collect();
     assert!(
-        missing.is_empty(),
-        "{} entr(ies) in {DIVERGENCES_JSON} carry no `{FIELD}`. The verdict says what \
-         the OTHER route into the Lua engine already answers, which is what a reader \
-         deciding whether to fund the lowered seam is actually asking; an entry \
-         without one is counted in the list's length and in none of its three \
-         answers.\n{}",
-        missing.len(),
-        missing.join("\n"),
-    );
-
-    let unknown: Vec<String> = divergences()
-        .iter()
-        .filter_map(|e| {
-            let v = e.get(FIELD)?.as_str()?;
-            if values.contains(v) {
-                return None;
-            }
-            let (s, c) = key(e);
-            Some(format!("  {s}  ({c}) → {v:?}"))
-        })
-        .collect();
-    assert!(
-        unknown.is_empty(),
-        "{} entr(ies) name a `{FIELD}` that {DIVERGENCES_JSON} does not declare in \
-         `{FIELD}.values`. A spelling no lane derives is a claim nothing can \
-         fault.\n{}",
-        unknown.len(),
-        unknown.join("\n"),
+        revived.is_empty(),
+        "{} entr(ies) carry `{FIELD}` again. It retired when \
+         `supports_script_engine_target(Lua)` became true and `diverges_on` started \
+         carrying the same fact; two vocabularies for one fact is what this file's \
+         own header calls the drift it was written to end.\n{}",
+        revived.len(),
+        revived.join("\n"),
     );
 }
 
@@ -322,14 +328,15 @@ fn every_verdict_is_the_lowered_measurement_re_derived() {
     let wrong: Vec<String> = divergences()
         .iter()
         .filter_map(|entry| {
-            let declared = entry.get(FIELD)?.as_str()?;
+            let declared = declared_verdict(entry)?;
             let k = key(entry);
             let derived = derived_verdict(&k, &unreachable, &diverging);
             if declared == derived {
                 return None;
             }
             Some(format!(
-                "  {}  ({})\n    says {declared:?}, {LOWERED_JSON} makes it {derived:?}",
+                "  {}  ({})\n    its `diverges_on` says {declared:?}, {LOWERED_JSON} \
+                 makes it {derived:?}",
                 k.0, k.1
             ))
         })
@@ -337,7 +344,7 @@ fn every_verdict_is_the_lowered_measurement_re_derived() {
 
     assert!(
         wrong.is_empty(),
-        "{} `{FIELD}` verdict(s) disagree with the lowered measurement they are \
+        "{} `diverges_on` verdict(s) disagree with the lowered measurement they are \
          derived from.\n\
          The verdict is not a judgement anyone makes here: `answers` is a case \
          absent from BOTH arrays of {LOWERED_JSON}, `diverges` is one in its \
@@ -360,15 +367,7 @@ fn every_verdict_is_the_lowered_measurement_re_derived() {
 /// applied to the count this round produced, on the day it produced it.
 #[test]
 fn the_declared_tally_is_the_list_it_summarises() {
-    let declared = declared_tally();
     let actual = actual_tally();
-    assert_eq!(
-        declared, actual,
-        "{DIVERGENCES_JSON}'s `{FIELD}.measured` states {declared:?} and the entries \
-         under it count {actual:?}. The tally is a summary of the list, so the list \
-         is what to re-count — not the summary that disagrees with it."
-    );
-
     let total: i64 = actual.values().sum();
     assert_eq!(
         total,

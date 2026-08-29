@@ -151,15 +151,25 @@ generation time and emitted as Lua"). Measured 2026-08-27 —
   — so on their default configuration a document IS evaluated as
   ECMAScript, and the ECMA-262 case table
   (`tests/ecmascript/ecma262_semantics.json`) is answered in full.
-  Selecting Lua on either instead reaches a runtime text rewriter whose
-  disagreements with ECMA-262 are enumerated in
+  Selecting Lua on either reaches `sce-build`'s ECMAScript frontend,
+  which PARSES the author's text and lowers it at run time — the same
+  frontend the build-time lowering uses, linked into the engine. Its
+  disagreements with ECMA-262, if any, are enumerated in
   `tests/ecmascript/lua_engine_divergences.json` and
-  `tests/ecmascript/kotlin_lua_divergences.json`. Each entry there names
-  the PATH it is about (`diverges_on`): the runtime rewriter, or
-  `sce-build`'s build-time lowering, which a C++ run reaches by asking
+  `tests/ecmascript/kotlin_lua_divergences.json`; both lists are EMPTY as
+  of 2026-08-30. Each entry names the PATH it is about (`diverges_on`):
+  the run-time route, or the build-time lowering a run reaches by asking
   for `--script-engine lua`. Two routes into one engine fail differently,
   and a list that did not separate them could only ever shrink when the
-  rewriter was repaired.
+  route it named was repaired.
+
+  ⚠ Both lists reached empty through the frontend rather than through a
+  repair of what came before it — a per-backend `EcmaScriptToLuaTransformer`
+  that rewrote the same text WITHOUT parsing it, and so could not say
+  where an operand ended. C++ has deleted its copy; Kotlin's is still
+  compiled in as the fallback for text the frontend refuses, so an
+  expression outside the case table is still guessed at there rather than
+  refused.
 
 The manifest reports which of the two a given run produced, in
 `script_engine_language` (`SCE_ERROR_CONTRACT.md` §10.1).

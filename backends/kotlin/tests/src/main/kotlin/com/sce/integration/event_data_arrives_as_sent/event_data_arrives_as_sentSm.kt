@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8e0f0b7b552dfbb89b9083db177a216e77a3534d3f6112690f84145daf0386d4
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -182,7 +182,15 @@ class EventDataArrivesAsSentStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -207,12 +215,28 @@ class EventDataArrivesAsSentStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(EventDataArrivesAsSentEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -220,7 +244,12 @@ class EventDataArrivesAsSentStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -232,7 +261,7 @@ class EventDataArrivesAsSentStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -322,7 +351,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processDocumented(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard("_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'") -> TransitionResult.External(EventDataArrivesAsSentState.Opening, EventDataArrivesAsSentState.Documented)
+        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> TransitionResult.External(EventDataArrivesAsSentState.Opening, EventDataArrivesAsSentState.Documented)
 
         event is EventDataArrivesAsSentEvent.Doc -> TransitionResult.External(EventDataArrivesAsSentState.Flattened, EventDataArrivesAsSentState.Documented)
 
@@ -332,7 +361,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processHeard(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard("_event.data === 'hold the line'") -> TransitionResult.External(EventDataArrivesAsSentState.Quoted, EventDataArrivesAsSentState.Heard)
+        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 'hold the line'")) -> TransitionResult.External(EventDataArrivesAsSentState.Quoted, EventDataArrivesAsSentState.Heard)
 
         event is EventDataArrivesAsSentEvent.Note -> TransitionResult.External(EventDataArrivesAsSentState.Garbled, EventDataArrivesAsSentState.Heard)
 
@@ -342,7 +371,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processOpening(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard("_event.data === '<assign> to detail failed'") -> TransitionResult.External(EventDataArrivesAsSentState.Settled, EventDataArrivesAsSentState.Opening)
+        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '<assign> to detail failed'")) -> TransitionResult.External(EventDataArrivesAsSentState.Settled, EventDataArrivesAsSentState.Opening)
 
         event is EventDataArrivesAsSentEvent.Broken -> TransitionResult.External(EventDataArrivesAsSentState.Swallowed, EventDataArrivesAsSentState.Opening)
 
@@ -352,7 +381,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processQuoted(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard("_event.data === '2 + 3'") -> TransitionResult.External(EventDataArrivesAsSentState.Documented, EventDataArrivesAsSentState.Quoted)
+        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '2 + 3'")) -> TransitionResult.External(EventDataArrivesAsSentState.Documented, EventDataArrivesAsSentState.Quoted)
 
         event is EventDataArrivesAsSentEvent.Arith -> TransitionResult.External(EventDataArrivesAsSentState.Evaluated, EventDataArrivesAsSentState.Quoted)
 
@@ -362,7 +391,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processWaiting(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard("_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2") -> TransitionResult.External(EventDataArrivesAsSentState.Heard, EventDataArrivesAsSentState.Waiting)
+        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> TransitionResult.External(EventDataArrivesAsSentState.Heard, EventDataArrivesAsSentState.Waiting)
 
         event is EventDataArrivesAsSentEvent.Payload -> TransitionResult.External(EventDataArrivesAsSentState.Mangled, EventDataArrivesAsSentState.Waiting)
 

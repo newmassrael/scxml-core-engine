@@ -71,18 +71,33 @@ public:
      * @param jsEngine JSEngine instance for variable storage and expression evaluation
      * @param sessionId Session ID for JSEngine context
      * @param varId Variable identifier (e.g., "var1")
-     * @param content Inline XML content or empty if using src/expr
+     * @param content Inline content, as a `ScriptSource` — see below
      * @param errorCallback Function to call on error (receives error message)
      * @return true if initialization succeeded, false otherwise
      *
      * §scxml-5.2.2: content, src, and expr are mutually exclusive
      * - If content is non-empty and starts with '<', create DOM object
-     * - Otherwise, evaluate content as JavaScript expression
+     * - Otherwise, evaluate content as an expression
      *
      * §scxml-5.3: Raises error.execution if initialization fails
+     *
+     * A `ScriptSource` and not a `std::string`, because this evaluates: the
+     * non-XML arm reaches `evaluateExpression`, and a parameter that could
+     * only be the author's text meant a `--script-engine lua` artifact
+     * evaluated ECMAScript here while the `expr` arm beside it carried Lua the
+     * build-time frontend had produced. Measured 2026-08-29 — the site was
+     * invisible to the migration scan because a C++ RAW string literal made
+     * it read as a log line.
+     *
+     * §scxml-B-2's first reading is answered from `content.source()`, the
+     * author's own text: whether the children are an XML document is a
+     * question about the document and not about which language the engine
+     * speaks. The DOM node and the whitespace-normalized string are built
+     * from that same half, and only the expression reading uses the lowered
+     * one.
      */
     static bool initializeVariable(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
-                                   const std::string &content, std::function<void(const std::string &)> errorCallback);
+                                   const ScriptSource &content, std::function<void(const std::string &)> errorCallback);
 
     /**
      * @brief Initialize a datamodel variable with external file loading

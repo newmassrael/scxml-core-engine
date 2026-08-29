@@ -26,7 +26,7 @@
 {% elif var.content %}
                 // State {{ state_id }} variable '{{ var.id }}' from content
                 ::SCE::DataModelInitHelper::initializeVariable(
-                    scriptEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content }})",
+                    scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.content | to_script_source_data_content }},
                     [&engine](const ::std::string& msg) {
                         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
                     });

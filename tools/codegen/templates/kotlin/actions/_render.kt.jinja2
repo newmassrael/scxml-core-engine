@@ -12,7 +12,7 @@
 {% if model.needs_script_engine %}
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}(scriptEngine?.evaluateExpr(scriptSessionId ?: "", "{{ action.expr | escape_kotlin }}")?.toString() ?: ""))
+                println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}(scriptEngine?.evaluateExpr(scriptSessionId ?: "", {{ action.expr | to_script_source_expr }})?.toString() ?: ""))
             } catch (_: Exception) {}
 {% else %}
             println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}{{ action.expr | to_kotlin_string_expr }})

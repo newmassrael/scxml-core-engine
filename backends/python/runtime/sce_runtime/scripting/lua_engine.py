@@ -14,19 +14,21 @@ every backend sits on the same footing. It does not
   - Rust — `mlua` (PUC Lua bindings).
   - Go — `gopher-lua`.
   - C11 — Lua 5.4 directly.
-- Rewritten at RUN time, by a per-backend `EcmaScriptToLuaTransformer` inside
-  the engine, because the generated code hands it the author's ECMAScript:
+- Lowered at RUN time, by the SAME frontend linked into the engine, because
+  the generated code hands it the author's ECMAScript:
   - C++ — Lua 5.4 via the C API, under `SCE_SCRIPT_ENGINE=lua` only.
   - Kotlin — JNI bindings, when `LuaScriptEngine` is the injected engine.
 
-Those two runtime rewriters are where the ECMA-262 divergences live
+Those two run-time routes are where the ECMA-262 divergences used to live
 (`tests/ecmascript/lua_engine_divergences.json`,
-`tests/ecmascript/kotlin_lua_divergences.json`). The four above them have
-none, which is the whole reason this distinction is worth spelling out —
-and it is why each entry in those lists names the PATH it is about
-(`diverges_on`). C++ can now be asked for build-time lowering too
-(`--script-engine lua`), so "which rewriter" stopped being the same
-question as "which backend".
+`tests/ecmascript/kotlin_lua_divergences.json`). Both lists are EMPTY as of
+2026-08-30, and they emptied when each engine stopped reaching a text
+rewriter — a pass that replaced the author's text without parsing it — and
+started reaching the frontend instead. The four backends above them never had
+a rewriter at all, which is the whole reason this distinction is worth
+spelling out, and it is why each entry in those lists names the PATH it is
+about (`diverges_on`): "which route" was never the same question as "which
+backend".
 
 Generated `*_sm.py` modules call `IScriptEngine.evaluate_expression(...)`
 with **Lua text** (already transformed at codegen time). The Lua engine

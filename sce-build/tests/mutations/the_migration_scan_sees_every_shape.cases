@@ -1,0 +1,83 @@
+# Mutation cases for "the migration scan sees every shape that carries the
+# author's text into an engine".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_migration_scan_sees_every_shape.cases`.
+#
+# `supports_script_engine_target(Lua)` is a REFUSAL built on two scans, and a
+# refusal built on a scan is only as honest as what the scan can see. Measured
+# 2026-08-29 it could not see three shapes, and each one was hiding a real
+# hand-off in the backend both lists reported as FINISHED:
+#
+#   * a `{% set %}` that binds the author's text to a name emitted elsewhere —
+#     `<donedata>`'s content reached `DoneDataHelper::evaluateContent` this way,
+#     and the artifact carried `ScriptSource::lua("(\"a\" .. \"b\")", …)` on one
+#     line and the author's `Var1 + 'z'` on another, in one session;
+#   * a C++ RAW string literal, whose own `(` and `)` made the prose test read
+#     the site as a log line — three `<data>` inline-content sites, one of them
+#     a bare `evaluateExpression` call;
+#   * a callee more than three lines above its argument, which is how Kotlin
+#     spells a call with named arguments.
+#
+# Each case below puts one template site back into the shape that used to hide
+# it. The gate must NAME the site. A case that SURVIVES means the scan has lost
+# that shape again — and with it the claim that a `--script-engine lua`
+# artifact is wholly lowered, which is the one thing this refusal exists to
+# say.
+#
+# ⚠ Why these mutate TEMPLATES and not the scanner: removing the scanner's
+# reach makes both lists SHORTER, so every "no sites remain" assertion stays
+# green. The defect is only visible from the other side — an unmigrated site
+# the scan should name and does not — so that is the side the mutation works
+# on. The scanner's own reach has a positive witness instead
+# (`the_scan_reaches_expressions_bound_by_a_set_statement`).
+
+mutation_tests -p sce-build --features cli --test script_engine_target_input
+mutation_targets sce-build/src/generator.rs
+mutation_runtime_targets tools/codegen/templates/entry_exit_actions.jinja2 tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2
+
+# ── The author's text is laundered through a `{% set %}` name ──────
+#
+# The binding names no callee, the emission names no model field, and a scan
+# reading only `{{ … }}` sees neither half. One name is all it took to launder
+# a site out of the migration population for a whole round.
+
+mutation_case "the author's text is laundered through a set binding" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "{% set donedata_content = state.donedata.content.text | to_script_source_expr %}",
+     "{% set donedata_content = state.donedata.content.text %}")
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "                        {{ donedata_content }},",
+     '                        "{{ donedata_content | escape_cpp }}",')
+PY
+
+# ── A hand-off wearing a C++ raw string ────────────────────────────
+#
+# `R"( … )"` carries its delimiters INSIDE the quotes, so a prose test that
+# asks "does anything else survive in this literal" reads `(` and `)` as other
+# text and files the site as a sentence with a value in it. The site this
+# restores is target-INDEPENDENT — `--script-engine lua` does not change it by
+# one byte — which is what made it invisible from the artifact too.
+
+mutation_case "a hand-off wears a C++ raw string" <<'PY'
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     "scriptEngine.evaluateExpression(sessionId_.value(), {{ var.content | to_script_source_data_content }}).get();",
+     'scriptEngine.evaluateExpression(sessionId_.value(), R"({{ var.content | escape_cpp }})").get();')
+PY
+
+# ── The callee sits further away than the window reached ───────────
+#
+# Kotlin spells a call with named arguments, so its callee is further from the
+# value than a C++ positional call puts it. This restores an unmigrated site
+# whose callee is out of a three-line window: the scan must still reach
+# `evaluateExpr` and report the site rather than filing it as a destination
+# nobody has judged.
+
+mutation_case "the callee sits further away than the window reached" <<'PY'
+edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
+     "                    val v = eng.evaluateExpr(sid, {{ action.targetexpr | to_script_source_expr }})",
+     """                    val v = eng.evaluateExpr(
+                        sid,
+                        "{{ action.targetexpr | escape_kotlin }}",
+                    )""")
+PY

@@ -22,6 +22,10 @@ dependencies {
 // ---------------------------------------------------------------------------
 
 val luaSrcDir = rootProject.file("third_party/lua/src")
+// Read at configuration time and carried as a plain string, so no Gradle
+// project object leaks into task state — the same rule the codegen binary
+// resolution follows for the configuration cache.
+val rootProjectDirPath: String = rootProject.projectDir.absolutePath
 val nativeSrcDir = file("src/main/cpp")
 val nativeBuildDir = layout.buildDirectory.dir("native")
 val nativeLibDir = layout.buildDirectory.dir("native/lib")
@@ -45,6 +49,13 @@ val cmakeConfigure by tasks.registering(Exec::class) {
     commandLine("cmake",
         nativeSrcDir.absolutePath,
         "-DLUA_SRC_DIR=${luaSrcDir.absolutePath}",
+        // The repository root, so the native build can reach
+        // `cmake/SCEBuildLowering.cmake` — the one place that knows how to
+        // build and name sce-build's lowering staticlib. Passed rather than
+        // walked up to from the CMake file: a relative `../../../../..` is a
+        // second copy of this directory's depth, and moving the module would
+        // move only one of them.
+        "-DSCE_REPO_ROOT=${rootProjectDirPath}",
         "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${libDir.absolutePath}",
         "-DCMAKE_BUILD_TYPE=Release",
         "-DJAVA_HOME=${System.getProperty("java.home")}")

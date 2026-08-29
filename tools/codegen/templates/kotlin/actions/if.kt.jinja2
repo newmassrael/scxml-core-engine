@@ -8,7 +8,7 @@
 {% if outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt %}
             if ({{ outer_if_action.cond_kt }}) {
 {% elif model.needs_script_engine and outer_if_action.cond %}
-            if (safeEvaluateGuard("{{ outer_if_action.cond | escape_kotlin }}")) {
+            if (safeEvaluateGuard({{ outer_if_action.cond | to_script_source_guard }})) {
 {% elif outer_if_action.cond %}
             // W3C SCXML 4.2: cond="{{ outer_if_action.cond }}" decided at build time
             if ({{ 'true' if outer_if_action.cond_constant else 'false' }}) {
@@ -21,7 +21,7 @@
 {% if elseif.is_pure_in_predicate and elseif.cond_kt %}
             } else if ({{ elseif.cond_kt }}) {
 {% elif model.needs_script_engine and elseif.cond %}
-            } else if (safeEvaluateGuard("{{ elseif.cond | escape_kotlin }}")) {
+            } else if (safeEvaluateGuard({{ elseif.cond | to_script_source_guard }})) {
 {% else %}
             } else if ({{ 'true' if elseif.cond_constant else 'false' }}) {
 {% endif %}

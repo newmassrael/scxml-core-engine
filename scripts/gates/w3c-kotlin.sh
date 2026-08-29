@@ -136,12 +136,17 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 #
 # ⚠ What this comment ALSO said until 2026-08-29 — "It passes this suite
 # (measured: 230 cases)" — was false. Run that day with
-# `./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua`, TWO cases fail:
+# `./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua`, TWO cases failed:
 # `SendParamPayloadTest` (W3C SCXML 6.2, a repeated `<param>` name loses one of
 # its values) and `XmlDataIsADomTreeTest` (W3C SCXML B.2, a `<data>` element's
-# XML does not arrive as a document). Both predate that day's engine changes;
-# an A/B against the engine's previous undeclared-variable guard reproduced
-# them unchanged.
+# XML does not arrive as a document).
+#
+# ⚠⚠ BOTH CLOSED 2026-08-30, and not by anybody fixing them. `sce-build`'s
+# ECMAScript frontend is now linked into this backend's Lua engine, and the
+# same suite on the same selection is 371 of 371. The A/B is in
+# `docs/SCE_LUA_TRANSLATION_SEAM.md`'s eleventh round: neutering the frontend
+# path brings back exactly those two, beside the 44 expression divergences —
+# which is what makes the attribution the frontend rather than a coincidence.
 #
 # No total is written here on purpose. The one that was ("230 cases") was stale
 # by 131, and the replacement drafted the same morning ("361 tests") was stale
@@ -149,16 +154,17 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # one does. The FAILING CASES are named instead: those two names are what a
 # reader can act on, and a name does not rot the way a denominator does.
 #
-# ⚠⚠ So NO CI LANE MEASURES THIS ENGINE ABOVE THE EXPRESSION LEVEL. The
-# ECMA-262 table and the divergence lists cover its expressions; the 226
-# generated machines are run on rhino and quickjs only, and the sentence that
-# stood in for running them on Lua was a claim nobody could fault — the exact
-# shape `docs/SCE_LUA_TRANSLATION_SEAM.md` keeps paying for. The repair is not
-# to add `lua` to this array (that makes the conformance claim this gate must
-# not make) but to give Lua its own declared-failure list, held in both
-# directions the way `kotlin_lua_divergences.json` is. Until that exists this
-# note is a debt, deliberately written where the next person to widen the array
-# will read it.
+# ⚠⚠⚠ NO CI LANE STILL MEASURES THIS ENGINE ABOVE THE EXPRESSION LEVEL, and
+# the reason it is not simply added to this array has CHANGED. It used to be
+# that running it here would assert a conformance the engine did not have. That
+# premise is gone — the divergence list is empty and the suite is green on the
+# selection — and what is left is a MECHANICAL blocker: the committed Kotlin
+# tree is generated for the ECMAScript target, which is what rhino and quickjs
+# need, and adding `lua` here would run that same tree on an engine whose
+# frontend answers it correctly only through the run-time route. Measuring the
+# lowered route above the expression level needs the suite to generate PER
+# ENGINE. Until it does, this note is a debt, deliberately written where the
+# next person to widen the array will read it.
 KOTLIN_ENGINES=(rhino quickjs)
 REPORTS="backends/kotlin/tests/build/test-results/test"
 

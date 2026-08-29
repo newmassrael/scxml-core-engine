@@ -1181,8 +1181,12 @@ fn register_script_source_filters(
     env: &mut minijinja::Environment,
     scope: &Arc<DocumentScope>,
     target: crate::generator::ScriptEngineTarget,
+    spelling: ScriptSourceSpelling,
 ) {
     use crate::generator::ScriptEngineTarget;
+    let script_source_ecmascript = move |source: &str| -> String { spelling.ecmascript(source) };
+    let script_source_lua =
+        move |lowered: &str, source: &str| -> String { spelling.lua(lowered, source) };
 
     // Expressions and guards differ only in the lowering they take: a guard
     // goes through the truthiness helper, an expression does not. Under the
@@ -1197,9 +1201,9 @@ fn register_script_source_filters(
         "to_script_source_expr",
         move |expr: String| -> Result<String, minijinja::Error> {
             Ok(match target {
-                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(&expr),
+                ScriptEngineTarget::EcmaScript => script_source_ecmascript(&expr),
                 ScriptEngineTarget::Lua => {
-                    cpp_script_source_lua(&to_lua_expr(expr.clone(), &for_expr)?, &expr)
+                    script_source_lua(&to_lua_expr(expr.clone(), &for_expr)?, &expr)
                 }
             })
         },
@@ -1209,9 +1213,9 @@ fn register_script_source_filters(
         "to_script_source_guard",
         move |expr: String| -> Result<String, minijinja::Error> {
             Ok(match target {
-                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(&expr),
+                ScriptEngineTarget::EcmaScript => script_source_ecmascript(&expr),
                 ScriptEngineTarget::Lua => {
-                    cpp_script_source_lua(&to_lua_guard(expr.clone(), &for_guard)?, &expr)
+                    script_source_lua(&to_lua_guard(expr.clone(), &for_guard)?, &expr)
                 }
             })
         },
@@ -1221,9 +1225,9 @@ fn register_script_source_filters(
         "to_script_source_script",
         move |body: String| -> Result<String, minijinja::Error> {
             Ok(match target {
-                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(&body),
+                ScriptEngineTarget::EcmaScript => script_source_ecmascript(&body),
                 ScriptEngineTarget::Lua => {
-                    cpp_script_source_lua(&to_lua_script(body.clone(), &for_script)?, &body)
+                    script_source_lua(&to_lua_script(body.clone(), &for_script)?, &body)
                 }
             })
         },
@@ -1239,10 +1243,10 @@ fn register_script_source_filters(
         "to_script_source_data_content",
         move |content: String| -> Result<String, minijinja::Error> {
             Ok(match target {
-                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(
-                    &to_author_data_content(content, &for_data_content)?,
-                ),
-                ScriptEngineTarget::Lua => cpp_script_source_lua(
+                ScriptEngineTarget::EcmaScript => {
+                    script_source_ecmascript(&to_author_data_content(content, &for_data_content)?)
+                }
+                ScriptEngineTarget::Lua => script_source_lua(
                     &to_lua_data_content(content.clone(), &for_data_content)?,
                     &to_author_data_content(content, &for_data_content)?,
                 ),
@@ -1254,10 +1258,10 @@ fn register_script_source_filters(
         "to_script_source_assign_content",
         move |content: String| -> Result<String, minijinja::Error> {
             Ok(match target {
-                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(
+                ScriptEngineTarget::EcmaScript => script_source_ecmascript(
                     &to_author_assign_content(content, &for_assign_content)?,
                 ),
-                ScriptEngineTarget::Lua => cpp_script_source_lua(
+                ScriptEngineTarget::Lua => script_source_lua(
                     &to_lua_assign_content(content.clone(), &for_assign_content)?,
                     &to_author_assign_content(content, &for_assign_content)?,
                 ),
@@ -1276,9 +1280,9 @@ fn register_script_source_filters(
         "to_script_source_location",
         move |location: String| -> Result<String, minijinja::Error> {
             Ok(match target {
-                ScriptEngineTarget::EcmaScript => cpp_script_source_ecmascript(&location),
+                ScriptEngineTarget::EcmaScript => script_source_ecmascript(&location),
                 ScriptEngineTarget::Lua => {
-                    cpp_script_source_lua(&to_lua_location(location.clone())?, &location)
+                    script_source_lua(&to_lua_location(location.clone())?, &location)
                 }
             })
         },
@@ -1297,9 +1301,9 @@ fn register_script_source_filters(
         move |expr: String, location: String| -> Result<String, minijinja::Error> {
             Ok(match target {
                 ScriptEngineTarget::EcmaScript => {
-                    cpp_script_source_ecmascript(&format!("{location} = {expr}"))
+                    script_source_ecmascript(&format!("{location} = {expr}"))
                 }
-                ScriptEngineTarget::Lua => cpp_script_source_lua(
+                ScriptEngineTarget::Lua => script_source_lua(
                     &format!("{location} = {}", to_lua_expr(expr.clone(), &for_assign)?),
                     &format!("{location} = {expr}"),
                 ),
@@ -1308,22 +1312,59 @@ fn register_script_source_filters(
     );
 }
 
-/// `::SCE::ScriptSource::ecmascript("…")` — the author's text, unlowered.
-fn cpp_script_source_ecmascript(source: &str) -> String {
-    format!(
-        "::SCE::ScriptSource::ecmascript(\"{}\")",
-        escape_cpp(source.to_string())
-    )
+/// How one backend spells a `ScriptSource` in its own language.
+///
+/// The seam is the SAME on both sides — which lowering each filter applies,
+/// which arm the run's `--script-engine` selection takes, and the rule that a
+/// filter emits BOTH halves or neither. Only the constructor's spelling and
+/// the string escaping differ, so those are what this carries and everything
+/// else stays one implementation. A second copy of
+/// [`register_script_source_filters`] per backend would be a second answer to
+/// "what does the Lua target do with an `<assign>` location", free to drift
+/// from the first the way the manifest's `script_engine_language` already did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScriptSourceSpelling {
+    /// `::SCE::ScriptSource::…`, escaped for a C++ string literal.
+    Cpp,
+    /// `com.sce.runtime.ScriptSource.…`, escaped for a Kotlin string literal.
+    ///
+    /// Fully qualified because the generated machine is emitted into the
+    /// document's own package and does not import the runtime wholesale —
+    /// every other runtime type it names is spelled out the same way.
+    Kotlin,
 }
 
-/// `::SCE::ScriptSource::lua("…lowered…", "…source…")` — both halves, in the
-/// order the C++ named constructor takes them.
-fn cpp_script_source_lua(lowered: &str, source: &str) -> String {
-    format!(
-        "::SCE::ScriptSource::lua(\"{}\", \"{}\")",
-        escape_cpp(lowered.to_string()),
-        escape_cpp(source.to_string())
-    )
+impl ScriptSourceSpelling {
+    /// `ScriptSource::ecmascript("…")` — the author's text, unlowered.
+    fn ecmascript(self, source: &str) -> String {
+        match self {
+            Self::Cpp => format!(
+                "::SCE::ScriptSource::ecmascript(\"{}\")",
+                escape_cpp(source.to_string())
+            ),
+            Self::Kotlin => format!(
+                "com.sce.runtime.ScriptSource.ecmascript(\"{}\")",
+                escape_kotlin(source.to_string())
+            ),
+        }
+    }
+
+    /// `ScriptSource::lua("…lowered…", "…source…")` — both halves, in the
+    /// order the named constructor takes them.
+    fn lua(self, lowered: &str, source: &str) -> String {
+        match self {
+            Self::Cpp => format!(
+                "::SCE::ScriptSource::lua(\"{}\", \"{}\")",
+                escape_cpp(lowered.to_string()),
+                escape_cpp(source.to_string())
+            ),
+            Self::Kotlin => format!(
+                "com.sce.runtime.ScriptSource.lua(\"{}\", \"{}\")",
+                escape_kotlin(lowered.to_string()),
+                escape_kotlin(source.to_string())
+            ),
+        }
+    }
 }
 
 pub fn register_cpp_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
@@ -1344,7 +1385,7 @@ pub fn register_cpp_filters_for_engine(
     scope: &Arc<DocumentScope>,
     target: crate::generator::ScriptEngineTarget,
 ) {
-    register_script_source_filters(env, scope, target);
+    register_script_source_filters(env, scope, target, ScriptSourceSpelling::Cpp);
     register_cpp_filters_inner(env, scope)
 }
 
@@ -1684,6 +1725,28 @@ fn to_in_predicate_c11(
 /// Carries the scope for the same single filter, and for the same reason,
 /// as [`register_cpp_filters`].
 pub fn register_kotlin_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    register_kotlin_filters_for_engine(
+        env,
+        scope,
+        crate::generator::Language::Kotlin.default_script_engine_target(),
+    )
+}
+
+/// [`register_kotlin_filters`] with the run's engine selection named.
+///
+/// Same two-function shape as the C++ side next door, and for the same
+/// reason: Rust has no default arguments, and every caller that does not pass
+/// a target means this backend's default.
+pub fn register_kotlin_filters_for_engine(
+    env: &mut minijinja::Environment,
+    scope: &Arc<DocumentScope>,
+    target: crate::generator::ScriptEngineTarget,
+) {
+    register_script_source_filters(env, scope, target, ScriptSourceSpelling::Kotlin);
+    register_kotlin_filters_inner(env, scope)
+}
+
+fn register_kotlin_filters_inner(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     let for_content = Arc::clone(scope);
     env.add_filter("to_author_data_content", move |content: String| {
         to_author_data_content(content, &for_content)
