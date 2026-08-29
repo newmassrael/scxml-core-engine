@@ -240,6 +240,127 @@ fn enum_variant_names(src: &str, opener: &str) -> Vec<String> {
     panic!("`{opener}` is not closed by a `}}` at column 0");
 }
 
+/// The lines of a shell script or workflow with commentary removed and
+/// backslash continuations joined, so a token can be read as an
+/// ARGUMENT rather than as text that happens to appear in the file.
+///
+/// Both bash and YAML comment with `#`, and no cargo argument this is
+/// used to read contains one, so cutting each line at its first `#`
+/// removes prose and commented-out invocations alike.
+fn command_lines(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for line in src.lines() {
+        let code = line.split('#').next().unwrap_or("").trim_end();
+        match code.strip_suffix('\\') {
+            Some(head) => {
+                current.push_str(head);
+                current.push(' ');
+            }
+            None => {
+                current.push_str(code);
+                out.push(std::mem::take(&mut current));
+            }
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
+/// Whether `src` PASSES `feature` to cargo — as a member of a
+/// `--features` / `-F` value on a line that is not commented out.
+///
+/// ⚠ The distinction is the whole of this function. The first form of
+/// the check that uses it asked whether the text `ffi-probe` appeared
+/// anywhere in a gate file, and the paragraph explaining why the
+/// feature is named there satisfied that on its own: a mutation that
+/// deleted the feature from the cargo invocation and left the prose
+/// standing kept the gate GREEN while nothing compiled the probe. That
+/// is the exact failure the check exists to prevent, so it was blind in
+/// precisely the case it was written for. Naming a feature is not
+/// building it, and a scanner that reads comments cannot tell.
+fn passes_cargo_feature(src: &str, feature: &str) -> bool {
+    command_lines(src).iter().any(|line| {
+        let mut tokens = line.split_whitespace();
+        loop {
+            let Some(token) = tokens.next() else {
+                return false;
+            };
+            let value = match token.strip_prefix("--features=") {
+                Some(value) => Some(value),
+                None if token == "--features" || token == "-F" => tokens.next(),
+                None => None,
+            };
+            let Some(value) = value else { continue };
+            // cargo accepts a comma- OR space-separated list, and the
+            // shell may have quoted the whole of it — in which case the
+            // list spans several whitespace tokens and has to be put
+            // back together before it can be read as a list.
+            let mut value = value.to_string();
+            if let Some(quote) = value.chars().next().filter(|c| *c == '"' || *c == '\'') {
+                while value.len() < 2 || !value.ends_with(quote) {
+                    let Some(rest) = tokens.next() else { break };
+                    value.push(' ');
+                    value.push_str(rest);
+                }
+            }
+            if value
+                .trim_matches(|c| c == '"' || c == '\'')
+                .split([',', ' '])
+                .any(|named| named == feature)
+            {
+                return true;
+            }
+        }
+    })
+}
+
+/// The boundary `passes_cargo_feature` exists to hold, pinned so that a
+/// later simplification back to a substring search fails here first.
+///
+/// The negative cases are not hypothetical. The middle one is the
+/// mutation that survived the check this replaced: `tree-hygiene.sh`
+/// lost `ffi-probe` from its cargo invocation, kept the paragraph
+/// explaining why the feature is named there, and the ledger stayed
+/// green while no lane compiled the probe.
+#[test]
+fn a_named_feature_is_not_a_passed_feature() {
+    for passed in [
+        "cargo test -p sce-build --features cli,ffi-probe \\\n    --test roadmap_marker_gate\n",
+        "cargo build --features=cli,ffi-probe\n",
+        "cargo build -F ffi-probe\n",
+        "  cargo test --features \"cli ffi-probe\"\n",
+    ] {
+        assert!(
+            passes_cargo_feature(passed, "ffi-probe"),
+            "should read a passed feature out of: {passed:?}"
+        );
+    }
+
+    let named_only = "# `ffi-probe` is here so that SOMETHING compiles it.\n\
+                      cargo test -p sce-build --features cli\n";
+    assert!(
+        named_only.contains("ffi-probe"),
+        "the mutation kept the prose"
+    );
+    for not_passed in [
+        named_only,
+        // A commented-out invocation does not build anything either.
+        "# cargo test -p sce-build --features cli,ffi-probe\n",
+        // A longer name that merely starts the same way is not a member.
+        "cargo test --features ffi-probe-extra\n",
+        // `--features` belonging to some other command on another line.
+        "cargo test --features\ncli,ffi-probe\n",
+    ] {
+        assert!(
+            !passes_cargo_feature(not_passed, "ffi-probe"),
+            "should NOT count as building the probe: {not_passed:?}"
+        );
+    }
+}
+
 fn enum_variants(src: &str, opener: &str, is_variant: impl Fn(&str) -> bool) -> usize {
     let mut inside = false;
     let mut count = 0usize;
@@ -485,23 +606,41 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
 
         // The IN half is measured by building an off-by-default feature,
         // and `clippy-check.yml` runs `--workspace --all-targets` WITHOUT
-        // `--all-features`. So unless a lane names the feature, nothing
+        // `--all-features`. So unless a lane PASSES the feature, nothing
         // compiles the probe — and a probe that stops compiling makes
         // this row's number un-re-derivable, which is the precise defect
         // it was committed to remove.
-        let compiled_by: Vec<&String> = tracked
+        //
+        // ⚠ "Passes", not "mentions", and the difference was measured
+        // rather than reasoned. This asked whether the text `ffi-probe`
+        // occurred anywhere in a gate file, and the comment in
+        // `tree-hygiene.sh` that explains why the feature is there said
+        // it too — so deleting the feature from the cargo invocation and
+        // leaving that paragraph standing kept this GREEN while nothing
+        // built the probe. A gate blind in the one case it exists for is
+        // not a gate, and `passes_cargo_feature` reads arguments.
+        let gate_files: Vec<&String> = tracked
             .iter()
             .filter(|p| p.starts_with("scripts/gates/") || p.starts_with(".github/workflows/"))
+            .collect();
+        let compiled_by: Vec<&&String> = gate_files
+            .iter()
+            .filter(|p| passes_cargo_feature(&read(p), "ffi-probe"))
+            .collect();
+        let merely_named: Vec<&&String> = gate_files
+            .iter()
             .filter(|p| read(p).contains("ffi-probe"))
             .collect();
         assert!(
             !compiled_by.is_empty(),
-            "row `{}`: no gate script or workflow names the `ffi-probe` feature, \
-             so no lane compiles the probe `{}` builds. The probe would rot \
-             unnoticed and this row's number would go back to being a figure \
-             nobody can reproduce.",
+            "row `{}`: no gate script or workflow PASSES `--features ffi-probe` \
+             to cargo, so no lane compiles the probe `{}` builds. The probe \
+             would rot unnoticed and this row's number would go back to being \
+             a figure nobody can reproduce. Files that merely NAME the feature, \
+             which is not the same thing and does not compile it: {:?}",
             row.id,
-            row.evidence
+            row.evidence,
+            merely_named,
         );
         return;
     }

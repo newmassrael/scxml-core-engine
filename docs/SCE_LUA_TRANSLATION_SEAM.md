@@ -1569,6 +1569,23 @@ the row itself declares. A row carrying a status, a kind or a check the gate
 does not recognise is RED, not skipped: an unclassified row is how a ledger
 stops being a ledger.
 
+⚠⚠ **And a check that reads PROSE is not a check — measured here, not
+reasoned.** `swap-net-footprint` rests on a probe some lane has to compile, so
+the row's check requires one; the first form of that requirement asked whether
+the text `ffi-probe` occurred anywhere under `scripts/gates/` or
+`.github/workflows/`. The comment in `tree-hygiene.sh` explaining why the
+feature is named there satisfies that on its own, and a mutation that deleted
+the feature from the cargo invocation while leaving the paragraph standing
+**kept the gate green with nothing building the probe** — blind in precisely
+the case it was written for, which is the same defect as a residue nobody
+enumerates. The check now reads `--features` ARGUMENTS, with commentary and
+commented-out invocations cut away first, and
+`a_named_feature_is_not_a_passed_feature` pins that boundary so a later
+simplification back to a substring search fails there before it can pass here.
+Every row's check has since been shown red by a mutation: the ladder reordered,
+the load-time stage orphaned, the feature dropped, the rewriter put behind a
+generator expression, and its line count moved.
+
 <!-- D1-LEDGER v1
      columns: id | status | kind | number | check | evidence
      Parsed by sce-build/tests/lowering_decision_ledger.rs.
