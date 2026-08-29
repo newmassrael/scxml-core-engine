@@ -56,8 +56,19 @@ jobs:
     # No `submodules: recursive`: the gate skips third_party/ and vendor/,
     # and neither target compiles against a submodule. Checking them out
     # would only slow a job that fires on every push.
+    #
+    # `fetch-depth: 0` because `lowering_decision_ledger` runs here and a
+    # RETIRED measurement pins its number to the commit that still holds the
+    # subject — `git cat-file -t` and `git ls-tree` cannot see that commit in
+    # the default shallow clone. The check does not fail in a shallow
+    # checkout; it CLASSIFIES it and skips the pin arm, which means the arm
+    # is only real where history is. This is that lane, it fires on every
+    # push, and the ledger asserts this very line so the arm cannot go
+    # everywhere-unverifiable by someone deleting it.
     - name: Checkout Repository
       uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
 
     # libxml2 backs sce-build's default `xsd` feature; without it the
     # crate fails at link time before any test runs.
