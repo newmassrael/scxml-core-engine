@@ -3040,13 +3040,23 @@ transform call sites by line number that had all moved. Both are the same
 failure: a fact about the tree, written where nothing re-derives it.
 
 `ScriptLanguageSeamTest.everyRewriteIsReachedThroughTheSeamBranch` is the
-replacement. It splits `LuaScriptEngine.kt` at its class-level `fun`
-declarations and asserts that **every member calling the rewriter also asks
-what language the text is in**. It is not a list of approved call sites: the
-failure this repository keeps paying for is the sixth entry point nobody adds
-to the list, so an unclassified member is red rather than exempt. It carries a
-floor — the branch itself holds two rewriter calls — so a sweep that stopped
-finding the rewriter fails instead of passing on an empty population.
+replacement. Its population is **every engine** — the Kotlin sources under
+`backends/kotlin` declaring a `ScxmlScriptEngine`, derived the same way
+`theLanguageContractIsNotAnEngineDetail` derives its own — and within each, the
+members split at the class-level `fun` declarations. It asserts that **every
+member calling the rewriter also asks what language the text is in**. It is not
+a list of approved call sites: the failure this repository keeps paying for is
+the sixth entry point nobody adds to the list, so an unclassified member is red
+rather than exempt. Two floors — the engine count and the rewriter calls the
+branch itself holds — keep a sweep that stopped finding the tree from passing
+on an empty population.
+
+⚠ The obvious wider population, "every file that calls the rewriter", is wrong
+and was measured to be on 2026-08-30: `LoweredEcma262Test` calls it deliberately,
+because comparing the rewritten arm against the lowered one IS its measurement.
+Deriving the population as *engines* keeps that file out by what it is rather
+than by an exemption entry — and an exemption entry is the shape this gate
+exists to refuse.
 
 ### Witnesses, all re-made in the round that claims them
 
