@@ -1,0 +1,80 @@
+# Mutation cases for the member surface, one language over.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_frontend_now_owns_the_member_surface.cases`.
+#
+# Five cases stood in `lua_engine_reads_ecmascript.cases` aimed at
+# `EcmaScriptToLuaTransformer`. On 2026-08-29 that rewriter was RETIRED: the
+# engine lowers the author's ECMAScript with `sce-build`'s frontend and refuses
+# what the frontend refuses, which the seam document's `retire-rewriter` row
+# asserts and `the_rewriter_is_retired_not_merely_second.cases` mutates. Nothing
+# reaches the code those cases broke, so every one of them would have reported
+# SURVIVED — and none of them had stopped being a defect.
+#
+# That casefile's own header had already named this failure twice, on the same
+# day, for the same reason: *"a seam that takes work away from a component
+# takes the corpus's grip on it at the same moment, silently, and only a full
+# round says so."* The retirement takes the last of it. The distinguishing
+# question stays "who answers this now", and the answer for every clause below
+# is `sce-build/src/ecmascript/lua.rs`.
+#
+# What each case breaks is the clause it always broke:
+#
+#   * §13-3-3 an Array is a 1-based Lua sequence, so a numeric index moves by
+#     one. Leaving it alone answers a NEIGHBOURING element — a wrong value, not
+#     an error.
+#   * §15-4-4-4 `concat` appends every argument. The shared `_concat` takes one
+#     other value, so the arguments are FOLDED through it; passing them to a
+#     single call drops all but the first and answers a shorter array. The
+#     rewriter did exactly that, which is why the fold is spelled out.
+#   * §15-4-4-7 `push` answers the new length. `table.insert` answers nothing,
+#     so the receiver is held in a local and the length returned.
+#   * §15-4-4 / §15-5-4 a member method is implemented by the shared
+#     `ecma_semantics.lua` definition, not by Lua's own library. `table.sort`
+#     is the habit Lua makes available and it orders numbers numerically where
+#     ECMAScript orders them as strings.
+#
+# ⚠ **A fifth case did NOT come with them, and is retired rather than moved.**
+# It broke the placeholder that made a string literal invisible as a receiver
+# to every backward-scanning pass, so `'abc'.length` reached Lua as itself. A
+# parser has no backward scan and no placeholder: a literal receiver is a
+# subtree, and the defect class cannot be constructed here. Retiring it is the
+# honest answer; inventing a frontend mutation that produces the same wrong
+# text would be a case about nothing. The property itself is still asked —
+# `ecmascript_member_access.rs` and the shared table both put a literal in
+# receiver position.
+
+mutation_tests -p sce-build --features cli --test ecmascript_semantics
+mutation_targets sce-build/src/ecmascript/lua.rs
+mutation_oracles sce-build/tests/ecmascript_semantics.rs
+
+mutation_case "a numeric index is read one element short" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     'return Ok(format!("{}[{}]", operand(object)?, n + 1));',
+     'return Ok(format!("{}[{}]", operand(object)?, n));')
+PY
+
+mutation_case "concat keeps only its first argument" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """                let mut folded = receiver;
+                for arg in emitted {
+                    folded = format!("_concat({folded}, {arg})");
+                }""",
+     """                let mut folded = receiver;
+                for arg in emitted {
+                    folded = format!("_concat({folded}, {arg})");
+                    break;
+                }""")
+PY
+
+mutation_case "push answers nothing where the length was promised" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     '"(function() local __t = {receiver} {inserts}return #__t end)()"',
+     '"(function() local __t = {receiver} {inserts}end)()"')
+PY
+
+mutation_case "sort loses the shared definition that implements it" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     '                    "sort" => "_scxml_sort",',
+     '                    "sort" => "table.sort",')
+PY

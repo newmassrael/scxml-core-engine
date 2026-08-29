@@ -148,8 +148,9 @@ to a Lua engine unlowered. A `<finalize>` worked there only when its
 JavaScript was valid Lua as well — test233's single bare assignment is, which
 is why the surface passed on a coincidence. Python and C11 already applied
 `to_lua_script`; Kotlin needs none (Rhino is a JavaScript engine) and neither
-does the C++ AOT channel (its engine runs `EcmaScriptToLuaTransformer`
-itself), which is why the fix landed in exactly two templates.
+does the C++ AOT channel (its engine lowers author-language text itself,
+through `sce-build`'s ECMAScript frontend), which is why the fix landed in
+exactly two templates.
 
 The children answer from a `<transition>` body rather than `<onentry>`, and
 the two invokes are sequential rather than parallel: §scxml-6.5's "only the

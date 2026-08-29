@@ -1,0 +1,59 @@
+# Mutation cases for the DOM half of the rewriter's vocabulary, one language
+# over.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_frontend_now_owns_the_dom_vocabulary.cases`.
+#
+# Both cases were in `dom_read_surface_cpp.cases` until 2026-08-29, aimed at
+# `EcmaScriptToLuaTransformer`: its receiver walk-back, and its own copy of the
+# DOM method list. On that day the rewriter was RETIRED — nothing in the engine
+# reaches it, which the seam document's `retire-rewriter` row asserts — so
+# breaking it stopped being able to change what any suite sees, and both cases
+# would have reported SURVIVED with nothing in the casefile or the test having
+# changed.
+#
+# That is the same move `the_frontend_now_owns_rounding_and_escapes.cases`
+# records, and the same question settles it: not "make the mutation stronger"
+# but WHO ANSWERS THIS NOW. For a member call on a DOM handle the answer is
+# `sce-build/src/ecmascript/lua.rs`, and the vocabulary it decides against is
+# `builtins::DOM_METHODS`.
+#
+# What each case breaks is the clause the retired pair always broke:
+#
+#   * a DOM method binds its RECEIVER. `d.hasChildNodes()` is a call on the
+#     handle, so it lowers to a colon call; a field call passes no receiver and
+#     the binding dies at run time with a `nil` self. The rewriter got this
+#     wrong by walking back over word characters and finding only the last link
+#     of a chain, which is how `var1.childNodes.length` became `var1.#childNodes`.
+#   * a method the surface does NOT carry is REFUSED, with the DOM vocabulary
+#     offered back. Falling through instead emits a call that generates cleanly
+#     on every backend and dies at run time — the defect
+#     `builtins::unsupported_method` exists to prevent, and the reason the two
+#     lists were ever described as one vocabulary.
+#
+# ⚠ The oracle asks the frontend DIRECTLY rather than through a compiled C++
+# suite, and that is deliberate. `cmake/SCEBuildLowering.cmake` builds the Rust
+# staticlib with `execute_process` at CONFIGURE time, so no C++ build depends on
+# these sources: a mutation judged by a ctest would be invisible for a reason
+# that has nothing to do with the defect.
+
+mutation_tests -p sce-build --test ecmascript_builtin_vocabulary
+mutation_targets sce-build/src/ecmascript/lua.rs
+mutation_targets sce-build/src/ecmascript/builtins.rs
+mutation_oracles sce-build/tests/ecmascript_builtin_vocabulary.rs
+
+mutation_case "a DOM method is emitted as a field call" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     'return Ok(format!("{receiver}:{method}({})", emitted.join(", ")));',
+     'return Ok(format!("{receiver}.{method}({})", emitted.join(", ")));')
+PY
+
+mutation_case "an unsupported DOM method falls through instead of being refused" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """    } else if DOM_UNIMPLEMENTED_METHODS.contains(&method) {
+        DOM_METHODS
+    } else {""",
+     """    } else if false && DOM_UNIMPLEMENTED_METHODS.contains(&method) {
+        DOM_METHODS
+    } else {""")
+PY

@@ -101,7 +101,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - `Logger` + backends (spdlog optional) — Runtime logging infrastructure
 - `UniqueIdGenerator` — Thread-safe unique ID generation
 - `ScriptResultUtils`, `EventDataHelper`, `GuardUtils` — Value manipulation
-- `EcmaScriptToLuaTransformer` — ECMAScript-to-Lua syntax transformation
+- `EcmaScriptToLuaTransformer` — the retired ECMAScript-to-Lua text rewriter; still compiled, no longer reached by the engine
 - `XMLDOMWrapper`, `SessionRegistry` — DOM and session utilities
 - `TypeRegistry`, `JsonUtils` — Runtime type and JSON support
 
@@ -493,12 +493,15 @@ either — what changed is how much of the table it is still asked.
 ⚠⚠⚠⚠ **97 → 98, and `tests/ecmascript/lua_engine_divergences.json` is now
 EMPTY.** The last case was not an expression: it diverged in a statement
 sequence, which reaches the engine through `loweredScriptOf`. That path now
-asks `sce_lower_script` first, by the same seam and the same fallback, so
-`continue` reaches a real Lua label instead of the rewriter's `_ = continue`.
-**An empty list is not a retired rewriter**: `EcmaScriptToLuaTransformer` is
-still linked and still answers anything the frontend refuses, and this cell
-scores the 98-case shared table rather than every program a consumer can
-write. Retirement is a separate claim and needs its own witness.
+asks `sce_lower_script`, so `continue` reaches a real Lua label instead of the
+rewriter's `_ = continue`.
+**An empty list was not a retired rewriter**, and this cell still scores the
+98-case shared table rather than every program a consumer can write.
+Retirement was the separate claim, and it now has the separate witness it
+needed: the seam doc's `retire-rewriter` row sweeps every tracked C++ file
+for anything that reaches `EcmaScriptToLuaTransformer` and finds none the
+classification does not already name. What
+the frontend refuses is refused (§scxml-5.9.1); nothing answers it instead.
 
 ⚠ **This cell was the DIRECT route only, until the same day closed the other
 one.** The engine reached through a generated `--script-engine ecmascript`
@@ -551,18 +554,32 @@ table.
 
 **ScriptEngineProvider**: Compile-time engine selection via `SCE_SCRIPT_ENGINE` CMake option. Provides `IScriptEngine` interface for engine-agnostic consumers.
 
-### EcmaScriptToLuaTransformer
+### EcmaScriptToLuaTransformer — RETIRED
 
-Reached only by `SCE_SCRIPT_ENGINE=lua`, and the reason that is no longer the
-default: it rewrites expression *text* rather than parsing it, so the answers
-it gets wrong (every entry in `tests/ecmascript/lua_engine_divergences.json`)
-are wrong by construction rather
-than by omission — `0 && x` reads as Lua truthiness, `-7 % 3` as Lua's
-flooring remainder, `5 ^ 3` as Lua's exponentiation. The build-time frontend
-in `sce-build/src/ecmascript` is the parsing counterpart that the other five
-backends use, and this one has no equivalent.
+**Nothing reaches it but the instrument that priced it.** `LuaEngine` lowers
+the author's ECMAScript with `sce-build`'s frontend (`LoweringScope` →
+`SceLowering.h`) and refuses what that frontend refuses; the seam doc's
+`retire-rewriter` row is the gate that holds the tree to it, and
+`sce-build/tests/mutations/the_rewriter_is_retired_not_merely_second.cases`
+puts the caller back and requires the row to go red. The sweep is over every
+tracked C++ file rather than the engine's own directories, because a
+directory boundary does not exempt what lies outside it — it hides it. A file
+is the retired unit, or a declared instrument (today: the per-call benchmark,
+which constructs the rewriter to time it), or must not reach it; unclassified
+is red. The translation unit is still listed in `sce/sce_base_sources.cmake`
+and still compiles — retired is not deleted, and deleting it is its own
+round, which takes the benchmark with it.
 
-Bridges ECMAScript syntax in W3C SCXML `datamodel="ecmascript"` to Lua evaluation:
+Why it was retired: it rewrote expression *text* rather than parsing it, so
+the answers it got wrong were wrong by construction rather than by omission —
+`0 && x` read as Lua truthiness, `-7 % 3` as Lua's flooring remainder,
+`5 ^ 3` as Lua's exponentiation. Every entry
+`tests/ecmascript/lua_engine_divergences.json` ever held was one of those, and
+the list is empty because the parsing counterpart the other five backends
+already used is now reachable at run time too.
+
+What it did, while it did it — ECMAScript in W3C SCXML `datamodel="ecmascript"`
+bridged to Lua evaluation:
 - Operator translation: `===`→`==`, `!==`→`~=`, `!`→`not`, `&&`→`and`, `||`→`or`
 - `typeof` operator, `null`/`undefined` handling, increment/decrement operators
 - Object literals, array indexing (0-based JS → 1-based Lua), ternary operator

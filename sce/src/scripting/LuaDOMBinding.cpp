@@ -184,7 +184,8 @@ int LuaDOMBinding::lua_getElementsByTagName(lua_State *L) {
         handle.isDocument ? handle.document->getElementsByTagName(tagName) : handle.node->getElementsByTagName(tagName);
 
     // Create Lua table with 1-based indexing (Lua convention)
-    // ECMAScript [0],[1] are transformed to Lua [1],[2] by EcmaScriptToLuaTransformer
+    // ECMAScript [0],[1] are lowered to Lua [1],[2] by sce-build's ECMAScript
+    // frontend, which is what shifts the index (`lua.rs`, `Expr::Index`)
     lua_newtable(L);
     for (size_t i = 0; i < elements.size(); ++i) {
         pushElementObject(L, handle.document, elements[i]);

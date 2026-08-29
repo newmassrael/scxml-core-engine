@@ -18,11 +18,13 @@
  *
  * ## Why the engine calls this at all
  *
- * `EcmaScriptToLuaTransformer` rewrites the author's ECMAScript into Lua
- * as TEXT, without parsing it, so it cannot say where an operand ends.
- * `tests/ecmascript/lua_engine_divergences.json` is what that costs, on
- * the `runtime-rewriter` path; `docs/SCE_LUA_TRANSLATION_SEAM.md` is why.
- * The frontend behind this header parses, and it answers them.
+ * Because there is nothing else left to call. `EcmaScriptToLuaTransformer`
+ * rewrote the author's ECMAScript into Lua as TEXT, without parsing it, so
+ * it could not say where an operand ended; the frontend behind this header
+ * parses. It is no longer the FIRST of two answers — it is the only one,
+ * and text it refuses is refused (§scxml-5.9.1) rather than guessed at.
+ * `docs/SCE_LUA_TRANSLATION_SEAM.md` is why, and its `retire-rewriter` row
+ * is what holds the engine to it.
  *
  * How MANY is deliberately not written here. That file is the one thing
  * that knows, its suite is red in both directions, and the number moved

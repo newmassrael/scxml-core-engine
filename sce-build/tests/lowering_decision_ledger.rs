@@ -502,12 +502,117 @@ fn a_mentioned_call_is_not_a_made_call() {
     );
 }
 
+/// The boundary `reaches_rewriter` holds, pinned so that the retirement
+/// check cannot be quietly widened or quietly blinded.
+///
+/// Each negative case is a shape the tree actually contains. The engine
+/// still explains, in prose, what the rewriter was and why it went, in
+/// both a `//` comment and a `/** */` block, and a check that read those
+/// as callers would force the history to be deleted in order to go
+/// green — the opposite of what this row is for. How MANY such comments
+/// there are is not written here on purpose: it is a number nothing
+/// re-derives, and this file records what a restated count costs.
+///
+/// Each positive case is what a revert looks like. The member declaration
+/// is how the caller stood until the day this row was written; the
+/// include is what would survive a caller being removed and the header
+/// left behind, and the unit would then still be compiled into the engine
+/// with nothing to show for it.
+#[test]
+fn a_remembered_rewriter_is_not_a_reached_one() {
+    for reaching in [
+        // The member, as `LuaEngine.h` carried it.
+        "class LuaEngine {\n    EcmaScriptToLuaTransformer transformer_;\n};\n",
+        "std::string s = SCE::EcmaScriptToLuaTransformer{}.transformScript(t);\n",
+        // The include alone: no call, but the engine still compiles it in.
+        "#include \"scripting/EcmaScriptToLuaTransformer.h\"\n#include <string>\n",
+        // A comment ABOVE a real use must not hide the use.
+        "// the rewriter is gone\nEcmaScriptToLuaTransformer t;\n",
+    ] {
+        assert!(
+            reaches_rewriter(reaching),
+            "should count as reaching the rewriter: {reaching:?}"
+        );
+    }
+
+    // ⚠ The predicate is per FILE and the claim is per POPULATION, and this
+    // is the case that separates them. `return transformer_.transform(…);`
+    // is exactly how the call stood in `LuaEngine.cpp` until this row was
+    // written, and read on its own it names nothing — the type appears only
+    // where the member is DECLARED, one file over.
+    //
+    // That is not a hole, and this pins why: C++ has no way to call a
+    // class's method without a declaration of that class being visible, and
+    // `sce/include/` is swept together with `sce/src/`. So the pair is
+    // caught even though one half of it is invisible. Keying the predicate
+    // on the member's NAME instead would make it catch that half — and go
+    // blind the day the member is renamed, which is a rename of a detail
+    // rather than of the subject.
+    let caller_cpp = "return transformer_.transform(expression.text());\n";
+    let its_header = "class LuaEngine {\n    EcmaScriptToLuaTransformer transformer_;\n};\n";
+    assert!(
+        !reaches_rewriter(caller_cpp),
+        "a call through a member names no type, and pretending otherwise \
+         would hide which half of the pair this check actually sees"
+    );
+    assert!(
+        [caller_cpp, its_header].iter().any(|f| reaches_rewriter(f)),
+        "the population is swept as a whole — a source and the header that \
+         declares what it calls — and neither half being seen would mean a \
+         restored caller passes"
+    );
+
+    for remembering in [
+        // The five shapes the engine's own prose actually uses.
+        "// `EcmaScriptToLuaTransformer` rewrote the text without a parse.\n",
+        "/*\n * EcmaScriptToLuaTransformer::transformScript replaced text.\n */\n",
+        "    /// must adapt it (`EcmaScriptToLuaTransformer`) or refuse.\n",
+        "// #include \"scripting/EcmaScriptToLuaTransformer.h\"\n",
+        "/* #include \"scripting/EcmaScriptToLuaTransformer.h\" */\n",
+        // A diagnostic naming it is not a use of it, for the same reason
+        // one naming `sce_lower_value(` is not a call to it.
+        "throw std::runtime_error(\"EcmaScriptToLuaTransformer is retired\");\n",
+        // An include of something else entirely.
+        "#include \"scripting/LoweringScope.h\"\n",
+    ] {
+        assert!(
+            !reaches_rewriter(remembering),
+            "should NOT count as reaching the rewriter: {remembering:?}"
+        );
+    }
+
+    // The two readings line up by index, which is the whole mechanism of
+    // the include arm: a block comment spanning three lines must not shift
+    // the include below it onto a different raw line.
+    let after_a_block =
+        "/* one\n * two\n */\n#include \"scripting/EcmaScriptToLuaTransformer.h\"\n";
+    assert!(
+        reaches_rewriter(after_a_block),
+        "a block comment above an include must not shift the line the include is read from"
+    );
+}
+
 /// The prefixes a check identifier can open with.
 ///
 /// One per shape `check_row` implements. A kind added there without a
 /// line here would let the document spell it and promise nothing, which
 /// is the failure this list exists inside.
-const CHECK_KINDS: &[&str] = &["census:", "derive:", "decision:", "precondition:"];
+const CHECK_KINDS: &[&str] = &[
+    "census:",
+    "derive:",
+    "decision:",
+    "precondition:",
+    "retirement:",
+];
+
+/// The rewriter the `retire-rewriter` row is about.
+///
+/// One constant, used as the type name, as the stem of the two files that
+/// ARE the retired unit, and as the header a caller would include. That is
+/// not brevity: a sweep whose subject is spelled three times can be half
+/// renamed, and the half left behind reports zero because it is looking for
+/// something nothing carries.
+const REWRITER: &str = "EcmaScriptToLuaTransformer";
 
 /// Every check identifier the document SPELLS, with the line it is on.
 ///
@@ -1130,10 +1235,255 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         return;
     }
 
+    if row.check == "retirement:rewriter-uncalled" {
+        assert_eq!(
+            row.kind, "decision",
+            "row `{}` carries a retirement check with kind `{}`. A retirement \
+             has no measurement to re-run — what stands in for one is the tree \
+             still doing what was decided, which is what `decision` means here.",
+            row.id, row.kind
+        );
+
+        // 1. The retired unit is still in the tree, and still spells the
+        //    name this sweep looks for.
+        //
+        //    ⚠ This is the assertion that makes the sweep below mean
+        //    something. "No file names X" is trivially true of an X nothing
+        //    carries, so a rename or a deletion would report the retirement
+        //    as complete for a reason that has nothing to do with callers.
+        //    Retirement is also not deletion yet: the translation unit is
+        //    still listed in `sce/sce_base_sources.cmake` and still compiles.
+        let unit: Vec<&str> = tracked
+            .iter()
+            .map(|p| p.as_str())
+            .filter(|p| is_cpp_source(p) && file_stem_of(p).starts_with(REWRITER))
+            .collect();
+        assert!(
+            unit.len() >= 2,
+            "row `{}`: the retired unit is {} tracked C++ file(s) named after \
+             `{REWRITER}`, and it has to be at least two — the header that \
+             declares it and the source that defines it. Fewer means the unit \
+             was renamed or deleted, and the sweep below would then report \
+             zero callers of a name the tree no longer carries.",
+            row.id,
+            unit.len()
+        );
+        assert!(
+            unit.iter()
+                .any(|p| cpp_code_only(&read(p)).contains(&format!("class {REWRITER}"))),
+            "row `{}`: no file of the retired unit declares `class {REWRITER}` \
+             in code. The sweep's subject is that class; without it this row \
+             is asking about a name nothing defines.",
+            row.id
+        );
+
+        // 2. The population: EVERY tracked C++ file.
+        //
+        //    ⚠ It was `sce/src` and `sce/include` for a day, and that was a
+        //    boundary nothing re-derived. One file outside those directories
+        //    really does construct the rewriter — the benchmark that PRICED
+        //    the retirement — and under a directory boundary it was not
+        //    exempted, it was INVISIBLE: the sweep never opened it, so
+        //    nothing in the tree said whether it was an instrument or a
+        //    caller, and a second file joining it would have been as quiet.
+        //
+        //    What replaces the boundary is a CLASSIFICATION. A tracked C++
+        //    file either IS the retired unit, or is a declared instrument
+        //    below, or must not reach the rewriter. Unclassified is red,
+        //    which is the only shape an exemption is allowed to take here.
+        let population: Vec<&str> = tracked
+            .iter()
+            .map(|p| p.as_str())
+            .filter(|p| is_cpp_source(p))
+            .collect();
+        assert!(
+            population.len() >= TRACKED_CPP_FLOOR,
+            "row `{}`: this sweep found {} tracked C++ file(s), below the \
+             floor of {TRACKED_CPP_FLOOR}. A sweep that stopped reading \
+             reports an empty result, and an empty result reads exactly like \
+             a completed retirement.",
+            row.id,
+            population.len()
+        );
+        //    The engine's own sources remain the SUBJECT even though the
+        //    sweep is wider, and they carry their own floor: a population
+        //    held up by the committed generated trees while the engine's
+        //    share of it went to zero would pass the line above having
+        //    stopped reading the only files this row is really about.
+        let engine: Vec<&str> = population
+            .iter()
+            .copied()
+            .filter(|p| p.starts_with("sce/src/") || p.starts_with("sce/include/"))
+            .collect();
+        assert!(
+            engine.len() >= ENGINE_SOURCE_FLOOR,
+            "row `{}`: this sweep found {} engine source(s) under `sce/src/` \
+             and `sce/include/`, below the floor of {ENGINE_SOURCE_FLOOR}. A \
+             sweep that stopped reading reports an empty result, and an empty \
+             result reads exactly like a completed retirement.",
+            row.id,
+            engine.len()
+        );
+
+        // 3. The positive control, on the tree rather than on a fixture: the
+        //    same predicate that will report zero below must report the
+        //    retired unit's own files. If it does not, it has stopped being
+        //    able to see the name at all.
+        let unit_seen: Vec<&&str> = unit.iter().filter(|p| reaches_rewriter(&read(p))).collect();
+        assert_eq!(
+            unit_seen.len(),
+            unit.len(),
+            "row `{}`: the sweep sees {} of the retired unit's {} own file(s). \
+             The predicate cannot find the name where the name certainly is, \
+             so its answer about the engine below is not evidence of anything.",
+            row.id,
+            unit_seen.len(),
+            unit.len()
+        );
+
+        // 4. The declared instruments, each asserted rather than trusted. A
+        //    path listed must be tracked AND must still reach the rewriter,
+        //    so the list can only shrink by being edited. An entry that
+        //    outlives what it exempts is how a list stops describing the
+        //    tree and starts hiding it: the day a caller appeared at that
+        //    path, a sentence about a file that no longer does what it says
+        //    would be what let it through.
+        for (path, why) in REWRITER_INSTRUMENTS {
+            assert!(
+                tracked.contains(*path),
+                "row `{}`: `{path}` is declared an instrument that reaches \
+                 `{REWRITER}` ({why}), and no such file is tracked. A \
+                 declaration about a file that is not there exempts nothing \
+                 and hides that it exempts nothing.",
+                row.id
+            );
+            assert!(
+                reaches_rewriter(&read(path)),
+                "row `{}`: `{path}` is declared an instrument that reaches \
+                 `{REWRITER}` ({why}), and it no longer does. Delete the \
+                 entry, so that the day a caller appears at that path it is \
+                 unclassified and therefore red.",
+                row.id
+            );
+        }
+
+        // 5. The claim itself: everything the two classes above do not name.
+        let callers: Vec<&str> = population
+            .iter()
+            .copied()
+            .filter(|p| !unit.contains(p))
+            .filter(|p| !REWRITER_INSTRUMENTS.iter().any(|(i, _)| i == p))
+            .filter(|p| reaches_rewriter(&read(p)))
+            .collect();
+        assert!(
+            callers.is_empty(),
+            "row `{}`: {} tracked C++ file(s) reach `{REWRITER}` while being \
+             neither the retired unit nor a declared instrument:\n  {}\nThe \
+             row claims the rewriter is retired, which is the claim that \
+             NOTHING takes the fallback — not that the frontend is tried \
+             first. A file here either calls it or includes its header; both \
+             are a second translator still being carried. If one of them is \
+             an instrument rather than a caller, say so in \
+             `REWRITER_INSTRUMENTS` — unclassified is red on purpose.",
+            row.id,
+            callers.len(),
+            callers.join("\n  ")
+        );
+        return;
+    }
+
     panic!(
         "row `{}` declares check `{}`, which this gate does not implement. \
          An unrecognised check is RED: a row whose check is skipped is a row \
          holding nothing, and it reads exactly like one that passed.",
         row.id, row.check
     );
+}
+
+/// Files allowed to reach the retired rewriter, and why each one is.
+///
+/// ⚠ Not an exemption list of the kind the gates here refuse. Every entry is
+/// itself asserted: the path must be tracked and must STILL reach the
+/// rewriter, so a line cannot outlive its subject and go on covering
+/// whatever later appears at that path. The reason lives beside the path
+/// rather than in a comment because the check quotes it in its own failure,
+/// which is the only place a reader meets it at the moment it matters.
+///
+/// The one entry is an INSTRUMENT: it constructs the rewriter in order to
+/// time it against the frontend, which is how the retirement was priced at
+/// all. The deletion round this row is a step towards deletes that benchmark
+/// with the unit, and this line is where that consequence shows up.
+const REWRITER_INSTRUMENTS: &[(&str, &str)] = &[(
+    "tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp",
+    "the benchmark that priced the retirement: it constructs the rewriter to \
+     time its memo caches against the frontend, so it is an instrument \
+     pointed at the unit rather than a caller on the engine's path",
+)];
+
+/// A floor for the engine sweep, well under the count on the day it was
+/// written (349) and well over anything a broken filter would return.
+const ENGINE_SOURCE_FLOOR: usize = 200;
+
+/// A floor for the whole-tree sweep, well under the count on the day the
+/// population was widened from the engine's two directories to every tracked
+/// C++ file (1937, the committed generated trees included) and well over
+/// anything a broken filter would return.
+const TRACKED_CPP_FLOOR: usize = 1000;
+
+fn is_cpp_source(path: &str) -> bool {
+    matches!(
+        path.rsplit_once('.').map(|(_, ext)| ext),
+        Some("cpp" | "cc" | "cxx" | "h" | "hpp" | "c")
+    )
+}
+
+fn file_stem_of(path: &str) -> &str {
+    let name = path.rsplit_once('/').map_or(path, |(_, n)| n);
+    name.split_once('.').map_or(name, |(stem, _)| stem)
+}
+
+/// Whether one C++ file reaches the retired rewriter.
+///
+/// ⚠ Per FILE, while the row's claim is per POPULATION, and the difference
+/// is deliberate. A call made through a MEMBER — `transformer_.transform(…)`,
+/// which is how the call stood — names no type in the file that makes it.
+/// What makes it compile is a declaration of the type, and C++ has no way to
+/// do without one: `sce/include/` is swept together with `sce/src/`, so the
+/// declaration is in the population even when the call is invisible. Keying
+/// this on the member's name would see the other half and go blind the day
+/// the member is renamed. `a_remembered_rewriter_is_not_a_reached_one` pins
+/// both halves.
+///
+/// Two ways, because a caller needs both and either one alone would let the
+/// other stand:
+///
+///   * it NAMES the type in code — a member, a local, a qualified call. A
+///     mention in a comment is not a use, and this document deliberately
+///     keeps the history of the rewriter in prose, so `cpp_code_only` runs
+///     first for the same reason `a_mentioned_call_is_not_a_made_call`
+///     pins it one check over.
+///   * it INCLUDES the header. An include with no use is not a call, but it
+///     is the engine still compiling a second translator into itself, and
+///     the deletion round this row is a step towards cannot happen while one
+///     stands.
+///
+/// The include has to be read off the RAW line rather than the stripped one:
+/// `cpp_code_only` keeps a string's quotes and drops what is between them, so
+/// `#include "…/EcmaScriptToLuaTransformer.h"` survives as `#include ""`. It
+/// keeps one newline per newline it consumes — its own comment says so, and
+/// `a_mentioned_call_is_not_a_made_call` pins it — so the two readings line up
+/// by index, and an include commented out is an include the stripped side
+/// never reports.
+fn reaches_rewriter(src: &str) -> bool {
+    let code = cpp_code_only(src);
+    if code.contains(REWRITER) {
+        return true;
+    }
+    let raw: Vec<&str> = src.lines().collect();
+    code.lines().enumerate().any(|(n, line)| {
+        line.trim_start().starts_with("#include")
+            && raw
+                .get(n)
+                .is_some_and(|r| r.contains(&format!("{REWRITER}.h")))
+    })
 }

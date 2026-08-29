@@ -123,8 +123,8 @@ public:
      * @brief Whether this engine may be handed text written in @p language.
      *
      * True for `nativeLanguage()` always, and additionally for any language
-     * the engine owns an input adapter for — `LuaEngine` accepts ECMAScript
-     * because `EcmaScriptToLuaTransformer` is exactly that adapter. Answering
+     * the engine can LOWER into it — `LuaEngine` accepts ECMAScript where
+     * `sce-build`'s ECMAScript frontend is linked, and only there. Answering
      * false is what turns a wrong-language call into a refusal rather than an
      * attempt.
      */

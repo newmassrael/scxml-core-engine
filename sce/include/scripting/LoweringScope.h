@@ -27,11 +27,13 @@ namespace SCE {
  * own. `a && b` names two things, and until the caller says what `a` and `b`
  * are, no parse can be trusted with them.
  *
- * So the scope is not configuration. It is the question, and widening it is
- * how the frontend takes work from `EcmaScriptToLuaTransformer`:
- * `docs/SCE_LUA_TRANSLATION_SEAM.md` records the decision to retire that
- * rewriter, and every expression class that crosses does so by a scope that
- * can answer for it.
+ * So the scope is not configuration. It is the question, and it is now the
+ * ONLY question: `EcmaScriptToLuaTransformer` used to answer whatever the
+ * scope did not, and `docs/SCE_LUA_TRANSLATION_SEAM.md`'s `retire-rewriter`
+ * row records that it no longer does. A name this scope has not been told
+ * about is therefore an expression the engine refuses, which is why every
+ * door that puts a name in a session's namespace has to come through
+ * `LuaEngine::offerToScope`.
  *
  * ## Why a session owns one
  *
@@ -53,12 +55,17 @@ namespace SCE {
  * ## Refusal is an answer
  *
  * [`lowerValue`] returns nothing when the frontend will not lower the text.
- * That is normal and is what lets the seam be adopted one class of expression
- * at a time: a caller falls back to whatever it did before, so a missed
- * expression stays as it was and is never newly wrong.
+ * That is normal, and it is now FINAL: while the rewriter stood, a refusal
+ * meant "a caller falls back to whatever it did before", which is what let
+ * the seam be adopted one expression class at a time. With nothing behind it,
+ * a refusal is the engine's answer — `error.execution`, §scxml-5.9.1 — so
+ * text this will not lower is text the datamodel does not evaluate, said out
+ * loud rather than approximated.
  *
  * A build that links no frontend (`SCE_HAS_LOWERING_FFI` undefined — the wasm
- * build is one) refuses everything, by the same door.
+ * build is one) refuses everything, by the same door. `LuaEngine` answers
+ * that build's `acceptsLanguage(ECMAScript)` with false rather than accepting
+ * a call it would refuse per expression.
  */
 class LoweringScope {
 public:
