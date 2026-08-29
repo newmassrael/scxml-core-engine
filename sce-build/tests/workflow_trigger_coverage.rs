@@ -71,6 +71,15 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // matters — a refusal the walker invents — is only visible on a
     // document that carries the construct.
     "ecmascript_acceptance_parity",
+    // Lowers every expression in every committed document once per scope
+    // stage, so a document added anywhere changes what it reads. The
+    // sweep is the lesser half of the reason: its census is what says
+    // whether a run-time lowering surface needs a scope handle at all,
+    // and a zero there is an answer rather than a silence. What keeps
+    // the census honest is a document that crosses a stage boundary —
+    // exactly the input a `paths:` filter over today's trees cannot
+    // name.
+    "scope_obligation",
     // Sweeps every authored document for a refused expression, so a
     // document added under `examples/` or `integration_resources/`
     // changes what it reads. It is also the only CI-side copy of
