@@ -12,6 +12,14 @@
 #include "scripting/ScriptResult.h"
 #include "scripting/SessionRegistry.h"
 
+#ifdef SCE_HAS_LOWERING_FFI
+// sce-build's ECMAScript frontend, linked beside lua54 by
+// `cmake/SCEBuildLowering.cmake`. The definition and the link are set on the
+// same two lines of `sce/CMakeLists.txt`, so this cannot be reached without
+// the symbols behind it.
+#include "scripting/SceLowering.h"
+#endif
+
 extern "C" {
 #include <lauxlib.h>
 #include <lua.h>
@@ -509,6 +517,26 @@ int LuaEngine::loadCachedChunk(lua_State *L, const std::string &code,
     return status;
 }
 
+#ifdef SCE_HAS_LOWERING_FFI
+// The one scope every closed-expression lowering is asked against, and it
+// stays empty for the life of the process.
+//
+// Empty is not "not filled in yet". It is the QUESTION: the frontend refuses
+// any expression naming something the scope does not declare, so an empty
+// scope selects exactly the expressions that name nothing — and those are the
+// ones the engine can lower without knowing which session it is in. A scope
+// carrying a session's variables would be a different and much larger change,
+// because it would have to be rebuilt whenever an `<assign>` ran.
+//
+// Shared, because it never changes: `sce_lower_*` takes it by const pointer
+// and only reads, so concurrent evaluation is safe. Function-local static
+// initialisation is itself thread-safe since C++11.
+static const SceLoweringScope *closedLoweringScope() {
+    static SceLoweringScope *const scope = sce_scope_new();
+    return scope;
+}
+#endif
+
 // The seam: the ONE step a pre-lowered call skips.
 //
 // docs/SCE_LUA_TRANSLATION_SEAM.md, "The seam is not 'skip the transformer'":
@@ -526,6 +554,35 @@ std::string LuaEngine::loweredTextOf(const ScriptSource &expression) {
     if (expression.language() == ScriptLanguage::Lua) {
         return expression.text();
     }
+#ifdef SCE_HAS_LOWERING_FFI
+    // The author's ECMAScript, offered to the frontend's PARSER before the
+    // rewriter's text pass gets it. The owner's decision on 2026-08-29 was to
+    // link the frontend and retire `EcmaScriptToLuaTransformer`; this is the
+    // first expression class to cross.
+    //
+    // The scope is EMPTY, and that is the whole definition of the class. An
+    // empty scope asks "can you answer this without me naming anything?", so
+    // only CLOSED expressions — those referring to no variable — are taken.
+    // Everything else is refused with NULL and falls through to the rewriter,
+    // exactly as before. That is why this can land while the rewriter is still
+    // the engine's only answer for the rest: a missed expression stays
+    // *diverging*, never newly wrong.
+    //
+    // Measured 2026-08-29: 11 of the 23 entries in
+    // `tests/ecmascript/lua_engine_divergences.json` are closed expressions,
+    // and this answers every one of them —  `1 == '1'` coerces, `-7 % 3`
+    // truncates, `-8 >>> 28` is unsigned. The rewriter cannot do any of it
+    // because it replaces text without knowing where an operand ends.
+    //
+    // A run-time scope, which would take the other 12, is a later step: it
+    // needs the names the session actually holds, and the D1 ledger's scope
+    // census is what says a `declare` + `declare_chunk` pair is enough.
+    if (char *lowered = sce_lower_value(expression.text().c_str(), closedLoweringScope())) {
+        std::string text(lowered);
+        sce_lower_free(lowered);
+        return text;
+    }
+#endif
     return transformer_.transform(expression.text());
 }
 

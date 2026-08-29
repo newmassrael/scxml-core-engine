@@ -3,10 +3,13 @@
 //
 //! The D1 decision ledger is held to the tree, row by row.
 //!
-//! `docs/SCE_LUA_TRANSLATION_SEAM.md` has to price four things before a
-//! person can choose whether `sce-build` grows a C-callable lowering
-//! surface. Three are closed on numbers and one is open on a judgement,
-//! and that summary is the document's most quotable paragraph — which is
+//! `docs/SCE_LUA_TRANSLATION_SEAM.md` had to price four things before a
+//! person could choose whether `sce-build` grows a C-callable lowering
+//! surface. All four were priced, two more numbers arrived while they
+//! were being checked, and on 2026-08-29 the owner CHOSE: link it, and
+//! retire the rewriter. Six rows now, five closed on numbers and one on
+//! that decision. Each sentence in that summary is the document's most
+//! quotable kind — which is
 //! exactly the kind of sentence this repository has watched rot. The
 //! same file records two instances already: a per-call figure quoted
 //! from a `/tmp` probe that was deleted when the round ended and was
@@ -26,12 +29,26 @@
 //!     `<Token> census:`. A closure resting on a probe nobody can run
 //!     again is the `/tmp` defect, and this is the shape that catches
 //!     it.
-//!   * `precondition:rust-is-not-linked` is the one an OPEN row carries.
-//!     It holds the premise that makes the row open: nothing in the tree
-//!     links a Rust artifact, so the cost of linking one cannot be
-//!     measured in advance and the item is a judgement rather than an
-//!     unrun experiment. The day that stops being true, this turns red
-//!     and the row has to be re-adjudicated.
+//!   * `decision:linked-beside-lua` is what a CLOSED-by-decision row
+//!     carries. There is no measurement to re-run, so what stands in
+//!     for one is the tree still doing what was decided: the surface
+//!     exists behind its feature, a CMake file links it, the link sits
+//!     inside `if(SCE_ENABLE_LUA)` rather than behind the engine
+//!     selection, and `LuaEngine` actually calls it. The last is not
+//!     decoration — a linked library nothing reaches is discarded by
+//!     the linker, and without it this row could not fail.
+//!   * `precondition:rust-is-not-linked` is what the OPEN row carried
+//!     before that: nothing in the tree links a Rust artifact, so the
+//!     cost could not be measured and the item was a judgement rather
+//!     than an unrun experiment. **No row carries it now**, and it is
+//!     kept because the shape is right for the next premise that has
+//!     to hold a row open.
+//!     ⚠ It is also kept as a warning. When the link finally arrived it
+//!     did NOT fire, because `cmake_links_rust` matched spellings
+//!     (`libsce_build`, `corrosion_`) and the real link asks cargo for
+//!     the path at configure time and exposes `SCE::Lowering`. A
+//!     tripwire is not tested by the thing it is watching for; this one
+//!     was only found because the row it guarded was being replaced.
 //!
 //! Two structural rules matter as much as the checks.
 //!
@@ -273,7 +290,7 @@ fn command_lines(src: &str) -> Vec<String> {
 /// `--features` / `-F` value on a line that is not commented out.
 ///
 /// ⚠ The distinction is the whole of this function. The first form of
-/// the check that uses it asked whether the text `ffi-probe` appeared
+/// the check that uses it asked whether the text `ffi` appeared
 /// anywhere in a gate file, and the paragraph explaining why the
 /// feature is named there satisfied that on its own: a mutation that
 /// deleted the feature from the cargo invocation and left the prose
@@ -322,40 +339,37 @@ fn passes_cargo_feature(src: &str, feature: &str) -> bool {
 ///
 /// The negative cases are not hypothetical. The middle one is the
 /// mutation that survived the check this replaced: `tree-hygiene.sh`
-/// lost `ffi-probe` from its cargo invocation, kept the paragraph
+/// lost `ffi` from its cargo invocation, kept the paragraph
 /// explaining why the feature is named there, and the ledger stayed
 /// green while no lane compiled the probe.
 #[test]
 fn a_named_feature_is_not_a_passed_feature() {
     for passed in [
-        "cargo test -p sce-build --features cli,ffi-probe \\\n    --test roadmap_marker_gate\n",
-        "cargo build --features=cli,ffi-probe\n",
-        "cargo build -F ffi-probe\n",
-        "  cargo test --features \"cli ffi-probe\"\n",
+        "cargo test -p sce-build --features cli,ffi \\\n    --test roadmap_marker_gate\n",
+        "cargo build --features=cli,ffi\n",
+        "cargo build -F ffi\n",
+        "  cargo test --features \"cli ffi\"\n",
     ] {
         assert!(
-            passes_cargo_feature(passed, "ffi-probe"),
+            passes_cargo_feature(passed, "ffi"),
             "should read a passed feature out of: {passed:?}"
         );
     }
 
-    let named_only = "# `ffi-probe` is here so that SOMETHING compiles it.\n\
+    let named_only = "# `ffi` is here so that SOMETHING compiles it.\n\
                       cargo test -p sce-build --features cli\n";
-    assert!(
-        named_only.contains("ffi-probe"),
-        "the mutation kept the prose"
-    );
+    assert!(named_only.contains("ffi"), "the mutation kept the prose");
     for not_passed in [
         named_only,
         // A commented-out invocation does not build anything either.
-        "# cargo test -p sce-build --features cli,ffi-probe\n",
+        "# cargo test -p sce-build --features cli,ffi\n",
         // A longer name that merely starts the same way is not a member.
-        "cargo test --features ffi-probe-extra\n",
+        "cargo test --features ffi-extra\n",
         // `--features` belonging to some other command on another line.
-        "cargo test --features\ncli,ffi-probe\n",
+        "cargo test --features\ncli,ffi\n",
     ] {
         assert!(
-            !passes_cargo_feature(not_passed, "ffi-probe"),
+            !passes_cargo_feature(not_passed, "ffi"),
             "should NOT count as building the probe: {not_passed:?}"
         );
     }
@@ -399,10 +413,21 @@ fn cmake_links_rust(tracked: &BTreeSet<String>) -> Vec<String> {
         let src = read(path);
         for (n, line) in src.lines().enumerate() {
             let code = line.split('#').next().unwrap_or("");
+            // ⚠ The first four spellings were the whole list, and they
+            // did not see the link when it arrived. `SCEBuildLowering.cmake`
+            // asks cargo for the artifact path at configure time and
+            // exposes it as `SCE::Lowering`, so no tracked CMake line ever
+            // contains `libsce_build` — the detector would have reported
+            // "nothing links Rust" with the engine linking it. Found on
+            // 2026-08-29 while replacing the row that detector guarded,
+            // which is the only reason it was found at all: a tripwire is
+            // not tested by the thing it is watching for.
             if code.contains("corrosion_")
                 || code.contains("libsce_build")
                 || code.contains("sce_build.so")
                 || code.contains("sce_build.a")
+                || code.contains("SCE::Lowering")
+                || code.contains("--crate-type")
             {
                 hits.push(format!("{path}:{}: {}", n + 1, line.trim()));
             }
@@ -456,11 +481,17 @@ fn the_d1_ledger_is_classified_and_holds_to_the_tree() {
             ),
         }
 
+        // `decision` is the fourth, added 2026-08-29 when the owner closed
+        // the one item that was never waiting on a number. It is the kind
+        // that needs the most care: a measurement row rots when the number
+        // moves and something re-measures, but a decision row has nothing
+        // to re-run, so what its check must hold is the TREE still doing
+        // what the decision said.
         match row.kind.as_str() {
-            "measurement" | "counting" | "judgement" => {}
+            "measurement" | "counting" | "judgement" | "decision" => {}
             other => panic!(
                 "row `{}` carries kind `{other}`, which this gate does not \
-                 recognise (measurement, counting, judgement).",
+                 recognise (measurement, counting, judgement, decision).",
                 row.id
             ),
         }
@@ -612,7 +643,7 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         // it was committed to remove.
         //
         // ⚠ "Passes", not "mentions", and the difference was measured
-        // rather than reasoned. This asked whether the text `ffi-probe`
+        // rather than reasoned. This asked whether the text `ffi`
         // occurred anywhere in a gate file, and the comment in
         // `tree-hygiene.sh` that explains why the feature is there said
         // it too — so deleting the feature from the cargo invocation and
@@ -625,15 +656,15 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
             .collect();
         let compiled_by: Vec<&&String> = gate_files
             .iter()
-            .filter(|p| passes_cargo_feature(&read(p), "ffi-probe"))
+            .filter(|p| passes_cargo_feature(&read(p), "ffi"))
             .collect();
         let merely_named: Vec<&&String> = gate_files
             .iter()
-            .filter(|p| read(p).contains("ffi-probe"))
+            .filter(|p| read(p).contains("ffi"))
             .collect();
         assert!(
             !compiled_by.is_empty(),
-            "row `{}`: no gate script or workflow PASSES `--features ffi-probe` \
+            "row `{}`: no gate script or workflow PASSES `--features ffi` \
              to cargo, so no lane compiles the probe `{}` builds. The probe \
              would rot unnoticed and this row's number would go back to being \
              a figure nobody can reproduce. Files that merely NAME the feature, \
@@ -683,6 +714,95 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
              reaches it.",
             row.id,
             gate,
+        );
+        return;
+    }
+
+    if row.check == "decision:linked-beside-lua" {
+        assert_eq!(
+            row.status, "CLOSED",
+            "row `{}` carries a decision check. A decision is taken or it is \
+             not; an OPEN row holding one is a decision nobody made.",
+            row.id
+        );
+
+        // A decision row is the one shape that could become a sentence
+        // nothing holds — there is no measurement to re-run, so what
+        // stands in for one is the tree doing what the decision says.
+        // Four things, and each is a way the row could quietly stop
+        // being true.
+
+        // 1. The surface exists and is reachable by a feature name.
+        let cargo = read("sce-build/Cargo.toml");
+        assert!(
+            cargo.lines().any(|l| l.trim_start().starts_with("ffi =")),
+            "row `{}`: `sce-build/Cargo.toml` declares no `ffi` feature, so \
+             there is no surface for the decision to have linked.",
+            row.id
+        );
+
+        // 2. Some tracked CMake file links it. This is the exact inverse
+        //    of the tripwire this row replaced — that one failed if any
+        //    site appeared, this one fails if none does.
+        let hits = cmake_links_rust(tracked);
+        assert!(
+            !hits.is_empty(),
+            "row `{}` says the frontend is linked and no tracked CMake file \
+             links a Rust artifact. The decision was recorded and then \
+             reverted, or the link moved somewhere this cannot see — which \
+             has happened once already, to the detector itself.",
+            row.id
+        );
+
+        // 3. It is linked BESIDE the capability, not at top level and not
+        //    behind the engine SELECTION. That is the half of the decision
+        //    that was argued rather than measured, so it is the half most
+        //    likely to be undone by someone narrowing a guard to save a
+        //    build.
+        let site = read("sce/CMakeLists.txt");
+        let mut depth_in_lua_guard = 0usize;
+        let mut nesting = 0usize;
+        let mut linked_under_lua = false;
+        for line in site.lines() {
+            let code = line.split('#').next().unwrap_or("").trim();
+            if code.starts_with("if(") {
+                nesting += 1;
+                if code.contains("SCE_ENABLE_LUA") && depth_in_lua_guard == 0 {
+                    depth_in_lua_guard = nesting;
+                }
+            }
+            if depth_in_lua_guard > 0 && code.contains("SCE::Lowering") {
+                linked_under_lua = true;
+            }
+            if code.starts_with("endif(") {
+                if depth_in_lua_guard == nesting {
+                    depth_in_lua_guard = 0;
+                }
+                nesting = nesting.saturating_sub(1);
+            }
+        }
+        assert!(
+            linked_under_lua,
+            "row `{}`: `sce/CMakeLists.txt` does not link `SCE::Lowering` \
+             inside an `if(SCE_ENABLE_LUA)` guard. The decision was for the \
+             CAPABILITY, not the selection: scoping it to \
+             `SCE_SCRIPT_ENGINE=lua` takes `EcmaScriptSemanticsOnLuaEngine` \
+             its subject in every default build, and that suite is what \
+             measures the divergences this whole decision is about.",
+            row.id
+        );
+
+        // 4. Something CALLS it. A linked library nothing reaches is
+        //    discarded by the linker, so a row resting on the link alone
+        //    would be a row that cannot fail — the population would have
+        //    a role in it that can never be zero.
+        let engine = read("sce/src/scripting/LuaEngine.cpp");
+        assert!(
+            engine.contains("sce_lower_value("),
+            "row `{}`: `LuaEngine.cpp` no longer calls the surface. The link \
+             would then be dead weight the linker discards, and this row \
+             would describe a build-system fact with no behaviour behind it.",
+            row.id
         );
         return;
     }
