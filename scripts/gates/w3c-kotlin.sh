@@ -130,10 +130,29 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # `setCurrentEvent`, `executeForeach`, the `In()` state-query callback. A
 # defect there is invisible to both the table and a Rhino-only suite.
 #
-# Lua is deliberately absent. It passes this suite (measured: 230 cases), and
-# running it here anyway would assert that SCE offers it for the ECMAScript
-# datamodel, which is the opposite of what
-# `luaIsNotAnEcmaScriptEngineAndSaysSo` establishes.
+# Lua is deliberately absent, and the reason is sound: running it here would
+# assert that SCE offers it for the ECMAScript datamodel, which is the opposite
+# of what `luaIsNotAnEcmaScriptEngineAndSaysSo` establishes.
+#
+# ⚠ What this comment ALSO said until 2026-08-29 — "It passes this suite
+# (measured: 230 cases)" — was false, and the count was stale twice over. Run
+# on 2026-08-29 (`./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua`):
+# 361 tests, 2 failing — `SendParamPayloadTest` (W3C SCXML 6.2, a repeated
+# `<param>` name loses one of its values) and `XmlDataIsADomTreeTest` (W3C
+# SCXML B.2, a `<data>` element's XML does not arrive as a document). Both
+# predate that day's engine changes; an A/B against the engine's previous
+# undeclared-variable guard reproduced them unchanged.
+#
+# ⚠⚠ So NO CI LANE MEASURES THIS ENGINE ABOVE THE EXPRESSION LEVEL. The
+# ECMA-262 table and the divergence lists cover its expressions; the 226
+# generated machines are run on rhino and quickjs only, and the sentence that
+# stood in for running them on Lua was a claim nobody could fault — the exact
+# shape `docs/SCE_LUA_TRANSLATION_SEAM.md` keeps paying for. The repair is not
+# to add `lua` to this array (that makes the conformance claim this gate must
+# not make) but to give Lua its own declared-failure list, held in both
+# directions the way `kotlin_lua_divergences.json` is. Until that exists this
+# note is a debt, deliberately written where the next person to widen the array
+# will read it.
 KOTLIN_ENGINES=(rhino quickjs)
 REPORTS="backends/kotlin/tests/build/test-results/test"
 
