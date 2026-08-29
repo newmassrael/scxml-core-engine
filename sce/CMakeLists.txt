@@ -303,6 +303,12 @@ if(SCE_HAS_SCRIPTING)
         # Lua engine (conditional)
         $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaEngine.cpp>
         $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaDOMBinding.cpp>
+
+        # The one translation unit that calls sce-build's C surface. Gated on
+        # the same option as the link below, because the link is its reason to
+        # exist; without it the class compiles to a scope that refuses every
+        # expression, which is what a wasm build already gets.
+        $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LoweringScope.cpp>
     )
 
     # W3C SCXML B.2: Generate json_builtins_lua.h from shared json_builtins.lua

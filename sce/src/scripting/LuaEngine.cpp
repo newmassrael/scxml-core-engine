@@ -12,13 +12,11 @@
 #include "scripting/ScriptResult.h"
 #include "scripting/SessionRegistry.h"
 
-#ifdef SCE_HAS_LOWERING_FFI
-// sce-build's ECMAScript frontend, linked beside lua54 by
-// `cmake/SCEBuildLowering.cmake`. The definition and the link are set on the
-// same two lines of `sce/CMakeLists.txt`, so this cannot be reached without
-// the symbols behind it.
-#include "scripting/SceLowering.h"
-#endif
+// sce-build's ECMAScript frontend is reached through `LoweringScope`
+// (included by LuaEngine.h), which is where the C surface and its one
+// preprocessor branch live. This file therefore has no `#ifdef` for it: a
+// build that links no frontend gets a scope that refuses every expression,
+// and refusal already means "keep the answer you had".
 
 extern "C" {
 #include <lauxlib.h>
@@ -517,26 +515,6 @@ int LuaEngine::loadCachedChunk(lua_State *L, const std::string &code,
     return status;
 }
 
-#ifdef SCE_HAS_LOWERING_FFI
-// The one scope every closed-expression lowering is asked against, and it
-// stays empty for the life of the process.
-//
-// Empty is not "not filled in yet". It is the QUESTION: the frontend refuses
-// any expression naming something the scope does not declare, so an empty
-// scope selects exactly the expressions that name nothing — and those are the
-// ones the engine can lower without knowing which session it is in. A scope
-// carrying a session's variables would be a different and much larger change,
-// because it would have to be rebuilt whenever an `<assign>` ran.
-//
-// Shared, because it never changes: `sce_lower_*` takes it by const pointer
-// and only reads, so concurrent evaluation is safe. Function-local static
-// initialisation is itself thread-safe since C++11.
-static const SceLoweringScope *closedLoweringScope() {
-    static SceLoweringScope *const scope = sce_scope_new();
-    return scope;
-}
-#endif
-
 // The seam: the ONE step a pre-lowered call skips.
 //
 // docs/SCE_LUA_TRANSLATION_SEAM.md, "The seam is not 'skip the transformer'":
@@ -546,7 +524,7 @@ static const SceLoweringScope *closedLoweringScope() {
 // not to translating ECMAScript, so both paths converge on the same tail below
 // rather than growing a second, simpler implementation. Those four keep their
 // own clauses, cited where they are implemented in evaluateExpressionInternal.
-std::string LuaEngine::loweredTextOf(const ScriptSource &expression) {
+std::string LuaEngine::loweredTextOf(const ScriptSource &expression, const LoweringScope &scope) {
     // Already lowered by sce-build's ECMAScript frontend. Running the rewriter
     // over the frontend's own output would shift an index the frontend already
     // made 1-based a second time (`transformArrayIndexing`), an off-by-one with
@@ -554,35 +532,30 @@ std::string LuaEngine::loweredTextOf(const ScriptSource &expression) {
     if (expression.language() == ScriptLanguage::Lua) {
         return expression.text();
     }
-#ifdef SCE_HAS_LOWERING_FFI
     // The author's ECMAScript, offered to the frontend's PARSER before the
     // rewriter's text pass gets it. The owner's decision on 2026-08-29 was to
-    // link the frontend and retire `EcmaScriptToLuaTransformer`; this is the
-    // first expression class to cross.
+    // link the frontend and retire `EcmaScriptToLuaTransformer`, and what
+    // decides how much of it has been retired is the SCOPE this asks against.
     //
-    // The scope is EMPTY, and that is the whole definition of the class. An
-    // empty scope asks "can you answer this without me naming anything?", so
-    // only CLOSED expressions — those referring to no variable — are taken.
-    // Everything else is refused with NULL and falls through to the rewriter,
-    // exactly as before. That is why this can land while the rewriter is still
-    // the engine's only answer for the rest: a missed expression stays
-    // *diverging*, never newly wrong.
+    // It began empty, which asked "can you answer this without me naming
+    // anything?" and so selected exactly the CLOSED expressions — 11 of the 23
+    // divergences then declared. `scope` is now the session's own, fed by
+    // `<data id>` (`setVariableInternal`) and by what a `<script>` chunk's top
+    // level introduces (`executeScriptInternal`), which is the pair the D1
+    // ledger's scope census measured as sufficient for 301 of 301 sites. An
+    // expression naming a variable the session holds is therefore answered
+    // here too: `a && b` yields its left operand, `a == null` equates null and
+    // undefined, `!a` is ToBoolean's negation — none of it reachable by a pass
+    // that replaces text without knowing where an operand ends.
     //
-    // Measured 2026-08-29: 11 of the 23 entries in
-    // `tests/ecmascript/lua_engine_divergences.json` are closed expressions,
-    // and this answers every one of them —  `1 == '1'` coerces, `-7 % 3`
-    // truncates, `-8 >>> 28` is unsigned. The rewriter cannot do any of it
-    // because it replaces text without knowing where an operand ends.
-    //
-    // A run-time scope, which would take the other 12, is a later step: it
-    // needs the names the session actually holds, and the D1 ledger's scope
-    // census is what says a `declare` + `declare_chunk` pair is enough.
-    if (char *lowered = sce_lower_value(expression.text().c_str(), closedLoweringScope())) {
-        std::string text(lowered);
-        sce_lower_free(lowered);
-        return text;
+    // Refusal is still the fallback and still a normal answer. A name the
+    // session has not declared, or text the parser will not read, comes back
+    // as nothing and the rewriter answers exactly as it did before, so an
+    // expression this misses stays *diverging* rather than becoming newly
+    // wrong.
+    if (auto lowered = scope.lowerValue(expression.text())) {
+        return *lowered;
     }
-#endif
     return transformer_.transform(expression.text());
 }
 
@@ -618,7 +591,7 @@ std::future<ScriptResult> LuaEngine::doValidateExpression(const std::string &ses
         return p.get_future();
     }
 
-    std::string luaExpr = loweredTextOf(expression);
+    std::string luaExpr = loweredTextOf(expression, it->second->loweringScope);
     std::string wrapped = "return " + luaExpr;
 
     lua_State *L = it->second->L;
@@ -672,6 +645,26 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     scriptExec[script.text()] = {it->second->chunkCache.at(luaScript).ref, script.language()};
 
     int status = lua_pcall(L, 0, LUA_MULTRET, 0);
+
+    // §scxml-5.8: a `<script>` that ran has introduced its top-level
+    // declarations into the datamodel, so the ECMAScript frontend is told
+    // about them — the `declare_chunk` half of the scope, and the half that
+    // reaches the variables no `<data id>` names.
+    //
+    // Only for text that ARRIVED as ECMAScript. Lua text comes from a
+    // generated artifact, which lowered its expressions at build time and
+    // never asks this engine to lower one, so handing that chunk to an
+    // ECMAScript parser would be asking a question nothing answers.
+    //
+    // Only after a successful run, because a chunk that raised declared
+    // whatever it reached and this cannot say where it stopped. Claiming the
+    // names of a chunk that did not finish would let the frontend resolve a
+    // variable the session does not hold, and refusal — the answer it gives
+    // now — is the safe one.
+    if (status == LUA_OK && script.language() == ScriptLanguage::ECMAScript) {
+        it->second->loweringScope.declareChunk(script.text());
+    }
+
     return luaResultToScriptResult(L, status);
 }
 
@@ -689,9 +682,16 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     // A cached entry from the other language is a miss: the same text lowers
     // differently, and reusing the wrong chunk would be an off-by-one nobody
     // gets a diagnostic for.
+    //
+    // An entry lowered against an OLDER scope is a miss for the same reason
+    // one step out: the frontend's answer depends on which names it was told
+    // about, so a `<script>` that declared one since must be able to change
+    // what this text lowers to.
+    const uint64_t scopeGeneration = it->second->loweringScope.generation();
     auto &execCache = it->second->exprExecCache;
     auto execIt = execCache.find(expression.text());
-    if (execIt != execCache.end() && execIt->second.language == expression.language()) {
+    if (execIt != execCache.end() && execIt->second.language == expression.language() &&
+        execIt->second.scopeGeneration == scopeGeneration) {
         auto &info = execIt->second;
         lua_rawgeti(L, LUA_REGISTRYINDEX, info.chunkRef);
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
@@ -707,7 +707,7 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     }
 
     // Slow path: first-time evaluation for this expression in this session
-    std::string luaExpr = loweredTextOf(expression);
+    std::string luaExpr = loweredTextOf(expression, it->second->loweringScope);
 
     // W3C SCXML: Detect undeclared simple variable references
     // JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
@@ -736,7 +736,7 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
         if (status == LUA_OK) {
             // Cache for fast path on subsequent calls
-            execCache[expression.text()] = {cache.at(wrapped).ref, true, expression.language()};
+            execCache[expression.text()] = {cache.at(wrapped).ref, true, expression.language(), scopeGeneration};
             return luaResultToScriptResult(L, status);
         }
         std::string error = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
@@ -768,7 +768,7 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
             int status = lua_pcall(L, 0, LUA_MULTRET, 0);
             if (status == LUA_OK) {
                 // Cache for fast path on subsequent calls
-                execCache[expression.text()] = {cache.at(luaExpr).ref, false, expression.language()};
+                execCache[expression.text()] = {cache.at(luaExpr).ref, false, expression.language(), scopeGeneration};
                 return ScriptResult::createSuccess(ScriptUndefined{});
             }
             lua_pop(L, 1);
@@ -828,6 +828,13 @@ ScriptResult LuaEngine::setVariableInternal(const std::string &sessionId, const 
 
     // Track declared variables (Lua nil == undeclared, so we need explicit tracking)
     it->second->declaredVars.insert(name);
+
+    // §scxml-5.3: the same declaration, told to the ECMAScript frontend. This
+    // is the `<data id>` half of the scope the D1 ledger's census measured —
+    // without it the frontend refuses every expression naming this variable
+    // and the rewriter answers instead, which is where the declared
+    // divergences come from.
+    it->second->loweringScope.declare(name);
 
     // Track pre-initialized variables for invoke param/namelist support
     // §scxml-6.4.2: DataModelInitializer skips re-initialization of pre-initialized variables

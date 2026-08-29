@@ -6283,6 +6283,15 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "enterAt",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::setVariableInternal",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/LoweringScope.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7204,6 +7213,15 @@
         },
         {
           "file": "sce/include/scripting/SceLowering.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::executeScriptInternal",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/LoweringScope.h",
           "kind": "references"
         }
       ],

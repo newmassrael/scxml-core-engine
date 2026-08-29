@@ -20,10 +20,14 @@
  *
  * `EcmaScriptToLuaTransformer` rewrites the author's ECMAScript into Lua
  * as TEXT, without parsing it, so it cannot say where an operand ends.
- * `docs/SCE_LUA_TRANSLATION_SEAM.md` and
- * `tests/ecmascript/lua_engine_divergences.json` list what that costs —
- * 23 entries, every one of them on the `runtime-rewriter` path. The
- * frontend behind this header parses, and it answers them.
+ * `tests/ecmascript/lua_engine_divergences.json` is what that costs, on
+ * the `runtime-rewriter` path; `docs/SCE_LUA_TRANSLATION_SEAM.md` is why.
+ * The frontend behind this header parses, and it answers them.
+ *
+ * How MANY is deliberately not written here. That file is the one thing
+ * that knows, its suite is red in both directions, and the number moved
+ * three times on 2026-08-29 alone — a count restated beside the file
+ * that owns it is the defect the whole D1 ledger was written against.
  *
  * The owner's decision on 2026-08-29 was to link it and retire the
  * rewriter. This header is the first half of that: the rewriter is still
@@ -48,10 +52,15 @@ extern "C" {
 
 /// An opaque handle to the set of names the frontend may resolve.
 ///
-/// An EMPTY scope is a meaningful question, not a degenerate one: it
-/// asks whether the expression can be answered without the caller
-/// naming anything. 11 of the 23 tracked divergences are closed
-/// expressions and are answered that way.
+/// The scope is the SELECTOR, not configuration: the frontend refuses
+/// any expression naming something the scope has not been told about,
+/// so how much a caller declares is exactly how much it gets answered.
+/// An EMPTY scope is therefore a meaningful question rather than a
+/// degenerate one — it asks whether the expression can be answered
+/// without the caller naming anything, which admits the CLOSED
+/// expressions and nothing else. `LuaEngine` began there and now
+/// declares what its session holds; `SCE::LoweringScope` is the C++
+/// side of that, and the only caller of this surface in the engine.
 struct SceLoweringScope;
 
 /// Open a scope with nothing declared.
