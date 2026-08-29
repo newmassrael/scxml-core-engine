@@ -2641,3 +2641,137 @@ corpus would leave a suite that passes by asking nothing.
   Four readers of the emission plus one artifact route (`ecma262-lowered-cpp`)
   is a population five wide, derived from nobody. That gate is what would have
   found this gap in the first place, and it is the next thing to build.
+
+## Landed 2026-08-29 (seventh round): how much of Kotlin's 46 the seam buys back
+
+The round above measured the lowered route across the whole shared table. It
+did not answer the question the 46 are actually a list FOR, which is the one
+anybody deciding whether to fund the seam asks first: **of the cases this
+backend gets wrong today, how many would simply stop existing once translation
+moves to build time?**
+
+The two files could not answer it separately. `kotlin_lua_divergences.json`
+knows which cases the runtime rewriter gets wrong and nothing about the other
+route; `kotlin_lowered_ecma262.json` knows what the other route does and
+nothing about which of its cases the rewriter also gets wrong. The answer is
+their intersection, and until now nobody had taken it — so the 46 were one
+undifferentiated number, and every argument for the seam had to be made on the
+size of a list rather than on what closing it would remove.
+
+Each entry now carries a `build_time_frontend` verdict. This is the split:
+
+<!-- sce:kotlin-lowering-dividend — parsed by sce-build/tests/kotlin_lowering_dividend.rs -->
+
+| verdict | entries | what it means for the seam |
+|---|---:|---|
+| `answers` | 39 | the frontend's Lua reached this backend's Lua engine and ECMA-262's answer came back — **the seam retires these** |
+| `diverges` | 2 | reached the engine unchanged and was still answered wrong; the seam does not buy these back, the frontend defect does |
+| `unmeasured` | 5 | the rewriter mangles the frontend's own Lua on the way in, so the lowered route cannot ask them yet |
+| **total** | **46** | every entry is in exactly one verdict |
+
+```sh
+python3 - <<'PY'
+import collections, json
+d = json.load(open('tests/ecmascript/kotlin_lua_divergences.json'))
+low = json.load(open('tests/ecmascript/kotlin_lowered_ecma262.json'))
+unreachable = {(c['source'], c['clause']) for c in low['unreachable']}
+diverging = {(c['source'], c['clause']) for c in low['divergences']}
+def verdict(e):
+    k = (e['source'], e['clause'])
+    return ('unmeasured' if k in unreachable
+            else 'diverges' if k in diverging else 'answers')
+print(collections.Counter(verdict(e) for e in d['divergences']))
+print(collections.Counter(e['build_time_frontend'] for e in d['divergences']))
+PY
+```
+
+**39 of 46, or 85%, is what moving Kotlin's translation to build time is worth
+on this table** — and it is worth saying the other way round too, because it is
+the half a proposal would have hidden: **7 of the 46 the seam does NOT close on
+its own.** Two are a frontend defect (both the same one: the emitted setup
+assigns without `var`, so the session's declared-identifier guard never learns
+the name), and five are cases the seam has to open before anyone can even ask.
+
+### The verdict is derived, not judged
+
+Nothing types these three words from an opinion.
+`sce-build/tests/kotlin_lowering_dividend.rs` re-derives every one of them from
+`kotlin_lowered_ecma262.json` and fails on a disagreement in either direction —
+and that file is itself held against the running Lua engine, in both
+directions, by `LoweredEcma262Test`. So the chain from the number `39` back to
+an execution has no prose in it:
+
+```
+LuaScriptEngine (running)  →  LoweredEcma262Test (both directions)
+  →  kotlin_lowered_ecma262.json  →  kotlin_lowering_dividend (both directions)
+  →  build_time_frontend verdicts  →  the tally  →  this table
+```
+
+The Rust lane rather than the Kotlin one for the same reason
+`ecma262_scoreboard_contract` gives for checking the Kotlin divergence list
+from Rust: it needs no JVM, so a verdict that stops describing the tree is
+caught on every push instead of only when the Kotlin gate is selected. The
+measurement stays where the engine is; what is re-derived here is agreement.
+
+### Unclassified is RED, and the escape hatch is the one that is guarded
+
+`unmeasured` is the only verdict that exempts an entry from the measurement, so
+a missing `build_time_frontend` would silently mean exactly it. Every entry
+therefore carries one, and an entry that carries none fails — the same rule
+`diverges_on` already lives under one key above it. And `unmeasured` cannot be
+claimed freely: it is admitted only for a case declared `unreachable` in
+`kotlin_lowered_ecma262.json`, where `LoweredEcma262Test` refuses both an
+undeclared mangling and a declared one the rewriter has stopped doing.
+
+### This field has a path to zero, and it is not repair
+
+The honest answer to "how do these three counts reach zero" is that they do not
+go one at a time. They go together, on the day
+`Language::Kotlin.supports_script_engine_target(Lua)` becomes true: at that
+point `build-time-lowering` is a path this backend HAS, `diverges_on` can carry
+the same fact beside the path it is about, and `build_time_frontend` becomes a
+second vocabulary for it. `the_field_retires_when_the_seam_opens` fails on
+exactly that day and says what to do — `answers` becomes an entry naming only
+`runtime-rewriter`, `diverges` one naming both, `unmeasured` gets a real answer
+for the first time. `ecma262_scoreboard_contract` goes red the same day asking
+which path each entry is about; the two reds together are the migration.
+
+### Shown red before it was believed
+
+| mutation | what it models | verdict |
+|---|---|---|
+| one `answers` → `unmeasured` | a verdict is talked into the exempting value | RED — `says "unmeasured", … makes it "answers"` |
+| `build_time_frontend` deleted from one entry | the field is quietly optional | RED — "1 entr(ies) … carry no `build_time_frontend`" |
+| `measured.answers` 39 → 38 | the tally drifts from the list it summarises | RED — declared vs actual maps differ |
+| the seam table's `39` → `38` | the document keeps a number the tree has moved past | RED — stated vs measured maps differ |
+
+The casefile is
+`sce-build/tests/mutations/the_lowering_dividend_is_derived_not_declared.cases`,
+so this control is bought once rather than by hand each round
+— which is what the sixth round could not do, its suite being Gradle's. All six
+CAUGHT, each naming the assertion that owns it; the sixth is the one worth
+reading, because `the_field_retires_when_the_seam_opens` measures nothing today
+and a case that opens the Lua target is the only thing that can show it alive.
+
+### What this leaves open
+
+- **`39` is a number about THIS TABLE.** The shared table asks 98 expressions;
+  it does not ask session lifecycle, `setCurrentEvent`, `executeForeach` or the
+  `In()` callback, and the Kotlin gate's own comment says why that gap matters
+  — a defect there is invisible to both an expression table and a Rhino-only
+  suite. So `39/46` prices the seam against expression semantics and nothing
+  else, and the residue is unpriced rather than zero.
+- **The 5 `unmeasured` have no answer yet, and cannot get one here.** They are
+  not "probably fine": the rewriter mangles the frontend's own Lua for them, so
+  the only way to learn what the lowered route does is to build the lowered
+  route. They are the cases most likely to move the 39 in either direction.
+- **The 2 `diverges` are a frontend defect that is still open.** Both are the
+  same one — the emitted setup assigns without `var`, so the session's
+  declared-identifier guard never learns the name. Naming it in two files is
+  not fixing it, and nothing in this round did.
+- **The C++ list keeps no such field, deliberately.**
+  `lua_engine_divergences.json` does not need one: C++ HAS both paths, so
+  `diverges_on` already carries
+  the same fact where it belongs. That asymmetry is the reason this field is
+  written as temporary, and `the_field_retires_when_the_seam_opens` is what
+  makes "temporary" a claim something can fault.
