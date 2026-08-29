@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "04157dbdaf",
+  "embed_version": "5ad003aa4a",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 283,
+  "symbol_count": 292,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1761,6 +1761,60 @@
       "kind": "function",
       "name": "SCE::createPlatformExecutor",
       "signature": "std::unique_ptr<PlatformExecutionHelper> SCE::createPlatformExecutor()"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_lower_condition",
+      "signature": "char * sce_lower_condition(const char *, const SceLoweringScope *)"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_lower_free",
+      "signature": "void sce_lower_free(char *)"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_lower_location",
+      "signature": "char * sce_lower_location(const char *)"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_lower_script",
+      "signature": "char * sce_lower_script(const char *, const SceLoweringScope *)"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_lower_value",
+      "signature": "char * sce_lower_value(const char *, const SceLoweringScope *)"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_scope_declare",
+      "signature": "void sce_scope_declare(SceLoweringScope *, const char *)"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_scope_declare_chunk",
+      "signature": "void sce_scope_declare_chunk(SceLoweringScope *, const char *)"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_scope_free",
+      "signature": "void sce_scope_free(SceLoweringScope *)"
+    },
+    {
+      "header": "scripting/SceLowering.h",
+      "kind": "function",
+      "name": "sce_scope_new",
+      "signature": "SceLoweringScope * sce_scope_new()"
     },
     {
       "header": "scripting/ScriptDialect.h",
