@@ -68,6 +68,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # edit to the mesh roster would otherwise be held to the contract only by a
 # lane that edit cannot start. This workflow declares no filter, so it runs
 # on exactly the pushes such an edit arrives in.
+#
+# `scope_obligation` lowers every expression in every committed *.scxml once
+# per scope stage, so a document added anywhere changes what it reads. Its
+# reason for being here is sharper than the sweep, though: the census it
+# prints is what says whether a run-time lowering surface needs a scope
+# handle, and a zero is an answer. A document that crosses a stage boundary
+# is what keeps that census honest, so it is precisely a NEW document — the
+# thing a `paths:` filter over today's trees cannot name — that this gate
+# must not miss.
 cargo test -p sce-build --features cli \
     --test roadmap_marker_gate \
     --test scope_terminology \
@@ -89,6 +98,7 @@ cargo test -p sce-build --features cli \
     --test datamodel_read_accessor \
     --test ecmascript_semantics \
     --test ecmascript_acceptance_parity \
+    --test scope_obligation \
     --test cli_expression_refusal \
     --test cli_guard_emission \
     --test mutation_rounds_selection \

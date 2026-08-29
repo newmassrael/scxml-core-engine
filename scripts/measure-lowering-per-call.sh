@@ -33,6 +33,15 @@ BENCH="$BUILD_DIR/tests/benchmarks/benchmark_ecma_lowering_per_call"
 
 cd "$REPO_ROOT"
 
+# How much of this machine was actually free. The census header carries it
+# because the figures below are only comparable between runs taken under
+# similar load — the same 21 gates have been measured here at 529s and at
+# 1161s. It is READ FROM THE OWNER rather than derived from `/proc/loadavg`
+# here: that arithmetic has one home, and a second spelling of it is a second
+# answer (`build_jobs_has_one_owner` refuses one, and refused this file).
+# shellcheck source=scripts/lib/sce_build_jobs.sh
+source "$REPO_ROOT/scripts/lib/sce_build_jobs.sh"
+
 # The population both halves must agree on. Read from the file rather than
 # hard-coded, because a table that grows and a benchmark that does not is
 # exactly the drift this line exists to refuse.
@@ -48,7 +57,7 @@ fi
 RESULTS="$(mktemp -d)"
 trap 'rm -rf "$RESULTS"' EXIT
 
-echo "==> host $(hostname), $(nproc) core(s), load$(cut -d' ' -f1-3 /proc/loadavg | sed 's/^/ /')"
+echo "==> host $(hostname), $(nproc) core(s), $(sce_build_jobs_value) free of them"
 
 # --- C++: the run-time rewriter, cold and warm -----------------------------
 "$BENCH" --benchmark_format=json --benchmark_min_time=1s > "$RESULTS/cpp.json"

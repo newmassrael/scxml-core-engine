@@ -130,22 +130,50 @@ impl std::fmt::Display for RefusedExpression {
     }
 }
 
-/// Every expression in `model` the ECMAScript frontend refuses, in
-/// document order.
+/// One authored expression, named by where it stands, before anything has
+/// been asked of it.
 ///
-/// An empty vector means the whole document lowers — which is the answer
-/// for every document in the W3C corpus except the two that write
-/// `cond="return"` on purpose.
-pub fn refusals(model: &SCXMLModel) -> Vec<RefusedExpression> {
-    // One scope for the document, assembled before any expression is
-    // lowered. A `<data>` declared in the last state is in scope for the
-    // first state's `cond`: the datamodel is one table, and early
-    // binding puts every declaration in it before the first macrostep.
-    // Building it per expression would make the verdict depend on
-    // document order, which nothing in the spec licenses.
-    let scope = DocumentScope::from_model(model);
+/// [`sites`] answers *where the expressions are*; [`refusals`] answers
+/// *which of them the frontend rejects*. They are separate because the
+/// first question has more than one caller: a probe that lowers the same
+/// site under two different scopes is asking about the scope rather than
+/// about acceptance, and it must not re-implement the walk to do so — the
+/// walk reaches fourteen call sites, and a second copy of it would drift
+/// from this one without saying so.
+#[derive(Debug, Clone)]
+pub struct ExpressionSite {
+    pub role: ExpressionRole,
+    /// Author-facing name of the attribute or element that carried it —
+    /// `<assign expr>`, `<transition cond>`.
+    pub site: String,
+    /// The expression as the author wrote it.
+    pub source: String,
+    /// The owning element's own coordinate, when the parser recorded one.
+    pub location: Option<SourceLocation>,
+}
+
+impl ExpressionSite {
+    /// Lower this site's source against `scope`, in its own role.
+    ///
+    /// The role decides which of the four frontend entry points runs, so a
+    /// caller cannot pick one and stay correct — `<assign location>` is
+    /// not a value and a `<script>` body is not a condition. This is the
+    /// only supported way to lower a site.
+    pub fn lower(&self, scope: &DocumentScope) -> Result<String, ExprError> {
+        self.role.lower(&self.source, scope)
+    }
+}
+
+/// Every expression `model` carries that the frontend is asked to lower,
+/// in document order.
+///
+/// This is the population, not a verdict. Sites the pipeline never routes
+/// through the frontend are absent — an absent attribute, a `cpp:`/`kt:`
+/// native guard, a pure `In()` predicate — because including them would
+/// inflate every count taken over this walk with expressions no engine
+/// ever sees.
+pub fn sites(model: &SCXMLModel) -> Vec<ExpressionSite> {
     let mut into = Collector {
-        scope: &scope,
         document_needs_script_engine: model.needs_script_engine,
         out: Vec::new(),
     };
@@ -171,22 +199,50 @@ pub fn refusals(model: &SCXMLModel) -> Vec<RefusedExpression> {
     into.out
 }
 
-/// The walk's accumulator: the refusals found so far, and the scope every
-/// one of them was judged against.
+/// Every expression in `model` the ECMAScript frontend refuses, in
+/// document order.
 ///
-/// The two travel together because they are used together at exactly one
-/// site — [`check`] — and every other function here exists only to reach
-/// it. Passing them separately would put the same pair in fourteen
-/// signatures and let a future site take the scope from somewhere else.
-struct Collector<'a> {
-    scope: &'a DocumentScope,
+/// An empty vector means the whole document lowers — which is the answer
+/// for every document in the W3C corpus except the two that write
+/// `cond="return"` on purpose.
+pub fn refusals(model: &SCXMLModel) -> Vec<RefusedExpression> {
+    // One scope for the document, assembled before any expression is
+    // lowered. A `<data>` declared in the last state is in scope for the
+    // first state's `cond`: the datamodel is one table, and early
+    // binding puts every declaration in it before the first macrostep.
+    // Building it per expression would make the verdict depend on
+    // document order, which nothing in the spec licenses.
+    let scope = DocumentScope::from_model(model);
+    sites(model)
+        .into_iter()
+        .filter_map(|site| {
+            site.lower(&scope).err().map(|error| RefusedExpression {
+                role: site.role,
+                site: site.site,
+                source: site.source,
+                error,
+                location: site.location,
+            })
+        })
+        .collect()
+}
+
+/// The walk's accumulator: the sites found so far, and the one fact about
+/// the document that a site's inclusion can depend on.
+///
+/// It carries no scope. The walk used to lower as it went, which tied the
+/// population to whichever scope it was judged against and left no way to
+/// ask the same walk a second question. Deciding *whether a site is one*
+/// and deciding *what it lowers to* are different jobs, and only the first
+/// belongs here.
+struct Collector {
     /// Whether the templates will route this document's guards through
     /// the frontend at all — see [`check_condition`].
     document_needs_script_engine: bool,
-    out: Vec<RefusedExpression>,
+    out: Vec<ExpressionSite>,
 }
 
-fn check_state(state: &State, into: &mut Collector<'_>) {
+fn check_state(state: &State, into: &mut Collector) {
     for var in &state.datamodel {
         check_variable(var, into);
     }
@@ -261,7 +317,7 @@ fn check_state(state: &State, into: &mut Collector<'_>) {
     }
 }
 
-fn check_variable(var: &Variable, into: &mut Collector<'_>) {
+fn check_variable(var: &Variable, into: &mut Collector) {
     // `<data>`'s inline body is not checked here. The spec makes "not an
     // expression" a legal reading of it, and `filters::to_lua_data_content`
     // — which carries that clause — takes that reading: a body the
@@ -276,7 +332,7 @@ fn check_variable(var: &Variable, into: &mut Collector<'_>) {
     );
 }
 
-fn check_invoke(invoke: &Invoke, into: &mut Collector<'_>) {
+fn check_invoke(invoke: &Invoke, into: &mut Collector) {
     match invoke {
         Invoke::Scxml(info) => {
             check(
@@ -323,7 +379,7 @@ fn check_invoke(invoke: &Invoke, into: &mut Collector<'_>) {
     }
 }
 
-fn check_params(params: &[Param], fallback: Option<&SourceLocation>, into: &mut Collector<'_>) {
+fn check_params(params: &[Param], fallback: Option<&SourceLocation>, into: &mut Collector) {
     for param in params {
         // A `<param>` carries its own coordinate for exactly this: the
         // enclosing element's line does not contain the rejected value.
@@ -353,7 +409,7 @@ fn check_params(params: &[Param], fallback: Option<&SourceLocation>, into: &mut 
     }
 }
 
-fn check_action(action: &Action, into: &mut Collector<'_>) {
+fn check_action(action: &Action, into: &mut Collector) {
     let at = action.source_location.as_ref();
     match action.action_type.as_str() {
         "send" => {
@@ -502,7 +558,7 @@ fn check_condition(
     site: &str,
     cond: &str,
     location: Option<&SourceLocation>,
-    into: &mut Collector<'_>,
+    into: &mut Collector,
 ) {
     let (needs_engine, _has_in) = crate::parser::check_expression_needs(cond);
     if !needs_engine && !into.document_needs_script_engine {
@@ -522,7 +578,7 @@ fn check(
     site: &str,
     source: &str,
     location: Option<&SourceLocation>,
-    into: &mut Collector<'_>,
+    into: &mut Collector,
 ) {
     // An absent attribute is not an expression. The filters answer the
     // same way — an empty `expr` lowers to nothing, an empty `cond` to
@@ -530,13 +586,10 @@ fn check(
     if source.is_empty() {
         return;
     }
-    if let Err(error) = role.lower(source, into.scope) {
-        into.out.push(RefusedExpression {
-            role,
-            site: site.to_string(),
-            source: source.to_string(),
-            error,
-            location: location.cloned(),
-        });
-    }
+    into.out.push(ExpressionSite {
+        role,
+        site: site.to_string(),
+        source: source.to_string(),
+        location: location.cloned(),
+    });
 }
