@@ -375,6 +375,125 @@ fn a_named_feature_is_not_a_passed_feature() {
     }
 }
 
+/// `src` with C and C++ commentary removed and the CONTENTS of string
+/// and character literals emptied, so a symbol can be read as a CALL
+/// rather than as text that happens to appear in the file.
+///
+/// The same distinction `passes_cargo_feature` draws, one language over.
+/// Literals are emptied as well as comments because a symbol named in a
+/// diagnostic message is not called either, and both are how a deleted
+/// call leaves its name behind.
+///
+/// It reads C++ as a lexer does and not as a parser does: `a / *p` would
+/// be taken for a block comment. No such division exists in the file this
+/// is pointed at, and widening it to a parse would be a second front end
+/// for a check that only has to tell code from prose.
+fn cpp_code_only(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut chars = src.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '/' if chars.peek() == Some(&'/') => {
+                for inner in chars.by_ref() {
+                    if inner == '\n' {
+                        out.push('\n');
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                let mut prev = '\0';
+                for inner in chars.by_ref() {
+                    // A block comment spans lines, and the lines are kept
+                    // so a later line-based reading still lines up.
+                    if inner == '\n' {
+                        out.push('\n');
+                    }
+                    if prev == '*' && inner == '/' {
+                        break;
+                    }
+                    prev = inner;
+                }
+            }
+            '"' | '\'' => {
+                out.push(c);
+                let mut escaped = false;
+                for inner in chars.by_ref() {
+                    if escaped {
+                        escaped = false;
+                        continue;
+                    }
+                    if inner == '\\' {
+                        escaped = true;
+                        continue;
+                    }
+                    if inner == c {
+                        out.push(c);
+                        break;
+                    }
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// The boundary `cpp_code_only` exists to hold, pinned so that a later
+/// simplification back to a substring search over the whole file fails
+/// here first.
+///
+/// The first negative case is not hypothetical. It is the mutation run on
+/// 2026-08-29 against `decision:linked-beside-lua`: the call was deleted
+/// from `LuaEngine::loweredTextOf` and the paragraph explaining it was
+/// left standing, exactly as a careless revert would leave it. The C++
+/// suite went red on eleven expressions and this ledger stayed GREEN —
+/// blind in precisely the case the check was written for, which is the
+/// same defect `a_named_feature_is_not_a_passed_feature` records one
+/// language over.
+#[test]
+fn a_mentioned_call_is_not_a_made_call() {
+    for called in [
+        "if (char *lowered = sce_lower_value(text.c_str(), scope())) {\n",
+        "// offered to the frontend first\nreturn sce_lower_value(t, s);\n",
+        "/* block */ x = sce_lower_value(t, s);\n",
+    ] {
+        assert!(
+            cpp_code_only(called).contains("sce_lower_value("),
+            "should read a made call out of: {called:?}"
+        );
+    }
+
+    let mentioned_only = "// MUTATION: the call to sce_lower_value(...) was removed here.\n\
+                          return transformer_.transform(expression.text());\n";
+    assert!(
+        mentioned_only.contains("sce_lower_value("),
+        "the mutation kept the prose"
+    );
+    for not_called in [
+        mentioned_only,
+        // A block comment hides it just as well as a line comment.
+        "/*\n * sce_lower_value(t, s) used to be called here.\n */\n",
+        // A diagnostic naming the symbol does not call it.
+        "throw std::runtime_error(\"sce_lower_value( is unavailable\");\n",
+    ] {
+        assert!(
+            !cpp_code_only(not_called).contains("sce_lower_value("),
+            "should NOT count as calling the surface: {not_called:?}"
+        );
+    }
+
+    // An apostrophe inside a comment must not be read as opening a
+    // character literal and swallowing the code after it: comments are
+    // cut before literals are, and this pins that order.
+    let after_an_apostrophe = "// the frontend doesn't refuse this one\nsce_lower_value(t, s);\n";
+    assert!(
+        cpp_code_only(after_an_apostrophe).contains("sce_lower_value("),
+        "an apostrophe in a comment must not hide the code below it"
+    );
+}
+
 fn enum_variants(src: &str, opener: &str, is_variant: impl Fn(&str) -> bool) -> usize {
     let mut inside = false;
     let mut count = 0usize;
@@ -796,7 +915,16 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         //    discarded by the linker, so a row resting on the link alone
         //    would be a row that cannot fail — the population would have
         //    a role in it that can never be zero.
-        let engine = read("sce/src/scripting/LuaEngine.cpp");
+        //
+        //    ⚠ In CODE, not in the file. This read the whole file until
+        //    2026-08-29, when the mutation it exists to catch was run
+        //    against it: the call was deleted and the paragraph above it
+        //    left standing, and the ledger stayed green while the C++
+        //    suite went red on eleven expressions. That is the same
+        //    defect `passes_cargo_feature` was written for, and
+        //    `a_mentioned_call_is_not_a_made_call` pins the boundary so a
+        //    simplification back to a whole-file search fails there first.
+        let engine = cpp_code_only(&read("sce/src/scripting/LuaEngine.cpp"));
         assert!(
             engine.contains("sce_lower_value("),
             "row `{}`: `LuaEngine.cpp` no longer calls the surface. The link \
