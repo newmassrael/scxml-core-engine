@@ -125,6 +125,7 @@ cargo test -p sce-build --features cli,ffi \
     --test mutation_rounds_selection \
     --test mutation_corpus_fits_its_lane \
     --test mutation_round_survives_the_next_push \
+    --test ci_supersession_policy \
     --test mesh_rpc_backend_contract \
     --test ecma262_scoreboard_contract \
     --test script_engine_language_parity \

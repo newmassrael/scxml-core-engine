@@ -324,6 +324,21 @@ GATES: dict[str, dict] = {
         # spellings. The gate reads `SCE_GATE_NO_FAIL_FAST` and the lane sets
         # it.
         "runner_workflow": True,
+        # ⚠ `.github/workflows/**` is deliberately NOT here, though the suite
+        # reads every file in that directory at run time
+        # (`mutation_round_survives_the_next_push`, `ci_supersession_policy`).
+        # `extra` is the HOOK's trigger list as well as the CI-coverage one,
+        # and adding it classified every workflow path — which broke
+        # `unfiltered-workflow-self`: editing a workflow that declares no
+        # `paths:` of its own is meant to be unclassified and buy the full run,
+        # and a `ci_only` gate cannot take that job because the hook is never
+        # offered it. The path would have read as known and selected nothing.
+        #
+        # The coverage the suite needs is one-directional and belongs on the
+        # other side: `rust-workspace-tests.yml` lists `.github/workflows/**`
+        # in its `paths:`, so the lane starts for a workflow edit. A workflow
+        # filter WIDER than its gate's triggers is what `ci-only-coverage`
+        # allows; the reverse is what it refuses.
         "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root

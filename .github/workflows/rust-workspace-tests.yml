@@ -58,6 +58,17 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust-workspace-tests.yml'
+      # ⚠ NOT `.github/workflows/**`, though two suites here read the other
+      # workflow files as their subject
+      # (`mutation_round_survives_the_next_push`, `ci_supersession_policy`).
+      # A gate inherits its workflow's `paths:` as its hook triggers, so that
+      # glob would classify every workflow path — and `workspace-tests` is
+      # `ci_only`, which the hook is never offered. Editing an unfiltered
+      # lane's own file is meant to be UNCLASSIFIED and buy the full run
+      # (`unfiltered-workflow-self` in tools/git-hooks/gate_registry.py); it
+      # would instead have read as known and selected nothing.
+      # Those two suites are run by `tree-hygiene.sh`, whose workflow declares
+      # no filter at all and therefore already starts for every workflow edit.
       # Inputs the suite reads without compiling: the acceptance doc, the
       # wire schemas and the API headers are `include_str!`-ed by tests
       # here. The `workspace-tests` gate has always declared them in its
@@ -79,6 +90,17 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust-workspace-tests.yml'
+      # ⚠ NOT `.github/workflows/**`, though two suites here read the other
+      # workflow files as their subject
+      # (`mutation_round_survives_the_next_push`, `ci_supersession_policy`).
+      # A gate inherits its workflow's `paths:` as its hook triggers, so that
+      # glob would classify every workflow path — and `workspace-tests` is
+      # `ci_only`, which the hook is never offered. Editing an unfiltered
+      # lane's own file is meant to be UNCLASSIFIED and buy the full run
+      # (`unfiltered-workflow-self` in tools/git-hooks/gate_registry.py); it
+      # would instead have read as known and selected nothing.
+      # Those two suites are run by `tree-hygiene.sh`, whose workflow declares
+      # no filter at all and therefore already starts for every workflow edit.
       # Inputs the suite reads without compiling: the acceptance doc, the
       # wire schemas and the API headers are `include_str!`-ed by tests
       # here. The `workspace-tests` gate has always declared them in its
@@ -91,9 +113,35 @@ on:
       - 'schemas/**'
       - 'apis/**'
 
+# This lane is not superseded by the push that follows it.
+#
+# Measured 2026-08-29 over this lane's own last 25 runs: a 32.4 min median
+# success against a 18.9 min median gap between pushes to `main`, so it cannot
+# finish between two of them; 11 of those 25 runs ended `cancelled`. It carries
+# the densest correctness net in the tree
+# — every contract test under `sce-build/tests/` runs here — and the
+# `workspace-tests` gate is `ci_only`, so a cancellation is the only reader of
+# those contracts going quiet.
+#
+# `false` rather than a per-commit key, deliberately: a newly queued run still
+# cancels a PENDING one, so `false` saves the run IN FLIGHT and the LATEST
+# commit and defers the ones between. That is the right trade for a lane whose
+# answer is about a BRANCH — this one re-runs the whole workspace suite against
+# whatever the tree now holds. `mutation-rounds.yml` keys on `github.sha`
+# because its answer is about a COMMIT: selection is by change set, and nothing
+# re-selects it.
+#
+# Held by `sce-build/tests/ci_supersession_policy.rs`, which classifies EVERY
+# workflow in this directory and reds one nobody classified; the derivation and
+# the command that re-takes the measurement live there. That suite runs here
+# with the rest of the workspace, and — because this lane's `paths:` cannot
+# name the whole workflow directory without stealing the hook's
+# unclassified-forces-FULL fail-safe, see the note in the filter above — also
+# in `tree-hygiene.sh`, whose workflow declares no filter and so starts for
+# every workflow edit.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   test:
