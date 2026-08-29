@@ -177,8 +177,8 @@ target_include_directories(sce_base
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/common>
     # include/scripting is PRIVATE here (sce_base's own .cpp files compile
-    # XMLDOMWrapper/SessionRegistry/ScriptResultUtils/EcmaScriptToLuaTransformer
-    # whose headers use unqualified includes). It is re-exposed PUBLIC on
+    # XMLDOMWrapper/SessionRegistry/ScriptResultUtils whose headers use
+    # unqualified includes). It is re-exposed PUBLIC on
     # sce_scripting below so tier-respecting consumers pick it up only when
     # they actually link the scripting tier.
     PRIVATE
@@ -383,9 +383,9 @@ if(SCE_HAS_SCRIPTING)
         # sce-build's ECMAScript frontend, called from LuaEngine's seam.
         #
         # The owner's decision, 2026-08-29: link it and retire
-        # `EcmaScriptToLuaTransformer`. This is the first half — the
-        # rewriter is still compiled and is still the fallback for every
-        # expression the frontend refuses.
+        # `EcmaScriptToLuaTransformer`. Both halves are done — the
+        # rewriter is deleted, and what this frontend refuses is refused
+        # rather than handed to a second translator.
         #
         # `NOT EMSCRIPTEN` because the staticlib cargo builds here is for
         # the host, and the visualizer's wasm link would take it as

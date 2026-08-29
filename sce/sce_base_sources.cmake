@@ -25,7 +25,6 @@ set(SCE_BASE_SOURCES
     src/scripting/ScriptResultUtils.cpp
     src/scripting/XMLDOMWrapper.cpp
     src/scripting/SessionRegistry.cpp
-    src/scripting/EcmaScriptToLuaTransformer.cpp
 
     # Runtime utilities (engine-agnostic)
     src/runtime/TypeRegistry.cpp

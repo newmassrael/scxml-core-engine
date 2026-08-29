@@ -113,32 +113,15 @@ target_link_libraries(benchmark_luaengine
         Threads::Threads
 )
 
-# ECMAScript lowering, per call.
+# ECMAScript lowering, per call — REMOVED with its subject.
 #
-# The C++ half of the price in docs/SCE_LUA_TRANSLATION_SEAM.md; the Rust
-# half is `cargo run --release --example lowering_per_call -p sce-build`,
-# and scripts/measure-lowering-per-call.sh runs both on one host so the
-# two columns are comparable. It reads the same shared table the
-# LoweredEcma262 ratchet does, named here rather than copied, so the two
-# measurements cannot drift onto different populations.
-add_executable(benchmark_ecma_lowering_per_call
-    EcmaLoweringPerCallBenchmark.cpp
-)
-target_compile_definitions(benchmark_ecma_lowering_per_call
-    PRIVATE
-        SCE_ECMA262_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_semantics.json"
-)
-target_include_directories(benchmark_ecma_lowering_per_call
-    PRIVATE
-        ${CMAKE_SOURCE_DIR}/third_party/nlohmann_json/include
-)
-target_link_libraries(benchmark_ecma_lowering_per_call
-    PRIVATE
-        sce_runtime
-        benchmark::benchmark
-        benchmark::benchmark_main
-        Threads::Threads
-)
+# `benchmark_ecma_lowering_per_call` timed `EcmaScriptToLuaTransformer`
+# against `sce-build`'s frontend, and that is how the D1 ledger's
+# `per-call-cost` row got 577ns against 1085ns cold. The rewriter is gone,
+# so the comparison has no second side and the target cannot be rebuilt in
+# this tree. The number stays in the ledger as a RETIRED measurement, with
+# the commit that still holds the probe named in the row's own check — see
+# `retired-measurement:` in sce-build/tests/lowering_decision_ledger.rs.
 
 # Memory Footprint Benchmarks
 add_executable(benchmark_memory_footprint
