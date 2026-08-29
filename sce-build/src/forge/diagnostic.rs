@@ -14967,6 +14967,87 @@ mod tests {
         );
     }
 
+    /// One `ExprError` variant, one `DiagnosticCode` — the mapping is
+    /// injective, and that is what lets a machine reader act on it.
+    ///
+    /// `payload_for` matching every variant is compiler-enforced; that
+    /// two variants do not land on the SAME code is not, and it is the
+    /// half that carries a decision. `docs/SCE_LUA_TRANSLATION_SEAM.md`
+    /// prices a C-callable lowering surface, and the question of what
+    /// its error channel must carry is settled by exactly this count:
+    /// the frontend distinguishes 15 failure kinds by code, while the
+    /// run-time path's `ScriptResult` carries a bool and a free-form
+    /// string and no code at all. A C surface that returned a boolean
+    /// would discard the whole alphabet — but only while the alphabet
+    /// stays distinguishable, which is what this asserts.
+    ///
+    /// It reads the golden corpus rather than constructing the variants
+    /// a second time: `every_code_has_a_golden` already holds that
+    /// corpus exhaustive over the code enum, so a variant added without
+    /// a golden fails there first and this test never reports a
+    /// shrinking alphabet as agreement.
+    #[test]
+    fn no_two_expression_errors_share_a_diagnostic_code() {
+        use std::collections::HashMap;
+        use std::mem::{discriminant, Discriminant};
+
+        let mut code_of: HashMap<Discriminant<ExprError>, Vec<&'static str>> = HashMap::new();
+        let mut variants_of: HashMap<&'static str, Vec<Discriminant<ExprError>>> = HashMap::new();
+
+        for (_label, err, _golden) in forge_golden_entries() {
+            let ForgeError::Expression(expr) = &err else {
+                continue;
+            };
+            let kind = discriminant(expr);
+            let code = single(&err).code.as_str();
+            let seen = code_of.entry(kind).or_default();
+            if !seen.contains(&code) {
+                seen.push(code);
+            }
+            let kinds = variants_of.entry(code).or_default();
+            if !kinds.contains(&kind) {
+                kinds.push(kind);
+            }
+        }
+
+        // A scan that found nothing would satisfy every assertion below.
+        // The floor is the `Expression*` family of the code enum, read
+        // from the enum rather than typed here, so it tracks the source
+        // of truth instead of restating it.
+        let expression_codes = ALL_DIAGNOSTIC_CODES
+            .iter()
+            .filter(|c| c.as_str().starts_with("expression/"))
+            .count();
+        assert!(
+            expression_codes >= 15,
+            "the code enum carries only {expression_codes} `expression/` code(s) — \
+             the alphabet this test measures has shrunk, or the wire prefix moved"
+        );
+        assert_eq!(
+            code_of.len(),
+            expression_codes,
+            "the golden corpus reaches {} `ExprError` variant(s) but the enum \
+             carries {expression_codes} `expression/` code(s) — `every_code_has_a_golden` \
+             should have caught this first",
+            code_of.len(),
+        );
+
+        let collapsed: Vec<String> = variants_of
+            .iter()
+            .filter(|(_, kinds)| kinds.len() > 1)
+            .map(|(code, kinds)| format!("{code} is produced by {} variants", kinds.len()))
+            .collect();
+        assert!(
+            collapsed.is_empty(),
+            "`ExprError` variants collapse onto one `DiagnosticCode`: {collapsed:?}\n\
+             A consumer that receives only the code can no longer tell them apart, \
+             which is precisely what a C-callable lowering surface would receive. \
+             Give each variant its own code, or record in \
+             docs/SCE_LUA_TRANSLATION_SEAM.md that the error channel now needs \
+             the message string to stay lossless."
+        );
+    }
+
     /// Coverage drift guard: every `DiagnosticCode` variant must have
     /// at least one entry in [`forge_golden_entries`] or
     /// [`mesh_golden_entries`]. Without this, the byte-stability and

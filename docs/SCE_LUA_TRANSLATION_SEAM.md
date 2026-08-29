@@ -1503,21 +1503,10 @@ cache already covers.
   alone**, which a run-time caller can do once, before running anything. The
   residue is **3 sites in 3 documents**, and they are named rather than
   counted. Re-derive with `scripts/measure-scope-obligation.sh`.
-- **The error channel and ownership contract.** The probe returned `NULL` for
-  every failure and leaked the distinction. A real surface has to carry
-  `ExprError` across, and `_event.data` on `error.execution` is where that text
-  is wire-visible.
-  **HOW TO MEASURE IT** — count what would be LOST, not what it would cost.
-  `ExprError`'s variants are the alphabet a C surface has to preserve
-  (`grep -c 'ExprError::' sce-build/src/ecmascript/*.rs` for the sites, and the
-  enum for the arms); against that, count the distinct messages the rewriter's
-  path puts on `_event.data` today. If the frontend's alphabet is strictly
-  richer the FFI must carry a code plus a string, not a boolean, and the
-  question is settled without a benchmark. The ownership half is a leak test,
-  not a design question: run the probe's four entry points over the corpus under
-  ASan/LSan and require zero bytes still reachable — with a `free` entry point
-  the contract is trivially satisfiable, and the measurement exists to say the
-  caller actually called it.
+- **The error channel** — ~~unmeasured~~ **settled 2026-08-29, and without a
+  benchmark, exactly as this bullet predicted. See "The error channel, counted"
+  below.** 15 codes against 0. ⚠ The OWNERSHIP half of this bullet is still
+  open and is stated at the end of that section.
 - **Whether the link is unconditional.** The table's last row is the largest
   number in it: `SCE_ENABLE_LUA` is a capability, not a selection, so a link
   placed beside `lua54` is paid by developers who never choose Lua. Scoping it
@@ -1539,6 +1528,75 @@ cache already covers.
 **No decision is recorded here on purpose.** The numbers are the deliverable;
 which way to go is a judgement about what a C++ consumer should carry, and this
 document's job is to make that judgement due rather than to make it.
+
+### The error channel, counted 2026-08-29
+
+The third of the four, and the only one this document said could be settled by
+counting rather than by measuring. It was.
+
+**Re-derive it with three commands; do not cite the numbers.**
+
+```sh
+# the frontend's alphabet: variants, and the codes they map to
+grep -c 'ExprError::' sce-build/src/ecmascript/*.rs      # construction sites
+sed -n '/pub enum ExprError {/,/^}/p' sce-build/src/forge/error.rs | grep -cE '^    [A-Z]'
+grep -cE '^\s{4}Expression[A-Za-z]+,' sce-build/src/forge/diagnostic.rs
+
+# what the run-time path can say at its boundary
+sed -n '/^struct ScriptResult/,/^public:/p' sce/include/scripting/ScriptResult.h
+grep -o 'createError([^;]*' sce/src/scripting/LuaEngine.cpp | sort -u
+```
+
+| | build-time frontend | run-time rewriter |
+|---|---|---|
+| failure kinds distinguishable at the boundary | **15** `ExprError` variants | **0** |
+| machine-readable code | **15** distinct `DiagnosticCode`s, one per variant | none — `ScriptResult` is `bool` + `std::string` |
+| structured repair data | `available` / `members` / `candidates` / `arguments`, driving `Fix::ReplaceOneOf` and `Fix::ReplaceWith` | none |
+| author-facing message shapes | one per variant, `#[error(...)]` | 4 authored (`ReferenceError: …`, `Session not found: …`, `Syntax error: …`, `Unknown Lua error`) plus raw Lua strings passed through |
+
+11 of the 15 variants are constructed by the ECMAScript frontend itself, over
+30 sites in `sce-build/src/ecmascript/` (`lua.rs` 10, `builtins.rs` 10,
+`parser.rs` 9, `resolve.rs` 1); the remaining four reach it through the shared
+expression pipeline.
+
+**The question this bullet posed is answered: the frontend's alphabet is
+strictly richer — 15 codes against 0 — so the FFI must carry a code plus a
+string, not a boolean.**
+
+⚠ **And the code does not have to be invented.** `payload_for` already maps
+every `ExprError` variant to its own `DiagnosticCode`, the mapping is a
+bijection onto the enum's 15-member `expression/` family, and those spellings
+are already wire-visible and pinned by `schemas/sce-diagnostic.v1.schema.json`.
+A C surface should carry THAT code rather than a private enum of its own — the
+alternative is a second alphabet for the same failures, which is the shape
+`SCE_WIRE_CONTRACTS.md` exists to refuse.
+
+⚠⚠ **The property the decision rests on was not asserted anywhere, and now is.**
+That `payload_for` covers every variant is compiler-enforced; that no two
+variants land on the SAME code is not, and a collapse would silently make the
+code insufficient — the consumer would be back to parsing the string. Held by
+`no_two_expression_errors_share_a_diagnostic_code`, which reads the golden
+corpus (already exhaustive over the code enum via `every_code_has_a_golden`, so
+a shrinking alphabet cannot read as agreement) and takes its floor from the
+enum rather than restating it. **Verified by mutation in the turn that landed
+it**: pointing `ExprError::LiteralNotCallable` at
+`DiagnosticCode::ExpressionPropertyNotCallable` — a one-token change the
+compiler accepts — failed it with *"expression/property-not-callable is
+produced by 2 variants"*.
+
+⚠ **What this does NOT settle: the ownership half.** The probe's four entry
+points returned `NULL` and leaked; that is a leak test, not a design question.
+**HOW TO MEASURE IT** — run the four entry points over the corpus under
+ASan/LSan and require zero bytes still reachable. With a `free` entry point the
+contract is trivially satisfiable, so the measurement exists to say the caller
+actually called it, not to discover whether it can be.
+
+⚠ **What it also does not settle, and is worth naming**: the 15 codes are what
+the frontend can *say*, not what a consumer receives today. The run-time path
+reports through `ScriptResult`, which has no code field at all, so adopting the
+frontend's alphabet at an FFI boundary is a change to that struct as much as to
+the FFI. That is the same open debt as the `_event.data` gap and should be paid
+with it, not twice.
 
 ### The scope obligation, counted 2026-08-29
 
