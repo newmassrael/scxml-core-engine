@@ -50,20 +50,52 @@ void LoweringScope::declareChunk(const std::string &source) {
     ++generation_;
 }
 
+#ifdef SCE_HAS_LOWERING_FFI
+namespace {
+
+/// Take ownership of what an `sce_lower_*` returned.
+///
+/// This is the half the entry points share — the refusal check, the copy, and
+/// the release on the frontend's own allocator — so a caller never holds a
+/// pointer it would have to remember to free. A copy per role would be a
+/// second place for that free to go missing, and a leak here is per
+/// EXPRESSION rather than per session.
+///
+/// The CALL stays at the call site rather than being passed in as a function
+/// pointer. That is not a style preference: the D1 ledger's
+/// `decision:linked-beside-lua` row reads this tree for a made call to the
+/// surface, and a callee handed over as a value is a reference the row cannot
+/// see as one. Keeping the call spelled where it happens keeps the row's
+/// question answerable by reading the code.
+std::optional<std::string> adopt(char *lowered) {
+    if (lowered == nullptr) {
+        return std::nullopt;
+    }
+    std::string text(lowered);
+    sce_lower_free(lowered);
+    return text;
+}
+
+}  // namespace
+#endif
+
 std::optional<std::string> LoweringScope::lowerValue([[maybe_unused]] const std::string &source) const {
     if (scope_ == nullptr) {
         return std::nullopt;
     }
 #ifdef SCE_HAS_LOWERING_FFI
-    char *lowered = sce_lower_value(source.c_str(), scope_);
-    if (lowered == nullptr) {
+    return adopt(sce_lower_value(source.c_str(), scope_));
+#else
+    return std::nullopt;
+#endif
+}
+
+std::optional<std::string> LoweringScope::lowerScript([[maybe_unused]] const std::string &source) const {
+    if (scope_ == nullptr) {
         return std::nullopt;
     }
-    std::string text(lowered);
-    // Freed on the frontend's own allocator before the string leaves, so a
-    // caller never holds a pointer it would have to remember to release.
-    sce_lower_free(lowered);
-    return text;
+#ifdef SCE_HAS_LOWERING_FFI
+    return adopt(sce_lower_script(source.c_str(), scope_));
 #else
     return std::nullopt;
 #endif

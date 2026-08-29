@@ -1369,8 +1369,10 @@ asserts that no cache entry shadows it.
   CLOSED expression to the frontend's parser instead of to the rewriter. That
   took `tests/ecmascript/lua_engine_divergences.json` from 23 entries to 12 —
   the first time that list has emptied rather than grown. Later the same day
-  the scope stopped being empty and it went to 1; see "The scope was the
-  selector, so widening it was the whole repair" below.**
+  the scope stopped being empty, and then the script path crossed too, and the
+  list reached ZERO; see "The scope was the selector, so widening it was the
+  whole repair" below. The rewriter is still linked and still the fallback, so
+  an empty list is a statement about the shared table, not a retirement.**
 
 ### Measured after the seam landed: it took the corpus's grip with the work
 
@@ -1454,22 +1456,55 @@ stale one is a MISS. Without that, whichever evaluation came first would pin
 its answer for the life of the session and the later declaration could never
 reach it: a correctness bug that would look exactly like a caching win.
 
-#### The one that is left is not an expression
+#### The one that was left was not an expression, and it went the same way
 
-`n | 14.7.3 while, with continue skipping one iteration` is the whole remaining
-list, and it does not diverge in its expression — the expression is `n`. It
-diverges in its SETUP, a statement sequence, which reaches the engine through
-`loweredScriptOf` and `EcmaScriptToLuaTransformer::transformScript`. That path
-does not cross the seam at all, so no scope can reach it; what the rewriter
-emits for it is visible in the suite's own log, `_ = continue` and a `return`
-in statement position.
+`n | 14.7.3 while, with continue skipping one iteration` was the whole remaining
+list, and it did not diverge in its expression — the expression is `n`. It
+diverged in its SETUP, a statement sequence, which reaches the engine through
+`loweredScriptOf` and `EcmaScriptToLuaTransformer::transformScript`. No scope
+could reach that, because a scope only decides which NAMES resolve; what the
+rewriter emitted for it was visible in the suite's own log, `_ = continue` and a
+`return` in statement position.
 
-`sce_lower_script` is the frontend's answer for that shape, already declared in
-`sce/include/scripting/SceLowering.h` and already exported. Routing
-`loweredScriptOf` through it is what would take the list to zero — a bigger
-blast radius than the expression path, because every `<script>` in every
-document under the `lua` selection goes through it, so it is its own round with
-its own witnesses.
+So `loweredScriptOf` was routed through `sce_lower_script`, the frontend's
+answer for that shape, by the same seam and the same fallback as its neighbour.
+Three things made it a smaller step than it looks:
+
+- **A chunk brings its own names.** `resolve::script` hoists every `var`
+  binding into the chunk's frame before anything resolves, so a self-contained
+  body is answered even by an EMPTY scope. What the chunk still asks the scope
+  about is the names it only reads, which is why this takes the session's scope
+  rather than a constant.
+- **Refusal is still the fallback**, so the blast radius is bounded in the one
+  direction that matters: a body the parser will not read is answered by the
+  rewriter exactly as before.
+- **`var` at chunk top level is a global assignment**, not a `local`
+  (`lua.rs`, `Stmt::VarDecl` — the `local ` keyword is added only when
+  `scope.in_function`). A chunk that stopped publishing its variables to the
+  datamodel would have failed every setup in the shared table, which is the
+  measurement that settles it rather than the reading.
+
+**Measured, in one run**: `EcmaScriptSemanticsOnLuaEngine` reported the last
+entry as `now agrees with ECMA-262` and NOT ONE newly undeclared disagreement,
+so `tests/ecmascript/lua_engine_divergences.json` is EMPTY and
+`ARCHITECTURE.md`'s Lua cell reads 98/98.
+
+⚠ **An empty list is not a retired rewriter.** `EcmaScriptToLuaTransformer` is
+still linked, still the fallback, and still the answer for anything the
+frontend refuses. What the list measures is the 98-case shared table; retiring
+the rewriter is the claim that nothing takes the fallback at all, and that
+needs its own witness rather than this one's silence.
+
+⚠⚠ **One of the list's own two witnesses could not survive the list emptying,
+and that is worth stating rather than quietly fixing.** The corpus held the
+list to both directions with two mutations: add an entry that has been
+repaired, and remove one that is still live. The second is not expressible
+against an empty list — there is nothing to remove — and a mutation case that
+cannot apply reads as SURVIVED, not as absent. It is not replaced by another
+edit to the list: the direction it covered is now carried by the two SEAM
+cases, each of which makes the engine really disagree with the shared table
+while the list stays empty. That is the undeclared-divergence failure in its
+natural form rather than a simulation of it.
 
 ⚠ **And zero has to be reachable, which it was not.** The C++ suite opened with
 `ASSERT_FALSE(declared.empty())`, meaning "the list was read" — but a list that
