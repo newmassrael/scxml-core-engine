@@ -1406,40 +1406,89 @@ for line in sys.stdin:
 ### Per-call cost, measured 2026-08-29 — and the assumption was backwards
 
 The first of the four unpriced items, decided by the owner as the one to
-measure next. Same 98 sources from the shared table, N=1000, **one host, one
-load window** (a cross-machine comparison is not one — the first attempt timed
-C++ locally and Rust on the build machine and had to be redone).
+measure next. Same 98 sources from the shared table, **one host, one load
+window** (a cross-machine comparison is not one — the first attempt timed C++
+locally and Rust on the build machine and had to be redone).
+
+**Re-derive it with one command; do not cite this table.**
+
+```sh
+cmake --build build --target benchmark_ecma_lowering_per_call
+scripts/measure-lowering-per-call.sh          # prints the census line below
+```
 
 | path | ns/call | cache |
 |---|---|---|
-| `sce-build` frontend — PARSE then emit Lua | **1112** | none at all |
-| `EcmaScriptToLuaTransformer` — COLD text rewrite | **1535** | miss |
-| `EcmaScriptToLuaTransformer` — WARM | **20** | its own memo hit |
+| `sce-build` frontend — PARSE then emit Lua, steady state | **577** | none at all |
+| `sce-build` frontend — first pass over the table | 1185 | warm-up, *not* a memo |
+| `EcmaScriptToLuaTransformer` — COLD text rewrite | **1085** | miss |
+| `EcmaScriptToLuaTransformer` — WARM | **12** | its own memo hit |
 
-**Parsing is ~1.4x FASTER than rewriting on a cold call.** The intuition that a
+```
+LoweringPerCall census: population=98 frontend_steady_ns=577
+  frontend_first_pass_ns=1185 rewriter_cold_ns=1085 rewriter_warm_ns=12
+  cold_ratio=1.88 memo_speedup=88.8
+```
+
+**Parsing is 1.88x FASTER than rewriting on a cold call.** The intuition that a
 parser must cost more than a text pass is refuted here: the rewriter runs a
 sequence of full-string scans and rebuilds, and that is dearer than one parse.
+
+⚠⚠⚠ **This table was re-derived on 2026-08-29 and every magnitude in the first
+version moved.** It read 1112 / 1535 / 20 and "~1.4x". The direction survived;
+none of the numbers did, and the frontend row was wrong in a way worth naming:
+**1112 was the FIRST PASS, quoted as the steady-state cost.** A first pass over
+a table pays page faults, cold i-cache and allocator warm-up, and here that is
+a 2x tax — 1185 against 577 on the same run. The probe that produced it timed
+one pass and divided. So the reported gap was understated (1.4x, when it is
+1.88x) by comparing the rewriter's cold cost against the frontend's *coldest*
+cost rather than its real one.
+
+That the first version could not be checked is the reason it stayed wrong for
+a round: it lived in a throwaway `/tmp` script that was deleted when the round
+ended. Both halves are now committed targets —
+`sce-build/examples/lowering_per_call.rs` and
+`tests/benchmarks/EcmaLoweringPerCallBenchmark.cpp` — built by `cargo` and
+CMake respectively, so they cannot rot unnoticed, and
+`scripts/measure-lowering-per-call.sh` runs them in one window because that is
+the only way the two columns are comparable. Neither asserts a bound: this
+machine is shared, and the same 21 gates have been measured at 529s and 1161s.
 
 ⚠⚠ **The trap this measurement walked into first, and it is the third time on
 this axis.** `EcmaScriptToLuaTransformer` keeps THREE `mutable` memo caches
 inside itself — `generalCache_` / `guardCache_` / `scriptCache_`
 (`sce/include/scripting/EcmaScriptToLuaTransformer.h:130-132`) — so a probe that
-reuses one instance measures a hash lookup and reports **22-35 ns/call**. That
-is a floor, not a cost, exactly as an unexported cdylib's 380 KB was. A fresh
-instance per pass is what makes every call a miss. Re-derive by constructing the
-transformer INSIDE the timed loop; if the number is two digits, the cache is
-answering.
+reuses one instance measures a hash lookup and reports a two-digit figure (12
+here, 22-35 on the first attempt). That is a floor, not a cost, exactly as an
+unexported cdylib's 380 KB was. A fresh instance per call is what makes every
+call a miss, and the C++ benchmark now constructs one INSIDE the timed region
+for exactly that reason, with the reason written above the fixture.
+
+⚠ Note the symmetry the corrected numbers expose: **both halves had a
+warm/cold confusion, in opposite directions.** The rewriter was nearly measured
+warm and called cheap; the frontend was measured cold and called expensive. The
+discriminator is the same in both cases — ask whether the second pass costs
+what the first did.
 
 **What it means for the decision.** A runtime lowering path is not slower per
-translation — it is faster. What it does not have is the rewriter's memo, and
-the 20-vs-1112 gap is entirely that memo, not the algorithm. The frontend would
+translation — it is faster, and by more than the first measurement said. What
+it does not have is the rewriter's memo, worth **89x** here (1085 against 12).
+The 12-vs-577 gap is entirely that memo, not the algorithm. The frontend would
 need one of the same shape, which is the cheapest part of the work: `LuaEngine`
 already keys a per-session chunk cache on the incoming text one layer above.
+⚠ And the memo is what a decision has to weigh, not the per-call figure: at
+577ns a cold lowering is already cheap enough that only a hot guard evaluated
+per event could notice, which is precisely the case `LuaEngine`'s existing
+cache already covers.
 
 ⚠ **What the probe did NOT price, and a decision needs**:
 
-- ~~**Per-evaluation cost.**~~ **Measured 2026-08-29 — see the table above.**
-  Parsing is 1.4x faster cold; the whole of the rewriter's advantage is its memo.
+- ~~**Per-evaluation cost.**~~ **Measured 2026-08-29, then re-derived the same
+  day and corrected — see the table above.** Parsing is **1.88x** faster cold
+  (577ns against 1085ns); the whole of the rewriter's advantage is its memo,
+  worth 89x. Re-derive with `scripts/measure-lowering-per-call.sh`, which is
+  in the tree precisely because the first version of this bullet cited a
+  number from a deleted `/tmp` probe and was wrong by 2x.
 - **The scope obligation at run time.** The build-time caller builds a scope
   from the whole model once (`DocumentScope::from_model`). An Interpreter's
   scope grows as it runs — `var x` inside a `<script>` declares a name
