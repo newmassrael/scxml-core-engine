@@ -35,6 +35,14 @@
 # a case of its own below: it is now the engine's first answer, and a corpus
 # that mutates only the rewriter would stop covering the path most expressions
 # take.
+#
+# ⚠⚠ Run in full on 2026-08-29 rather than reasoned about, and THREE cases came
+# back SURVIVED for exactly that reason — every one of them broke the rewriter
+# under a CLOSED expression the frontend now answers first. The measurement is
+# the lesson: a seam that takes work away from a component takes the corpus's
+# grip on it at the same moment, silently, and only a full round says so. One
+# was re-aimed at an open expression, two followed their subject to the
+# frontend, and each is recorded where it happened rather than here.
 
 mutation_ctest --test-dir build -R '^(ECMAScriptSemantics)$'
 mutation_targets sce/src/scripting/EcmaScriptToLuaTransformer.cpp
@@ -70,11 +78,19 @@ PY
 # generator's Lua backends for the same source. A method missing from the table
 # below is not rewritten at all: the definition sits in the same interpreter,
 # unnamed.
+#
+# ⚠ This case named `substring` and `charAt` until 2026-08-29, and the seam
+# below made it unobservable: the table asks both only of a string LITERAL
+# (`'abcdef'.substring(1, 3)`), which is closed, so the frontend answers it and
+# the rewriter's map is never consulted. `sort` and `reverse` are asked of `xs`
+# (`xs.sort().join(',')`), which names a variable and is therefore still the
+# rewriter's. Same subject — a member method whose shared definition the map
+# has to name — through the path that still reaches it.
 
-mutation_case "two string methods lose the shared definition that implements them" <<'PY'
+mutation_case "two array methods lose the shared definition that implements them" <<'PY'
 edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """    {"substring", "_scxml_substring"},
-    {"charAt", "_scxml_charat"},
+     """    {"sort", "_scxml_sort"},
+    {"reverse", "_scxml_reverse"},
 """,
      "")
 PY
@@ -121,36 +137,29 @@ edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
      """    return true;""")
 PY
 
-# ── Math.round rounds half toward positive infinity §15-8-2-15 ──────
-
-mutation_case "rounding becomes Lua's rather than the language's" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """    replaceAll(result, "Math.round", "_scxml_round");""",
-     """    replaceAll(result, "Math.round", "math.floor");""")
-PY
-
-# ── A unicode escape names a character §12-9-4 ──────────────────────
+# ── Rounding and unicode escapes moved with their owner ─────────────
 #
-# Lua 5.4 spells the escape with braces. Carrying the ECMAScript spelling
-# through unchanged produces a literal Lua refuses to parse.
-
-mutation_case "the unicode escape keeps a spelling Lua cannot read" <<'PY'
-edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """    for (size_t offset = 2; offset < 6; ++offset) {
-        if (!std::isxdigit(static_cast<unsigned char>(input[pos + offset]))) {
-            return false;
-        }
-    }
-    return true;
-}""",
-     """    for (size_t offset = 2; offset < 6; ++offset) {
-        if (!std::isxdigit(static_cast<unsigned char>(input[pos + offset]))) {
-            return false;
-        }
-    }
-    return false;
-}""")
-PY
+# Two cases stood here — `Math.round` rounding the language's way §15-8-2-15,
+# and a `\uXXXX` escape reaching Lua in a spelling it can read §12-9-4 — and on
+# 2026-08-29 both reported SURVIVED. Neither mutation had stopped being a
+# defect; both had stopped being OBSERVABLE from this suite. The shared table
+# asks `Math.round(2.5)` and `'é'` as CLOSED expressions, the seam below
+# answers every closed expression in `sce-build`'s frontend, and the rewriter
+# code these cases break is no longer what the engine's answer depends on for
+# either one.
+#
+# They were not deleted and they were not re-aimed at some other expression:
+# they followed their subject to the code that now owns it, and live in
+# `the_frontend_now_owns_rounding_and_escapes.cases` against the frontend's own
+# suite. That is the shape this corpus should take as the rewriter retires —
+# a case moves when the behaviour moves, so coverage tracks the seam instead of
+# thinning out behind it.
+#
+# ⚠ What is NOT covered either way: the rewriter's own `Math.round` and escape
+# handling is still live for an OPEN expression, and the shared table samples
+# neither feature open. Closing that means adding open cases to
+# `tests/ecmascript/ecma262_semantics.json`, which every backend reads — an
+# expansion with its own lanes to answer, not a line to slip into this round.
 
 # ── The declared list is held to BOTH directions ────────────────────
 #

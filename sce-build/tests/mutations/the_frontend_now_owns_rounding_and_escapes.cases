@@ -1,0 +1,65 @@
+# Mutation cases for two clauses that moved from the rewriter to the frontend.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_frontend_now_owns_rounding_and_escapes.cases`.
+#
+# Both cases here were in `lua_engine_reads_ecmascript.cases` until 2026-08-29,
+# aimed at `EcmaScriptToLuaTransformer`. On that day `LuaEngine::loweredTextOf`
+# began offering the author's ECMAScript to `sce-build`'s frontend PARSER first,
+# against an empty scope, so every CLOSED expression is answered there. The
+# shared table asks `Math.round(2.5)` and `'é'` closed — no variable in
+# either — so the engine's answer stopped depending on the rewriter code the two
+# cases broke, and a full round reported both SURVIVED.
+#
+# ⚠ SURVIVED did not mean the mutation was harmless. It meant the mutated code
+# was no longer on the path the suite exercises, which is the failure mode this
+# corpus is least able to see: nothing changes in the casefile, nothing changes
+# in the test, and the verdict flips from CAUGHT to SURVIVED because a seam
+# somewhere else took the work away. The distinguishing question is not "make
+# the mutation stronger" but "who answers this expression now" — and the answer
+# was the frontend, so the cases followed it here.
+#
+# What each case breaks is the same clause it always broke, one language over:
+#
+#   * ECMA-262 15.8.2.15 sends a half toward +Infinity and hands NaN and the
+#     infinities straight back. `math.floor` is the habit Lua makes available
+#     and it is wrong for exactly those inputs, which is why the shared runtime
+#     library owns the clause instead of each backend picking one.
+#   * ECMA-262 12.9.4 decodes `\uXXXX` to the character it names. Carrying the
+#     ECMAScript spelling through unchanged leaves the escape text in the
+#     string, which is a wrong VALUE rather than a parse error — the shape a
+#     golden comparison catches and an eyeball does not.
+#
+# ⚠⚠ What no case covers, here or there: the rewriter's own rounding and escape
+# handling is still live for an OPEN expression, and the shared table samples
+# neither feature open. Closing that means adding open cases to
+# `tests/ecmascript/ecma262_semantics.json`, which six backend readers answer.
+
+mutation_tests -p sce-build --features cli --test ecmascript_semantics
+mutation_targets sce-build/src/ecmascript/lua.rs
+mutation_targets sce-build/src/ecmascript/parser.rs
+
+mutation_case "rounding becomes Lua's rather than the language's" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """    if name == "round" {
+        return Ok(format!("_scxml_round({})", args.join(", ")));
+    }""",
+     """    if name == "round" {
+        return Ok(format!("math.floor({})", args.join(", ")));
+    }""")
+PY
+
+mutation_case "the unicode escape keeps the spelling instead of the character" <<'PY'
+edit("sce-build/src/ecmascript/parser.rs",
+     """            'u' => {
+                let hex: String = (0..4).filter_map(|_| chars.next()).collect();
+                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    Some(c) => out.push(c),""",
+     """            'u' => {
+                let hex: String = (0..4).filter_map(|_| chars.next()).collect();
+                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    Some(_) => {
+                        out.push('u');
+                        out.push_str(&hex);
+                    }""")
+PY
