@@ -464,7 +464,7 @@ interchangeable.
 | Engine | Standard | Selection | W3C IRP | ECMA-262 (`tests/ecmascript/ecma262_semantics.json`) |
 |--------|----------|-----------|---------|------|
 | QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` (default) | 202/202 | **98/98** |
-| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **75/98** |
+| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **86/98** |
 
 ⚠ **The Lua row is about the RUNTIME REWRITER, and since 2026-08-29 that is no
 longer everything the `lua` selection runs.** `sce_add_state_machine` now
@@ -473,6 +473,15 @@ derives `--script-engine lua` for a `-DSCE_SCRIPT_ENGINE=lua` tree, so
 it never reaches the rewriter. What still does is the **Interpreter**, which has
 no build step, and any artifact generated with `--script-engine ecmascript`
 explicitly. So read this row as the score for those, not for a C++ AOT build.
+
+⚠⚠ **And since later the same day the rewriter is no longer everything THAT
+path runs either.** The owner decided to link `sce-build`'s frontend into the
+engine, so `LuaEngine::loweredTextOf` offers the author's ECMAScript to the
+frontend's parser before the rewrite and falls back only when it refuses. The
+scope it asks against is empty, which selects exactly the CLOSED expressions —
+those naming no variable — so the row moved 75 → 86 without the rewriter being
+touched. The 12 that remain all name a variable and need a scope carrying the
+session's names.
 A second row for the lowered path is deliberately absent: it would be a cell
 about an artifact shape rather than an engine, and this table is what a consumer
 reads when choosing an ENGINE. `LoweredEcma262` is where the lowered path's

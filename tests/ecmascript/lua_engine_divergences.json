@@ -37,6 +37,24 @@
     "literal no pass could see as a receiver, a computed index that was never",
     "shifted, `Math.round`, and `\\uXXXX`. Those took 44 disagreements to 23.",
     "",
+    "2026-08-29 took 23 to 12, and NOT by repairing the rewriter. The owner",
+    "decided to link `sce-build`'s frontend into the engine and retire it, so",
+    "`LuaEngine::loweredTextOf` now offers the author's ECMAScript to the",
+    "frontend's PARSER first and falls back to the rewrite only when the",
+    "frontend refuses. The scope it asks against is EMPTY, which is what",
+    "selects the class: an expression naming no variable is answered, and",
+    "everything else is refused and left exactly as it was. Eleven entries",
+    "here were closed expressions, so eleven entries left — `1 == '1'`",
+    "coerces, `-7 % 3` truncates, `-8 >>> 28` is unsigned, and none of it",
+    "was reachable by a pass that cannot see where an operand ends.",
+    "",
+    "So the emptying this file was shaped for has started, and it started on",
+    "the path the shape existed to distinguish. The 12 that remain all name a",
+    "variable, and reaching them needs a scope carrying the session's names —",
+    "a `declare` per `<data id>` and a `declare_chunk` per document-level",
+    "`<script>`, which the D1 ledger's scope census measured as sufficient",
+    "(301 sites, 298 of them, then the last 3).",
+    "",
     "`diverges_on` says WHICH PATH into the engine the entry is about, and it",
     "is the field that lets this list empty. `needs` says what closing an",
     "entry would take — a cause. It does not say where the entry is still",
@@ -121,44 +139,8 @@
       "diverges_on": ["runtime-rewriter"]
     },
     {
-      "source": "1 == '1'",
-      "clause": "7.2.15 number vs string coerces",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "0 == false",
-      "clause": "7.2.15 boolean is ToNumber'd",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "'' == 0",
-      "clause": "7.2.15 empty string is ToNumber 0",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "1 != '1'",
-      "clause": "7.2.15 negation of the above",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
       "source": "a == null",
       "clause": "7.2.15 null and undefined equal each other",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "-7 % 3",
-      "clause": "13.7 remainder truncates",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "typeof missingVariable !== 'undefined'",
-      "clause": "13.5.3 typeof of an unresolvable reference is 'undefined'",
       "needs": "operand-boundaries",
       "diverges_on": ["runtime-rewriter"]
     },
@@ -175,39 +157,9 @@
       "diverges_on": ["runtime-rewriter"]
     },
     {
-      "source": "5 ^ 3",
-      "clause": "13.12 bitwise XOR",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "-8 >> 1",
-      "clause": "13.9.2 signed right shift",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "-8 >>> 28",
-      "clause": "13.9.3 unsigned right shift",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
       "source": "(a == 1) | (b != 2)",
       "clause": "13.12 booleans are ToInt32'd, so the result is a number",
       "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "+'3'",
-      "clause": "13.5.4 unary plus is ToNumber",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "typeof JSON.parse('{\"a\":1}')",
-      "clause": "15.12.2 the result of parsing a JSON object is an object",
-      "needs": "chain-operand",
       "diverges_on": ["runtime-rewriter"]
     }
   ]

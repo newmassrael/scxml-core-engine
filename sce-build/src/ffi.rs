@@ -1,43 +1,57 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! A MEASUREMENT PROBE for the C-callable lowering surface. Not the
-//! surface, and not a decision that there will be one.
+//! The C-callable surface over the ECMAScript frontend.
 //!
-//! `docs/SCE_LUA_TRANSLATION_SEAM.md` prices a C surface over the
-//! ECMAScript frontend, and the largest number in that pricing is how
-//! much compiled code a C++ consumer would take on. That number can only
-//! be measured by exporting the entry points and asking the linker what
-//! it kept — which is why the first version of it was measured with a
-//! throwaway probe that was deleted when the round ended. The document
-//! then had to cite a figure nobody could reproduce, and it says so
-//! against itself.
+//! ## What this is, and what it stopped being
 //!
-//! So the probe is committed and gated behind an off-by-default feature.
-//! It changes nothing about a normal build: `default = ["xsd"]` does not
-//! name `ffi-probe`, no CMake target links a Rust artifact, and
-//! `sce-build` stays `crate-type = ["rlib"]`. Turning the feature on
-//! measures; it does not decide. The decision this feeds — whether a
-//! C++ consumer carries the link at all, and whether unconditionally —
-//! is a person's, and neither this file nor the document makes it.
+//! This module began as a MEASUREMENT PROBE, committed behind an
+//! off-by-default feature so the D1 ledger's largest number could be
+//! re-derived rather than cited from a throwaway. It said of itself, in
+//! this docstring, "not the surface, and not a decision that there will
+//! be one".
 //!
-//! ## Why it returns the string instead of a status
+//! **That is no longer true.** The owner decided on 2026-08-29 to link
+//! the frontend into the C++ engine and retire `EcmaScriptToLuaTransformer`,
+//! and `docs/SCE_LUA_TRANSLATION_SEAM.md`'s D1 ledger carries that
+//! decision as a row. A file whose name and prose still said "probe"
+//! while a shipped engine called it would be the exact drift the ledger
+//! exists to catch, so the feature is `ffi`, the module is `ffi`, and
+//! this paragraph is here instead of the old disclaimer.
 //!
-//! The earlier probe returned `NULL` from every entry point. That is a
-//! measurement hazard, not just a leak: a wrapper that never uses the
-//! lowered text lets the linker drop the emitter the measurement exists
-//! to weigh, so the figure comes out too small. These wrappers hand the
-//! text back through `CString::into_raw`, which keeps the whole
-//! parse -> resolve -> emit path reachable, and `sce_lower_free` is the
-//! matching release. Ownership is the caller's from `into_raw` to
-//! `sce_lower_free`, exactly once.
+//! It stays behind a feature because it is not needed by the code
+//! generator: `default = ["xsd"]` does not name `ffi`, and a `cargo
+//! build` for the generator compiles none of it. What turns it on is the
+//! C++ build (`cmake/SCEBuildLowering.cmake`) and
+//! `scripts/measure-lowering-footprint.sh`.
 //!
-//! ## What a reader may conclude from a build of this
+//! ## The contract, and where its other half lives
 //!
-//! Only the size of the reachable lowering code. Not the ergonomics of
-//! the surface, not its error contract (the document counts that
-//! separately, 15 codes against 0), and not whether the four entry
-//! points are the right four.
+//! `sce/include/scripting/SceLowering.h` declares these functions for
+//! C++. The two are held together by `ffi_header_matches_surface`, which
+//! fails if either side grows, loses or renames an entry point — a hand
+//! written header that drifts from its library is a segfault with a
+//! clean compile.
+//!
+//! ## Ownership
+//!
+//! Every `sce_lower_*` hands back a heap string through
+//! `CString::into_raw`; the caller owns it from that moment and releases
+//! it with [`sce_lower_free`], exactly once. A `NULL` return means the
+//! frontend REFUSED — the expression did not parse, or it named
+//! something the scope does not declare — and there is nothing to free.
+//!
+//! ⚠ Refusal is a normal answer, not an error to route around. It is
+//! what lets a caller send only the expressions the frontend can answer
+//! and leave the rest on its existing path, which is precisely how
+//! `LuaEngine` adopts this without the rewriter having to retire first.
+//!
+//! ## Why the wrappers return the string rather than a status
+//!
+//! An earlier form returned `NULL` from every entry point. That is a
+//! measurement hazard as well as a useless API: a wrapper that never
+//! uses the lowered text lets the linker drop the emitter, so the size
+//! the ledger reports comes out too small.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -68,6 +82,11 @@ fn hand_back(result: Result<String, crate::forge::error::ExprError>) -> *mut c_c
 
 /// Open a scope handle. The scope is one flat set of names, so a handle
 /// plus `declare` is the whole of what crosses the boundary.
+///
+/// A scope with nothing declared is not a degenerate case: it is what a
+/// caller uses to ask "can you answer this expression without me telling
+/// you any name?", and 11 of the 23 divergences this repository tracks
+/// are answered that way.
 ///
 /// # Safety
 /// The returned pointer must be released with [`sce_scope_free`].

@@ -1362,11 +1362,12 @@ asserts that no cache entry shadows it.
   `extern_emit`. The frontend answers all 98 shared-table cases correctly and
   has no way to be called at run time; closing that is what lets the rewriter
   be retired instead of repaired.
-  **Its price is now measured in full — the four items are gathered in "D1 at a
-  glance: three closed by measurement, one open by judgement" below, three
-  CLOSED with their numbers and one OPEN with none, because that one is a
-  judgement and not a measurement. The choice is a person's, not this
-  document's.**
+  **Its price was measured in full and the choice has since been made — see
+  "D1 at a glance: five closed by measurement, one closed by decision" below.
+  The owner chose to link, on 2026-08-29, and `LuaEngine` now sends every
+  CLOSED expression to the frontend's parser instead of to the rewriter. That
+  took `tests/ecmascript/lua_engine_divergences.json` from 23 entries to 12 —
+  the first time that list has emptied rather than grown.**
 
 ### The price of a C-callable lowering surface, measured 2026-08-29
 
@@ -1382,7 +1383,7 @@ below names how.
 | surface to expose | **four** lowering fns, not three | `grep '^pub fn' sce-build/src/ecmascript/mod.rs` → `to_lua_condition` / `to_lua_value` / `to_lua_script` / `to_lua_location` |
 | what crosses the boundary | a scope, and it is **flat** | `DocumentScope` is one `BTreeSet<String>` (`sce-build/src/ecmascript/scope.rs:53`) — an opaque handle plus `declare` is enough; no model marshalling |
 | build time | **7.00s** to recompile `sce-build` and link the cdylib; **14.96s** including its cold deps | `cargo rustc -p sce-build --lib --release --crate-type cdylib`, release, warm cargo cache, build machine (32 cores) |
-| artifact size | ~~589 KB / 380 KB ⇒ ~214 KB~~ **Re-derived 2026-08-29: 634.5 KB against 410.8 KB ⇒ +223.7 KB**, and this is now the IN half of a NET — see `swap-net-footprint` in the D1 ledger | **`scripts/measure-lowering-footprint.sh`**, which builds the cdylib with and without `--features ffi-probe` and asks cargo for both paths. ⚠ The first figure came from a throwaway probe that was deleted, so it could not be re-run and it was LOW: those wrappers returned `NULL`, which lets the linker drop the emitter the measurement exists to weigh. The probe is now committed, behind an off-by-default feature, and hands the lowered string back |
+| artifact size | ~~589 KB / 380 KB ⇒ ~214 KB~~ **Re-derived 2026-08-29: 634.5 KB against 410.8 KB ⇒ +223.7 KB**, and this is now the IN half of a NET — see `swap-net-footprint` in the D1 ledger | **`scripts/measure-lowering-footprint.sh`**, which builds the cdylib with and without `--features ffi` and asks cargo for both paths. ⚠ The first figure came from a throwaway probe that was deleted, so it could not be re-run and it was LOW: those wrappers returned `NULL`, which lets the linker drop the emitter the measurement exists to weigh. The probe is now committed, behind an off-by-default feature, and hands the lowered string back |
 | native deps inherited | `libgcc_s`, `libc`, the loader. **libxml2 is NOT** | `ldd` the same path — the `xsd` feature's C library is unreachable from the lowering entry points, so a C++ consumer does not inherit it. `sce-build-wasm` needs `default-features = false` for that reason; a native link would not |
 | who pays for it | **every C++ configure in the tree**, not just the `lua` selection | the natural link site is `sce_scripting` beside `lua54` (`sce/CMakeLists.txt:374`), guarded by `SCE_ENABLE_LUA`, which is `option(... ON)` at `sce/CMakeLists.txt:18`. Eight gates build a C++ target: `cpp-suite`, `w3c-cpp`, `w3c-c11`, `forge-cpp`, `lib`, `visualizer-wasm`, `w3c-python-bindings`, `ecma262-lowered-cpp` (`grep -l sce_gate_build scripts/gates/*.sh`) |
 
@@ -1533,12 +1534,25 @@ cache already covers.
   time, and the stage ladder had them arriving *after* `<assign>`. With the
   order corrected the census reads `load_time_diverging=0`, so the surface
   needs `declare` + `declare_chunk` and no scope that tracks execution.
-- **Whether the link is unconditional.** The table's last row is the largest
-  number in it: `SCE_ENABLE_LUA` is a capability, not a selection, so a link
+- ~~**Whether the link is unconditional.**~~ **DECIDED 2026-08-29 by the
+  owner: link it, beside `SCE_ENABLE_LUA`, and retire the rewriter.** The
+  question this bullet held open was never a missing number — both sides were
+  costed — and it is recorded here as a decision rather than deleted, because a
+  ledger that erases the item it closed cannot be audited. What was chosen and
+  what it costs is the `link-beside-lua` row below; what remains of the
+  reasoning is kept in the rest of this bullet, since it is why the answer is
+  the capability and not the selection.
+  `SCE_ENABLE_LUA` is a capability, not a selection, so a link
   placed beside `lua54` is paid by developers who never choose Lua. Scoping it
   to `SCE_SCRIPT_ENGINE=lua` instead would contradict `LuaEngine` being
   constructible whenever the capability is on — which is what
   `EcmaScriptSemanticsOnLuaEngine` relies on to measure it at all.
+  ⚠ The price the ledger carried was measured on a cdylib DELTA (+223.7 KB),
+  and the shape actually chosen is a staticlib linked into an image that had no
+  Rust in it at all. Re-measured on the chosen shape: **474.6 KB** of stripped
+  image, because the cdylib's baseline already carried Rust's runtime and a
+  C++ image does not. Both numbers are real; only the second is the one a C++
+  consumer pays.
   ⚠⚠ **~~HOW TO MEASURE IT~~ — there is nothing left to measure, and the
   prescription this bullet used to carry measured the wrong subject.** It said:
   configure one tree with `SCE_ENABLE_LUA=ON` and one with `OFF`, build the same
@@ -1555,12 +1569,20 @@ cache already covers.
   stop being measured anywhere. That is the trade, and it is a correctness cost
   against a build-time one.
 
-### D1 at a glance: three closed by measurement, one open by judgement
+### D1 at a glance: five closed by measurement, one closed by decision
 
 Four things had to be priced before a person could choose whether `sce-build`
-grows a C-callable lowering surface. Three are closed and their numbers are
-gathered here; the fourth is not waiting on a measurement, and this section
-says why rather than leaving it looking unfinished.
+grows a C-callable lowering surface. All four were, and two more numbers
+arrived while they were being checked, so the table below carries six rows.
+
+**The choice was then made.** On 2026-08-29 the owner chose to LINK the
+frontend and retire `EcmaScriptToLuaTransformer`; the `link-beside-lua` row
+records it. That row is not a measurement and cannot be re-run, so what its
+check holds is the tree still doing what was decided — the surface exists, a
+CMake file links it, the link sits inside `if(SCE_ENABLE_LUA)` rather than
+behind the engine selection, and `LuaEngine` actually calls it. The last is
+there because a linked library nothing reaches is discarded by the linker,
+which would leave the row unable to fail.
 
 ⚠ **This table is not a second copy of the sections above — it is the
 machine-readable one.** `sce-build/tests/lowering_decision_ledger.rs` parses
@@ -1572,7 +1594,7 @@ stops being a ledger.
 ⚠⚠ **And a check that reads PROSE is not a check — measured here, not
 reasoned.** `swap-net-footprint` rests on a probe some lane has to compile, so
 the row's check requires one; the first form of that requirement asked whether
-the text `ffi-probe` occurred anywhere under `scripts/gates/` or
+the text `ffi` occurred anywhere under `scripts/gates/` or
 `.github/workflows/`. The comment in `tree-hygiene.sh` explaining why the
 feature is named there satisfies that on its own, and a mutation that deleted
 the feature from the cargo invocation while leaving the paragraph standing
@@ -1598,7 +1620,7 @@ generator expression, and its line count moved.
 | `error-channel` | CLOSED | counting | **15** distinguishable failures against **0** — so the FFI carries a code plus a string, and the code already exists | `derive:expression-alphabet=15` | `sce-build/src/forge/diagnostic.rs` |
 | `swap-net-footprint` | CLOSED | measurement | the link is a SWAP, not an addition: **+223.7 KB** in, **−76.0 KB** out ⇒ **net +147.8 KB**, so pricing it as an addition overstates by **34%**. The rewriter's **2262** tracked lines leave with it | `derive:rewriter-footprint=2262` | `scripts/measure-lowering-footprint.sh` |
 | `scope-answer` | CLOSED | measurement | **0** sites diverge once the caller has read every `<data id>` AND every document-level `<script>` — both readable before the first macrostep — so the surface needs `declare` + `declare_chunk` and NO execution-time scope | `derive:scope-ladder=LoadTime` | `sce-build/src/ecmascript/scope.rs` |
-| `link-is-unconditional` | OPEN | judgement | — | `precondition:rust-is-not-linked` | `sce-build/Cargo.toml` |
+| `link-beside-lua` | CLOSED | decision | the owner chose to LINK, beside `SCE_ENABLE_LUA`, and retire the rewriter. Priced on the shape chosen: a staticlib costs **474.6 KB** of stripped image, not the **223.7 KB** the cdylib delta reported — that baseline already held Rust's runtime and a C++ image does not | `decision:linked-beside-lua` | `sce/CMakeLists.txt` |
 
 <!-- /D1-LEDGER -->
 
