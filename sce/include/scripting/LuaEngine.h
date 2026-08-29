@@ -6,6 +6,7 @@
 #include "EcmaScriptToLuaTransformer.h"
 #include "IScriptEngine.h"
 #include "ISessionManager.h"
+#include "LoweringScope.h"
 #include <atomic>
 #include <climits>
 #include <functional>
@@ -116,6 +117,18 @@ private:
         bool systemVarsInitialized = false;
         std::unordered_set<std::string> preInitializedVars;
         std::unordered_set<std::string> declaredVars;  // Track all declared variables (Lua nil != undeclared)
+
+        // The same names, asked of sce-build's ECMAScript frontend rather than
+        // of Lua. `declaredVars` answers "may this name be read?"; this
+        // answers "may this expression be PARSED?" — the frontend refuses any
+        // expression naming something it has not been told about, so the
+        // engine's own declarations are what let a lowering happen at all.
+        //
+        // Per session because a datamodel is: two sessions of one document
+        // hold different values under the same names, and a session that
+        // borrowed another's names would lower an expression the borrower
+        // cannot evaluate.
+        LoweringScope loweringScope;
         // Bound native method storage for bindNativeObject lifetime management
         std::vector<std::unique_ptr<NativeMethod>> boundMethods;
 
@@ -142,6 +155,16 @@ private:
             int chunkRef;       // Lua registry ref for compiled chunk
             bool returnsValue;  // true: "return expr" form; false: assignment (ScriptUndefined)
             ScriptLanguage language = ScriptLanguage::ECMAScript;
+
+            // The scope this text was lowered against. A hit on a stale one is
+            // a MISS, because the lowering depended on it: `a && b` is refused
+            // by the frontend and rewritten while `a` is unknown, and answered
+            // by the frontend once a `<script>` has declared it. Without this,
+            // whichever evaluation came first would pin its answer for the
+            // life of the session and the later declaration could never reach
+            // it. Only the expression cache carries it — `scriptExecCache`
+            // holds text `loweredScriptOf` lowers without consulting a scope.
+            uint64_t scopeGeneration = 0;
         };
 
         std::unordered_map<std::string, ExprExecInfo> exprExecCache;
@@ -171,7 +194,12 @@ private:
     // the transformer, this engine's input adapter. Everything the engine does
     // AFTER this — the undeclared-variable check, the `return` wrapping, the
     // chunk cache, the assignment fallback — is common to both paths.
-    std::string loweredTextOf(const ScriptSource &expression);
+    //
+    // The scope is an argument rather than engine state because it is the
+    // SESSION'S: it says which names the frontend may resolve, and a caller
+    // holding the wrong session's would lower an expression this one cannot
+    // evaluate.
+    std::string loweredTextOf(const ScriptSource &expression, const LoweringScope &scope);
     std::string loweredScriptOf(const ScriptSource &script);
 
     // === Internal implementation ===

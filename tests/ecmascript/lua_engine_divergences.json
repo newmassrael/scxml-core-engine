@@ -41,19 +41,31 @@
     "decided to link `sce-build`'s frontend into the engine and retire it, so",
     "`LuaEngine::loweredTextOf` now offers the author's ECMAScript to the",
     "frontend's PARSER first and falls back to the rewrite only when the",
-    "frontend refuses. The scope it asks against is EMPTY, which is what",
-    "selects the class: an expression naming no variable is answered, and",
-    "everything else is refused and left exactly as it was. Eleven entries",
+    "frontend refuses. The scope it asks against was EMPTY, which is what",
+    "selected the class: an expression naming no variable was answered, and",
+    "everything else was refused and left exactly as it was. Eleven entries",
     "here were closed expressions, so eleven entries left — `1 == '1'`",
     "coerces, `-7 % 3` truncates, `-8 >>> 28` is unsigned, and none of it",
     "was reachable by a pass that cannot see where an operand ends.",
     "",
-    "So the emptying this file was shaped for has started, and it started on",
-    "the path the shape existed to distinguish. The 12 that remain all name a",
-    "variable, and reaching them needs a scope carrying the session's names —",
-    "a `declare` per `<data id>` and a `declare_chunk` per document-level",
-    "`<script>`, which the D1 ledger's scope census measured as sufficient",
-    "(301 sites, 298 of them, then the last 3).",
+    "The same day took 12 to 1, by the same seam and a WIDER SCOPE. Nothing",
+    "about the rewriter changed again: a `LuaEngine` session now owns a",
+    "`LoweringScope` and tells it the names the session holds — one `declare`",
+    "per variable `setVariable` creates (`<data id>`, §scxml-5.3) and one",
+    "`declare_chunk` per ECMAScript `<script>` that ran (§scxml-5.8), which is",
+    "the pair the D1 ledger's scope census measured as sufficient for all 301",
+    "sites. An expression naming a variable the session declared is therefore",
+    "parsed rather than rewritten, and the eleven entries that named `a`, `b`",
+    "or `v` stopped describing the engine in one measurement.",
+    "",
+    "What is left is ONE entry, and it is not an expression. The `while` case",
+    "diverges in its SETUP — a statement sequence, which reaches the engine",
+    "through `loweredScriptOf` and `EcmaScriptToLuaTransformer::transformScript`",
+    "rather than through the seam. `sce_lower_script` is the frontend's answer",
+    "for that shape and is already declared in `sce/include/scripting/",
+    "SceLowering.h`; routing the script path through it is what would take",
+    "this file to zero, and zero is a legal state — the suites that read this",
+    "list may not require it to be non-empty, because that is the finish line.",
     "",
     "`diverges_on` says WHICH PATH into the engine the entry is about, and it",
     "is the field that lets this list empty. `needs` says what closing an",
@@ -91,75 +103,9 @@
   "paths": ["runtime-rewriter", "build-time-lowering"],
   "divergences": [
     {
-      "source": "!a",
-      "clause": "12.5.9 logical NOT",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "a && b",
-      "clause": "13.13.1 the AND yields its left operand when it is falsy",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "a || b",
-      "clause": "13.13.1 the OR yields its right operand when the left is falsy",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "a && b",
-      "clause": "13.13.1 the value is an operand, not a boolean",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "a || b",
-      "clause": "13.13.1 the value is an operand, not a boolean",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "a ? 'yes' : 'no'",
-      "clause": "13.14 conditional uses ToBoolean",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "true ? a : 'other'",
-      "clause": "13.14 a false consequent is still the result",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "a + ''",
-      "clause": "7.1.1 ToPrimitive of an Array joins with commas",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "a == null",
-      "clause": "7.2.15 null and undefined equal each other",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "++v",
-      "clause": "13.4.4 the operand is ToNumber'd, so this is not concatenation",
-      "needs": "operand-boundaries",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
       "source": "n",
       "clause": "14.7.3 while, with continue skipping one iteration",
       "needs": "statement-structure",
-      "diverges_on": ["runtime-rewriter"]
-    },
-    {
-      "source": "(a == 1) | (b != 2)",
-      "clause": "13.12 booleans are ToInt32'd, so the result is a number",
-      "needs": "operand-boundaries",
       "diverges_on": ["runtime-rewriter"]
     }
   ]

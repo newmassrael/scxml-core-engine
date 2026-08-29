@@ -1,0 +1,99 @@
+# Mutation cases for the scope a `LuaEngine` session hands the frontend.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_session_scope_is_what_the_frontend_answers_with.cases`.
+#
+# `LuaEngine::loweredTextOf` offers the author's ECMAScript to `sce-build`'s
+# parser before the rewriter, and the parser REFUSES anything naming a variable
+# its scope does not declare. So the SCOPE is the selector, and how much of the
+# rewriter has been retired is exactly how much the scope has been told.
+#
+# It began empty, which admitted only closed expressions — 11 of the 23
+# divergences then declared. On 2026-08-29 a session began owning a
+# `LoweringScope` and telling it what the session holds: one `declare` per
+# variable `setVariable` creates (`<data id>`, §scxml-5.3) and one
+# `declare_chunk` per ECMAScript `<script>` that ran (§scxml-5.8) — the pair the
+# D1 ledger's `scope-obligation` and `scope-answer` rows measured as sufficient
+# for all 301 sites. `tests/ecmascript/lua_engine_divergences.json` went 12 to 1
+# in one measurement, with no new disagreement in the other direction.
+#
+# ⚠ The two halves of the scope have DIFFERENT oracles, and asking that
+# question first is what this file exists to record. Every setup in the shared
+# ECMA-262 table arrives through `executeScript`, so that table can only see
+# `declare_chunk`; the `<data id>` half and the cache's scope guard are
+# invisible to it and would have been mutated into permanent SURVIVED. They are
+# answered by `ScriptLanguageSeam`, which reaches `setVariable` directly, and
+# the two tests there were written for these two cases rather than the other
+# way round.
+#
+# ⚠⚠ The third case is the one that is a correctness bug wearing a caching
+# win's clothes. The per-session expression cache is keyed on the AUTHOR'S text
+# and the same text lowers differently as the scope grows, so an entry lowered
+# against an older scope has to be a MISS. Without that, whichever evaluation
+# came first pins its answer for the life of the session.
+
+mutation_ctest --test-dir build -R '^(ECMAScriptSemantics|ScriptLanguageSeam)$'
+mutation_targets sce/src/scripting/LuaEngine.cpp
+mutation_targets sce/src/scripting/LoweringScope.cpp
+# The suites each case reds, measured rather than assumed: the `<data id>` half
+# and the cache guard red only `ScriptLanguageSeam`, the chunk half only
+# `EcmaScriptSemanticsOnLuaEngine`.
+mutation_oracles tests/engine/ScriptLanguageSeamTest.cpp
+mutation_oracles tests/engine/EcmaScriptSemanticsTest.cpp
+
+# ── The `<data id>` half of the scope ───────────────────────────────
+#
+# The comment above the call is left standing on purpose: that is the shape a
+# careless revert has, and a check satisfied by the paragraph beside a call is
+# a defect this repository has now paid for three times.
+
+mutation_case "a data item declaration never reaches the frontend's scope" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     "    it->second->loweringScope.declare(name);",
+     "")
+PY
+
+# ── The `<script>` half of the scope ────────────────────────────────
+#
+# This is the half the shared ECMA-262 table can see, because every one of its
+# setups is a script. Removing it puts eleven expressions back on the rewriter:
+# `a && b` stops yielding its left operand, `a == null` stops equating null with
+# undefined, `!a` goes back to Lua's reading of truthiness.
+
+mutation_case "a script's declarations never reach the frontend's scope" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     """    if (status == LUA_OK && script.language() == ScriptLanguage::ECMAScript) {
+        it->second->loweringScope.declareChunk(script.text());
+    }""",
+     "")
+PY
+
+# ── The cache is keyed on the scope as well as the language ─────────
+#
+# Dropping the generation comparison leaves a cache that is still correct for
+# every expression evaluated once, which is why the oracle has to evaluate one
+# TWICE across a declaration. A fixture that asked once would report this
+# mutation as SURVIVED and be right about its own question.
+
+mutation_case "the expression cache ignores the scope it was lowered against" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     """    if (execIt != execCache.end() && execIt->second.language == expression.language() &&
+        execIt->second.scopeGeneration == scopeGeneration) {""",
+     "    if (execIt != execCache.end() && execIt->second.language == expression.language()) {")
+PY
+
+# ── Growth has to be observable at all ──────────────────────────────
+#
+# `generation()` is what the cache compares, and a counter that never moves
+# makes every stale entry a hit. This mutates the counter rather than the
+# comparison, so the two are held separately: a repair that removed one and
+# left the other would still be caught here.
+
+mutation_case "the scope never reports that it grew" <<'PY'
+edit("sce/src/scripting/LoweringScope.cpp",
+     """    sce_scope_declare(scope_, name.c_str());
+#endif
+    ++generation_;""",
+     """    sce_scope_declare(scope_, name.c_str());
+#endif""")
+PY
