@@ -190,8 +190,16 @@ class ScriptLanguageSeamTest {
         withSession(engine, "seam_lowered_assign") { id ->
             engine.executeScript(id, ScriptSource.lua("a = {10, 20}", "var a = [10, 20];"))
 
-            engine.assign(id, "fromLowered", ScriptSource.lua("a[1]", "a[0]"))
-            engine.assign(id, "fromAuthor", ScriptSource.ecmascript("a[1]"))
+            engine.assign(
+                id,
+                ScriptSource.lua("fromLowered", "fromLowered"),
+                ScriptSource.lua("a[1]", "a[0]"),
+            )
+            engine.assign(
+                id,
+                ScriptSource.ecmascript("fromAuthor"),
+                ScriptSource.ecmascript("a[1]"),
+            )
 
             val lowered = (engine.getVariable(id, "fromLowered") as Number).toLong()
             val rewritten = (engine.getVariable(id, "fromAuthor") as Number).toLong()
@@ -322,7 +330,7 @@ class ScriptLanguageSeamTest {
                     "evaluateExpr" to { s -> engine.evaluateExpr(s, lua) },
                     "executeScript" to { s -> engine.executeScript(s, lua) },
                     "evaluateCondition" to { s -> engine.evaluateCondition(s, lua) },
-                    "assign" to { s -> engine.assign(s, "v", lua) },
+                    "assign" to { s -> engine.assign(s, ScriptSource.ecmascript("v"), lua) },
                     "executeForeach" to { s -> engine.executeForeach(s, lua, "elem", "") {} },
                 )
                 for ((entry, call) in entryPoints) {
@@ -538,8 +546,17 @@ class ScriptLanguageSeamTest {
         /** A member declaration at class indentation, and its name. */
         val MEMBER_DECLARATION = Regex("""^\s{4}(?:\w+\s+)*fun\s+(\w+)""")
 
-        /** `loweredTextOf` and `loweredScriptOf` — the branch is two calls wide. */
-        const val REWRITE_FLOOR = 2
+        /**
+         * `loweredTextOf`, `loweredScriptOf` and `loweredLocationOf` — the
+         * branch is three calls wide.
+         *
+         * A FLOOR and not an equality, so a fourth arm does not fail this on
+         * the day it lands; what it defends is the sweep still finding the
+         * rewriter at all. It moved 2 → 3 on 2026-08-29 when an `<assign>`
+         * LOCATION started carrying its language too, which it has to: the
+         * Lua arm splices the location in front of `=` and runs the result.
+         */
+        const val REWRITE_FLOOR = 3
 
         /**
          * An `override` of a guarded entry point — the two-argument

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c97edcb094613d8138825758fc943d853d23ad4854f2fa7dcf6ff6f58539b674
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -212,21 +212,21 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'tally' with expr
         try {
-            val initResult_tally = engine.evaluateExpr(sid, "1")
+            val initResult_tally = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
             engine.setVariable(sid, "tally", initResult_tally)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='tally'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'guard' with expr
         try {
-            val initResult_guard = engine.evaluateExpr(sid, "1")
+            val initResult_guard = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
             engine.setVariable(sid, "guard", initResult_guard)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='guard'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'keeper' with expr
         try {
-            val initResult_keeper = engine.evaluateExpr(sid, "3")
+            val initResult_keeper = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("3"))
             engine.setVariable(sid, "keeper", initResult_keeper)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='keeper'> expr failed to evaluate")
@@ -250,7 +250,15 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -275,12 +283,28 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -288,7 +312,12 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -300,7 +329,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -388,7 +417,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processAbsentPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard("guard !== 1") -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize, EmptyFinalizeUpdatesTheLocationState.AbsentPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("guard !== 1")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize, EmptyFinalizeUpdatesTheLocationState.AbsentPhase)
 
         event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, EmptyFinalizeUpdatesTheLocationState.AbsentPhase)
 
@@ -400,7 +429,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processEmptyPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard("tally === 7") -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.AbsentPhase, EmptyFinalizeUpdatesTheLocationState.EmptyPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("tally === 7")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.AbsentPhase, EmptyFinalizeUpdatesTheLocationState.EmptyPhase)
 
         event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailNotUpdated, EmptyFinalizeUpdatesTheLocationState.EmptyPhase)
 
@@ -412,7 +441,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processUnmatchedPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard("keeper !== 3") -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("keeper !== 3")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase)
 
         event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.Pass, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase)
 

@@ -59,7 +59,7 @@
 {% for dm_var in state.datamodel %}
 {% if dm_var.expr %}
                     try {
-                        val v = engine.evaluateExpr(sid, "{{ dm_var.expr | escape_kotlin }}")
+                        val v = engine.evaluateExpr(sid, {{ dm_var.expr | to_script_source_expr }})
                         engine.setVariable(sid, "{{ dm_var.id }}", v)
                     } catch (e: Exception) {
                         raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> expr failed to evaluate")
@@ -166,12 +166,12 @@
                         try {
 {% if inv.srcexpr %}
                             // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child
-                            val pathResult = eng.evaluateExpr(sid, "{{ inv.srcexpr | escape_kotlin }}")
+                            val pathResult = eng.evaluateExpr(sid, {{ inv.srcexpr | to_script_source_expr }})
                             val filePath = pathResult?.toString() ?: return@deferInvoke
                             val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "{{ model.scxml_base_path | escape_kotlin }}", scriptEngine)
 {% elif inv.contentexpr %}
                             // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child
-                            val contentResult = eng.evaluateExpr(sid, "{{ inv.contentexpr | escape_kotlin }}")
+                            val contentResult = eng.evaluateExpr(sid, {{ inv.contentexpr | to_script_source_expr }})
                             val scxmlContent = contentResult?.toString() ?: return@deferInvoke
                             val childSM = ScxmlRuntimeInterpreter.fromString(scxmlContent, scriptEngine)
 {% endif %}
@@ -221,7 +221,7 @@
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["{{ param.name | escape_kotlin }}"] = engineInv.evaluateExpr(sidInv, "{{ param.expr | escape_kotlin }}")
+                        invokeParams["{{ param.name | escape_kotlin }}"] = engineInv.evaluateExpr(sidInv, {{ param.expr | to_script_source_expr }})
                     } catch (_: Exception) {
                         raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
                     }
@@ -284,16 +284,16 @@
 {% if state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
-{% set donedata_content_source = state.donedata.content.text %}
+{% set donedata_content = state.donedata.content.text | to_script_source_expr %}
 {% else %}
                     // W3C SCXML B.2: inline text takes the ordered readings —
                     // an expression when it is one, otherwise the string. The
                     // reading is decided from the document, so every backend
                     // reaches the same one for the same text.
-{% set donedata_content_source = state.donedata.content.text | to_author_data_content %}
+{% set donedata_content = state.donedata.content.text | to_script_source_data_content %}
 {% endif %}
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ donedata_content_source | escape_kotlin }}")
+                        val contentResult = engineDD.evaluateExpr(sidDD, {{ donedata_content }})
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
@@ -310,7 +310,7 @@
 {% for param in state.donedata.params %}
 {% if param.expr is not none %}
                     try {
-                        doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, "{{ param.expr | escape_kotlin }}")
+                        doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, {{ param.expr | to_script_source_expr }})
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
                         raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
@@ -318,7 +318,7 @@
 {% elif param.location is not none %}
 {% if param.location %}
                     try {
-                        val locVal = engineDD.evaluateExpr(sidDD, "{{ param.location }}")
+                        val locVal = engineDD.evaluateExpr(sidDD, {{ param.location | to_script_source_expr }})
                         doneParams["{{ param.name | escape_kotlin }}"] = locVal
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime location error — raise error.execution but continue

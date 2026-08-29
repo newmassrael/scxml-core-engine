@@ -5,94 +5,132 @@
 # `scripts/mutate sce-build/tests/mutations/the_lowering_dividend_is_derived_not_declared.cases`.
 #
 # `tests/ecmascript/kotlin_lua_divergences.json` lists the cases this backend's
-# Lua engine answers differently from ECMA-262, all of them on one path because
-# `runtime-rewriter` is the only route the generated Kotlin has. What the list
-# could not say is what the OTHER route already answers, which is the question
-# anybody deciding whether to fund the lowered seam asks first: how many of
-# these would stop existing if translation moved to build time?
+# Lua engine answers differently from ECMA-262. Since 2026-08-29 the backend
+# has BOTH routes into that engine, so each entry says which of them it is
+# wrong on — and that is the same question this file used to ask in a field of
+# its own: an entry naming only `runtime-rewriter` is one the build-time
+# frontend already answers, and the seam retires it.
 #
-# ⚠ **The answer is not written here.** It lives in that file's
-# `build_time_frontend.measured`, `kotlin_lowering_dividend` re-derives it on
-# every push, and it moved twice on 2026-08-29 alone. The reason it is worth a
-# casefile is that it is
-# the exact shape of number this repository has been wrong about four times —
-# "27 of its 58" over a table of 98, a `58/58` scoreboard, a gate's own comment
-# saying "58-case", a divergence list's prose naming an entry its array did not
-# hold. Every one of them was a count that lived somewhere nothing re-derived.
+# ⚠ **The answer is not written here.** It lives in the anchored table in
+# `docs/SCE_LUA_TRANSLATION_SEAM.md`, `kotlin_lowering_dividend` re-derives it
+# on every push, and it moved twice on 2026-08-29 alone. The reason it is worth
+# a casefile is that it is the exact shape of number this repository has been
+# wrong about four times — "27 of its 58" over a table of 98, a `58/58`
+# scoreboard, a gate's own comment saying "58-case", a divergence list's prose
+# naming an entry its array did not hold. Every one of them was a count that
+# lived somewhere nothing re-derived.
 #
 # So the verdicts are not judged here, they are DERIVED — each from
 # `kotlin_lowered_ecma262.json`, which `LoweredEcma262Test` holds against the
 # running Lua engine in both directions. These cases are the control on that
-# derivation: they model the four ways the number could go back to being typed,
-# plus the day the field should stop existing.
+# derivation: they model the ways the number could go back to being typed.
 #
-# ⚠ The sixth round could not buy this control: its suite is Gradle's and
-# `scripts/mutate` has no Gradle runner, so its two reds were applied and
-# reverted by hand. This lane is `cargo`, which is why the same reasoning gets
-# a durable casefile here.
+# ⚠⚠ **Retargeted 2026-08-29, the day the seam opened.** Five of the six cases
+# below used to mutate a `build_time_frontend` field that
+# `the_field_retires_when_the_seam_opens` then required to be gone. A case
+# whose anchor no longer matches is INCONCLUSIVE, not CAUGHT — the shape that
+# made `Mutation Rounds` red on `ef6513194b` — so they were re-aimed at the key
+# that carries the verdict now, in the same round that retired the old one.
+#
+# ⚠ The Kotlin suite's own reds still cannot be bought here: that suite is
+# Gradle's and `scripts/mutate` has no Gradle runner. This lane is `cargo`,
+# which is why the same reasoning gets a durable casefile on this side.
 
-mutation_tests -p sce-build --test kotlin_lowering_dividend
+mutation_tests -p sce-build --features cli --test kotlin_lowering_dividend --test ecma262_scoreboard_contract
 mutation_targets sce-build/src/generator.rs
 mutation_runtime_targets tests/ecmascript/kotlin_lua_divergences.json docs/SCE_LUA_TRANSLATION_SEAM.md
 
-# ── A verdict is talked into the exempting value ───────────────────
+# ── An entry claims the frontend gets it wrong too ─────────────────
 #
-# `unmeasured` is the one verdict that takes an entry OUT of the measurement:
-# it says the lowered route cannot ask this case at all. So it is the value a
-# label drifts toward when somebody wants a disagreement to go away, and the
-# derivation is what makes that impossible — the case is either declared
-# `unreachable` in the lowered file, where `LoweredEcma262Test` defends it in
-# both directions against the engine, or it is not.
-
-mutation_case "a verdict is talked into the exempting value" <<'PY'
-edit("tests/ecmascript/kotlin_lua_divergences.json",
-     '{ "source": "!a", "clause": "12.5.9 logical NOT", "diverges_on": ["runtime-rewriter"], "build_time_frontend": "answers" }',
-     '{ "source": "!a", "clause": "12.5.9 logical NOT", "diverges_on": ["runtime-rewriter"], "build_time_frontend": "unmeasured" }')
-PY
-
-# ── The field becomes quietly optional ─────────────────────────────
+# Naming BOTH paths says the build-time frontend answers this case wrongly as
+# well, so the seam does not retire it. That is the direction a list drifts
+# when somebody wants the dividend to look smaller than it is — and it is
+# derivable, so it cannot be asserted: the case is either in
+# `kotlin_lowered_ecma262.json`'s `divergences`, where `LoweredEcma262Test`
+# defends it against the running engine in both directions, or it is not.
 #
-# An entry with no verdict is not an entry with no answer: the value a missing
-# field silently means is `unmeasured`, because that is what "this lane did not
-# measure it" reads as. An escape hatch reached by OMISSION is one nobody has
-# to justify, which is the failure `diverges_on` already refuses one key above
-# this one. Unclassified is red, not a default.
-
-mutation_case "the verdict field is quietly optional" <<'PY'
-edit("tests/ecmascript/kotlin_lua_divergences.json",
-     '"clause": "12.5.9 logical NOT", "diverges_on": ["runtime-rewriter"], "build_time_frontend": "answers" }',
-     '"clause": "12.5.9 logical NOT", "diverges_on": ["runtime-rewriter"] }')
-PY
-
-# ── The tally drifts from the list it summarises ───────────────────
+# The anchor is read out of the file rather than spelled, for the reason the
+# tally cases below give: an entry that moves must not turn this into an
+# INCONCLUSIVE.
 #
-# The count is what a reader takes away, and it is stored beside the list
-# rather than computed by whoever reads it — which is exactly the arrangement
-# that was wrong every previous time. It survives only while something
-# re-counts the entries under it.
+# ⚠⚠ Retargeted 2026-08-30, when the list reached ZERO entries. The three
+# cases below used to mutate an existing entry, and an empty list left them
+# with no subject at all — `raise SystemExit` reports that honestly, but an
+# INCONCLUSIVE case buys nothing, and empty is the state this list is expected
+# to stay in. So each now works either way: it mutates an entry if one is
+# there, and otherwise ADDS one that says the wrong thing about a real case of
+# the shared table. Adding is the right mutation for an empty list — the clause
+# under test is "what an entry may claim", and a list with no entries can only
+# be made to claim something by gaining one.
 #
-# ⚠ **The anchor is DERIVED, and that is a repair.** Until 2026-08-30 this case
-# spelled `"answers": 39` literally, and on 2026-08-29 the tally moved 39 → 44
-# in three commits. The anchor then matched nothing, the harness reported
-# INCONCLUSIVE, and `Mutation Rounds` was red on `ef6513194b` — a casefile whose
-# whole subject is "a count that lived somewhere nothing re-derived" had itself
-# become one. The body reads the number out of the file and mutates THAT, so the
-# case follows the tally wherever it goes and stays about the clause instead of
-# about a particular value.
+# ⚠ The added entry names a case READ OUT of `ecma262_semantics.json` rather
+# than spelled here. An entry naming no real case is caught by
+# `every_declared_divergence_answers_a_real_case` — a different clause — and a
+# case caught by the wrong assertion is a control that proves the wrong thing.
 
-mutation_case "the stated tally drifts from the entries under it" <<'PY'
-import re
+mutation_case "an entry claims the frontend diverges where the measurement says it answers" <<'PY'
+import json, re
 
 PATH = "tests/ecmascript/kotlin_lua_divergences.json"
-found = re.search(r'"measured": \{ "answers": (\d+),', open(PATH).read())
-if not found:
-    raise SystemExit(
-        "%s no longer states a `measured.answers` tally in the shape this case "
-        "mutates. That field IS the clause under test, so its disappearance is a "
-        "finding, not something to work around." % PATH
-    )
-edit(PATH, found.group(0),
-     '"measured": { "answers": %d,' % (int(found.group(1)) + 1))
+BOTH = '["build-time-lowering", "runtime-rewriter"]'
+text = open(PATH).read()
+found = re.search(r'\{ "source": .*?, "diverges_on": \["runtime-rewriter"\] \}', text)
+if found:
+    edit(PATH, found.group(0), found.group(0).replace('["runtime-rewriter"]', BOTH))
+else:
+    case = json.load(open("tests/ecmascript/ecma262_semantics.json"))["cases"][0]
+    entry = '{ "source": %s, "clause": %s, "diverges_on": %s }' % (
+        json.dumps(case["source"]), json.dumps(case["clause"]), BOTH)
+    edit(PATH, '"divergences": []', '"divergences": [\n    %s\n  ]' % entry)
+PY
+
+# ── The verdict goes back to being a field of its own ──────────────
+#
+# `build_time_frontend` retired the day `supports_script_engine_target(Lua)`
+# became true, because `diverges_on` can now carry the same fact and two
+# vocabularies for one fact drift. This is the case that keeps it retired: a
+# field reintroduced one entry at a time is exactly how a parallel spelling
+# comes back, and nothing else would notice.
+
+mutation_case "the retired verdict field comes back beside the paths" <<'PY'
+import json, re
+
+PATH = "tests/ecmascript/kotlin_lua_divergences.json"
+REVIVED = ', "build_time_frontend": "answers" }'
+text = open(PATH).read()
+found = re.search(r'\{ "source": .*?, "diverges_on": \["runtime-rewriter"\] \}', text)
+if found:
+    edit(PATH, found.group(0), found.group(0).replace(' }', REVIVED))
+else:
+    case = json.load(open("tests/ecmascript/ecma262_semantics.json"))["cases"][0]
+    entry = '{ "source": %s, "clause": %s, "diverges_on": ["runtime-rewriter"]%s' % (
+        json.dumps(case["source"]), json.dumps(case["clause"]), REVIVED)
+    edit(PATH, '"divergences": []', '"divergences": [\n    %s\n  ]' % entry)
+PY
+
+# ── An entry names a path shape nothing can read ───────────────────
+#
+# There are exactly two shapes an entry can have now, and a third is a claim
+# about the lowered route that no measurement produced. Unclassified is RED
+# rather than a default — the same rule `diverges_on` already carries one key
+# up, and the same rule the Lua codegen target enforces by refusing while any
+# site is UNADJUDICATED rather than only while one is known-unmigrated.
+
+mutation_case "an entry names a path shape no measurement can produce" <<'PY'
+import json, re
+
+PATH = "tests/ecmascript/kotlin_lua_divergences.json"
+LOWERED_ONLY = '["build-time-lowering"]'
+text = open(PATH).read()
+found = re.search(r'\{ "source": .*?, "diverges_on": \["runtime-rewriter"\] \}', text)
+if found:
+    edit(PATH, found.group(0),
+         found.group(0).replace('["runtime-rewriter"]', LOWERED_ONLY))
+else:
+    case = json.load(open("tests/ecmascript/ecma262_semantics.json"))["cases"][0]
+    entry = '{ "source": %s, "clause": %s, "diverges_on": %s }' % (
+        json.dumps(case["source"]), json.dumps(case["clause"]), LOWERED_ONLY)
+    edit(PATH, '"divergences": []', '"divergences": [\n    %s\n  ]' % entry)
 PY
 
 # ── The document keeps a number the tree has moved past ────────────
@@ -102,10 +140,11 @@ PY
 # and the least likely to be re-derived by hand. This is the failure that
 # actually happened to the sentence this table replaces — "the frontend answers
 # all 98 cases" outlived the measurement it was made from.
-
 #
-# ⚠ Derived for the same reason the case above it is, and it went stale on the
-# same day: the document's row said 39 while the list said 44.
+# ⚠ Derived, and it went stale once already: on 2026-08-29 the document's row
+# said 39 while the list said 44, the anchor matched nothing, and the round
+# reported INCONCLUSIVE. Reading the number out of the file keeps the case
+# about the clause instead of about a particular value.
 
 mutation_case "the seam document keeps a number the list has moved past" <<'PY'
 import re
@@ -121,40 +160,40 @@ if not found:
 edit(PATH, found.group(0), "| `answers` | %d |" % (int(found.group(1)) + 1))
 PY
 
-# ── A verdict this lane derives is not a spelling the file admits ──
+# ── The list stops declaring a route the backend has ───────────────
 #
-# The vocabulary is declared in the file rather than only in the lane, the same
-# way `paths` is, so that neither side can hold a value the other cannot. A
-# renamed key leaves the lane deriving `unmeasured` for five entries the file
-# would then reject as misspellings — and, worse in the other direction, leaves
-# a declared value nothing can ever assign.
+# `paths` is the set an entry's `diverges_on` may name, and it is DERIVED from
+# the backend rather than typed: `default_script_engine_target` says whether
+# the engine is still handed the author's text, and
+# `supports_script_engine_target(Lua)` says whether a lowered artifact can be
+# emitted at all. A list that dropped the route the backend just gained would
+# leave every entry describing a world with one path in it — which is what the
+# file said until the day the templates crossed.
 
-mutation_case "the declared vocabulary drops a value the lane derives" <<'PY'
+mutation_case "the list drops a route its backend actually has" <<'PY'
 edit("tests/ecmascript/kotlin_lua_divergences.json",
-     '"unmeasured": "The case cannot be put',
-     '"unmeasurable": "The case cannot be put')
+     '"paths": ["build-time-lowering", "runtime-rewriter"],',
+     '"paths": ["runtime-rewriter"],')
 PY
 
-# ── The seam opens and the field survives it ───────────────────────
+# ── The backend loses the route the list declares ──────────────────
 #
-# This is the case for the assertion that has nothing to measure today, and it
-# is the one that keeps `build_time_frontend` from becoming permanent. The
-# field exists ONLY because `build-time-lowering` is not yet a path this
-# backend has, so the answer cannot be written where it belongs — in
-# `diverges_on`, beside the path it is about. Opening the Lua target makes the
-# field a second vocabulary for a fact `diverges_on` can now carry, and two
-# spellings of one fact drift.
+# The same clause as the case above, approached from the other side: `paths` is
+# derived from the BACKEND, so a backend that stops offering the lowered target
+# must make the list red just as a list that stops declaring it does. Both
+# directions, because a derivation checked in one direction only is a
+# derivation that can be satisfied by moving whichever side is easier.
 #
-# Mutating the generator rather than the lane's own helper on purpose: the
-# condition being modelled is the real one, and `mutation_tests` names this
-# binary alone, so the red that comes back is this gate's and not another
-# suite's opinion about the same edit.
+# ⚠ Written as `=> false` and not `=> true`. Until 2026-08-29 this case forced
+# the target OPEN, which was the defect then; since the templates crossed,
+# forcing it open is a NO-OP and a no-op case can never be caught — the
+# discriminator this repository pays for whenever a case SURVIVES twice.
 
-mutation_case "the seam opens and the field survives as a second vocabulary" <<'PY'
+mutation_case "the backend loses the route its list declares" <<'PY'
 edit("sce-build/src/generator.rs",
      """            ScriptEngineTarget::Lua => {
                 self.unmigrated_expression_sites().is_empty()
                     && self.unclassified_expression_sites().is_empty()
             }""",
-     """            ScriptEngineTarget::Lua => true,""")
+     """            ScriptEngineTarget::Lua => false,""")
 PY

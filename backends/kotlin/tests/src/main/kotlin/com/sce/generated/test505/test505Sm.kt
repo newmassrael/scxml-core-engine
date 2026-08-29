@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -185,21 +185,21 @@ class Test505StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, "0")
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test505Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, "0")
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test505Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var3' with expr
         try {
-            val initResult_Var3 = engine.evaluateExpr(sid, "0")
+            val initResult_Var3 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "Var3", initResult_Var3)
         } catch (e: Exception) {
             raisePlatformError(Test505Event.Error.Execution, "<data id='Var3'> expr failed to evaluate")
@@ -223,7 +223,15 @@ class Test505StateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -248,12 +256,28 @@ class Test505StateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(Test505Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -261,7 +285,12 @@ class Test505StateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -273,7 +302,7 @@ class Test505StateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -372,14 +401,14 @@ class Test505StateMachine(
 
     private fun processNullS2(
     ): TransitionResult<Test505State> = when {
-        safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test505State.S3, Test505State.S2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test505State.S3, Test505State.S2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test505State.Fail, Test505State.S2)
     }
 
     private fun processNullS3(
     ): TransitionResult<Test505State> = when {
-        safeEvaluateGuard("Var2 == 2") -> TransitionResult.External(Test505State.Pass, Test505State.S3)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 2")) -> TransitionResult.External(Test505State.Pass, Test505State.S3)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test505State.Fail, Test505State.S3)
     }
@@ -391,7 +420,7 @@ class Test505StateMachine(
     ): TransitionResult<Test505State> = when {
         event is Test505Event.Foo -> TransitionResult.InternalToTarget(Test505State.S11, Test505State.S1)
 
-        event is Test505Event.Bar && safeEvaluateGuard("Var3 == 1") -> TransitionResult.External(Test505State.S2, Test505State.S1)
+        event is Test505Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == 1")) -> TransitionResult.External(Test505State.S2, Test505State.S1)
 
         event is Test505Event.Bar -> TransitionResult.External(Test505State.Fail, Test505State.S1)
 
@@ -462,14 +491,14 @@ class Test505StateMachine(
                 activeStateIds.remove("s1")
 
 
-            executeAssign("Var1", "Var1 + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
             }
             is Test505State.S11 -> {
                 // SCE-MAP: test505.scxml:28 :: s11 :: _state_body
                 activeStateIds.remove("s11")
 
 
-            executeAssign("Var2", "Var2 + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("Var2 + 1"))
             }
             is Test505State.S2 -> {
                 // SCE-MAP: test505.scxml:35 :: s2 :: _state_body
@@ -495,7 +524,7 @@ class Test505StateMachine(
                 // SCE-MAP: test505.scxml:20 :: s1 :: _transition_0
 
 
-            executeAssign("Var3", "Var3 + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var3"), com.sce.runtime.ScriptSource.ecmascript("Var3 + 1"))
             }
             else -> {}
         }
@@ -504,7 +533,7 @@ class Test505StateMachine(
                 // SCE-MAP: test505.scxml:20 :: s1 :: _transition_0
 
 
-            executeAssign("Var3", "Var3 + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var3"), com.sce.runtime.ScriptSource.ecmascript("Var3 + 1"))
             }
             else -> {}
         }

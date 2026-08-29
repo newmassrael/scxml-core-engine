@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 448efc1945f51a00d346a070a50c9e40a8fdb0d3297033414fa43984fe293f6e
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -176,21 +176,21 @@ class EventlessMacrostepIsBoundedStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, "0")
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(EventlessMacrostepIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'laps' with expr
         try {
-            val initResult_laps = engine.evaluateExpr(sid, "0")
+            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "laps", initResult_laps)
         } catch (e: Exception) {
             raisePlatformError(EventlessMacrostepIsBoundedEvent.Error.Execution, "<data id='laps'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'spins' with expr
         try {
-            val initResult_spins = engine.evaluateExpr(sid, "0")
+            val initResult_spins = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "spins", initResult_spins)
         } catch (e: Exception) {
             raisePlatformError(EventlessMacrostepIsBoundedEvent.Error.Execution, "<data id='spins'> expr failed to evaluate")
@@ -214,7 +214,15 @@ class EventlessMacrostepIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -239,12 +247,28 @@ class EventlessMacrostepIsBoundedStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(EventlessMacrostepIsBoundedEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -252,7 +276,12 @@ class EventlessMacrostepIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -264,7 +293,7 @@ class EventlessMacrostepIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -362,7 +391,7 @@ class EventlessMacrostepIsBoundedStateMachine(
 
     private fun processNullBoundedA(
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
-        safeEvaluateGuard("laps < 500") -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedB, EventlessMacrostepIsBoundedState.BoundedA)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 500")) -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedB, EventlessMacrostepIsBoundedState.BoundedA)
         else -> TransitionResult.Ignored
     }
 
@@ -498,13 +527,13 @@ class EventlessMacrostepIsBoundedStateMachine(
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:90 :: bounded_a :: _transition_1
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
-            event == null && safeEvaluateGuard("laps < 500") -> {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 500")) -> {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:85 :: bounded_a :: _transition_0
 
 
-            executeAssign("laps", "laps + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))
             }
             else -> {}
         }
@@ -513,7 +542,7 @@ class EventlessMacrostepIsBoundedStateMachine(
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:72 :: idle :: _transition_0
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             else -> {}
         }
@@ -522,13 +551,13 @@ class EventlessMacrostepIsBoundedStateMachine(
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:108 :: spin_a :: _transition_1
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             event == null -> {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:105 :: spin_a :: _transition_0
 
 
-            executeAssign("spins", "spins + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("spins"), com.sce.runtime.ScriptSource.ecmascript("spins + 1"))
             }
             else -> {}
         }

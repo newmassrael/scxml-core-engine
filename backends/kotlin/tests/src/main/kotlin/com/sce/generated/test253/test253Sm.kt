@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -193,7 +193,15 @@ class Test253StateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -218,12 +226,28 @@ class Test253StateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(Test253Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -231,7 +255,12 @@ class Test253StateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -243,7 +272,7 @@ class Test253StateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -361,8 +390,8 @@ class Test253StateMachine(
 
     private fun processNullS02(
     ): TransitionResult<Test253State> = when {
-        safeEvaluateGuard("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> TransitionResult.External(Test253State.S03, Test253State.S02)
-        safeEvaluateGuard("Var1 == 'scxml'") -> TransitionResult.External(Test253State.S03, Test253State.S02)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253State.S03, Test253State.S02)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'scxml'")) -> TransitionResult.External(Test253State.S03, Test253State.S02)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test253State.Fail, Test253State.S02)
     }
@@ -499,19 +528,19 @@ class Test253StateMachine(
                 // SCE-MAP: test253.scxml:54 :: s01 :: _transition_0
 
 
-            executeAssign("Var1", "_event.origintype")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.origintype"))
             }
             else -> {}
         }
         is Test253State.S02 -> when {
-            event == null && safeEvaluateGuard("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> {
                 // SCE-MAP: test253.scxml:61 :: s02 :: _transition_0
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("foo", "parentToChild")
             }
-            event == null && safeEvaluateGuard("Var1 == 'scxml'") -> {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'scxml'")) -> {
                 // SCE-MAP: test253.scxml:64 :: s02 :: _transition_1
 
 

@@ -63,6 +63,18 @@ private const val ENGINE_PATH =
 private const val RUNTIME_REWRITER_PATH = "runtime-rewriter"
 
 /**
+ * The text rewriter that used to be this engine's only answer, and is now the
+ * fallback behind `sce-build`'s ECMAScript frontend.
+ *
+ * Two spellings because two questions are asked of them: whether the engine
+ * still CALLS it (read from the class body, so a mention in a comment is not a
+ * call) and whether the engine's documentation NAMES it. Both retire together
+ * on the day the fallback goes.
+ */
+private const val REWRITER_NAME = "EcmaScriptToLuaTransformer"
+private const val REWRITER_CALL = "transformer."
+
+/**
  * One case an engine answered differently from ECMA-262.
  *
  * Carried as a key plus a message rather than a message alone: the message is
@@ -84,33 +96,36 @@ class EcmaScriptSemanticsTest {
     fun quickJsAnswersWhatEcmaScriptAnswers() = measure("QuickJS") { QuickJSScriptEngine() }
 
     /**
-     * Lua is measured too, and the assertion runs the other way.
+     * Lua is measured too, and the assertion runs in both directions.
      *
-     * It is not an ECMAScript engine and it does not become one by being
-     * asked politely, so `datamodel="ecmascript"` — a claim about a language
-     * — cannot be met by it. The honest landing is not a permanently red
-     * suite, which teaches a reader to scroll past red, but a test that pins
-     * WHICH cases the answer is no for and fires when that set moves in
-     * either direction.
-     *
-     * "Either direction" is the part this test did not used to have. It
+     * "Both directions" is the part this test did not used to have. It
      * asserted only that the failure set was NOT EMPTY, which is satisfied by
-     * one disagreement and by fifty, so the rewriter could regress or improve
-     * for months without a word. The engine's own KDoc meanwhile carried "27
-     * of its 58" under a sentence saying this test held it to the
-     * measurement; it held no number at all, and the shared table had since
-     * grown to 98 cases. A declared list is what makes both directions
-     * visible — the same shape `tests/ecmascript/lua_engine_divergences.json`
-     * gives the C++ selection, and for the same reason its header states: a
-     * count that lives in prose is a count nobody re-answers.
+     * one disagreement and by fifty, so the engine could regress or improve
+     * for months without a word. Its own KDoc meanwhile carried "27 of its
+     * 58" under a sentence saying this test held it to the measurement; it
+     * held no number at all, and the shared table had since grown to 98 cases.
+     * A declared list is what makes both directions visible — the same shape
+     * `tests/ecmascript/lua_engine_divergences.json` gives the C++ selection,
+     * and for the same reason its header states: a count that lives in prose
+     * is a count nobody re-answers.
      *
-     * The two lists are separate on purpose. This backend rewrites with its
-     * own [com.sce.scripting.lua.EcmaScriptToLuaTransformer] onto a different
-     * Lua, so its divergences are its own measurement and neither list may be
-     * derived from the other.
+     * ⚠ EMPTY IS A LEGAL ANSWER, and forbidding it was this test's own defect.
+     * A third assertion here required the declared list to be non-empty, to
+     * catch a list this suite had stopped reading — a real failure — but it
+     * also failed on a list with nothing left in it, which is the terminal
+     * state the whole seam is working towards. A counter whose zero is
+     * forbidden is not a counter. What "was the list actually read" now means
+     * is that the FILE was read, which [loadDeclaredDivergences] asserts, and
+     * `ecma262_scoreboard_contract`'s `readers_of` is what still fails if
+     * nothing opens the list at all.
+     *
+     * The two lists are separate on purpose, and that both are now empty is a
+     * measurement rather than a definition: they were 23 and 44 while each
+     * backend had its own text rewriter, and neither may be derived from the
+     * other.
      */
     @Test
-    fun luaIsNotAnEcmaScriptEngineAndSaysSo() {
+    fun theLuaEngineDivergesExactlyWhereItIsDeclaredTo() {
         val failures = collectFailures { LuaScriptEngine() }
         val declared = loadDeclaredDivergences()
 
@@ -122,9 +137,9 @@ class EcmaScriptSemanticsTest {
         assertTrue(
             undeclared.isEmpty(),
             "${undeclared.size} expression(s) disagree with ECMA-262 on LuaScriptEngine " +
-                "without being declared to. Either the rewriter regressed, or " +
-                "$DIVERGENCES_PATH has not caught up with it. If it is the second, these " +
-                "are the entries to add:\n" +
+                "without being declared to. Either the engine lost an answer it used to " +
+                "give, or $DIVERGENCES_PATH has not caught up with it. If it is the " +
+                "second, these are the entries to add:\n" +
                 undeclared.joinToString(",\n") {
                     "    { \"source\": ${jsonQuoted(it.source)}, \"clause\": ${jsonQuoted(it.clause)} }"
                 } +
@@ -139,34 +154,43 @@ class EcmaScriptSemanticsTest {
             "${repaired.size} declared divergence(s) no longer describe this engine. Remove " +
                 "them from $DIVERGENCES_PATH — a list that keeps a repaired case is a list " +
                 "that cannot be trusted in the other direction either, and it is what a " +
-                "reader consults to decide whether their document stays inside what the " +
-                "rewriter covers.\n" +
+                "reader consults to decide whether their document stays inside what this " +
+                "engine covers.\n" +
                 repaired.joinToString("\n") { "  ${it.source}  (${it.clause})" },
         )
 
-        assertTrue(
-            declared.isNotEmpty(),
-            "$DIVERGENCES_PATH declares nothing, and nothing disagreed. If Lua now answers " +
-                "all ${loadSharedTable().size} ECMA-262 cases that is good news and it makes this " +
-                "test wrong: rewrite the doc comment on LuaScriptEngine and turn this into " +
-                "`measure(...)` beside the other two.",
-        )
-
-        // Refutable, and refuted where a consumer can see it: the engine's own
-        // header must not be recommending itself for the datamodel it answers
-        // differently from. It said "For AOSP/AAOS production, this replaces
-        // Rhino with a faster native engine" while answering a whole class of
-        // the table differently from the language that production would run.
+        // Refutable, and refuted where a consumer can see it: while a second
+        // translator is still compiled in behind the frontend, the engine's own
+        // header has to say so. An empty divergence list says the frontend
+        // answers the shared table's 98 cases; it says nothing about an
+        // expression outside that table which the frontend refuses, and THAT is
+        // the one the fallback still guesses at. A header claiming ECMAScript
+        // without naming the fallback would hide exactly the case a reader
+        // needs to know about — the shape this file already paid for once, when
+        // it read "For AOSP/AAOS production, this replaces Rhino with a faster
+        // native engine" over a whole class of the table answered differently.
+        //
+        // Derived, so it retires itself: the requirement is keyed on the
+        // FALLBACK STILL BEING CALLED, read out of the engine's own source. The
+        // day `retire-rewriter` lands on this backend, this assertion stops
+        // asking rather than having to be remembered.
         val header = File(ENGINE_PATH)
         assertTrue(header.isFile, "the Lua engine is missing at ${header.absolutePath}")
-        val doc = header.readText().substringBefore("class LuaScriptEngine")
-        assertTrue(
-            "not an ECMAScript engine" in doc,
-            "the Lua engine's documentation does not say what this test measures. " +
-                "${failures.size} of the shared table's cases are answered differently, so a " +
-                "reader who takes that header at its word chooses an engine that runs their " +
-                "`datamodel=\"ecmascript\"` document as something else.",
-        )
+        val engineSource = header.readText()
+        val doc = engineSource.substringBefore("class LuaScriptEngine")
+        val body = engineSource.substringAfter("class LuaScriptEngine")
+        if (REWRITER_CALL in body) {
+            assertTrue(
+                REWRITER_NAME in doc,
+                "$ENGINE_PATH still calls `$REWRITER_CALL` — the text rewriter is the " +
+                    "fallback behind every lowering entry point — and its documentation does " +
+                    "not name $REWRITER_NAME. An empty $DIVERGENCES_PATH means the frontend " +
+                    "answers the ${loadSharedTable().size} cases of the shared table; it does " +
+                    "not mean there is no second answer left. A reader choosing this engine " +
+                    "for `datamodel=\"ecmascript\"` has to be able to see that an expression " +
+                    "the frontend refuses is rewritten rather than refused.",
+            )
+        }
 
         // The header must point at the list rather than restate its size. The
         // count it used to carry outlived two growths of the shared table, and

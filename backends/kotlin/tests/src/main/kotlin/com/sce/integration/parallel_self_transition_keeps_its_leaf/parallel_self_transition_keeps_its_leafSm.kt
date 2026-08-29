@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 09b7454cf9165bde8e92b3225905fad8bae3b40d103c1bd2ce5da264bfe36345
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -203,14 +203,14 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'n' with expr
         try {
-            val initResult_n = engine.evaluateExpr(sid, "0")
+            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "n", initResult_n)
         } catch (e: Exception) {
             raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'm' with expr
         try {
-            val initResult_m = engine.evaluateExpr(sid, "0")
+            val initResult_m = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "m", initResult_m)
         } catch (e: Exception) {
             raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "<data id='m'> expr failed to evaluate")
@@ -236,7 +236,15 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -261,12 +269,28 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -274,7 +298,12 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -286,7 +315,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -374,7 +403,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     private fun processJudging(
         event: ParallelSelfTransitionKeepsItsLeafEvent
     ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> = when {
-        event is ParallelSelfTransitionKeepsItsLeafEvent.Check && safeEvaluateGuard("n == 1 && m == 2") -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Settled, ParallelSelfTransitionKeepsItsLeafState.Judging)
+        event is ParallelSelfTransitionKeepsItsLeafEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("n == 1 && m == 2")) -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Settled, ParallelSelfTransitionKeepsItsLeafState.Judging)
 
         else -> TransitionResult.Ignored
     }
@@ -550,7 +579,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
                 // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:73 :: within :: _transition_0
 
 
-            executeAssign("m", "m + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("m"), com.sce.runtime.ScriptSource.ecmascript("m + 1"))
             }
             else -> {}
         }
@@ -559,7 +588,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
                 // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:86 :: working :: _transition_0
 
 
-            executeAssign("n", "n + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("n"), com.sce.runtime.ScriptSource.ecmascript("n + 1"))
             }
             else -> {}
         }

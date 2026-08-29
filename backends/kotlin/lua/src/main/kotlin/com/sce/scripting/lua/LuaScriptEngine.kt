@@ -4,7 +4,8 @@
 // SCE Kotlin Lua — Lua 5.4 implementation of ScxmlScriptEngine
 //
 // Drop-in replacement for RhinoScriptEngine using Lua 5.4 via JNI.
-// ECMAScript expressions are transformed to Lua via EcmaScriptToLuaTransformer.
+// ECMAScript expressions are lowered to Lua by sce-build's ECMAScript frontend,
+// with EcmaScriptToLuaTransformer as the fallback for what it refuses.
 // Each session gets an isolated lua_State for full variable isolation.
 //
 // C++ parity: sce/src/scripting/LuaEngine.cpp
@@ -22,25 +23,26 @@ import com.sce.runtime.SetCurrentEventArgs
 import org.w3c.dom.Node
 
 /**
- * Lua 5.4, running SCXML expressions that were rewritten from ECMAScript.
+ * Lua 5.4, running SCXML expressions that `sce-build`'s ECMAScript frontend
+ * PARSED and lowered.
  *
- * **This is not an ECMAScript engine, and a `datamodel="ecmascript"` document
- * does not run correctly on it.** Measured against the shared table in
- * `tests/ecmascript/ecma262_semantics.json`, a class of its cases is answered
- * differently from what ECMA-262 says, and the disagreements are not exotic —
- * `0 && x` comes back true, `1 == '1'` comes back false, `-7 % 3` comes back
- * 2, a computed array index is off by one. The C++ build measured the same
- * class and flipped its default engine away from Lua for that reason.
+ * **What answers ECMAScript here is a parser, not a pass over text.** The
+ * author's expression goes to the frontend — the same one every backend's
+ * build-time lowering uses, reached at run time through `sce_lua_jni` — and
+ * what comes back is Lua the parse produced. That is the whole reason the
+ * disagreements this header used to enumerate are gone: `0 && x`, `1 == '1'`,
+ * `-7 % 3` and a computed array index were all cases a rewriting pass could
+ * not reach, because no pass that replaces text can say where an operand ends.
  *
- * **Which cases** is not written here, because a count in prose is the one
- * thing nothing can re-answer. It is enumerated, clause by clause, in
- * `tests/ecmascript/kotlin_lua_divergences.json`, and
- * `EcmaScriptSemanticsTest.luaIsNotAnEcmaScriptEngineAndSaysSo` holds this
- * engine to that list in BOTH directions: a case that starts disagreeing
- * without being declared is red, and a declared case that has been repaired
- * is red too. The C++ selection has its own list beside it
- * (`lua_engine_divergences.json`) — two measurements of two engines that
- * share a strategy, neither derivable from the other.
+ * **Which cases it still answers differently** is not written here, because a
+ * count in prose is the one thing nothing can re-answer. It is enumerated,
+ * clause by clause, in `tests/ecmascript/kotlin_lua_divergences.json`, and
+ * `EcmaScriptSemanticsTest.theLuaEngineDivergesExactlyWhereItIsDeclaredTo`
+ * holds this engine to that list in BOTH directions: a case that starts
+ * disagreeing without being declared is red, and a declared case that has been
+ * repaired is red too. The C++ selection has its own list beside it
+ * (`lua_engine_divergences.json`) — two measurements of two engines that now
+ * share a frontend, neither derivable from the other.
  *
  * That list is what this paragraph used to lack. It carried two counts —
  * "27 of its 58" here and "26 of 58" for C++ — under a sentence claiming the
@@ -49,21 +51,26 @@ import org.w3c.dom.Node
  * fifty. The shared table had meanwhile grown to 98 cases, so both
  * denominators named a table that no longer existed.
  *
+ * ⚠ **[EcmaScriptToLuaTransformer] is still the FALLBACK.** An expression the
+ * frontend refuses — one naming something the session's [LoweringScope] has
+ * not been told about, or text its parser will not read — is handed to the old
+ * rewriter and guessed at rather than refused. An empty divergence list says
+ * the frontend answers the shared table; it does not say there is no second
+ * answer left. That second claim is `retire-rewriter`'s, which
+ * `docs/SCE_LUA_TRANSLATION_SEAM.md` records for C++ and has open for this
+ * backend.
+ *
  * This header used to read "For AOSP/AAOS production, this replaces Rhino
- * with a faster native engine". It is faster, and that sentence sent a reader
- * building an AAOS product to an engine that answers their guards wrong.
- * For that product the engines that answer ECMA-262 are Rhino on the JVM and
- * QuickJS natively — both measured against every case in the shared table by
- * the same test, with no failures allowed.
+ * with a faster native engine". It is faster, and while a rewriting pass was
+ * the only answer that sentence sent a reader building an AAOS product to an
+ * engine that answered their guards wrong. Rhino and QuickJS remain the
+ * engines that answer ECMA-262 by BEING ECMAScript implementations; this one
+ * answers it by lowering, and what it can lower is decided by the scope.
  *
- * What it remains good for is a document whose expressions stay inside what
- * the rewriter covers, on a device with no room for a JS engine. That is a
- * real position; it is just not the same as running ECMAScript.
- *
- * Each session gets its own lua_State (variable isolation). ECMAScript
- * expressions from SCXML are transformed to Lua via
- * [EcmaScriptToLuaTransformer] before evaluation — a rewriter, not an
- * interpreter of the language, which is where the disagreements come from.
+ * Each session gets its own lua_State (variable isolation) and its own
+ * [LoweringScope] — the names the frontend may resolve, fed by `<data id>`,
+ * by `<assign>`, by `<foreach>` and by what a `<script>` chunk's top level
+ * introduces.
  */
 class LuaScriptEngine : ScxmlScriptEngine {
 
@@ -83,7 +90,25 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val handle: Long,  // lua_State pointer
         var stateQueryCallback: ((String) -> Boolean)? = null,
         val declaredVars: MutableSet<String> = mutableSetOf(),
-        val activeRefs: MutableSet<Int> = mutableSetOf()
+        val activeRefs: MutableSet<Int> = mutableSetOf(),
+        /**
+         * The names this session holds, as `sce-build`'s ECMAScript frontend
+         * sees them (W3C SCXML §scxml-5.3, §scxml-5.8).
+         *
+         * Per session rather than per engine, because it is the set of names
+         * one session's datamodel holds: two sessions of the same document may
+         * legitimately differ, and one session's names must never answer for
+         * another's.
+         */
+        val loweringScope: LoweringScope = LoweringScope(),
+        /**
+         * The names already offered to [loweringScope].
+         *
+         * The frontend accepts a re-declaration, so this is not for
+         * correctness; it keeps a `<data id>` that is assigned on every
+         * macrostep from crossing the JNI boundary once per assignment.
+         */
+        val offeredToScope: MutableSet<String> = mutableSetOf()
     )
 
     private val sessions = mutableMapOf<String, Session>()
@@ -103,6 +128,10 @@ class LuaScriptEngine : ScxmlScriptEngine {
             LuaNative.unref(session.handle, regIdx, ref)
         }
         LuaNative.closeState(session.handle)
+        // The scope is native memory with the session's lifetime, like the Lua
+        // state beside it. `close()` is idempotent, so a teardown that runs
+        // twice is a second no-op rather than a double free.
+        session.loweringScope.close()
     }
 
     override fun setupSystemVariables(
@@ -136,6 +165,13 @@ class LuaScriptEngine : ScxmlScriptEngine {
         LuaNative.setGlobal(L, "_ioprocessors")
 
         session.declaredVars.addAll(listOf("_sessionid", "_name", "_ioprocessors", "_event"))
+        // §scxml-5.10: the system variables are part of the datamodel a guard
+        // may name, so the frontend has to be able to resolve them too. Without
+        // this every `cond="_event.data.x"` in the corpus would be refused and
+        // fall back to the rewriter, which is most of what a W3C document asks.
+        for (name in session.declaredVars) {
+            offerToScope(session, name)
+        }
     }
 
     override fun evaluateCondition(sessionId: String, expr: String): Boolean =
@@ -145,18 +181,20 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
 
-        val luaExpr = loweredTextOf(expr, EcmaScriptToLuaTransformer.ExpressionContext.Guard)
+        val luaExpr = loweredConditionOf(expr, session)
         return evaluateLuaBoolean(session, luaExpr, expr.source)
     }
 
     /**
      * This engine's own language, stated rather than documented.
      *
-     * `EcmaScriptToLuaTransformer` is the ADAPTER that lets it accept the
-     * author's ECMAScript as well, which is why [acceptsLanguage] is true for
-     * both — and why a case this engine answers differently from ECMA-262 is a
-     * fact about that adapter, enumerated in
-     * `tests/ecmascript/kotlin_lua_divergences.json`, not a fact about Lua.
+     * Lua is what it evaluates. What lets it accept the author's ECMAScript as
+     * well is `sce-build`'s frontend, linked beside `lua54` and reached through
+     * [LoweringScope], with [EcmaScriptToLuaTransformer] behind it for what the
+     * frontend refuses — which is why [acceptsLanguage] is true for both, and
+     * why a case this engine answers differently from ECMA-262 is a fact about
+     * that pair, enumerated in `tests/ecmascript/kotlin_lua_divergences.json`,
+     * not a fact about Lua.
      */
     override fun nativeLanguage(): ScriptLanguage = ScriptLanguage.Lua
 
@@ -166,30 +204,94 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * The seam, and it is ONE BRANCH — everything after it is the tail both
      * routes run.
      *
-     * Lua the frontend already emitted passes through untouched; the author's
-     * ECMAScript goes to the rewriter. The `ReferenceError` below is then
-     * built from [ScriptSource.source] while the check runs on the lowered
-     * text, which is the two-string requirement `ScriptSource` exists for: a
-     * document that wrote `nosuchvar[0]` must not be told about
-     * `nosuchvar[1]`.
+     * Lua the frontend already emitted passes through untouched. The author's
+     * ECMAScript is offered to `sce-build`'s ECMAScript frontend, which PARSES
+     * it, and only text the frontend refuses reaches
+     * [EcmaScriptToLuaTransformer], which replaces text without a parse and so
+     * cannot say where an operand ends.
+     *
+     * What the frontend can answer is decided by the SESSION'S SCOPE: it
+     * refuses any expression naming something the scope has not been told
+     * about, so an empty scope admits exactly the CLOSED expressions and a
+     * session that has declared its `<data id>`s admits the ones that name
+     * them. `LoweringScope` carries why.
+     *
+     * The fallback is deliberate and temporary. The C++ engine passed through
+     * this same state — frontend first, rewriter behind it — before its
+     * `retire-rewriter` row closed and refusal became the final answer
+     * (§scxml-5.9.1). Keeping it here means the frontend is adopted one class
+     * of expression at a time, and an expression it refuses answers exactly
+     * what it answered before rather than newly failing.
+     *
+     * The `ReferenceError` below is built from [ScriptSource.source] while the
+     * check runs on the lowered text, which is the two-string requirement
+     * `ScriptSource` exists for: a document that wrote `nosuchvar[0]` must not
+     * be told about `nosuchvar[1]`.
      */
     private fun loweredTextOf(
         expr: ScriptSource,
+        session: Session,
         context: EcmaScriptToLuaTransformer.ExpressionContext =
             EcmaScriptToLuaTransformer.ExpressionContext.General,
     ): String =
         if (expr.language == ScriptLanguage.Lua) {
             expr.text
         } else {
-            transformer.transform(expr.text, context)
+            session.loweringScope.lowerValue(expr.text)
+                ?: transformer.transform(expr.text, context)
         }
 
-    /** As [loweredTextOf], for a whole script rather than one expression. */
-    private fun loweredScriptOf(script: ScriptSource): String =
+    /**
+     * As [loweredTextOf], for a `cond` rather than a value.
+     *
+     * A separate frontend entry point rather than [loweredTextOf] with a flag:
+     * §scxml-5.9 truthiness is not Lua's — `0`, `''` and `NaN` are false in
+     * ECMAScript and true in Lua — so a guard has to arrive already wrapped in
+     * the shared truthiness helper, which is what `to_lua_guard` does and
+     * `to_lua_expr` does not. The rewriter's own answer to the same question is
+     * its `Guard` context, which is why that is what the fallback passes.
+     */
+    private fun loweredConditionOf(expr: ScriptSource, session: Session): String =
+        if (expr.language == ScriptLanguage.Lua) {
+            expr.text
+        } else {
+            session.loweringScope.lowerCondition(expr.text)
+                ?: transformer.transform(expr.text, EcmaScriptToLuaTransformer.ExpressionContext.Guard)
+        }
+
+    /**
+     * As [loweredTextOf], for an assignment TARGET rather than a value.
+     *
+     * A location is not a smaller expression: `sce-build` lowers one with
+     * `to_lua_location` rather than `to_lua_expr`, because a write is how this
+     * datamodel's globals come into existence and the target is therefore not
+     * resolved against what the document declares — which is why the frontend
+     * entry point for it takes no scope. The runtime rewriter has no separate
+     * location arm, so its fallback goes through the general one.
+     */
+    private fun loweredLocationOf(location: ScriptSource, session: Session): String =
+        if (location.language == ScriptLanguage.Lua) {
+            location.text
+        } else {
+            session.loweringScope.lowerLocation(location.text)
+                ?: transformer.transform(location.text)
+        }
+
+    /**
+     * As [loweredTextOf], for a whole script rather than one expression.
+     *
+     * A chunk asks LESS of the scope than an expression does — `var` bindings
+     * are hoisted into the chunk's own frame before anything resolves — so a
+     * self-contained body is answered even by an empty scope. What it still
+     * asks the scope for is the names it only READS: a `<data id>` the document
+     * declared, or a variable an earlier `<script>` introduced.
+     */
+    private fun loweredScriptOf(script: ScriptSource, session: Session): String =
         if (script.language == ScriptLanguage.Lua) {
             script.text
         } else {
-            transformer.transformScript(script.text)
+            session.loweringScope.lowerScript(script.text)
+                ?: transformer.transformScript(script.text)
         }
 
     override fun evaluateExpr(sessionId: String, expr: String): Any? =
@@ -199,7 +301,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
 
-        val luaExpr = loweredTextOf(expr)
+        val luaExpr = loweredTextOf(expr, session)
 
         // Check undeclared simple variable (W3C SCXML compliance: JS throws ReferenceError)
         if (isUndeclaredSimpleVariable(luaExpr, session)) {
@@ -236,10 +338,33 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
 
-        val luaScript = loweredScriptOf(script)
+        val luaScript = loweredScriptOf(script, session)
         val err = LuaNative.doString(session.handle, luaScript)
         if (err != null) {
             throw ScriptEngineException("Script execution failed: $err")
+        }
+
+        // W3C SCXML §scxml-5.8: a `<script>` that ran has introduced its
+        // top-level declarations into the datamodel, so the frontend is told
+        // about them — the `declare_chunk` half of the scope, and the half that
+        // reaches the variables no `<data id>` names.
+        //
+        // Only after a successful run: a chunk that raised declared whatever it
+        // reached and this cannot say where it stopped.
+        //
+        // Only for ECMAScript, because this asks the frontend's own PARSER to
+        // read the chunk's top level and Lua text has no ECMAScript parse to
+        // ask. A name a Lua-language `<script>` introduced is therefore one the
+        // frontend will not resolve, and an ECMAScript expression naming it
+        // falls back to the rewriter — the answer it had before this seam
+        // existed. Codegen does not produce that mixture (an artifact is
+        // generated for one language and hands over that language everywhere),
+        // so it is a residue of the engine accepting both rather than a case
+        // any document reaches; C++ closes it by sweeping Lua's global table,
+        // which needs a name for every global this engine installs and is its
+        // own piece of work.
+        if (script.language == ScriptLanguage.ECMAScript) {
+            session.loweringScope.declareChunk(script.text)
         }
     }
 
@@ -249,7 +374,23 @@ class LuaScriptEngine : ScxmlScriptEngine {
         pushKotlinValue(L, value)
         LuaNative.setGlobal(L, name)
         session.declaredVars.add(name)
+        offerToScope(session, name)
         unrefIfNeeded(session, value)
+    }
+
+    /**
+     * Tell the frontend about one name this session now holds.
+     *
+     * Every door that puts a name in a session's namespace comes through here,
+     * because the frontend refuses an expression naming anything it has not
+     * been told about: a name that reaches the datamodel without reaching the
+     * scope is an expression that silently keeps the rewriter's answer.
+     */
+    private fun offerToScope(session: Session, name: String) {
+        if (name.isEmpty() || !session.offeredToScope.add(name)) {
+            return
+        }
+        session.loweringScope.declare(name)
     }
 
     override fun getVariable(sessionId: String, name: String): Any? {
@@ -267,18 +408,24 @@ class LuaScriptEngine : ScxmlScriptEngine {
     }
 
     override fun assign(sessionId: String, location: String, expr: String) =
-        doAssign(sessionId, location, ScriptSource.ecmascript(expr))
+        doAssign(sessionId, ScriptSource.ecmascript(location), ScriptSource.ecmascript(expr))
 
-    override fun doAssign(sessionId: String, location: String, expr: ScriptSource) {
+    override fun doAssign(sessionId: String, location: ScriptSource, expr: ScriptSource) {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
 
-        // W3C SCXML B.2: System variables are read-only
-        if (location.startsWith("_")) {
-            throw ScriptEngineException("Cannot assign to system variable: $location")
+        // W3C SCXML B.2: System variables are read-only — asked of the
+        // author's spelling, because §scxml-5.10 names `_event` and the rest
+        // in the document's language and not in this engine's.
+        if (location.source.startsWith("_")) {
+            throw ScriptEngineException("Cannot assign to system variable: ${location.source}")
         }
 
-        val luaExpr = loweredTextOf(expr)
+        val luaExpr = loweredTextOf(expr, session)
+        // The WRITE TARGET, in this engine's language: it is spliced in front
+        // of `=` below and run, so `Var1[0]` has to have become `Var1[1]`
+        // before it gets here.
+        val luaLocation = loweredLocationOf(location, session)
         val L = session.handle
 
         // C++ AssignmentExecutionHelper 3-path strategy.
@@ -291,27 +438,33 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // author's text.
         if (isSystemVariableReference(expr.source)) {
             // Path 1: System variable reference — use script execution
-            val err = LuaNative.doString(L, "$location = $luaExpr")
+            val err = LuaNative.doString(L, "$luaLocation = $luaExpr")
             if (err != null) {
-                throw ScriptEngineException("Assignment failed: $location = ${expr.source} ($err)")
+                throw ScriptEngineException("Assignment failed: ${location.source} = ${expr.source} ($err)")
             }
-        } else if (isSimpleVariableName(location)) {
+        } else if (isSimpleVariableName(luaLocation)) {
             // Path 2: Simple variable — evaluate + setGlobal
             val status = LuaNative.loadAndCall(L, "return $luaExpr", 1)
             if (status != 0) {
                 val err = LuaNative.getError(L)
                 LuaNative.pop(L, 1)
-                throw ScriptEngineException("Assignment failed: $location = ${expr.source} ($err)")
+                throw ScriptEngineException("Assignment failed: ${location.source} = ${expr.source} ($err)")
             }
-            LuaNative.setGlobal(L, location)
+            LuaNative.setGlobal(L, luaLocation)
         } else {
             // Path 3: Complex path — use script execution
-            val err = LuaNative.doString(L, "$location = ($luaExpr)")
+            val err = LuaNative.doString(L, "$luaLocation = ($luaExpr)")
             if (err != null) {
-                throw ScriptEngineException("Assignment failed: $location = ${expr.source} ($err)")
+                throw ScriptEngineException("Assignment failed: ${location.source} = ${expr.source} ($err)")
             }
         }
-        session.declaredVars.add(location.split('.')[0])
+        session.declaredVars.add(luaLocation.split('.')[0].substringBefore('['))
+        // §scxml-5.4: an assignment is how this datamodel's globals come into
+        // existence, so the target's root name is one the frontend must be able
+        // to resolve afterwards. Taken from the AUTHOR'S spelling rather than
+        // from `luaLocation`, for the reason the system-variable check above
+        // states: a name is a name in the document's language.
+        offerToScope(session, location.source.split('.')[0].substringBefore('['))
     }
 
     override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs): PayloadReading {
@@ -371,7 +524,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
             throw ScriptEngineException("Illegal foreach index variable name: '$index'")
 
         val L = session.handle
-        val luaArray = loweredTextOf(array)
+        val luaArray = loweredTextOf(array, session)
 
         // Evaluate array expression
         val status = LuaNative.loadAndCall(L, "return $luaArray", 1)
@@ -389,6 +542,11 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // W3C SCXML 4.6: foreach auto-declares item/index variables
         session.declaredVars.add(item)
         if (index.isNotEmpty()) session.declaredVars.add(index)
+        // The same declaration, told to the frontend: the body's expressions
+        // name `item` and `index`, and one the scope has not been told about is
+        // refused.
+        offerToScope(session, item)
+        if (index.isNotEmpty()) offerToScope(session, index)
 
         val length = LuaNative.rawLen(L, -1)
         for (i in 1..length) {

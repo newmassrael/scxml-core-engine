@@ -18,7 +18,7 @@
    still arrives with the offending pair absent. #}
 {% macro param_expr_arm(param, map, eng, sid, machine_name, indent) %}
 {{ indent }}try {
-{{ indent }}    putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ eng }}.evaluateExpr({{ sid }}, "{{ param.expr | escape_kotlin }}"))
+{{ indent }}    putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ eng }}.evaluateExpr({{ sid }}, {{ param.expr | to_script_source_expr }}))
 {{ indent }}} catch (_: Exception) {
 {{ indent }}    // W3C SCXML 5.7.1: report the failure and omit the name and value.
 {{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
@@ -44,7 +44,7 @@
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, "{{ action.targetexpr | escape_kotlin }}")
+                    val v = eng.evaluateExpr(sid, {{ action.targetexpr | to_script_source_expr }})
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
@@ -84,7 +84,7 @@
                 hostParams["{{ param.name | escape_kotlin }}"] = listOf("{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
                 try {
-                    val v = hostEngine.evaluateExpr(hostSid, "{{ param.expr | escape_kotlin }}")
+                    val v = hostEngine.evaluateExpr(hostSid, {{ param.expr | to_script_source_expr }})
                     // The param crosses as text, and `toString()` is the
                     // platform's spelling of the value; this is the document's.
                     hostParams["{{ param.name | escape_kotlin }}"] = listOf(valueToWireString(v))
@@ -98,7 +98,7 @@
 {% endfor %}
 {% if action.eventexpr and model.needs_script_engine %}
                 val hostEventName = try {
-                    hostEngine.evaluateExpr(hostSid, "{{ action.eventexpr | escape_kotlin }}")?.toString() ?: ""
+                    hostEngine.evaluateExpr(hostSid, {{ action.eventexpr | to_script_source_expr }})?.toString() ?: ""
                 } catch (_: Exception) {
                     ""
                 }
@@ -127,7 +127,7 @@
    host never sees the act. #}
 {% if action.delayexpr and model.needs_script_engine %}
                 val hostDelayMs = try {
-                    parseDelay(evaluateExpr(scriptSessionId!!, "{{ action.delayexpr | escape_kotlin }}")?.toString() ?: "0")
+                    parseDelay(evaluateExpr(scriptSessionId!!, {{ action.delayexpr | to_script_source_expr }})?.toString() ?: "0")
                 } catch (_: Exception) {
                     0L
                 }
@@ -179,7 +179,7 @@
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val dynamicEventName: String
                 try {
-                    val v = engine.evaluateExpr(sid, "{{ action.eventexpr | escape_kotlin }}")
+                    val v = engine.evaluateExpr(sid, {{ action.eventexpr | to_script_source_expr }})
                     dynamicEventName = v?.toString() ?: ""
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> eventexpr failed to evaluate")
@@ -349,7 +349,7 @@
                 // W3C SCXML 6.2: Dynamic delay + dynamic target — schedule locally (C++ pattern: delay before target routing)
                 val delayStrT: String
                 try {
-                    val v = engineT.evaluateExpr(sidT, "{{ action.delayexpr | escape_kotlin }}")
+                    val v = engineT.evaluateExpr(sidT, {{ action.delayexpr | to_script_source_expr }})
                     delayStrT = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
@@ -390,7 +390,7 @@
                 val sidDly = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val delayStrT: String
                 try {
-                    val v = engineDly.evaluateExpr(sidDly, "{{ action.delayexpr | escape_kotlin }}")
+                    val v = engineDly.evaluateExpr(sidDly, {{ action.delayexpr | to_script_source_expr }})
                     delayStrT = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
@@ -475,7 +475,7 @@
 {% if content_is_xml %}
 {% set content_data = '"' ~ (action.content | escape_kotlin) ~ '"' %}
 {% else %}
-{% set content_data = 'evaluateSendContent("' ~ (action.content | to_author_data_content | escape_kotlin) ~ '")' %}
+{% set content_data = 'evaluateSendContent(' ~ (action.content | to_script_source_data_content) ~ ')' %}
 {% endif %}
             // W3C SCXML B.2: the reading is decided at build time; a value
             // is evaluated here and serialized, XML is handed on as source.
@@ -492,7 +492,7 @@
                 val sidC = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val contentData: String
                 try {
-                    val v = engineC.evaluateExpr(sidC, "{{ action.contentexpr | escape_kotlin }}")
+                    val v = engineC.evaluateExpr(sidC, {{ action.contentexpr | to_script_source_expr }})
                     contentData = if (v != null) valueToJson(v) else ""
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate")
@@ -514,7 +514,7 @@
                 val sidDly = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val delayStrE: String
                 try {
-                    val v = engineDly.evaluateExpr(sidDly, "{{ action.delayexpr | escape_kotlin }}")
+                    val v = engineDly.evaluateExpr(sidDly, {{ action.delayexpr | to_script_source_expr }})
                     delayStrE = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")

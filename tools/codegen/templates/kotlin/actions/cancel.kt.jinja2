@@ -14,7 +14,7 @@
                 val engineCancel = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidCancel = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = engineCancel.evaluateExpr(sidCancel, "{{ action.sendidexpr | escape_kotlin }}")
+                    val v = engineCancel.evaluateExpr(sidCancel, {{ action.sendidexpr | to_script_source_expr }})
                     val sendidToCancel = v?.toString() ?: ""
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
                 } catch (_: Exception) {}

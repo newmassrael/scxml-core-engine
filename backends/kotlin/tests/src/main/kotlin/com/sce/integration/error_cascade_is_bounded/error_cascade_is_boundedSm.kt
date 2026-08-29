@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4731a6ba40787ab928e39e6fce63f290cd233b0d7081f439713483c0324e40fe
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -186,28 +186,28 @@ class ErrorCascadeIsBoundedStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, "0")
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'repairs' with expr
         try {
-            val initResult_repairs = engine.evaluateExpr(sid, "0")
+            val initResult_repairs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "repairs", initResult_repairs)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='repairs'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'runs' with expr
         try {
-            val initResult_runs = engine.evaluateExpr(sid, "0")
+            val initResult_runs = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "runs", initResult_runs)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='runs'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'ticks' with expr
         try {
-            val initResult_ticks = engine.evaluateExpr(sid, "0")
+            val initResult_ticks = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "ticks", initResult_ticks)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='ticks'> expr failed to evaluate")
@@ -231,7 +231,15 @@ class ErrorCascadeIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -256,12 +264,28 @@ class ErrorCascadeIsBoundedStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -269,7 +293,12 @@ class ErrorCascadeIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -281,7 +310,7 @@ class ErrorCascadeIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -396,7 +425,7 @@ class ErrorCascadeIsBoundedStateMachine(
     private fun processSettling(
         event: ErrorCascadeIsBoundedEvent
     ): TransitionResult<ErrorCascadeIsBoundedState> = when {
-        event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard("repairs < 3") -> TransitionResult.Internal
+        event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("repairs < 3")) -> TransitionResult.Internal
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.Internal
         event is ErrorCascadeIsBoundedEvent.Reset -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Settling)
@@ -468,7 +497,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:68 :: idle :: _transition_0
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             event is ErrorCascadeIsBoundedEvent.Boom -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:74 :: idle :: _transition_1
@@ -484,7 +513,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
 
 
-            executeAssign("runs", "runs + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("runs"), com.sce.runtime.ScriptSource.ecmascript("runs + 1"))
 
             raiseInternal(ErrorCascadeIsBoundedEvent.Tick)
 
@@ -496,22 +525,22 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
 
 
-            executeAssign("ticks", "ticks + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("ticks"), com.sce.runtime.ScriptSource.ecmascript("ticks + 1"))
             }
             event is ErrorCascadeIsBoundedEvent.Poke -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             else -> {}
         }
         is ErrorCascadeIsBoundedState.Settling -> when {
-            event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard("repairs < 3") -> {
+            event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("repairs < 3")) -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
 
 
-            executeAssign("repairs", "repairs + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("repairs"), com.sce.runtime.ScriptSource.ecmascript("repairs + 1"))
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
@@ -521,7 +550,7 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             else -> {}
         }

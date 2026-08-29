@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 5eba0d45073fc837c42ae33f20795f0ee658705613f4c4e42a59b557f47ce142
-// template-hash: 2999a09c910b968e408271dc62f423daf659e11e3dbdea0cdf9857029573f331
+// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -249,49 +249,49 @@ class InternalChainIsBoundedStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, "0")
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'laps' with expr
         try {
-            val initResult_laps = engine.evaluateExpr(sid, "0")
+            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "laps", initResult_laps)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='laps'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'links' with expr
         try {
-            val initResult_links = engine.evaluateExpr(sid, "0")
+            val initResult_links = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "links", initResult_links)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='links'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'beats' with expr
         try {
-            val initResult_beats = engine.evaluateExpr(sid, "0")
+            val initResult_beats = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "beats", initResult_beats)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='beats'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'alts' with expr
         try {
-            val initResult_alts = engine.evaluateExpr(sid, "0")
+            val initResult_alts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "alts", initResult_alts)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='alts'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'ignores' with expr
         try {
-            val initResult_ignores = engine.evaluateExpr(sid, "0")
+            val initResult_ignores = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "ignores", initResult_ignores)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='ignores'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pending' with expr
         try {
-            val initResult_pending = engine.evaluateExpr(sid, "0")
+            val initResult_pending = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
             engine.setVariable(sid, "pending", initResult_pending)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pending'> expr failed to evaluate")
@@ -315,7 +315,15 @@ class InternalChainIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
-    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -340,12 +348,28 @@ class InternalChainIsBoundedStateMachine(
     // string, so an expression handed to it arrives as its own source
     // text. `JSON.stringify` is what both of them can read back, and it
     // is the same shape the C++ backend transports.
-    private fun evaluateSendContent(source: String): String {
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
         return try {
-            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
@@ -353,7 +377,12 @@ class InternalChainIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.3: Assignment via script engine
-    private fun executeAssign(location: String, expr: String) {
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -365,7 +394,7 @@ class InternalChainIsBoundedStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: String) {
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -461,7 +490,7 @@ class InternalChainIsBoundedStateMachine(
 
     private fun processNullAlt(
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        safeEvaluateGuard("pending == 1") -> TransitionResult.Internal
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("pending == 1")) -> TransitionResult.Internal
         else -> TransitionResult.Ignored
     }
 
@@ -480,7 +509,7 @@ class InternalChainIsBoundedStateMachine(
     private fun processBounded(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard("laps < 999") -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 999")) -> TransitionResult.Internal
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is InternalChainIsBoundedEvent.Link -> TransitionResult.Internal
         // W3C SCXML 3.13: Targetless transition (actions only)
@@ -509,7 +538,7 @@ class InternalChainIsBoundedStateMachine(
     private fun processIgnoring(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard("ignores < 999") -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("ignores < 999")) -> TransitionResult.Internal
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is InternalChainIsBoundedEvent.Beatless -> TransitionResult.Internal
         // W3C SCXML 3.13: Targetless transition (actions only)
@@ -520,7 +549,7 @@ class InternalChainIsBoundedStateMachine(
     private fun processResuming(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard("beats < 1499") -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("beats < 1499")) -> TransitionResult.Internal
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is InternalChainIsBoundedEvent.Beat -> TransitionResult.Internal
         // W3C SCXML 3.13: Targetless transition (actions only)
@@ -621,33 +650,33 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:212 :: alt :: _transition_0
 
 
-            executeAssign("alts", "alts + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("alts"), com.sce.runtime.ScriptSource.ecmascript("alts + 1"))
 
 
-            executeAssign("pending", "1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pending"), com.sce.runtime.ScriptSource.ecmascript("1"))
             }
             event is InternalChainIsBoundedEvent.Poke -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:220 :: alt :: _transition_2
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
-            event == null && safeEvaluateGuard("pending == 1") -> {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("pending == 1")) -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:216 :: alt :: _transition_1
 
 
-            executeAssign("pending", "0")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pending"), com.sce.runtime.ScriptSource.ecmascript("0"))
 
             raiseInternal(InternalChainIsBoundedEvent.Tick)
             }
             else -> {}
         }
         is InternalChainIsBoundedState.Bounded -> when {
-            event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard("laps < 999") -> {
+            event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 999")) -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:154 :: bounded :: _transition_0
 
 
-            executeAssign("laps", "laps + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
@@ -655,13 +684,13 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:158 :: bounded :: _transition_1
 
 
-            executeAssign("laps", "laps + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))
             }
             event is InternalChainIsBoundedEvent.Poke -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:163 :: bounded :: _transition_2
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             else -> {}
         }
@@ -670,7 +699,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:123 :: idle :: _transition_0
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             event is InternalChainIsBoundedEvent.Bounded -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:126 :: idle :: _transition_1
@@ -700,11 +729,11 @@ class InternalChainIsBoundedStateMachine(
             else -> {}
         }
         is InternalChainIsBoundedState.Ignoring -> when {
-            event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard("ignores < 999") -> {
+            event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("ignores < 999")) -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:245 :: ignoring :: _transition_0
 
 
-            executeAssign("ignores", "ignores + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("ignores"), com.sce.runtime.ScriptSource.ecmascript("ignores + 1"))
 
             raiseInternal(InternalChainIsBoundedEvent.Unheard)
 
@@ -714,22 +743,22 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:250 :: ignoring :: _transition_1
 
 
-            executeAssign("ignores", "ignores + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("ignores"), com.sce.runtime.ScriptSource.ecmascript("ignores + 1"))
             }
             event is InternalChainIsBoundedEvent.Poke -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:253 :: ignoring :: _transition_2
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             else -> {}
         }
         is InternalChainIsBoundedState.Resuming -> when {
-            event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard("beats < 1499") -> {
+            event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("beats < 1499")) -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_0
 
 
-            executeAssign("beats", "beats + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("beats"), com.sce.runtime.ScriptSource.ecmascript("beats + 1"))
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
             }
@@ -737,13 +766,13 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:197 :: resuming :: _transition_1
 
 
-            executeAssign("beats", "beats + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("beats"), com.sce.runtime.ScriptSource.ecmascript("beats + 1"))
             }
             event is InternalChainIsBoundedEvent.Poke -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:200 :: resuming :: _transition_2
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             else -> {}
         }
@@ -752,7 +781,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:175 :: spin :: _transition_0
 
 
-            executeAssign("links", "links + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("links"), com.sce.runtime.ScriptSource.ecmascript("links + 1"))
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
@@ -760,7 +789,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:179 :: spin :: _transition_1
 
 
-            executeAssign("pokes", "pokes + 1")
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             else -> {}
         }

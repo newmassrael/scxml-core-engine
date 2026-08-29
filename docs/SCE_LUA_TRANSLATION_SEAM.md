@@ -2673,10 +2673,20 @@ Each entry now carries a `build_time_frontend` verdict. This is the split:
 
 | verdict | entries | what it means for the seam |
 |---|---:|---|
-| `answers` | 44 | the frontend's Lua reached this backend's Lua engine and ECMA-262's answer came back — **the seam retires these** |
+| `answers` | 0 | the frontend's Lua reached this backend's Lua engine and ECMA-262's answer came back — **the seam retires these** |
 | `diverges` | 0 | reached the engine unchanged and was still answered wrong; the seam does not buy these back, the frontend defect does |
 | `unmeasured` | 0 | the lowered route cannot put the case to the engine at all |
-| **total** | **44** | every entry is in exactly one verdict |
+| **total** | **0** | every entry is in exactly one verdict |
+
+⚠ **Every cell is zero because the LIST is empty, not because nothing was
+measured.** The seventh round's answer to "how much does the seam buy back"
+was 44 of 44; the eleventh round below collected the dividend without moving
+translation to build time at all — it linked the same frontend into the engine
+and had it answer at RUN time, so the 44 left through the `runtime-rewriter`
+path instead of through the lowered one. A verdict is a statement about an
+entry, so with no entries there is nothing to state, and the total agreeing
+with the list's length is what keeps this from reading as "the lane stopped
+looking".
 
 ```sh
 python3 - <<'PY'
@@ -2689,10 +2699,24 @@ def verdict(e):
     k = (e['source'], e['clause'])
     return ('unmeasured' if k in unreachable
             else 'diverges' if k in diverging else 'answers')
+def stated(e):
+    p = set(e['diverges_on'])
+    return ('answers' if p == {'runtime-rewriter'}
+            else 'diverges' if p == {'runtime-rewriter', 'build-time-lowering'}
+            else 'unreadable')
 print(collections.Counter(verdict(e) for e in d['divergences']))
-print(collections.Counter(e['build_time_frontend'] for e in d['divergences']))
+print(collections.Counter(stated(e) for e in d['divergences']))
 PY
 ```
+
+⚠ The second line used to read `e['build_time_frontend']`. That field retired
+on 2026-08-29, the day `Language::Kotlin.supports_script_engine_target(Lua)`
+became true: `build-time-lowering` became a path this backend HAS, so
+`diverges_on` carries the verdict and a separate field for it would have been
+a second vocabulary for one fact. `the_field_retires_when_the_seam_opens` is
+what said so, on exactly that day, and this snippet is its instruction carried
+out — the two counters still have to agree, and the second one now reads the
+paths instead of a word beside them.
 
 **44 of 44 — all of them — is what moving Kotlin's translation to build time is
 worth on this table.** The number reached that in three steps on one day, and
@@ -3078,13 +3102,240 @@ branch is still written. That is the honest limit of a source-reading gate, and
 it is why the behavioural arms are not redundant with it — one names the member
 that has no arm, the others name the arm that stopped working.
 
-### What this still does NOT do
+### ~~What this still does NOT do~~ — closed the same day
 
-No template emits `ScriptSource.lua(...)`, so
-`Language::Kotlin.supports_script_engine_target(Lua)` is still false and the
-44 are still runtime-rewriter divergences. What changed is that the engine
-side no longer has a hole for a template migration to fall through: every
-route a generated machine takes into this engine can now be handed lowered
-Lua. The template sites are the next step, and the day they cross,
-`the_field_retires_when_the_seam_opens` and `ecma262_scoreboard_contract` both
-go red and direct the migration.
+~~No template emits `ScriptSource.lua(...)`~~. They do, as of the round below.
+What that round found is that the two lists which said so had been reading the
+templates through a hole.
+
+## Landed 2026-08-29 (eighth round): the Kotlin templates cross, and the scan that said C++ had finished was reading past three shapes
+
+`sce-codegen generate … -l kotlin --script-engine lua` now succeeds, and the
+generated Kotlin carries the pair at every site:
+
+```kotlin
+safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"ab\")", "Var1 == 'ab'"))
+executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"),
+              com.sce.runtime.ScriptSource.lua("(\"a\" .. \"b\")", "'a' + 'b'"))
+engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("(_scxml_tostring(Var1) .. \"z\")", "Var1 + 'z'"))
+```
+
+Re-derive with the loop the section above already carries — every backend now
+answers `rc=0`:
+
+```sh
+cargo build --bin sce-codegen --features cli -p sce-build
+for L in kotlin cpp rust go python c11; do
+  ./target/debug/sce-codegen generate tests/integration/test_thermostat.scxml \
+      -o /tmp/seam -l "$L" --script-engine lua >/dev/null 2>&1; echo "$L rc=$?"
+done
+```
+
+### The three shapes the migration scan could not see
+
+The Kotlin count was **6 unmigrated + 29 unclassified**. Closing it needed the
+templates AND the scan, because the scan had three blind spots — and each one
+was hiding a real hand-off in the backend the lists reported as **finished**.
+
+| shape | what it hid | measured |
+|---|---|---|
+| a `{% set %}` that binds the author's text to a name emitted elsewhere | C++ `entry_exit_actions.jinja2` laundered `<donedata>`'s content into `DoneDataHelper::evaluateContent` | `--script-engine lua` emitted `ScriptSource::lua("(\"a\" .. \"b\")", …)` on one line and the author's `Var1 + 'z'` on another |
+| a C++ RAW string literal, `R"( … )"`, read as prose because `(` and `)` are "other text in the quotes" | `<data>`'s inline content, at three sites, handed to `evaluateExpression` and to `DataModelInitHelper::initializeVariable` | the `expr` arm emitted `ScriptSource::ecmascript("'a' + 'b'")` and the `<content>` arm beside it emitted a bare `R"(…)"` — **target-independent**, so `--script-engine lua` changed it not at all |
+| a callee more than three lines above its argument, or on the other side of a `{% else %}` | Kotlin's `HostSendRequest(content = …)`; and, in the other direction, the static `println` arm read as a hand-off | the window is now 6 lines and stops at a branch boundary it does not also close |
+
+The first two are the same failure the seam document already recorded one
+layer down, and they are why "both scan lists are empty" was not the finished
+migration it read as. **The C++ side was not closed on 2026-08-28; it was
+closed on 2026-08-29, by a scan that could see these.**
+
+`DataModelInitHelper::initializeVariable` took the repair `initializeVariableFromExpr`
+had already had: a `ScriptSource` rather than a `std::string`. §scxml-B-2's XML
+and string readings are answered from `source()` — whether the children are a
+document is a question about the document — and only the expression reading
+uses the lowered half. `initializeVariableFromSrc` passes
+`ScriptSource::ecmascript`, because a file read at run time has no build-time
+half to pair with; that is the run-time seat this seam keeps on purpose.
+
+### What crossed on the Kotlin side, and the one thing that did not
+
+Twelve templates. Every `cond` through `to_script_source_guard`, every `expr`
+through `to_script_source_expr`, `<script>` through `to_script_source_script`,
+`<assign>` through `to_script_source_location` + `to_script_source_expr` /
+`_assign_content`, `<send>`'s inline `<content>` through
+`to_script_source_data_content`. The generated helpers took `ScriptSource`
+parameters to match — `safeEvaluateGuard`, `executeAssign`,
+`executeScriptBlock`, `evaluateSendContent`.
+
+⚠ `<assign>`'s LOCATION now carries a language too, and the KDoc that said it
+should not was wrong for a measurable reason: `LuaScriptEngine.doAssign`
+splices the location into `"$location = $expr"` and runs the result as Lua, so
+`Var1[0]` written in ECMAScript addressed the wrong element of a 1-based
+table. C++ had already said so — `to_script_source_location` exists because
+`AssignmentExecutionHelper` glues the location in front of `=`.
+
+The one that did NOT cross is `<data>`'s inline `<content>`, and it is an
+adjudication rather than a gap: the Kotlin site's destination is
+`ScxmlScriptEngine.parseDataValue`, whose ladder on the engine a Lua-target
+artifact actually runs (`LuaScriptEngine.parseDataValueInternal`) is
+§scxml-B-2-8-1's three readings and no fourth — XML, JSON, space-normalized
+string. Nothing there evaluates in the engine's language, so lowering it would
+answer a question nobody asks. It is in `INERT_DESTINATIONS` with that
+reasoning, not on an exemption list.
+
+⚠ Found while adjudicating it, and NOT repaired here: `RhinoScriptEngine` and
+`QuickJSScriptEngine` still carry the expression rung
+(*"Step 2: Try as JS expression"*) that the 2026-08-17 round removed from the
+other four. That is a §scxml-B-2-8-1 conformance defect in two engines, not a
+language-seam question — they are ECMAScript engines, so the text they
+evaluate is the author's own either way. It stays open and stated rather than
+folded into this axis.
+
+## Landed 2026-08-30 (eleventh round): the Kotlin engine reaches the frontend, and its list empties
+
+`kotlin_lua_divergences.json` holds **nothing**. Re-derive rather than trusting
+this sentence — it is the one number this axis exists to drive, and it has been
+restated wrongly here before:
+
+```sh
+python3 -c "import json; print(len(json.load(open('tests/ecmascript/kotlin_lua_divergences.json'))['divergences']))"
+```
+
+### What was actually done, because it was not the thing the milestone named
+
+The plan of record for this backend was: move the Kotlin templates across the
+seam, then make `Language::Kotlin.lowers_expressions_at_build_time` true, so
+generated Kotlin hands its engine Lua and the rewriter is never reached. The
+first half landed in the eighth round. The second half was measured this round
+and **it does not close a single entry**, for the same reason the C++ round
+recorded on 2026-08-29 and for the same measurable cause:
+
+```sh
+grep -c "Generated" backends/kotlin/tests/src/test/kotlin/com/sce/ecmascript/EcmaScriptSemanticsTest.kt   # 0
+```
+
+The suite that holds the `runtime-rewriter` path reaches the engine by a DIRECT
+evaluate. It has no generated machine, so no codegen default can move one of its
+answers. Flipping that predicate would have changed what the manifest says and
+what the templates emit, and left all 44 entries exactly where they were —
+while `measurable_paths` would have stopped admitting the path they are declared
+on, and the repair a reader takes from that red is to drop the path and delete
+the entries. **A zero reached that way would be a false one**, and the two-sided
+suite is the only thing that would have caught it, by going red for a reason
+that names neither the cause nor the fix.
+
+So the work went to the engine instead, which is where the C++ close happened
+too: `sce-build`'s ECMAScript frontend is now linked into the Kotlin Lua engine
+and answers the author's text at run time.
+
+### The link is the same artifact, not a second one
+
+`backends/kotlin/lua/src/main/cpp/CMakeLists.txt` includes
+`cmake/SCEBuildLowering.cmake` — the module `sce/CMakeLists.txt` already uses —
+and links `SCE::Lowering` into `sce_lua_jni`, the shared library this backend's
+Lua already comes through. Two backends, one staticlib, one frontend: a
+difference between what `datamodel="ecmascript"` means on C++ and on Kotlin can
+no longer be a difference in which parser answered.
+
+`lowering_jni.cpp` is the ONE translation unit on this backend that names the C
+surface, mirroring `LoweringScope.cpp` on the other, and
+`LoweringScope.kt`/`SceLoweringNative.kt` are the class everything above talks
+to instead.
+
+**The link is not optional, and that is the substance rather than caution.** A
+library built without the frontend would answer the shared table from the
+rewriter alone — a SECOND set of answers under one engine name, only one of
+which the divergence list describes. There is no `#ifdef` on this side for the
+same reason: one artifact, one answer.
+
+### The scope is what decides how much gets answered, and every door feeds it
+
+The frontend refuses any expression naming something its scope has not been
+told about, so a session that declares nothing gets only the closed expressions
+answered. Every door that puts a name in a session's namespace therefore goes
+through `offerToScope`:
+
+| door | clause |
+|---|---|
+| `setVariable` | §scxml-5.3, a `<data id>` |
+| `setupSystemVariables` | §scxml-5.10, `_event` and the rest — without which every `cond="_event.data.x"` in the corpus is refused |
+| `doAssign` | §scxml-5.4, the target's root name, taken from the AUTHOR'S spelling |
+| `executeForeach` | §scxml-4.6, `item` and `index` |
+| `doExecuteScript` | §scxml-5.8, `declareChunk` on a chunk that ran |
+
+⚠ One door is NOT fed, and it is stated rather than hidden: a Lua-language
+`<script>` introduces names the frontend's parser cannot be asked about, so an
+ECMAScript expression naming one of them is refused and falls back to the
+rewriter. C++ closes that by sweeping Lua's own global table
+(`offerDocumentGlobalsToScope`), which needs a name for every global this engine
+installs and is its own piece of work. Codegen does not produce the mixture —
+an artifact is generated for one language and hands over that language
+everywhere — so it is a residue of the engine accepting both, not a case a
+document reaches.
+
+### 44 to 0, and the A/B that says so
+
+Measured in the turn that claims it, on this machine:
+
+| `./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua` | tests | failures |
+|---|---:|---:|
+| with the frontend | 371 | **0** |
+| with `LoweringScope`'s four `lower*` neutered to `null` | 371 | **3** |
+
+The three are the whole witness, and each is attributable:
+
+- `EcmaScriptSemanticsTest.theLuaEngineDivergesExactlyWhereItIsDeclaredTo` —
+  `44 expression(s) disagree with ECMA-262 on LuaScriptEngine`, which is the
+  list this round emptied, arriving back in one piece;
+- `SendParamPayloadTest.sendParamsReachEventDataFromChildAndInternalQueue` and
+  `XmlDataIsADomTreeTest.aDataElementsXmlIsADomTreeTheDocumentCanWalk` — **the
+  two cases `scripts/gates/w3c-kotlin.sh` names in its own comment** as failing
+  under `-Psce.script.engine=lua`. They were not part of the plan and they close
+  with it: the frontend answers what the rewriter could not, above the
+  expression level as well as inside it.
+
+That second bullet is why the A/B was run rather than only the forward
+direction. The forward run says "371 green"; only the neutered one says the
+frontend is what makes them green, and it names the same two cases a comment
+written by hand on a different day already knew about.
+
+### Empty is not retired, and the two claims are kept apart
+
+`EcmaScriptToLuaTransformer` is still compiled in and is still the FALLBACK
+behind every lowering entry point. What an empty list says is that the frontend
+answers the 98 cases of the shared table; what retirement would say is that
+there is no second answer left. An expression outside that table which the
+frontend refuses is still rewritten rather than refused (§scxml-5.9.1), which
+is the state C++ passed through between its 23-to-12 round and
+`retire-rewriter`.
+
+`EcmaScriptSemanticsTest` holds the engine's own KDoc to that distinction, and
+the check is DERIVED so it retires itself: while the engine's class body still
+calls `transformer.`, its documentation must name `EcmaScriptToLuaTransformer`.
+The day the fallback goes, the assertion stops asking rather than having to be
+remembered.
+
+### The floor that forbade the finish line
+
+`assertTrue(declared.isNotEmpty(), …)` stood in that suite to catch a list it
+had stopped reading — a real failure — but it also failed on a list with
+nothing left in it, which is the terminal state the whole axis is working
+towards. **A counter whose zero is forbidden is not a counter.** It is gone,
+the same way and for the same reason the C++ suite's went, and what still fails
+if nothing opens the list is `ecma262_scoreboard_contract`'s `readers_of`
+sweep.
+
+### What this leaves open
+
+- **`kotlin-retire-rewriter`.** Delete the fallback, and
+  `LuaScriptEngine.acceptsLanguage(ECMAScript)` becomes a claim about the
+  frontend being linked rather than an unconditional `true`. The 2262-line C++
+  unit left its tree the day its row closed; the Kotlin one is 1175 lines and
+  still there.
+- **The Lua-language `<script>` door**, above.
+- **`Language::Kotlin.lowers_expressions_at_build_time` is still false**, and
+  this round is the measurement that says flipping it is a separate question
+  from the divergence count rather than the way to close it. What it would
+  change is the DEFAULT artifact and the committed Kotlin tree, which
+  `w3c-kotlin` runs on Rhino and QuickJS — two engines that refuse Lua. So the
+  flip needs the suite to generate per engine first, which is also what would
+  let `lua` join `KOTLIN_ENGINES` and close that gate's own standing note.
