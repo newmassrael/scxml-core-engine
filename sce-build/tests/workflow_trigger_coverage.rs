@@ -144,6 +144,16 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // case the test exists for: a NEW tree drifting outside the ledger's
     // symbol scan.
     "ledger_symbol_axis_reach",
+    // Reads every tracked CMake file to answer whether anything links a
+    // Rust artifact yet, which is the premise the one OPEN row of the D1
+    // ledger rests on. A directory can acquire a `CMakeLists.txt`
+    // anywhere, and the link this watches for would arrive in a file
+    // that does not exist today — so a `paths:` filter written over the
+    // tree as it stands enumerates the answer the gate already knows and
+    // by construction cannot name the file whose arrival it exists to
+    // catch. It reads `docs/SCE_LUA_TRANSLATION_SEAM.md` and two
+    // `sce-build/src/forge/` enums besides.
+    "lowering_decision_ledger",
     "roadmap_marker_gate",
     "scope_terminology",
     "sourced_scripts_are_tracked",

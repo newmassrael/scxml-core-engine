@@ -39,6 +39,25 @@ name: C++ Test Suite
 #   ctest --test-dir build -N -LE c11    # tail: "Total Tests: 184" here
 #   ctest --test-dir build -N            # tail: "Total Tests: 435" here
 #
+# AND THE LANE HAS NOW REPORTED THOSE CASES FROM CI, which is the half the
+# 2026-08-12 incident was missing: the gate existed and the workflow was
+# cancelled before it could speak. Run 33226052648, job 99029926480, on
+# `2ea4b4906a`, 01:18:34Z -> 02:09:25Z:
+#
+#   [cpp-suite] registered non-c11 tests: 184 (of 435)
+#   100% tests passed, 0 tests failed out of 177
+#   [cpp-suite] 7 disabled test(s) not run
+#
+# 177 executed + 7 disabled = 184 registered, so the partition assertion and
+# the run account for every case. The set is the one the incident named: 114
+# `mesh_*` cases including all 19 zenoh ones are in that log. Re-derive with
+#
+#   gh api repos/<owner>/<repo>/actions/jobs/<job id>/logs \
+#     | grep -E 'registered non-c11|tests passed|disabled test'
+#
+# ⚠ `gh run view <id> --log` fails outside a git repository; the job-log API
+# above does not care where it is run from.
+#
 # ⚠ The first version of this block reused "159 of 382" — the figures from
 # the 2026-08-12 incident recorded at the top of this file — as though they
 # were this lane's size. They are not: 159 is how many cases were then run by
@@ -46,11 +65,13 @@ name: C++ Test Suite
 # exactly like a measured one, which is why every figure above now names the
 # command that produces it.
 #
-# Re-derive the run ratio the same way:
+# Re-derive the run ratio the same way — and split it on the fix, because a
+# window that straddles the change reports neither population:
 #
-#   gh run list --workflow=cpp-suite.yml --limit 20 \
-#     --json conclusion --jq '[.[].conclusion] | group_by(.)
-#            | map({(.[0]): length}) | add'
+#   gh run list --workflow=cpp-suite.yml --limit 40 \
+#     --json conclusion,status,createdAt --jq '
+#       [.[] | select(.createdAt < "2026-08-29T00:53:21Z")][:20]
+#       | group_by(.conclusion) | map({(.[0].conclusion): length}) | add'
 #
 # Two changes, and they answer different halves:
 #
@@ -71,6 +92,62 @@ name: C++ Test Suite
 #   - a docs-only push must create NO new run for this workflow at all —
 #     `gh run list --workflow=cpp-suite.yml --limit 3 --json headSha` should not
 #     name a commit whose diff touches only ignored paths.
+#
+# BOTH READINGS TAKEN 2026-08-29, the second by making the push rather than by
+# waiting for one to happen.
+#
+# Reading 1 — cut the history at the fix (`74f83197b7`, 00:53:21Z) rather than
+# taking a rolling 20, and the two populations separate cleanly:
+#
+#   the 20 runs immediately BEFORE   15 cancelled, 5 success
+#   every run SINCE                   0 cancelled, 1 success, 2 still alive
+#
+# ⚠ Take the rolling window instead and it reads 13 cancelled / 5 success / 2
+# in flight, which is neither number: it mixes 17 pre-fix runs with the 3 that
+# came after. That reading was written into this block once before being
+# split. A ratio over a window that straddles the change measures the change
+# and the history at once, and reports neither.
+#
+# Three runs is a thin sample, so the sample is not the argument. The argument
+# is a superseding push that no longer kills anything. Run 33226052648
+# (`2ea4b4906a`) started 01:18:34Z; the push of `1a1f1169f8` created run
+# 33228007089 at 02:04:07Z; 33226052648 went on to report SUCCESS at 02:09:25Z,
+# five minutes and eighteen seconds after the push that `cancel-in-progress:
+# true` would have killed it with. It happened again at once: 33228007089 was
+# still in_progress when 33228600893 queued at 02:18:01Z. Two overlaps, zero
+# cancellations, against 15 in 20 before.
+#
+# Reading 2 — `650157a91c` is a docs-only commit, pushed alone. It started FOUR
+# workflows (Tree Hygiene, W3C SCXML Compliance Tests, Mutation Rounds,
+# BasicHTTP Endpoint SSOT) against SIXTEEN for the code push before it, and this
+# workflow is not among the four. The deny-list does what it claims and no more:
+# three of those four declare no filter, so a docs-only push still reaches every
+# lane that never excluded docs.
+#
+#   FULL=$(git rev-parse <commit>)   # 40 characters, and this matters
+#   gh run list --commit "$FULL" --json workflowName,status
+#
+# ⚠ `--commit` takes a FULL sha and answers a SHORT one with an empty list and
+# exit 0. This confirmation was first read as "the push started nothing at all"
+# — including the unfiltered lanes, which cannot be true — because the query
+# carried a 10-character sha. A silent zero from a blind instrument is
+# indistinguishable from a real absence, which is why this block names its
+# commands and not its conclusions.
+#
+# ⚠⚠ WHAT THIS DID NOT FIX, measured in the same reading. Three lanes are long
+# enough to be starved and only this one was repaired. Over the last 300 runs:
+#
+#   lane                          cancelled   median successful run
+#   C++ Test Suite                   13/20    50.9 min   <- repaired here
+#   W3C SCXML Compliance Tests       13/21    29.1 min   <- still starved
+#   Rust Workspace Tests              8/15    30.2 min   <- still starved
+#   Mutation Rounds                   0/21    32.7 min   <- sha-keyed group
+#
+# The docs-only push above cancelled the W3C run on `174b25a24c` while proving
+# this lane's filter. Mutation Rounds is the shape of the answer for both: its
+# concurrency group is keyed on the sha, so a later push supersedes nothing.
+# Re-derive with `gh run list --limit 300 --json
+# workflowName,conclusion,createdAt,updatedAt` and group by lane.
 
 on:
   push:
