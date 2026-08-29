@@ -161,6 +161,84 @@ TEST(ScriptLanguageSeam, TheFastPathDoesNotConfuseTheTwoLanguages) {
 }
 
 /**
+ * @brief A `<data id>` declaration is what lets the frontend answer at all.
+ *
+ * The seam offers the author's ECMAScript to `sce-build`'s parser before the
+ * rewriter, and the parser REFUSES anything naming a variable its scope does
+ * not declare. So the scope is the selector, and `setVariable` — what a
+ * `DataModelInitializer` calls for every `<data id>` (§scxml-5.3) — is the
+ * half of it that no `<script>` supplies.
+ *
+ * `!a` with `a = 0` is the discriminator because the two answers differ by the
+ * language rather than by a detail: ECMA-262 7.1.2 makes `ToBoolean(0)` false,
+ * so `!a` is TRUE, while Lua counts 0 as truthy, so a rewritten `not a` is
+ * FALSE. The shared ECMA-262 table cannot ask this question of this route —
+ * every one of its setups arrives through `executeScript` — so without this
+ * test the `<data id>` half of the scope has no oracle at all.
+ */
+TEST(ScriptLanguageSeam, ADataItemDeclarationIsWhatLetsTheFrontendAnswer) {
+    auto &engine = SCE::LuaEngine::instance();
+    const std::string sessionId = "seam_data_id_reaches_the_scope";
+    ASSERT_TRUE(engine.createSession(sessionId, ""));
+
+    ASSERT_TRUE(engine.setVariable(sessionId, "a", ScriptValue{static_cast<int64_t>(0)}).get().isSuccess());
+
+    auto answered = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("!a")).get();
+    ASSERT_TRUE(answered.isSuccess()) << answered.getErrorMessage();
+    ASSERT_TRUE(std::holds_alternative<bool>(answered.getInternalValue()))
+        << "`!a` answered something that is not a boolean, so this test can no longer tell the "
+           "two lowerings apart";
+    EXPECT_TRUE(std::get<bool>(answered.getInternalValue()))
+        << "`!a` with `a = 0` answered false, which is Lua's reading of `not a`. ECMA-262 7.1.2 "
+           "makes ToBoolean(0) false and so `!a` true, so this says the declaration never reached "
+           "the frontend's scope and the expression was rewritten instead of parsed.";
+
+    engine.destroySession(sessionId);
+}
+
+/**
+ * @brief A lowering cached against an older scope is not reused.
+ *
+ * The per-session expression cache is keyed on the AUTHOR'S text, and the same
+ * text lowers differently as the scope grows: `a && b` is refused while `b` is
+ * unknown and answered once it is declared. So a cache that ignored the scope
+ * would pin whichever answer came first for the life of the session, and the
+ * later declaration could never reach it — a correctness bug wearing the shape
+ * of a caching win.
+ *
+ * The first evaluation is the control as well as the setup. If it already
+ * answered 0, the scope was never the selector and the assertion below would
+ * pass without a re-lowering having happened.
+ */
+TEST(ScriptLanguageSeam, ALoweringCachedAgainstAnOlderScopeIsNotReused) {
+    auto &engine = SCE::LuaEngine::instance();
+    const std::string sessionId = "seam_cache_follows_the_scope";
+    ASSERT_TRUE(engine.createSession(sessionId, ""));
+
+    ASSERT_TRUE(engine.setVariable(sessionId, "a", ScriptValue{static_cast<int64_t>(0)}).get().isSuccess());
+
+    // `b` is undeclared, so the frontend refuses the whole expression and the
+    // rewriter answers it: Lua's `a and b` counts 0 as truthy and yields `b`,
+    // which is nil.
+    auto before = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("a && b")).get();
+    const bool alreadyRight = before.isSuccess() && std::holds_alternative<int64_t>(before.getInternalValue()) &&
+                              std::get<int64_t>(before.getInternalValue()) == 0;
+    ASSERT_FALSE(alreadyRight) << "`a && b` was already answered correctly with `b` undeclared, so this test "
+                                  "cannot tell a re-lowering from a cache hit";
+
+    ASSERT_TRUE(engine.setVariable(sessionId, "b", ScriptValue{static_cast<int64_t>(2)}).get().isSuccess());
+
+    auto after = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("a && b")).get();
+    ASSERT_TRUE(after.isSuccess()) << after.getErrorMessage();
+    EXPECT_EQ(asWholeNumber(after.getInternalValue()), 0)
+        << "ECMA-262 13.13.1 yields the LEFT operand when it is falsy, so `a && b` is 0. The same "
+           "text answered differently before `b` was declared, so answering it the same way twice "
+           "means the chunk compiled against the older scope was reused.";
+
+    engine.destroySession(sessionId);
+}
+
+/**
  * @brief §scxml-5.9's ReferenceError names what the author wrote.
  *
  * The check runs on the lowered text — that is the only text an engine can

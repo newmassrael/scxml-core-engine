@@ -1052,12 +1052,41 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         //    defect `passes_cargo_feature` was written for, and
         //    `a_mentioned_call_is_not_a_made_call` pins the boundary so a
         //    simplification back to a whole-file search fails there first.
-        let engine = cpp_code_only(&read("sce/src/scripting/LuaEngine.cpp"));
+        //
+        //    ⚠⚠ And in the engine's scripting SOURCES, not in one named
+        //    file. This read `LuaEngine.cpp` alone until the scope stopped
+        //    being a process-wide constant and became a session's: the
+        //    call moved into `LoweringScope.cpp`, the one translation unit
+        //    that names the C surface, and a check anchored on a file name
+        //    would have gone red for a move that changed nothing it is
+        //    about. Staying green for a deletion and going red for a
+        //    refactor are the same defect from opposite sides — the
+        //    subject is that SOMETHING in the engine calls the surface.
+        let sources: Vec<&String> = tracked
+            .iter()
+            .filter(|p| p.starts_with("sce/src/scripting/") && p.ends_with(".cpp"))
+            .collect();
         assert!(
-            engine.contains("sce_lower_value("),
-            "row `{}`: `LuaEngine.cpp` no longer calls the surface. The link \
-             would then be dead weight the linker discards, and this row \
-             would describe a build-system fact with no behaviour behind it.",
+            sources.len() >= 2,
+            "row `{}`: this sweep found {} tracked source(s) under \
+             `sce/src/scripting/`. The engine and the surface it calls both \
+             live there, so fewer than two means the sweep stopped reading \
+             rather than found the call gone — and an empty sweep would \
+             report the deletion below as the tree's answer.",
+            row.id,
+            sources.len()
+        );
+        let callers: Vec<&str> = sources
+            .iter()
+            .filter(|p| cpp_code_only(&read(p)).contains("sce_lower_value("))
+            .map(|p| p.as_str())
+            .collect();
+        assert!(
+            !callers.is_empty(),
+            "row `{}`: nothing under `sce/src/scripting/` calls the surface. \
+             The link would then be dead weight the linker discards, and this \
+             row would describe a build-system fact with no behaviour behind \
+             it.",
             row.id
         );
         return;

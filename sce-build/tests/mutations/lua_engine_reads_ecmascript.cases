@@ -172,55 +172,55 @@ mutation_case "a repaired divergence stays on the declared list" <<'PY'
 edit("tests/ecmascript/lua_engine_divergences.json",
      """  "divergences": [
     {
-      "source": "!a",""",
+      "source": "n",""",
      """  "divergences": [
     {
-      "source": "'abc'.charAt(1)",
-      "clause": "15.5.4.4 String.prototype.charAt",
+      "source": "!a",
+      "clause": "12.5.9 logical NOT",
       "needs": "operand-boundaries",
       "diverges_on": ["runtime-rewriter"]
     },
     {
-      "source": "!a",""")
+      "source": "n",""")
 PY
 
 mutation_case "a live divergence is left off the declared list" <<'PY'
 edit("tests/ecmascript/lua_engine_divergences.json",
      """    {
-      "source": "++v",
-      "clause": "13.4.4 the operand is ToNumber'd, so this is not concatenation",
-      "needs": "operand-boundaries",
+      "source": "n",
+      "clause": "14.7.3 while, with continue skipping one iteration",
+      "needs": "statement-structure",
       "diverges_on": ["runtime-rewriter"]
-    },
+    }
 """,
      "")
 PY
 
-# ── The seam offers CLOSED expressions to the frontend ──────────────
+# ── The seam offers expressions to the frontend at all ──────────────
 #
-# `LuaEngine::loweredTextOf` asks `sce_lower_value` before the rewriter, against
-# an EMPTY scope: an expression naming no variable is parsed, everything else is
-# refused with NULL and falls through as before. Deleting the call while leaving
-# the paragraph that explains it standing is the shape a careless revert has,
-# and it puts eleven expressions back on the rewriter — `1 == '1'` stops
-# coercing, `-7 % 3` stops truncating, `-8 >>> 28` stops parsing at all.
+# `LuaEngine::loweredTextOf` asks the frontend before the rewriter, and every
+# expression it answers is one the rewriter never sees. Deleting the call while
+# leaving the paragraph that explains it standing is the shape a careless revert
+# has, and it puts the whole table back on the rewriter — `1 == '1'` stops
+# coercing, `-7 % 3` stops truncating, `a && b` stops yielding its left operand.
 #
-# ⚠ `(void)closedLoweringScope();` is what keeps the mutation COMPILING. Without
-# it the helper is unused, `-Werror` refuses the build, and a mutation the
-# compiler refused proves nothing either way.
+# ⚠ `(void)scope;` is what keeps the mutation COMPILING. Without it the
+# parameter is unused, `-Werror` refuses the build, and a mutation the compiler
+# refused proves nothing either way. It used to be `(void)closedLoweringScope()`
+# — the scope was a process-wide constant then, and the case had to be re-aimed
+# when it became a session's argument.
 #
 # ⚠⚠ This case also stands in for a check that could not see it. The D1 ledger's
-# `decision:linked-beside-lua` row asserts `LuaEngine` still calls the surface,
-# and until 2026-08-29 it searched the whole FILE — so this exact mutation left
+# `decision:linked-beside-lua` row asserts the engine still calls the surface,
+# and until 2026-08-29 it searched one whole FILE — so this exact mutation left
 # the ledger green while the suite went red. The row now reads code with
-# commentary cut away; this case is the witness that keeps saying so.
+# commentary cut away, across every source under `sce/src/scripting/`; this case
+# is the witness that keeps saying so.
 
-mutation_case "the seam stops offering closed expressions to the frontend" <<'PY'
+mutation_case "the seam stops offering expressions to the frontend" <<'PY'
 edit("sce/src/scripting/LuaEngine.cpp",
-     """    if (char *lowered = sce_lower_value(expression.text().c_str(), closedLoweringScope())) {
-        std::string text(lowered);
-        sce_lower_free(lowered);
-        return text;
+     """    if (auto lowered = scope.lowerValue(expression.text())) {
+        return *lowered;
     }""",
-     """    (void)closedLoweringScope();""")
+     """    (void)scope;""")
 PY

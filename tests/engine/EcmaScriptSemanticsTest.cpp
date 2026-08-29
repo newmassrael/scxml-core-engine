@@ -33,6 +33,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <set>
 #include <string>
 #include <variant>
@@ -282,11 +283,27 @@ std::string identify(const Case &testCase) {
 /// values; the other, `build-time-lowering`, belongs to `LoweredEcma262`.
 constexpr const char *RUNTIME_REWRITER_PATH = "runtime-rewriter";
 
-std::vector<std::string> loadDeclaredDivergences() {
+/// The entries declared on this path, or nothing if the list could not be
+/// read at all.
+///
+/// The two answers are separated because they used to be one, and conflating
+/// them forbade the finish line. `ASSERT_FALSE(declared.empty())` stood here
+/// to catch a list this suite had stopped reading — a real failure — but it
+/// also failed on a list with nothing left in it, which is the terminal state
+/// the whole seam is working towards: `LuaEngine` sends the author's
+/// ECMAScript to `sce-build`'s frontend first, and every expression class that
+/// crosses empties this file further. A counter whose zero is forbidden is not
+/// a counter, so the question the assertion asks is now "was it READ", and an
+/// empty answer from a file that was read is simply true.
+///
+/// `ecma262_scoreboard_contract`'s `readers_of` is the other half: it is what
+/// still fails if nothing opens the list, which is the failure the old form
+/// was reaching for.
+std::optional<std::vector<std::string>> loadDeclaredDivergences() {
     std::ifstream file(SCE_LUA_DIVERGENCES_PATH);
     if (!file.is_open()) {
         ADD_FAILURE() << "cannot read the declared divergences at " << SCE_LUA_DIVERGENCES_PATH;
-        return {};
+        return std::nullopt;
     }
     nlohmann::json document;
     file >> document;
@@ -379,12 +396,12 @@ TEST(EcmaScriptSemanticsOnLuaEngine, TheSecondEngineDivergesExactlyWhereItIsDecl
     assertTableWasRead(cases);
 
     const auto declared = loadDeclaredDivergences();
-    ASSERT_FALSE(declared.empty()) << "the declared divergences were not read from " << SCE_LUA_DIVERGENCES_PATH;
+    ASSERT_TRUE(declared.has_value()) << "the declared divergences were not read from " << SCE_LUA_DIVERGENCES_PATH;
 
     auto &engine = SCE::LuaEngine::instance();
     const auto failures = disagreements(engine, "lua", cases);
 
-    std::set<std::string> declaredSet(declared.begin(), declared.end());
+    std::set<std::string> declaredSet(declared->begin(), declared->end());
     std::set<std::string> observed;
     std::vector<std::string> undeclared;
     for (const auto &failure : failures) {
@@ -411,7 +428,7 @@ TEST(EcmaScriptSemanticsOnLuaEngine, TheSecondEngineDivergesExactlyWhereItIsDecl
     }
 
     std::vector<std::string> stale;
-    for (const auto &entry : declared) {
+    for (const auto &entry : *declared) {
         if (named.count(entry) == 0) {
             stale.push_back(entry + "  (no such case in the shared table)");
         } else if (observed.count(entry) == 0) {

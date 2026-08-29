@@ -1365,10 +1365,12 @@ asserts that no cache entry shadows it.
   declares and the link `sce/CMakeLists.txt` makes.
   **Its price was measured in full and the choice has since been made — see
   "D1 at a glance: five closed by measurement, one closed by decision" below.
-  The owner chose to link, on 2026-08-29, and `LuaEngine` now sends every
+  The owner chose to link, on 2026-08-29, and `LuaEngine` sent every
   CLOSED expression to the frontend's parser instead of to the rewriter. That
   took `tests/ecmascript/lua_engine_divergences.json` from 23 entries to 12 —
-  the first time that list has emptied rather than grown.**
+  the first time that list has emptied rather than grown. Later the same day
+  the scope stopped being empty and it went to 1; see "The scope was the
+  selector, so widening it was the whole repair" below.**
 
 ### Measured after the seam landed: it took the corpus's grip with the work
 
@@ -1413,6 +1415,71 @@ its own — a casefile is only judged when it changes, and none of these changed
 CONFIGURE time and imports it, so `cmake --build` does not rebuild it after a
 Rust edit: a frontend mutation driven through ctest never reaches the binary
 and is reported INCONCLUSIVE. The cargo runner is what reaches it.
+
+### The scope was the selector, so widening it was the whole repair
+
+The seam landed asking an EMPTY scope, and that emptiness was doing all the
+selecting: the frontend refuses any expression naming something its scope does
+not declare, so an empty one admitted exactly the expressions that name
+nothing. Eleven closed expressions crossed. The twelve left behind were not a
+harder problem — `!a`, `a && b`, `a == null` and the rest were the SAME
+problem, asked of a scope that had not been told what `a` is.
+
+So nothing about the rewriter was touched again. A `LuaEngine` session now owns
+a `LoweringScope` and tells it what the session holds:
+
+- one `declare` per variable `setVariable` creates (`<data id>`, §scxml-5.3),
+  alongside the `declaredVars` entry the engine already kept for its own
+  undeclared-variable check;
+- one `declare_chunk` per ECMAScript `<script>` that RAN (§scxml-5.8), which is
+  where the variables no `<data id>` names come from.
+
+That is the pair the `scope-obligation` and `scope-answer` rows measured as
+sufficient — 301 sites, 298 by `<data id>` alone and the last 3 by the chunk —
+and it is why the surface has those two entry points and no execution-time
+third.
+
+**Measured, in one run, on 2026-08-29**: `EcmaScriptSemanticsOnLuaEngine`
+reported `11 declared divergence(s) no longer describe this engine` and NOT ONE
+newly undeclared disagreement, so the list went 12 → 1 and
+`ARCHITECTURE.md`'s Lua cell 86/98 → 97/98. Both halves matter: the suite is
+red in both directions, so a widening that had broken something would have said
+so in the same sentence.
+
+**A cached lowering is an answer that depended on the scope.** The expression
+cache is keyed on the author's text, and the same text lowers differently once
+a `<script>` has declared a name — refused and rewritten before, parsed after.
+So `ExprExecInfo` carries the scope generation it was lowered against and a
+stale one is a MISS. Without that, whichever evaluation came first would pin
+its answer for the life of the session and the later declaration could never
+reach it: a correctness bug that would look exactly like a caching win.
+
+#### The one that is left is not an expression
+
+`n | 14.7.3 while, with continue skipping one iteration` is the whole remaining
+list, and it does not diverge in its expression — the expression is `n`. It
+diverges in its SETUP, a statement sequence, which reaches the engine through
+`loweredScriptOf` and `EcmaScriptToLuaTransformer::transformScript`. That path
+does not cross the seam at all, so no scope can reach it; what the rewriter
+emits for it is visible in the suite's own log, `_ = continue` and a `return`
+in statement position.
+
+`sce_lower_script` is the frontend's answer for that shape, already declared in
+`sce/include/scripting/SceLowering.h` and already exported. Routing
+`loweredScriptOf` through it is what would take the list to zero — a bigger
+blast radius than the expression path, because every `<script>` in every
+document under the `lua` selection goes through it, so it is its own round with
+its own witnesses.
+
+⚠ **And zero has to be reachable, which it was not.** The C++ suite opened with
+`ASSERT_FALSE(declared.empty())`, meaning "the list was read" — but a list that
+is read and EMPTY is the finish line this whole document is aimed at, and that
+assertion would have failed on it. A counter whose zero is forbidden is not a
+counter. The two questions are now separate: `loadDeclaredDivergences` returns
+nothing when it could not READ the file, and an empty answer from a file it did
+read is simply true. `ecma262_scoreboard_contract`'s `readers_of` is the other
+half — it is what still fails if nothing opens the list at all, which is the
+failure the old form was reaching for.
 
 ### The price of a C-callable lowering surface, measured 2026-08-29
 
@@ -1721,13 +1788,15 @@ is subtracted — paid by the eight gates that build a C++ target. The other
 side of the trade is priced too, and it is not in seconds:
 scoping the link to `SCE_SCRIPT_ENGINE=lua` would take
 `EcmaScriptSemanticsOnLuaEngine` its subject in every default build — verified,
-that suite is `#ifdef SCE_ENABLE_LUA` at
-`tests/engine/EcmaScriptSemanticsTest.cpp:356`, not `SCE_SCRIPT_ENGINE_LUA` —
+that suite is guarded by `#ifdef SCE_ENABLE_LUA` in
+`tests/engine/EcmaScriptSemanticsTest.cpp`, not by `SCE_SCRIPT_ENGINE_LUA` —
 and every divergence row it holds would stop being measured anywhere. How many
 rows that is stays deliberately unwritten here: it is
-`tests/ecmascript/lua_engine_divergences.json`'s own length, it moved twice in
-one day (44 to 23 to 12), and a count restated beside the file that owns it is
-the defect the whole of D1 was written against.
+`tests/ecmascript/lua_engine_divergences.json`'s own length, it moved three
+times in one day, and a count restated beside the file that owns it is the
+defect the whole of D1 was written against. The line number that used to
+accompany that `#ifdef` is gone for the same reason — it was already wrong,
+seventeen lines out, and nothing re-derived it.
 
 **Neither side was missing a figure, so what remained was a judgement about
 what a C++ consumer should carry — and on 2026-08-29 the owner made it: LINK
