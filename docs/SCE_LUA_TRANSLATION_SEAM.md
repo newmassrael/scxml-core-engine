@@ -1362,8 +1362,11 @@ asserts that no cache entry shadows it.
   `extern_emit`. The frontend answers all 98 shared-table cases correctly and
   has no way to be called at run time; closing that is what lets the rewriter
   be retired instead of repaired.
-  **Its price is now measured — see below. This bullet is what that
-  measurement is for, and the choice is a person's, not this document's.**
+  **Its price is now measured in full — the four items are gathered in "D1 at a
+  glance: three closed by measurement, one open by judgement" below, three
+  CLOSED with their numbers and one OPEN with none, because that one is a
+  judgement and not a measurement. The choice is a person's, not this
+  document's.**
 
 ### The price of a C-callable lowering surface, measured 2026-08-29
 
@@ -1513,17 +1516,79 @@ cache already covers.
   to `SCE_SCRIPT_ENGINE=lua` instead would contradict `LuaEngine` being
   constructible whenever the capability is on — which is what
   `EcmaScriptSemanticsOnLuaEngine` relies on to measure it at all.
-  **HOW TO MEASURE IT** — the cost is wall-clock on the eight C++ gates, so
-  measure it there and nowhere else. Configure one tree with `SCE_ENABLE_LUA=ON`
-  and one with `OFF`, build the same target in each from cold, and take the
-  difference; that is what every developer who never chooses Lua would pay. Then
-  ask the second half, which is not a number: does any in-tree consumer
-  construct `LuaEngine` in a tree whose SELECTION is not lua?
+  ⚠⚠ **~~HOW TO MEASURE IT~~ — there is nothing left to measure, and the
+  prescription this bullet used to carry measured the wrong subject.** It said:
+  configure one tree with `SCE_ENABLE_LUA=ON` and one with `OFF`, build the same
+  target from cold, take the difference. Re-derived 2026-08-29 and withdrawn —
+  that experiment prices `lua54` and two translation units, which every
+  developer already pays for, while nothing in the tree links a Rust artifact
+  for it to price. Both sides of the actual trade are already costed; see
+  "D1 at a glance" below. What remains is the second half, which was never a
+  number: does any in-tree consumer construct `LuaEngine` in a tree whose
+  SELECTION is not lua?
   `EcmaScriptSemanticsOnLuaEngine` does — it is `#ifdef SCE_ENABLE_LUA`, not
   `SCE_SCRIPT_ENGINE_LUA` — so scoping the link to the selection would take that
   suite's subject away in every default build, and the 23 rows it holds would
   stop being measured anywhere. That is the trade, and it is a correctness cost
   against a build-time one.
+
+### D1 at a glance: three closed by measurement, one open by judgement
+
+Four things had to be priced before a person could choose whether `sce-build`
+grows a C-callable lowering surface. Three are closed and their numbers are
+gathered here; the fourth is not waiting on a measurement, and this section
+says why rather than leaving it looking unfinished.
+
+⚠ **This table is not a second copy of the sections above — it is the
+machine-readable one.** `sce-build/tests/lowering_decision_ledger.rs` parses
+exactly the block between the markers below and holds every row to the check
+the row itself declares. A row carrying a status, a kind or a check the gate
+does not recognise is RED, not skipped: an unclassified row is how a ledger
+stops being a ledger.
+
+<!-- D1-LEDGER v1
+     columns: id | status | kind | number | check | evidence
+     Parsed by sce-build/tests/lowering_decision_ledger.rs.
+     Do not restate these rows elsewhere in this file. -->
+
+| id | status | kind | the number | check | evidence |
+|---|---|---|---|---|---|
+| `per-call-cost` | CLOSED | measurement | 577ns against 1085ns cold — parsing is **1.88x faster**; the rewriter's whole advantage is a memo worth **89x** | `census:LoweringPerCall` | `scripts/measure-lowering-per-call.sh` |
+| `scope-obligation` | CLOSED | measurement | **301** of 1120 sites diverge with no scope; **298** of them are discharged by `<data id>` alone, before anything runs; residue **3**, named rather than counted | `census:ScopeObligation` | `scripts/measure-scope-obligation.sh` |
+| `error-channel` | CLOSED | counting | **15** distinguishable failures against **0** — so the FFI carries a code plus a string, and the code already exists | `derive:expression-alphabet=15` | `sce-build/src/forge/diagnostic.rs` |
+| `link-is-unconditional` | OPEN | judgement | — | `precondition:rust-is-not-linked` | `sce-build/Cargo.toml` |
+
+<!-- /D1-LEDGER -->
+
+**Why the fourth carries no number, and it is not that nobody has run it yet.**
+The bullet above prescribes: configure one tree with `SCE_ENABLE_LUA=ON` and one
+with `OFF`, build the same target from cold, take the difference. Re-derived
+2026-08-29, **that experiment does not contain its subject.** `SCE_ENABLE_LUA`
+today guards `lua54` and two translation units (`sce/CMakeLists.txt:304-305`,
+`374`); no tracked CMake file links a Rust artifact at all, and `sce-build` is
+still `crate-type = ["rlib"]`. So the ON/OFF delta prices the Lua capability as
+it already stands — a bill every developer already pays — and says nothing about
+the cdylib whose link is the thing being decided. A real number about the wrong
+subject is precisely the defect this file recorded once already, when "159 of
+382" was reused as the `cpp-suite` lane's size.
+
+The subject's own price is already in the table above and needs no second
+experiment: **7.00s** to rebuild `sce-build` and link the cdylib (14.96s
+including cold deps) at **589 KB**, paid by the eight gates that build a C++
+target. The other side of the trade is priced too, and it is not in seconds:
+scoping the link to `SCE_SCRIPT_ENGINE=lua` would take
+`EcmaScriptSemanticsOnLuaEngine` its subject in every default build — verified,
+that suite is `#ifdef SCE_ENABLE_LUA` at
+`tests/engine/EcmaScriptSemanticsTest.cpp:356`, not `SCE_SCRIPT_ENGINE_LUA` —
+and the 23 divergence rows it holds would stop being measured anywhere.
+
+**So neither side is missing a figure, and no measurement is outstanding. What
+is left is a judgement about what a C++ consumer should carry, and it is a
+person's to make — this document does not make it.**
+`precondition:rust-is-not-linked` is what keeps that honest rather than merely
+stated: the day anything in the tree links a Rust artifact, this row's premise
+is false, the gate turns red, and the row has to be re-adjudicated instead of
+standing as prose nobody re-reads.
 
 **No decision is recorded here on purpose.** The numbers are the deliverable;
 which way to go is a judgement about what a C++ consumer should carry, and this
