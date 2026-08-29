@@ -2327,3 +2327,215 @@ comparable between runs taken under similar load.
   has to be reported on the manifest for the host that will supply the engine.
 
 This file records the measurement, and now also the decisions taken on it.
+
+## Measured 2026-08-29 (fifth round): the Kotlin rewriter's place, in numbers
+
+The C++ half of this seam is closed — the rewriter is deleted, its divergence
+list is empty, and a Lua-lowered artifact is compiled and run on a lane of its
+own. `backends/kotlin/lua/.../EcmaScriptToLuaTransformer.kt` (**1175** lines) is
+what remains. Before anything is moved, two questions had to be answered with
+numbers rather than by analogy with the C++ side: is it answering the same
+population, and is there a seat for it to be retired into. Both are measured
+below, every figure with the command that re-derives it.
+
+### 1. The population is the same, and the list is exactly the table's subset
+
+| | count | |
+|---|---:|---|
+| shared table, `tests/ecmascript/ecma262_semantics.json` | **98** | 98 unique `(source, clause)` keys |
+| Kotlin's declared divergences | **46** | `tests/ecmascript/kotlin_lua_divergences.json` |
+| of those, inside the shared table | **46** | |
+| of those, outside it | **0** | so it is a subset, not a second corpus |
+| C++'s declared divergences today | **0** | `tests/ecmascript/lua_engine_divergences.json` |
+
+So the Kotlin rewriter is measured against the same 98 claims the C++ one was,
+by a reader that loads `cases` with no filter and refuses a table under 55 rows.
+It is not a smaller or a differently-drawn population.
+
+```sh
+python3 - <<'PY'
+import json
+sem = json.load(open('tests/ecmascript/ecma262_semantics.json'))
+kot = json.load(open('tests/ecmascript/kotlin_lua_divergences.json'))
+shared = {(c['source'], c['clause']) for c in sem['cases']}
+kd = {(d['source'], d['clause']) for d in kot['divergences']}
+print(len(shared), len(kd), kd <= shared, sorted(kd - shared))
+PY
+```
+
+**Re-made in the turn that wrote this**, because a subset relation between two
+files says nothing about what the engine answers:
+`./gradlew :sce-kotlin-tests:test --tests com.sce.ecmascript.EcmaScriptSemanticsTest`
+ran the task — not UP-TO-DATE, `> Task :sce-kotlin-tests:test` with three
+PASSED lines under it — and its three cases are the measurement:
+`rhinoAnswersWhatEcmaScriptAnswers` and `quickJsAnswersWhatEcmaScriptAnswers`
+put those two engines at 98 of 98, and `luaIsNotAnEcmaScriptEngineAndSaysSo`
+holds the Lua engine to the declared set in BOTH directions — so 46 is the
+live answer, not a stored one.
+
+Where the 46 fall, which is the shape a repair would have to take:
+
+| group | table | rewriter wrong |
+|---|---:|---:|
+| truthiness | 10 | 7 |
+| builtins | 29 | 17 |
+| equality | 7 | 4 |
+| functions-and-statements | 5 | 3 |
+| bitwise | 8 | 4 |
+| arrays-and-objects | 12 | 4 |
+| literals | 4 | 2 |
+| json | 6 | 2 |
+| addition-or-concatenation | 5 | 1 |
+| remainder | 2 | 1 |
+| side-effecting | 3 | 1 |
+| typeof-and-instanceof | 7 | **0** |
+| **total** | **98** | **46** |
+
+### 1b. What the same population does NOT mean: three fixtures reach this engine, and two of them bypass the rewriter
+
+`EcmaScriptSemanticsTest` is not the only Kotlin reader that instantiates
+`LuaScriptEngine`. `DomReadSurfaceTest` (**39** cases) and
+`EventDataReadingsTest` (**10**) do too — and both hand the Lua engine the
+fixture's `lua` column, which is what `sce-build`'s frontend emitted, while
+handing Rhino and QuickJS the `source` column. Those 49 cases are therefore
+already exercising the OTHER path on this backend, today, green.
+
+That is the encouraging reading, and measuring it costs it most of its force.
+The two columns have to actually differ for a case to be evidence about
+lowering at all, and mostly they do not:
+
+| fixture | cases | `lua` differs from `source` |
+|---|---:|---:|
+| `tests/ecmascript/dom_read_surface.json` | 39 | **13** |
+| `tests/ecmascript/event_data_readings.json` | 10 | **0** |
+| `tests/ecmascript/ecma262_emitted_lua.json` | 98 | **89** |
+
+So the standing evidence that Kotlin's Lua runtime can consume frontend-lowered
+text is **13 cases, all DOM reads** (`#var1.childNodes` for
+`var1.childNodes.length`, `var1:getAttribute("count")` for
+`var1.getAttribute('count')`). The event-data fixture contributes nothing to
+that question — its ten `lua` spellings are byte-identical to their `source`,
+so the engine cannot tell which column it was handed and the run would pass
+with the seam absent.
+
+The corpus that WOULD answer it is the third row: the 98 lowered expressions,
+89 of which differ. It has three readers —
+`backends/go/lua/ecma262_semantics_test.go`,
+`backends/python/tests/ecmascript/test_ecma262_semantics.py` and
+`sce-build/tests/ecmascript_semantics.rs` — and **none on Kotlin**.
+
+```sh
+python3 - <<'PY'
+import json
+for p in ('tests/ecmascript/dom_read_surface.json',
+          'tests/ecmascript/event_data_readings.json'):
+    cs = json.load(open(p))['cases']
+    print(p, len(cs), sum(c['lua'] != c['source'] for c in cs))
+e = {c['source']: c['expression']
+     for c in json.load(open('tests/ecmascript/ecma262_emitted_lua.json'))['cases']}
+s = json.load(open('tests/ecmascript/ecma262_semantics.json'))['cases']
+print('emitted_lua', len(s), sum(e[c['source']] != c['source'] for c in s))
+PY
+grep -rl ecma262_emitted_lua --include='*.kt' --include='*.go' --include='*.py' --include='*.rs' .
+```
+
+### 2. Kotlin has no build-time lowering path, and the seat it would take is empty rather than missing
+
+The generator answers this itself; it does not have to be read off the
+templates. `--script-engine lua` is refused by a backend that cannot emit a
+wholly-lowered artifact, and the refusal counts what is left:
+
+```sh
+cargo build --bin sce-codegen --features cli -p sce-build
+for L in kotlin cpp rust go python c; do
+  ./target/debug/sce-codegen generate examples/widget_patterns/button.scxml \
+      -o /tmp/seam -l "$L" --script-engine lua; echo "$L rc=$?"
+done
+```
+
+| backend | `--script-engine lua` | sites still handing over source | sites unclassified |
+|---|---|---:|---:|
+| `kotlin` | **refused** (rc=1) | **6** | **29** |
+| `cpp` | accepted (rc=0) | 0 | 0 |
+| `rust` / `go` / `python` / `c11` | accepted — it is their default | — | — |
+
+The **6** are `kotlin/actions/if.kt.jinja2` (twice),
+`kotlin/actions/script.kt.jinja2`, `kotlin/process_event.kt.jinja2`,
+`kotlin/scriptengine_helpers.kt.jinja2` and
+`kotlin/transition_actions.kt.jinja2` — the guard, the `<script>` body, and the
+two `<if>` conditions. The **29** are the `send` / `assign` / `foreach` /
+`invoke` / `<data>` family, each mentioning a model expression and reaching a
+callee this build has not been told about; each needs the same one-time
+decision the C++ side's 29 needed, and the population is the same shape, not
+the same list.
+
+**What the C++ side put in the rewriter's place, so the seat can be named
+rather than invented.** There are two, and both are already built in this tree:
+
+* **Build time** — the `--script-engine lua` codegen target. C++ reaches it
+  because both of its scan lists are empty.
+* **Run time** — a C ABI over the same frontend: **9** `extern "C"` entry
+  points in `sce-build/src/ffi.rs` (`sce_scope_new`, `sce_scope_declare`,
+  `sce_scope_declare_chunk`, `sce_scope_free`, `sce_lower_value`,
+  `sce_lower_condition`, `sce_lower_script`, `sce_lower_location`,
+  `sce_lower_free`), built as a staticlib by `cmake/SCEBuildLowering.cmake` and
+  wrapped by `sce/src/scripting/LoweringScope.cpp`, which is what `LuaEngine`
+  calls instead of a rewriter.
+
+Kotlin has **neither, and no obstacle in kind to the second**. The C ABI has
+**0** Kotlin consumers — but `backends/kotlin/lua/src/main/cpp/` is already a
+CMake project (`sce_lua_jni`) that compiles Lua 5.4 and **50**
+`Java_com_sce_scripting_lua_LuaNative_*` entry points into a shared library the
+JVM loads. The seat is reachable from there by the route the C++ side used; it
+is empty, not absent.
+
+```sh
+grep -c '^pub unsafe extern "C" fn' sce-build/src/ffi.rs
+grep -rl 'sce_lower_value' --include='*.kt' --include='*.cpp' --include='*.c' .
+grep -o 'Java_com_sce_[A-Za-z0-9_]*' backends/kotlin/lua/src/main/cpp/lua_jni.cpp
+```
+
+### 3. Measured on the way past: the grip on this file is thinner than the C++ one ever was
+
+| | Kotlin | C++, on the day its rewriter was deleted |
+|---|---:|---:|
+| rewriter, lines | 1175 | 2127 |
+| test source files in the engine's own module | **0** | — |
+| mutation casefiles naming the rewriter | **0** | 2 |
+| mutation casefiles naming the backend at all | 1 of 95 | — |
+| lane that runs a lowered artifact end to end | **none** | `scripts/gate ecma262-lowered-cpp` |
+
+`scripts/gate w3c-kotlin` does read the 46 — it runs `:sce-kotlin-tests:test`
+once per ECMAScript engine and `EcmaScriptSemanticsTest` measures all three
+engines inside each run, so the list is answered twice per gate run. What no
+lane asks is the question the C++ side had to answer before it could retire
+anything: whether this backend's Lua, given the frontend's output, answers the
+table. `ecma262-lowered-cpp` is that question for C++, with the un-lowered
+artifact beside it as the control.
+
+```sh
+ls backends/kotlin/lua/src/test
+grep -l 'EcmaScriptToLuaTransformer.kt' sce-build/tests/mutations/*.cases
+ls sce-build/tests/mutations/*.cases
+```
+
+### What this measurement leaves open
+
+- **Nothing asks whether Kotlin's Lua answers the lowered 98.** 89 of those
+  expressions differ from their source, three backends read them, and this one
+  does not. Until it does, "the frontend already answers all 98" is a statement
+  about `sce-build` plus somebody else's Lua, not about this engine's. This is
+  the step the C++ side took first, and it needs no template to move.
+- **The 35 sites have no ratchet.** `supports_script_engine_target` derives a
+  BOOLEAN, and the two lists behind it are only consulted to compute it, so a
+  Kotlin template that gains a 36th site changes nothing anybody reads. The C++
+  count went 38 → 29 → 0 under a person's attention, not under a gate's.
+- **The rewriter has no mutation grip at all**, so "it still answers exactly
+  these 46" rests entirely on one JVM suite. The C++ round that deleted its
+  rewriter had to buy back a positive control it lost with the unit; here there
+  is none to lose yet, which is the cheaper time to add one.
+- ⚠ Found while measuring: `scripts/gates/w3c-kotlin.sh` described
+  `EcmaScriptSemanticsTest` as measuring "the shared 58-case ECMA-262 table" —
+  40 cases short, and one more count in prose about THIS table found stale.
+  Repaired the way the engine's own KDoc was: by naming the file instead of
+  restating its size.

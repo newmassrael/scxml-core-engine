@@ -116,9 +116,15 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # just the default.
 #
 # `EcmaScriptSemanticsTest` already measures all three engines against the
-# shared 58-case ECMA-262 table on every run, so expression semantics are not
-# what is missing here — that was measured, and it corrects a debt entry that
-# said QuickJS had no lane at all. What only the default engine ever saw is
+# shared ECMA-262 table (`tests/ecmascript/ecma262_semantics.json`) on every
+# run, so expression semantics are not what is missing here — that was
+# measured, and it corrects a debt entry that said QuickJS had no lane at all.
+#
+# The table's SIZE is deliberately not restated here. This comment said
+# "58-case" until 2026-08-29, by which time the table held 98: a count in prose
+# is the one thing nothing re-answers, which is the reason the divergence lists
+# beside that table exist at all, and the same repair the Lua engine's own KDoc
+# took. What only the default engine ever saw is
 # the other half: the 226 generated machines, and everything an engine does
 # for them that an expression table never asks for — session lifecycle,
 # `setCurrentEvent`, `executeForeach`, the `In()` state-query callback. A
