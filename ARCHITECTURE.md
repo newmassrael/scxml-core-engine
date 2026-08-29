@@ -464,7 +464,7 @@ interchangeable.
 | Engine | Standard | Selection | W3C IRP | ECMA-262 (`tests/ecmascript/ecma262_semantics.json`) |
 |--------|----------|-----------|---------|------|
 | QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` (default) | 202/202 | **98/98** |
-| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **97/98** |
+| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **98/98** |
 
 ⚠ **The Lua row is about the RUNTIME REWRITER, and since 2026-08-29 that is no
 longer everything the `lua` selection runs.** `sce_add_state_machine` now
@@ -488,11 +488,25 @@ holds: one `declare` per variable `setVariable` creates, one `declare_chunk`
 per ECMAScript `<script>` that ran. An expression naming a declared variable is
 therefore parsed rather than rewritten, so `a && b` yields its left operand and
 `a == null` equates null with undefined. The rewriter was not touched for this
-either — what changed is how much of the table it is still asked. **The one
-case left is not an expression**: its divergence is in a statement sequence,
-which reaches the engine through `loweredScriptOf` and never crosses the seam.
-`sce_lower_script` is the frontend's answer for that shape, and routing the
-script path through it is what would make this cell read 98/98.
+either — what changed is how much of the table it is still asked.
+
+⚠⚠⚠⚠ **97 → 98, and `tests/ecmascript/lua_engine_divergences.json` is now
+EMPTY.** The last case was not an expression: it diverged in a statement
+sequence, which reaches the engine through `loweredScriptOf`. That path now
+asks `sce_lower_script` first, by the same seam and the same fallback, so
+`continue` reaches a real Lua label instead of the rewriter's `_ = continue`.
+**An empty list is not a retired rewriter**: `EcmaScriptToLuaTransformer` is
+still linked and still answers anything the frontend refuses, and this cell
+scores the 98-case shared table rather than every program a consumer can
+write. Retirement is a separate claim and needs its own witness.
+
+⚠ **And this cell is the DIRECT route.** The same engine reached through a
+generated `--script-engine ecmascript` document is measured separately by
+`LoweredEcma262`, which reported `source-wrong=14` on 2026-08-29 and is RED on
+it — its answers there include Lua's own `^` and `>>`, so that route appears to
+reach neither the frontend nor the rewriter. Until that is understood, do not
+read this cell as covering a document-driven artifact; the lane's census line
+is the number to ask, and it prints on every run.
 A second row for the lowered path is deliberately absent: it would be a cell
 about an artifact shape rather than an engine, and this table is what a consumer
 reads when choosing an ENGINE. `LoweredEcma262` is where the lowered path's

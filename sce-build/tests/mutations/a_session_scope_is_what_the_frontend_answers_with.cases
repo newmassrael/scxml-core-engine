@@ -97,3 +97,22 @@ edit("sce/src/scripting/LoweringScope.cpp",
      """    sce_scope_declare(scope_, name.c_str());
 #endif""")
 PY
+
+# ── The SCRIPT cache is keyed on the scope as well ──────────────────
+#
+# The sibling of the case above, for the path `loweredScriptOf` owns. It is a
+# separate case rather than a wider one because the two caches are separate
+# maps with separate hit conditions: a repair that fixed one and left the other
+# would be a correctness bug on whichever path was not looked at, and a single
+# case cannot say which of the two it was reporting.
+#
+# `ScriptLanguageSeam` is the oracle here as well — the shared ECMA-262 table
+# executes each setup once per case in a fresh session, so it never asks the
+# same chunk text twice across a declaration and cannot see this at all.
+
+mutation_case "the script cache ignores the scope it was lowered against" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     """    if (sit != scriptExec.end() && sit->second.language == script.language() &&
+        sit->second.scopeGeneration == scopeGeneration) {""",
+     "    if (sit != scriptExec.end() && sit->second.language == script.language()) {")
+PY
