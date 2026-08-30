@@ -1380,6 +1380,22 @@ struct GenerateW3cArgs {
         long_help = LanguageRoute::GenerateW3c.flag_help("Target language"),
     )]
     language: String,
+    /// Which language the generated machines hand their script engine.
+    ///
+    /// The batch counterpart of `generate --script-engine`, and it exists for
+    /// the same reason the single-document flag does: a backend carrying both
+    /// arms of the language seam emits a DIFFERENT artifact for each, so a
+    /// conformance suite that can only be generated for one of them can only
+    /// be measured on one of them. `w3c-kotlin` ran two ECMAScript engines
+    /// against an ECMAScript tree and had no spelling at all for the lowered
+    /// tree its Lua engine evaluates — which is why that gate's Lua arm was a
+    /// comment describing a debt rather than a run.
+    ///
+    /// Resolved through the same `supports_script_engine_target` refusal as
+    /// `generate`, so a backend part-way across the seam refuses here too
+    /// rather than emitting a suite that hands one engine two languages.
+    #[arg(long = "script-engine", value_name = "LANG")]
+    script_engine: Option<String>,
     /// Path to the W3C conformance registry
     #[arg(long, long_help = w3c_registry_flag_help())]
     registry: Option<String>,
@@ -4718,6 +4734,7 @@ struct TestFileSpec<'a> {
 fn cmd_generate_w3c(args: GenerateW3cArgs) {
     let GenerateW3cArgs {
         language,
+        script_engine,
         registry,
         resources,
         output_dir,
@@ -4773,11 +4790,39 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         output_dir.is_some(),
     );
 
+    // Resolved before a single file is written, and refused rather than
+    // approximated — the same call `generate` makes. A backend that cannot
+    // emit for the named engine must not emit 202 machines for the other one
+    // under the caller's name for this one.
+    let script_engine_target = match resolve_script_engine_target(lang, script_engine.as_deref()) {
+        Ok(target) => target,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+    };
+    // The two backends that own both arms of the seam take the run's
+    // selection; the other four have a single arm, and it is
+    // `supports_script_engine_target` above — not silence here — that turns
+    // asking them for the other one into a refusal. Asking one of them for
+    // the arm it already has is a tautology, which is why passing nothing on
+    // is not a dropped selection.
+    let engine_or_default = |lang: Language| {
+        script_engine_target.unwrap_or_else(|| lang.default_script_engine_target())
+    };
+
     let backend: Box<dyn W3cBackend> = match lang {
         Language::Rust => Box::new(RustBackend::new(&output_root, &packaging)),
         Language::Go => Box::new(GoBackend::new(&output_root, &packaging)),
-        Language::Kotlin => Box::new(KotlinBackend::new(&output_root, &packaging)),
-        Language::Cpp => Box::new(CppBackend::new(&output_root)),
+        Language::Kotlin => Box::new(KotlinBackend::new(
+            &output_root,
+            &packaging,
+            engine_or_default(Language::Kotlin),
+        )),
+        Language::Cpp => Box::new(CppBackend::new(
+            &output_root,
+            engine_or_default(Language::Cpp),
+        )),
         Language::Python => Box::new(PythonBackend::new(&output_root, &packaging)),
         // `lang` holds the backend the caller named, not prose about
         // it: `actual` on the wire then means the same kind of value
@@ -6335,12 +6380,24 @@ struct KotlinBackend {
     suite: SuiteIdentity,
     /// Set when the emitted project has to stand on its own.
     standalone: Option<StandaloneSuite>,
+    /// The language the emitted machines hand their script engine.
+    ///
+    /// Carried on the backend rather than read per machine so every file in
+    /// one run is emitted for one engine: a suite mixing the two would hand
+    /// one session two languages, which is the state
+    /// `supports_script_engine_target` refuses for a single document and has
+    /// no reason to allow for 202 of them.
+    script_engine: sce_build::generator::ScriptEngineTarget,
 }
 
 impl KotlinBackend {
     const RELATIVE_ROOT: &'static str = "backends/kotlin/tests";
 
-    fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
+    fn new(
+        output_root: &Path,
+        packaging: &SuitePackaging,
+        script_engine: sce_build::generator::ScriptEngineTarget,
+    ) -> Self {
         let tests_module = output_root.join(Self::RELATIVE_ROOT);
         let suite = packaging.identity().clone();
         // A Kotlin source tree mirrors its package names as
@@ -6355,6 +6412,7 @@ impl KotlinBackend {
             tmpl_dir: sce_build::find_template_dir_for(Language::Kotlin),
             suite,
             standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
+            script_engine,
         }
     }
 
@@ -6462,7 +6520,12 @@ impl W3cBackend for KotlinBackend {
         model: &SCXMLModel,
         input_stem: &str,
     ) -> Result<Vec<(String, String)>, ForgeError> {
-        let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir, None)?;
+        let code = sce_build::generator::generate_kotlin_for_engine(
+            model,
+            &self.tmpl_dir,
+            None,
+            self.script_engine,
+        )?;
         // The Kotlin templates spell this repository's package root.
         // Rewriting on the way out rather than parameterising the
         // template keeps `template-hash` — and therefore every
@@ -6713,13 +6776,17 @@ impl W3cBackend for KotlinBackend {
 struct CppBackend {
     output_dir: PathBuf,
     tmpl_dir: PathBuf,
+    /// The language the emitted machines hand their script engine. Same
+    /// reason it is per-run rather than per-machine as on `KotlinBackend`.
+    script_engine: sce_build::generator::ScriptEngineTarget,
 }
 
 impl CppBackend {
-    fn new(output_root: &Path) -> Self {
+    fn new(output_root: &Path, script_engine: sce_build::generator::ScriptEngineTarget) -> Self {
         Self {
             output_dir: output_root.join("build/tests/w3c_static_generated"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Cpp),
+            script_engine,
         }
     }
 }
@@ -6740,7 +6807,13 @@ impl W3cBackend for CppBackend {
         model: &SCXMLModel,
         input_stem: &str,
     ) -> Result<Vec<(String, String)>, ForgeError> {
-        let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem, None)?;
+        let output = sce_build::generator::generate_cpp_for_engine(
+            model,
+            &self.tmpl_dir,
+            input_stem,
+            None,
+            self.script_engine,
+        )?;
         Ok(output.files)
     }
 
