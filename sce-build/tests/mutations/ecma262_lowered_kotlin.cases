@@ -1,0 +1,124 @@
+# Mutations for the Kotlin lowered-artifact lane.
+#
+# What these guard is the sentence `ecma262-lowered-kotlin` says about itself:
+# that a Kotlin artifact generated with `--script-engine lua` was COMPILED and
+# RUN, and answered the shared ECMA-262 table.
+#
+# ⚠ The runner cannot drive Gradle, so what is judged here is the RUST half —
+# the registry row that makes the gate reachable, the supersession
+# classification that keeps the workflow honest, and the gate script's own
+# structural claims held by `gate_registry_contract`. The JVM half of the lane
+# is bought by hand, the way `kotlin_engine_selection.cases` says the Kotlin
+# side always has to be: this backend has no gradle runner in `scripts/mutate`.
+#
+# ⚠ Target selectors, never a bare filter: a filter reaches every binary the
+# selector matched.
+mutation_tests -p sce-build --features cli \
+    --test gate_registry_contract --test ci_supersession_policy
+mutation_runtime_targets scripts/gates/ecma262-lowered-kotlin.sh \
+    .github/workflows/ecma262-lowered-kotlin.yml \
+    tools/git-hooks/gate_registry.py
+# ⚠ COMPILED, so `mutation_targets` and not the runtime list. One case removes
+# this lane's row from the `LANES` table, and that table lives inside the
+# oracle's own source file. Measured 2026-08-30: declared in neither list, the
+# case came back INCONCLUSIVE with `the case body did not apply` — only
+# declared files are snapshotted, so the runner refuses to edit one it could
+# not restore. A case that cannot apply is not a case that survived, and the
+# two read differently only because the runner says so.
+mutation_targets sce-build/tests/ci_supersession_policy.rs
+
+# ── The lane stops being reachable ─────────────────────────────────
+#
+# A gate nothing selects is a gate that never runs, and the failure is silent:
+# `scripts/gate` would refuse the slug, the pre-push hook would never choose
+# it, and CI's own job would be the only thing left measuring the artifact.
+# `gate_registry_contract` holds every gate to having a workflow that runs it.
+
+mutation_case "the lowered Kotlin gate loses the workflow that runs it" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     '"ecma262-lowered-kotlin": {\n        "workflows": ["ecma262-lowered-kotlin.yml"],',
+     '"ecma262-lowered-kotlin": {\n        "workflows": [],')
+PY
+
+# ── A new lane slips past the supersession policy ──────────────────
+#
+# `ci_supersession_policy` classifies EVERY workflow in the directory and reds
+# one nobody classified. That is the check a NEW lane is most likely to walk
+# past, because adding a file is not adding a row — and an unclassified lane
+# neither supersedes nor queues by anyone's decision.
+
+mutation_case "the new lane is added without being classified" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '    ("ecma262-lowered-kotlin.yml", 4.8, 0, 0),',
+     '')
+PY
+
+# ── The gate stops proving the two artifacts are different ─────────
+#
+# THE case that matters. Both artifacts answer the same 98 cases and — with
+# both divergence arrays empty — answer them identically, so the suite alone
+# cannot tell a real pair from a subject compared against itself. The floor on
+# the subject's lowered call sites is the only thing that can: a
+# `--script-engine lua` that accepted the flag and emitted the default anyway
+# produces two identical machines whose counts both sit down at the run-time
+# helper's single arm, and every case in them still passes.
+#
+# Dropping the floor to zero leaves the mirror equalities intact — identical
+# machines mirror each other perfectly — which is exactly why the floor is a
+# separate claim and not a corollary of them.
+
+mutation_case "the lowered artifact may carry no lowered call site at all" <<'PY'
+edit("scripts/gates/ecma262-lowered-kotlin.sh",
+     "if (( lowered_lua < 50 )); then",
+     "if (( lowered_lua < 0 )); then")
+PY
+
+# ── The census stops being required ────────────────────────────────
+#
+# The lane's verdict is read from the run's OUTPUT, and Gradle answers an
+# unchanged `test` task UP-TO-DATE without producing any. Measured 2026-08-30:
+# the second invocation of this gate reported no census over a perfectly good
+# artifact, because nothing had run. `--rerun` is what makes the run happen and
+# the census demand is what notices when it does not.
+
+mutation_case "a run that produced no census is accepted" <<'PY'
+edit("scripts/gates/ecma262-lowered-kotlin.sh",
+     '[ -n "$census" ] \\',
+     '[ -n "$census" ] || true \\')
+PY
+
+mutation_case "the suite is allowed to answer from cache instead of running" <<'PY'
+edit("scripts/gates/ecma262-lowered-kotlin.sh",
+     "./gradlew --console=plain :sce-kotlin-lowered-ecma262:test --rerun \\",
+     "./gradlew --console=plain :sce-kotlin-lowered-ecma262:test \\")
+PY
+
+# ── The workflow stops naming the pin the gate reads ───────────────
+#
+# `sce_gate_require_jdk` derives its floor from this workflow's
+# `java-version:`. A workflow that stopped declaring one would leave the gate
+# with no floor and Gradle free to run on whatever JVM the machine exports —
+# which on this fleet has been a JDK 8 while `java --version` said 17.
+
+mutation_case "the workflow stops pinning the JDK the gate derives its floor from" <<'PY'
+edit(".github/workflows/ecma262-lowered-kotlin.yml",
+     "        java-version: '17'",
+     "        java-version: ''")
+PY
+
+# ── The exclusion list loses its ceiling ───────────────────────────
+#
+# `kotlin_lowered_artifact_defects.json` is the one thing in this lane that can
+# make it green while the artifact answers ECMA-262 wrong, so the ceiling on it
+# is held from two sources. The suite's `MAX_DEFECTS` lives in the same file as
+# the assertion that reads it — raise the constant and the assertion agrees
+# with you — so the gate keeps its own, in another language, over the count the
+# suite PRINTED. Removing it leaves the list free to grow to the size of the
+# population, at which point every case is excused and the lane is green over
+# an artifact that answers nothing.
+
+mutation_case "the exclusion list may grow without limit" <<'PY'
+edit("scripts/gates/ecma262-lowered-kotlin.sh",
+     "if (( excused > DEFECT_CEILING )); then",
+     "if (( excused > 10000 )); then")
+PY

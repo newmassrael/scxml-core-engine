@@ -106,6 +106,30 @@ const LANES: &[(&str, f64, u32, u32)] = &[
     ("doc-content-gate.yml", 2.5, 4, 21),
     ("drift-verify.yml", 3.7, 4, 21),
     ("ecma262-lowered-cpp.yml", 22.6, 2, 5),
+    // ⚠ NO HOSTED HISTORY OF ITS OWN — the lane landed 2026-08-30 and the `0`
+    // in the last column says so rather than hiding it.
+    //
+    // ⚠⚠ So the number is a CONSERVATIVE UPPER BOUND, and the direction
+    // matters: `must_not_supersede` only fires ABOVE the push gap, so an
+    // optimistic median is the permissive reading. A local wall clock is the
+    // wrong stand-in for exactly that reason — this row first carried 1.4 from
+    // `scripts/gate --measure` on the build machine, where the whole gate runs
+    // in 11 seconds from clean, which says nothing about a cold hosted runner.
+    //
+    // What it carries instead is DERIVED FROM HOSTED RUNS, of the nearest lane
+    // that exists: the `Kotlin W3C Tests` job of `w3c-tests.yml`, measured
+    // 2026-08-30 over its last three successes at 3.4, 4.8 and 3.4 minutes.
+    // That job is a strict SUPERSET of this one's work — it builds the same
+    // Kotlin runtime and the same Lua JNI library, plus QuickJS and Rhino,
+    // then runs 4 x 373 cases where this lane runs 98 — so its worst reading
+    // bounds this lane from above. 4.8 is that reading.
+    //
+    //   gh run list --workflow=w3c-tests.yml --limit 3 --json databaseId
+    //   gh run view <id> --json jobs      # startedAt/completedAt of that job
+    //
+    // Replace it with this lane's own median once it has runs to take one
+    // over, and move the row if it grew past the push gap.
+    ("ecma262-lowered-kotlin.yml", 4.8, 0, 0),
     // The nearest lane below the line, and the one to re-measure first: 13.8
     // minutes against an 18.9 minute gap, on only 12 successful runs.
     ("embed-vendor-smoke.yml", 13.8, 4, 12),

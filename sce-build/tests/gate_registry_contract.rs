@@ -741,6 +741,199 @@ fn the_kotlin_suite_reruns_when_the_gate_it_reads_changes() {
     );
 }
 
+/// The Kotlin lowered-artifact lane proves its two artifacts are different.
+///
+/// The lane compiles ONE document twice, with `--script-engine lua` and with
+/// `--script-engine ecmascript`, and runs both. Both answer the same 98 cases
+/// and — with `kotlin_lua_divergences.json` empty on both routes — answer them
+/// the same way, so the SUITE cannot tell a real pair from a subject compared
+/// against itself. What can is the shape of the emitted machines, and the gate
+/// is where that is read.
+///
+/// ⚠ The floor is asserted separately from the mirror equalities, because the
+/// mirror alone is satisfied by the failure it exists to catch. A
+/// `--script-engine lua` that accepted the flag and emitted the default anyway
+/// produces two IDENTICAL machines — and identical machines mirror each other
+/// perfectly, with both counts sitting down at the run-time helper's single
+/// arm. Only the floor says the subject carries hundreds of lowered call
+/// sites.
+///
+/// ⚠⚠ And the count is not `== 0` on the control, which was the first
+/// spelling and was measured wrong the same day: a generated machine emits
+/// BOTH arms of the helper that re-wraps a `ScriptSource` it was handed, so
+/// one occurrence of each spelling appears in every machine whatever it was
+/// generated for. `w3c-kotlin` recorded the same trap from the other side,
+/// where counting one tree read 159 against 159.
+#[test]
+fn the_kotlin_lowered_gate_proves_its_control_is_not_its_subject() {
+    let code: String =
+        std::fs::read_to_string(repo_root().join("scripts/gates/ecma262-lowered-kotlin.sh"))
+            .expect("the Kotlin lowered-artifact gate is readable")
+            .lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+    assert!(
+        code.contains("if (( lowered_lua < 50 )); then"),
+        "⚠ the floor on the subject's lowered call sites is gone. Without it a \
+         `--script-engine lua` that emitted the backend's default anyway would \
+         give this lane two identical machines, which satisfy every mirror \
+         equality below and pass every case — a control compared against itself."
+    );
+    assert!(
+        code.contains("if (( lowered_lua != source_ecma )); then"),
+        "⚠ the gate no longer checks that the subject's lowered call sites and \
+         the control's source-passing ones are the SAME COUNT. Two selections \
+         of one document carry one call site for one call site; without this \
+         they need not even be the same document."
+    );
+
+    // The verdict is read from the run's OUTPUT, so the run has to happen.
+    assert!(
+        code.contains(":sce-kotlin-lowered-ecma262:test --rerun"),
+        "⚠ the gate no longer forces the suite to run. Gradle answers an \
+         unchanged test task UP-TO-DATE or FROM-CACHE and produces no output, \
+         and this lane reads its census and its probe controls out of that \
+         output — measured 2026-08-30 as `the suite printed no census line` \
+         over an artifact that was perfectly fine."
+    );
+    // ⚠ The CHECK and its consequence, held ADJACENTLY, and the adjacency is
+    // the whole point. This assertion was first written as
+    // `code.contains("the suite printed no census line")` — the failure
+    // MESSAGE alone — and a mutation round measured it blind on 2026-08-30:
+    // appending `|| true` to the test leaves the message in the file, so the
+    // guard was dead and the oracle was green. It is the shape this repository
+    // has already been bitten by, and names elsewhere as "the code dies and the
+    // short-circuit survives".
+    // ⚠ The escape hatch this lane INTRODUCED, held from outside the file that
+    // declares it. `kotlin_lowered_artifact_defects.json` excuses a case from
+    // answering ECMA-262, which is the one thing here that can be green over a
+    // wrong artifact. The suite has `MAX_DEFECTS`, but that constant sits in
+    // the same file as the assertion reading it — raise it and the assertion
+    // agrees. The gate keeps a second ceiling, in another language, over the
+    // count the suite PRINTED, and the two do not imply each other: one counts
+    // entries in the file, the other counts entries that actually excused a
+    // case in the population.
+    assert!(
+        code.contains("if (( excused > DEFECT_CEILING )); then"),
+        "⚠ the exclusion list may now grow without limit. Every entry in \
+         tests/ecmascript/kotlin_lowered_artifact_defects.json excuses a case \
+         from answering ECMA-262, so a list with no ceiling is a way to make \
+         this lane green over an artifact that answers nothing — and the \
+         suite's own MAX_DEFECTS cannot be the only ceiling, because it lives \
+         in the file that reads it."
+    );
+    assert!(
+        code.contains(
+            "[ -n \"$census\" ] \\\n    || sce_gate_fail \"the suite printed no census line"
+        ),
+        "⚠ a run that produced no census is now accepted. That is the reading \
+         a cached green produces, and it is the one state where this lane \
+         reports on a run that did not happen. Note this holds the TEST and \
+         its `sce_gate_fail` together: a message with no live check behind it \
+         is what this assertion exists to refuse."
+    );
+}
+
+/// Every gate that derives a JDK floor names a workflow that declares one.
+///
+/// `sce_gate_require_jdk` reads its floor out of a workflow's `java-version:`
+/// and REFUSES when it finds none — which is the right runtime behaviour and
+/// is not a check anyone runs before pushing. A workflow that stopped pinning
+/// a version would leave the two Kotlin gates with no floor, and Gradle free to
+/// run on whatever JVM the machine exports. On this fleet that has been a JDK 8
+/// while `java --version` said 17, failing inside a build script with a message
+/// that names no JDK.
+///
+/// ⚠ The population is DERIVED from the gate scripts rather than listed here,
+/// so a third gate that starts deriving a floor is covered on the commit that
+/// adds it. The floor on the population is what keeps that derivation honest:
+/// a scan that silently matched nothing would assert nothing, and would pass.
+#[test]
+fn every_gate_that_derives_a_jdk_floor_names_a_workflow_that_pins_one() {
+    let root = repo_root();
+    let dir = root.join("scripts/gates");
+    let mut pinned: Vec<(String, String)> = Vec::new();
+    let mut offenders: Vec<String> = Vec::new();
+
+    for entry in std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("sh") {
+            continue;
+        }
+        let body = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+        for line in body.lines() {
+            let line = line.trim_start();
+            // Comments describe the call; they are not one. Without this the
+            // helper's own documentation in `lib.sh` would be read as a caller.
+            if line.starts_with('#') {
+                continue;
+            }
+            let Some(rest) = line.strip_prefix("sce_gate_require_jdk ") else {
+                continue;
+            };
+            let workflow = rest.trim().trim_matches('"').replace("$SCE_REPO_ROOT/", "");
+            pinned.push((
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                workflow,
+            ));
+        }
+    }
+
+    // Two gates drive Gradle today. A floor rather than an equality: a third
+    // may be added and must not have to edit this number. What it refuses is
+    // the scan matching NOTHING, which would make every assertion below
+    // vacuous — the failure mode this repository calls a gate that reports on
+    // a population it never built.
+    assert!(
+        pinned.len() >= 2,
+        "the scan over scripts/gates/*.sh found {} caller(s) of \
+         `sce_gate_require_jdk`, and there are at least two (w3c-kotlin and \
+         ecma262-lowered-kotlin). A scan that matches nothing asserts nothing \
+         and passes, so this refuses the empty reading rather than reporting \
+         on it.",
+        pinned.len()
+    );
+
+    for (gate, workflow) in &pinned {
+        let path = root.join(workflow);
+        let Ok(body) = std::fs::read_to_string(&path) else {
+            offenders.push(format!(
+                "{gate} derives its JDK floor from {workflow}, which is not readable"
+            ));
+            continue;
+        };
+        let pin = body.lines().find_map(|line| {
+            let line = line.trim_start();
+            let rest = line.strip_prefix("java-version:")?;
+            let value = rest.trim().trim_matches('\'').trim_matches('"');
+            value.chars().next().filter(char::is_ascii_digit)?;
+            Some(value.to_string())
+        });
+        match pin {
+            Some(_) => {}
+            None => offenders.push(format!(
+                "{gate} derives its JDK floor from {workflow}, which declares no \
+                 numeric `java-version:`"
+            )),
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "⚠ {} gate(s) derive a JDK floor from a workflow that no longer pins \
+         one. `sce_gate_require_jdk` would refuse at run time, which is a \
+         failed push rather than a caught edit:\n  {}",
+        offenders.len(),
+        offenders.join("\n  ")
+    );
+}
+
 #[test]
 fn the_push_hook_delegates_rather_than_carrying_gates() {
     // The property the split exists to hold: verification commands live in
@@ -1783,7 +1976,19 @@ fn reach_of(text: &str, root: &Path, depth: usize) -> Reach {
             reach.sweeps_the_workspace |= inner.sweeps_the_workspace;
             // The rounds gate resolves its targets from the corpus at run
             // time, so its script names none of them.
-            if body.contains("sce-build/tests/mutations") {
+            //
+            // ⚠ `code_lines`, not a raw `contains` over the body, and the
+            // difference was measured on 2026-08-30. A gate script that merely
+            // MENTIONS the corpus directory in a comment — `ecma262-lowered-
+            // kotlin.sh`, explaining which casefile mutates it — was read as
+            // running the whole corpus's oracles, and this suite then reported
+            // that its lane must install the pinned validator. It does not run
+            // them; it talks about them. The two carriers that really do
+            // (`mutation-rounds.sh`, `mutation-cases.sh`) both assign the path
+            // to `CORPUS=`, so the code reading keeps them and drops the
+            // sentence. This repository has recorded the same lesson from the
+            // other side: a scanner has to strip comments before it matches.
+            if code_lines(&body).any(|l| l.contains("sce-build/tests/mutations")) {
                 reach.named.extend(corpus_oracle_targets(root));
             }
         }
