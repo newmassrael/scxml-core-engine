@@ -351,7 +351,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processDocumented(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> TransitionResult.External(EventDataArrivesAsSentState.Opening, EventDataArrivesAsSentState.Documented, 0)
+        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_scxml_truthy(_event.data) and _scxml_truthy(_event.data.documentElement)) and (_event.data.documentElement.nodeName == \"books\"))", "_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> TransitionResult.External(EventDataArrivesAsSentState.Opening, EventDataArrivesAsSentState.Documented, 0)
 
         event is EventDataArrivesAsSentEvent.Doc -> TransitionResult.External(EventDataArrivesAsSentState.Flattened, EventDataArrivesAsSentState.Documented, 1)
 
@@ -361,7 +361,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processHeard(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 'hold the line'")) -> TransitionResult.External(EventDataArrivesAsSentState.Quoted, EventDataArrivesAsSentState.Heard, 2)
+        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"hold the line\")", "_event.data === 'hold the line'")) -> TransitionResult.External(EventDataArrivesAsSentState.Quoted, EventDataArrivesAsSentState.Heard, 2)
 
         event is EventDataArrivesAsSentEvent.Note -> TransitionResult.External(EventDataArrivesAsSentState.Garbled, EventDataArrivesAsSentState.Heard, 3)
 
@@ -371,7 +371,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processOpening(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '<assign> to detail failed'")) -> TransitionResult.External(EventDataArrivesAsSentState.Settled, EventDataArrivesAsSentState.Opening, 4)
+        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"<assign> to detail failed\")", "_event.data === '<assign> to detail failed'")) -> TransitionResult.External(EventDataArrivesAsSentState.Settled, EventDataArrivesAsSentState.Opening, 4)
 
         event is EventDataArrivesAsSentEvent.Broken -> TransitionResult.External(EventDataArrivesAsSentState.Swallowed, EventDataArrivesAsSentState.Opening, 5)
 
@@ -381,7 +381,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processQuoted(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '2 + 3'")) -> TransitionResult.External(EventDataArrivesAsSentState.Documented, EventDataArrivesAsSentState.Quoted, 6)
+        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"2 + 3\")", "_event.data === '2 + 3'")) -> TransitionResult.External(EventDataArrivesAsSentState.Documented, EventDataArrivesAsSentState.Quoted, 6)
 
         event is EventDataArrivesAsSentEvent.Arith -> TransitionResult.External(EventDataArrivesAsSentState.Evaluated, EventDataArrivesAsSentState.Quoted, 7)
 
@@ -391,7 +391,7 @@ class EventDataArrivesAsSentStateMachine(
     private fun processWaiting(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> TransitionResult.External(EventDataArrivesAsSentState.Heard, EventDataArrivesAsSentState.Waiting, 8)
+        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_scxml_truthy(_event.data) and (_event.data.milestone == \"refined\")) and (_event.data.turns == 2))", "_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> TransitionResult.External(EventDataArrivesAsSentState.Heard, EventDataArrivesAsSentState.Waiting, 8)
 
         event is EventDataArrivesAsSentEvent.Payload -> TransitionResult.External(EventDataArrivesAsSentState.Mangled, EventDataArrivesAsSentState.Waiting, 9)
 

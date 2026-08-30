@@ -139,7 +139,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'seen' with expr
         try {
-            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
+            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
             engine.setVariable(sid, "seen", initResult_seen)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
@@ -333,8 +333,8 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(
 
     private fun processNullReport(
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'number' && seen > 1e308")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report, 0)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'string'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((_typeof(seen) == \"number\") and (seen > 1e308))", "typeof seen === 'number' && seen > 1e308")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(seen) == \"string\")", "typeof seen === 'string'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report, 1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report, 2)
     }

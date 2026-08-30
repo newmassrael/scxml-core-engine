@@ -191,21 +191,21 @@ class SendNamelistOverHttpStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("2"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'echoed' with expr
         try {
-            val initResult_echoed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_echoed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "echoed", initResult_echoed)
         } catch (e: Exception) {
             raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='echoed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sawNamelistError' with expr
         try {
-            val initResult_sawNamelistError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_sawNamelistError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "sawNamelistError", initResult_sawNamelistError)
         } catch (e: Exception) {
             raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='sawNamelistError'> expr failed to evaluate")
@@ -401,7 +401,7 @@ class SendNamelistOverHttpStateMachine(
 
     private fun processNullMapVerdict(
     ): TransitionResult<SendNamelistOverHttpState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("echoed == 2")) -> TransitionResult.External(SendNamelistOverHttpState.DiscardPhase, SendNamelistOverHttpState.MapVerdict, 6)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(echoed, 2)", "echoed == 2")) -> TransitionResult.External(SendNamelistOverHttpState.DiscardPhase, SendNamelistOverHttpState.MapVerdict, 6)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(SendNamelistOverHttpState.FailNamelistNotPosted, SendNamelistOverHttpState.MapVerdict, 7)
     }
@@ -415,7 +415,7 @@ class SendNamelistOverHttpStateMachine(
         event is SendNamelistOverHttpEvent.Error.Execution -> TransitionResult.Internal(0)
         event is SendNamelistOverHttpEvent.ShouldNotArrive -> TransitionResult.External(SendNamelistOverHttpState.FailMessageNotDiscarded, SendNamelistOverHttpState.DiscardPhase, 1)
 
-        event is SendNamelistOverHttpEvent.TimeoutDiscard && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawNamelistError !== 1")) -> TransitionResult.External(SendNamelistOverHttpState.FailNoNamelistError, SendNamelistOverHttpState.DiscardPhase, 2)
+        event is SendNamelistOverHttpEvent.TimeoutDiscard && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawNamelistError ~= 1)", "sawNamelistError !== 1")) -> TransitionResult.External(SendNamelistOverHttpState.FailNoNamelistError, SendNamelistOverHttpState.DiscardPhase, 2)
 
         event is SendNamelistOverHttpEvent.TimeoutDiscard -> TransitionResult.External(SendNamelistOverHttpState.Pass, SendNamelistOverHttpState.DiscardPhase, 3)
 
@@ -454,7 +454,7 @@ class SendNamelistOverHttpStateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
@@ -545,7 +545,7 @@ class SendNamelistOverHttpStateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
@@ -660,7 +660,7 @@ class SendNamelistOverHttpStateMachine(
                 // SCE-MAP: send_namelist_over_http.scxml:106 :: discardPhase :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("sawNamelistError"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("sawNamelistError", "sawNamelistError"), com.sce.runtime.ScriptSource.lua("1", "1"))
             }
             else -> {}
         }
@@ -669,7 +669,7 @@ class SendNamelistOverHttpStateMachine(
                 // SCE-MAP: send_namelist_over_http.scxml:82 :: mapPhase :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("echoed"), com.sce.runtime.ScriptSource.ecmascript("_event.data.Var1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("echoed", "echoed"), com.sce.runtime.ScriptSource.lua("_event.data.Var1", "_event.data.Var1"))
             }
             else -> {}
         }

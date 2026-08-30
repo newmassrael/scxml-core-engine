@@ -151,14 +151,14 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'seen' with expr
         try {
-            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
+            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
             engine.setVariable(sid, "seen", initResult_seen)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'token' with expr
         try {
-            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'child'"))
+            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"child\"", "'child'"))
             engine.setVariable(sid, "token", initResult_token)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
@@ -352,8 +352,8 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
     private fun processNullReport(
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'parent'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report, 0)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'child'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(seen == \"parent\")", "seen === 'parent'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(seen == \"child\")", "seen === 'child'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report, 1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report, 2)
     }

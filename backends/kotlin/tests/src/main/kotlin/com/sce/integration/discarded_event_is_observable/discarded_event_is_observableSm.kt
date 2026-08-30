@@ -156,14 +156,14 @@ class DiscardedEventIsObservableStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'nudges' with expr
         try {
-            val initResult_nudges = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_nudges = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "nudges", initResult_nudges)
         } catch (e: Exception) {
             raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<data id='nudges'> expr failed to evaluate")
@@ -429,13 +429,13 @@ class DiscardedEventIsObservableStateMachine(
                 // SCE-MAP: discarded_event_is_observable.scxml:38 :: idle :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             2 -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:41 :: idle :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("nudges"), com.sce.runtime.ScriptSource.ecmascript("nudges + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("nudges", "nudges"), com.sce.runtime.ScriptSource.lua("_scxml_add(nudges, 1)", "nudges + 1"))
             }
             else -> {}
         }

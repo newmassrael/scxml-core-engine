@@ -212,21 +212,21 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'tally' with expr
         try {
-            val initResult_tally = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_tally = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "tally", initResult_tally)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='tally'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'guard' with expr
         try {
-            val initResult_guard = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_guard = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "guard", initResult_guard)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='guard'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'keeper' with expr
         try {
-            val initResult_keeper = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("3"))
+            val initResult_keeper = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("3", "3"))
             engine.setVariable(sid, "keeper", initResult_keeper)
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='keeper'> expr failed to evaluate")
@@ -417,7 +417,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processAbsentPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("guard !== 1")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 0)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(guard ~= 1)", "guard !== 1")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 0)
 
         event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 1)
 
@@ -429,7 +429,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processEmptyPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("tally === 7")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.AbsentPhase, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 3)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(tally == 7)", "tally === 7")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.AbsentPhase, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 3)
 
         event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailNotUpdated, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 4)
 
@@ -441,7 +441,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processUnmatchedPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("keeper !== 3")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 6)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(keeper ~= 3)", "keeper !== 3")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 6)
 
         event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.Pass, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 7)
 

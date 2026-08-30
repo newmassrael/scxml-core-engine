@@ -203,14 +203,14 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'n' with expr
         try {
-            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "n", initResult_n)
         } catch (e: Exception) {
             raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'm' with expr
         try {
-            val initResult_m = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_m = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "m", initResult_m)
         } catch (e: Exception) {
             raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "<data id='m'> expr failed to evaluate")
@@ -403,7 +403,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     private fun processJudging(
         event: ParallelSelfTransitionKeepsItsLeafEvent
     ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> = when {
-        event is ParallelSelfTransitionKeepsItsLeafEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("n == 1 && m == 2")) -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Settled, ParallelSelfTransitionKeepsItsLeafState.Judging, 0)
+        event is ParallelSelfTransitionKeepsItsLeafEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_eq(n, 1) and _scxml_eq(m, 2))", "n == 1 && m == 2")) -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Settled, ParallelSelfTransitionKeepsItsLeafState.Judging, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -580,7 +580,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
                 // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:73 :: within :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("m"), com.sce.runtime.ScriptSource.ecmascript("m + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("m", "m"), com.sce.runtime.ScriptSource.lua("_scxml_add(m, 1)", "m + 1"))
             }
             else -> {}
         }
@@ -589,7 +589,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
                 // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:86 :: working :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("n"), com.sce.runtime.ScriptSource.ecmascript("n + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("n", "n"), com.sce.runtime.ScriptSource.lua("_scxml_add(n, 1)", "n + 1"))
             }
             else -> {}
         }

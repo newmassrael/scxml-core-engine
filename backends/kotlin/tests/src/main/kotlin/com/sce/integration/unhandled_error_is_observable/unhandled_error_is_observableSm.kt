@@ -201,35 +201,35 @@ class UnhandledErrorIsObservableStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'booms' with expr
         try {
-            val initResult_booms = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_booms = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "booms", initResult_booms)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='booms'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'caught' with expr
         try {
-            val initResult_caught = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_caught = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "caught", initResult_caught)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='caught'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'detail' with expr
         try {
-            val initResult_detail = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'none'"))
+            val initResult_detail = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"none\"", "'none'"))
             engine.setVariable(sid, "detail", initResult_detail)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='detail'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'heards' with expr
         try {
-            val initResult_heards = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_heards = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "heards", initResult_heards)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='heards'> expr failed to evaluate")
@@ -489,7 +489,7 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("booms"), com.sce.runtime.ScriptSource.ecmascript("booms + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("booms", "booms"), com.sce.runtime.ScriptSource.lua("_scxml_add(booms, 1)", "booms + 1"))
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
@@ -499,10 +499,10 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:94 :: guarded :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("caught"), com.sce.runtime.ScriptSource.ecmascript("caught + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("caught", "caught"), com.sce.runtime.ScriptSource.lua("_scxml_add(caught, 1)", "caught + 1"))
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("detail"), com.sce.runtime.ScriptSource.ecmascript("_event.name"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("detail", "detail"), com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))
             }
             else -> {}
         }
@@ -511,7 +511,7 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:55 :: idle :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             3 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:58 :: idle :: _transition_1
@@ -526,13 +526,13 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:80 :: idle :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("heards"), com.sce.runtime.ScriptSource.ecmascript("heards + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("heards", "heards"), com.sce.runtime.ScriptSource.lua("_scxml_add(heards, 1)", "heards + 1"))
             }
             5 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:83 :: idle :: _transition_3
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("booms"), com.sce.runtime.ScriptSource.ecmascript("booms + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("booms", "booms"), com.sce.runtime.ScriptSource.lua("_scxml_add(booms, 1)", "booms + 1"))
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
