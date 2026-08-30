@@ -1,0 +1,73 @@
+{
+  "about": [
+    "What a GENERATED Kotlin artifact answers differently from ECMA-262 for a",
+    "reason that is not about the language at all.",
+    "",
+    "`kotlin_lua_divergences.json` beside this file is about the two ROUTES",
+    "into the Lua engine — what the frontend lowers at build time, and what",
+    "the engine lowers at run time — and both of its arrays are empty. This",
+    "file is about the CODE GENERATOR, and it exists because",
+    "`ecma262-lowered-kotlin` found something on the day it was built that",
+    "neither of those routes could be blamed for.",
+    "",
+    "Keeping the two apart is the whole point. Folding a code-generation",
+    "defect into a language-divergence list would make",
+    "`kotlin_lua_divergences.json` non-empty and would say the frontend gets a",
+    "case wrong, which is false and would send the next reader to the wrong",
+    "half of the seam.",
+    "",
+    "HELD IN BOTH DIRECTIONS by `LoweredEcma262ArtifactTest`. An entry whose",
+    "case the artifact now answers CORRECTLY is red — remove it, because a",
+    "list that can only grow can never reach zero, and zero is the point. An",
+    "undeclared wrong answer is red too. Neither direction has an escape",
+    "hatch: a case is either right, or named here with a cause someone can",
+    "act on.",
+    "",
+    "AND A CEILING. `MAX_DEFECTS` in that suite refuses a list that has grown",
+    "past a handful. An exclusion list with no ceiling is a way to make any",
+    "lane green, and this one is small on purpose: every entry is a defect",
+    "someone is expected to remove, not a property of the backend."
+  ],
+  "defects": [
+    {
+      "source": "++v == 2",
+      "clause": "13.4.4 prefix increment yields the new value",
+      "cause": [
+        "The generated Kotlin evaluates a transition's `cond` TWICE. W3C SCXML",
+        "Appendix D evaluates it once, in `selectTransitions`; the Kotlin",
+        "templates evaluate it again in `executeTransitionActions` to decide",
+        "which transition's executable content to run.",
+        "",
+        "Invisible for a pure guard and wrong for a side-effecting one:",
+        "`processNullD43()` runs `++v` and reads 2 (the guard holds, target",
+        "chosen), then `executeTransitionActions` runs `++v` again and reads 3",
+        "(the guard does not hold), so the UNGUARDED arm's content runs and",
+        "the fixture records `2` — 'the guard did not hold' — for a case whose",
+        "transition was in fact taken.",
+        "",
+        "Measured 2026-08-30 in the emitted machine:",
+        "`safeEvaluateGuard(ScriptSource.lua(\"_scxml_eq((function() v = _scxml_tonumber(v) + 1 return v end)(), 2)\", \"++v == 2\"))`",
+        "appears in both `processNullD43()` and `executeTransitionActions`.",
+        "",
+        "NOT a language defect: the lowered Lua is correct, and the same",
+        "expression is answered correctly by this engine when it is evaluated",
+        "once. Both routes into the engine record it wrongly, which is itself",
+        "the evidence — a divergence of a lowering route could not affect the",
+        "route that does no lowering."
+      ],
+      "fix": [
+        "What C++ already does: `tools/codegen/templates/state_machine.jinja2`",
+        "carries `int transitionIndex` on its transition result, so the action",
+        "dispatch switches on the transition that was SELECTED instead of",
+        "re-deciding. Kotlin's `com.sce.runtime.TransitionResult` has no such",
+        "field and `executeTransitionActions(source, event)` has nowhere to",
+        "put one.",
+        "",
+        "The change is a runtime signature plus two templates plus a",
+        "regeneration of every committed Kotlin tree, which is why it is a",
+        "round of its own rather than a fix smuggled into the round that",
+        "found it."
+      ]
+    }
+  ]
+}

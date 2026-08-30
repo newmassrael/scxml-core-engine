@@ -1,0 +1,156 @@
+name: ECMA-262 through a Lua-lowered Kotlin artifact
+
+# The Kotlin half of the lane `docs/SCE_LUA_TRANSLATION_SEAM.md` ended without.
+#
+# `ecma262-lowered-cpp` has compiled and run a Lua-lowered C++ artifact since
+# 2026-08-29. Kotlin had the seam — `ScriptSource.lua`, the lowered arm on
+# `LuaScriptEngine`, a frontend that answers the shared table — and no lane
+# that ran an ARTIFACT through it. What existed reached the ENGINE with text a
+# test chose: `EcmaScriptSemanticsTest` hands it the author's ECMAScript,
+# `LoweredEcma262Test` hands it Lua read out of a committed table. Neither
+# compiles a machine, so "the frontend answers all 98 cases" stayed a statement
+# about `sce-build` plus somebody else's Lua.
+#
+# ⚠ That gap was not cosmetic. The first run of this lane found a defect
+# neither of those two could see: the generated Kotlin evaluates a transition's
+# `cond` TWICE — once to choose the target and again to choose which arm's
+# executable content to run — so a guard with a SIDE EFFECT takes its
+# transition and then records the other arm's answer. Invisible to an
+# engine-level test because no engine is involved in it, and invisible to the
+# W3C suite because no fixture there guards on a side effect. Declared, with
+# its cause and its fix, in
+# `tests/ecmascript/kotlin_lowered_artifact_defects.json`.
+#
+# What the job measures is BUILD-TIME lowering, and it is that path's CONTRACT
+# rather than a measurement of it.
+# `tests/ecmascript/kotlin_lua_divergences.json` says per entry which routes
+# into the Lua engine still answer a case differently (`diverges_on`), and this
+# job holds the `build-time-lowering` one in BOTH directions: a case the
+# lowered artifact gets wrong without being declared is red, AND a case
+# declared and answered correctly is red. The second direction is what keeps
+# that list at zero honestly rather than by nobody asking.
+#
+# The population is the SHARED TABLE in full (`ecma262_semantics.json`),
+# expanded by the same `tools/generate_lowered_ecma262_fixture.py` the C++ lane
+# uses. One expander, one population, two backends.
+#
+# The module compiles ONE generated document twice: with `--script-engine lua`,
+# where the expressions reach the engine already lowered; and with
+# `--script-engine ecmascript`, where the same engine lowers them at run time.
+# The second is the control, and the gate counts `ScriptSource.lua(` in each
+# emitted machine so that a subject compared against itself cannot pass.
+#
+# The `paths:` filter is narrow on purpose, and it is what
+# `tools/git-hooks/gate_registry.py` reads to decide whether a push runs this
+# gate. It names the seam's two halves — what generates the artifact and what
+# runs it — plus the table the fixture expands and the lists the harness reads.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backends/kotlin/lowered-ecma262/**'
+      - 'backends/kotlin/runtime/**'
+      - 'backends/kotlin/lua/**'
+      - 'sce-build/src/**'
+      - 'tools/codegen/templates/**'
+      - 'tools/generate_lowered_ecma262_fixture.py'
+      - 'tests/ecmascript/ecma262_semantics.json'
+      - 'tests/ecmascript/kotlin_lua_divergences.json'
+      - 'tests/ecmascript/kotlin_lowered_artifact_defects.json'
+      - 'settings.gradle.kts'
+      - 'scripts/gates/ecma262-lowered-kotlin.sh'
+      - 'scripts/gates/lib.sh'
+      - '.github/workflows/ecma262-lowered-kotlin.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Superseded by the push that follows it.
+#
+# Unlike its C++ sibling this lane finishes in a few minutes — it compiles two
+# generated machines and the Lua JNI library, not a C++ tree — so a newer push
+# can reach a verdict before the older one would have, and the older answer is
+# about a tree nobody has any more. `cancel-in-progress: true` is the setting
+# for a lane whose duration is well under the gap between pushes.
+#
+# ⚠ What holds this setting is `sce-build/tests/ci_supersession_policy.rs`,
+# which classifies EVERY workflow in this directory and reds one nobody
+# classified. A new lane is not exempt from that by being new.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ecma262-lowered-kotlin:
+    name: A Lua-lowered Kotlin artifact, compiled and run
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        # The Lua JNI library is built from a vendored source tree, so this
+        # lane needs the submodules its Kotlin siblings declare.
+        submodules: recursive
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: |
+        # The Cargo cache restores all of `target`, but this step only builds
+        # the debug profile, so a release binary the cache still holds is not
+        # a product of this commit.
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
+        cargo build --bin sce-codegen --features cli -p sce-build
+
+    # ⚠ The gate READS this pin. `sce_gate_require_jdk` derives its floor from
+    # the `java-version:` on the next line, so this lane and a developer's
+    # machine agree about which JVM Gradle runs on. Changing the number here
+    # moves the floor there.
+    - name: Setup JDK 17
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Cache Gradle
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    # Generation, compilation and the run are one gate — the same one the
+    # pre-push hook runs. The pair counts read off the emitted machines, the
+    # manifests read back for the language each artifact was asked for, and the
+    # probe controls lifted out of the census all live there, so this lane and
+    # a developer's machine judge the artifact by the same rules.
+    - name: Run the lowered-artifact gate
+      run: scripts/gate ecma262-lowered-kotlin
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: ecma262-lowered-kotlin-results
+        path: backends/kotlin/lowered-ecma262/build/reports/tests/test/
+        retention-days: 30
