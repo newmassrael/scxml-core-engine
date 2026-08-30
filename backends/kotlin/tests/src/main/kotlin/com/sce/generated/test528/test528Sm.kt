@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -351,7 +351,7 @@ class Test528StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test528State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test528State.S02, Test528State.S01)
+        else -> TransitionResult.External(Test528State.S02, Test528State.S01, 2)
     }
 
     // --- Per-State Event Handlers ---
@@ -359,9 +359,9 @@ class Test528StateMachine(
     private fun processS0(
         event: Test528Event
     ): TransitionResult<Test528State> = when {
-        event is Test528Event.Error.Execution -> TransitionResult.External(Test528State.S1, Test528State.S0)
+        event is Test528Event.Error.Execution -> TransitionResult.External(Test528State.S1, Test528State.S0, 0)
 
-        event is Test528Event.Done.State.S0 -> TransitionResult.External(Test528State.Fail, Test528State.S0)
+        event is Test528Event.Done.State.S0 -> TransitionResult.External(Test528State.Fail, Test528State.S0, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -369,10 +369,10 @@ class Test528StateMachine(
     private fun processS1(
         event: Test528Event
     ): TransitionResult<Test528State> = when {
-        event is Test528Event.Done.State.S0 -> TransitionResult.External(Test528State.Pass, Test528State.S1)
+        event is Test528Event.Done.State.S0 -> TransitionResult.External(Test528State.Pass, Test528State.S1, 3)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test528State.Fail, Test528State.S1)
+        else -> TransitionResult.External(Test528State.Fail, Test528State.S1, 4)
     }
 
 
@@ -471,7 +471,8 @@ class Test528StateMachine(
     // SCE-MAP: test528.scxml:4 :: _machine
     override fun executeTransitionActions(
         source: Test528State,
-        event: Test528Event?
+        event: Test528Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

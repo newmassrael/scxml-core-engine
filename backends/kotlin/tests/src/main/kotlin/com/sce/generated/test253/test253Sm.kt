@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -390,10 +390,10 @@ class Test253StateMachine(
 
     private fun processNullS02(
     ): TransitionResult<Test253State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253State.S03, Test253State.S02)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'scxml'")) -> TransitionResult.External(Test253State.S03, Test253State.S02)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253State.S03, Test253State.S02, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'scxml'")) -> TransitionResult.External(Test253State.S03, Test253State.S02, 3)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test253State.Fail, Test253State.S02)
+        else -> TransitionResult.External(Test253State.Fail, Test253State.S02, 4)
     }
 
     // --- Per-State Event Handlers ---
@@ -401,7 +401,7 @@ class Test253StateMachine(
     private fun processS0(
         event: Test253Event
     ): TransitionResult<Test253State> = when {
-        event is Test253Event.Timeout -> TransitionResult.External(Test253State.Fail, Test253State.S0)
+        event is Test253Event.Timeout -> TransitionResult.External(Test253State.Fail, Test253State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -409,7 +409,7 @@ class Test253StateMachine(
     private fun processS01(
         event: Test253Event
     ): TransitionResult<Test253State> = when {
-        event is Test253Event.ChildRunning -> TransitionResult.External(Test253State.S02, Test253State.S01)
+        event is Test253Event.ChildRunning -> TransitionResult.External(Test253State.S02, Test253State.S01, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -417,9 +417,9 @@ class Test253StateMachine(
     private fun processS03(
         event: Test253Event
     ): TransitionResult<Test253State> = when {
-        event is Test253Event.Success -> TransitionResult.External(Test253State.Pass, Test253State.S03)
+        event is Test253Event.Success -> TransitionResult.External(Test253State.Pass, Test253State.S03, 5)
 
-        event is Test253Event.Fail -> TransitionResult.External(Test253State.Fail, Test253State.S03)
+        event is Test253Event.Fail -> TransitionResult.External(Test253State.Fail, Test253State.S03, 6)
 
         else -> TransitionResult.Ignored
     }
@@ -520,11 +520,12 @@ class Test253StateMachine(
     // SCE-MAP: test253.scxml:8 :: _machine
     override fun executeTransitionActions(
         source: Test253State,
-        event: Test253Event?
+        event: Test253Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test253State.S01 -> when {
-            event is Test253Event.ChildRunning -> {
+        is Test253State.S01 -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: test253.scxml:54 :: s01 :: _transition_0
 
 
@@ -532,15 +533,15 @@ class Test253StateMachine(
             }
             else -> {}
         }
-        is Test253State.S02 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> {
+        is Test253State.S02 -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: test253.scxml:61 :: s02 :: _transition_0
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("foo", "parentToChild")
             }
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'scxml'")) -> {
+            3 -> {
                 // SCE-MAP: test253.scxml:64 :: s02 :: _transition_1
 
 

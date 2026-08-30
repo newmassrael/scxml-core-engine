@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -326,9 +326,9 @@ class Test332StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test332State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 === Var2")) -> TransitionResult.External(Test332State.Pass, Test332State.S1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 === Var2")) -> TransitionResult.External(Test332State.Pass, Test332State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test332State.Fail, Test332State.S1)
+        else -> TransitionResult.External(Test332State.Fail, Test332State.S1, 3)
     }
 
     // --- Per-State Event Handlers ---
@@ -337,10 +337,10 @@ class Test332StateMachine(
         event: Test332Event
     ): TransitionResult<Test332State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test332Event.Error || event is Test332Event.Error.Execution) -> TransitionResult.External(Test332State.S1, Test332State.S0)
+        (event is Test332Event.Error || event is Test332Event.Error.Execution) -> TransitionResult.External(Test332State.S1, Test332State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test332State.Fail, Test332State.S0)
+        else -> TransitionResult.External(Test332State.Fail, Test332State.S0, 1)
     }
 
 
@@ -416,11 +416,12 @@ class Test332StateMachine(
     // SCE-MAP: test332.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test332State,
-        event: Test332Event?
+        event: Test332Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test332State.S0 -> when {
-            (event is Test332Event.Error || event is Test332Event.Error.Execution) -> {
+        is Test332State.S0 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test332.scxml:17 :: s0 :: _transition_0
 
 

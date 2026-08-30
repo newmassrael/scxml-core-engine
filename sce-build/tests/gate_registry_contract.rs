@@ -741,6 +741,116 @@ fn the_kotlin_suite_reruns_when_the_gate_it_reads_changes() {
     );
 }
 
+/// The Kotlin action dispatch never re-evaluates a guard.
+///
+/// ⚠ THE DEFECT THIS FORBIDS WAS REAL, and it was invisible to every suite in
+/// the tree until an artifact was compiled and run. `transition_actions.kt.jinja2`
+/// keyed each arm on the transition's `cond` and event pattern — the same
+/// `cond` `process_event.kt.jinja2` had already evaluated to CHOOSE that
+/// transition. A pure guard answers the same twice and nothing shows. A guard
+/// with a side effect does not: measured 2026-08-30, `cond="++v == 2"` took its
+/// transition on the first evaluation (`++v` -> 2) and then failed the second
+/// (`++v` -> 3), so the machine ran the other arm's content.
+///
+/// The arms are keyed on `transitionIndex` now. This test is what keeps them
+/// there: a scan for the shapes that would mean a guard is being decided again
+/// at dispatch time.
+///
+/// ⚠⚠ Comments are stripped first. This file's own header explains the defect
+/// at length and names `safeEvaluateGuard` while doing so — a raw `contains`
+/// would read the explanation as the thing it warns about. The same reading
+/// error `reach_of` made on 2026-08-30, one file over.
+#[test]
+fn the_kotlin_action_dispatch_switches_on_the_selection_it_was_given() {
+    let template = std::fs::read_to_string(
+        repo_root().join("tools/codegen/templates/kotlin/transition_actions.kt.jinja2"),
+    )
+    .expect("the Kotlin transition-actions template is readable");
+
+    // Jinja comments span lines, so they are cut as a block; `#` line comments
+    // never appear in this template's Kotlin output.
+    let mut code = String::new();
+    let mut rest = template.as_str();
+    while let Some(open) = rest.find("{#") {
+        code.push_str(&rest[..open]);
+        rest = match rest[open..].find("#}") {
+            Some(close) => &rest[open + close + 2..],
+            None => "",
+        };
+    }
+    code.push_str(rest);
+
+    assert!(
+        code.contains("when (transitionIndex)"),
+        "⚠ the Kotlin action dispatch no longer switches on the transition the \
+         SELECTION chose. Whatever it switches on instead has to be re-derived \
+         at dispatch time, and the only thing there is to re-derive it from is \
+         the guard — which is the defect (`++v == 2`, measured 2026-08-30)."
+    );
+    for forbidden in [
+        "safeEvaluateGuard",
+        "render_cond",
+        "cond_kt",
+        "cond_constant",
+    ] {
+        assert!(
+            !code.contains(forbidden),
+            "⚠ `{forbidden}` is back in tools/codegen/templates/kotlin/\
+             transition_actions.kt.jinja2. Every one of these spellings is a way \
+             of DECIDING AGAIN, at action-dispatch time, which transition ran — \
+             and the selection has already decided it. A guard with a side \
+             effect answers differently the second time, so the machine takes \
+             one transition and runs another's content."
+        );
+    }
+}
+
+/// The lowered lane regenerates when the GENERATOR changes, not just the input.
+///
+/// ⚠ Measured 2026-08-30, and it is the lane's own subject turned against it.
+/// `GenerateLoweredArtifact` declared the generator as `@get:Input
+/// codegen: Property<String>` — the PATH. A `cargo build` that changed what the
+/// generator emits therefore left the task UP-TO-DATE, and the suite compiled
+/// and measured machines from the PREVIOUS generator while reporting on the
+/// current tree.
+///
+/// It surfaced only by luck: the change under test had also moved a runtime
+/// signature, so the stale Kotlin failed to compile. A change that altered
+/// emitted BEHAVIOUR and nothing else would have gone green over the old
+/// artifact — which is precisely the reading this lane refuses everywhere else
+/// (`--rerun` on the test task, the census demand, the pair counts).
+///
+/// The fix is to declare the binary's CONTENT, and this holds it.
+#[test]
+fn the_lowered_lane_regenerates_when_the_generator_itself_changes() {
+    let build = std::fs::read_to_string(
+        repo_root().join("backends/kotlin/lowered-ecma262/build.gradle.kts"),
+    )
+    .expect("the lowered-artifact build file is readable");
+    let code: String = build
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        code.contains("@get:InputFile\n    abstract val codegenBinary"),
+        "⚠ `backends/kotlin/lowered-ecma262/build.gradle.kts` no longer \
+         declares the generator BINARY as an input of the generation task. \
+         With only its path declared, rebuilding `sce-codegen` leaves the \
+         task UP-TO-DATE and this lane measures machines the previous \
+         generator emitted — a green about a tree that is no longer the one \
+         on disk."
+    );
+    assert!(
+        code.contains("codegenBinary.set(File(it))"),
+        "⚠ the generation task declares a `codegenBinary` input and never \
+         sets it. An unset `@InputFile` is not a stricter check than no \
+         input at all; it is a configuration failure or an ignored property, \
+         and either way the staleness it was added to catch goes on passing."
+    );
+}
+
 /// The Kotlin lowered-artifact lane proves its two artifacts are different.
 ///
 /// The lane compiles ONE document twice, with `--script-engine lua` and with

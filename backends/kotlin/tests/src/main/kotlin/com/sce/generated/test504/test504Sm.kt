@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -485,35 +485,35 @@ class Test504StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test504State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.P, Test504State.S1)
+        else -> TransitionResult.External(Test504State.P, Test504State.S1, 3)
     }
 
     private fun processNullS3(
     ): TransitionResult<Test504State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test504State.S4, Test504State.S3)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test504State.S4, Test504State.S3, 4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.Fail, Test504State.S3)
+        else -> TransitionResult.External(Test504State.Fail, Test504State.S3, 5)
     }
 
     private fun processNullS4(
     ): TransitionResult<Test504State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 2")) -> TransitionResult.External(Test504State.S5, Test504State.S4)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 2")) -> TransitionResult.External(Test504State.S5, Test504State.S4, 6)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.Fail, Test504State.S4)
+        else -> TransitionResult.External(Test504State.Fail, Test504State.S4, 7)
     }
 
     private fun processNullS5(
     ): TransitionResult<Test504State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == 2")) -> TransitionResult.External(Test504State.S6, Test504State.S5)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == 2")) -> TransitionResult.External(Test504State.S6, Test504State.S5, 8)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.Fail, Test504State.S5)
+        else -> TransitionResult.External(Test504State.Fail, Test504State.S5, 9)
     }
 
     private fun processNullS6(
     ): TransitionResult<Test504State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var5 == 1")) -> TransitionResult.External(Test504State.Pass, Test504State.S6)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var5 == 1")) -> TransitionResult.External(Test504State.Pass, Test504State.S6, 10)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.Fail, Test504State.S6)
+        else -> TransitionResult.External(Test504State.Fail, Test504State.S6, 11)
     }
 
     // --- Per-State Event Handlers ---
@@ -521,11 +521,11 @@ class Test504StateMachine(
     private fun processP(
         event: Test504Event
     ): TransitionResult<Test504State> = when {
-        event is Test504Event.Foo -> TransitionResult.External(Test504State.Ps1, Test504State.P)
+        event is Test504Event.Foo -> TransitionResult.External(Test504State.Ps1, Test504State.P, 0)
 
-        event is Test504Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4 == 1")) -> TransitionResult.External(Test504State.S3, Test504State.P)
+        event is Test504Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4 == 1")) -> TransitionResult.External(Test504State.S3, Test504State.P, 1)
 
-        event is Test504Event.Bar -> TransitionResult.External(Test504State.Fail, Test504State.P)
+        event is Test504Event.Bar -> TransitionResult.External(Test504State.Fail, Test504State.P, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -702,11 +702,12 @@ class Test504StateMachine(
     // SCE-MAP: test504.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test504State,
-        event: Test504Event?
+        event: Test504Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test504State.P -> when {
-            event is Test504Event.Foo -> {
+        is Test504State.P -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test504.scxml:31 :: p :: _transition_0
 
 
@@ -714,8 +715,8 @@ class Test504StateMachine(
             }
             else -> {}
         }
-        is Test504State.Ps1 -> when {
-            event is Test504Event.Foo -> {
+        is Test504State.Ps1 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test504.scxml:31 :: p :: _transition_0
 
 
@@ -723,8 +724,8 @@ class Test504StateMachine(
             }
             else -> {}
         }
-        is Test504State.Ps2 -> when {
-            event is Test504Event.Foo -> {
+        is Test504State.Ps2 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test504.scxml:31 :: p :: _transition_0
 
 

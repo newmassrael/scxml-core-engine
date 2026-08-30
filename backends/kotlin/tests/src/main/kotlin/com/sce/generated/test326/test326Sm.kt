@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -330,15 +330,15 @@ class Test326StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test326State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test326State.S1, Test326State.S0)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("true")) -> TransitionResult.External(Test326State.Fail, Test326State.S0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test326State.S1, Test326State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("true")) -> TransitionResult.External(Test326State.Fail, Test326State.S0, 1)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullS2(
     ): TransitionResult<Test326State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test326State.Pass, Test326State.S2)
+        else -> TransitionResult.External(Test326State.Pass, Test326State.S2, 4)
     }
 
     // --- Per-State Event Handlers ---
@@ -346,10 +346,10 @@ class Test326StateMachine(
     private fun processS1(
         event: Test326Event
     ): TransitionResult<Test326State> = when {
-        event is Test326Event.Error.Execution -> TransitionResult.External(Test326State.S2, Test326State.S1)
+        event is Test326Event.Error.Execution -> TransitionResult.External(Test326State.S2, Test326State.S1, 2)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test326State.Fail, Test326State.S1)
+        else -> TransitionResult.External(Test326State.Fail, Test326State.S1, 3)
     }
 
 
@@ -430,7 +430,8 @@ class Test326StateMachine(
     // SCE-MAP: test326.scxml:4 :: _machine
     override fun executeTransitionActions(
         source: Test326State,
-        event: Test326Event?
+        event: Test326Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

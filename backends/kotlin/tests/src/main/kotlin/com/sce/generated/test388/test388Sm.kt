@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -437,13 +437,13 @@ class Test388StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test388State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External((historyStore["s0HistDeep"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test388State.S022), Test388State.S1)
+        else -> TransitionResult.External((historyStore["s0HistDeep"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test388State.S022), Test388State.S1, 6)
     }
 
     private fun processNullS2(
     ): TransitionResult<Test388State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External((historyStore["s0HistShallow"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test388State.S021), Test388State.S2)
+        else -> TransitionResult.External((historyStore["s0HistShallow"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test388State.S021), Test388State.S2, 7)
     }
 
     // --- Per-State Event Handlers ---
@@ -451,19 +451,19 @@ class Test388StateMachine(
     private fun processS0(
         event: Test388Event
     ): TransitionResult<Test388State> = when {
-        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test388State.S1, Test388State.S0)
+        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test388State.S1, Test388State.S0, 0)
 
-        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test388State.S2, Test388State.S0)
-
-        // W3C SCXML 3.12.1: Prefix match for "entering"
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test388State.Fail, Test388State.S0)
-
-        event is Test388Event.Entering.S011 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionResult.External(Test388State.Pass, Test388State.S0)
+        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test388State.S2, Test388State.S0, 1)
 
         // W3C SCXML 3.12.1: Prefix match for "entering"
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionResult.External(Test388State.Fail, Test388State.S0)
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test388State.Fail, Test388State.S0, 2)
 
-        event is Test388Event.Timeout -> TransitionResult.External(Test388State.Fail, Test388State.S0)
+        event is Test388Event.Entering.S011 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionResult.External(Test388State.Pass, Test388State.S0, 3)
+
+        // W3C SCXML 3.12.1: Prefix match for "entering"
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionResult.External(Test388State.Fail, Test388State.S0, 4)
+
+        event is Test388Event.Timeout -> TransitionResult.External(Test388State.Fail, Test388State.S0, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -614,11 +614,12 @@ class Test388StateMachine(
     // SCE-MAP: test388.scxml:9 :: _machine
     override fun executeTransitionActions(
         source: Test388State,
-        event: Test388Event?
+        event: Test388Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test388State.S0 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
+        is Test388State.S0 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -626,8 +627,8 @@ class Test388StateMachine(
             }
             else -> {}
         }
-        is Test388State.S01 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
+        is Test388State.S01 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -635,8 +636,8 @@ class Test388StateMachine(
             }
             else -> {}
         }
-        is Test388State.S011 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
+        is Test388State.S011 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -644,8 +645,8 @@ class Test388StateMachine(
             }
             else -> {}
         }
-        is Test388State.S012 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
+        is Test388State.S012 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -653,8 +654,8 @@ class Test388StateMachine(
             }
             else -> {}
         }
-        is Test388State.S02 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
+        is Test388State.S02 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -662,8 +663,8 @@ class Test388StateMachine(
             }
             else -> {}
         }
-        is Test388State.S021 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
+        is Test388State.S021 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
@@ -671,8 +672,8 @@ class Test388StateMachine(
             }
             else -> {}
         }
-        is Test388State.S022 -> when {
-            event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
+        is Test388State.S022 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 

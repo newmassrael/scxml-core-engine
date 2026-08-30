@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -454,28 +454,28 @@ class Test533StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test533State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test533State.P, Test533State.S1)
+        else -> TransitionResult.External(Test533State.P, Test533State.S1, 3)
     }
 
     private fun processNullS2(
     ): TransitionResult<Test533State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test533State.S3, Test533State.S2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test533State.S3, Test533State.S2, 4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test533State.Fail, Test533State.S2)
+        else -> TransitionResult.External(Test533State.Fail, Test533State.S2, 5)
     }
 
     private fun processNullS3(
     ): TransitionResult<Test533State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 2")) -> TransitionResult.External(Test533State.S4, Test533State.S3)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 2")) -> TransitionResult.External(Test533State.S4, Test533State.S3, 6)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test533State.Fail, Test533State.S3)
+        else -> TransitionResult.External(Test533State.Fail, Test533State.S3, 7)
     }
 
     private fun processNullS4(
     ): TransitionResult<Test533State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == 2")) -> TransitionResult.External(Test533State.Pass, Test533State.S4)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == 2")) -> TransitionResult.External(Test533State.Pass, Test533State.S4, 8)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test533State.Fail, Test533State.S4)
+        else -> TransitionResult.External(Test533State.Fail, Test533State.S4, 9)
     }
 
     // --- Per-State Event Handlers ---
@@ -483,11 +483,11 @@ class Test533StateMachine(
     private fun processP(
         event: Test533Event
     ): TransitionResult<Test533State> = when {
-        event is Test533Event.Foo -> TransitionResult.External(Test533State.Ps1, Test533State.P)
+        event is Test533Event.Foo -> TransitionResult.External(Test533State.Ps1, Test533State.P, 0)
 
-        event is Test533Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4 == 1")) -> TransitionResult.External(Test533State.S2, Test533State.P)
+        event is Test533Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4 == 1")) -> TransitionResult.External(Test533State.S2, Test533State.P, 1)
 
-        event is Test533Event.Bar -> TransitionResult.External(Test533State.Fail, Test533State.P)
+        event is Test533Event.Bar -> TransitionResult.External(Test533State.Fail, Test533State.P, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -639,11 +639,12 @@ class Test533StateMachine(
     // SCE-MAP: test533.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test533State,
-        event: Test533Event?
+        event: Test533Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test533State.P -> when {
-            event is Test533Event.Foo -> {
+        is Test533State.P -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test533.scxml:25 :: p :: _transition_0
 
 
@@ -651,8 +652,8 @@ class Test533StateMachine(
             }
             else -> {}
         }
-        is Test533State.Ps1 -> when {
-            event is Test533Event.Foo -> {
+        is Test533State.Ps1 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test533.scxml:25 :: p :: _transition_0
 
 
@@ -660,8 +661,8 @@ class Test533StateMachine(
             }
             else -> {}
         }
-        is Test533State.Ps2 -> when {
-            event is Test533Event.Foo -> {
+        is Test533State.Ps2 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test533.scxml:25 :: p :: _transition_0
 
 

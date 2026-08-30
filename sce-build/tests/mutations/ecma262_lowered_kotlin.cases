@@ -17,7 +17,9 @@ mutation_tests -p sce-build --features cli \
     --test gate_registry_contract --test ci_supersession_policy
 mutation_runtime_targets scripts/gates/ecma262-lowered-kotlin.sh \
     .github/workflows/ecma262-lowered-kotlin.yml \
-    tools/git-hooks/gate_registry.py
+    tools/git-hooks/gate_registry.py \
+    backends/kotlin/lowered-ecma262/build.gradle.kts \
+    tools/codegen/templates/kotlin/transition_actions.kt.jinja2
 # ⚠ COMPILED, so `mutation_targets` and not the runtime list. One case removes
 # this lane's row from the `LANES` table, and that table lives inside the
 # oracle's own source file. Measured 2026-08-30: declared in neither list, the
@@ -121,4 +123,43 @@ mutation_case "the exclusion list may grow without limit" <<'PY'
 edit("scripts/gates/ecma262-lowered-kotlin.sh",
      "if (( excused > DEFECT_CEILING )); then",
      "if (( excused > 10000 )); then")
+PY
+
+# ── The lane stops seeing the generator change under it ────────────
+#
+# Measured 2026-08-30 and repaired the same day: the generation task declared
+# the generator's PATH (`@get:Input codegen: Property<String>`) and not its
+# CONTENT, so rebuilding `sce-codegen` left the task UP-TO-DATE. The suite then
+# compiled machines the PREVIOUS generator had emitted and reported on them as
+# if they were this tree's. It surfaced only because that change also moved a
+# runtime signature, so the stale Kotlin failed to compile — a change that
+# altered only emitted BEHAVIOUR would have gone green.
+#
+# This is the same reading `--rerun` and the census demand refuse one level
+# down. A lane whose whole subject is "the artifact this tree emits, executed"
+# cannot be allowed to execute an artifact from another tree.
+
+mutation_case "the generator may change without regenerating the artifact" <<'PY'
+edit("backends/kotlin/lowered-ecma262/build.gradle.kts",
+     "    @get:InputFile\n    abstract val codegenBinary: RegularFileProperty",
+     "    @get:Internal\n    abstract val codegenBinary: RegularFileProperty")
+PY
+
+# ── The action dispatch starts deciding again ──────────────────────
+#
+# THE defect this round repaid, restored. `transition_actions.kt.jinja2` used
+# to key each arm on the transition's `cond` — the same one the selection had
+# already evaluated to choose that transition. Measured 2026-08-30 on
+# `cond="++v == 2"`: the guard held on the first evaluation and the transition
+# was taken, then failed on the second and the machine ran the other arm's
+# content.
+#
+# Putting a guard call back into that template is the whole regression in one
+# line, and nothing downstream would notice: no W3C fixture guards on a side
+# effect, and no engine-level test compiles a machine.
+
+mutation_case "the action dispatch decides again instead of being told" <<'PY'
+edit("tools/codegen/templates/kotlin/transition_actions.kt.jinja2",
+     "        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when (transitionIndex) {",
+     "        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when { safeEvaluateGuard(x) -> {} else ->")
 PY

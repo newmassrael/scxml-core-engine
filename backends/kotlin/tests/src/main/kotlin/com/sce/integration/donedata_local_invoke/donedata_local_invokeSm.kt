@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -344,11 +344,11 @@ class DonedataLocalInvokeStateMachine(
     private fun processPhaseContent(
         event: DonedataLocalInvokeEvent
     ): TransitionResult<DonedataLocalInvokeState> = when {
-        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("param_ok && _event.data === 'hello_content'")) -> TransitionResult.External(DonedataLocalInvokeState.Pass, DonedataLocalInvokeState.PhaseContent)
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("param_ok && _event.data === 'hello_content'")) -> TransitionResult.External(DonedataLocalInvokeState.Pass, DonedataLocalInvokeState.PhaseContent, 0)
 
-        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseContent)
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseContent, 1)
 
-        event is DonedataLocalInvokeEvent.Error.Execution -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseContent)
+        event is DonedataLocalInvokeEvent.Error.Execution -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseContent, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -356,11 +356,11 @@ class DonedataLocalInvokeStateMachine(
     private fun processPhaseParam(
         event: DonedataLocalInvokeEvent
     ): TransitionResult<DonedataLocalInvokeState> = when {
-        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLocalInvokeState.PhaseContent, DonedataLocalInvokeState.PhaseParam)
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLocalInvokeState.PhaseContent, DonedataLocalInvokeState.PhaseParam, 3)
 
-        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseParam)
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseParam, 4)
 
-        event is DonedataLocalInvokeEvent.Error.Execution -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseParam)
+        event is DonedataLocalInvokeEvent.Error.Execution -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseParam, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -454,11 +454,12 @@ class DonedataLocalInvokeStateMachine(
     // SCE-MAP: donedata_local_invoke.scxml:28 :: _machine
     override fun executeTransitionActions(
         source: DonedataLocalInvokeState,
-        event: DonedataLocalInvokeEvent?
+        event: DonedataLocalInvokeEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is DonedataLocalInvokeState.PhaseParam -> when {
-            event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> {
+        is DonedataLocalInvokeState.PhaseParam -> when (transitionIndex) {
+            3 -> {
                 // SCE-MAP: donedata_local_invoke.scxml:47 :: phase_param :: _transition_0
 
 

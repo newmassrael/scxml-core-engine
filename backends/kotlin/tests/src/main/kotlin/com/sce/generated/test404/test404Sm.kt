@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -159,7 +159,7 @@ class Test404StateMachine(
     private fun processNullS01p(
     ): TransitionResult<Test404State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test404State.S02, Test404State.S01p)
+        else -> TransitionResult.External(Test404State.S02, Test404State.S01p, 0)
     }
 
     // --- Per-State Event Handlers ---
@@ -167,37 +167,37 @@ class Test404StateMachine(
     private fun processS02(
         event: Test404Event
     ): TransitionResult<Test404State> = when {
-        event is Test404Event.Event1 -> TransitionResult.External(Test404State.S03, Test404State.S02)
+        event is Test404Event.Event1 -> TransitionResult.External(Test404State.S03, Test404State.S02, 1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test404State.Fail, Test404State.S02)
+        else -> TransitionResult.External(Test404State.Fail, Test404State.S02, 2)
     }
 
     private fun processS03(
         event: Test404Event
     ): TransitionResult<Test404State> = when {
-        event is Test404Event.Event2 -> TransitionResult.External(Test404State.S04, Test404State.S03)
+        event is Test404Event.Event2 -> TransitionResult.External(Test404State.S04, Test404State.S03, 3)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test404State.Fail, Test404State.S03)
+        else -> TransitionResult.External(Test404State.Fail, Test404State.S03, 4)
     }
 
     private fun processS04(
         event: Test404Event
     ): TransitionResult<Test404State> = when {
-        event is Test404Event.Event3 -> TransitionResult.External(Test404State.S05, Test404State.S04)
+        event is Test404Event.Event3 -> TransitionResult.External(Test404State.S05, Test404State.S04, 5)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test404State.Fail, Test404State.S04)
+        else -> TransitionResult.External(Test404State.Fail, Test404State.S04, 6)
     }
 
     private fun processS05(
         event: Test404Event
     ): TransitionResult<Test404State> = when {
-        event is Test404Event.Event4 -> TransitionResult.External(Test404State.Pass, Test404State.S05)
+        event is Test404Event.Event4 -> TransitionResult.External(Test404State.Pass, Test404State.S05, 7)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test404State.Fail, Test404State.S05)
+        else -> TransitionResult.External(Test404State.Fail, Test404State.S05, 8)
     }
 
 
@@ -353,27 +353,28 @@ class Test404StateMachine(
     // SCE-MAP: test404.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test404State,
-        event: Test404Event?
+        event: Test404Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test404State.S01p -> when {
-            event == null -> {
+        is Test404State.S01p -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test404.scxml:19 :: s01p :: _transition_0
 
             raiseInternal(Test404Event.Event4)
             }
             else -> {}
         }
-        is Test404State.S01p1 -> when {
-            event == null -> {
+        is Test404State.S01p1 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test404.scxml:19 :: s01p :: _transition_0
 
             raiseInternal(Test404Event.Event4)
             }
             else -> {}
         }
-        is Test404State.S01p2 -> when {
-            event == null -> {
+        is Test404State.S01p2 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test404.scxml:19 :: s01p :: _transition_0
 
             raiseInternal(Test404Event.Event4)

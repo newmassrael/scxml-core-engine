@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4731a6ba40787ab928e39e6fce63f290cd233b0d7081f439713483c0324e40fe
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -397,13 +397,13 @@ class ErrorCascadeIsBoundedStateMachine(
     private fun processIdle(
         event: ErrorCascadeIsBoundedEvent
     ): TransitionResult<ErrorCascadeIsBoundedState> = when {
-        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Idle)
+        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Idle, 0)
 
-        event is ErrorCascadeIsBoundedEvent.Boom -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Idle)
+        event is ErrorCascadeIsBoundedEvent.Boom -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Idle, 1)
 
-        event is ErrorCascadeIsBoundedEvent.Settle -> TransitionResult.External(ErrorCascadeIsBoundedState.Settling, ErrorCascadeIsBoundedState.Idle)
+        event is ErrorCascadeIsBoundedEvent.Settle -> TransitionResult.External(ErrorCascadeIsBoundedState.Settling, ErrorCascadeIsBoundedState.Idle, 2)
 
-        event is ErrorCascadeIsBoundedEvent.Spin -> TransitionResult.External(ErrorCascadeIsBoundedState.Runaway, ErrorCascadeIsBoundedState.Idle)
+        event is ErrorCascadeIsBoundedEvent.Spin -> TransitionResult.External(ErrorCascadeIsBoundedState.Runaway, ErrorCascadeIsBoundedState.Idle, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -412,12 +412,12 @@ class ErrorCascadeIsBoundedStateMachine(
         event: ErrorCascadeIsBoundedEvent
     ): TransitionResult<ErrorCascadeIsBoundedState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is ErrorCascadeIsBoundedEvent.Error.Execution -> TransitionResult.Internal
+        event is ErrorCascadeIsBoundedEvent.Error.Execution -> TransitionResult.Internal(4)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is ErrorCascadeIsBoundedEvent.Tick -> TransitionResult.Internal
+        event is ErrorCascadeIsBoundedEvent.Tick -> TransitionResult.Internal(5)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.Internal
-        event is ErrorCascadeIsBoundedEvent.Reset -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Runaway)
+        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.Internal(6)
+        event is ErrorCascadeIsBoundedEvent.Reset -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Runaway, 7)
 
         else -> TransitionResult.Ignored
     }
@@ -425,10 +425,10 @@ class ErrorCascadeIsBoundedStateMachine(
     private fun processSettling(
         event: ErrorCascadeIsBoundedEvent
     ): TransitionResult<ErrorCascadeIsBoundedState> = when {
-        event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("repairs < 3")) -> TransitionResult.Internal
+        event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("repairs < 3")) -> TransitionResult.Internal(8)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.Internal
-        event is ErrorCascadeIsBoundedEvent.Reset -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Settling)
+        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.Internal(9)
+        event is ErrorCascadeIsBoundedEvent.Reset -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Settling, 10)
 
         else -> TransitionResult.Ignored
     }
@@ -489,17 +489,18 @@ class ErrorCascadeIsBoundedStateMachine(
     // SCE-MAP: error_cascade_is_bounded.scxml:45 :: _machine
     override fun executeTransitionActions(
         source: ErrorCascadeIsBoundedState,
-        event: ErrorCascadeIsBoundedEvent?
+        event: ErrorCascadeIsBoundedEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is ErrorCascadeIsBoundedState.Idle -> when {
-            event is ErrorCascadeIsBoundedEvent.Poke -> {
+        is ErrorCascadeIsBoundedState.Idle -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:68 :: idle :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
-            event is ErrorCascadeIsBoundedEvent.Boom -> {
+            1 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:74 :: idle :: _transition_1
 
 
@@ -508,8 +509,8 @@ class ErrorCascadeIsBoundedStateMachine(
             }
             else -> {}
         }
-        is ErrorCascadeIsBoundedState.Runaway -> when {
-            event is ErrorCascadeIsBoundedEvent.Error.Execution -> {
+        is ErrorCascadeIsBoundedState.Runaway -> when (transitionIndex) {
+            4 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
 
 
@@ -521,13 +522,13 @@ class ErrorCascadeIsBoundedStateMachine(
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
-            event is ErrorCascadeIsBoundedEvent.Tick -> {
+            5 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("ticks"), com.sce.runtime.ScriptSource.ecmascript("ticks + 1"))
             }
-            event is ErrorCascadeIsBoundedEvent.Poke -> {
+            6 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
 
 
@@ -535,8 +536,8 @@ class ErrorCascadeIsBoundedStateMachine(
             }
             else -> {}
         }
-        is ErrorCascadeIsBoundedState.Settling -> when {
-            event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("repairs < 3")) -> {
+        is ErrorCascadeIsBoundedState.Settling -> when (transitionIndex) {
+            8 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
 
 
@@ -546,7 +547,7 @@ class ErrorCascadeIsBoundedStateMachine(
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
-            event is ErrorCascadeIsBoundedEvent.Poke -> {
+            9 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
 
 

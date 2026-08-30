@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -325,9 +325,9 @@ class Test307StateMachine(
         event: Test307Event
     ): TransitionResult<Test307State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionResult.External(Test307State.S1, Test307State.S0)
+        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionResult.External(Test307State.S1, Test307State.S0, 0)
 
-        event is Test307Event.Foo -> TransitionResult.External(Test307State.S1, Test307State.S0)
+        event is Test307Event.Foo -> TransitionResult.External(Test307State.S1, Test307State.S0, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -336,9 +336,9 @@ class Test307StateMachine(
         event: Test307Event
     ): TransitionResult<Test307State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionResult.External(Test307State.Final, Test307State.S1)
+        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionResult.External(Test307State.Final, Test307State.S1, 2)
 
-        event is Test307Event.Bar -> TransitionResult.External(Test307State.Final, Test307State.S1)
+        event is Test307Event.Bar -> TransitionResult.External(Test307State.Final, Test307State.S1, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -419,11 +419,12 @@ class Test307StateMachine(
     // SCE-MAP: test307.scxml:1 :: _machine
     override fun executeTransitionActions(
         source: Test307State,
-        event: Test307Event?
+        event: Test307Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test307State.S0 -> when {
-            (event is Test307Event.Error || event is Test307Event.Error.Execution) -> {
+        is Test307State.S0 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test307.scxml:13 :: s0 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
@@ -431,15 +432,15 @@ class Test307StateMachine(
                 println("error in state s0: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event"))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
-            event is Test307Event.Foo -> {
+            1 -> {
                 // SCE-MAP: test307.scxml:16 :: s0 :: _transition_1
 
             println("no error in s0")
             }
             else -> {}
         }
-        is Test307State.S1 -> when {
-            (event is Test307Event.Error || event is Test307Event.Error.Execution) -> {
+        is Test307State.S1 -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: test307.scxml:31 :: s1 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
@@ -447,7 +448,7 @@ class Test307StateMachine(
                 println("error in state s1: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event"))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
-            event is Test307Event.Bar -> {
+            3 -> {
                 // SCE-MAP: test307.scxml:34 :: s1 :: _transition_1
 
             println("No error in s1")

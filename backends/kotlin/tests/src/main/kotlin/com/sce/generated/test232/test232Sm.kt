@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -173,7 +173,7 @@ class Test232StateMachine(
     private fun processS0(
         event: Test232Event
     ): TransitionResult<Test232State> = when {
-        event is Test232Event.Timeout -> TransitionResult.External(Test232State.Fail, Test232State.S0)
+        event is Test232Event.Timeout -> TransitionResult.External(Test232State.Fail, Test232State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -181,7 +181,7 @@ class Test232StateMachine(
     private fun processS01(
         event: Test232Event
     ): TransitionResult<Test232State> = when {
-        event is Test232Event.ChildToParent1 -> TransitionResult.External(Test232State.S02, Test232State.S01)
+        event is Test232Event.ChildToParent1 -> TransitionResult.External(Test232State.S02, Test232State.S01, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -189,7 +189,7 @@ class Test232StateMachine(
     private fun processS02(
         event: Test232Event
     ): TransitionResult<Test232State> = when {
-        event is Test232Event.ChildToParent2 -> TransitionResult.External(Test232State.S03, Test232State.S02)
+        event is Test232Event.ChildToParent2 -> TransitionResult.External(Test232State.S03, Test232State.S02, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -197,7 +197,7 @@ class Test232StateMachine(
     private fun processS03(
         event: Test232Event
     ): TransitionResult<Test232State> = when {
-        event is Test232Event.Done.Invoke -> TransitionResult.External(Test232State.Pass, Test232State.S03)
+        event is Test232Event.Done.Invoke -> TransitionResult.External(Test232State.Pass, Test232State.S03, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -298,7 +298,8 @@ class Test232StateMachine(
     // SCE-MAP: test232.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test232State,
-        event: Test232Event?
+        event: Test232Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

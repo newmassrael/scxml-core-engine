@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -320,12 +320,12 @@ class AutoforwardEventFieldsStateMachine(
         event: AutoforwardEventFieldsEvent
     ): TransitionResult<AutoforwardEventFieldsState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is AutoforwardEventFieldsEvent.ChildToParent -> TransitionResult.Internal
-        event is AutoforwardEventFieldsEvent.FieldsPreserved -> TransitionResult.External(AutoforwardEventFieldsState.Pass, AutoforwardEventFieldsState.Phase)
+        event is AutoforwardEventFieldsEvent.ChildToParent -> TransitionResult.Internal(0)
+        event is AutoforwardEventFieldsEvent.FieldsPreserved -> TransitionResult.External(AutoforwardEventFieldsState.Pass, AutoforwardEventFieldsState.Phase, 1)
 
-        event is AutoforwardEventFieldsEvent.FieldsStripped -> TransitionResult.External(AutoforwardEventFieldsState.Fail, AutoforwardEventFieldsState.Phase)
+        event is AutoforwardEventFieldsEvent.FieldsStripped -> TransitionResult.External(AutoforwardEventFieldsState.Fail, AutoforwardEventFieldsState.Phase, 2)
 
-        event is AutoforwardEventFieldsEvent.Error.Execution -> TransitionResult.External(AutoforwardEventFieldsState.Fail, AutoforwardEventFieldsState.Phase)
+        event is AutoforwardEventFieldsEvent.Error.Execution -> TransitionResult.External(AutoforwardEventFieldsState.Fail, AutoforwardEventFieldsState.Phase, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -396,7 +396,8 @@ class AutoforwardEventFieldsStateMachine(
     // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardEventFieldsState,
-        event: AutoforwardEventFieldsEvent?
+        event: AutoforwardEventFieldsEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

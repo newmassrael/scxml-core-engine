@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -305,7 +305,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
     private fun processEmit(
         event: EventOriginIsALocationSceSynthInvokeInvPeerEvent
     ): TransitionResult<EventOriginIsALocationSceSynthInvokeInvPeerState> = when {
-        event is EventOriginIsALocationSceSynthInvokeInvPeerEvent.Reply -> TransitionResult.External(EventOriginIsALocationSceSynthInvokeInvPeerState.Acked, EventOriginIsALocationSceSynthInvokeInvPeerState.Emit)
+        event is EventOriginIsALocationSceSynthInvokeInvPeerEvent.Reply -> TransitionResult.External(EventOriginIsALocationSceSynthInvokeInvPeerState.Acked, EventOriginIsALocationSceSynthInvokeInvPeerState.Emit, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -369,11 +369,12 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
     // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: EventOriginIsALocationSceSynthInvokeInvPeerState,
-        event: EventOriginIsALocationSceSynthInvokeInvPeerEvent?
+        event: EventOriginIsALocationSceSynthInvokeInvPeerEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> when {
-            event is EventOriginIsALocationSceSynthInvokeInvPeerEvent.Reply -> {
+        is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:12 :: emit :: _transition_0
 
 

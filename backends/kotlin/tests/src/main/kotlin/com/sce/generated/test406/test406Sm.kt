@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -215,7 +215,7 @@ class Test406StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test406State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test406State.S0p2, Test406State.S01)
+        else -> TransitionResult.External(Test406State.S0p2, Test406State.S01, 1)
     }
 
     // --- Per-State Event Handlers ---
@@ -223,7 +223,7 @@ class Test406StateMachine(
     private fun processS0(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Timeout -> TransitionResult.External(Test406State.Fail, Test406State.S0)
+        event is Test406Event.Timeout -> TransitionResult.External(Test406State.Fail, Test406State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -231,34 +231,34 @@ class Test406StateMachine(
     private fun processS03(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Event2 -> TransitionResult.External(Test406State.S04, Test406State.S03)
+        event is Test406Event.Event2 -> TransitionResult.External(Test406State.S04, Test406State.S03, 2)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test406State.Fail, Test406State.S03)
+        else -> TransitionResult.External(Test406State.Fail, Test406State.S03, 3)
     }
 
     private fun processS04(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Event3 -> TransitionResult.External(Test406State.S05, Test406State.S04)
+        event is Test406Event.Event3 -> TransitionResult.External(Test406State.S05, Test406State.S04, 4)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test406State.Fail, Test406State.S04)
+        else -> TransitionResult.External(Test406State.Fail, Test406State.S04, 5)
     }
 
     private fun processS05(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Event4 -> TransitionResult.External(Test406State.Pass, Test406State.S05)
+        event is Test406Event.Event4 -> TransitionResult.External(Test406State.Pass, Test406State.S05, 6)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test406State.Fail, Test406State.S05)
+        else -> TransitionResult.External(Test406State.Fail, Test406State.S05, 7)
     }
 
     private fun processS0p2(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Event1 -> TransitionResult.External(Test406State.S03, Test406State.S0p2)
+        event is Test406Event.Event1 -> TransitionResult.External(Test406State.S03, Test406State.S0p2, 8)
 
         else -> TransitionResult.Ignored
     }
@@ -419,11 +419,12 @@ class Test406StateMachine(
     // SCE-MAP: test406.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test406State,
-        event: Test406Event?
+        event: Test406Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test406State.S01 -> when {
-            event == null -> {
+        is Test406State.S01 -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: test406.scxml:15 :: s01 :: _transition_0
 
             raiseInternal(Test406Event.Event1)

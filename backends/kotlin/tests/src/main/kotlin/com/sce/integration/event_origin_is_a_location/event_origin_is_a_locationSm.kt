@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -343,7 +343,7 @@ class EventOriginIsALocationStateMachine(
     private fun processAwaitReply(
         event: EventOriginIsALocationEvent
     ): TransitionResult<EventOriginIsALocationState> = when {
-        event is EventOriginIsALocationEvent.ReplyArrived -> TransitionResult.External(EventOriginIsALocationState.Pass, EventOriginIsALocationState.AwaitReply)
+        event is EventOriginIsALocationEvent.ReplyArrived -> TransitionResult.External(EventOriginIsALocationState.Pass, EventOriginIsALocationState.AwaitReply, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -351,9 +351,9 @@ class EventOriginIsALocationStateMachine(
     private fun processWaiting(
         event: EventOriginIsALocationEvent
     ): TransitionResult<EventOriginIsALocationState> = when {
-        event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.origin == _event.data.myLocation")) -> TransitionResult.External(EventOriginIsALocationState.AwaitReply, EventOriginIsALocationState.Waiting)
+        event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.origin == _event.data.myLocation")) -> TransitionResult.External(EventOriginIsALocationState.AwaitReply, EventOriginIsALocationState.Waiting, 1)
 
-        event is EventOriginIsALocationEvent.FromChild -> TransitionResult.External(EventOriginIsALocationState.Fail, EventOriginIsALocationState.Waiting)
+        event is EventOriginIsALocationEvent.FromChild -> TransitionResult.External(EventOriginIsALocationState.Fail, EventOriginIsALocationState.Waiting, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -442,11 +442,12 @@ class EventOriginIsALocationStateMachine(
     // SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine
     override fun executeTransitionActions(
         source: EventOriginIsALocationState,
-        event: EventOriginIsALocationEvent?
+        event: EventOriginIsALocationEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is EventOriginIsALocationState.Waiting -> when {
-            event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.origin == _event.data.myLocation")) -> {
+        is EventOriginIsALocationState.Waiting -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: event_origin_is_a_location.scxml:75 :: waiting :: _transition_0
 
 

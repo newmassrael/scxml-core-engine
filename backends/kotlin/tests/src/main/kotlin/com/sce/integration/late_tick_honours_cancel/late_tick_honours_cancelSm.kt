@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 830b289f80d91dc5d572815c7cc65d24d654428511fa200c1077c009c1ba9b91
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -97,9 +97,9 @@ class LateTickHonoursCancelStateMachine(
     private fun processActive(
         event: LateTickHonoursCancelEvent
     ): TransitionResult<LateTickHonoursCancelState> = when {
-        event is LateTickHonoursCancelEvent.Settle -> TransitionResult.External(LateTickHonoursCancelState.CancelLost, LateTickHonoursCancelState.Active)
+        event is LateTickHonoursCancelEvent.Settle -> TransitionResult.External(LateTickHonoursCancelState.CancelLost, LateTickHonoursCancelState.Active, 0)
 
-        event is LateTickHonoursCancelEvent.Finish -> TransitionResult.External(LateTickHonoursCancelState.Pass, LateTickHonoursCancelState.Active)
+        event is LateTickHonoursCancelEvent.Finish -> TransitionResult.External(LateTickHonoursCancelState.Pass, LateTickHonoursCancelState.Active, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -107,9 +107,9 @@ class LateTickHonoursCancelStateMachine(
     private fun processWaiting(
         event: LateTickHonoursCancelEvent
     ): TransitionResult<LateTickHonoursCancelState> = when {
-        event is LateTickHonoursCancelEvent.Poke -> TransitionResult.External(LateTickHonoursCancelState.Active, LateTickHonoursCancelState.Waiting)
+        event is LateTickHonoursCancelEvent.Poke -> TransitionResult.External(LateTickHonoursCancelState.Active, LateTickHonoursCancelState.Waiting, 2)
 
-        event is LateTickHonoursCancelEvent.Settle -> TransitionResult.External(LateTickHonoursCancelState.CancelLost, LateTickHonoursCancelState.Waiting)
+        event is LateTickHonoursCancelEvent.Settle -> TransitionResult.External(LateTickHonoursCancelState.CancelLost, LateTickHonoursCancelState.Waiting, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -187,7 +187,8 @@ class LateTickHonoursCancelStateMachine(
     // SCE-MAP: late_tick_honours_cancel.scxml:39 :: _machine
     override fun executeTransitionActions(
         source: LateTickHonoursCancelState,
-        event: LateTickHonoursCancelEvent?
+        event: LateTickHonoursCancelEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

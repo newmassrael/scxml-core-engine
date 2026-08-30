@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -121,7 +121,8 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
     // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDoneInvokeSceSynthInvokeInvShortState,
-        event: AutoforwardDoneInvokeSceSynthInvokeInvShortEvent?
+        event: AutoforwardDoneInvokeSceSynthInvokeInvShortEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

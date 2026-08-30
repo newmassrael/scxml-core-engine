@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -127,7 +127,7 @@ class NestedFinalNotTerminalStateMachine(
     private fun processNullRunning(
     ): TransitionResult<NestedFinalNotTerminalState> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(NestedFinalNotTerminalState.PhaseDone, NestedFinalNotTerminalState.Running)
+        else -> TransitionResult.External(NestedFinalNotTerminalState.PhaseDone, NestedFinalNotTerminalState.Running, 1)
     }
 
     // --- Per-State Event Handlers ---
@@ -135,7 +135,7 @@ class NestedFinalNotTerminalStateMachine(
     private fun processPhase(
         event: NestedFinalNotTerminalEvent
     ): TransitionResult<NestedFinalNotTerminalState> = when {
-        event is NestedFinalNotTerminalEvent.Resume -> TransitionResult.External(NestedFinalNotTerminalState.Pass, NestedFinalNotTerminalState.Phase)
+        event is NestedFinalNotTerminalEvent.Resume -> TransitionResult.External(NestedFinalNotTerminalState.Pass, NestedFinalNotTerminalState.Phase, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -201,7 +201,8 @@ class NestedFinalNotTerminalStateMachine(
     // SCE-MAP: nested_final_not_terminal.scxml:41 :: _machine
     override fun executeTransitionActions(
         source: NestedFinalNotTerminalState,
-        event: NestedFinalNotTerminalEvent?
+        event: NestedFinalNotTerminalEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

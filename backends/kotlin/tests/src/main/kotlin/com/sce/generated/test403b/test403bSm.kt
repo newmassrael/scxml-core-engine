@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -392,16 +392,16 @@ class Test403bStateMachine(
         event: Test403bEvent
     ): TransitionResult<Test403bState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is Test403bEvent.Event1 -> TransitionResult.Internal
+        event is Test403bEvent.Event1 -> TransitionResult.Internal(0)
         else -> TransitionResult.Ignored
     }
 
     private fun processP0s1(
         event: Test403bEvent
     ): TransitionResult<Test403bState> = when {
-        event is Test403bEvent.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test403bState.Pass, Test403bState.P0s1)
+        event is Test403bEvent.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test403bState.Pass, Test403bState.P0s1, 1)
 
-        event is Test403bEvent.Event2 -> TransitionResult.External(Test403bState.Fail, Test403bState.P0s1)
+        event is Test403bEvent.Event2 -> TransitionResult.External(Test403bState.Fail, Test403bState.P0s1, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -410,7 +410,7 @@ class Test403bStateMachine(
         event: Test403bEvent
     ): TransitionResult<Test403bState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is Test403bEvent.Event1 -> TransitionResult.Internal
+        event is Test403bEvent.Event1 -> TransitionResult.Internal(3)
         else -> TransitionResult.Ignored
     }
 
@@ -529,17 +529,18 @@ class Test403bStateMachine(
     // SCE-MAP: test403b.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test403bState,
-        event: Test403bEvent?
+        event: Test403bEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test403bState.P0 -> when {
-            event is Test403bEvent.Event1 -> {
+        is Test403bState.P0 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
             }
-            event is Test403bEvent.Event1 -> {
+            3 -> {
                 // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
@@ -547,14 +548,14 @@ class Test403bStateMachine(
             }
             else -> {}
         }
-        is Test403bState.P0s1 -> when {
-            event is Test403bEvent.Event1 -> {
+        is Test403bState.P0s1 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
             }
-            event is Test403bEvent.Event1 -> {
+            3 -> {
                 // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
@@ -562,14 +563,14 @@ class Test403bStateMachine(
             }
             else -> {}
         }
-        is Test403bState.P0s2 -> when {
-            event is Test403bEvent.Event1 -> {
+        is Test403bState.P0s2 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
             }
-            event is Test403bEvent.Event1 -> {
+            3 -> {
                 // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
@@ -577,8 +578,8 @@ class Test403bStateMachine(
             }
             else -> {}
         }
-        is Test403bState.S0 -> when {
-            event is Test403bEvent.Event1 -> {
+        is Test403bState.S0 -> when (transitionIndex) {
+            3 -> {
                 // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 

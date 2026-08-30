@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -321,9 +321,9 @@ class Test318StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test318State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'foo'")) -> TransitionResult.External(Test318State.Pass, Test318State.S1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'foo'")) -> TransitionResult.External(Test318State.Pass, Test318State.S1, 1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test318State.Fail, Test318State.S1)
+        else -> TransitionResult.External(Test318State.Fail, Test318State.S1, 2)
     }
 
     // --- Per-State Event Handlers ---
@@ -331,7 +331,7 @@ class Test318StateMachine(
     private fun processS0(
         event: Test318Event
     ): TransitionResult<Test318State> = when {
-        event is Test318Event.Foo -> TransitionResult.External(Test318State.S1, Test318State.S0)
+        event is Test318Event.Foo -> TransitionResult.External(Test318State.S1, Test318State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -404,7 +404,8 @@ class Test318StateMachine(
     // SCE-MAP: test318.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test318State,
-        event: Test318Event?
+        event: Test318Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

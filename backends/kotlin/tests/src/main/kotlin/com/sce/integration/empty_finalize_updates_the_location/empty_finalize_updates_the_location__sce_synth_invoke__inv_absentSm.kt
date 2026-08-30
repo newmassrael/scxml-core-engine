@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c97edcb094613d8138825758fc943d853d23ad4854f2fa7dcf6ff6f58539b674
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -310,7 +310,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
     private fun processNullAnswer(
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Done, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Answer)
+        else -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Done, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Answer, 0)
     }
 
     // --- Per-State Event Handlers ---
@@ -356,11 +356,12 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
     // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState,
-        event: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent?
+        event: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Answer -> when {
-            event == null -> {
+        is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Answer -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:9 :: answer :: _transition_0
 
 

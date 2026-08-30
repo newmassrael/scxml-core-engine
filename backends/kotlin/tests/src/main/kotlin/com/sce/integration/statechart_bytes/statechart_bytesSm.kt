@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: d8762291f8adee4223c5af3de347a3acefddf00a392ed861e70d8d9802dc3abb
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -126,7 +126,7 @@ class StatechartBytesStateMachine(
     private fun processWaiting(
         event: StatechartBytesEvent
     ): TransitionResult<StatechartBytesState> = when {
-        event is StatechartBytesEvent.Signal.Received && pendingSignalReceivedPayload != null && (pendingSignalReceivedPayload!!.raw.contentEquals("ack".toByteArray())) -> TransitionResult.External(StatechartBytesState.Done, StatechartBytesState.Waiting)
+        event is StatechartBytesEvent.Signal.Received && pendingSignalReceivedPayload != null && (pendingSignalReceivedPayload!!.raw.contentEquals("ack".toByteArray())) -> TransitionResult.External(StatechartBytesState.Done, StatechartBytesState.Waiting, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -170,7 +170,8 @@ class StatechartBytesStateMachine(
     // SCE-MAP: statechart_bytes.scxml:13 :: _machine
     override fun executeTransitionActions(
         source: StatechartBytesState,
-        event: StatechartBytesEvent?
+        event: StatechartBytesEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

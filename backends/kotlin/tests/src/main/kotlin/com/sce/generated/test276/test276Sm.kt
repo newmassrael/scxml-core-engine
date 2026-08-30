@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -316,9 +316,9 @@ class Test276StateMachine(
     private fun processS0(
         event: Test276Event
     ): TransitionResult<Test276State> = when {
-        event is Test276Event.Event1 -> TransitionResult.External(Test276State.Pass, Test276State.S0)
+        event is Test276Event.Event1 -> TransitionResult.External(Test276State.Pass, Test276State.S0, 0)
 
-        event is Test276Event.Event0 -> TransitionResult.External(Test276State.Fail, Test276State.S0)
+        event is Test276Event.Event0 -> TransitionResult.External(Test276State.Fail, Test276State.S0, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -416,7 +416,8 @@ class Test276StateMachine(
     // SCE-MAP: test276.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test276State,
-        event: Test276Event?
+        event: Test276Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

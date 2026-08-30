@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -323,10 +323,10 @@ class Test253SceSynthInvokeFooStateMachine(
 
     private fun processNullSub1(
     ): TransitionResult<Test253SceSynthInvokeFooState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 'scxml'")) -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 'scxml'")) -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1)
+        else -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1, 3)
     }
 
     // --- Per-State Event Handlers ---
@@ -334,7 +334,7 @@ class Test253SceSynthInvokeFooStateMachine(
     private fun processSub0(
         event: Test253SceSynthInvokeFooEvent
     ): TransitionResult<Test253SceSynthInvokeFooState> = when {
-        event is Test253SceSynthInvokeFooEvent.ParentToChild -> TransitionResult.External(Test253SceSynthInvokeFooState.Sub1, Test253SceSynthInvokeFooState.Sub0)
+        event is Test253SceSynthInvokeFooEvent.ParentToChild -> TransitionResult.External(Test253SceSynthInvokeFooState.Sub1, Test253SceSynthInvokeFooState.Sub0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -393,11 +393,12 @@ class Test253SceSynthInvokeFooStateMachine(
     // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test253SceSynthInvokeFooState,
-        event: Test253SceSynthInvokeFooEvent?
+        event: Test253SceSynthInvokeFooEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test253SceSynthInvokeFooState.Sub0 -> when {
-            event is Test253SceSynthInvokeFooEvent.ParentToChild -> {
+        is Test253SceSynthInvokeFooState.Sub0 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:12 :: sub0 :: _transition_0
 
 
@@ -405,22 +406,22 @@ class Test253SceSynthInvokeFooStateMachine(
             }
             else -> {}
         }
-        is Test253SceSynthInvokeFooState.Sub1 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> {
+        is Test253SceSynthInvokeFooState.Sub1 -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:17 :: sub1 :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
             }
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 'scxml'")) -> {
+            2 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:20 :: sub1 :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
             }
-            event == null -> {
+            3 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:23 :: sub1 :: _transition_2
 
 

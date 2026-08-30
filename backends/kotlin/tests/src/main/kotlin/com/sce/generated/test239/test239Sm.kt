@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -152,7 +152,7 @@ class Test239StateMachine(
     private fun processS0(
         event: Test239Event
     ): TransitionResult<Test239State> = when {
-        event is Test239Event.Timeout -> TransitionResult.External(Test239State.Fail, Test239State.S0)
+        event is Test239Event.Timeout -> TransitionResult.External(Test239State.Fail, Test239State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -160,7 +160,7 @@ class Test239StateMachine(
     private fun processS01(
         event: Test239Event
     ): TransitionResult<Test239State> = when {
-        event is Test239Event.Done.Invoke -> TransitionResult.External(Test239State.S02, Test239State.S01)
+        event is Test239Event.Done.Invoke -> TransitionResult.External(Test239State.S02, Test239State.S01, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -168,7 +168,7 @@ class Test239StateMachine(
     private fun processS02(
         event: Test239Event
     ): TransitionResult<Test239State> = when {
-        event is Test239Event.Done.Invoke -> TransitionResult.External(Test239State.Pass, Test239State.S02)
+        event is Test239Event.Done.Invoke -> TransitionResult.External(Test239State.Pass, Test239State.S02, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -274,7 +274,8 @@ class Test239StateMachine(
     // SCE-MAP: test239.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test239State,
-        event: Test239Event?
+        event: Test239Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

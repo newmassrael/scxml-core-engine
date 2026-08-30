@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 280975c88158c1a2612c8726a71e4ae581a1e42f8ef6d030924e99800aff8d10
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -189,7 +189,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
     private fun processA1(
         event: ParallelCompletionRaisesDoneStateEvent
     ): TransitionResult<ParallelCompletionRaisesDoneStateState> = when {
-        event is ParallelCompletionRaisesDoneStateEvent.Go -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.A2, ParallelCompletionRaisesDoneStateState.A1)
+        event is ParallelCompletionRaisesDoneStateEvent.Go -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.A2, ParallelCompletionRaisesDoneStateState.A1, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -197,7 +197,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
     private fun processB1(
         event: ParallelCompletionRaisesDoneStateEvent
     ): TransitionResult<ParallelCompletionRaisesDoneStateState> = when {
-        event is ParallelCompletionRaisesDoneStateEvent.Go -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.B2, ParallelCompletionRaisesDoneStateState.B1)
+        event is ParallelCompletionRaisesDoneStateEvent.Go -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.B2, ParallelCompletionRaisesDoneStateState.B1, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -205,7 +205,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
     private fun processRun(
         event: ParallelCompletionRaisesDoneStateEvent
     ): TransitionResult<ParallelCompletionRaisesDoneStateState> = when {
-        event is ParallelCompletionRaisesDoneStateEvent.Bail -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.Stopped, ParallelCompletionRaisesDoneStateState.Run)
+        event is ParallelCompletionRaisesDoneStateEvent.Bail -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.Stopped, ParallelCompletionRaisesDoneStateState.Run, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -365,7 +365,8 @@ class ParallelCompletionRaisesDoneStateStateMachine(
     // SCE-MAP: parallel_completion_raises_done_state.scxml:21 :: _machine
     override fun executeTransitionActions(
         source: ParallelCompletionRaisesDoneStateState,
-        event: ParallelCompletionRaisesDoneStateEvent?
+        event: ParallelCompletionRaisesDoneStateEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

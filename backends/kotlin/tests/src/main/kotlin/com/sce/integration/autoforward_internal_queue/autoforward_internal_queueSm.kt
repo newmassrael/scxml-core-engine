@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -125,12 +125,12 @@ class AutoforwardInternalQueueStateMachine(
         event: AutoforwardInternalQueueEvent
     ): TransitionResult<AutoforwardInternalQueueState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is AutoforwardInternalQueueEvent.Ready -> TransitionResult.Internal
+        event is AutoforwardInternalQueueEvent.Ready -> TransitionResult.Internal(0)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is AutoforwardInternalQueueEvent.Error.Execution -> TransitionResult.Internal
-        event is AutoforwardInternalQueueEvent.SawInternal -> TransitionResult.External(AutoforwardInternalQueueState.Fail, AutoforwardInternalQueueState.Phase)
+        event is AutoforwardInternalQueueEvent.Error.Execution -> TransitionResult.Internal(1)
+        event is AutoforwardInternalQueueEvent.SawInternal -> TransitionResult.External(AutoforwardInternalQueueState.Fail, AutoforwardInternalQueueState.Phase, 2)
 
-        event is AutoforwardInternalQueueEvent.SawProbeOnly -> TransitionResult.External(AutoforwardInternalQueueState.Pass, AutoforwardInternalQueueState.Phase)
+        event is AutoforwardInternalQueueEvent.SawProbeOnly -> TransitionResult.External(AutoforwardInternalQueueState.Pass, AutoforwardInternalQueueState.Phase, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -201,11 +201,12 @@ class AutoforwardInternalQueueStateMachine(
     // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardInternalQueueState,
-        event: AutoforwardInternalQueueEvent?
+        event: AutoforwardInternalQueueEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is AutoforwardInternalQueueState.Phase -> when {
-            event is AutoforwardInternalQueueEvent.Ready -> {
+        is AutoforwardInternalQueueState.Phase -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:75 :: phase :: _transition_0
 
 
@@ -213,7 +214,7 @@ class AutoforwardInternalQueueStateMachine(
             raisePlatformError(AutoforwardInternalQueueEvent.Error.Execution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support", "__send_0")
             return  // W3C SCXML 5.10: Stop subsequent executable content
             }
-            event is AutoforwardInternalQueueEvent.Error.Execution -> {
+            1 -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:78 :: phase :: _transition_1
 
 

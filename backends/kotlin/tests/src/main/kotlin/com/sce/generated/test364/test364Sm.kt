@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -391,13 +391,13 @@ class Test364StateMachine(
     private fun processNullS3(
     ): TransitionResult<Test364State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test364State.Fail, Test364State.S3)
+        else -> TransitionResult.External(Test364State.Fail, Test364State.S3, 4)
     }
 
     private fun processNullS3111(
     ): TransitionResult<Test364State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test364State.Pass, Test364State.S3111)
+        else -> TransitionResult.External(Test364State.Pass, Test364State.S3111, 5)
     }
 
     // --- Per-State Event Handlers ---
@@ -405,7 +405,7 @@ class Test364StateMachine(
     private fun processS1(
         event: Test364Event
     ): TransitionResult<Test364State> = when {
-        event is Test364Event.Timeout -> TransitionResult.External(Test364State.Fail, Test364State.S1)
+        event is Test364Event.Timeout -> TransitionResult.External(Test364State.Fail, Test364State.S1, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -413,7 +413,7 @@ class Test364StateMachine(
     private fun processS11p122(
         event: Test364Event
     ): TransitionResult<Test364State> = when {
-        event is Test364Event.InS11p112 -> TransitionResult.External(Test364State.S2, Test364State.S11p122)
+        event is Test364Event.InS11p112 -> TransitionResult.External(Test364State.S2, Test364State.S11p122, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -421,7 +421,7 @@ class Test364StateMachine(
     private fun processS2(
         event: Test364Event
     ): TransitionResult<Test364State> = when {
-        event is Test364Event.Timeout -> TransitionResult.External(Test364State.Fail, Test364State.S2)
+        event is Test364Event.Timeout -> TransitionResult.External(Test364State.Fail, Test364State.S2, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -429,7 +429,7 @@ class Test364StateMachine(
     private fun processS21p122(
         event: Test364Event
     ): TransitionResult<Test364State> = when {
-        event is Test364Event.InS21p112 -> TransitionResult.External(Test364State.S3, Test364State.S21p122)
+        event is Test364Event.InS21p112 -> TransitionResult.External(Test364State.S3, Test364State.S21p122, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -861,7 +861,8 @@ class Test364StateMachine(
     // SCE-MAP: test364.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test364State,
-        event: Test364Event?
+        event: Test364Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

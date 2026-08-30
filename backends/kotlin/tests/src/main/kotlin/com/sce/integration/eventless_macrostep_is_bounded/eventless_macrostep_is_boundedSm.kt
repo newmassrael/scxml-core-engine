@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 448efc1945f51a00d346a070a50c9e40a8fdb0d3297033414fa43984fe293f6e
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -391,26 +391,26 @@ class EventlessMacrostepIsBoundedStateMachine(
 
     private fun processNullBoundedA(
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 500")) -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedB, EventlessMacrostepIsBoundedState.BoundedA)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 500")) -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedB, EventlessMacrostepIsBoundedState.BoundedA, 0)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullBoundedB(
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedA, EventlessMacrostepIsBoundedState.BoundedB)
+        else -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedA, EventlessMacrostepIsBoundedState.BoundedB, 2)
     }
 
     private fun processNullSpinA(
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(EventlessMacrostepIsBoundedState.SpinB, EventlessMacrostepIsBoundedState.SpinA)
+        else -> TransitionResult.External(EventlessMacrostepIsBoundedState.SpinB, EventlessMacrostepIsBoundedState.SpinA, 6)
     }
 
     private fun processNullSpinB(
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(EventlessMacrostepIsBoundedState.SpinA, EventlessMacrostepIsBoundedState.SpinB)
+        else -> TransitionResult.External(EventlessMacrostepIsBoundedState.SpinA, EventlessMacrostepIsBoundedState.SpinB, 9)
     }
 
     // --- Per-State Event Handlers ---
@@ -419,18 +419,18 @@ class EventlessMacrostepIsBoundedStateMachine(
         event: EventlessMacrostepIsBoundedEvent
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionResult.Internal
+        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionResult.Internal(1)
         else -> TransitionResult.Ignored
     }
 
     private fun processIdle(
         event: EventlessMacrostepIsBoundedEvent
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
-        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionResult.External(EventlessMacrostepIsBoundedState.Idle, EventlessMacrostepIsBoundedState.Idle)
+        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionResult.External(EventlessMacrostepIsBoundedState.Idle, EventlessMacrostepIsBoundedState.Idle, 3)
 
-        event is EventlessMacrostepIsBoundedEvent.Bounded -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedA, EventlessMacrostepIsBoundedState.Idle)
+        event is EventlessMacrostepIsBoundedEvent.Bounded -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedA, EventlessMacrostepIsBoundedState.Idle, 4)
 
-        event is EventlessMacrostepIsBoundedEvent.Spin -> TransitionResult.External(EventlessMacrostepIsBoundedState.SpinA, EventlessMacrostepIsBoundedState.Idle)
+        event is EventlessMacrostepIsBoundedEvent.Spin -> TransitionResult.External(EventlessMacrostepIsBoundedState.SpinA, EventlessMacrostepIsBoundedState.Idle, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -439,8 +439,8 @@ class EventlessMacrostepIsBoundedStateMachine(
         event: EventlessMacrostepIsBoundedEvent
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionResult.Internal
-        event is EventlessMacrostepIsBoundedEvent.Reset -> TransitionResult.External(EventlessMacrostepIsBoundedState.Idle, EventlessMacrostepIsBoundedState.SpinA)
+        event is EventlessMacrostepIsBoundedEvent.Poke -> TransitionResult.Internal(7)
+        event is EventlessMacrostepIsBoundedEvent.Reset -> TransitionResult.External(EventlessMacrostepIsBoundedState.Idle, EventlessMacrostepIsBoundedState.SpinA, 8)
 
         else -> TransitionResult.Ignored
     }
@@ -448,7 +448,7 @@ class EventlessMacrostepIsBoundedStateMachine(
     private fun processSpinB(
         event: EventlessMacrostepIsBoundedEvent
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
-        event is EventlessMacrostepIsBoundedEvent.Reset -> TransitionResult.External(EventlessMacrostepIsBoundedState.Idle, EventlessMacrostepIsBoundedState.SpinB)
+        event is EventlessMacrostepIsBoundedEvent.Reset -> TransitionResult.External(EventlessMacrostepIsBoundedState.Idle, EventlessMacrostepIsBoundedState.SpinB, 10)
 
         else -> TransitionResult.Ignored
     }
@@ -519,26 +519,27 @@ class EventlessMacrostepIsBoundedStateMachine(
     // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     override fun executeTransitionActions(
         source: EventlessMacrostepIsBoundedState,
-        event: EventlessMacrostepIsBoundedEvent?
+        event: EventlessMacrostepIsBoundedEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is EventlessMacrostepIsBoundedState.BoundedA -> when {
-            event is EventlessMacrostepIsBoundedEvent.Poke -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:90 :: bounded_a :: _transition_1
-
-
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
-            }
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 500")) -> {
+        is EventlessMacrostepIsBoundedState.BoundedA -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:85 :: bounded_a :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))
             }
+            1 -> {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:90 :: bounded_a :: _transition_1
+
+
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            }
             else -> {}
         }
-        is EventlessMacrostepIsBoundedState.Idle -> when {
-            event is EventlessMacrostepIsBoundedEvent.Poke -> {
+        is EventlessMacrostepIsBoundedState.Idle -> when (transitionIndex) {
+            3 -> {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:72 :: idle :: _transition_0
 
 
@@ -546,18 +547,18 @@ class EventlessMacrostepIsBoundedStateMachine(
             }
             else -> {}
         }
-        is EventlessMacrostepIsBoundedState.SpinA -> when {
-            event is EventlessMacrostepIsBoundedEvent.Poke -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:108 :: spin_a :: _transition_1
-
-
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
-            }
-            event == null -> {
+        is EventlessMacrostepIsBoundedState.SpinA -> when (transitionIndex) {
+            6 -> {
                 // SCE-MAP: eventless_macrostep_is_bounded.scxml:105 :: spin_a :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("spins"), com.sce.runtime.ScriptSource.ecmascript("spins + 1"))
+            }
+            7 -> {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:108 :: spin_a :: _transition_1
+
+
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
             else -> {}
         }

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -341,9 +341,9 @@ class Test151StateMachine(
 
     private fun processNullS2(
     ): TransitionResult<Test151State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var5 !== 'undefined'")) -> TransitionResult.External(Test151State.Pass, Test151State.S2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var5 !== 'undefined'")) -> TransitionResult.External(Test151State.Pass, Test151State.S2, 4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test151State.Fail, Test151State.S2)
+        else -> TransitionResult.External(Test151State.Fail, Test151State.S2, 5)
     }
 
     // --- Per-State Event Handlers ---
@@ -352,20 +352,20 @@ class Test151StateMachine(
         event: Test151Event
     ): TransitionResult<Test151State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test151Event.Error || event is Test151Event.Error.Execution) -> TransitionResult.External(Test151State.Fail, Test151State.S0)
+        (event is Test151Event.Error || event is Test151Event.Error.Execution) -> TransitionResult.External(Test151State.Fail, Test151State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test151State.S1, Test151State.S0)
+        else -> TransitionResult.External(Test151State.S1, Test151State.S0, 1)
     }
 
     private fun processS1(
         event: Test151Event
     ): TransitionResult<Test151State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test151Event.Error || event is Test151Event.Error.Execution) -> TransitionResult.External(Test151State.Fail, Test151State.S1)
+        (event is Test151Event.Error || event is Test151Event.Error.Execution) -> TransitionResult.External(Test151State.Fail, Test151State.S1, 2)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test151State.S2, Test151State.S1)
+        else -> TransitionResult.External(Test151State.S2, Test151State.S1, 3)
     }
 
 
@@ -468,7 +468,8 @@ class Test151StateMachine(
     // SCE-MAP: test151.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test151State,
-        event: Test151Event?
+        event: Test151Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

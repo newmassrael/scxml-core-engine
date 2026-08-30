@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -403,7 +403,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
     private fun processJudging(
         event: ParallelRegionsTakeOwnTransitionsEvent
     ): TransitionResult<ParallelRegionsTakeOwnTransitionsState> = when {
-        event is ParallelRegionsTakeOwnTransitionsEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("n == 1 && m == 1")) -> TransitionResult.External(ParallelRegionsTakeOwnTransitionsState.Settled, ParallelRegionsTakeOwnTransitionsState.Judging)
+        event is ParallelRegionsTakeOwnTransitionsEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("n == 1 && m == 1")) -> TransitionResult.External(ParallelRegionsTakeOwnTransitionsState.Settled, ParallelRegionsTakeOwnTransitionsState.Judging, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -411,7 +411,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
     private fun processWithin(
         event: ParallelRegionsTakeOwnTransitionsEvent
     ): TransitionResult<ParallelRegionsTakeOwnTransitionsState> = when {
-        event is ParallelRegionsTakeOwnTransitionsEvent.E -> TransitionResult.External(ParallelRegionsTakeOwnTransitionsState.Within, ParallelRegionsTakeOwnTransitionsState.Within)
+        event is ParallelRegionsTakeOwnTransitionsEvent.E -> TransitionResult.External(ParallelRegionsTakeOwnTransitionsState.Within, ParallelRegionsTakeOwnTransitionsState.Within, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -419,7 +419,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
     private fun processWorking(
         event: ParallelRegionsTakeOwnTransitionsEvent
     ): TransitionResult<ParallelRegionsTakeOwnTransitionsState> = when {
-        event is ParallelRegionsTakeOwnTransitionsEvent.E -> TransitionResult.External(ParallelRegionsTakeOwnTransitionsState.Judging, ParallelRegionsTakeOwnTransitionsState.Working)
+        event is ParallelRegionsTakeOwnTransitionsEvent.E -> TransitionResult.External(ParallelRegionsTakeOwnTransitionsState.Judging, ParallelRegionsTakeOwnTransitionsState.Working, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -571,11 +571,12 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
     // SCE-MAP: parallel_regions_take_own_transitions.scxml:24 :: _machine
     override fun executeTransitionActions(
         source: ParallelRegionsTakeOwnTransitionsState,
-        event: ParallelRegionsTakeOwnTransitionsEvent?
+        event: ParallelRegionsTakeOwnTransitionsEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is ParallelRegionsTakeOwnTransitionsState.Within -> when {
-            event is ParallelRegionsTakeOwnTransitionsEvent.E -> {
+        is ParallelRegionsTakeOwnTransitionsState.Within -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:62 :: within :: _transition_0
 
 
@@ -583,8 +584,8 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
             }
             else -> {}
         }
-        is ParallelRegionsTakeOwnTransitionsState.Working -> when {
-            event is ParallelRegionsTakeOwnTransitionsEvent.E -> {
+        is ParallelRegionsTakeOwnTransitionsState.Working -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:38 :: working :: _transition_0
 
 

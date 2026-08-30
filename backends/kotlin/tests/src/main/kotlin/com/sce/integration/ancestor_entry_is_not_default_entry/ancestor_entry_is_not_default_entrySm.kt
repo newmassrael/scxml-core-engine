@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 215c3b8c048d546a929c95bb520cc0c508e71ce4c95c9630e94bb32b22528dc2
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -472,7 +472,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
     private fun processAway(
         event: AncestorEntryIsNotDefaultEntryEvent
     ): TransitionResult<AncestorEntryIsNotDefaultEntryState> = when {
-        event is AncestorEntryIsNotDefaultEntryEvent.Cross -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Chosen, AncestorEntryIsNotDefaultEntryState.Away)
+        event is AncestorEntryIsNotDefaultEntryEvent.Cross -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Chosen, AncestorEntryIsNotDefaultEntryState.Away, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -480,17 +480,17 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
     private fun processChosen(
         event: AncestorEntryIsNotDefaultEntryEvent
     ): TransitionResult<AncestorEntryIsNotDefaultEntryState> = when {
-        event is AncestorEntryIsNotDefaultEntryEvent.Back -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Lobby, AncestorEntryIsNotDefaultEntryState.Chosen)
+        event is AncestorEntryIsNotDefaultEntryEvent.Back -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Lobby, AncestorEntryIsNotDefaultEntryState.Chosen, 1)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("defaulted != 0")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailDefaulted, AncestorEntryIsNotDefaultEntryState.Chosen)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("defaulted != 0")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailDefaulted, AncestorEntryIsNotDefaultEntryState.Chosen, 2)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("lobbied != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailLobbied, AncestorEntryIsNotDefaultEntryState.Chosen)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("lobbied != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailLobbied, AncestorEntryIsNotDefaultEntryState.Chosen, 3)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("idled != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailIdled, AncestorEntryIsNotDefaultEntryState.Chosen)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("idled != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailIdled, AncestorEntryIsNotDefaultEntryState.Chosen, 4)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("targeted != 2")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailTargeted, AncestorEntryIsNotDefaultEntryState.Chosen)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("targeted != 2")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailTargeted, AncestorEntryIsNotDefaultEntryState.Chosen, 5)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Settled, AncestorEntryIsNotDefaultEntryState.Chosen)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Settled, AncestorEntryIsNotDefaultEntryState.Chosen, 6)
 
         else -> TransitionResult.Ignored
     }
@@ -498,7 +498,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
     private fun processLobby(
         event: AncestorEntryIsNotDefaultEntryEvent
     ): TransitionResult<AncestorEntryIsNotDefaultEntryState> = when {
-        event is AncestorEntryIsNotDefaultEntryEvent.Again -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Chosen, AncestorEntryIsNotDefaultEntryState.Lobby)
+        event is AncestorEntryIsNotDefaultEntryEvent.Again -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Chosen, AncestorEntryIsNotDefaultEntryState.Lobby, 7)
 
         else -> TransitionResult.Ignored
     }
@@ -727,7 +727,8 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
     // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:69 :: _machine
     override fun executeTransitionActions(
         source: AncestorEntryIsNotDefaultEntryState,
-        event: AncestorEntryIsNotDefaultEntryEvent?
+        event: AncestorEntryIsNotDefaultEntryEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

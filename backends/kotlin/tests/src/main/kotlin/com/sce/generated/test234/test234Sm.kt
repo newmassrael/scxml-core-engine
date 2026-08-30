@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -414,9 +414,9 @@ class Test234StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test234State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 1")) -> TransitionResult.External(Test234State.Pass, Test234State.S1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 1")) -> TransitionResult.External(Test234State.Pass, Test234State.S1, 3)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test234State.Fail, Test234State.S1)
+        else -> TransitionResult.External(Test234State.Fail, Test234State.S1, 4)
     }
 
     // --- Per-State Event Handlers ---
@@ -424,7 +424,7 @@ class Test234StateMachine(
     private fun processP0(
         event: Test234Event
     ): TransitionResult<Test234State> = when {
-        event is Test234Event.Timeout -> TransitionResult.External(Test234State.Fail, Test234State.P0)
+        event is Test234Event.Timeout -> TransitionResult.External(Test234State.Fail, Test234State.P0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -432,9 +432,9 @@ class Test234StateMachine(
     private fun processP01(
         event: Test234Event
     ): TransitionResult<Test234State> = when {
-        event is Test234Event.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test234State.S1, Test234State.P01)
+        event is Test234Event.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test234State.S1, Test234State.P01, 1)
 
-        event is Test234Event.ChildToParent -> TransitionResult.External(Test234State.Fail, Test234State.P01)
+        event is Test234Event.ChildToParent -> TransitionResult.External(Test234State.Fail, Test234State.P01, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -577,7 +577,8 @@ class Test234StateMachine(
     // SCE-MAP: test234.scxml:8 :: _machine
     override fun executeTransitionActions(
         source: Test234State,
-        event: Test234Event?
+        event: Test234Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

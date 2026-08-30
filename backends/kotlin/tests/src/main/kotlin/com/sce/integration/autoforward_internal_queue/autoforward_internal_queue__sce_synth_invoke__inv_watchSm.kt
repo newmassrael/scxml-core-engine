@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -111,9 +111,9 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
     private fun processWatch(
         event: AutoforwardInternalQueueSceSynthInvokeInvWatchEvent
     ): TransitionResult<AutoforwardInternalQueueSceSynthInvokeInvWatchState> = when {
-        event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Execution -> TransitionResult.External(AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked, AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch)
+        event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Execution -> TransitionResult.External(AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked, AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch, 0)
 
-        event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean, AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch)
+        event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean, AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -174,18 +174,19 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
     // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardInternalQueueSceSynthInvokeInvWatchState,
-        event: AutoforwardInternalQueueSceSynthInvokeInvWatchEvent?
+        event: AutoforwardInternalQueueSceSynthInvokeInvWatchEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> when {
-            event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Execution -> {
+        is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:9 :: watch :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawInternal", "")
             }
-            event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Probe -> {
+            1 -> {
                 // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:12 :: watch :: _transition_1
 
 

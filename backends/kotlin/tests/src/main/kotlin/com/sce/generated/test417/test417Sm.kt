@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -227,13 +227,13 @@ class Test417StateMachine(
     private fun processNullS1p111(
     ): TransitionResult<Test417State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test417State.S1p11final, Test417State.S1p111)
+        else -> TransitionResult.External(Test417State.S1p11final, Test417State.S1p111, 2)
     }
 
     private fun processNullS1p121(
     ): TransitionResult<Test417State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test417State.S1p12final, Test417State.S1p121)
+        else -> TransitionResult.External(Test417State.S1p12final, Test417State.S1p121, 3)
     }
 
     // --- Per-State Event Handlers ---
@@ -241,7 +241,7 @@ class Test417StateMachine(
     private fun processS1(
         event: Test417Event
     ): TransitionResult<Test417State> = when {
-        event is Test417Event.Timeout -> TransitionResult.External(Test417State.Fail, Test417State.S1)
+        event is Test417Event.Timeout -> TransitionResult.External(Test417State.Fail, Test417State.S1, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -249,7 +249,7 @@ class Test417StateMachine(
     private fun processS1p1(
         event: Test417Event
     ): TransitionResult<Test417State> = when {
-        event is Test417Event.Done.State.S1p1 -> TransitionResult.External(Test417State.Pass, Test417State.S1p1)
+        event is Test417Event.Done.State.S1p1 -> TransitionResult.External(Test417State.Pass, Test417State.S1p1, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -436,7 +436,8 @@ class Test417StateMachine(
     // SCE-MAP: test417.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test417State,
-        event: Test417Event?
+        event: Test417Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

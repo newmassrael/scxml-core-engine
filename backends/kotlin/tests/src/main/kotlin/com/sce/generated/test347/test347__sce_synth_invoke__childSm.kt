@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -101,7 +101,7 @@ class Test347SceSynthInvokeChildStateMachine(
     private fun processSub0(
         event: Test347SceSynthInvokeChildEvent
     ): TransitionResult<Test347SceSynthInvokeChildState> = when {
-        event is Test347SceSynthInvokeChildEvent.ParentToChild -> TransitionResult.External(Test347SceSynthInvokeChildState.SubFinal, Test347SceSynthInvokeChildState.Sub0)
+        event is Test347SceSynthInvokeChildEvent.ParentToChild -> TransitionResult.External(Test347SceSynthInvokeChildState.SubFinal, Test347SceSynthInvokeChildState.Sub0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -151,7 +151,8 @@ class Test347SceSynthInvokeChildStateMachine(
     // SCE-MAP: test347__sce_synth_invoke__child.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test347SceSynthInvokeChildState,
-        event: Test347SceSynthInvokeChildEvent?
+        event: Test347SceSynthInvokeChildEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

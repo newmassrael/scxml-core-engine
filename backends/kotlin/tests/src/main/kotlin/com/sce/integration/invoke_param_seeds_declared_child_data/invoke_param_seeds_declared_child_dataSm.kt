@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -415,13 +415,13 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     private fun processInfinite(
         event: InvokeParamSeedsDeclaredChildDataEvent
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataState> = when {
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.Pass, InvokeParamSeedsDeclaredChildDataState.Infinite)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.Pass, InvokeParamSeedsDeclaredChildDataState.Infinite, 0)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost, InvokeParamSeedsDeclaredChildDataState.Infinite)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost, InvokeParamSeedsDeclaredChildDataState.Infinite, 1)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Collapsed -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamCollapsed, InvokeParamSeedsDeclaredChildDataState.Infinite)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Collapsed -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamCollapsed, InvokeParamSeedsDeclaredChildDataState.Infinite, 2)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost, InvokeParamSeedsDeclaredChildDataState.Infinite)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailInfiniteParamLost, InvokeParamSeedsDeclaredChildDataState.Infinite, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -429,11 +429,11 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     private fun processNamelistPhase(
         event: InvokeParamSeedsDeclaredChildDataEvent
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataState> = when {
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.Infinite, InvokeParamSeedsDeclaredChildDataState.NamelistPhase)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.Infinite, InvokeParamSeedsDeclaredChildDataState.NamelistPhase, 4)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost, InvokeParamSeedsDeclaredChildDataState.NamelistPhase)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost, InvokeParamSeedsDeclaredChildDataState.NamelistPhase, 5)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost, InvokeParamSeedsDeclaredChildDataState.NamelistPhase)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailNamelistValueLost, InvokeParamSeedsDeclaredChildDataState.NamelistPhase, 6)
 
         else -> TransitionResult.Ignored
     }
@@ -441,13 +441,13 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     private fun processShadowed(
         event: InvokeParamSeedsDeclaredChildDataEvent
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataState> = when {
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.SoleName, InvokeParamSeedsDeclaredChildDataState.Shadowed)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.SoleName, InvokeParamSeedsDeclaredChildDataState.Shadowed, 7)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Shadowed -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression, InvokeParamSeedsDeclaredChildDataState.Shadowed)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Shadowed -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailChildEvaluatedTheExpression, InvokeParamSeedsDeclaredChildDataState.Shadowed, 8)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost, InvokeParamSeedsDeclaredChildDataState.Shadowed)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost, InvokeParamSeedsDeclaredChildDataState.Shadowed, 9)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost, InvokeParamSeedsDeclaredChildDataState.Shadowed)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailShadowSeedLost, InvokeParamSeedsDeclaredChildDataState.Shadowed, 10)
 
         else -> TransitionResult.Ignored
     }
@@ -455,11 +455,11 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     private fun processSoleName(
         event: InvokeParamSeedsDeclaredChildDataEvent
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataState> = when {
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.Unmatched, InvokeParamSeedsDeclaredChildDataState.SoleName)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.Unmatched, InvokeParamSeedsDeclaredChildDataState.SoleName, 11)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost, InvokeParamSeedsDeclaredChildDataState.SoleName)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost, InvokeParamSeedsDeclaredChildDataState.SoleName, 12)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost, InvokeParamSeedsDeclaredChildDataState.SoleName)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailParentOnlyExprLost, InvokeParamSeedsDeclaredChildDataState.SoleName, 13)
 
         else -> TransitionResult.Ignored
     }
@@ -467,13 +467,13 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     private fun processUnmatched(
         event: InvokeParamSeedsDeclaredChildDataEvent
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataState> = when {
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.NamelistPhase, InvokeParamSeedsDeclaredChildDataState.Unmatched)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Ok -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.NamelistPhase, InvokeParamSeedsDeclaredChildDataState.Unmatched, 14)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Leaked -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailUnmatchedParamEnteredTheChild, InvokeParamSeedsDeclaredChildDataState.Unmatched)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Leaked -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailUnmatchedParamEnteredTheChild, InvokeParamSeedsDeclaredChildDataState.Unmatched, 15)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost, InvokeParamSeedsDeclaredChildDataState.Unmatched)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Seed.Missing -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost, InvokeParamSeedsDeclaredChildDataState.Unmatched, 16)
 
-        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost, InvokeParamSeedsDeclaredChildDataState.Unmatched)
+        event is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataState.FailDeclaredParamLost, InvokeParamSeedsDeclaredChildDataState.Unmatched, 17)
 
         else -> TransitionResult.Ignored
     }
@@ -854,7 +854,8 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
     override fun executeTransitionActions(
         source: InvokeParamSeedsDeclaredChildDataState,
-        event: InvokeParamSeedsDeclaredChildDataEvent?
+        event: InvokeParamSeedsDeclaredChildDataEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: d8762291f8adee4223c5af3de347a3acefddf00a392ed861e70d8d9802dc3abb
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -161,9 +161,9 @@ class StatechartNativeActionStateMachine(
     private fun processAssembling(
         event: StatechartNativeActionEvent
     ): TransitionResult<StatechartNativeActionState> = when {
-        event is StatechartNativeActionEvent.Reset -> TransitionResult.External(StatechartNativeActionState.Idle, StatechartNativeActionState.Assembling)
+        event is StatechartNativeActionEvent.Reset -> TransitionResult.External(StatechartNativeActionState.Idle, StatechartNativeActionState.Assembling, 0)
 
-        event is StatechartNativeActionEvent.Error.Execution -> TransitionResult.External(StatechartNativeActionState.Faulted, StatechartNativeActionState.Assembling)
+        event is StatechartNativeActionEvent.Error.Execution -> TransitionResult.External(StatechartNativeActionState.Faulted, StatechartNativeActionState.Assembling, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -171,7 +171,7 @@ class StatechartNativeActionStateMachine(
     private fun processFaulted(
         event: StatechartNativeActionEvent
     ): TransitionResult<StatechartNativeActionState> = when {
-        event is StatechartNativeActionEvent.Reset -> TransitionResult.External(StatechartNativeActionState.Idle, StatechartNativeActionState.Faulted)
+        event is StatechartNativeActionEvent.Reset -> TransitionResult.External(StatechartNativeActionState.Idle, StatechartNativeActionState.Faulted, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -179,10 +179,10 @@ class StatechartNativeActionStateMachine(
     private fun processIdle(
         event: StatechartNativeActionEvent
     ): TransitionResult<StatechartNativeActionState> = when {
-        event is StatechartNativeActionEvent.Fragment.Received -> TransitionResult.External(StatechartNativeActionState.Assembling, StatechartNativeActionState.Idle)
+        event is StatechartNativeActionEvent.Fragment.Received -> TransitionResult.External(StatechartNativeActionState.Assembling, StatechartNativeActionState.Idle, 3)
 
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StatechartNativeActionEvent.Selftest -> TransitionResult.Internal
+        event is StatechartNativeActionEvent.Selftest -> TransitionResult.Internal(4)
         else -> TransitionResult.Ignored
     }
 
@@ -240,11 +240,12 @@ class StatechartNativeActionStateMachine(
     // SCE-MAP: statechart_native_action.scxml:31 :: _machine
     override fun executeTransitionActions(
         source: StatechartNativeActionState,
-        event: StatechartNativeActionEvent?
+        event: StatechartNativeActionEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is StatechartNativeActionState.Assembling -> when {
-            event is StatechartNativeActionEvent.Reset -> {
+        is StatechartNativeActionState.Assembling -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: statechart_native_action.scxml:56 :: assembling :: _transition_0
 
             // W3C SCXML G.7: <sce:action name="reset_slot">
@@ -252,14 +253,14 @@ class StatechartNativeActionStateMachine(
             }
             else -> {}
         }
-        is StatechartNativeActionState.Idle -> when {
-            event is StatechartNativeActionEvent.Fragment.Received -> {
+        is StatechartNativeActionState.Idle -> when (transitionIndex) {
+            3 -> {
                 // SCE-MAP: statechart_native_action.scxml:42 :: idle :: _transition_0
 
             // W3C SCXML G.7: <sce:action name="append_fragment_payload">
             pendingFragmentReceivedPayload?.let { actions.appendFragmentPayload(it.payload, it.offset) } ?: run { raiseInternal(StatechartNativeActionEvent.Error.Execution, EventMetadata(data = "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry", type = "platform")) }
             }
-            event is StatechartNativeActionEvent.Selftest -> {
+            4 -> {
                 // SCE-MAP: statechart_native_action.scxml:48 :: idle :: _transition_1
 
             raiseInternal(StatechartNativeActionEvent.Fragment.Received)

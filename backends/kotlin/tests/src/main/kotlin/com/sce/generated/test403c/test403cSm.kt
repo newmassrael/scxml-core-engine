@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -430,9 +430,9 @@ class Test403cStateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test403cState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test403cState.Pass, Test403cState.S1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test403cState.Pass, Test403cState.S1, 8)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test403cState.Fail, Test403cState.S1)
+        else -> TransitionResult.External(Test403cState.Fail, Test403cState.S1, 9)
     }
 
     // --- Per-State Event Handlers ---
@@ -441,16 +441,16 @@ class Test403cStateMachine(
         event: Test403cEvent
     ): TransitionResult<Test403cState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is Test403cEvent.Event1 -> TransitionResult.Internal
+        event is Test403cEvent.Event1 -> TransitionResult.Internal(0)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is Test403cEvent.Event2 -> TransitionResult.Internal
+        event is Test403cEvent.Event2 -> TransitionResult.Internal(1)
         else -> TransitionResult.Ignored
     }
 
     private fun processP0s2(
         event: Test403cEvent
     ): TransitionResult<Test403cState> = when {
-        event is Test403cEvent.Event1 -> TransitionResult.External(Test403cState.P0s1, Test403cState.P0s2)
+        event is Test403cEvent.Event1 -> TransitionResult.External(Test403cState.P0s1, Test403cState.P0s2, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -458,9 +458,9 @@ class Test403cStateMachine(
     private fun processP0s3(
         event: Test403cEvent
     ): TransitionResult<Test403cState> = when {
-        event is Test403cEvent.Event1 -> TransitionResult.External(Test403cState.Fail, Test403cState.P0s3)
+        event is Test403cEvent.Event1 -> TransitionResult.External(Test403cState.Fail, Test403cState.P0s3, 3)
 
-        event is Test403cEvent.Event2 -> TransitionResult.External(Test403cState.S1, Test403cState.P0s3)
+        event is Test403cEvent.Event2 -> TransitionResult.External(Test403cState.S1, Test403cState.P0s3, 4)
 
         else -> TransitionResult.Ignored
     }
@@ -469,15 +469,15 @@ class Test403cStateMachine(
         event: Test403cEvent
     ): TransitionResult<Test403cState> = when {
         // W3C SCXML 3.12.1: Wildcard targetless transition
-        else -> TransitionResult.Internal
+        else -> TransitionResult.Internal(5)
     }
 
     private fun processS0(
         event: Test403cEvent
     ): TransitionResult<Test403cState> = when {
-        event is Test403cEvent.Event2 -> TransitionResult.External(Test403cState.Fail, Test403cState.S0)
+        event is Test403cEvent.Event2 -> TransitionResult.External(Test403cState.Fail, Test403cState.S0, 6)
 
-        event is Test403cEvent.Timeout -> TransitionResult.External(Test403cState.Fail, Test403cState.S0)
+        event is Test403cEvent.Timeout -> TransitionResult.External(Test403cState.Fail, Test403cState.S0, 7)
 
         else -> TransitionResult.Ignored
     }
@@ -637,19 +637,20 @@ class Test403cStateMachine(
     // SCE-MAP: test403c.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test403cState,
-        event: Test403cEvent?
+        event: Test403cEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test403cState.P0s2 -> when {
-            event is Test403cEvent.Event1 -> {
+        is Test403cState.P0s2 -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: test403c.scxml:26 :: p0s2 :: _transition_0
 
             raiseInternal(Test403cEvent.Event2)
             }
             else -> {}
         }
-        is Test403cState.P0s4 -> when {
-            event != null -> {
+        is Test403cState.P0s4 -> when (transitionIndex) {
+            5 -> {
                 // SCE-MAP: test403c.scxml:43 :: p0s4 :: _transition_0
 
 

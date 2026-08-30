@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -327,43 +327,43 @@ class Test346StateMachine(
     private fun processS0(
         event: Test346Event
     ): TransitionResult<Test346State> = when {
-        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S1, Test346State.S0)
+        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S1, Test346State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test346State.Fail, Test346State.S0)
+        else -> TransitionResult.External(Test346State.Fail, Test346State.S0, 1)
     }
 
     private fun processS1(
         event: Test346Event
     ): TransitionResult<Test346State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is Test346Event.Event1 -> TransitionResult.Internal
-        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S2, Test346State.S1)
+        event is Test346Event.Event1 -> TransitionResult.Internal(2)
+        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S2, Test346State.S1, 3)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test346State.Fail, Test346State.S1)
+        else -> TransitionResult.External(Test346State.Fail, Test346State.S1, 4)
     }
 
     private fun processS2(
         event: Test346Event
     ): TransitionResult<Test346State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is Test346Event.Event2 -> TransitionResult.Internal
-        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S3, Test346State.S2)
+        event is Test346Event.Event2 -> TransitionResult.Internal(5)
+        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S3, Test346State.S2, 6)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test346State.Fail, Test346State.S2)
+        else -> TransitionResult.External(Test346State.Fail, Test346State.S2, 7)
     }
 
     private fun processS3(
         event: Test346Event
     ): TransitionResult<Test346State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is Test346Event.Event3 -> TransitionResult.Internal
-        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.Pass, Test346State.S3)
+        event is Test346Event.Event3 -> TransitionResult.Internal(8)
+        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.Pass, Test346State.S3, 9)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test346State.Fail, Test346State.S3)
+        else -> TransitionResult.External(Test346State.Fail, Test346State.S3, 10)
     }
 
 
@@ -465,7 +465,8 @@ class Test346StateMachine(
     // SCE-MAP: test346.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test346State,
-        event: Test346Event?
+        event: Test346Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

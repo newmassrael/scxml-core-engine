@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ceb5ba77c107690ed8824e3a95913c8f850f275ca17535023aec22eab166125d
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -165,16 +165,16 @@ class HostEventReachesTheChildStateMachine(
         event: HostEventReachesTheChildEvent
     ): TransitionResult<HostEventReachesTheChildState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is HostEventReachesTheChildEvent.HostPing -> TransitionResult.Internal
+        event is HostEventReachesTheChildEvent.HostPing -> TransitionResult.Internal(0)
         else -> TransitionResult.Ignored
     }
 
     private fun processPhase(
         event: HostEventReachesTheChildEvent
     ): TransitionResult<HostEventReachesTheChildState> = when {
-        event is HostEventReachesTheChildEvent.SawHostPing -> TransitionResult.External(HostEventReachesTheChildState.Pass, HostEventReachesTheChildState.Phase)
+        event is HostEventReachesTheChildEvent.SawHostPing -> TransitionResult.External(HostEventReachesTheChildState.Pass, HostEventReachesTheChildState.Phase, 1)
 
-        event is HostEventReachesTheChildEvent.SawMarkerOnly -> TransitionResult.External(HostEventReachesTheChildState.Fail, HostEventReachesTheChildState.Phase)
+        event is HostEventReachesTheChildEvent.SawMarkerOnly -> TransitionResult.External(HostEventReachesTheChildState.Fail, HostEventReachesTheChildState.Phase, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -182,7 +182,7 @@ class HostEventReachesTheChildStateMachine(
     private fun processWaiting(
         event: HostEventReachesTheChildEvent
     ): TransitionResult<HostEventReachesTheChildState> = when {
-        event is HostEventReachesTheChildEvent.Ready -> TransitionResult.External(HostEventReachesTheChildState.Armed, HostEventReachesTheChildState.Waiting)
+        event is HostEventReachesTheChildEvent.Ready -> TransitionResult.External(HostEventReachesTheChildState.Armed, HostEventReachesTheChildState.Waiting, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -271,11 +271,12 @@ class HostEventReachesTheChildStateMachine(
     // SCE-MAP: host_event_reaches_the_child.scxml:67 :: _machine
     override fun executeTransitionActions(
         source: HostEventReachesTheChildState,
-        event: HostEventReachesTheChildEvent?
+        event: HostEventReachesTheChildEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is HostEventReachesTheChildState.Armed -> when {
-            event is HostEventReachesTheChildEvent.HostPing -> {
+        is HostEventReachesTheChildState.Armed -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: host_event_reaches_the_child.scxml:95 :: armed :: _transition_0
 
 

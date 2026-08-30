@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -328,9 +328,9 @@ class Test241SceSynthInvokeInvoke2StateMachine(
 
     private fun processNullSub03(
     ): TransitionResult<Test241SceSynthInvokeInvoke2State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test241SceSynthInvokeInvoke2State.SubFinal3, Test241SceSynthInvokeInvoke2State.Sub03)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test241SceSynthInvokeInvoke2State.SubFinal3, Test241SceSynthInvokeInvoke2State.Sub03, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test241SceSynthInvokeInvoke2State.SubFinal3, Test241SceSynthInvokeInvoke2State.Sub03)
+        else -> TransitionResult.External(Test241SceSynthInvokeInvoke2State.SubFinal3, Test241SceSynthInvokeInvoke2State.Sub03, 1)
     }
 
     // --- Per-State Event Handlers ---
@@ -376,18 +376,19 @@ class Test241SceSynthInvokeInvoke2StateMachine(
     // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test241SceSynthInvokeInvoke2State,
-        event: Test241SceSynthInvokeInvoke2Event?
+        event: Test241SceSynthInvokeInvoke2Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test241SceSynthInvokeInvoke2State.Sub03 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> {
+        is Test241SceSynthInvokeInvoke2State.Sub03 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:9 :: sub03 :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
             }
-            event == null -> {
+            1 -> {
                 // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:12 :: sub03 :: _transition_1
 
 

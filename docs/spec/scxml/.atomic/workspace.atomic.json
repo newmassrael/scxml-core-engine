@@ -14285,6 +14285,11 @@
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "getTransitionDomain",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "BatchedTransition",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14546,6 +14551,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "applySimultaneousTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "BatchedTransition",
           "kind": "implements"
         }
       ],

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 321b42acfe8cb266c51aff87d805eb471548c8d5250d5f0a5214385ef864d6e9
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -1066,7 +1066,7 @@ class AiLoopStateMachine(
     private fun processAlive(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Session.Lost -> TransitionResult.External(AiLoopState.Rebuilding, AiLoopState.Alive)
+        event is AiLoopEvent.Session.Lost -> TransitionResult.External(AiLoopState.Rebuilding, AiLoopState.Alive, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -1074,9 +1074,9 @@ class AiLoopStateMachine(
     private fun processClosing(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Reported, AiLoopState.Closing)
+        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Reported, AiLoopState.Closing, 1)
 
-        event is AiLoopEvent.Turn.Blocked -> TransitionResult.External(AiLoopState.Screening, AiLoopState.Closing)
+        event is AiLoopEvent.Turn.Blocked -> TransitionResult.External(AiLoopState.Screening, AiLoopState.Closing, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -1084,11 +1084,11 @@ class AiLoopStateMachine(
     private fun processDrive(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Hold -> TransitionResult.InternalToTarget(AiLoopState.Paused, AiLoopState.Drive)
+        event is AiLoopEvent.Hold -> TransitionResult.InternalToTarget(AiLoopState.Paused, AiLoopState.Drive, 3)
 
-        event is AiLoopEvent.Turn.Interrupted -> TransitionResult.InternalToTarget(AiLoopState.Paused, AiLoopState.Drive)
+        event is AiLoopEvent.Turn.Interrupted -> TransitionResult.InternalToTarget(AiLoopState.Paused, AiLoopState.Drive, 4)
 
-        event is AiLoopEvent.Session.Lost -> TransitionResult.InternalToTarget(AiLoopState.Restarting, AiLoopState.Drive)
+        event is AiLoopEvent.Session.Lost -> TransitionResult.InternalToTarget(AiLoopState.Restarting, AiLoopState.Drive, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -1097,13 +1097,13 @@ class AiLoopStateMachine(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
         // W3C SCXML 3.12.1: Prefix match for "judge"
-        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.done")) -> TransitionResult.External(AiLoopState.Closing, AiLoopState.Judging)
+        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.done")) -> TransitionResult.External(AiLoopState.Closing, AiLoopState.Judging, 6)
 
         // W3C SCXML 3.12.1: Prefix match for "judge"
-        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("turns_since_reflect >= reflect_every")) -> TransitionResult.External(AiLoopState.Reflecting, AiLoopState.Judging)
+        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("turns_since_reflect >= reflect_every")) -> TransitionResult.External(AiLoopState.Reflecting, AiLoopState.Judging, 7)
 
         // W3C SCXML 3.12.1: Prefix match for "judge"
-        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> TransitionResult.External(AiLoopState.Working, AiLoopState.Judging)
+        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> TransitionResult.External(AiLoopState.Working, AiLoopState.Judging, 8)
 
         else -> TransitionResult.Ignored
     }
@@ -1111,13 +1111,13 @@ class AiLoopStateMachine(
     private fun processPaused(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Judging, AiLoopState.Paused)
+        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Judging, AiLoopState.Paused, 9)
 
-        event is AiLoopEvent.Turn.Interrupted -> TransitionResult.External(AiLoopState.Paused, AiLoopState.Paused)
+        event is AiLoopEvent.Turn.Interrupted -> TransitionResult.External(AiLoopState.Paused, AiLoopState.Paused, 10)
 
-        event is AiLoopEvent.Resume -> TransitionResult.External((historyStore["where"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: AiLoopState.Working), AiLoopState.Paused)
+        event is AiLoopEvent.Resume -> TransitionResult.External((historyStore["where"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: AiLoopState.Working), AiLoopState.Paused, 11)
 
-        event is AiLoopEvent.Unattended -> TransitionResult.External(AiLoopState.Abandoned, AiLoopState.Paused)
+        event is AiLoopEvent.Unattended -> TransitionResult.External(AiLoopState.Abandoned, AiLoopState.Paused, 12)
 
         else -> TransitionResult.Ignored
     }
@@ -1125,7 +1125,7 @@ class AiLoopStateMachine(
     private fun processPriming(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Prompt.Sent -> TransitionResult.External(AiLoopState.Working, AiLoopState.Priming)
+        event is AiLoopEvent.Prompt.Sent -> TransitionResult.External(AiLoopState.Working, AiLoopState.Priming, 13)
 
         else -> TransitionResult.Ignored
     }
@@ -1133,7 +1133,7 @@ class AiLoopStateMachine(
     private fun processRebuilding(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Session.Ready -> TransitionResult.External(AiLoopState.Alive, AiLoopState.Rebuilding)
+        event is AiLoopEvent.Session.Ready -> TransitionResult.External(AiLoopState.Alive, AiLoopState.Rebuilding, 14)
 
         else -> TransitionResult.Ignored
     }
@@ -1141,9 +1141,9 @@ class AiLoopStateMachine(
     private fun processReflecting(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Reflect.Applied -> TransitionResult.External(AiLoopState.Restarting, AiLoopState.Reflecting)
+        event is AiLoopEvent.Reflect.Applied -> TransitionResult.External(AiLoopState.Restarting, AiLoopState.Reflecting, 15)
 
-        event is AiLoopEvent.Reflect.None -> TransitionResult.External(AiLoopState.Working, AiLoopState.Reflecting)
+        event is AiLoopEvent.Reflect.None -> TransitionResult.External(AiLoopState.Working, AiLoopState.Reflecting, 16)
 
         else -> TransitionResult.Ignored
     }
@@ -1151,9 +1151,9 @@ class AiLoopStateMachine(
     private fun processRestarting(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Session.Ready && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("restarts > max_restarts")) -> TransitionResult.External(AiLoopState.Stuck, AiLoopState.Restarting)
+        event is AiLoopEvent.Session.Ready && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("restarts > max_restarts")) -> TransitionResult.External(AiLoopState.Stuck, AiLoopState.Restarting, 17)
 
-        event is AiLoopEvent.Session.Ready -> TransitionResult.External(AiLoopState.Priming, AiLoopState.Restarting)
+        event is AiLoopEvent.Session.Ready -> TransitionResult.External(AiLoopState.Priming, AiLoopState.Restarting, 18)
 
         else -> TransitionResult.Ignored
     }
@@ -1161,15 +1161,15 @@ class AiLoopStateMachine(
     private fun processRun(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Run.Converged -> TransitionResult.External(AiLoopState.Converged, AiLoopState.Run)
+        event is AiLoopEvent.Run.Converged -> TransitionResult.External(AiLoopState.Converged, AiLoopState.Run, 19)
 
-        event is AiLoopEvent.Run.Exhausted -> TransitionResult.External(AiLoopState.Exhausted, AiLoopState.Run)
+        event is AiLoopEvent.Run.Exhausted -> TransitionResult.External(AiLoopState.Exhausted, AiLoopState.Run, 20)
 
-        event is AiLoopEvent.Run.Blocked -> TransitionResult.External(AiLoopState.Blocked, AiLoopState.Run)
+        event is AiLoopEvent.Run.Blocked -> TransitionResult.External(AiLoopState.Blocked, AiLoopState.Run, 21)
 
-        event is AiLoopEvent.Fail -> TransitionResult.External(AiLoopState.Failed, AiLoopState.Run)
+        event is AiLoopEvent.Fail -> TransitionResult.External(AiLoopState.Failed, AiLoopState.Run, 22)
 
-        event is AiLoopEvent.Cancel -> TransitionResult.External(AiLoopState.Cancelled, AiLoopState.Run)
+        event is AiLoopEvent.Cancel -> TransitionResult.External(AiLoopState.Cancelled, AiLoopState.Run, 23)
 
         else -> TransitionResult.Ignored
     }
@@ -1177,9 +1177,9 @@ class AiLoopStateMachine(
     private fun processScreening(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Screen.Matched -> TransitionResult.External(AiLoopState.Working, AiLoopState.Screening)
+        event is AiLoopEvent.Screen.Matched -> TransitionResult.External(AiLoopState.Working, AiLoopState.Screening, 24)
 
-        event is AiLoopEvent.Screen.None -> TransitionResult.External(AiLoopState.Paused, AiLoopState.Screening)
+        event is AiLoopEvent.Screen.None -> TransitionResult.External(AiLoopState.Paused, AiLoopState.Screening, 25)
 
         else -> TransitionResult.Ignored
     }
@@ -1187,9 +1187,9 @@ class AiLoopStateMachine(
     private fun processWithin(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("turns + 1 >= max_turns")) -> TransitionResult.External(AiLoopState.Spent, AiLoopState.Within)
+        event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("turns + 1 >= max_turns")) -> TransitionResult.External(AiLoopState.Spent, AiLoopState.Within, 26)
 
-        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Within, AiLoopState.Within)
+        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Within, AiLoopState.Within, 27)
 
         else -> TransitionResult.Ignored
     }
@@ -1197,9 +1197,9 @@ class AiLoopStateMachine(
     private fun processWorking(
         event: AiLoopEvent
     ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Judging, AiLoopState.Working)
+        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Judging, AiLoopState.Working, 28)
 
-        event is AiLoopEvent.Turn.Blocked -> TransitionResult.External(AiLoopState.Screening, AiLoopState.Working)
+        event is AiLoopEvent.Turn.Blocked -> TransitionResult.External(AiLoopState.Screening, AiLoopState.Working, 29)
 
         else -> TransitionResult.Ignored
     }
@@ -1829,11 +1829,12 @@ class AiLoopStateMachine(
     // SCE-MAP: ai_loop.scxml:155 :: _machine
     override fun executeTransitionActions(
         source: AiLoopState,
-        event: AiLoopEvent?
+        event: AiLoopEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is AiLoopState.Judging -> when {
-            (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> {
+        is AiLoopState.Judging -> when (transitionIndex) {
+            8 -> {
                 // SCE-MAP: ai_loop.scxml:362 :: judging :: _transition_2
 
 
@@ -1880,8 +1881,8 @@ class AiLoopStateMachine(
             }
             else -> {}
         }
-        is AiLoopState.Paused -> when {
-            event is AiLoopEvent.Turn.Done -> {
+        is AiLoopState.Paused -> when (transitionIndex) {
+            9 -> {
                 // SCE-MAP: ai_loop.scxml:468 :: paused :: _transition_0
 
 
@@ -1889,8 +1890,8 @@ class AiLoopStateMachine(
             }
             else -> {}
         }
-        is AiLoopState.Reflecting -> when {
-            event is AiLoopEvent.Reflect.Applied -> {
+        is AiLoopState.Reflecting -> when (transitionIndex) {
+            15 -> {
                 // SCE-MAP: ai_loop.scxml:379 :: reflecting :: _transition_0
 
 
@@ -1902,7 +1903,7 @@ class AiLoopStateMachine(
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("milestone"), com.sce.runtime.ScriptSource.ecmascript("_event.data.milestone"))
             }
-            event is AiLoopEvent.Reflect.None -> {
+            16 -> {
                 // SCE-MAP: ai_loop.scxml:385 :: reflecting :: _transition_1
 
 
@@ -1949,14 +1950,14 @@ class AiLoopStateMachine(
             }
             else -> {}
         }
-        is AiLoopState.Within -> when {
-            event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("turns + 1 >= max_turns")) -> {
+        is AiLoopState.Within -> when (transitionIndex) {
+            26 -> {
                 // SCE-MAP: ai_loop.scxml:522 :: within :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("turns"), com.sce.runtime.ScriptSource.ecmascript("turns + 1"))
             }
-            event is AiLoopEvent.Turn.Done -> {
+            27 -> {
                 // SCE-MAP: ai_loop.scxml:525 :: within :: _transition_1
 
 
@@ -1964,8 +1965,8 @@ class AiLoopStateMachine(
             }
             else -> {}
         }
-        is AiLoopState.Working -> when {
-            event is AiLoopEvent.Turn.Done -> {
+        is AiLoopState.Working -> when (transitionIndex) {
+            28 -> {
                 // SCE-MAP: ai_loop.scxml:311 :: working :: _transition_0
 
 
