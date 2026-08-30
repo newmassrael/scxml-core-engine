@@ -235,6 +235,26 @@ MUTATION_ARTIFACTS=()
 # harness under `GTEST_FILTER=<suite>` — a workaround for a fact the runner
 # already had in front of it and threw away.
 MUTATION_FAILING="$WORK/failing.txt"
+# What the runner PRINTED about those failures — the panic, the traceback, the
+# expectation block — as it printed it.
+#
+# The name file above ends one question short of the reader's. `baseline is not
+# green (1 failing)` followed by `test_oracle.py::test_value_is_two` says which
+# test, and the next thing anyone asks is why; the runner had already answered
+# that and the harness parsed the names out of its output and dropped the rest.
+# Measured 2026-08-30 on a probe casefile: the refusal carried the node id and
+# nothing else, while pytest had printed the assertion, both values and the
+# line. The build-failure path has had its counterpart since the beginning —
+# `mutation_build_diagnostics` — and the run-failure path had none.
+#
+# The cost of that silence is measurable rather than hypothetical: a leaked
+# `SCE_MUTATION_SHARD` stopped `mutation_rounds_selection.cases` for six days
+# with a red baseline whose CI log held zero occurrences of `panicked at` or
+# `assertion`, because this is where the runner's account of it went.
+#
+# A file rather than a variable, for the reason the two beside it are files:
+# the runners execute inside a command substitution.
+MUTATION_FAILURE_DETAIL="$WORK/failure-detail.txt"
 # Why the last run produced no result this harness could read, when that is
 # what happened — one sentence per line, empty otherwise.
 #
@@ -814,6 +834,25 @@ mutation_regenerate() {
 # because a terminal failure has room for it.
 mutation_build_diagnostics() { tail -40 "$MUTATION_BUILD_LOG" 2>/dev/null || true; }
 
+# What the last RUN printed about the tests it failed — the counterpart of the
+# function above, for the branch that had none.
+#
+# A build that refuses is terminal and gets the tail of its log. A run whose
+# BASELINE is red is terminal in exactly the same way — the round cannot start
+# — and until now it got a list of names with no account of them. The two
+# branches are the same branch to a reader: something the round depends on did
+# not hold, and the only thing that shortens the next step is what the tool
+# itself said.
+#
+# Not a tail. The runners' detail parsers have already selected the failing
+# tests' own output out of a console that may be mostly a passing suite's
+# chatter, so what arrives here is the account and nothing else; the cap is a
+# ceiling on that, applied by `mutation_baseline_detail`, which also speaks up
+# when the file is empty rather than printing a silence.
+mutation_run_diagnostics() {
+    mutation_baseline_detail <"$MUTATION_FAILURE_DETAIL" 2>/dev/null || true
+}
+
 # Resolve the test executables the selector names. Doing this once, and
 # then running the binaries directly, is what removes the shared-filter
 # hazard: there is no argument left that could narrow one binary's run.
@@ -865,6 +904,7 @@ mutation_hash_artifacts() {
 mutation_cargo_run() {
     local exe out rc run failed total_run=0 total_failed=0 timed_out=0
     : > "$MUTATION_FAILING"
+    : > "$MUTATION_FAILURE_DETAIL"
     for exe in "${MUTATION_ARTIFACTS[@]}"; do
         # Capped, because some contracts are about TERMINATION and a harness
         # with no clock cannot witness those. A mutation that puts back an
@@ -886,6 +926,7 @@ mutation_cargo_run() {
         run="$(printf '%s\n' "$out" | sed -n 's/^running \([0-9]*\) test.*/\1/p' | awk '{s+=$1} END {print s+0}')"
         failed="$(printf '%s\n' "$out" | sed -n 's/.*[0-9]* passed; \([0-9]*\) failed.*/\1/p' | awk '{s+=$1} END {print s+0}')"
         printf '%s\n' "$out" | mutation_failures_from_cargo >> "$MUTATION_FAILING"
+        printf '%s\n' "$out" | mutation_detail_from_cargo >> "$MUTATION_FAILURE_DETAIL"
         total_run=$((total_run + ${run:-0}))
         total_failed=$((total_failed + ${failed:-0}))
     done
@@ -1184,11 +1225,16 @@ mutation_ctest_run() {
     local report="$WORK/ctest-junit.xml" console="$WORK/ctest-console.txt"
     rm -f "$report"
     : > "$MUTATION_FAILING"
+    : > "$MUTATION_FAILURE_DETAIL"
     local rc stopped=""
     rc="$(mutation_ctest_supervise "$report" "$console")"
     stopped="$(cat "$WORK/runner-stopped.txt" 2>/dev/null || true)"
     mutation_ctest_keep_artifacts "$report" "$console"
     mutation_failures_from_gtest < "$console" > "$MUTATION_FAILING"
+    # From the same unabridged console, for the same reason: the copy under
+    # `SCE_MUTATION_REPORT_DIR` is two-sided-capped and a failure in the middle
+    # of a flood is exactly what it drops.
+    mutation_detail_from_gtest < "$console" > "$MUTATION_FAILURE_DETAIL"
 
     # The runner was stopped by this harness, which is a reading and not a
     # gap: the baseline ran the same selector to completion under the same
@@ -1337,6 +1383,7 @@ mutation_go_run() {
     local dir pkg binary out rc run failed total_run=0 total_failed=0 timed_out=0
     dir="$(mutation_go_module_dir)"
     : > "$MUTATION_FAILING"
+    : > "$MUTATION_FAILURE_DETAIL"
     while IFS= read -r pkg; do
         [[ -n "$pkg" ]] || continue
         binary="$(mutation_go_binary_for "$pkg")"
@@ -1353,6 +1400,7 @@ mutation_go_run() {
         run="$(printf '%s\n' "$out" | grep -cE '^--- (PASS|FAIL|SKIP): ' || true)"
         failed="$(printf '%s\n' "$out" | grep -cE '^--- FAIL: ' || true)"
         printf '%s\n' "$out" | mutation_failures_from_go >> "$MUTATION_FAILING"
+        printf '%s\n' "$out" | mutation_detail_from_go >> "$MUTATION_FAILURE_DETAIL"
         total_run=$((total_run + ${run:-0}))
         total_failed=$((total_failed + ${failed:-0}))
     done < <(mutation_go_packages)
@@ -1463,6 +1511,7 @@ mutation_pytest_run() {
     console="$WORK/pytest-console.txt"
     rm -f "$report"
     : > "$MUTATION_FAILING"
+    : > "$MUTATION_FAILURE_DETAIL"
     ( cd "$root" && timeout "$MUTATION_ARTIFACT_TIMEOUT" \
         python3 -m pytest $(mutation_pytest_args) -q -p no:cacheprovider \
         --junitxml="$report" ) >"$console" 2>&1
@@ -1474,6 +1523,10 @@ mutation_pytest_run() {
         return
     fi
     mutation_failures_from_pytest < "$console" > "$MUTATION_FAILING"
+    # Before the no-report return below, deliberately: a collection error
+    # writes no JUnit document, and its traceback is the whole of what the
+    # round has to say about a mutation upstream of an import.
+    mutation_detail_from_pytest < "$console" > "$MUTATION_FAILURE_DETAIL"
     if [[ ! -f "$report" ]]; then
         # No report and no timeout means pytest refused before it ran anything
         # — a collection error, which is what a mutation upstream of an import
@@ -1661,6 +1714,7 @@ mutation_gradle_run() {
     local log="$WORK/gradle-run.log" rc=0
     rm -rf "$MUTATION_GRADLE_REPORT_DIR" "$MUTATION_GRADLE_CLASSPATH_DIR"
     : > "$MUTATION_FAILING"
+    : > "$MUTATION_FAILURE_DETAIL"
     mutation_gradle_invoke run "$log" || rc=$?
     if [[ "$rc" == "124" ]]; then
         printf 'gradle (did not terminate within %ss)\n' "$MUTATION_ARTIFACT_TIMEOUT" \
@@ -1700,26 +1754,34 @@ mutation_gradle_run() {
     mutation_gradle_report
 }
 
-# The JUnit XML the run left, read once for both answers it holds.
+# The JUnit XML the run left, read once for every answer it holds.
 #
-# One reader rather than two, because the count and the names come out of the
-# same elements: a second parser over the same format would be a second thing
-# to keep in step with it, and this format is somebody else's.
+# One reader rather than several, because the count, the names and the JVM's
+# account of each failure come out of the same elements: a second parser over
+# the same format would be a second thing to keep in step with it, and this
+# format is somebody else's.
+#
+# The JVM is the one runner here whose failure text is not on its console in a
+# form worth parsing — Gradle prints `4 tests completed, 1 failed` and points
+# at an HTML report — so the `<failure>` element IS the account, and this is
+# where it is read. The other four runners have a console parser instead; both
+# roads end at `$MUTATION_FAILURE_DETAIL`.
 #
 # No report at all prints zero RUN rather than zero FAILED, so the run-count
 # rule catches it instead of it reading as a green sweep. That is exactly how
 # a Gradle round fails when a task is skipped: the build succeeds, prints
 # nothing about tests, and nothing ran.
 mutation_gradle_report() {
-    python3 - "$MUTATION_GRADLE_REPORT_DIR" "$MUTATION_FAILING" <<'PY'
+    python3 - "$MUTATION_GRADLE_REPORT_DIR" "$MUTATION_FAILING" "$MUTATION_FAILURE_DETAIL" <<'PY'
 import os
 import sys
 import xml.etree.ElementTree as ET
 
-report_dir, failing_path = sys.argv[1], sys.argv[2]
+report_dir, failing_path, detail_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
 run = failed = 0
 names = []
+detail = []
 for base, _dirs, files in os.walk(report_dir):
     for name in sorted(files):
         if not name.endswith(".xml"):
@@ -1738,15 +1800,32 @@ for base, _dirs, files in os.walk(report_dir):
             run += total - skipped
             failed += int(suite.get("failures", 0)) + int(suite.get("errors", 0))
             for case in suite.iter("testcase"):
-                if case.find("failure") is None and case.find("error") is None:
+                reports = case.findall("failure") + case.findall("error")
+                if not reports:
                     continue
                 # `classname.name` is how the JVM names a test everywhere else
                 # in this repository, and it is what a reader greps for.
-                names.append(f"{case.get('classname', '?')}.{case.get('name', '?')}")
+                full = f"{case.get('classname', '?')}.{case.get('name', '?')}"
+                names.append(full)
+                # The assertion and the stack trace, under the name they
+                # belong to. The message is an attribute and the trace is the
+                # element's text; a reader needs both and JUnit splits them.
+                detail.append(f"---- {full} ----")
+                for report in reports:
+                    message = (report.get("message") or "").strip()
+                    if message:
+                        detail.append(message)
+                    body = (report.text or "").strip()
+                    if body:
+                        detail.append(body)
 
 with open(failing_path, "w", encoding="utf-8") as handle:
     for name in sorted(set(names)):
         handle.write(name + "\n")
+
+with open(detail_path, "w", encoding="utf-8") as handle:
+    for line in detail:
+        handle.write(line + "\n")
 
 # The caller handles the timeout, so a report that exists is a run that
 # came back.
@@ -2309,6 +2388,19 @@ mutation_init() {
             [[ -n "$failing_line" ]] || continue
             red "              $failing_line"
         done < <(mutation_baseline_failures <"$baseline_src")
+        # And WHY, in the runner's own words, which is the question a list of
+        # names hands straight back to the reader. The build-failure branch a
+        # few lines up has printed its log since the beginning; this branch
+        # printed names and dropped the account behind them, and the round is
+        # just as terminal here.
+        #
+        # On stdout rather than stderr, unlike `mutation_build_diagnostics`:
+        # the ledger keeps a round's own stdout as its console log, and the
+        # same function is called from inside the case loop below, where a
+        # note on the other stream arrives detached from the verdict it
+        # belongs to.
+        red "              the runner's own account of those failures:"
+        mutation_run_diagnostics
         exit 2
     fi
     if [[ "$BASELINE_RUN" == "0" ]]; then
@@ -2424,6 +2516,11 @@ mutation_rebaseline() {
         while IFS= read -r line; do
             [[ -n "$line" ]] && red "                $line"
         done < <(mutation_baseline_failures <"$MUTATION_FAILING")
+        # The same account, for the same reason: a retake that will not go
+        # green stops the round, and a reader who is told only which test is
+        # red has to reproduce the run to learn anything more.
+        red "                and what the runner said about them:"
+        mutation_run_diagnostics
         return 1
     fi
     BASELINE_HASHES="$rebuilt"
