@@ -507,11 +507,11 @@ fn every_runner_the_corpus_declares_is_provisioned_in_the_rounds_job() {
     runners.remove("cargo");
 
     assert!(
-        runners.len() >= 3,
-        "⚠ the corpus declares {} non-cargo runner(s): {runners:?}. Three are \
-         expected — ctest, go and pytest — and a smaller set means either a \
-         runner was dropped or this derivation stopped reading them, which \
-         would make the sweep below vacuous",
+        runners.len() >= 4,
+        "⚠ the corpus declares {} non-cargo runner(s): {runners:?}. Four are \
+         expected — ctest, go, gradle and pytest — and a smaller set means \
+         either a runner was dropped or this derivation stopped reading them, \
+         which would make the sweep below vacuous",
         runners.len()
     );
 
