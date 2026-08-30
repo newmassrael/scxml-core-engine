@@ -23,7 +23,7 @@
 # is driven by the snapshot the shell already sourced.
 
 mutation_tests -p sce-build --features cli --test mutation_case_liveness
-mutation_runtime_targets scripts/mutate
+mutation_runtime_targets scripts/mutate scripts/lib/mutation_failures.sh
 
 # ── An anchor that matches nothing ─────────────────────────────────
 #
@@ -78,4 +78,18 @@ mutation_case "an empty casefile stops being refused" <<'PY'
 edit("scripts/mutate",
      "    if [[ $total -eq 0 ]]; then",
      "    if [[ $total -eq -1 ]]; then")
+PY
+
+# ── A tally that counts a quoted summary ───────────────────────────
+#
+# The counts come from lines libtest owns the START of. Unanchored, the failed
+# count is read from anywhere on any line, so a suite that quotes another run's
+# summary — a probe that re-executes its own binary, for instance — has that
+# run's failures added to its own. Measured 2026-08-30 at `3/8 red` against two
+# named tests.
+
+mutation_case "the failed count is read from anywhere on a line" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     "        /^test result:/ {",
+     "        /test result:/ {")
 PY

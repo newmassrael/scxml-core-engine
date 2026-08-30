@@ -870,6 +870,57 @@ fn a_green_run_names_nothing() {
 }
 
 #[test]
+fn a_quoted_summary_is_not_added_to_this_runs_own_tally() {
+    // The counts come from lines libtest owns the START of. Before that
+    // anchoring, the failed count was read with a pattern that matched
+    // anywhere on any line — so a test that quoted ANOTHER run's summary had
+    // that run's failures added to its own.
+    //
+    // Measured 2026-08-30: a suite whose probe re-executes its own binary and
+    // quotes the child's output on failure made a round report `3/8 red` while
+    // naming two tests. CAUGHT survived it because CAUGHT needs only a
+    // non-zero count; a SURVIVED verdict read the same way would have been a
+    // false one.
+    let counts = failure_names(
+        "mutation_counts_from_cargo",
+        "running 8 tests\n\
+         test a_pass ... ok\n\
+         test the_probe ... FAILED\n\
+         failures:\n\
+         ---- the_probe stdout ----\n\
+         the child half failed:\n\
+         \x20   | running 1 test\n\
+         \x20   | test the_probe ... FAILED\n\
+         \x20   | test result: FAILED. 0 passed; 1 failed; 0 ignored\n\n\
+         test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured\n",
+    );
+    assert_eq!(
+        counts,
+        vec!["8 1".to_string()],
+        "the quoted child's header and summary must not reach this run's tally"
+    );
+}
+
+#[test]
+fn several_binaries_worth_of_tests_are_totalled() {
+    // One captured stream can hold more than one `running N tests` header —
+    // libtest prints one per test section — so the run count is a sum rather
+    // than the last thing seen.
+    let counts = failure_names(
+        "mutation_counts_from_cargo",
+        "running 2 tests\n\
+         test result: ok. 2 passed; 0 failed; 0 ignored\n\
+         running 3 tests\n\
+         test result: FAILED. 1 passed; 2 failed; 0 ignored\n",
+    );
+    assert_eq!(
+        counts,
+        vec!["5 2".to_string()],
+        "the tally must total every section the stream carried"
+    );
+}
+
+#[test]
 fn a_red_baseline_names_the_tests_it_is_made_of() {
     // The refusal above this list is a COUNT, and a count sends the reader
     // back to CI to ask which. Measured 2026-08-24: the first whole-corpus

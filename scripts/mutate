@@ -923,8 +923,7 @@ mutation_cargo_run() {
                 "$MUTATION_ARTIFACT_TIMEOUT" >> "$MUTATION_FAILING"
             continue
         fi
-        run="$(printf '%s\n' "$out" | sed -n 's/^running \([0-9]*\) test.*/\1/p' | awk '{s+=$1} END {print s+0}')"
-        failed="$(printf '%s\n' "$out" | sed -n 's/.*[0-9]* passed; \([0-9]*\) failed.*/\1/p' | awk '{s+=$1} END {print s+0}')"
+        read -r run failed <<<"$(printf '%s\n' "$out" | mutation_counts_from_cargo)"
         printf '%s\n' "$out" | mutation_failures_from_cargo >> "$MUTATION_FAILING"
         printf '%s\n' "$out" | mutation_detail_from_cargo >> "$MUTATION_FAILURE_DETAIL"
         total_run=$((total_run + ${run:-0}))
