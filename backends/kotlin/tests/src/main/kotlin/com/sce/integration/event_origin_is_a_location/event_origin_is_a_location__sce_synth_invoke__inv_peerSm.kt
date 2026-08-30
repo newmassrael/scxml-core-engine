@@ -336,7 +336,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsP, "myLocation", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['scxml'].location")))
+                    putParam(paramsP, "myLocation", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("_ioprocessors.scxml.location", "_ioprocessors['scxml'].location")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<send> <param name='myLocation'> expr failed to evaluate")

@@ -136,7 +136,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'seen' with expr
         try {
-            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
+            val initResult_seen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
             engine.setVariable(sid, "seen", initResult_seen)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
@@ -330,7 +330,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
 
     private fun processNullReport(
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'sole'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Report, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(seen == \"sole\")", "seen === 'sole'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Report, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Report, 1)
     }

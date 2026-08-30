@@ -323,7 +323,7 @@ class DonedataLateCompletionStateMachine(
     ): TransitionResult<DonedataLateCompletionState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is DonedataLateCompletionEvent.Ready -> TransitionResult.Internal(0)
-        event is DonedataLateCompletionEvent.Done.Invoke.InvLate && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLateCompletionState.Pass, DonedataLateCompletionState.Phase, 1)
+        event is DonedataLateCompletionEvent.Done.Invoke.InvLate && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.result == 42))", "_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLateCompletionState.Pass, DonedataLateCompletionState.Phase, 1)
 
         event is DonedataLateCompletionEvent.Done.Invoke.InvLate -> TransitionResult.External(DonedataLateCompletionState.Fail, DonedataLateCompletionState.Phase, 2)
 

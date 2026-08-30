@@ -330,21 +330,21 @@ class XmlDataIsADomTreeStateMachine(
 
     private fun processNullReading(
     ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.nodeType === 9 && doc.nodeName === '#document' && doc.documentElement.tagName === 'books' && doc.hasAttribute('count')")) -> TransitionResult.External(XmlDataIsADomTreeState.Traversing, XmlDataIsADomTreeState.Reading, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((doc.nodeType == 9) and (doc.nodeName == \"#document\")) and (doc.documentElement.tagName == \"books\")) and _scxml_truthy(doc:hasAttribute(\"count\")))", "doc.nodeType === 9 && doc.nodeName === '#document' && doc.documentElement.tagName === 'books' && doc.hasAttribute('count')")) -> TransitionResult.External(XmlDataIsADomTreeState.Traversing, XmlDataIsADomTreeState.Reading, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(XmlDataIsADomTreeState.NotADocument, XmlDataIsADomTreeState.Reading, 1)
     }
 
     private fun processNullReadingText(
     ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.documentElement.firstChild.firstChild.nodeType === 3 && doc.documentElement.firstChild.firstChild.nodeValue === 'first' && doc.documentElement.textContent === 'first' && doc.documentElement.lastChild.hasChildNodes() === false")) -> TransitionResult.External(XmlDataIsADomTreeState.Settled, XmlDataIsADomTreeState.ReadingText, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((doc.documentElement.firstChild.firstChild.nodeType == 3) and (doc.documentElement.firstChild.firstChild.nodeValue == \"first\")) and (doc.documentElement.textContent == \"first\")) and (doc.documentElement.lastChild:hasChildNodes() == false))", "doc.documentElement.firstChild.firstChild.nodeType === 3 && doc.documentElement.firstChild.firstChild.nodeValue === 'first' && doc.documentElement.textContent === 'first' && doc.documentElement.lastChild.hasChildNodes() === false")) -> TransitionResult.External(XmlDataIsADomTreeState.Settled, XmlDataIsADomTreeState.ReadingText, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(XmlDataIsADomTreeState.NoText, XmlDataIsADomTreeState.ReadingText, 3)
     }
 
     private fun processNullTraversing(
     ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.documentElement.childNodes.length === 2 && doc.documentElement.firstChild.getAttribute('title') === 't1' && doc.documentElement.lastChild.getAttribute('title') === 't2' && doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' && doc.documentElement.firstChild.parentNode.tagName === 'books'")) -> TransitionResult.External(XmlDataIsADomTreeState.ReadingText, XmlDataIsADomTreeState.Traversing, 4)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((((#doc.documentElement.childNodes == 2) and (doc.documentElement.firstChild:getAttribute(\"title\") == \"t1\")) and (doc.documentElement.lastChild:getAttribute(\"title\") == \"t2\")) and (doc.documentElement.lastChild.previousSibling:getAttribute(\"title\") == \"t1\")) and (doc.documentElement.firstChild.parentNode.tagName == \"books\"))", "doc.documentElement.childNodes.length === 2 && doc.documentElement.firstChild.getAttribute('title') === 't1' && doc.documentElement.lastChild.getAttribute('title') === 't2' && doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' && doc.documentElement.firstChild.parentNode.tagName === 'books'")) -> TransitionResult.External(XmlDataIsADomTreeState.ReadingText, XmlDataIsADomTreeState.Traversing, 4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(XmlDataIsADomTreeState.WrongTree, XmlDataIsADomTreeState.Traversing, 5)
     }

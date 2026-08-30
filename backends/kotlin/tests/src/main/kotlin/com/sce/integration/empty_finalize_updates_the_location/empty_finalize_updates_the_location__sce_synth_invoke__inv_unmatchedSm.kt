@@ -372,7 +372,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsP, "unrelated", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.ecmascript("5")))
+                    putParam(paramsP, "unrelated", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("5", "5")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent.Error.Execution, "<send> <param name='unrelated'> expr failed to evaluate")

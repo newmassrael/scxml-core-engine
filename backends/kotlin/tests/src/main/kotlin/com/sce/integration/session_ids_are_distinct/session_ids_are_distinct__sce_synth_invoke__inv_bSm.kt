@@ -310,7 +310,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsP, "sid", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.ecmascript("_sessionid")))
+                    putParam(paramsP, "sid", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution, "<send> <param name='sid'> expr failed to evaluate")

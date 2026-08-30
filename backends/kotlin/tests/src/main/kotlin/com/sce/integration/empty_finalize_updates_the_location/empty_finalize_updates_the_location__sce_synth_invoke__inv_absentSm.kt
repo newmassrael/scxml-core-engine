@@ -372,7 +372,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsP, "guard", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.ecmascript("9")))
+                    putParam(paramsP, "guard", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("9", "9")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, "<send> <param name='guard'> expr failed to evaluate")

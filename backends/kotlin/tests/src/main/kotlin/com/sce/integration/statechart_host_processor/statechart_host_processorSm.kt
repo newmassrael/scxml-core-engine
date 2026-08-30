@@ -163,21 +163,21 @@ class StatechartHostProcessorStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'served' with expr
         try {
-            val initResult_served = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_served = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "served", initResult_served)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='served'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'refused' with expr
         try {
-            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "refused", initResult_refused)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'plain' with expr
         try {
-            val initResult_plain = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_plain = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "plain", initResult_plain)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='plain'> expr failed to evaluate")
@@ -445,19 +445,19 @@ class StatechartHostProcessorStateMachine(
                 // SCE-MAP: statechart_host_processor.scxml:48 :: dispatching :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("plain"), com.sce.runtime.ScriptSource.ecmascript("plain + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("plain", "plain"), com.sce.runtime.ScriptSource.lua("_scxml_add(plain, 1)", "plain + 1"))
             }
             1 -> {
                 // SCE-MAP: statechart_host_processor.scxml:51 :: dispatching :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("served"), com.sce.runtime.ScriptSource.ecmascript("served + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("served", "served"), com.sce.runtime.ScriptSource.lua("_scxml_add(served, 1)", "served + 1"))
             }
             2 -> {
                 // SCE-MAP: statechart_host_processor.scxml:54 :: dispatching :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("refused"), com.sce.runtime.ScriptSource.ecmascript("refused + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))
             }
             else -> {}
         }

@@ -139,7 +139,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'declared' with expr
         try {
-            val initResult_declared = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
+            val initResult_declared = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
             engine.setVariable(sid, "declared", initResult_declared)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent.Error.Execution, "<data id='declared'> expr failed to evaluate")
@@ -333,8 +333,8 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(
 
     private fun processNullReport(
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof nowhere !== 'undefined'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report, 0)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("declared === 'carried'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(nowhere) ~= \"undefined\")", "typeof nowhere !== 'undefined'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(declared == \"carried\")", "declared === 'carried'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report, 1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report, 2)
     }

@@ -351,7 +351,7 @@ class EventOriginIsALocationStateMachine(
     private fun processWaiting(
         event: EventOriginIsALocationEvent
     ): TransitionResult<EventOriginIsALocationState> = when {
-        event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.origin == _event.data.myLocation")) -> TransitionResult.External(EventOriginIsALocationState.AwaitReply, EventOriginIsALocationState.Waiting, 1)
+        event is EventOriginIsALocationEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.origin, _event.data.myLocation)", "_event.origin == _event.data.myLocation")) -> TransitionResult.External(EventOriginIsALocationState.AwaitReply, EventOriginIsALocationState.Waiting, 1)
 
         event is EventOriginIsALocationEvent.FromChild -> TransitionResult.External(EventOriginIsALocationState.Fail, EventOriginIsALocationState.Waiting, 2)
 
@@ -458,7 +458,7 @@ class EventOriginIsALocationStateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_event.origin"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
