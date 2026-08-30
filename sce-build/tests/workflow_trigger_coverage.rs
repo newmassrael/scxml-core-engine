@@ -582,3 +582,245 @@ fn debug_only_codegen_builds_drop_the_stale_release_binary() {
          certifies nothing.",
     );
 }
+
+/// The floor under the committed-artefact population, so a probe that
+/// stops finding artefacts fails instead of certifying an empty sweep.
+///
+/// Measured 2026-08-30: 1303 tracked files carry a §synth-6.2.6 drift
+/// header. The floor sits below that rather than at it — trees do get
+/// retired, and this number exists to catch a BROKEN probe, not to pin a
+/// corpus size some other gate owns.
+const MIN_COMMITTED_ARTEFACTS: usize = 1000;
+
+/// Whether a tracked file is a committed §synth-6.2.6 artefact.
+///
+/// The drift header is the generator's own mark and it is emitted in
+/// every backend language, so asking for it is asking the tree rather
+/// than restating a directory list that the next backend invalidates.
+/// Both halves are required: `SCE-GENERATED` alone appears in prose
+/// about the marker, and the `template-hash` line is what makes the file
+/// something `scripts/regen_all_committed_trees.sh` rewrites.
+fn is_committed_artefact(path: &Path) -> bool {
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(400)]);
+    head.contains("SCE-GENERATED") && head.contains("template-hash:")
+}
+
+/// Every tracked path, from git rather than from a directory walk, so
+/// build output and ignored trees cannot enter the population.
+fn tracked_files() -> Vec<String> {
+    let out = std::process::Command::new("git")
+        .args(["ls-files", "-z"])
+        .current_dir(repo_root())
+        .output()
+        .expect("git ls-files runs in the repository");
+    assert!(
+        out.status.success(),
+        "git ls-files failed: {:?}",
+        out.status
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .split('\0')
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether `path` matches one GitHub Actions `paths:` filter pattern.
+///
+/// The two wildcards differ in exactly the way that decides this gate's
+/// answers: `**` crosses `/`, a single `*` does not. A matcher that
+/// blurred them would read `com/sce/generated/**` as covering
+/// `com/sce/integration/...` and report the very hole it exists to find
+/// as covered.
+fn filter_matches(pattern: &str, path: &str) -> bool {
+    fn go(p: &[u8], s: &[u8]) -> bool {
+        if p.is_empty() {
+            return s.is_empty();
+        }
+        if p[0] == b'*' {
+            if p.len() > 1 && p[1] == b'*' {
+                // `**` crosses separators.
+                let rest = &p[2..];
+                for i in 0..=s.len() {
+                    if go(rest, &s[i..]) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            // A single `*` stops at the next separator.
+            let rest = &p[1..];
+            for i in 0..=s.len() {
+                if go(rest, &s[i..]) {
+                    return true;
+                }
+                if s.get(i) == Some(&b'/') {
+                    break;
+                }
+            }
+            return false;
+        }
+        if p[0] == b'?' {
+            return !s.is_empty() && s[0] != b'/' && go(&p[1..], &s[1..]);
+        }
+        !s.is_empty() && p[0] == s[0] && go(&p[1..], &s[1..])
+    }
+    go(pattern.as_bytes(), path.as_bytes())
+}
+
+/// The `paths:` / `paths-ignore:` patterns declared anywhere in an `on:`
+/// block, as written.
+fn declared_filter_patterns(on: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    for line in on.lines() {
+        let t = line.trim();
+        if t == "paths:" || t == "paths-ignore:" {
+            inside = true;
+            continue;
+        }
+        if inside {
+            if let Some(rest) = t.strip_prefix("- ") {
+                out.push(rest.trim().trim_matches(['\'', '"']).to_owned());
+                continue;
+            }
+            if !t.is_empty() && !t.starts_with('#') {
+                inside = false;
+            }
+        }
+    }
+    out
+}
+
+/// The matcher separates the two wildcards, and says so about the exact
+/// pair that produced the hole.
+///
+/// The gate above is only as strong as this: a matcher that let a single
+/// `*` cross `/` would read `com/sce/generated/**` as covering
+/// `com/sce/integration/...` and report the 538 uncovered artefacts as
+/// covered — a green that means the opposite of what it says. That
+/// failure is invisible from the gate itself, because with no filter
+/// declared the matcher is never called at all, so it is asserted here
+/// directly rather than left to a sweep that may not reach it.
+#[test]
+fn the_filter_matcher_separates_the_two_wildcards() {
+    // `**` crosses separators; a single `*` stops at one.
+    assert!(filter_matches("a/**", "a/b/c.kt"));
+    assert!(filter_matches("a/*", "a/b.kt"));
+    assert!(!filter_matches("a/*", "a/b/c.kt"));
+    // `a/**` covers what is under `a`, not `a` itself.
+    assert!(!filter_matches("a/**", "a"));
+    // A wildcard inside a segment stays inside it.
+    assert!(filter_matches(
+        "scripts/regen_event_schema_native*.sh",
+        "scripts/regen_event_schema_native_go.sh"
+    ));
+    assert!(!filter_matches(
+        "scripts/regen_event_schema_native*.sh",
+        "scripts/x/regen_event_schema_native_go.sh"
+    ));
+    // A literal pattern matches only itself.
+    assert!(filter_matches(
+        "tests/w3c/conformance/fixtures.json",
+        "tests/w3c/conformance/fixtures.json"
+    ));
+    assert!(!filter_matches(
+        "tests/w3c/conformance/fixtures.json",
+        "tests/w3c/conformance/fixtures.json.bak"
+    ));
+
+    // The measured pair. The filter this lane used to carry named the
+    // `generated` tree; the artefacts that went stale live in the
+    // `integration` one beside it, and no reading of that pattern
+    // reaches them.
+    const OLD: &str = "backends/kotlin/tests/src/main/kotlin/com/sce/generated/**";
+    assert!(filter_matches(
+        OLD,
+        "backends/kotlin/tests/src/main/kotlin/com/sce/generated/test150/test150Sm.kt"
+    ));
+    assert!(!filter_matches(
+        OLD,
+        "backends/kotlin/tests/src/main/kotlin/com/sce/integration/ai_loop/ai_loopSm.kt"
+    ));
+}
+
+/// The lane that regenerates every committed tree is started by a change
+/// to any artefact it regenerates.
+///
+/// A `paths:` filter on that lane is a claim that the changes able to
+/// break it can be enumerated as globs. Measured 2026-08-30, the filter
+/// it carried made that claim falsely: 538 of the 1303 committed
+/// artefacts sat outside it — every Kotlin `com/sce/integration/**` and
+/// `src/test/**` tree, every Rust `src/integration/**` tree and
+/// `tests/test_*.rs`, and the Go forge round-trip codecs — because it
+/// named the two `generated/**` roots and stopped.
+///
+/// What that costs is not a slower red but an UNCLEARABLE one. The round
+/// that made lowered Lua the Kotlin backend's default artefact left 40
+/// Kotlin integration files stale and this lane failing; the commit whose
+/// whole content is those 40 regenerated files would not have started the
+/// lane, so the red would have stayed on the dashboard while the tree
+/// underneath it was already correct.
+///
+/// The lane therefore declares no filter, and this test is what keeps
+/// that true. It does not forbid a filter — it requires that one cover
+/// every artefact the lane reproduces, which is the property the removed
+/// filter did not have.
+#[test]
+fn the_regen_lane_is_started_by_every_artefact_it_reproduces() {
+    const LANE: &str = "regen-reproduces.yml";
+
+    let root = repo_root();
+    let artefacts: Vec<String> = tracked_files()
+        .into_iter()
+        .filter(|p| is_committed_artefact(&root.join(p)))
+        .collect();
+
+    // A sweep that found nothing would pass every assertion below while
+    // measuring nothing at all.
+    assert!(
+        artefacts.len() >= MIN_COMMITTED_ARTEFACTS,
+        "found only {} tracked file(s) carrying a §synth-6.2.6 drift \
+         header; expected at least {MIN_COMMITTED_ARTEFACTS}. Either the \
+         committed trees are gone or this probe stopped recognising them \
+         — and a probe that matches nothing certifies nothing.",
+        artefacts.len(),
+    );
+
+    let text = fs::read_to_string(root.join(".github/workflows").join(LANE))
+        .unwrap_or_else(|e| panic!("read {LANE}: {e}"));
+    let on = on_block(LANE, &text);
+    if !declares_path_filter(&on) {
+        return;
+    }
+
+    let patterns = declared_filter_patterns(&on);
+    assert!(
+        !patterns.is_empty(),
+        "{LANE} declares `paths:` but this gate read no pattern out of it, \
+         so it cannot say what the lane covers"
+    );
+
+    let uncovered: Vec<&String> = artefacts
+        .iter()
+        .filter(|a| !patterns.iter().any(|p| filter_matches(p, a)))
+        .collect();
+
+    assert!(
+        uncovered.is_empty(),
+        "{LANE} regenerates {} committed artefact(s) but its `paths:` \
+         filter does not start on {} of them, so a commit that repairs \
+         those files cannot clear the red they cause. Either cover them \
+         or drop the filter — the lane's input set is the union of the \
+         generator, the templates, every regeneration script, every \
+         authored document they read and every artefact they write.\n  \
+         first uncovered: {}\n  ({} more)",
+        artefacts.len(),
+        uncovered.len(),
+        uncovered[0],
+        uncovered.len().saturating_sub(1),
+    );
+}

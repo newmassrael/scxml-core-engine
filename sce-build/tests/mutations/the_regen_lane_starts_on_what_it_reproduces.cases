@@ -1,0 +1,63 @@
+# Mutation cases for "the regen lane is started by every artefact it
+# reproduces".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_regen_lane_starts_on_what_it_reproduces.cases`.
+#
+# The lane regenerates every committed tree and compares, so a `paths:` filter
+# on it is a claim that the changes able to break it can be enumerated as
+# globs. Measured 2026-08-30, the filter it carried made that claim falsely:
+# 1303 tracked files carry a §synth-6.2.6 drift header and 538 of them sat
+# outside it, because it named the two `generated/**` roots and stopped. Every
+# Kotlin `com/sce/integration/**` and `src/test/**` tree, every Rust
+# `src/integration/**` tree and `tests/test_*.rs`, and the Go forge round-trip
+# codecs were invisible to the lane that reproduces them.
+#
+# What that cost is not a slower red but an UNCLEARABLE one. The round that
+# made lowered Lua the Kotlin backend's default artefact left 40 Kotlin
+# integration files stale and this lane failing, and the commit whose entire
+# content is those 40 regenerated files would not have started the lane — the
+# red would have stayed on the dashboard above a tree that was already correct.
+#
+# So the lane declares no filter, and the gate does not forbid one: it requires
+# that a filter cover every artefact the lane reproduces. These cases are what
+# say it can fail, and they have to cover BOTH halves, because the two fail in
+# different places. A filter that reappears is caught by the coverage
+# assertion; a probe that stops recognising artefacts is caught only by the
+# population floor, and with no filter declared the coverage half returns
+# early and never runs at all — the exit that would otherwise let a dead probe
+# read as a clean sweep.
+#
+# `.github/workflows/regen-reproduces.yml` is read by the test at run time, so
+# it is a `mutation_runtime_target`; the harness header explains what that
+# changes about the evidence.
+#
+# Anchors are literal slices of the source, so an edit can move one out from
+# under a case. That is reported as INCONCLUSIVE with the anchor quoted, never
+# as a pass — re-anchor the case rather than reading the run as evidence.
+
+mutation_tests -p sce-build --test workflow_trigger_coverage
+mutation_targets sce-build/tests/workflow_trigger_coverage.rs
+mutation_runtime_targets .github/workflows/regen-reproduces.yml
+
+mutation_case "the lane takes back a filter that names only the generated roots" <<'PY'
+edit(".github/workflows/regen-reproduces.yml",
+     "  push:\n    branches: [ main ]\n  pull_request:",
+     "  push:\n    branches: [ main ]\n    paths:\n"
+     "      - 'sce-build/**'\n"
+     "      - 'backends/rust/tests/src/generated/**'\n"
+     "      - 'backends/kotlin/tests/src/main/kotlin/com/sce/generated/**'\n"
+     "  pull_request:")
+PY
+
+mutation_case "the artefact probe stops recognising the drift header" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     'head.contains("SCE-GENERATED") && head.contains("template-hash:")',
+     'head.contains("SCE-GENERATED") && head.contains("template-hash-absent:")')
+PY
+
+mutation_case "a single star is allowed to cross a path separator" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     "                if s.get(i) == Some(&b'/') {\n                    break;\n                }",
+     "                if s.get(i) == Some(&b'\\0') {\n                    break;\n                }")
+PY
