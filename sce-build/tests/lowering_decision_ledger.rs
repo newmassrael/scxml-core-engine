@@ -1803,6 +1803,61 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
             callers.join("\n  "),
             mentions.len()
         );
+
+        // 5. THE DETECTOR. Steps 1-4 say the unit is gone TODAY. Nothing in
+        //    them says the tree would notice it COMING BACK, and this
+        //    repository has a detector for exactly that: the semantics suite
+        //    reads the engine's class body for a rewriter call and, finding
+        //    one, requires the engine's documentation to name it.
+        //
+        //    That detector cannot hold the name in code — the type is deleted,
+        //    so naming it would not compile — so it holds it as a STRING. And
+        //    a string is invisible to both readings above: the raw-text
+        //    control cannot tell it from a comment, and the code-only claim
+        //    strips it with every other literal. Measured 2026-08-30 by
+        //    changing `REWRITER_NAME` to a name nothing carries: every check
+        //    in this file stayed green while the detector was looking for a
+        //    rewriter that could never return under that name.
+        //
+        //    ⚠ This is the arm that would go vacuous on its own. While the
+        //    rewriter is retired the detector's live branch never runs, so
+        //    nothing else in the tree reads that constant — which is the exact
+        //    shape of a check kept alive only by the prose around it.
+        let detectors: Vec<&str> = population
+            .iter()
+            .copied()
+            .filter(|p| kotlin_outside_comments(&read(p)).contains(REWRITER))
+            .collect();
+        assert!(
+            !detectors.is_empty(),
+            "row `{}`: no tracked Kotlin file names `{REWRITER}` outside a \
+             comment. The {} file(s) that mention it do so in prose, which \
+             remembers the retirement but does not WATCH it: nothing would \
+             turn red on the day a rewriter came back under that name. The \
+             detector holds the name as a string literal — restore it, or \
+             rewrite this row to stop claiming a retirement is watched.",
+            row.id,
+            mentions.len()
+        );
+
+        // 6. And the two populations are DIFFERENT. Steps 3 and 5 mean
+        //    different things — one proves the sweep opens files, the other
+        //    proves something is watching — and they say so only while at
+        //    least one file is in the first and not the second. Collapse them
+        //    (by reading raw text where step 5 reads code) and the detector
+        //    check passes on the strength of a comment, which is the reading
+        //    it exists to reject.
+        assert!(
+            detectors.len() < mentions.len(),
+            "row `{}`: every one of the {} file(s) that mention `{REWRITER}` \
+             also names it outside a comment, so the control and the detector \
+             have become the same set and neither is evidence about the other. \
+             Either the prose that remembers the retirement is gone — in which \
+             case this row must be rewritten — or step 5 has stopped reading \
+             code and started reading raw text.",
+            row.id,
+            mentions.len()
+        );
         return;
     }
 
@@ -1897,6 +1952,28 @@ fn is_kotlin_source(path: &str) -> bool {
 /// One newline is kept per newline consumed, so a line-based reading of the
 /// result still lines up with the raw source.
 fn kotlin_code_only(src: &str) -> String {
+    kotlin_text(src, true)
+}
+
+/// The same source with COMMENTS removed and string bodies kept.
+///
+/// The layer between the two the retirement check already had, and it exists
+/// because the thing standing between them is load-bearing. A retirement says
+/// the unit is gone; what says it has not COME BACK is a detector, and a
+/// detector cannot name a deleted type in code — it would not compile. So it
+/// holds the name as a STRING, which puts it in neither of the other two
+/// readings: the raw-text control cannot tell it from a comment, and the
+/// code-only claim strips it away with every other literal.
+///
+/// Measured 2026-08-30: `EcmaScriptSemanticsTest.kt`'s `REWRITER_NAME` was
+/// changed to a name nothing carries, and the whole ledger suite stayed green
+/// — the detector that tells a rewriter which came back from one that never
+/// left could be disabled in silence.
+fn kotlin_outside_comments(src: &str) -> String {
+    kotlin_text(src, false)
+}
+
+fn kotlin_text(src: &str, strip_strings: bool) -> String {
     let bytes: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
     let mut i = 0;
@@ -1948,8 +2025,16 @@ fn kotlin_code_only(src: &str) -> String {
                     && bytes.get(i + 1) == Some(&'"')
                     && bytes.get(i + 2) == Some(&'"')
                 {
+                    // The closing delimiter is kept with the body, so a reader
+                    // of the result can still see where the literal ended.
+                    if !strip_strings {
+                        out.push_str("\"\"\"");
+                    }
                     i += 3;
                     break;
+                }
+                if !strip_strings {
+                    out.push(bytes[i]);
                 }
                 i += 1;
             }
@@ -1961,6 +2046,12 @@ fn kotlin_code_only(src: &str) -> String {
             i += 1;
             while i < bytes.len() {
                 if bytes[i] == '\\' {
+                    if !strip_strings {
+                        out.push(bytes[i]);
+                        if let Some(next) = bytes.get(i + 1) {
+                            out.push(*next);
+                        }
+                    }
                     i += 2;
                     continue;
                 }
@@ -1970,8 +2061,14 @@ fn kotlin_code_only(src: &str) -> String {
                     continue;
                 }
                 if bytes[i] == c {
+                    if !strip_strings {
+                        out.push(bytes[i]);
+                    }
                     i += 1;
                     break;
+                }
+                if !strip_strings {
+                    out.push(bytes[i]);
                 }
                 i += 1;
             }
@@ -2043,4 +2140,68 @@ fn reaches_rewriter(src: &str) -> bool {
                 .get(n)
                 .is_some_and(|r| r.contains(&format!("{REWRITER}.h")))
     })
+}
+
+/// The three readings a Kotlin file gets, held apart.
+///
+/// `retirement:kotlin-rewriter-deleted` asks three different questions of the
+/// same tree — does anything MENTION the retired name, does anything REACH it
+/// in code, and does anything WATCH for its return — and the answers only
+/// differ because these two readers do. Fold the readers together and the row
+/// goes on passing while one of its three claims has stopped being asked.
+///
+/// A fixture rather than the tree, deliberately: the tree's own files are what
+/// the row measures, and a reader checked against them alone would be checked
+/// against whatever they happen to contain today.
+#[test]
+fn the_two_kotlin_readings_differ_exactly_at_a_string_literal() {
+    let src = "// a comment naming EcmaScriptToLuaTransformer\n\
+               private const val NAME = \"EcmaScriptToLuaTransformer\"\n\
+               /* a block comment naming EcmaScriptToLuaTransformer */\n\
+               val other = 1\n";
+
+    // The claim's reader: neither the comment nor the literal is code.
+    let code = kotlin_code_only(src);
+    assert!(
+        !code.contains(REWRITER),
+        "the code reading must strip comments AND string bodies:\n{code}"
+    );
+    assert!(
+        code.contains("val other = 1"),
+        "the code reading dropped actual code:\n{code}"
+    );
+
+    // The detector's reader: the comment is gone, the literal survives. That
+    // difference is the whole of what the detector rests on — the name it
+    // watches for cannot be written in code, because the type is deleted.
+    let outside = kotlin_outside_comments(src);
+    assert!(
+        outside.contains(&format!("\"{REWRITER}\"")),
+        "the detector reading must keep a string literal:\n{outside}"
+    );
+    assert_eq!(
+        outside.matches(REWRITER).count(),
+        1,
+        "the detector reading must keep the literal and drop BOTH comments — \
+         a reading that kept them would let prose pass as a detector:\n{outside}"
+    );
+}
+
+/// A raw string's body is a body in both readings' terms.
+///
+/// `"""o = {["k"] = 7}"""` really appears in the seam suite, which is why the
+/// reader handles raw strings at all. The detector reading has to keep such a
+/// body — a detector is free to hold its name in one — while the code reading
+/// still has to drop it.
+#[test]
+fn a_raw_string_body_is_a_literal_to_both_kotlin_readings() {
+    let src = "val fixture = \"\"\"EcmaScriptToLuaTransformer\"\"\"\nval n = 2\n";
+    assert!(
+        !kotlin_code_only(src).contains(REWRITER),
+        "a raw string body reached the code reading"
+    );
+    assert!(
+        kotlin_outside_comments(src).contains(REWRITER),
+        "a raw string body was dropped from the detector reading"
+    );
 }
