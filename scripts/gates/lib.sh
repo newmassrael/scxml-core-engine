@@ -508,3 +508,83 @@ sce_gate_requires_tool() {
             ;;
     esac
 }
+
+# The major version a JDK home reports. `$1` empty means the `java` on PATH.
+#
+# Java 8 spells itself `1.8.0_x` and everything since spells `<major>.x`, so the
+# leading `1.` is dropped before the first component is read.
+sce_java_major() {
+    local home="${1:-}" out version
+    out="$("${home:+$home/bin/}java" -version 2>&1 | head -1)" || return 1
+    version="${out#*\"}"
+    version="${version%%\"*}"
+    case "$version" in
+    1.*) version="${version#1.}" ;;
+    esac
+    printf '%s' "${version%%.*}"
+}
+
+# ── The JDK Gradle will ACTUALLY run on ───────────────────────────
+#
+# TWO gates drive Gradle — `w3c-kotlin` and `ecma262-lowered-kotlin` — and both
+# need the same guarantee, so it is written once. A second copy would be a
+# second answer to "which JVM is this", free to fall behind the first exactly
+# when a machine's `JAVA_HOME` is the problem.
+#
+# "Is there a java" and "which java does Gradle use" are different questions:
+# Gradle honours `JAVA_HOME` over the `java` on PATH, and nothing keeps the two
+# in step.
+#
+# Measured 2026-08-24 on a build machine whose `/etc/environment` carried
+# `JAVA_HOME=…java-8-openjdk…` for an unrelated toolchain: `java --version` said
+# 17, `update-alternatives` said 17, and Gradle compiled the build scripts on 8
+# — failing on a `ByteArrayOutputStream.toString(Charset)` overload that Java 10
+# added. Nothing in that error named a JDK, and the gate had no way to say "you
+# are on the wrong one".
+#
+# CI never meets this because `actions/setup-java` exports `JAVA_HOME`. So the
+# floor is READ from the version CI pins, and this makes the same guarantee
+# locally rather than inheriting whatever the machine happens to export.
+#
+# An adequate `JAVA_HOME` is left alone — overriding a deliberate choice is not
+# a gate's business. `SCE_JAVA_HOME` names one explicitly for a layout the
+# search below does not know.
+#
+# `$1` is the workflow file whose `java-version:` pin is the floor.
+sce_gate_require_jdk() {
+    local pin_file="$1" floor now candidate
+
+    # Deliberately not skip-capable. A lane obtains its JDK through
+    # `actions/setup-java` rather than a package install, and these gates are
+    # selected only when the Kotlin backend changed — a skip there would be
+    # silence about the exact change that asked for the check.
+    command -v java >/dev/null 2>&1 \
+        || sce_gate_fail "java is not on PATH, and this gate was selected because the Kotlin backend changed. Install a JDK 17+ (apt install openjdk-17-jdk) — skipping here would report green on an unverified backend."
+
+    floor="$(sed -n "s/^[[:space:]]*java-version:[[:space:]]*['\"]\{0,1\}\([0-9]\{1,\}\).*/\1/p" \
+        "$pin_file" | head -1)"
+    [ -n "$floor" ] \
+        || sce_gate_fail "no \`java-version:\` pin found in $pin_file — this gate derives its JDK floor from the version CI installs, and a missing pin would let it run on any JVM."
+
+    if [ -z "${JAVA_HOME:-}" ] || [ "$(sce_java_major "${JAVA_HOME:-}" || echo 0)" -lt "$floor" ]; then
+        # The pinned major first, then anything at or above the floor: a
+        # machine that carries several JDKs should land on the one CI uses,
+        # not merely on one that compiles.
+        for candidate in ${SCE_JAVA_HOME:+"$SCE_JAVA_HOME"} \
+            "/usr/lib/jvm/java-$floor-openjdk-"* /usr/lib/jvm/java-*-openjdk-*; do
+            # `javac`, not `java`: a JRE runs the tests but cannot compile
+            # them, and one of the fleet's "JDK 21" directories turned out to
+            # be exactly that — a JRE whose `bin/` holds four files and no
+            # compiler.
+            [ -x "$candidate/bin/javac" ] || continue
+            [ "$(sce_java_major "$candidate" || echo 0)" -ge "$floor" ] || continue
+            export JAVA_HOME="$candidate"
+            break
+        done
+    fi
+
+    now="$(sce_java_major "${JAVA_HOME:-}" || echo 0)"
+    [ "$now" -ge "$floor" ] \
+        || sce_gate_fail "Gradle would run on JDK $now, and this suite needs $floor+ (the version ${pin_file##*/} installs). JAVA_HOME=${JAVA_HOME:-<unset>}. Install a JDK $floor, or point SCE_JAVA_HOME at one — running on an older JVM fails inside a build script with a message that names no JDK."
+    sce_gate_step "Gradle will run on JDK $now (floor $floor from ${pin_file##*/})"
+}
