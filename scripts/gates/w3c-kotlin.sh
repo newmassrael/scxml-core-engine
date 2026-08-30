@@ -129,6 +129,37 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # an adapter, therefore turns this array red rather than being silently
 # unmeasured.
 KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript lua:lua)
+
+# ── How far this backend is from `kotlin-retire-rewriter` ──────────
+#
+# `EcmaScriptToLuaTransformer` is the FALLBACK behind every lowering entry
+# point in `LuaScriptEngine`: text `sce-build`'s frontend refuses is rewritten
+# rather than refused (§scxml-5.9.1). The seam document has said so in prose
+# since the frontend landed, and NOTHING COUNTED IT — so "how far is Kotlin
+# from retiring the rewriter" had no answer anyone could re-derive, and the
+# 1175-line unit's distance to deletion was a sentence.
+#
+# It is a number now. The engine appends one line per lowering, saying which
+# half answered, and this gate reads the file the suite wrote.
+#
+# ⚠ THE CEILING IS THE POINT, and it is a RATCHET rather than a budget: every
+# entry above zero is an expression someone is expected to move to the
+# frontend or to re-tag as Lua, and the row closes when it reaches 0. Raising
+# it is a claim to argue in `docs/SCE_LUA_TRANSLATION_SEAM.md`, not a way to
+# make this lane green.
+REWRITER_CEILING=100
+
+# ⚠⚠ AND A FLOOR UNDER THE FRONTEND, which is not decoration. Measured
+# 2026-08-30, twice: a probe that wrote to `System.err` reported ZERO
+# fallbacks over a run that in fact took the fallback 100 times, because
+# Gradle swallows the test JVM's stderr. A census that never arrives and a
+# census of a run with nothing left to rewrite BOTH read zero, so the low
+# number alone cannot tell "we are done" from "nobody measured". The
+# frontend's own successes are what separates them: on this suite it answers
+# tens of thousands of times, so anything near zero means the census did not
+# happen.
+FRONTEND_FLOOR=1000
+CENSUS="$LOG/lowering-census.tsv"
 REPORTS="backends/kotlin/tests/build/test-results/test"
 
 # ── Which language the committed machines are emitted for ─────────
@@ -258,6 +289,7 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
 
     status=0
     ./gradlew --console=plain :sce-kotlin-tests:test "-Psce.script.engine=$engine" \
+        "-Psce.lua.loweringCensus=$CENSUS" \
         "${overlay[@]}" \
         >"$LOG/kotlin-$engine-$language.log" 2>&1 || status=$?
     cat "$LOG/kotlin-$engine-$language.log"
@@ -296,6 +328,29 @@ PY
 
     sce_gate_step "$cases Kotlin case(s) passed on $engine over $language machines"
 done
+
+# ── The lowering census, read from the file the suite wrote ────────
+#
+# Held in BOTH directions, for the reason the ceiling block above states: a
+# missing census and a finished migration are the same small number, so the
+# frontend's successes are asserted as well as the rewriter's uses.
+[ -f "$CENSUS" ] \
+    || sce_gate_fail "no lowering census at $CENSUS — the suite ran without recording which half answered each expression, so this run cannot say how far the Kotlin backend is from retiring EcmaScriptToLuaTransformer. The property is forwarded by backends/kotlin/tests/build.gradle.kts; a Test task that stopped forwarding it would look exactly like a backend with nothing left to rewrite"
+
+frontend_hits="$(grep -c '^frontend' "$CENSUS" || true)"; frontend_hits="${frontend_hits:-0}"
+rewriter_hits="$(grep -c '^rewriter' "$CENSUS" || true)"; rewriter_hits="${rewriter_hits:-0}"
+
+if (( frontend_hits < FRONTEND_FLOOR )); then
+    sce_gate_fail "the census records only $frontend_hits frontend lowering(s), under the floor of $FRONTEND_FLOOR. This suite lowers tens of thousands of expressions, so a number this low means the census did not happen rather than that the frontend was not used — and a census that did not happen reports zero rewriter uses too"
+fi
+
+if (( rewriter_hits > REWRITER_CEILING )); then
+    printf '%s\n' "the expressions that reached the rewriter:" >&2
+    sort "$CENSUS" | grep '^rewriter' | uniq -c | sort -rn | head -n 20 >&2
+    sce_gate_fail "EcmaScriptToLuaTransformer answered $rewriter_hits expression(s), over the ceiling of $REWRITER_CEILING. Every one of them is text sce-build's frontend refused: either an ECMAScript shape the frontend should learn, or Lua a caller tagged as ECMAScript and should re-tag. The ceiling is a ratchet toward kotlin-retire-rewriter, so it goes DOWN"
+fi
+
+sce_gate_step "KotlinLowering census: frontend=$frontend_hits rewriter=$rewriter_hits ceiling=$REWRITER_CEILING"
 
 # The pin is the reason this gate can exist locally at all, so it is checked
 # rather than assumed: a run that rewrites the tree it was handed has

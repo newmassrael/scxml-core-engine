@@ -3330,7 +3330,9 @@ sweep.
   `LuaScriptEngine.acceptsLanguage(ECMAScript)` becomes a claim about the
   frontend being linked rather than an unconditional `true`. The 2262-line C++
   unit left its tree the day its row closed; the Kotlin one is 1175 lines and
-  still there.
+  still there. ⚠ **The distance is a NUMBER now** — see the round below: the
+  frontend answers **50667** and the rewriter **100**, and `w3c-kotlin` holds
+  that 100 under a ceiling that ratchets down.
 - **The Lua-language `<script>` door**, above.
 - **`Language::Kotlin.lowers_expressions_at_build_time` is still false**, and
   this round is the measurement that says flipping it is a separate question
@@ -3852,3 +3854,111 @@ collision being avoided.
 - **`Mutation Rounds` was red at `aecea0c0d1`**, and not from this work: both
   shards of `mutation_rounds_selection.cases` failed while
   `ecma262_lowered_kotlin.cases` passed. It is a debt of its own round.
+
+## Landed 2026-08-30 (fifteenth round): the distance to `kotlin-retire-rewriter` is a number
+
+### The flip is not the switch this document said it was
+
+The round opened on an instruction to flip
+`Language::Kotlin.default_script_engine_target()` to Lua. **There is no such
+switch to throw.** That function is DERIVED —
+`lowers_expressions_at_build_time()` reads the embedded template tree for the
+guard filter `to_lua_guard`, and `git grep -l to_lua_guard --
+tools/codegen/templates/` returns Rust (2), Go (2), Python (3) and C (1), and
+**zero Kotlin files**. Kotlin's guard site is `to_script_source_guard`, which
+emits a `ScriptSource` the run's selection fills in — the TWO-ARMED shape, and
+the reason this backend can be asked for either language at all.
+
+So "flip the default" means "make Kotlin's templates lower like Rust's", which
+takes the second arm away. `w3c-kotlin`'s four pairs include `rhino:ecmascript`
+and `quickjs:ecmascript`, and both engines refuse Lua. The instruction's own
+success condition — those four pairs green — is what the change it asks for
+would break. Flipping remains a real question; it is a question about the
+DEFAULT ARTIFACT and its hosts, not the way to retire the rewriter.
+
+### What the rewriter's retirement actually waits on
+
+`EcmaScriptToLuaTransformer` is reached from exactly four places, all the same
+shape:
+
+```kotlin
+if (expr.language == ScriptLanguage.Lua) expr.text          // the seam
+else session.loweringScope.lowerXxx(expr.text)              // the frontend
+         ?: transformer.transform(expr.text, …)             // the fallback
+```
+
+The fallback runs only where BOTH hold: the machine handed over the author's
+ECMAScript, AND the frontend refused to lower it. So retirement is not a
+policy flip — it is that second condition reaching zero.
+
+### The number nobody had
+
+This document has said *"empty is not retired"* since the frontend landed, and
+**nothing counted the fallback.** The 1175-line unit's distance to deletion was
+a sentence. It is a census now: the engine appends one line per lowering saying
+which half answered, `w3c-kotlin` reads the file, and the run prints
+
+```
+KotlinLowering census: frontend=50667 rewriter=100 ceiling=100
+```
+
+⚠⚠ **THE FIRST TWO MEASUREMENTS SAID ZERO, AND BOTH WERE WRONG.** The probe
+wrote to `System.err`; Gradle swallows the test JVM's stderr, so two full runs
+of four engine/language pairs reported `0 fallbacks` over a run that took the
+fallback 100 times. The second run had a POSITIVE CONTROL — count the
+frontend's successes too — and it read zero as well, which is what exposed the
+channel rather than the subject. **A censusless run and a finished migration
+report the same small number**, which is why the gate asserts a FLOOR under the
+frontend's count as well as a ceiling over the rewriter's, and fails outright
+when the census file is absent.
+
+### What the 100 are
+
+Named by the gate's own failure output, so they are re-derivable rather than
+listed here from memory. Two kinds, and only one is a gap:
+
+- **Lua tagged as ECMAScript** — `var1:getAttribute("count")`,
+  `#var1.childNodes`, `o = {["k"] = 7}`, `rules = {{ when = … }}`. A caller
+  handed Lua text through the ECMAScript door; the frontend correctly refuses
+  to parse it as ECMAScript and the rewriter passes it through by accident.
+  These retire by RE-TAGGING the caller, not by teaching the frontend.
+- **Frontend gaps and deliberate refusals** — `JSON.stringify(rules)`,
+  `a[1]`, `JSON.stringify(never_declared)`, `foo`. Some are shapes the
+  frontend should learn; others are the undeclared-name refusal working as
+  designed, which is what §scxml-5.9.1 wants once the fallback is gone.
+
+`a[1]` is the third kind and is worth naming separately: it is the CONTROL in
+`ScriptLanguageSeamTest`, present so that a run through the rewriter can be
+told from a run that skipped it. C++ hit the same thing —
+*"what this case can observe narrowed when the rewriter was retired"* — so
+these do not disappear, they get rewritten as the C++ ones were.
+
+### Measured in the turn that landed it
+
+- `scripts/gate w3c-kotlin` **rc=0**, 4 engine/language pairs x 373 cases,
+  `committed tree unchanged`, census `frontend=50667 rewriter=100 ceiling=100`.
+- `scripts/mutate sce-build/tests/mutations/kotlin_engine_selection.cases`
+  **10/10 CAUGHT**, baseline 46 tests 0 failing.
+
+### Shown red before it was believed
+
+| red witness | what it models | verdict |
+|---|---|---|
+| the census property stops being forwarded to the test JVM | a `Test` task forks, so the property reaches Gradle and stops | gate **rc=1**: *"no lowering census at …"* |
+| `REWRITER_CEILING` lowered under the measured count | the ratchet actually compares | gate **rc=1**, and it prints the 100 expressions by name |
+| `rewriter_hits > REWRITER_CEILING` → `> 1000000` | the ceiling is present but unused | **SURVIVED at first** — the Rust test asserted the constant's NAME, which its assignment line satisfies. Re-aimed at the COMPARISON; CAUGHT |
+| `systemProperty("sce.lua.loweringCensus", …)` renamed | the forward is spelled but lands nowhere | CAUGHT — `the_kotlin_test_task_forwards_the_lowering_census` |
+
+⚠ The third row is the one worth keeping. A gate that checks a constant is
+NAMED rather than USED is the same defect as a check that reads prose, and it
+survived one round of its own mutation before being re-aimed.
+
+### What this leaves open
+
+- **The 100.** Every entry is a re-tag or a frontend shape. The ceiling goes
+  DOWN; raising it is a claim to argue here.
+- **`kotlin-retire-rewriter` has no ledger row yet.** The D1 table admits at
+  most one OPEN row and requires kind `judgement` for it; this is a
+  measurement in progress, so it lives in the lane's census until it is zero
+  and the row can be added CLOSED.
+- **The flip**, on its own terms, above.

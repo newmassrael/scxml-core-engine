@@ -183,6 +183,21 @@ tasks.test {
         systemProperty("sce.script.engine", engineProp.get())
     }
 
+    // Where the Lua engine appends its lowering census, when asked for one.
+    //
+    // ⚠ Forwarded as a PROPERTY, and that is the whole reason this block
+    // exists. A Gradle `Test` task forks its own JVM, so `-Dsce…` given to
+    // Gradle reaches Gradle and not the tests, and the test JVM's `System.err`
+    // does not reach Gradle's log either. Measured 2026-08-30: two runs of a
+    // stderr-based probe reported ZERO fallbacks over a run that took the
+    // fallback 100 times, because the stream was swallowed. The census goes to
+    // a FILE the caller names, so nothing between here and the reader can
+    // silently drop it.
+    val censusProp = providers.gradleProperty("sce.lua.loweringCensus")
+    if (censusProp.isPresent) {
+        systemProperty("sce.lua.loweringCensus", censusProp.get())
+    }
+
     // W3C test timeouts: 10s per test (most complete in <100ms)
     systemProperty("junit.jupiter.execution.timeout.default", "10s")
 

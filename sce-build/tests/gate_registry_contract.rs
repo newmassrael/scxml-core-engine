@@ -704,6 +704,94 @@ fn the_kotlin_gate_runs_every_language_the_generator_can_emit() {
     }
 }
 
+/// The Kotlin lane COUNTS what the rewriter still answers, in both directions.
+///
+/// ⚠ The number this holds did not exist before 2026-08-30. The seam document
+/// had said for weeks that `EcmaScriptToLuaTransformer` is still the fallback
+/// behind every lowering entry point — *"empty is not retired"* — and nothing
+/// counted the fallback, so the distance from here to `kotlin-retire-rewriter`
+/// was a sentence rather than a figure. Measured the day this landed: the
+/// frontend answers **50667** expressions across the four engine/language
+/// pairs and the rewriter answers **100**.
+///
+/// ⚠⚠ THE FLOOR IS NOT DECORATION, and it is the half a reader is most likely
+/// to delete as redundant. A census that never arrives reports zero rewriter
+/// uses in exactly the way a finished migration does. That is not
+/// hypothetical: the first two attempts at this measurement wrote to
+/// `System.err`, Gradle swallowed the test JVM's stderr, and BOTH runs
+/// reported `0` over a run that took the fallback 100 times. Asserting the
+/// frontend's successes is what separates "nothing left to rewrite" from
+/// "nobody measured".
+#[test]
+fn the_kotlin_lane_counts_what_the_rewriter_still_answers() {
+    let gate = std::fs::read_to_string(repo_root().join("scripts/gates/w3c-kotlin.sh"))
+        .expect("the Kotlin W3C gate script is readable");
+    let code: String = code_lines(&gate).collect::<Vec<_>>().join("\n");
+
+    // ⚠ The COMPARISON, not the name. Asserting that `REWRITER_CEILING`
+    // occurs is satisfied by the line that assigns it, so a gate that
+    // compared against a literal million while the constant sat unused
+    // overhead would pass — measured 2026-08-30, that mutation SURVIVED this
+    // test's first form. A constant nothing reads is not a ceiling.
+    assert!(
+        code.contains("rewriter_hits > REWRITER_CEILING"),
+        "⚠ `scripts/gates/w3c-kotlin.sh` no longer compares the rewriter's \
+         uses against `REWRITER_CEILING`. Without that comparison the \
+         fallback can grow silently, and `kotlin-retire-rewriter` is the \
+         claim that it reaches ZERO — a distance nothing measures is a \
+         distance nobody closes."
+    );
+    assert!(
+        code.contains("frontend_hits < FRONTEND_FLOOR"),
+        "⚠⚠ the Kotlin gate caps the rewriter's uses and no longer asserts the \
+         FRONTEND's. Those two readings are what tell a finished migration \
+         from a census that never happened — both are a small rewriter count. \
+         Measured 2026-08-30: a stderr-based probe reported 0 fallbacks twice \
+         over a run that took the fallback 100 times, because Gradle swallowed \
+         the stream."
+    );
+    assert!(
+        code.contains("no lowering census at"),
+        "⚠ the Kotlin gate no longer fails when the census FILE is absent. An \
+         absent file is the loudest form of the same blindness the floor \
+         guards against, and it is the one a `build.gradle.kts` edit produces."
+    );
+}
+
+/// The Kotlin test task forwards the census property to the test JVM.
+///
+/// ⚠ A Gradle `Test` task FORKS. `-Dsce.lua.loweringCensus=…` handed to Gradle
+/// reaches Gradle's own JVM and not the tests, so the property has to be
+/// forwarded deliberately. Without the forward the engine's census helper
+/// returns on its first line, no file is written, and the lane's ceiling
+/// passes over a run that measured nothing — which is why the gate's
+/// file-absent check and this one are a pair rather than a duplicate.
+#[test]
+fn the_kotlin_test_task_forwards_the_lowering_census() {
+    let build = std::fs::read_to_string(repo_root().join("backends/kotlin/tests/build.gradle.kts"))
+        .expect("the Kotlin test module's build file is readable");
+    let code: String = build
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        code.contains("systemProperty(\"sce.lua.loweringCensus\""),
+        "⚠ `backends/kotlin/tests/build.gradle.kts` no longer forwards \
+         `sce.lua.loweringCensus` to the test JVM. The property named on the \
+         Gradle command line then reaches Gradle and stops there, the engine \
+         writes no census, and the lane's rewriter ceiling is satisfied by a \
+         run that recorded nothing."
+    );
+    assert!(
+        code.contains("gradleProperty(\"sce.lua.loweringCensus\")"),
+        "⚠ the census property is set from something other than the Gradle \
+         property the gate passes. A hard-coded path would write one run's \
+         census over another's; the gate names a directory of its own per run."
+    );
+}
+
 /// The Kotlin suite re-runs when the gate it reads changes.
 ///
 /// `GateEnginePairsTest` holds `KOTLIN_ENGINE_PAIRS` to the routes this backend
