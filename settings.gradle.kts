@@ -36,6 +36,12 @@ include(":sce-kotlin-quickjs")
 project(":sce-kotlin-quickjs").projectDir = file("backends/kotlin/quickjs")
 include(":sce-kotlin-tests")
 project(":sce-kotlin-tests").projectDir = file("backends/kotlin/tests")
+// ECMA-262 through a Lua-lowered Kotlin artifact. Separate from
+// `:sce-kotlin-tests` because it compiles two artifacts generated from one
+// document with two `--script-engine` selections, which is a different subject
+// from the W3C conformance suite and must not invalidate it.
+include(":sce-kotlin-lowered-ecma262")
+project(":sce-kotlin-lowered-ecma262").projectDir = file("backends/kotlin/lowered-ecma262")
 include(":sce-kotlin-benchmark")
 project(":sce-kotlin-benchmark").projectDir = file("backends/kotlin/benchmark")
 include(":sce-spring-boot-starter")
