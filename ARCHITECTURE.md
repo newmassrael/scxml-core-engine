@@ -553,7 +553,7 @@ table.
 
 **ScriptEngineProvider**: Compile-time engine selection via `SCE_SCRIPT_ENGINE` CMake option. Provides `IScriptEngine` interface for engine-agnostic consumers.
 
-### EcmaScriptToLuaTransformer — DELETED
+### EcmaScriptToLuaTransformer — DELETED, on BOTH backends
 
 **It is gone: header, source, and the benchmark that priced its retirement.**
 `LuaEngine` lowers the author's ECMAScript with `sce-build`'s frontend
@@ -564,6 +564,19 @@ puts a caller back and requires the row to go red. The sweep reads every
 tracked C++ file rather than the engine's own directories, because a directory
 boundary does not exempt what lies outside it — it hides it; there is now no
 exemption of any shape, since nothing may reach a unit that is not there.
+
+⚠ **The name existed TWICE, and the second one left a day later.** The Kotlin
+backend carried its own 1175-line port
+(`backends/kotlin/lua/.../EcmaScriptToLuaTransformer.kt`), on its own path,
+behind its own four call sites. It is deleted too:
+`com.sce.scripting.lua.LuaScriptEngine` reaches the same frontend through the
+same C surface (`lowering_jni.cpp` → `SceLowering.h`) and refuses what it
+refuses. Its witness is a SEPARATE row, `kotlin-retire-rewriter`, over a
+separate population of every tracked Kotlin file — one sweep over both
+backends would have reported the Kotlin half retired from the day C++ deleted
+its own, four rounds before any Kotlin file stopped reaching it. What the two
+retirements do share is the shape of the seam: one branch that asks the
+language, the frontend behind it, and a refusal behind that.
 
 ⚠ **Deleting it deleted the sweep's control, and that is worth knowing before
 touching this row.** The unit's own files used to be the proof that the

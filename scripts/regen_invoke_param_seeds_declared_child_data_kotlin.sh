@@ -36,7 +36,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/invoke_param_seeds_declared_child_data"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/invoke_param_seeds_declared_child_data"
 STEM="invoke_param_seeds_declared_child_data"
 INPUT_ROOT="integration_resources/invoke_param_seeds_declared_child_data"
 PACKAGE_PREFIX="com.sce.integration"

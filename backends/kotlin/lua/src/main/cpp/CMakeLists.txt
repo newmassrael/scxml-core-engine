@@ -53,11 +53,18 @@ set_source_files_properties(${LUA_SOURCES} PROPERTIES
 # staticlib, so this links the same artifact rather than describing it twice.
 #
 # Not optional, and that is the substance rather than caution. A library built
-# without the frontend would answer the shared ECMA-262 table from
+# without the frontend used to answer the shared ECMA-262 table from
 # `EcmaScriptToLuaTransformer` alone — a SECOND set of answers under one
 # engine name, only one of which `tests/ecmascript/kotlin_lua_divergences.json`
-# describes. One artifact, one answer; `theFrontendIsLinked` refuses a build
-# that reached here without it.
+# describes. That rewriter is retired, so such a library now answers NOTHING:
+# every ECMAScript expression reaches `refusedToLower`.
+#
+# ⚠ This comment named `theFrontendIsLinked` for four rounds before anything
+# carried that name — a promise nothing kept. The test exists now, in
+# `ScriptLanguageSeamTest`, and it is a RUN-TIME check rather than a build-time
+# one: it asks the engine for `1 + 1` and requires an answer. The retirement is
+# what makes that exact, because the frontend is now the only half that could
+# have produced it.
 if(NOT DEFINED SCE_REPO_ROOT)
     message(FATAL_ERROR
         "SCE_REPO_ROOT must be set. This library links sce-build's lowering "

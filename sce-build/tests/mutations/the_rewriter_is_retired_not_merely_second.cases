@@ -24,6 +24,16 @@
 # those raw mentions to stay above a floor. The cases below aim at that seam
 # more than at anything else, because it is the one that can go quietly blind.
 #
+# ⚠⚠⚠ THE NAME EXISTED TWICE, and this file covers both retirements. C++'s
+# closed on 2026-08-29 and Kotlin's on 2026-08-30, against two populations with
+# two sets of call sites, so `retirement:rewriter-deleted` and
+# `retirement:kotlin-rewriter-deleted` are two rows and the cases below come in
+# two groups. Folding them into one sweep over "every tracked source" is the
+# economy to refuse: it would have reported the Kotlin half retired from the
+# day C++ deleted its own, four rounds before any Kotlin file stopped reaching
+# the rewriter — the invisibility failure this file's C++ half already paid for
+# once, in a directory boundary.
+#
 # ⚠⚠ Two measurements retired WITH the subject rather than with the code:
 # `per-call-cost` timed the rewriter against the frontend, `swap-net-footprint`
 # weighed its object file. Neither can be re-measured here, so both carry a
@@ -44,6 +54,9 @@ mutation_runtime_targets docs/SCE_LUA_TRANSLATION_SEAM.md
 mutation_runtime_targets scripts/measure-lowering-per-call.sh
 mutation_runtime_targets .github/workflows/tree-hygiene.yml
 mutation_runtime_targets scripts/gates/tree-hygiene.sh
+# The Kotlin half's own subjects, added when `kotlin-retire-rewriter` closed.
+mutation_runtime_targets backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt
+mutation_runtime_targets backends/kotlin/tests/src/test/kotlin/com/sce/ecmascript/LoweredEcma262Test.kt
 
 # --- the subject: a caller comes back -------------------------------------
 #
@@ -204,4 +217,103 @@ mutation_case "the retired probe stops saying that it is retired" <<'PY'
 edit("scripts/measure-lowering-per-call.sh",
      "# `retired-measurement:<sha>`, and sce-build/tests/lowering_decision_ledger.rs",
      "# a pin recorded elsewhere, and sce-build/tests/lowering_decision_ledger.rs")
+PY
+
+# --- the KOTLIN half: the same claim, one language over --------------------
+#
+# `kotlin-retire-rewriter` closed on 2026-08-30, four rounds after its C++
+# sibling, and it is a SEPARATE row over a SEPARATE population for the reason
+# these cases are separate too: one sweep over both backends would have
+# reported success here from the day C++ deleted its half, because "no file
+# reaches the rewriter" is satisfied by a population that does not contain the
+# file that does.
+#
+# The subject cases are written as REVERTS. The member and the import are how
+# the engine and its suite actually stood, so a careless revert reproduces
+# them — and with the unit deleted neither compiles, which is the point.
+
+mutation_case "the Kotlin engine takes the rewriter back as a member" <<'PY'
+edit("backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt",
+     "    private val sessions = mutableMapOf<String, Session>()\n",
+     "    private val sessions = mutableMapOf<String, Session>()\n"
+     "    private val transformer = EcmaScriptToLuaTransformer()\n")
+PY
+
+mutation_case "a Kotlin suite imports the retired unit again" <<'PY'
+edit("backends/kotlin/tests/src/test/kotlin/com/sce/ecmascript/LoweredEcma262Test.kt",
+     "import com.sce.scripting.lua.LuaScriptEngine\n",
+     "import com.sce.scripting.lua.EcmaScriptToLuaTransformer\n"
+     "import com.sce.scripting.lua.LuaScriptEngine\n")
+PY
+
+# --- the gate: the Kotlin sweep goes blind ---------------------------------
+#
+# "No file names X" is what a sweep answers when it read nothing, and with the
+# unit deleted that is also the row's claim. The population filter, the floor
+# and the mention control are the three ways it can come to read nothing while
+# still reporting success.
+
+mutation_case "the Kotlin sweep is pointed at an extension nothing carries" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     'matches!(path.rsplit_once(\'.\').map(|(_, ext)| ext), Some("kt" | "kts"))',
+     'matches!(path.rsplit_once(\'.\').map(|(_, ext)| ext), Some("ktx" | "ktsx"))')
+PY
+
+mutation_case "the control that proves the Kotlin sweep reads goes blind" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     '            .filter(|p| read(p).contains(REWRITER))\n'
+     '            .collect();\n'
+     '        assert!(\n'
+     '            mentions.len() >= KOTLIN_MENTION_FLOOR,',
+     '            .filter(|_p| false)\n'
+     '            .collect();\n'
+     '        assert!(\n'
+     '            mentions.len() >= KOTLIN_MENTION_FLOOR,')
+PY
+
+# --- the gate: the Kotlin reader stops telling prose from code -------------
+#
+# The whole weight of the claim rests on this distinction: four Kotlin files
+# still explain the rewriter in comments, and they are the sweep's only
+# remaining proof that it can see the name at all. A reader that counted those
+# as callers would fail a correct tree; one that leaked a raw string's body, or
+# closed a nested comment early, would do the same in the other direction.
+
+# ⚠ The call is KEPT and its result discarded, rather than replaced. Dropping
+# it outright leaves `kotlin_code_only` with no caller, and this crate denies
+# dead code: the mutation then does not compile and the round reports
+# INCONCLUSIVE — a verdict that looks like a surviving mutation and is not one.
+# Measured 2026-08-30, on this very case.
+mutation_case "the Kotlin reader stops stripping comments" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     "fn reaches_rewriter_kt(src: &str) -> bool {\n"
+     "    kotlin_code_only(src).contains(REWRITER)",
+     "fn reaches_rewriter_kt(src: &str) -> bool {\n"
+     "    let _ = kotlin_code_only(src);\n"
+     "    src.contains(REWRITER)")
+PY
+
+# ⚠ Both of the cases below SURVIVED their first form, and neither was a hole
+# in the gate — the FIXTURES could not observe them. A raw string whose body
+# held an even number of quotes is consumed identically by the ordinary-string
+# reader, and a nested comment with the name inside the INNER comment is
+# consumed on the way to the first terminator either way. The repair was to
+# move the subject, not to strengthen the assertion: a fixture asks the
+# question its shape decides.
+mutation_case "a raw string leaks its body into the code side" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     '        if c == \'"\' && bytes.get(i + 1) == Some(&\'"\') && bytes.get(i + 2) == Some(&\'"\') {\n'
+     '            out.push_str("\\"\\"\\"");',
+     '        if false {\n'
+     '            out.push_str("\\"\\"\\"");')
+PY
+
+mutation_case "a nested block comment closes at the first terminator" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     "                if bytes[i] == '/' && bytes.get(i + 1) == Some(&'*') {\n"
+     "                    depth += 1;\n"
+     "                    i += 2;\n"
+     "                    continue;\n"
+     "                }\n",
+     "")
 PY

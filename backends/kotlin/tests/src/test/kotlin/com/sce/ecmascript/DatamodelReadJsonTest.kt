@@ -33,6 +33,7 @@
 package com.sce.ecmascript
 
 import com.sce.runtime.DatamodelRead
+import com.sce.runtime.ScriptSource
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.scripting.RhinoScriptEngine
 import com.sce.scripting.lua.LuaScriptEngine
@@ -53,17 +54,30 @@ class DatamodelReadJsonTest {
      * language before it ever reaches a session. What must not be
      * engine-specific is the reader, which is what the assertions below are
      * about.
+     *
+     * Carried as a [ScriptSource] rather than a string, because the setup is
+     * the one half that differs BY LANGUAGE and a string says nothing about
+     * which. The Lua spelling used to go through the `String` door, which
+     * claims ECMAScript: the frontend refused to parse a Lua table constructor
+     * as ECMAScript — correctly — and only a text rewriter passing what it
+     * could not read through unchanged made the run green.
      */
     private class Engine(
         val name: String,
-        val arrayLiteral: String,
+        val setup: ScriptSource,
         val create: () -> ScxmlScriptEngine,
     )
 
+    /** The declaration as a document would write it, which is the pair's `source`. */
+    private val authored = "rules = [{ when: 'design-decision', keys: 'Escape' }]"
+
     private val engines = listOf(
-        Engine("Rhino", "[{ when: 'design-decision', keys: 'Escape' }]") { RhinoScriptEngine() },
-        Engine("QuickJS", "[{ when: 'design-decision', keys: 'Escape' }]") { QuickJSScriptEngine() },
-        Engine("Lua", "{{ when = 'design-decision', keys = 'Escape' }}") { LuaScriptEngine() },
+        Engine("Rhino", ScriptSource.ecmascript(authored)) { RhinoScriptEngine() },
+        Engine("QuickJS", ScriptSource.ecmascript(authored)) { QuickJSScriptEngine() },
+        Engine(
+            "Lua",
+            ScriptSource.lua("rules = {{ when = 'design-decision', keys = 'Escape' }}", authored),
+        ) { LuaScriptEngine() },
     )
 
     /**
@@ -77,7 +91,7 @@ class DatamodelReadJsonTest {
     fun everyEngineServesTheExpressionTheReadersBuild() {
         for (engine in engines) {
             withSession(engine) { instance, sessionId ->
-                instance.executeScript(sessionId, "rules = ${engine.arrayLiteral}")
+                instance.executeScript(sessionId, engine.setup)
 
                 val json = DatamodelRead.readJson(instance, sessionId, "rules")
                 assertTrue(
@@ -165,7 +179,7 @@ class DatamodelReadJsonTest {
     fun eachEngineAnswersTheSameWayTwice() {
         for (engine in engines) {
             withSession(engine) { instance, sessionId ->
-                instance.executeScript(sessionId, "rules = ${engine.arrayLiteral}")
+                instance.executeScript(sessionId, engine.setup)
                 val first = DatamodelRead.readJson(instance, sessionId, "rules")
                 val second = DatamodelRead.readJson(instance, sessionId, "rules")
                 assertTrue(first != null, "${engine.name}: nothing to compare")

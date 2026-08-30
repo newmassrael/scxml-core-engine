@@ -26,7 +26,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/undecodable_payload_is_reported/undecodable_payload_is_reported.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/undecodable_payload_is_reported"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/undecodable_payload_is_reported"
 STEM="undecodable_payload_is_reported"
 INPUT_ROOT="integration_resources/undecodable_payload_is_reported"
 PACKAGE_PREFIX="com.sce.integration"

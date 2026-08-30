@@ -31,7 +31,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/ancestor_entry_is_not_default_entry/ancestor_entry_is_not_default_entry.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/ancestor_entry_is_not_default_entry"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/ancestor_entry_is_not_default_entry"
 STEM="ancestor_entry_is_not_default_entry"
 INPUT_ROOT="integration_resources/ancestor_entry_is_not_default_entry"
 PACKAGE_PREFIX="com.sce.integration"

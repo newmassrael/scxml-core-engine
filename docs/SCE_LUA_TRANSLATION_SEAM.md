@@ -2009,12 +2009,47 @@ cache already covers.
   that stops RUNNING the test satisfies a fetch-depth assertion perfectly
   while verifying nothing.
 
-### D1 at a glance: five closed by measurement, two closed by decision
+- **Whether the retirement happened on the OTHER backend.** The bullet above
+  is about C++, and for a day it was read as though it were about the name.
+  It is not: `EcmaScriptToLuaTransformer` existed twice, once per backend, on
+  two separate paths with two separate call sites, and the bullet above says
+  so itself — *"Kotlin's own rewriter (1175 lines) is a separate path and does
+  not leave with this one"*. So the Kotlin half needed its own claim and its
+  own witness, which is the `kotlin-retire-rewriter` row and
+  `retirement:kotlin-rewriter-deleted`.
+  ⚠ **Two sweeps rather than one widened sweep, deliberately.** The obvious
+  economy is to make the C++ check's population "every tracked source" and be
+  done; it is wrong for the reason its own boundary lesson gives one paragraph
+  up. `no file reaches the rewriter` over a population that does not contain
+  the file that does is not an exemption, it is INVISIBILITY — and a single
+  sweep would have gone green on Kotlin from the day C++ deleted its half,
+  four rounds before any Kotlin file stopped reaching it.
+  ⚠⚠ **The control is bought the same way and from a smaller purse.** Ten
+  tracked C++ files still explain the C++ rewriter in prose; four Kotlin files
+  explain the Kotlin one, so `KOTLIN_MENTION_FLOOR` is 2 where its sibling is
+  5. Both are half the measured count, and both mean the same thing: the day
+  nothing in the tree remembers the rewriter, this row has to be rewritten
+  rather than quietly relaxed, because the sweep would have nothing left to
+  prove it can still see the name.
+  ⚠⚠⚠ **What did NOT follow from the retirement, measured rather than
+  assumed.** This document predicted that deleting the fallback would make
+  `LuaScriptEngine.acceptsLanguage(ECMAScript)` "a claim about the frontend
+  being linked rather than an unconditional `true`". It did not:
+  `backends/kotlin/lua/src/main/cpp/CMakeLists.txt` links `SCE::Lowering`
+  into `sce_lua_jni` with nothing guarding it — *"Not optional, and that is
+  the substance rather than caution"* — and `theFrontendIsLinked` refuses a
+  build that reached the JNI layer without it. The C++ sibling is conditional
+  because `SCE_HAS_LOWERING_FFI` is a real configure-time choice there. Making
+  the Kotlin one conditional would have been a predicate whose false arm
+  nothing can reach.
+
+### D1 at a glance: five closed by measurement, three closed by decision
 
 Four things had to be priced before a person could choose whether `sce-build`
 grows a C-callable lowering surface. All four were, two more numbers arrived
 while they were being checked, and the decision the four informed then split
-into two rows — the link and the retirement — so the table below carries seven.
+into three rows — the link and one retirement per backend — so the table below
+carries eight.
 
 **The choice was then made.** On 2026-08-29 the owner chose to LINK the
 frontend and retire `EcmaScriptToLuaTransformer`; the `link-beside-lua` row
@@ -2086,6 +2121,7 @@ someone has read the warning.
 | `scope-answer` | CLOSED | measurement | **0** sites diverge once the caller has read every `<data id>` AND every document-level `<script>` — both readable before the first macrostep — so the surface needs `declare` + `declare_chunk` and NO execution-time scope | `derive:scope-ladder=LoadTime` | `sce-build/src/ecmascript/scope.rs` |
 | `link-beside-lua` | CLOSED | decision | the owner chose to LINK, beside `SCE_ENABLE_LUA`, and retire the rewriter. Priced on the shape chosen: a staticlib costs **474.6 KB** of stripped image, not the **223.7 KB** the cdylib delta reported — that baseline already held Rust's runtime and a C++ image does not | `decision:linked-beside-lua` | `sce/CMakeLists.txt` |
 | `retire-rewriter` | CLOSED | decision | the second half of that decision, carried out to the end: **zero** tracked C++ files reach `EcmaScriptToLuaTransformer` in code, and the unit is now DELETED — nothing is named after it, `sce/sce_base_sources.cmake` no longer lists it, and no exemption of any shape is left. The fallback is gone from all three sites — `loweredTextOf`, `loweredScriptOf`, `reset` — and refusal is the engine's own answer (§scxml-5.9.1) rather than a second translator's cue. ⚠ Deleting the unit deleted the control that made the zero mean something, so the check buys it back from the PROSE: the files that still explain the rewriter in comments must stay above a floor, because a sweep that read nothing answers zero the same way | `retirement:rewriter-deleted` | `sce/src/scripting/LuaEngine.cpp` |
+| `kotlin-retire-rewriter` | CLOSED | decision | the same decision one language over, carried to the end: **zero** tracked Kotlin files reach `EcmaScriptToLuaTransformer` in code, and the 1175-line unit is DELETED. The fallback is gone from all four lowering sites — `loweredTextOf`, `loweredConditionOf`, `loweredLocationOf`, `loweredScriptOf` — and refusal is the engine's own answer (§scxml-5.9.1) rather than a second translator's cue. ⚠ Its own check rather than a widening of the C++ row's: the two backends retired the same NAME at different times against different populations, and one sweep over both would have gone green here the day C++ deleted its half. ⚠⚠ Deleting the unit deleted the control the zero rested on, so this check buys it back from the PROSE exactly as its sibling does | `retirement:kotlin-rewriter-deleted` | `backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt` |
 
 <!-- /D1-LEDGER -->
 

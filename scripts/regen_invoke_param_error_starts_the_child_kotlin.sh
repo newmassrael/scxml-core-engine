@@ -21,7 +21,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/invoke_param_error_starts_the_child"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/invoke_param_error_starts_the_child"
 STEM="invoke_param_error_starts_the_child"
 INPUT_ROOT="integration_resources/invoke_param_error_starts_the_child"
 PACKAGE_PREFIX="com.sce.integration"

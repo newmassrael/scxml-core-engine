@@ -63,16 +63,33 @@ private const val ENGINE_PATH =
 private const val RUNTIME_REWRITER_PATH = "runtime-rewriter"
 
 /**
- * The text rewriter that used to be this engine's only answer, and is now the
- * fallback behind `sce-build`'s ECMAScript frontend.
+ * The text rewriter that used to be this engine's only answer, then its
+ * fallback behind `sce-build`'s ECMAScript frontend, and is now retired.
  *
  * Two spellings because two questions are asked of them: whether the engine
  * still CALLS it (read from the class body, so a mention in a comment is not a
- * call) and whether the engine's documentation NAMES it. Both retire together
- * on the day the fallback goes.
+ * call) and whether the engine's documentation NAMES it.
+ *
+ * ⚠ They are kept after the retirement rather than deleted with it, because
+ * the check they drive is what tells a rewriter that CAME BACK from one that
+ * never left — and the arm they select is the one that would then have to be
+ * satisfied. The tree-wide claim that no Kotlin file reaches the rewriter is
+ * `retirement:kotlin-rewriter-deleted`'s, in
+ * `sce-build/tests/lowering_decision_ledger.rs`; this pair is about the
+ * engine's own documentation.
  */
 private const val REWRITER_NAME = "EcmaScriptToLuaTransformer"
 private const val REWRITER_CALL = "transformer."
+
+/**
+ * What stands where the fallback stood, and the clause that makes it an answer.
+ *
+ * `refusedToLower` is read from the class BODY and the clause from the header,
+ * which is the same split the pair above uses and for the same reason: one asks
+ * what the code does, the other what a reader is told.
+ */
+private const val REFUSAL_CALL = "refusedToLower("
+private const val REFUSAL_CLAUSE = "§scxml-5.9.1"
 
 /**
  * One case an engine answered differently from ECMA-262.
@@ -159,21 +176,25 @@ class EcmaScriptSemanticsTest {
                 repaired.joinToString("\n") { "  ${it.source}  (${it.clause})" },
         )
 
-        // Refutable, and refuted where a consumer can see it: while a second
-        // translator is still compiled in behind the frontend, the engine's own
-        // header has to say so. An empty divergence list says the frontend
+        // Refutable, and refuted where a consumer can see it: what happens to
+        // an expression the frontend REFUSES has to be readable from the
+        // engine's own header. An empty divergence list says the frontend
         // answers the shared table's 98 cases; it says nothing about an
-        // expression outside that table which the frontend refuses, and THAT is
-        // the one the fallback still guesses at. A header claiming ECMAScript
-        // without naming the fallback would hide exactly the case a reader
-        // needs to know about — the shape this file already paid for once, when
-        // it read "For AOSP/AAOS production, this replaces Rhino with a faster
-        // native engine" over a whole class of the table answered differently.
+        // expression outside that table which the frontend refuses, and that is
+        // the one a reader choosing this engine for `datamodel="ecmascript"`
+        // has to know the fate of. A header claiming ECMAScript without saying
+        // is the shape this file already paid for once, when it read "For
+        // AOSP/AAOS production, this replaces Rhino with a faster native
+        // engine" over a whole class of the table answered differently.
         //
-        // Derived, so it retires itself: the requirement is keyed on the
-        // FALLBACK STILL BEING CALLED, read out of the engine's own source. The
-        // day `retire-rewriter` lands on this backend, this assertion stops
-        // asking rather than having to be remembered.
+        // ⚠ TWO STATES, BOTH WITH A REQUIREMENT — and that is the correction
+        // this block carries. It used to be one-sided: while the fallback was
+        // called the header had to name it, and it asked NOTHING otherwise, so
+        // "derived, it retires itself" meant a retirement left the engine free
+        // to document nothing about refusal at all. A check with an unasked arm
+        // reads exactly like a live one. Now the retired state has its own
+        // requirement: the call sites must reach `refusedToLower` and the
+        // header must cite the clause that makes refusal the answer.
         val header = File(ENGINE_PATH)
         assertTrue(header.isFile, "the Lua engine is missing at ${header.absolutePath}")
         val engineSource = header.readText()
@@ -189,6 +210,24 @@ class EcmaScriptSemanticsTest {
                     "not mean there is no second answer left. A reader choosing this engine " +
                     "for `datamodel=\"ecmascript\"` has to be able to see that an expression " +
                     "the frontend refuses is rewritten rather than refused.",
+            )
+        } else {
+            assertTrue(
+                REFUSAL_CALL in body,
+                "$ENGINE_PATH no longer calls `$REWRITER_CALL`, so an expression the " +
+                    "frontend refuses has to be REFUSED — and nothing in the class body " +
+                    "calls `$REFUSAL_CALL`. Neither a rewrite nor a refusal means the text " +
+                    "is going somewhere this test cannot see, which is the state a retiring " +
+                    "round must not leave behind.",
+            )
+            assertTrue(
+                REFUSAL_CLAUSE in doc,
+                "$ENGINE_PATH refuses what the frontend refuses and its documentation does " +
+                    "not cite $REFUSAL_CLAUSE. The clause is what makes the refusal an " +
+                    "ANSWER rather than a defect — the processor places `error.execution` on " +
+                    "the internal queue — and a reader choosing this engine has to be able " +
+                    "to see that an expression outside what the frontend parses fails " +
+                    "loudly rather than being guessed at.",
             )
         }
 
@@ -228,14 +267,15 @@ class EcmaScriptSemanticsTest {
             )
             // Only the entries declared on THIS path. `diverges_on` splits the
             // list by which route into the Lua engine still answers the case
-            // differently, and this suite reaches the engine through
-            // `EcmaScriptToLuaTransformer` — so it is the `runtime-rewriter`
-            // contract. Today that is the only path this backend has, and the
-            // filter is what keeps that from being an assumption: the day the
-            // Kotlin templates cross the seam and gain build-time lowering,
-            // an entry only that path gets wrong would otherwise be reported
-            // here as a rewriter divergence that has been repaired, and its
-            // deletion demanded.
+            // differently, and this suite hands the engine the author's
+            // ECMAScript and has it lowered AT RUN TIME against the session's
+            // scope — so it is the `runtime-rewriter` contract. The path keeps
+            // that name because `EcmaScriptToLuaTransformer` is what used to do
+            // that lowering; since it was retired the frontend does, and the
+            // route is still the one that can be refused by a scope. The filter
+            // is what keeps this from being an assumption: an entry that only
+            // build-time lowering gets wrong would otherwise be reported here
+            // as a repaired divergence and its deletion demanded.
             //
             // Unclassified is RED, not a default. An entry naming no path is
             // exempt from every per-path suite at once.

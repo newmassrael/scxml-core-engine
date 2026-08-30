@@ -184,22 +184,43 @@ edit("scripts/gates/w3c-kotlin.sh",
      'sce_gate_step "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"')
 PY
 
-# ── The distance to `kotlin-retire-rewriter` stops being measured ──
+# ── A refusal stops being classified ──────────────────────────────
 #
-# `EcmaScriptToLuaTransformer` is 1175 lines and is still the FALLBACK behind
+# `EcmaScriptToLuaTransformer` was 1175 lines and stood as the FALLBACK behind
 # every lowering entry point in `LuaScriptEngine`. Retiring it is the seam
 # document's `kotlin-retire-rewriter` row, and until 2026-08-30 nothing counted
-# how far away that was — the claim lived in prose. It is a census now:
-# frontend=50667 against rewriter=100, held under a ceiling that ratchets down.
+# how far away that was — the claim lived in prose. It became a census:
+# frontend=50667 against rewriter=100, under a ceiling that ratcheted down.
 #
-# Removing the ceiling leaves the fallback free to grow while the lane stays
-# green, which is how a distance nobody measures becomes a distance nobody
-# closes.
+# ⚠ THE CEILING RETIRED WITH ITS SUBJECT, and the case that attacked it
+# (`rewriter_hits > REWRITER_CEILING` → `> 1000000`) had to be RE-AIMED rather
+# than deleted, for the reason this file's header gives: an anchor that stops
+# matching makes its case INCONCLUSIVE, which reads as "nothing to report" in
+# exactly the place a report was wanted. With the fallback deleted `rewriter=0`
+# is STRUCTURAL — nothing in this tree can move it — so a ceiling over it is a
+# comparison that cannot fail.
+#
+# ⚠⚠ What those four call sites became is a REFUSAL, and refusals are held by
+# CLASSIFICATION instead: every refused text matches a declared entry in
+# `tests/ecmascript/kotlin_frontend_refusals.json`, in BOTH directions.
+#
+# TWO cases rather than one, because the block has two directions and either
+# alone is a one-sided list: without `undeclared` a newly refused text is
+# absorbed in silence, and without `unseen` a declaration outlives the case it
+# describes. Swapping the `comm` selector makes each side answer the OTHER
+# question while the machinery still looks present — the same shape as a
+# ceiling sitting unread beside a literal million.
 
-mutation_case "the rewriter may answer more and more without the lane noticing" <<'PY'
+mutation_case "a refusal nobody declared stops being red" <<'PY'
 edit("scripts/gates/w3c-kotlin.sh",
-     "if (( rewriter_hits > REWRITER_CEILING )); then",
-     "if (( rewriter_hits > 1000000 )); then")
+     'undeclared="$(comm -23',
+     'undeclared="$(comm -13')
+PY
+
+mutation_case "a declaration nothing produces stops being red" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     'unseen="$(comm -13',
+     'unseen="$(comm -23')
 PY
 
 # ── The census is measured, and the measurement never happened ─────

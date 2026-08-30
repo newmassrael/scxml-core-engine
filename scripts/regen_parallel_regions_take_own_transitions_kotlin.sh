@@ -31,7 +31,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/parallel_regions_take_own_transitions/parallel_regions_take_own_transitions.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_regions_take_own_transitions"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/parallel_regions_take_own_transitions"
 STEM="parallel_regions_take_own_transitions"
 INPUT_ROOT="integration_resources/parallel_regions_take_own_transitions"
 PACKAGE_PREFIX="com.sce.integration"

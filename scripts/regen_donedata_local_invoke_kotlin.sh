@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/donedata_local_invoke/donedata_local_invoke.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/donedata_local_invoke"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/donedata_local_invoke"
 STEM="donedata_local_invoke"
 INPUT_ROOT="integration_resources/donedata_local_invoke"
 PACKAGE_PREFIX="com.sce.integration"

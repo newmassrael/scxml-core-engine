@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/donedata_late_completion/donedata_late_completion.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/donedata_late_completion"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/donedata_late_completion"
 STEM="donedata_late_completion"
 INPUT_ROOT="integration_resources/donedata_late_completion"
 PACKAGE_PREFIX="com.sce.integration"

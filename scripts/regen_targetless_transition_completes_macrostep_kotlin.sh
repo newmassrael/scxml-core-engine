@@ -26,7 +26,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/targetless_transition_completes_macrostep/targetless_transition_completes_macrostep.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/targetless_transition_completes_macrostep"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/targetless_transition_completes_macrostep"
 STEM="targetless_transition_completes_macrostep"
 INPUT_ROOT="integration_resources/targetless_transition_completes_macrostep"
 PACKAGE_PREFIX="com.sce.integration"

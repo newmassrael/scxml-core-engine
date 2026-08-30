@@ -704,51 +704,70 @@ fn the_kotlin_gate_runs_every_language_the_generator_can_emit() {
     }
 }
 
-/// The Kotlin lane COUNTS what the rewriter still answers, in both directions.
+/// The Kotlin lane CLASSIFIES every refusal, in both directions.
 ///
-/// ⚠ The number this holds did not exist before 2026-08-30. The seam document
-/// had said for weeks that `EcmaScriptToLuaTransformer` is still the fallback
-/// behind every lowering entry point — *"empty is not retired"* — and nothing
-/// counted the fallback, so the distance from here to `kotlin-retire-rewriter`
-/// was a sentence rather than a figure. Measured the day this landed: the
-/// frontend answers **50667** expressions across the four engine/language
-/// pairs and the rewriter answers **100**.
+/// ⚠ The measurement this holds did not exist before 2026-08-30. The seam
+/// document had said for weeks that `EcmaScriptToLuaTransformer` is still the
+/// fallback behind every lowering entry point — *"empty is not retired"* — and
+/// nothing counted the fallback, so the distance from here to
+/// `kotlin-retire-rewriter` was a sentence rather than a figure. Measured the
+/// day it landed: the frontend answered **50667** expressions across the four
+/// engine/language pairs and the rewriter **100**.
 ///
-/// ⚠⚠ THE FLOOR IS NOT DECORATION, and it is the half a reader is most likely
-/// to delete as redundant. A census that never arrives reports zero rewriter
-/// uses in exactly the way a finished migration does. That is not
+/// ⚠⚠ **THE COUNT THEN RETIRED WITH ITS SUBJECT, and this test had to move
+/// with it.** `kotlin-retire-rewriter` closed the same week: the fallback is
+/// deleted, so `rewriter=0` is now STRUCTURAL — no change to this tree can
+/// raise or lower it — and a ceiling over a value nothing can move is a gate
+/// that cannot fail. What those four call sites became is a REFUSAL, and
+/// refusals cannot be capped either, because §scxml-5.9.1 makes some of them
+/// correct behaviour. So the gate matches each refused TEXT against a declared
+/// entry, both ways, and this test holds that pair of comparisons.
+///
+/// ⚠⚠⚠ THE FLOOR IS NOT DECORATION, and it is the half a reader is most likely
+/// to delete as redundant. A census that never arrives reports zero refusals
+/// in exactly the way a backend with nothing to refuse does. That is not
 /// hypothetical: the first two attempts at this measurement wrote to
 /// `System.err`, Gradle swallowed the test JVM's stderr, and BOTH runs
 /// reported `0` over a run that took the fallback 100 times. Asserting the
-/// frontend's successes is what separates "nothing left to rewrite" from
+/// frontend's successes is what separates "nothing left to refuse" from
 /// "nobody measured".
 #[test]
-fn the_kotlin_lane_counts_what_the_rewriter_still_answers() {
+fn the_kotlin_lane_classifies_every_refusal() {
     let gate = std::fs::read_to_string(repo_root().join("scripts/gates/w3c-kotlin.sh"))
         .expect("the Kotlin W3C gate script is readable");
     let code: String = code_lines(&gate).collect::<Vec<_>>().join("\n");
 
-    // ⚠ The COMPARISON, not the name. Asserting that `REWRITER_CEILING`
-    // occurs is satisfied by the line that assigns it, so a gate that
-    // compared against a literal million while the constant sat unused
-    // overhead would pass — measured 2026-08-30, that mutation SURVIVED this
-    // test's first form. A constant nothing reads is not a ceiling.
+    // ⚠ The COMPARISONS, not the names. Asserting that a constant OCCURS is
+    // satisfied by the line that assigns it, so a gate that compared against a
+    // literal million while the constant sat unused would pass — measured
+    // 2026-08-30, exactly that mutation SURVIVED this test's first form. Both
+    // directions are named separately because either one alone is a one-sided
+    // list: without `undeclared` a new gap is silently absorbed, and without
+    // `unseen` a declaration outlives the case it describes.
     assert!(
-        code.contains("rewriter_hits > REWRITER_CEILING"),
-        "⚠ `scripts/gates/w3c-kotlin.sh` no longer compares the rewriter's \
-         uses against `REWRITER_CEILING`. Without that comparison the \
-         fallback can grow silently, and `kotlin-retire-rewriter` is the \
-         claim that it reaches ZERO — a distance nothing measures is a \
-         distance nobody closes."
+        code.contains("undeclared=\"$(comm -23"),
+        "⚠ `scripts/gates/w3c-kotlin.sh` no longer compares the refusals this \
+         run OBSERVED against the declared list. Without that comparison a \
+         text the frontend newly refuses is absorbed in silence, and the whole \
+         point of recording refusals is that each one is either a shape to \
+         teach, a caller to re-tag, or the specification working."
+    );
+    assert!(
+        code.contains("unseen=\"$(comm -13"),
+        "⚠ the Kotlin gate checks that observed refusals are declared and no \
+         longer that declared refusals are OBSERVED. A one-sided list rots: an \
+         entry whose case has been repaired goes on claiming the engine still \
+         refuses it, and a reader consults that file to decide whether their \
+         document stays inside what this backend covers."
     );
     assert!(
         code.contains("frontend_hits < FRONTEND_FLOOR"),
-        "⚠⚠ the Kotlin gate caps the rewriter's uses and no longer asserts the \
-         FRONTEND's. Those two readings are what tell a finished migration \
-         from a census that never happened — both are a small rewriter count. \
-         Measured 2026-08-30: a stderr-based probe reported 0 fallbacks twice \
-         over a run that took the fallback 100 times, because Gradle swallowed \
-         the stream."
+        "⚠⚠ the Kotlin gate classifies refusals and no longer asserts the \
+         FRONTEND's successes. Those two readings are what tell a backend with \
+         nothing to refuse from a census that never happened — both report no \
+         refusals. Measured 2026-08-30: a stderr-based probe reported 0 \
+         fallbacks twice over a run that took the fallback 100 times, because \
+         Gradle swallowed the stream."
     );
     assert!(
         code.contains("no lowering census at"),

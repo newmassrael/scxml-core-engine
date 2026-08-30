@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/send_param_payload/send_param_payload.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/send_param_payload"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/send_param_payload"
 STEM="send_param_payload"
 INPUT_ROOT="integration_resources/send_param_payload"
 PACKAGE_PREFIX="com.sce.integration"

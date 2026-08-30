@@ -708,6 +708,75 @@ fn a_remembered_rewriter_is_not_a_reached_one() {
     );
 }
 
+/// The same boundary for KOTLIN, pinned for the same reason and separately.
+///
+/// `retirement:kotlin-rewriter-deleted` reports zero over a tree whose files
+/// all mention the rewriter in prose, so the predicate that reports it has to
+/// be shown to still SEE the name somewhere. These fixtures are that
+/// demonstration — the deleted unit can no longer be it.
+///
+/// Two shapes are Kotlin's own and neither is reachable through the C++
+/// reader: a `"""raw string"""` holding text that looks like source, and a
+/// nested block comment. Both are in this tree — the seam suite writes a Lua
+/// table constructor as a raw string — so a reader that got either wrong would
+/// report a suite as a caller, or a caller as prose.
+#[test]
+fn a_remembered_kotlin_rewriter_is_not_a_reached_one() {
+    for reaching in [
+        "import com.sce.scripting.lua.EcmaScriptToLuaTransformer\n",
+        "private val transformer = EcmaScriptToLuaTransformer()\n",
+        "val x = com.sce.scripting.lua.EcmaScriptToLuaTransformer().transform(t)\n",
+    ] {
+        assert!(
+            reaches_rewriter_kt(reaching),
+            "should count as reaching the rewriter: {reaching:?}"
+        );
+    }
+
+    for remembering in [
+        "// EcmaScriptToLuaTransformer was retired on 2026-08-30.\n",
+        "/** The rewriter [EcmaScriptToLuaTransformer] used to stand here. */\n",
+        "private const val REWRITER_NAME = \"EcmaScriptToLuaTransformer\"\n",
+        "import com.sce.scripting.lua.LoweringScope\n",
+        // ⚠ The name sits AFTER the inner comment's terminator and inside the
+        // outer one, which is the only placement that can observe the nesting
+        // arm. Measured 2026-08-30: a fixture with the name INSIDE the inner
+        // comment survived deleting that arm, because a reader that stops at
+        // the first `*/` has already consumed the name on its way there. The
+        // question a fixture asks is decided by where the subject sits, not by
+        // whether the shape is present.
+        "/* outer /* inner */ names EcmaScriptToLuaTransformer */\n",
+    ] {
+        assert!(
+            !reaches_rewriter_kt(remembering),
+            "should NOT count as reaching the rewriter: {remembering:?}"
+        );
+    }
+
+    // A nested comment must end where Kotlin ends it, so code after the OUTER
+    // terminator is read. The pair above is what makes the arm observable in
+    // both directions.
+    let after_a_nested =
+        "/* outer /* inner */ still comment */\nval t = EcmaScriptToLuaTransformer()\n";
+    assert!(
+        reaches_rewriter_kt(after_a_nested),
+        "a nested block comment must end where Kotlin ends it, not at the first `*/`"
+    );
+
+    // ⚠ The raw-string arm, and this fixture is shaped by the same measurement.
+    // A raw string whose body holds an EVEN number of quotes is invisible to
+    // the arm: an ordinary-string reader pairs them off and consumes the same
+    // span, so deleting the arm changes nothing. `"""say "hi"""` holds one, so
+    // an ordinary reader's quotes fall out of step and it swallows the line
+    // BELOW the string — which is where the name is.
+    let after_a_raw = "val q = \"\"\"say \"hi\"\"\"\nval t = EcmaScriptToLuaTransformer()\n";
+    assert!(
+        reaches_rewriter_kt(after_a_raw),
+        "a raw string must end where Kotlin ends it: a reader that mis-pairs its \
+         quotes swallows the code after it and reports a caller as prose"
+    );
+}
+
 /// The prefixes a check identifier can open with.
 ///
 /// One per shape `check_row` implements. A kind added there without a
@@ -1635,6 +1704,108 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         return;
     }
 
+    if row.check == "retirement:kotlin-rewriter-deleted" {
+        assert_eq!(
+            row.kind, "decision",
+            "row `{}` carries a retirement check with kind `{}`. A retirement \
+             has no measurement to re-run — what stands in for one is the tree \
+             still doing what was decided, which is what `decision` means here.",
+            row.id, row.kind
+        );
+
+        // The same three steps its C++ sibling takes, one language over, and
+        // deliberately not folded into it. The two backends retired the same
+        // NAME at different times against different populations, and a single
+        // check over both would have gone green on Kotlin the day C++ deleted
+        // its half — "no file reaches it" is satisfied by a population that
+        // does not contain the file that does.
+
+        // 1. The unit is GONE, and nothing compiles it. Kotlin needs no build
+        //    list to strike: the source set is the directory, so the file's
+        //    absence is the whole of it.
+        let unit: Vec<&str> = tracked
+            .iter()
+            .map(|p| p.as_str())
+            .filter(|p| is_kotlin_source(p) && file_stem_of(p) == REWRITER)
+            .collect();
+        assert!(
+            unit.is_empty(),
+            "row `{}`: {} tracked Kotlin file(s) are still named after \
+             `{REWRITER}`:\n  {}\nThe row claims the unit was DELETED, not \
+             merely left uncalled.",
+            row.id,
+            unit.len(),
+            unit.join("\n  ")
+        );
+
+        // 2. The population: EVERY tracked Kotlin file, for the reason the
+        //    C++ half learned the hard way — a directory boundary does not
+        //    exempt what falls outside it, it makes it INVISIBLE.
+        let population: Vec<&str> = tracked
+            .iter()
+            .map(|p| p.as_str())
+            .filter(|p| is_kotlin_source(p))
+            .collect();
+        assert!(
+            population.len() >= TRACKED_KOTLIN_FLOOR,
+            "row `{}`: this sweep found {} tracked Kotlin file(s), below the \
+             floor of {TRACKED_KOTLIN_FLOOR}. A sweep that stopped reading \
+             reports an empty result, and an empty result reads exactly like \
+             a completed retirement.",
+            row.id,
+            population.len()
+        );
+
+        // 3. THE CONTROL, bought back from the PROSE exactly as the C++ half
+        //    buys it: deleting the unit deleted the files whose own text
+        //    proved the predicate could still see the name. The engine, its
+        //    suites and the JNI layer still explain what the rewriter was and
+        //    why it went, so a sweep that is really opening files finds the
+        //    name in RAW text several times over while finding it in CODE
+        //    never.
+        //
+        //    ⚠ This CAN legitimately reach zero — by deleting every comment
+        //    that remembers the rewriter. That is allowed, and it is exactly
+        //    when this row has to be rewritten rather than quietly relaxed.
+        let mentions: Vec<&str> = population
+            .iter()
+            .copied()
+            .filter(|p| read(p).contains(REWRITER))
+            .collect();
+        assert!(
+            mentions.len() >= KOTLIN_MENTION_FLOOR,
+            "row `{}`: only {} tracked Kotlin file(s) mention `{REWRITER}` in \
+             raw text, below the floor of {KOTLIN_MENTION_FLOOR}. Every one of \
+             them is prose — the history of a deleted unit — and they are this \
+             sweep's only proof that it is opening files at all. Without them \
+             the zero below is indistinguishable from a sweep that read \
+             nothing, so this row must be rewritten rather than left standing.",
+            row.id,
+            mentions.len()
+        );
+
+        // 4. The claim itself. No classification is left: with the unit gone
+        //    there is nothing a Kotlin file could legitimately reach.
+        let callers: Vec<&str> = population
+            .iter()
+            .copied()
+            .filter(|p| reaches_rewriter_kt(&read(p)))
+            .collect();
+        assert!(
+            callers.is_empty(),
+            "row `{}`: {} tracked Kotlin file(s) reach `{REWRITER}` in code:\n  \
+             {}\nThe unit is deleted, so a file that names the type or imports \
+             it cannot compile — this is a build break as well as a false row. \
+             The {} file(s) that merely MENTION it in comments are the control \
+             above and are not this.",
+            row.id,
+            callers.len(),
+            callers.join("\n  "),
+            mentions.len()
+        );
+        return;
+    }
+
     panic!(
         "row `{}` declares check `{}`, which this gate does not implement. \
          An unrecognised check is RED: a row whose check is skipped is a row \
@@ -1681,11 +1852,146 @@ const TRACKED_CPP_FLOOR: usize = 1000;
 /// fail a round that changed nothing about callers.
 const REWRITER_MENTION_FLOOR: usize = 5;
 
+/// A floor for the Kotlin sweep, well under the count on the day the Kotlin
+/// rewriter was deleted (754 tracked `.kt` files, the committed generated
+/// trees included) and well over anything a broken filter would return.
+const TRACKED_KOTLIN_FLOOR: usize = 400;
+
+/// A floor for the raw-text mentions that are the KOTLIN deletion sweep's only
+/// remaining control.
+///
+/// Four tracked Kotlin files still explain the rewriter in comments on the day
+/// the unit was deleted — `LuaScriptEngine` itself and three of its suites.
+/// The floor is half of that, for the reason its C++ sibling states: high
+/// enough that a sweep which stopped reading cannot clear it, low enough that
+/// trimming prose does not fail a round that changed nothing about callers.
+const KOTLIN_MENTION_FLOOR: usize = 2;
+
 fn is_cpp_source(path: &str) -> bool {
     matches!(
         path.rsplit_once('.').map(|(_, ext)| ext),
         Some("cpp" | "cc" | "cxx" | "h" | "hpp" | "c")
     )
+}
+
+fn is_kotlin_source(path: &str) -> bool {
+    matches!(
+        path.rsplit_once('.').map(|(_, ext)| ext),
+        Some("kt" | "kts")
+    )
+}
+
+/// Kotlin with its comments and string literals removed.
+///
+/// A separate reader from [`cpp_code_only`] rather than a reuse of it, and the
+/// two differences are both load-bearing in this tree:
+///
+///   * **Raw strings.** `"""o = {["k"] = 7}"""` appears in the seam suite. A
+///     reader that took `"""` for an empty string followed by an open quote
+///     would leak the body into the code side, and the body of a raw string is
+///     exactly where a fixture puts text that LOOKS like source.
+///   * **Nested block comments**, which Kotlin allows and C++ does not. A
+///     reader that closed at the first `*/` would report the tail of an outer
+///     comment as code.
+///
+/// One newline is kept per newline consumed, so a line-based reading of the
+/// result still lines up with the raw source.
+fn kotlin_code_only(src: &str) -> String {
+    let bytes: Vec<char> = src.chars().collect();
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        // Line comment.
+        if c == '/' && bytes.get(i + 1) == Some(&'/') {
+            while i < bytes.len() && bytes[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        // Block comment, nesting.
+        if c == '/' && bytes.get(i + 1) == Some(&'*') {
+            let mut depth = 1usize;
+            i += 2;
+            while i < bytes.len() && depth > 0 {
+                if bytes[i] == '\n' {
+                    out.push('\n');
+                    i += 1;
+                    continue;
+                }
+                if bytes[i] == '/' && bytes.get(i + 1) == Some(&'*') {
+                    depth += 1;
+                    i += 2;
+                    continue;
+                }
+                if bytes[i] == '*' && bytes.get(i + 1) == Some(&'/') {
+                    depth -= 1;
+                    i += 2;
+                    continue;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        // Raw string. Checked BEFORE the ordinary one, because its opener
+        // starts with the ordinary opener.
+        if c == '"' && bytes.get(i + 1) == Some(&'"') && bytes.get(i + 2) == Some(&'"') {
+            out.push_str("\"\"\"");
+            i += 3;
+            while i < bytes.len() {
+                if bytes[i] == '\n' {
+                    out.push('\n');
+                    i += 1;
+                    continue;
+                }
+                if bytes[i] == '"'
+                    && bytes.get(i + 1) == Some(&'"')
+                    && bytes.get(i + 2) == Some(&'"')
+                {
+                    i += 3;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        // Ordinary string or character literal.
+        if c == '"' || c == '\'' {
+            out.push(c);
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == '\\' {
+                    i += 2;
+                    continue;
+                }
+                if bytes[i] == '\n' {
+                    out.push('\n');
+                    i += 1;
+                    continue;
+                }
+                if bytes[i] == c {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+/// Whether one Kotlin file reaches the retired rewriter.
+///
+/// Simpler than its C++ sibling by one arm, and the reason is the language:
+/// Kotlin has no header to include, so a file that reaches the type NAMES it —
+/// in an `import`, a constructor call, or a qualified reference. What the two
+/// share is the part that matters: a mention in a COMMENT is not a use, and
+/// this repository deliberately keeps the history of the rewriter in prose.
+fn reaches_rewriter_kt(src: &str) -> bool {
+    kotlin_code_only(src).contains(REWRITER)
 }
 
 fn file_stem_of(path: &str) -> &str {

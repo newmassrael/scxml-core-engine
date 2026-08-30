@@ -43,7 +43,7 @@ source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 FIXTURE="sce-build/tests/fixtures/event_schema/statechart_minimal.scxml"
 INPUT_ROOT="sce-build/tests/fixtures/event_schema"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_minimal"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_minimal"
 PACKAGE_PREFIX="com.sce.integration"
 
 # The bytes fixture (RFC rfc-eventschema-bytes-guard.md §bytesguard-6) lowers to a
@@ -51,7 +51,7 @@ PACKAGE_PREFIX="com.sce.integration"
 # `==` is reference equality, so contentEquals is the whole point. Its
 # machine name differs, so the generated SM lives in its own package dir.
 BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
-BYTES_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_bytes"
+BYTES_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_bytes"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
