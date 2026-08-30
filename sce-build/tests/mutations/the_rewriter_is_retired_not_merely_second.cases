@@ -342,3 +342,53 @@ edit("sce-build/tests/lowering_decision_ledger.rs",
      "                }\n",
      "")
 PY
+
+# ── The retirement is claimed but not WATCHED ──────────────────────
+#
+# Steps 1-4 of the Kotlin row say the unit is gone TODAY. What says the tree
+# would notice it COMING BACK is a detector: the semantics suite reads the
+# engine's class body for a rewriter call and, finding one, requires the
+# engine's documentation to name it. That detector cannot hold the name in
+# code — the type is deleted, so naming it would not compile — so it holds it
+# as a STRING, which was invisible to both readings the row had.
+#
+# Measured 2026-08-30: `REWRITER_NAME` in `EcmaScriptSemanticsTest.kt` was
+# changed to a name nothing carries, and every check in this file stayed green
+# while the detector looked for a rewriter that could never return under that
+# name. These three attack the reader that makes the third reading possible.
+
+mutation_case "the detector reading strips string literals too" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     """fn kotlin_outside_comments(src: &str) -> String {
+    kotlin_text(src, false)
+}""",
+     """fn kotlin_outside_comments(src: &str) -> String {
+    kotlin_text(src, true)
+}""")
+PY
+
+mutation_case "the detector is looked for in raw text, comments and all" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     """            .filter(|p| kotlin_outside_comments(&read(p)).contains(REWRITER))
+            .collect();""",
+     """            .filter(|p| read(p).contains(REWRITER))
+            .collect();""")
+PY
+
+mutation_case "the detector reading keeps the comments as well" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     """        // Line comment.
+        if c == '/' && bytes.get(i + 1) == Some(&'/') {
+            while i < bytes.len() && bytes[i] != '\\n' {
+                i += 1;
+            }
+            continue;
+        }""",
+     """        // Line comment.
+        if c == '/' && bytes.get(i + 1) == Some(&'/') && strip_strings {
+            while i < bytes.len() && bytes[i] != '\\n' {
+                i += 1;
+            }
+            continue;
+        }""")
+PY
