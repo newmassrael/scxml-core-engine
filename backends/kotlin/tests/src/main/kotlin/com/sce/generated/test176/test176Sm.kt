@@ -139,7 +139,7 @@ class Test176StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test176Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -339,7 +339,7 @@ class Test176StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test176State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 2")) -> TransitionResult.External(Test176State.Pass, Test176State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 2)", "Var2 == 2")) -> TransitionResult.External(Test176State.Pass, Test176State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test176State.Fail, Test176State.S1, 3)
     }
@@ -381,7 +381,7 @@ class Test176StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("2"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("2", "2"))
 
 
             // W3C SCXML 5.10: Evaluate params/namelist for event data
@@ -391,7 +391,7 @@ class Test176StateMachine(
                 val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsE = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.ecmascript("Var1")))
+                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(Test176Event.Error.Execution, "<send> <param name='aParam'> expr failed to evaluate")
@@ -446,7 +446,7 @@ class Test176StateMachine(
                 // SCE-MAP: test176.scxml:19 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.data.aParam"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.data.aParam", "_event.data.aParam"))
             }
             else -> {}
         }

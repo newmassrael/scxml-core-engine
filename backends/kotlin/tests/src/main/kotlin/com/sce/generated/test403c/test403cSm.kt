@@ -193,7 +193,7 @@ class Test403cStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test403cEvent.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -430,7 +430,7 @@ class Test403cStateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test403cState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test403cState.Pass, Test403cState.S1, 8)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionResult.External(Test403cState.Pass, Test403cState.S1, 8)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test403cState.Fail, Test403cState.S1, 9)
     }
@@ -654,7 +654,7 @@ class Test403cStateMachine(
                 // SCE-MAP: test403c.scxml:43 :: p0s4 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
             else -> {}
         }

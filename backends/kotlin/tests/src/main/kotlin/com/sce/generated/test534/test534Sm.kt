@@ -309,7 +309,7 @@ class Test534StateMachine(
     private fun processS0(
         event: Test534Event
     ): TransitionResult<Test534State> = when {
-        event is Test534Event.Test && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data[\"_scxmleventname\"] == \"test\"")) -> TransitionResult.External(Test534State.Pass, Test534State.S0, 0)
+        event is Test534Event.Test && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data._scxmleventname, \"test\")", "_event.data[\"_scxmleventname\"] == \"test\"")) -> TransitionResult.External(Test534State.Pass, Test534State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test534State.Fail, Test534State.S0, 1)
@@ -351,7 +351,7 @@ class Test534StateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {

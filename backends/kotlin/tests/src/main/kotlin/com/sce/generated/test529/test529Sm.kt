@@ -354,7 +354,7 @@ class Test529StateMachine(
     private fun processS0(
         event: Test529Event
     ): TransitionResult<Test529State> = when {
-        event is Test529Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 21")) -> TransitionResult.External(Test529State.Pass, Test529State.S0, 0)
+        event is Test529Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, 21)", "_event.data == 21")) -> TransitionResult.External(Test529State.Pass, Test529State.S0, 0)
 
         event is Test529Event.Done.State.S0 -> TransitionResult.External(Test529State.Fail, Test529State.S0, 1)
 
@@ -406,7 +406,7 @@ class Test529StateMachine(
                     // reading is decided from the document, so every backend
                     // reaches the same one for the same text.
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("21"))
+                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("21", "21"))
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {

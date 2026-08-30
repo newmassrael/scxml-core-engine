@@ -342,14 +342,14 @@ class Test178StateMachine(
                 val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsE = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsE, "Var1", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.ecmascript("2")))
+                    putParam(paramsE, "Var1", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("2", "2")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(Test178Event.Error.Execution, "<send> <param name='Var1'> expr failed to evaluate")
                 }
 
                 try {
-                    putParam(paramsE, "Var1", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.ecmascript("3")))
+                    putParam(paramsE, "Var1", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("3", "3")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(Test178Event.Error.Execution, "<send> <param name='Var1'> expr failed to evaluate")
@@ -396,7 +396,7 @@ class Test178StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("_event : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.raw"))?.toString() ?: ""))
+                println("_event : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.raw", "_event.raw"))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             else -> {}

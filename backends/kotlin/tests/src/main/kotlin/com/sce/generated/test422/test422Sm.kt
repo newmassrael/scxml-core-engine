@@ -174,7 +174,7 @@ class Test422StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test422Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -394,7 +394,7 @@ class Test422StateMachine(
         (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> TransitionResult.Internal(0)
         event is Test422Event.InvokeS11 -> TransitionResult.External(Test422State.Fail, Test422State.S1, 1)
 
-        event is Test422Event.Timeout && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test422State.Pass, Test422State.S1, 2)
+        event is Test422Event.Timeout && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionResult.External(Test422State.Pass, Test422State.S1, 2)
 
         event is Test422Event.Timeout -> TransitionResult.External(Test422State.Fail, Test422State.S1, 3)
 
@@ -525,7 +525,7 @@ class Test422StateMachine(
                 // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
             else -> {}
         }
@@ -534,7 +534,7 @@ class Test422StateMachine(
                 // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
             else -> {}
         }
@@ -543,7 +543,7 @@ class Test422StateMachine(
                 // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
             else -> {}
         }

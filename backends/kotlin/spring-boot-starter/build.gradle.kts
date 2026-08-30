@@ -8,7 +8,10 @@ version = "1.0.0"
 
 dependencies {
     api(project(":sce-kotlin-runtime"))
-    api(project(":sce-kotlin-rhino"))
+    // The engine this starter's default bean constructs. `api` rather than
+    // `implementation` because the bean is part of the surface an application
+    // sees: it may want to name the type to replace it.
+    api(project(":sce-kotlin-lua"))
     implementation(libs.spring.boot.autoconfigure)
 
     testImplementation(libs.spring.boot.starter.test)

@@ -134,7 +134,7 @@ class Test241SceSynthInvokeInvoke1StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test241SceSynthInvokeInvoke1Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -328,7 +328,7 @@ class Test241SceSynthInvokeInvoke1StateMachine(
 
     private fun processNullSub02(
     ): TransitionResult<Test241SceSynthInvokeInvoke1State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test241SceSynthInvokeInvoke1State.SubFinal2, Test241SceSynthInvokeInvoke1State.Sub02, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test241SceSynthInvokeInvoke1State.SubFinal2, Test241SceSynthInvokeInvoke1State.Sub02, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test241SceSynthInvokeInvoke1State.SubFinal2, Test241SceSynthInvokeInvoke1State.Sub02, 1)
     }

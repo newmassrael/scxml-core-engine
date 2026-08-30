@@ -373,7 +373,7 @@ class Test276StateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("1"))
+                        invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("1", "1"))
                     } catch (_: Exception) {
                         raisePlatformError(Test276Event.Error.Execution, "<invoke> <param name='Var1'> expr failed to evaluate")
                     }

@@ -339,7 +339,7 @@ class Test319StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof _event !== 'undefined'"))) {
+            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(_event) ~= \"undefined\")", "typeof _event !== 'undefined'"))) {
 
             raiseInternal(Test319Event.Bound)
             } else {

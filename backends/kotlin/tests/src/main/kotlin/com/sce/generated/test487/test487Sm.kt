@@ -340,7 +340,7 @@ class Test487StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("undefined.invalidProperty"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))
 
             raiseInternal(Test487Event.Event)
             }

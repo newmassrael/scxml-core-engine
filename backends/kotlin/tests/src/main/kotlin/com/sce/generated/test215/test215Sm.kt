@@ -145,7 +145,7 @@ class Test215StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'foo'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"foo\"", "'foo'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test215Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -369,7 +369,7 @@ class Test215StateMachine(
             scheduleSend("__send_0", 5000L, Test215Event.Timeout)
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'http://www.w3.org/TR/scxml/'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"http://www.w3.org/TR/scxml/\"", "'http://www.w3.org/TR/scxml/'"))
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format

@@ -307,7 +307,7 @@ class Test245SceSynthInvokeInvoke0StateMachine(
 
     private fun processNullSub0(
     ): TransitionResult<Test245SceSynthInvokeInvoke0State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var2 !== 'undefined'")) -> TransitionResult.External(Test245SceSynthInvokeInvoke0State.SubFinal, Test245SceSynthInvokeInvoke0State.Sub0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var2) ~= \"undefined\")", "typeof Var2 !== 'undefined'")) -> TransitionResult.External(Test245SceSynthInvokeInvoke0State.SubFinal, Test245SceSynthInvokeInvoke0State.Sub0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test245SceSynthInvokeInvoke0State.SubFinal, Test245SceSynthInvokeInvoke0State.Sub0, 1)
     }

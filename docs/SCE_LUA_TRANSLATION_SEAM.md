@@ -36,7 +36,7 @@ site of the same shape.
 | `--lang` | Guard site | Filter chain | Hands the engine |
 |---|---|---|---|
 | `cpp` | `tools/codegen/templates/process_transition.jinja2:638` | `{{ trans.cond \| escape_cpp }}` | **ECMAScript source** |
-| `kotlin` | `tools/codegen/templates/kotlin/transition_actions.kt.jinja2:24` | `{{ trans.cond \| escape_kotlin }}` | **ECMAScript source** |
+| `kotlin` | `tools/codegen/templates/kotlin/process_event.kt.jinja2:28` | `{{ trans.cond \| to_script_source_guard }}` | translated Lua |
 | `rust` | `tools/codegen/templates/rust/state_machine.rs.jinja2:996` | `{{ trans.cond \| to_lua_guard \| escape_rust }}` | translated Lua |
 | `go` | `tools/codegen/templates/go/process_transition.go.jinja2:170` | `` {{ trans.cond \| to_lua_guard }} `` | translated Lua |
 | `python` | `tools/codegen/templates/python/process_transition.py.jinja2:35` | `{{ transition.cond \| to_lua_guard \| py_string_literal }}` | translated Lua |
@@ -99,19 +99,28 @@ is what that costs on each side:
   harness; the W3C suite selects with `-Psce.script.engine=`, and
   `W3CTestBase.engineFor` **refuses an unknown name rather than defaulting**
   (it used to end `else -> RhinoScriptEngine()`, which made a misspelt engine
-  a green run under another engine's name). `W3CTestBase.DEFAULT_ENGINE` is
-  **`"rhino"`** — so unlike C++, whose default `quickjs` already bypasses the
-  rewriter, Kotlin's default is an ECMAScript engine reached through the same
-  constructor slot a Lua-shaped artifact would close.
+  a green run under another engine's name).
+
+  ⚠ **The default engine moved with the default artifact on 2026-08-30.**
+  `W3CTestBase.DEFAULT_ENGINE` was `"rhino"` while the default artifact
+  carried the author's ECMAScript; it is **`"lua"`** now, and so is the Spring
+  starter's `scxmlScriptEngine` bean, because
+  `Language::Kotlin.default_script_engine_target()` answers `Lua`. That
+  pairing is the whole content of the flip — an artifact default without the
+  matching host default is the mis-supply `ScriptSource` exists to prevent —
+  and `scripts/gates/w3c-kotlin.sh` is what holds the two together
+  afterwards rather than this paragraph.
 
 **The one sentence.** Moving translation to build time costs the ability to run
 one generated artifact on more than one engine, and the only place that ability
 is exercised in this tree is Kotlin — where the two engines that answer every
 ECMA-262 case (Rhino, QuickJS) reach the machine through the same constructor
-slot a Lua-shaped artifact would close, and Rhino is the default — so the
-design must take the target engine as a codegen input (`script_engine_language`
-already exists on the manifest, `sce-build/src/manifest.rs:209`) rather than
-assume one.
+slot a Lua-shaped artifact closes — so the design must take the target engine
+as a codegen input (`script_engine_language` already exists on the manifest,
+`sce-build/src/manifest.rs:209`) rather than assume one. ⚠ That is exactly
+what happened: the input exists, `--script-engine` selects it per run, and the
+DEFAULT is now one policy among the values it can take rather than the only
+value the templates could emit.
 
 ## Found while measuring: the manifest names the wrong engine on two backends
 
@@ -126,8 +135,13 @@ It is derived from the flag alone
 `"lua"` (`manifest.rs:45`), justified by a claim this table refutes: *"Not
 per-backend: the lowering happens in `sce-build`, before any backend renders,
 so every language's generated machine evaluates the same Lua."* That holds for
-Rust, Go, Python and C11. It does not hold for C++ and Kotlin, which hand the
-engine ECMAScript source.
+Rust, Go, Python and C11. It does not hold for C++, which hands the engine
+ECMAScript source, nor — for the opposite reason — for Kotlin: Kotlin renders
+through the PAIR filter (`to_script_source_guard`), so which language its
+artifact carries follows the run's `--script-engine` selection, and since
+2026-08-30 its DEFAULT is lowered Lua. Two backends, two arms each, and one
+per-run answer: which is exactly why the field is per-backend and per-run
+rather than a constant.
 
 Measured 2026-08-27 on `examples/ai_loop/ai_loop.scxml`:
 
@@ -1056,13 +1070,18 @@ neither reports the other's divergence as one of its own that has been repaired.
 
 **`paths` is derived, not typed.** `ecma262_scoreboard_contract` computes it
 from the same answers the code generator gives — `runtime-rewriter` while
-`default_script_engine_target()` is `EcmaScript` (the backend hands the engine
+`supports_script_engine_target(EcmaScript)` (the backend CAN hand the engine
 the author's text, so a Lua engine must adapt it), and `build-time-lowering`
 once `supports_script_engine_target(Lua)` (the backend can emit a lowered
-artifact) — and holds each file's key to it. C++ gets both; Kotlin gets one, and
-the day the Kotlin templates cross the seam its list goes red asking which path
-each of its 46 entries is about, instead of keeping 46 answers that quietly
-became ambiguous.
+artifact) — and holds each file's key to it. C++ and Kotlin both get both.
+
+⚠ Both halves read a CAPABILITY, and the first one used to read
+`default_script_engine_target()` — a POLICY. The difference became load-bearing
+on 2026-08-30, when Kotlin's default moved to Lua: under the old derivation
+`runtime-rewriter` would have vanished from the population that morning, which
+would have demanded the deletion of every entry declaring it while the engine
+went on answering those cases exactly as before. A count that reaches zero
+because a default moved is not the count this axis is driving to zero.
 
 **Unclassified is RED, not a default.** All three readers refuse an entry with
 no `diverges_on` rather than assuming the runtime path. Defaulting would make
@@ -3343,7 +3362,15 @@ sweep.
   let `lua` join `KOTLIN_ENGINES` and close that gate's own standing note.
   ✅ **The per-engine generation landed 2026-08-30 (the round below), and `lua`
   joined.** The array is `KOTLIN_ENGINE_PAIRS` now and the flip is no longer
-  blocked by this gate; what the flip still needs is its own round.
+  blocked by this gate.
+  ✅✅ **The flip landed 2026-08-30 (sixteenth round).** ⚠ And this bullet had
+  the mechanism wrong in a way worth keeping: it named
+  `lowers_expressions_at_build_time` as the thing to flip, which would mean
+  giving Kotlin's templates Rust's UNCONDITIONAL lowering and taking the
+  second arm away. That is not what moved. `lowers_expressions_at_build_time`
+  is still false for Kotlin, both arms are still there, and what changed is
+  `default_script_engine_target` — which stopped being read off that
+  predicate and became a stated policy for the backends that carry two arms.
 
 ### The one thing that made the flip unsafe, removed — and it changes nothing yet
 

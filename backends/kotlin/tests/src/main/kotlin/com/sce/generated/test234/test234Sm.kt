@@ -195,14 +195,14 @@ class Test234StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test234Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test234Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
@@ -414,7 +414,7 @@ class Test234StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test234State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 1")) -> TransitionResult.External(Test234State.Pass, Test234State.S1, 3)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 1)", "Var2 == 1")) -> TransitionResult.External(Test234State.Pass, Test234State.S1, 3)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test234State.Fail, Test234State.S1, 4)
     }
@@ -432,7 +432,7 @@ class Test234StateMachine(
     private fun processP01(
         event: Test234Event
     ): TransitionResult<Test234State> = when {
-        event is Test234Event.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test234State.S1, Test234State.P01, 1)
+        event is Test234Event.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionResult.External(Test234State.S1, Test234State.P01, 1)
 
         event is Test234Event.ChildToParent -> TransitionResult.External(Test234State.Fail, Test234State.P01, 2)
 

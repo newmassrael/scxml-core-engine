@@ -392,7 +392,7 @@ class Test346StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_sessionid"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))
 
             raiseInternal(Test346Event.Event1)
             }
@@ -402,7 +402,7 @@ class Test346StateMachine(
                 if (!activeStateIds.add("s1")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_event"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_event", "_event"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))
 
             raiseInternal(Test346Event.Event2)
             }
@@ -412,7 +412,7 @@ class Test346StateMachine(
                 if (!activeStateIds.add("s2")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))
 
             raiseInternal(Test346Event.Event3)
             }
@@ -422,7 +422,7 @@ class Test346StateMachine(
                 if (!activeStateIds.add("s3")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_name"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_name", "_name"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))
 
             raiseInternal(Test346Event.Event4)
             }

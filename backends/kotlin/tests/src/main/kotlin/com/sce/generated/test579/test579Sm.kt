@@ -179,7 +179,7 @@ class Test579StateMachine(
         // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
         // State 's0' variable 'Var1'
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test579Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -389,9 +389,9 @@ class Test579StateMachine(
     private fun processS03(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event3 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 0")) -> TransitionResult.External(Test579State.S0, Test579State.S03, 4)
+        event is Test579Event.Event3 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 0)", "Var1 == 0")) -> TransitionResult.External(Test579State.S0, Test579State.S03, 4)
 
-        event is Test579Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test579State.S2, Test579State.S03, 5)
+        event is Test579Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test579State.S2, Test579State.S03, 5)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test579State.Fail, Test579State.S03, 6)
@@ -521,7 +521,7 @@ class Test579StateMachine(
                 activeStateIds.remove("s0")
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
             is Test579State.S01 -> {
                 // SCE-MAP: test579.scxml:33 :: s01 :: _state_body

@@ -421,7 +421,7 @@ class Test343StateMachine(
                     val doneParams = mutableMapOf<String, Any?>()
                     var doneParamStructuralError = false
                     try {
-                        val locVal = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("foo"))
+                        val locVal = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("error(\"SCXML expr is not valid ECMAScript: foo: foo is not declared by this document\")", "foo"))
                         doneParams["someParam"] = locVal
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime location error — raise error.execution but continue

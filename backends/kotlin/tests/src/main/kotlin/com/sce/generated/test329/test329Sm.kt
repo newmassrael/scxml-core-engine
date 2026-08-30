@@ -343,21 +343,21 @@ class Test329StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test329State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == _event")) -> TransitionResult.External(Test329State.S2, Test329State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, _event)", "Var2 == _event")) -> TransitionResult.External(Test329State.S2, Test329State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test329State.Fail, Test329State.S1, 3)
     }
 
     private fun processNullS2(
     ): TransitionResult<Test329State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var3 == _name")) -> TransitionResult.External(Test329State.S3, Test329State.S2, 4)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var3, _name)", "Var3 == _name")) -> TransitionResult.External(Test329State.S3, Test329State.S2, 4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test329State.Fail, Test329State.S2, 5)
     }
 
     private fun processNullS3(
     ): TransitionResult<Test329State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4 == _ioprocessors")) -> TransitionResult.External(Test329State.Pass, Test329State.S3, 6)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var4, _ioprocessors)", "Var4 == _ioprocessors")) -> TransitionResult.External(Test329State.Pass, Test329State.S3, 6)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test329State.Fail, Test329State.S3, 7)
     }
@@ -367,7 +367,7 @@ class Test329StateMachine(
     private fun processS0(
         event: Test329Event
     ): TransitionResult<Test329State> = when {
-        event is Test329Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == _sessionid")) -> TransitionResult.External(Test329State.S1, Test329State.S0, 0)
+        event is Test329Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, _sessionid)", "Var1 == _sessionid")) -> TransitionResult.External(Test329State.S1, Test329State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test329State.Fail, Test329State.S0, 1)
@@ -401,10 +401,10 @@ class Test329StateMachine(
             raiseInternal(Test329Event.Foo)
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_sessionid"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"))
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_sessionid"), com.sce.runtime.ScriptSource.ecmascript("'invalid_session_id'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"), com.sce.runtime.ScriptSource.lua("\"invalid_session_id\"", "'invalid_session_id'"))
             }
             is Test329State.S1 -> {
                 // SCE-MAP: test329.scxml:23 :: s1 :: _state_body
@@ -412,10 +412,10 @@ class Test329StateMachine(
                 if (!activeStateIds.add("s1")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event", "_event"))
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_event"), com.sce.runtime.ScriptSource.ecmascript("27"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_event", "_event"), com.sce.runtime.ScriptSource.lua("27", "27"))
             }
             is Test329State.S2 -> {
                 // SCE-MAP: test329.scxml:32 :: s2 :: _state_body
@@ -423,10 +423,10 @@ class Test329StateMachine(
                 if (!activeStateIds.add("s2")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var3"), com.sce.runtime.ScriptSource.ecmascript("_name"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var3", "Var3"), com.sce.runtime.ScriptSource.lua("_name", "_name"))
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_name"), com.sce.runtime.ScriptSource.ecmascript("27"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_name", "_name"), com.sce.runtime.ScriptSource.lua("27", "27"))
             }
             is Test329State.S3 -> {
                 // SCE-MAP: test329.scxml:42 :: s3 :: _state_body
@@ -434,10 +434,10 @@ class Test329StateMachine(
                 if (!activeStateIds.add("s3")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var4"), com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var4", "Var4"), com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"))
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"), com.sce.runtime.ScriptSource.ecmascript("27"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"), com.sce.runtime.ScriptSource.lua("27", "27"))
             }
         }
     }

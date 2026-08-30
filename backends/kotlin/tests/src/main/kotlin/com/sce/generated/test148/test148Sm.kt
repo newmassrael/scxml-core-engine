@@ -144,7 +144,7 @@ class Test148StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test148Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -333,7 +333,7 @@ class Test148StateMachine(
     private fun processS0(
         event: Test148Event
     ): TransitionResult<Test148State> = when {
-        event is Test148Event.Baz && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test148State.Pass, Test148State.S0, 0)
+        event is Test148Event.Baz && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test148State.Pass, Test148State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test148State.Fail, Test148State.S0, 1)
@@ -365,24 +365,24 @@ class Test148StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("false"))) {
+            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("false", "false"))) {
 
             raiseInternal(Test148Event.Foo)
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
-            } else if (safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("false"))) {
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
+            } else if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("false", "false"))) {
 
             raiseInternal(Test148Event.Bar)
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             } else {
 
             raiseInternal(Test148Event.Baz)
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
 
             raiseInternal(Test148Event.Bat)

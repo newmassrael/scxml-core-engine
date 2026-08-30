@@ -171,7 +171,7 @@ class Test240StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test240Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -490,7 +490,7 @@ class Test240StateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("1"))
+                        invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("1", "1"))
                     } catch (_: Exception) {
                         raisePlatformError(Test240Event.Error.Execution, "<invoke> <param name='Var1'> expr failed to evaluate")
                     }

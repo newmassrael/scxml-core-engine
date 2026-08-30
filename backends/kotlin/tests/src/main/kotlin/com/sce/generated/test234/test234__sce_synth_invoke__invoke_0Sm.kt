@@ -310,7 +310,7 @@ class Test234SceSynthInvokeInvoke0StateMachine(
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsP, "aParam", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.ecmascript("2")))
+                    putParam(paramsP, "aParam", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("2", "2")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(Test234SceSynthInvokeInvoke0Event.Error.Execution, "<send> <param name='aParam'> expr failed to evaluate")

@@ -139,7 +139,7 @@ class Test186StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test186Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -339,7 +339,7 @@ class Test186StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test186State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 1")) -> TransitionResult.External(Test186State.Pass, Test186State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 1)", "Var2 == 1")) -> TransitionResult.External(Test186State.Pass, Test186State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test186State.Fail, Test186State.S1, 3)
     }
@@ -388,7 +388,7 @@ class Test186StateMachine(
                 val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsE = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.ecmascript("Var1")))
+                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(Test186Event.Error.Execution, "<send> <param name='aParam'> expr failed to evaluate")
@@ -399,7 +399,7 @@ class Test186StateMachine(
             }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("2"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("2", "2"))
             }
             is Test186State.S1 -> {
                 // SCE-MAP: test186.scxml:26 :: s1 :: _state_body
@@ -446,7 +446,7 @@ class Test186StateMachine(
                 // SCE-MAP: test186.scxml:20 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.data.aParam"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.data.aParam", "_event.data.aParam"))
             }
             else -> {}
         }

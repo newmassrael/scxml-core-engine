@@ -139,7 +139,7 @@ class Test525StateMachine(
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test525Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
@@ -333,7 +333,7 @@ class Test525StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test525State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 3")) -> TransitionResult.External(Test525State.Pass, Test525State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 3)", "Var2 == 3")) -> TransitionResult.External(Test525State.Pass, Test525State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test525State.Fail, Test525State.S0, 1)
     }
@@ -371,10 +371,10 @@ class Test525StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), "Var3", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "Var3", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("Var2 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))
                     }
                 } catch (e: Exception) {
                     raisePlatformError(Test525Event.Error.Execution, "<foreach array='Var1'> failed to iterate")

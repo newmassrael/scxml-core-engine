@@ -138,7 +138,7 @@ class Test550StateMachine(
         // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
         // State 's1' variable 'Var1'
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("2"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test550Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -331,7 +331,7 @@ class Test550StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test550State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test550State.Pass, Test550State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionResult.External(Test550State.Pass, Test550State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test550State.Fail, Test550State.S0, 1)
     }

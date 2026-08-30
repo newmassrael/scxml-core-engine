@@ -327,14 +327,14 @@ class Test557StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test557State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1.getElementsByTagName('book')[0].getAttribute('title') == 'title1'")) -> TransitionResult.External(Test557State.S1, Test557State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var1:getElementsByTagName(\"book\")[1]:getAttribute(\"title\"), \"title1\")", "var1.getElementsByTagName('book')[0].getAttribute('title') == 'title1'")) -> TransitionResult.External(Test557State.S1, Test557State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test557State.Fail, Test557State.S0, 1)
     }
 
     private fun processNullS1(
     ): TransitionResult<Test557State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var2.getElementsByTagName('book')[1].getAttribute('title') == 'title2'")) -> TransitionResult.External(Test557State.Pass, Test557State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var2:getElementsByTagName(\"book\")[2]:getAttribute(\"title\"), \"title2\")", "var2.getElementsByTagName('book')[1].getAttribute('title') == 'title2'")) -> TransitionResult.External(Test557State.Pass, Test557State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test557State.Fail, Test557State.S1, 3)
     }

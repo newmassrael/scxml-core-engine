@@ -30,30 +30,46 @@
 // construct, and which documents those are is precisely what nobody
 // knew before this pass existed.
 //
-// C++ and Kotlin are absent from the backend list on purpose. Neither
-// lowers `<assign expr>` through the frontend — both hand the authored
-// ECMAScript to their engine and let it decide — so they emit no raise
-// to compare against. That gap is a real one and it is not this test's
-// to assert; `cpp_and_kotlin_do_not_lower_authored_ecmascript_here`
-// pins which backends are in scope so the list cannot quietly shrink.
+// C++ is absent from the backend list on purpose. It does not lower
+// `<assign expr>` through the frontend — it hands the authored ECMAScript
+// to its engine and lets it decide — so it emits no raise to compare
+// against. That gap is a real one and it is not this test's to assert;
+// `cpp_does_not_lower_authored_ecmascript_here` pins which backends are
+// in scope so the list cannot quietly shrink.
+//
+// ⚠ The list is DERIVED, so "absent" is a measurement rather than an
+// omission: `lowering_backends()` asks each backend for its default. That
+// is what moved Kotlin INTO the population on 2026-08-30 without anyone
+// editing an array.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use sce_build::ecmascript_acceptance::refusals;
-use sce_build::generator::Language;
+use sce_build::generator::{Language, ScriptEngineTarget};
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
 
 /// The backends whose templates lower authored ECMAScript through
 /// `sce_build::ecmascript`, i.e. the ones whose artifacts carry a raise
 /// to compare against.
-const LOWERING_BACKENDS: &[Language] = &[
-    Language::Rust,
-    Language::Go,
-    Language::Python,
-    Language::C11,
-];
+/// ⚠ DERIVED, not listed. This was a hand-written array of four, and it was a
+/// second roster beside the one the generator already keeps: a backend whose
+/// default moved would have left the array behind, and the array's silence
+/// reads exactly like "that backend does not lower".
+///
+/// Measured 2026-08-30, when `Language::Kotlin`'s default became Lua: the
+/// array said four, the generator said five, and the only test that noticed
+/// was the one asserting Kotlin was NOT here. Deriving it means moving a
+/// backend across the seam is one edit in `generator.rs`, and this list
+/// follows.
+fn lowering_backends() -> Vec<Language> {
+    Language::ALL
+        .iter()
+        .copied()
+        .filter(|lang| lang.default_script_engine_target() == ScriptEngineTarget::Lua)
+        .collect()
+}
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -166,7 +182,24 @@ fn render(model: &SCXMLModel, lang: Language, stem: &str) -> Option<String> {
                     .collect::<Vec<_>>()
                     .join("\n")
             }),
-        _ => None,
+        Language::Kotlin => sce_build::generator::generate_kotlin(model, &dir, None).ok(),
+        // ⚠ NOT `_ => None`, and the difference is the whole point of the
+        // derived population above. Two of the three callers read this as
+        // `let Some(x) = render(..) else { continue }`, so a backend this arm
+        // cannot render is SKIPPED rather than reported — the population grows
+        // and the coverage silently does not. Measured 2026-08-30: Kotlin
+        // joined the population when its default moved, `_ => None` dropped it
+        // from two tests without a word, and only the third — which unwraps —
+        // said anything at all.
+        //
+        // An unrenderable backend is RED now. A backend that reaches here is
+        // one the derivation says lowers, so being unable to render it means
+        // this file cannot check the very claim it exists for.
+        other => panic!(
+            "{other:?} is in the lowering population and this test cannot \
+             render it. Add its arm — skipping it would leave the population \
+             larger than the coverage, which is the shape a `_ => None` hides."
+        ),
     }
 }
 
@@ -186,7 +219,7 @@ fn every_refusal_a_backend_emits_is_one_the_walker_reports() {
         if !reported.is_empty() {
             with_refusals += 1;
         }
-        for lang in LOWERING_BACKENDS {
+        for lang in &lowering_backends() {
             let Some(rendered) = render(&model, *lang, stem) else {
                 continue;
             };
@@ -238,7 +271,7 @@ fn every_refusal_the_walker_reports_is_one_a_backend_emits() {
             continue;
         }
         let mut emitted = BTreeSet::new();
-        for lang in LOWERING_BACKENDS {
+        for lang in &lowering_backends() {
             if let Some(rendered) = render(&model, *lang, stem) {
                 emitted.extend(refusals_in_artifact(&rendered));
             }
@@ -305,7 +338,7 @@ fn a_refused_builtin_reaches_the_artifact_of_every_lowering_backend() {
         "the walker should report exactly the one reach: {reported:?}"
     );
 
-    for lang in LOWERING_BACKENDS {
+    for lang in &lowering_backends() {
         let rendered = render(&model, *lang, "reaching")
             .unwrap_or_else(|| panic!("{lang:?} renders the document"));
         assert_eq!(
@@ -318,16 +351,28 @@ fn a_refused_builtin_reaches_the_artifact_of_every_lowering_backend() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Which backends are in scope, pinned so the list cannot shrink
-/// silently.
+/// The backend that still hands its engine the authored ECMAScript.
 ///
-/// C++ and Kotlin hand the authored ECMAScript to their engine instead
-/// of lowering it here, so they emit no raise. That is a gap in those
-/// two backends, not a property of the accepted subset — the frontend's
-/// verdict is about the document. This test states the split rather than
-/// leaving it to be inferred from the absence of two entries above.
+/// C++ emits no raise here because its DEFAULT artifact carries the author's
+/// text for a run-time engine to deal with. That is a gap in that backend,
+/// not a property of the accepted subset — the frontend's verdict is about
+/// the document. This test states the split rather than leaving it to be
+/// inferred from an absence above.
+///
+/// ⚠ It said "C++ AND KOTLIN" until 2026-08-30, and Kotlin left on the day
+/// `Language::Kotlin.default_script_engine_target()` moved to Lua. The two
+/// were never here for the same reason: C++'s guard site does not carry the
+/// pair filter at all, while Kotlin's did — what kept Kotlin on this side was
+/// the DEFAULT, which is a host policy, and the day the hosts moved the
+/// default moved with them. The population above is derived from exactly that
+/// answer, so this test now asserts the ONE backend left rather than a pair
+/// whose members were held here by different facts.
+///
+/// The membership assertion below is what keeps this honest in the other
+/// direction: the day C++'s default moves too, this case is red rather than
+/// quietly checking a claim the tree has stopped making.
 #[test]
-fn cpp_and_kotlin_do_not_lower_authored_ecmascript_here() {
+fn cpp_does_not_lower_authored_ecmascript_here() {
     let path = repo_root().join("resources/344/test344.scxml");
     let model = parse(&path).expect("test344 parses");
     assert!(
@@ -335,25 +380,28 @@ fn cpp_and_kotlin_do_not_lower_authored_ecmascript_here() {
         "test344 writes cond=\"return\" on purpose"
     );
 
-    for lang in [Language::Cpp, Language::Kotlin] {
-        let dir = sce_build::find_template_dir_for(lang);
-        let rendered = match lang {
-            Language::Cpp => sce_build::generator::generate_cpp(&model, &dir, "test344", None)
-                .expect("cpp renders")
-                .files
-                .iter()
-                .map(|(_, body)| body.as_str())
-                .collect::<Vec<_>>()
-                .join("\n"),
-            _ => sce_build::generator::generate_kotlin(&model, &dir, None).expect("kotlin renders"),
-        };
-        assert!(
-            refusals_in_artifact(&rendered).is_empty(),
-            "{lang:?} now embeds a refusal — add it to LOWERING_BACKENDS"
-        );
-        assert!(
-            rendered.contains("return"),
-            "{lang:?} should carry the authored cond verbatim"
-        );
-    }
+    let lang = Language::Cpp;
+    assert!(
+        !lowering_backends().contains(&lang),
+        "`{lang:?}` now defaults to Lua, so it belongs to the derived \
+         population above and this test asserts the opposite of the tree. \
+         Drop it from here rather than pinning a split that has closed."
+    );
+    let dir = sce_build::find_template_dir_for(lang);
+    let rendered = sce_build::generator::generate_cpp(&model, &dir, "test344", None)
+        .expect("cpp renders")
+        .files
+        .iter()
+        .map(|(_, body)| body.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        refusals_in_artifact(&rendered).is_empty(),
+        "{lang:?} now embeds a refusal — its default has moved, so it \
+         belongs to the derived population above"
+    );
+    assert!(
+        rendered.contains("return"),
+        "{lang:?} should carry the authored cond verbatim"
+    );
 }

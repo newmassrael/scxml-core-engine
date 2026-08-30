@@ -327,14 +327,14 @@ class Test558StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test558State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1 == 'this is a string'")) -> TransitionResult.External(Test558State.S1, Test558State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var1, \"this is a string\")", "var1 == 'this is a string'")) -> TransitionResult.External(Test558State.S1, Test558State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test558State.Fail, Test558State.S0, 1)
     }
 
     private fun processNullS1(
     ): TransitionResult<Test558State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var2 == 'this is a string'")) -> TransitionResult.External(Test558State.Pass, Test558State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var2, \"this is a string\")", "var2 == 'this is a string'")) -> TransitionResult.External(Test558State.Pass, Test558State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test558State.Fail, Test558State.S1, 3)
     }

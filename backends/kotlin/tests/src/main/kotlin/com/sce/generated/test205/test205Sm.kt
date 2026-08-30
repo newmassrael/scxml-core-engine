@@ -321,7 +321,7 @@ class Test205StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test205State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test205State.Pass, Test205State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test205State.Pass, Test205State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test205State.Fail, Test205State.S1, 3)
     }
@@ -370,7 +370,7 @@ class Test205StateMachine(
                 val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsE = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.ecmascript("1")))
+                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("1", "1")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(Test205Event.Error.Execution, "<send> <param name='aParam'> expr failed to evaluate")
@@ -428,7 +428,7 @@ class Test205StateMachine(
                 // SCE-MAP: test205.scxml:20 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.data.aParam"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.data.aParam", "_event.data.aParam"))
             }
             else -> {}
         }

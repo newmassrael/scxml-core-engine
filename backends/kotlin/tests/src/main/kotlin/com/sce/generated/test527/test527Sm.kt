@@ -354,7 +354,7 @@ class Test527StateMachine(
     private fun processS0(
         event: Test527Event
     ): TransitionResult<Test527State> = when {
-        event is Test527Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 'foo'")) -> TransitionResult.External(Test527State.Pass, Test527State.S0, 0)
+        event is Test527Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, \"foo\")", "_event.data == 'foo'")) -> TransitionResult.External(Test527State.Pass, Test527State.S0, 0)
 
         event is Test527Event.Done.State.S0 -> TransitionResult.External(Test527State.Fail, Test527State.S0, 1)
 
@@ -403,7 +403,7 @@ class Test527StateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("'foo'"))
+                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("\"foo\"", "'foo'"))
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {

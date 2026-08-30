@@ -147,14 +147,14 @@ class Test460StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[1,2,3]"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 2, 3}", "[1,2,3]"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test460Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test460Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
@@ -348,7 +348,7 @@ class Test460StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test460State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2==3")) -> TransitionResult.External(Test460State.Pass, Test460State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 3)", "Var2==3")) -> TransitionResult.External(Test460State.Pass, Test460State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test460State.Fail, Test460State.S0, 1)
     }
@@ -368,7 +368,7 @@ class Test460StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'fail'"))?.toString() ?: ""))
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"fail\"", "'fail'"))?.toString() ?: ""))
             } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
@@ -380,7 +380,7 @@ class Test460StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'pass'"))?.toString() ?: ""))
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"pass\"", "'pass'"))?.toString() ?: ""))
             } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
@@ -396,13 +396,13 @@ class Test460StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), "Var3", "") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "Var3", "") {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("[].concat(Var1, [4])"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_concat(_concat({}, Var1), {4})", "[].concat(Var1, [4])"))
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("Var2 + 1"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))
                     }
                 } catch (e: Exception) {
                     raisePlatformError(Test460Event.Error.Execution, "<foreach array='Var1'> failed to iterate")

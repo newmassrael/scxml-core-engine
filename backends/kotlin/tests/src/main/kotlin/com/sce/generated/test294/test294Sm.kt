@@ -178,7 +178,7 @@ class Test294StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test294Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -414,7 +414,7 @@ class Test294StateMachine(
     private fun processS0(
         event: Test294Event
     ): TransitionResult<Test294State> = when {
-        event is Test294Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.Var1 == 1")) -> TransitionResult.External(Test294State.S1, Test294State.S0, 0)
+        event is Test294Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data.Var1, 1)", "_event.data.Var1 == 1")) -> TransitionResult.External(Test294State.S1, Test294State.S0, 0)
 
         event is Test294Event.Done.State.S0 -> TransitionResult.External(Test294State.Fail, Test294State.S0, 1)
 
@@ -424,7 +424,7 @@ class Test294StateMachine(
     private fun processS1(
         event: Test294Event
     ): TransitionResult<Test294State> = when {
-        event is Test294Event.Done.State.S1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 'foo'")) -> TransitionResult.External(Test294State.Pass, Test294State.S1, 3)
+        event is Test294Event.Done.State.S1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, \"foo\")", "_event.data == 'foo'")) -> TransitionResult.External(Test294State.Pass, Test294State.S1, 3)
 
         event is Test294Event.Done.State.S1 -> TransitionResult.External(Test294State.Fail, Test294State.S1, 4)
 
@@ -475,7 +475,7 @@ class Test294StateMachine(
                     val doneParams = mutableMapOf<String, Any?>()
                     var doneParamStructuralError = false
                     try {
-                        doneParams["Var1"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("1"))
+                        doneParams["Var1"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("1", "1"))
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
                         raisePlatformError(Test294Event.Error.Execution, "<donedata> <param name='Var1'> failed to evaluate")
@@ -514,7 +514,7 @@ class Test294StateMachine(
                     // reading is decided from the document, so every backend
                     // reaches the same one for the same text.
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("'foo'"))
+                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("\"foo\"", "'foo'"))
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {

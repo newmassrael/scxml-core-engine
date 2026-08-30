@@ -329,7 +329,7 @@ class Test513StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\""))?.toString() ?: ""))
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\"", "\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\""))?.toString() ?: ""))
             } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
@@ -341,7 +341,7 @@ class Test513StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\""))?.toString() ?: ""))
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\"", "\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\""))?.toString() ?: ""))
             } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
@@ -362,7 +362,7 @@ class Test513StateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
@@ -426,7 +426,7 @@ class Test513StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("\"Test 513: Received HTTP event - server responded with 200 OK\""))?.toString() ?: ""))
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Test 513: Received HTTP event - server responded with 200 OK\"", "\"Test 513: Received HTTP event - server responded with 200 OK\""))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             1 -> {
@@ -434,7 +434,7 @@ class Test513StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("\"Test 513: Timeout - no HTTP event received\""))?.toString() ?: ""))
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Test 513: Timeout - no HTTP event received\"", "\"Test 513: Timeout - no HTTP event received\""))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             else -> {}

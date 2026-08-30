@@ -335,7 +335,7 @@ class Test280StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test280State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 === Var2")) -> TransitionResult.External(Test280State.Pass, Test280State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(Var1 == Var2)", "Var1 === Var2")) -> TransitionResult.External(Test280State.Pass, Test280State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test280State.Fail, Test280State.S1, 3)
     }
@@ -377,7 +377,7 @@ class Test280StateMachine(
                     val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     try {
-                        val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+                        val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
                         engine.setVariable(sid, "Var2", v)
                     } catch (e: Exception) {
                         raisePlatformError(Test280Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
@@ -385,7 +385,7 @@ class Test280StateMachine(
                 }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var2"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("Var2", "Var2"))
             }
         }
     }
