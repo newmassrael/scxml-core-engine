@@ -114,6 +114,35 @@ class LuaScriptEngine : ScxmlScriptEngine {
     private val sessions = mutableMapOf<String, Session>()
     private val transformer = EcmaScriptToLuaTransformer()
 
+    /**
+     * Record that the frontend refused a text and [transformer] answered it.
+     *
+     * ⚠ THIS IS THE COUNTER `kotlin-retire-rewriter` NEEDS, and it did not
+     * exist before 2026-08-30. The seam document said "empty is not retired"
+     * and named the fallback as the remaining claim, but nothing counted the
+     * fallback, so "how far is this backend from retirement" had no answer a
+     * reader could re-derive — only prose saying some expressions still reach
+     * it. `w3c-kotlin` turns this file into a census line and holds it under a
+     * ceiling, so the distance to zero is a number rather than a sentence.
+     *
+     * ⚠⚠ THE SILENT PATH IS DELIBERATE. With no property set this is one
+     * `getProperty` and a return, so a production run pays nothing and no file
+     * is created. What it must NOT do is be silently absent when the property
+     * IS set — measured 2026-08-30, the first two attempts at this counter
+     * wrote to `System.err`, Gradle swallowed the test JVM's stderr, and the
+     * probe reported `0` twice over a run that in fact took the fallback 100
+     * times. A zero that a swallowed stream and an untaken branch produce
+     * identically is not a measurement, which is why the census records the
+     * frontend's SUCCESSES too: the ceiling is meaningless without a positive
+     * control saying the path ran at all.
+     */
+    private fun recordLowering(outcome: String, kind: String, text: String) {
+        val path = System.getProperty(LOWERING_CENSUS_PROPERTY) ?: return
+        synchronized(LuaScriptEngine::class.java) {
+            java.io.File(path).appendText("$outcome\t$kind\t$text\n")
+        }
+    }
+
     override fun createSession(sessionId: String) {
         val handle = LuaNative.newState()
         if (handle == 0L) throw ScriptEngineException("Failed to create Lua state")
@@ -238,7 +267,9 @@ class LuaScriptEngine : ScxmlScriptEngine {
             expr.text
         } else {
             session.loweringScope.lowerValue(expr.text)
+                ?.also { recordLowering("frontend", "value", expr.text) }
                 ?: transformer.transform(expr.text, context)
+                    .also { recordLowering("rewriter", "value", expr.text) }
         }
 
     /**
@@ -256,7 +287,9 @@ class LuaScriptEngine : ScxmlScriptEngine {
             expr.text
         } else {
             session.loweringScope.lowerCondition(expr.text)
+                ?.also { recordLowering("frontend", "cond", expr.text) }
                 ?: transformer.transform(expr.text, EcmaScriptToLuaTransformer.ExpressionContext.Guard)
+                    .also { recordLowering("rewriter", "cond", expr.text) }
         }
 
     /**
@@ -274,7 +307,9 @@ class LuaScriptEngine : ScxmlScriptEngine {
             location.text
         } else {
             session.loweringScope.lowerLocation(location.text)
+                ?.also { recordLowering("frontend", "location", location.text) }
                 ?: transformer.transform(location.text)
+                    .also { recordLowering("rewriter", "location", location.text) }
         }
 
     /**
@@ -291,7 +326,9 @@ class LuaScriptEngine : ScxmlScriptEngine {
             script.text
         } else {
             session.loweringScope.lowerScript(script.text)
+                ?.also { recordLowering("frontend", "script", script.text) }
                 ?: transformer.transformScript(script.text)
+                    .also { recordLowering("rewriter", "script", script.text) }
         }
 
     override fun evaluateExpr(sessionId: String, expr: String): Any? =
@@ -1049,6 +1086,16 @@ class LuaScriptEngine : ScxmlScriptEngine {
     }
 
     companion object {
+        /**
+         * Where to append the lowering census, or unset for no census at all.
+         *
+         * A system property rather than an environment variable because the
+         * suite that reads it is a Gradle `Test` task, and a property is what
+         * that task forwards deliberately (`systemProperty`) rather than by
+         * inheriting whatever the shell happened to hold.
+         */
+        const val LOWERING_CENSUS_PROPERTY: String = "sce.lua.loweringCensus"
+
         // W3C SCXML B.2: Load canonical json_builtins.lua from resources (Single Source of Truth)
         // Shared with C++ (CMake header) and Rust (include_str!) — see ARCHITECTURE.md
         private val JSON_BUILTINS: String by lazy {
