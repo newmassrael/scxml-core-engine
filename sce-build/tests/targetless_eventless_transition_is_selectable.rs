@@ -43,23 +43,56 @@ fn kotlin_of(content: &str, label: &str) -> String {
     generate_kotlin(&model, Path::new(&template_dir()), None).expect("Kotlin codegen succeeds")
 }
 
-/// How the emitted machine spells a guard call on the author's @p expr.
+/// The emitted line that guards on the author's @p expr, or a panic naming
+/// what was searched.
 ///
-/// ⚠ Not a convenience. These cases are about the SELECTION SURFACE — whether
-/// a targetless eventless transition is offered at all — and they were written
-/// against the literal `safeEvaluateGuard("polished == 0")`, which is an
-/// argument SPELLING and not their subject. On 2026-08-29 the Kotlin templates
-/// crossed the translation seam and every guard started carrying a
-/// `ScriptSource` instead of a bare string; four cases about selection went red
-/// over a change that moved no selection. A case that fails for a reason
-/// outside its own clause is a case whose next reader repairs the wrong thing.
+/// ⚠ Not a convenience, and NOT a spelling. These cases are about the
+/// SELECTION SURFACE — whether a targetless eventless transition is offered at
+/// all — and they have now gone red twice over the guard ARGUMENT, which is
+/// not their subject:
 ///
-/// So the spelling lives here, once, and each case asks its own question
-/// through it. The author's text is still what appears — it is the `source`
-/// half of the pair — so the expression is still named where a reader can see
-/// it.
-fn guard_call(expr: &str) -> String {
-    format!("safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript(\"{expr}\"))")
+/// * 2026-08-29, when the Kotlin templates crossed the translation seam and a
+///   bare `"polished == 0"` became `ScriptSource.ecmascript("polished == 0")`.
+///   Repaired by writing the new spelling down here, once.
+/// * 2026-08-30, when `Language::Kotlin.default_script_engine_target()` moved
+///   to Lua and the SAME guard became
+///   `ScriptSource.lua("_scxml_eq(polished, 0)", "polished == 0")`. The
+///   written-down spelling was wrong again, one day later.
+///
+/// Twice is the measurement: a case that names the argument at all is a case
+/// that the seam re-breaks every time it moves. So nothing here spells the
+/// call. What it asks for is the author's own text, which
+/// `com.sce.runtime.ScriptSource` GUARANTEES appears under either target — it
+/// is the `source` half of the pair, kept precisely so a diagnostic can name
+/// the expression back to whoever wrote it — and it returns the whole emitted
+/// line so each case can ask its own question about what that guard leads to.
+///
+/// A missing guard is a panic rather than an empty string: "the selection
+/// surface does not guard on this expression" is the exact defect these cases
+/// exist to catch, and returning something falsy would let a caller's
+/// `contains` report it as a different failure.
+fn guard_line<'a>(code: &'a str, function: &str, expr: &str) -> &'a str {
+    let start = code
+        .find(function)
+        .unwrap_or_else(|| panic!("`{function}` is not emitted at all.\n{code}"));
+    let body = &code[start..];
+    let end = body[function.len()..]
+        .find("\n    private fun ")
+        .map(|i| i + function.len())
+        .unwrap_or(body.len());
+    let needle = format!("\"{expr}\"");
+    body[..end]
+        .lines()
+        .find(|line| line.contains("safeEvaluateGuard") && line.contains(&needle))
+        .unwrap_or_else(|| {
+            panic!(
+                "`{function}` guards on no expression spelled `{expr}`. The author's text is \
+                 the `source` half of every `ScriptSource`, so it appears whichever language \
+                 the artifact was emitted for — its absence means the transition is not \
+                 offered here at all.\n{}",
+                &body[..end]
+            )
+        })
 }
 
 /// A document whose only eventless transition in `settled` is targetless: it
@@ -124,10 +157,8 @@ fn a_targetless_eventless_transition_reaches_the_null_selection_surface() {
          document spells.\n{code}"
     );
     assert!(
-        code.contains(&format!(
-            "{} -> TransitionResult.Internal",
-            guard_call("polished == 0")
-        )),
+        guard_line(&code, "private fun processNullSettled(", "polished == 0")
+            .contains("-> TransitionResult.Internal"),
         "and the handler must offer it as an in-place microstep — the same \
          answer this backend gives an event-driven targetless transition.\n{code}"
     );
@@ -142,14 +173,56 @@ fn a_targetless_eventless_transition_reaches_the_null_selection_surface() {
 /// action surface always carried the content. An engine that emitted the
 /// actions and no way to select them compiles, runs, and silently skips a
 /// microstep — which is exactly what shipped.
+///
+/// ⚠ The action surface stopped re-deciding on 2026-08-30 (`c5cfa53bd9`): it
+/// used to guard the arm with `event == null && <the same guard>` and now
+/// switches on the `transitionIndex` the SELECTION handed it. This case asked
+/// for the old string and went red over a repair that only strengthened its
+/// own point — so it asks through the INDEX now, which makes the claim
+/// sharper than it was: the content is not merely present, it hangs off
+/// exactly the number `processNullSettled` answers with. A dispatch that
+/// carried the content under some other index would still compile and still
+/// silently skip the microstep, and the old string could not tell.
 #[test]
 fn the_action_surface_carried_it_all_along() {
     let code = kotlin_of(BOTH_KINDS, "both_kinds.scxml");
 
+    let selected = guard_line(&code, "private fun processNullSettled(", "polished == 0");
+    let index = selected
+        .split("TransitionResult.Internal(")
+        .nth(1)
+        .and_then(|rest| rest.split(')').next())
+        .unwrap_or_else(|| {
+            panic!("the selection answers no transition index for this microstep:\n{selected}")
+        });
+
+    let dispatch_start = code
+        .find("override fun executeTransitionActions(")
+        .unwrap_or_else(|| panic!("the action surface is not emitted at all.\n{code}"));
+    let arm_start = code[dispatch_start..]
+        .find("is BothKindsScxmlState.Settled -> when (transitionIndex) {")
+        .map(|i| i + dispatch_start)
+        .unwrap_or_else(|| {
+            panic!(
+                "the action surface has no arm for `settled`.\n{}",
+                &code[dispatch_start..]
+            )
+        });
+    let arm = &code[arm_start..];
+    let arm_end = arm.find("\n        is ").unwrap_or(arm.len());
+    let arm = &arm[..arm_end];
+
     assert!(
-        code.contains(&format!("event == null && {}", guard_call("polished == 0"))),
-        "the transition's content is emitted under the null-event arm, which is \
-         what made the missing selection silent rather than a compile error.\n{code}"
+        arm.contains(&format!("{index} -> {{")),
+        "the transition's content is emitted under the index the selection \
+         answers with ({index}), which is what made the missing selection \
+         silent rather than a compile error.\n{arm}"
+    );
+    assert!(
+        arm.contains("\"polished\"") && arm.contains("\"polished + 1\""),
+        "and the content under that index is the assign the document spells — \
+         the author's text is the `source` half of every `ScriptSource`, so it \
+         is there whichever language this artifact was emitted for.\n{arm}"
     );
 }
 
@@ -164,11 +237,10 @@ fn a_targeted_eventless_transition_still_selects_as_a_state_change() {
     let code = kotlin_of(BOTH_KINDS, "both_kinds.scxml");
 
     assert!(
-        code.contains(&format!(
-            "{} -> TransitionResult.External(BothKindsScxmlState.Settled, \
-             BothKindsScxmlState.Idle)",
-            guard_call("armed == 1")
-        )),
+        guard_line(&code, "private fun processNullIdle(", "armed == 1").contains(
+            "-> TransitionResult.External(BothKindsScxmlState.Settled, \
+             BothKindsScxmlState.Idle,"
+        ),
         "a transition that names a target must still exit and enter.\n{code}"
     );
 }
@@ -190,10 +262,8 @@ fn a_leaf_inherits_its_ancestors_targetless_eventless_transition() {
          reach the ancestor's transition.\n{code}"
     );
     assert!(
-        code.contains(&format!(
-            "{} -> TransitionResult.Internal",
-            guard_call("polished == 0")
-        )),
+        guard_line(&code, "private fun processNullOuter(", "polished == 0")
+            .contains("-> TransitionResult.Internal"),
         "and the ancestor's handler must offer it as an in-place microstep.\n{code}"
     );
 }

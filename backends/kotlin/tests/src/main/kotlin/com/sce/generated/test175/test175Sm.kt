@@ -142,7 +142,7 @@ class Test175StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'0s'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"0s\"", "'0s'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test175Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -374,7 +374,7 @@ class Test175StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'1s'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"1s\"", "'1s'"))
 
 
             // W3C SCXML 6.2: Dynamic delay evaluation
@@ -384,7 +384,7 @@ class Test175StateMachine(
                 val sidDly = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val delayStrE: String
                 try {
-                    val v = engineDly.evaluateExpr(sidDly, com.sce.runtime.ScriptSource.ecmascript("Var1"))
+                    val v = engineDly.evaluateExpr(sidDly, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
                     delayStrE = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError(Test175Event.Error.Execution, "<send> delayexpr failed to evaluate")

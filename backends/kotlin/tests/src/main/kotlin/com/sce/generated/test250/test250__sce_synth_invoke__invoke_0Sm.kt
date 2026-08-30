@@ -351,7 +351,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'entering final state, invocation was not cancelled'"))?.toString() ?: ""))
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"entering final state, invocation was not cancelled\"", "'entering final state, invocation was not cancelled'"))?.toString() ?: ""))
             } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
@@ -369,7 +369,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'Exiting sub0'"))?.toString() ?: ""))
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Exiting sub0\"", "'Exiting sub0'"))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             is Test250SceSynthInvokeInvoke0State.Sub01 -> {
@@ -378,7 +378,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'Exiting sub01'"))?.toString() ?: ""))
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Exiting sub01\"", "'Exiting sub01'"))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             is Test250SceSynthInvokeInvoke0State.SubFinal -> {

@@ -303,7 +303,7 @@ class Test179StateMachine(
     private fun processS0(
         event: Test179Event
     ): TransitionResult<Test179State> = when {
-        event is Test179Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 123")) -> TransitionResult.External(Test179State.Pass, Test179State.S0, 0)
+        event is Test179Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data, 123)", "_event.data == 123")) -> TransitionResult.External(Test179State.Pass, Test179State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test179State.Fail, Test179State.S0, 1)
@@ -337,7 +337,7 @@ class Test179StateMachine(
 
             // W3C SCXML B.2: the reading is decided at build time; a value
             // is evaluated here and serialized, XML is handed on as source.
-            send(Test179Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = evaluateSendContent(com.sce.runtime.ScriptSource.ecmascript("123"))))
+            send(Test179Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = evaluateSendContent(com.sce.runtime.ScriptSource.lua("123", "123"))))
             }
         }
     }

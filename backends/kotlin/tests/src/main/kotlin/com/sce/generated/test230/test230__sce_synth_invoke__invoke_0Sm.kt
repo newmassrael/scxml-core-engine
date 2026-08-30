@@ -366,37 +366,37 @@ class Test230SceSynthInvokeInvoke0StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("name is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.name"))?.toString() ?: ""))
+                println("name is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))?.toString() ?: ""))
             } catch (_: Exception) {}
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("type is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.type"))?.toString() ?: ""))
+                println("type is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))?.toString() ?: ""))
             } catch (_: Exception) {}
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("sendid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.sendid"))?.toString() ?: ""))
+                println("sendid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.sendid", "_event.sendid"))?.toString() ?: ""))
             } catch (_: Exception) {}
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("origin is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.origin"))?.toString() ?: ""))
+                println("origin is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin"))?.toString() ?: ""))
             } catch (_: Exception) {}
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("origintype is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.origintype"))?.toString() ?: ""))
+                println("origintype is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype"))?.toString() ?: ""))
             } catch (_: Exception) {}
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("invokeid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.invokeid"))?.toString() ?: ""))
+                println("invokeid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.invokeid", "_event.invokeid"))?.toString() ?: ""))
             } catch (_: Exception) {}
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("data is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event.data"))?.toString() ?: ""))
+                println("data is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.data", "_event.data"))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             else -> {}

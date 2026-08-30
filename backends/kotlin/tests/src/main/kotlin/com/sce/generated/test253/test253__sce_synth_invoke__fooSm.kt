@@ -323,8 +323,8 @@ class Test253SceSynthInvokeFooStateMachine(
 
     private fun processNullSub1(
     ): TransitionResult<Test253SceSynthInvokeFooState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1, 1)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 'scxml'")) -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, \"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\")", "Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, \"scxml\")", "Var2 == 'scxml'")) -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1, 3)
     }
@@ -402,7 +402,7 @@ class Test253SceSynthInvokeFooStateMachine(
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:12 :: sub0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.origintype"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype"))
             }
             else -> {}
         }

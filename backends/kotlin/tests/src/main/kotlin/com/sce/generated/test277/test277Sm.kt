@@ -125,7 +125,7 @@ class Test277StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("undefined.invalidProperty"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test277Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -320,7 +320,7 @@ class Test277StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test277State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test277State.Pass, Test277State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test277State.Pass, Test277State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test277State.Fail, Test277State.S1, 3)
     }
@@ -369,7 +369,7 @@ class Test277StateMachine(
                 if (!activeStateIds.add("s1")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("1", "1"))
             }
         }
     }

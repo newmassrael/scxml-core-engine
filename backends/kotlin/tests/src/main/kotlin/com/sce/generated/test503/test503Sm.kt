@@ -158,14 +158,14 @@ class Test503StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test503Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
-            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
             raisePlatformError(Test503Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
@@ -367,7 +367,7 @@ class Test503StateMachine(
 
     private fun processNullS3(
     ): TransitionResult<Test503State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test503State.Pass, Test503State.S3, 4)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test503State.Pass, Test503State.S3, 4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test503State.Fail, Test503State.S3, 5)
     }
@@ -379,7 +379,7 @@ class Test503StateMachine(
     ): TransitionResult<Test503State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is Test503Event.Foo -> TransitionResult.Internal(1)
-        event is Test503Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var2 == 1")) -> TransitionResult.External(Test503State.S3, Test503State.S2, 2)
+        event is Test503Event.Bar && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var2, 1)", "Var2 == 1")) -> TransitionResult.External(Test503State.S3, Test503State.S2, 2)
 
         event is Test503Event.Bar -> TransitionResult.External(Test503State.Fail, Test503State.S2, 3)
 
@@ -449,7 +449,7 @@ class Test503StateMachine(
                 activeStateIds.remove("s2")
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
             is Test503State.S3 -> {
                 // SCE-MAP: test503.scxml:31 :: s3 :: _state_body
@@ -472,7 +472,7 @@ class Test503StateMachine(
                 // SCE-MAP: test503.scxml:23 :: s2 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("Var2 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))
             }
             else -> {}
         }

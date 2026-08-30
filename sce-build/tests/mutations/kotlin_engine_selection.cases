@@ -219,3 +219,59 @@ edit("backends/kotlin/tests/build.gradle.kts",
      'systemProperty("sce.lua.loweringCensus", censusProp.get())',
      'systemProperty("sce.lua.loweringCensusDisabled", censusProp.get())')
 PY
+
+# ── The two-armed default becomes a policy nobody chose ────────────
+#
+# `Language::Kotlin.default_script_engine_target()` flipped to Lua on
+# 2026-08-30, and the flip is a POLICY: both C++ and Kotlin render through the
+# pair filter, so the template tree cannot answer which language either one
+# should emit when nobody asks. `two_armed_default` is where that answer is
+# given, one backend at a time.
+#
+# The three cases below attack the three ways the answer could stop being a
+# CHOICE: the roster growing a catch-all, the classification collapsing so the
+# roster is never consulted, and the chosen value moving without the hosts
+# that have to accept it.
+
+# A `_ =>` answers for a backend that LATER grows a second arm, turning a
+# forced answer into an unexamined policy with nothing red — and no
+# behavioural test can see it, because today the catch-all and the enumeration
+# return the same values for the same backends. The witness has to read the
+# source, which is why `the_two_armed_policy_names_every_backend` exists at all.
+mutation_case "the two-armed roster grows a catch-all arm" <<'PY'
+edit("sce-build/src/generator.rs",
+     "Language::Rust | Language::Go | Language::Python | Language::C11 => unreachable!(",
+     "_ => unreachable!(")
+PY
+
+# The escape hatch out of the case above, and out of every assertion about the
+# arms. `can_lower_expressions_on_request` is what says a backend HAS a second
+# arm; force it false and every backend classifies as one-armed, the roster is
+# never reached, and `default_script_engine_target` answers `EcmaScript` for
+# C++ and Kotlin the way it did before the flip — silently.
+#
+# Caught twice over, which is the point: the Kotlin default pin says the value
+# moved back, and `every_backends_default_is_the_one_its_arms_allow` says the
+# two-armed population went to zero. A gate whose population can empty is a
+# gate that cannot be wrong.
+mutation_case "no backend is classified as carrying two arms" <<'PY'
+edit("sce-build/src/generator.rs",
+     """    pub fn can_lower_expressions_on_request(self) -> bool {
+        self.unmigrated_expression_sites().is_empty()
+            && self.unclassified_expression_sites().is_empty()
+    }""",
+     """    pub fn can_lower_expressions_on_request(self) -> bool {
+        false
+    }""")
+PY
+
+# The value itself, moved without the hosts. This is the mutation the seam
+# document argues about rather than a mechanical one: an artifact default of
+# `ecmascript` beside `W3CTestBase.DEFAULT_ENGINE = "lua"` is the mis-supply in
+# the other direction — a Lua engine handed the author's ECMAScript, which its
+# adapter accepts, so only the pins notice.
+mutation_case "the Kotlin default goes back without its hosts" <<'PY'
+edit("sce-build/src/generator.rs",
+     "            Language::Kotlin => ScriptEngineTarget::Lua,",
+     "            Language::Kotlin => ScriptEngineTarget::EcmaScript,")
+PY

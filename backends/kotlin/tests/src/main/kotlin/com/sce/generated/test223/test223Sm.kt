@@ -328,7 +328,7 @@ class Test223StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test223State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test223State.Pass, Test223State.S1, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var1) ~= \"undefined\")", "typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test223State.Pass, Test223State.S1, 1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test223State.Fail, Test223State.S1, 2)
     }

@@ -159,7 +159,7 @@ class Test459StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test459Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -176,14 +176,14 @@ class Test459StateMachine(
         } catch (_: Exception) {}
         // W3C SCXML 5.3: Initialize variable 'Var4' with expr
         try {
-            val initResult_Var4 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("[1,2,3]"))
+            val initResult_Var4 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 2, 3}", "[1,2,3]"))
             engine.setVariable(sid, "Var4", initResult_Var4)
         } catch (e: Exception) {
             raisePlatformError(Test459Event.Error.Execution, "<data id='Var4'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var5' with expr
         try {
-            val initResult_Var5 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var5 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var5", initResult_Var5)
         } catch (e: Exception) {
             raisePlatformError(Test459Event.Error.Execution, "<data id='Var5'> expr failed to evaluate")
@@ -377,7 +377,7 @@ class Test459StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test459State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var4==0 | Var3 != 2")) -> TransitionResult.External(Test459State.Fail, Test459State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_scxml_bitor(_scxml_eq(Var4, 0), (not _scxml_eq(Var3, 2))))", "Var4==0 | Var3 != 2")) -> TransitionResult.External(Test459State.Fail, Test459State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test459State.Pass, Test459State.S0, 1)
     }
@@ -397,7 +397,7 @@ class Test459StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'fail'"))?.toString() ?: ""))
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"fail\"", "'fail'"))?.toString() ?: ""))
             } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
@@ -409,7 +409,7 @@ class Test459StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("'pass'"))?.toString() ?: ""))
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"pass\"", "'pass'"))?.toString() ?: ""))
             } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
@@ -425,17 +425,17 @@ class Test459StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var4"), "Var2", "Var3") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var4", "Var4"), "Var2", "Var3") {
 
 
-            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1<Var2"))) {
+            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(Var1 < Var2)", "Var1<Var2"))) {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var2"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("Var2", "Var2"))
             } else {
 
 
-            engine.assign(sid, com.sce.runtime.ScriptSource.ecmascript("Var5"), com.sce.runtime.ScriptSource.ecmascript("0"))
+            engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var5", "Var5"), com.sce.runtime.ScriptSource.lua("0", "0"))
             }
                     }
                 } catch (e: Exception) {

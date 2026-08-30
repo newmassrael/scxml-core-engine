@@ -121,7 +121,7 @@ class Test453StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'var1' with expr
         try {
-            val initResult_var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("function(invar) {return invar + 1;}"))
+            val initResult_var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("function(invar) return _scxml_add(invar, 1) end", "function(invar) {return invar + 1;}"))
             engine.setVariable(sid, "var1", initResult_var1)
         } catch (e: Exception) {
             raisePlatformError(Test453Event.Error.Execution, "<data id='var1'> expr failed to evaluate")
@@ -310,7 +310,7 @@ class Test453StateMachine(
     private fun processS0(
         event: Test453Event
     ): TransitionResult<Test453State> = when {
-        event is Test453Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1(2) == 3")) -> TransitionResult.External(Test453State.Pass, Test453State.S0, 0)
+        event is Test453Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(var1(2), 3)", "var1(2) == 3")) -> TransitionResult.External(Test453State.Pass, Test453State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test453State.Fail, Test453State.S0, 1)

@@ -204,7 +204,7 @@ class Test388StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test388Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -451,17 +451,17 @@ class Test388StateMachine(
     private fun processS0(
         event: Test388Event
     ): TransitionResult<Test388State> = when {
-        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test388State.S1, Test388State.S0, 0)
+        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test388State.S1, Test388State.S0, 0)
 
-        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test388State.S2, Test388State.S0, 1)
-
-        // W3C SCXML 3.12.1: Prefix match for "entering"
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test388State.Fail, Test388State.S0, 2)
-
-        event is Test388Event.Entering.S011 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionResult.External(Test388State.Pass, Test388State.S0, 3)
+        event is Test388Event.Entering.S012 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionResult.External(Test388State.S2, Test388State.S0, 1)
 
         // W3C SCXML 3.12.1: Prefix match for "entering"
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 3")) -> TransitionResult.External(Test388State.Fail, Test388State.S0, 4)
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionResult.External(Test388State.Fail, Test388State.S0, 2)
+
+        event is Test388Event.Entering.S011 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 3)", "Var1 == 3")) -> TransitionResult.External(Test388State.Pass, Test388State.S0, 3)
+
+        // W3C SCXML 3.12.1: Prefix match for "entering"
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 3)", "Var1 == 3")) -> TransitionResult.External(Test388State.Fail, Test388State.S0, 4)
 
         event is Test388Event.Timeout -> TransitionResult.External(Test388State.Fail, Test388State.S0, 5)
 
@@ -494,7 +494,7 @@ class Test388StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
             is Test388State.S01 -> {
                 // SCE-MAP: test388.scxml:41 :: s01 :: _state_body

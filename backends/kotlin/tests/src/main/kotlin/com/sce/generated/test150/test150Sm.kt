@@ -341,7 +341,7 @@ class Test150StateMachine(
 
     private fun processNullS2(
     ): TransitionResult<Test150State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var4 !== 'undefined'")) -> TransitionResult.External(Test150State.Pass, Test150State.S2, 4)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var4) ~= \"undefined\")", "typeof Var4 !== 'undefined'")) -> TransitionResult.External(Test150State.Pass, Test150State.S2, 4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test150State.Fail, Test150State.S2, 5)
     }
@@ -399,7 +399,7 @@ class Test150StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var3"), "Var1", "Var2") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var1", "Var2") {
                     }
                 } catch (e: Exception) {
                     raisePlatformError(Test150Event.Error.Execution, "<foreach array='Var3'> failed to iterate")
@@ -419,7 +419,7 @@ class Test150StateMachine(
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.ecmascript("Var3"), "Var4", "Var5") {
+                    engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var4", "Var5") {
                     }
                 } catch (e: Exception) {
                     raisePlatformError(Test150Event.Error.Execution, "<foreach array='Var3'> failed to iterate")

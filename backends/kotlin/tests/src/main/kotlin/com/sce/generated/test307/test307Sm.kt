@@ -363,7 +363,7 @@ class Test307StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("entering s0 value of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("Var1"))?.toString() ?: ""))
+                println("entering s0 value of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("Var1", "Var1"))?.toString() ?: ""))
             } catch (_: Exception) {}
 
             raiseInternal(Test307Event.Foo)
@@ -378,7 +378,7 @@ class Test307StateMachine(
                     val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     try {
-                        val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+                        val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
                         engine.setVariable(sid, "Var1", v)
                     } catch (e: Exception) {
                         raisePlatformError(Test307Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -387,7 +387,7 @@ class Test307StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("entering s1, value of non-existent substructure of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("Var1.foo"))?.toString() ?: ""))
+                println("entering s1, value of non-existent substructure of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("Var1.foo", "Var1.foo"))?.toString() ?: ""))
             } catch (_: Exception) {}
 
             raiseInternal(Test307Event.Bar)
@@ -429,7 +429,7 @@ class Test307StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("error in state s0: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event"))?.toString() ?: ""))
+                println("error in state s0: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event", "_event"))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             1 -> {
@@ -445,7 +445,7 @@ class Test307StateMachine(
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
-                println("error in state s1: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.ecmascript("_event"))?.toString() ?: ""))
+                println("error in state s1: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event", "_event"))?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             3 -> {

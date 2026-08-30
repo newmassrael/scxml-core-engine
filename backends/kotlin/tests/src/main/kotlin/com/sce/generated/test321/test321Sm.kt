@@ -118,7 +118,7 @@ class Test321StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_sessionid"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test321Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -312,8 +312,8 @@ class Test321StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test321State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test321State.Pass, Test321State.S0, 0)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("true")) -> TransitionResult.External(Test321State.Fail, Test321State.S0, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var1) ~= \"undefined\")", "typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test321State.Pass, Test321State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("true", "true")) -> TransitionResult.External(Test321State.Fail, Test321State.S0, 1)
         else -> TransitionResult.Ignored
     }
 

@@ -421,7 +421,7 @@ class Test488StateMachine(
                     val doneParams = mutableMapOf<String, Any?>()
                     var doneParamStructuralError = false
                     try {
-                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("undefined.invalidProperty"))
+                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
                         raisePlatformError(Test488Event.Error.Execution, "<donedata> <param name='someParam'> failed to evaluate")

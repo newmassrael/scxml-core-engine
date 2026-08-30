@@ -145,7 +145,7 @@ class Test567StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("2"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test567Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -340,7 +340,7 @@ class Test567StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test567State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test567State.Pass, Test567State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionResult.External(Test567State.Pass, Test567State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test567State.Fail, Test567State.S1, 3)
     }
@@ -392,7 +392,7 @@ class Test567StateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
@@ -422,7 +422,7 @@ class Test567StateMachine(
                 val sidH = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val httpParams = mutableMapOf<String, List<String>>()
                 try {
-                    val v = engineH.evaluateExpr(sidH, com.sce.runtime.ScriptSource.ecmascript("2"))
+                    val v = engineH.evaluateExpr(sidH, com.sce.runtime.ScriptSource.lua("2", "2"))
                     // W3C SCXML C.2: the param crosses as text. `toString()` is
                     // the platform's spelling of the value; this is the document's.
                     httpParams["param1"] = listOf(valueToWireString(v))
@@ -483,7 +483,7 @@ class Test567StateMachine(
                 // SCE-MAP: test567.scxml:20 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.data.param1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.data.param1", "_event.data.param1"))
             }
             else -> {}
         }

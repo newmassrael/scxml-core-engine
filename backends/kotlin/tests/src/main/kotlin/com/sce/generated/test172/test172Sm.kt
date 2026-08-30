@@ -135,7 +135,7 @@ class Test172StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'event1'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"event1\"", "'event1'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test172Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -356,7 +356,7 @@ class Test172StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'event2'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"event2\"", "'event2'"))
 
 
             // W3C SCXML 6.2: Dynamic event name evaluation (test172)
@@ -366,7 +366,7 @@ class Test172StateMachine(
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val dynamicEventName: String
                 try {
-                    val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"))
+                    val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
                     dynamicEventName = v?.toString() ?: ""
                 } catch (_: Exception) {
                     raisePlatformError(Test172Event.Error.Execution, "<send> eventexpr failed to evaluate")

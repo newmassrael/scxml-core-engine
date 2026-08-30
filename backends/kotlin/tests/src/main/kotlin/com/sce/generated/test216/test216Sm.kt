@@ -141,7 +141,7 @@ class Test216StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'foo'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"foo\"", "'foo'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test216Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -365,7 +365,7 @@ class Test216StateMachine(
             scheduleSend("__send_0", 5000L, Test216Event.Timeout)
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'file:test216sub1.scxml'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"file:test216sub1.scxml\"", "'file:test216sub1.scxml'"))
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -376,7 +376,7 @@ class Test216StateMachine(
                         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         try {
                             // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child
-                            val pathResult = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"))
+                            val pathResult = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
                             val filePath = pathResult?.toString() ?: return@deferInvoke
                             val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "resources/216", scriptEngine)
                             startInvoke("_invoke_0", childSM, false, Test216Event.Done.Invoke, "", generatedInvokeId)

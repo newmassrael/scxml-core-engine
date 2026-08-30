@@ -305,7 +305,7 @@ class Test309StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test309State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("return")) -> TransitionResult.External(Test309State.Fail, Test309State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("error(\"SCXML cond is not valid ECMAScript: return: unsupported ECMAScript construct: reserved word 'return' used as a value. Extended SCXML expressions must use the stateless subset.\")", "return")) -> TransitionResult.External(Test309State.Fail, Test309State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test309State.Pass, Test309State.S0, 1)
     }

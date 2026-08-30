@@ -157,7 +157,7 @@ class Test372StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test372Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -352,7 +352,7 @@ class Test372StateMachine(
     private fun processS0(
         event: Test372Event
     ): TransitionResult<Test372State> = when {
-        event is Test372Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test372State.Pass, Test372State.S0, 0)
+        event is Test372Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> TransitionResult.External(Test372State.Pass, Test372State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test372State.Fail, Test372State.S0, 1)
@@ -392,7 +392,7 @@ class Test372StateMachine(
                 if (!activeStateIds.add("s0final")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("2"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("2", "2"))
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test372Event.Done.State.S0, EventMetadata.platform())
             }
@@ -420,7 +420,7 @@ class Test372StateMachine(
                 activeStateIds.remove("s0final")
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("3"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("3", "3"))
             }
         }
     }

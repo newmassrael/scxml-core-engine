@@ -143,17 +143,28 @@ generation time and emitted as Lua"). Measured 2026-08-27 —
   injected engine evaluates that. It is a translation, not an ECMAScript
   implementation — but the boundary of what it translates is declared
   below, which is what this paragraph used to record as open.
-- **C++ and Kotlin** receive the author's ECMAScript source and hand it
-  to the injected engine unchanged, because their generated code takes
-  that engine by injection and cannot know at generation time which one
-  arrives. Both ship and default to a real ECMAScript engine — QuickJS
-  (`SCE_SCRIPT_ENGINE=quickjs`) and Rhino (`W3CTestBase.DEFAULT_ENGINE`)
-  — so on their default configuration a document IS evaluated as
-  ECMAScript, and the ECMA-262 case table
+- **C++** receives the author's ECMAScript source and hands it to the
+  injected engine unchanged, because its generated code takes that engine
+  by injection and cannot know at generation time which one arrives. It
+  ships and defaults to a real ECMAScript engine — QuickJS
+  (`SCE_SCRIPT_ENGINE=quickjs`) — so on its default configuration a
+  document IS evaluated as ECMAScript, and the ECMA-262 case table
   (`tests/ecmascript/ecma262_semantics.json`) is answered in full.
-  Selecting Lua on either reaches `sce-build`'s ECMAScript frontend,
-  which PARSES the author's text and lowers it at run time — the same
-  frontend the build-time lowering uses, linked into the engine. Its
+- **Kotlin** was on that side until 2026-08-30 and is on the first one
+  now: its templates render through the pair filter, so a run's
+  `--script-engine` selects which language the artifact carries, and the
+  DEFAULT is lowered Lua. A Kotlin host that configures nothing is
+  therefore handed lowered Lua and the Lua engine that evaluates it —
+  `W3CTestBase.DEFAULT_ENGINE` and the Spring starter's
+  `scxmlScriptEngine` bean both name it, which is what makes the default
+  artifact and the default host one configuration rather than two.
+  Generating with `--script-engine ecmascript` puts it back on the C++
+  side, and Rhino or QuickJS then evaluate the author's own text.
+
+  Selecting Lua on C++, or ECMAScript-carrying input on the Kotlin Lua
+  engine, reaches `sce-build`'s ECMAScript frontend, which PARSES the
+  author's text and lowers it at run time — the same frontend the
+  build-time lowering uses, linked into the engine. Its
   disagreements with ECMA-262, if any, are enumerated in
   `tests/ecmascript/lua_engine_divergences.json` and
   `tests/ecmascript/kotlin_lua_divergences.json`; both lists are EMPTY as

@@ -417,7 +417,7 @@ class Test528StateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("undefined.invalidProperty"))
+                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {

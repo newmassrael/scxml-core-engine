@@ -327,14 +327,14 @@ class Test446StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test446State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var1 instanceof Array")) -> TransitionResult.External(Test446State.S1, Test446State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_isArray(var1)", "var1 instanceof Array")) -> TransitionResult.External(Test446State.S1, Test446State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test446State.Fail, Test446State.S0, 1)
     }
 
     private fun processNullS1(
     ): TransitionResult<Test446State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("var2 instanceof Array")) -> TransitionResult.External(Test446State.Pass, Test446State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_isArray(var2)", "var2 instanceof Array")) -> TransitionResult.External(Test446State.Pass, Test446State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test446State.Fail, Test446State.S1, 3)
     }

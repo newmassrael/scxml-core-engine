@@ -368,7 +368,7 @@ class Test510StateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {

@@ -224,6 +224,74 @@ done
 (( _committed_rows > 0 )) \
     || sce_gate_fail "no row in KOTLIN_ENGINE_PAIRS names the committed language ($COMMITTED_LANGUAGE), so nothing regenerates the committed tree in place and the tree-hash check below would compare it against itself untouched. Add the pair for whichever engine reads $COMMITTED_LANGUAGE."
 
+# ── The shipped host defaults must accept the default artifact ─────
+#
+# ⚠ The rows above all NAME their engine, so none of them can see this. What
+# they cannot cover is the run nobody configures: a host that constructs the
+# engine this tree ships as its default and is handed a machine generated with
+# no `--script-engine`. That pairing is the mis-supply `ScriptSource` exists to
+# prevent, it fails at RUN TIME in the host's own process, and until this block
+# existed the only thing asserting it was a sentence in a KDoc.
+#
+# The check is derived on both sides. `COMMITTED_LANGUAGE` is the manifest's
+# answer, above. Which languages an engine accepts is not restated here either:
+# `KOTLIN_ENGINE_PAIRS` IS that relation — `GateEnginePairsTest` derives the
+# population from `ScxmlScriptEngine.acceptsLanguage` and fails on a missing
+# row — so "this engine accepts that language" is exactly "that pair is in the
+# array".
+#
+# Each site is read with a narrow parse that must match EXACTLY ONE line, the
+# same discipline `GateEnginePairsTest` uses reading this file from the other
+# direction. A site that stops being greppable is a refusal, not a skip: a
+# silent zero here would be a lane reporting that it checked nothing.
+kotlin_default_engine_of() {
+    local label="$1" file="$2" pattern="$3" hits
+    [ -f "$file" ] \
+        || sce_gate_fail "$file is missing, so the $label default engine cannot be read. This gate pairs every shipped default against the language the committed machines carry; a site it cannot read is unchecked, not absent."
+    hits="$(grep -cE "$pattern" "$file" || true)"
+    [ "$hits" = "1" ] \
+        || sce_gate_fail "expected exactly one line matching \`$pattern\` in $file, found $hits. The $label default engine is what a host gets when it configures nothing, and a parse that matches none — or two — is a check that reports on the wrong line."
+    grep -oE "$pattern" "$file" | head -1
+}
+
+# `W3CTestBase.DEFAULT_ENGINE` — what a `./gradlew test` with no
+# `-Psce.script.engine` hands the committed machines.
+_suite_default="$(
+    kotlin_default_engine_of "conformance suite" \
+        "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt" \
+        'const val DEFAULT_ENGINE: String = "[a-z0-9]+"' \
+    | sed -E 's/.*"([a-z0-9]+)"/\1/'
+)"
+
+# The Spring starter's `@ConditionalOnMissingBean` engine — what an application
+# that adds the starter and declares no bean of its own gets.
+_starter_default="$(
+    kotlin_default_engine_of "Spring starter" \
+        "backends/kotlin/spring-boot-starter/src/main/kotlin/com/sce/spring/SceAutoConfiguration.kt" \
+        'open fun scxmlScriptEngine\(\): ScxmlScriptEngine = [A-Za-z]+ScriptEngine\(\)' \
+    | sed -E 's/.*= ([A-Za-z]+)ScriptEngine\(\)/\1/' \
+    | tr '[:upper:]' '[:lower:]'
+)"
+# `QuickJSScriptEngine` lowercases to `quickjs`, which is the wire spelling
+# already; `Rhino` and `Lua` do too. A class whose name does not reduce to a
+# known engine is caught by the membership test below rather than mapped here.
+
+for _default in "conformance suite:$_suite_default" "Spring starter:$_starter_default"; do
+    _site="${_default%%:*}"
+    _engine="${_default##*:}"
+    [ -n "$_engine" ] \
+        || sce_gate_fail "the $_site default engine parsed to an empty name, so the pairing below would be asserted about nothing."
+    _accepted=0
+    for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
+        if [ "$pair" = "$_engine:$COMMITTED_LANGUAGE" ]; then
+            _accepted=1
+        fi
+    done
+    (( _accepted == 1 )) \
+        || sce_gate_fail "the $_site ships \`$_engine\` as its default engine and the generator's default artifact is emitted for \`$COMMITTED_LANGUAGE\`, but \`$_engine:$COMMITTED_LANGUAGE\` is not a row of KOTLIN_ENGINE_PAIRS — which is the relation \`acceptsLanguage\` answers, held by GateEnginePairsTest. A host that configures nothing would be handed a machine its engine refuses, at run time, in its own process. Move the default engine to one that takes $COMMITTED_LANGUAGE, or move \`Language::Kotlin.default_script_engine_target()\` back."
+    sce_gate_step "the $_site default engine ($_engine) accepts the language the default artifact carries ($COMMITTED_LANGUAGE)"
+done
+
 # The generated tree for a language the committed one is not, produced once
 # and reused by every row that names it. The path lands in
 # `KOTLIN_TREE_FOR_LANGUAGE` rather than on stdout, because every refusal
