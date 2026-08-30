@@ -1,0 +1,169 @@
+# Mutation cases for "a signature spelled in a comment is not a file that
+# reads it".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_signature_in_a_comment_is_not_a_reader.cases`.
+#
+# The defect was a gate that read prose as code. `workflow_trigger_coverage`
+# decides which tests read inputs no `paths:` filter can enumerate by looking
+# for two signatures in a test's source, and a comment is source. Measured
+# 2026-08-30 on `aee11095c5`: `gate_selectors_do_not_leak.rs` names a workflow
+# file in its opening comment — to say WHICH caller exports the variables it
+# holds shut — and opens nothing under that directory at all. The gate demanded
+# it be registered as unfilterable, which would have moved a target whose
+# inputs are `sce-build/tests/**` into the workflow that runs on every push,
+# the opposite of what the registry is for. Registered gates: 29. Detected once
+# prose is stripped: the same 29.
+#
+# The mirror image of that reading had already been made, by the very file the
+# gate mis-read: `gate_selectors_do_not_leak`'s own call-site scan put
+# `workflow_trigger_coverage.rs` in its population because THAT file names the
+# gate script in a comment, and then failed it for lacking a helper it could
+# never need. Two scanners, one mistake, so the stripping is now one shared
+# answer in `common::rust_source` and both scanners ask it.
+#
+# ⚠ Both directions are attacked below, because they fail differently and only
+# one of them is loud. Stripping too LITTLE registers a gate an ordinary
+# `paths:` filter already covers, and the registry test says so on the next
+# push. Stripping too MUCH deletes code along with the prose, and a gate that
+# genuinely sweeps the tree then reads as one that does not — which is the
+# arrangement whose absence let a violation land outside every filter on
+# 2026-08-04. Three of the nine cases below are that quiet direction.
+#
+# ⚠ A literal is copied through verbatim, so mis-reading one can change the
+# answer ONLY by turning a `//` that was data into a live comment, which then
+# eats the rest of the line. A first draft of the last case here SURVIVED for
+# want of that: it made every apostrophe open a character literal, the scan
+# swallowed the file looking for a close — and swallowing COPIES, so the marker
+# was still there and no assertion moved. The fixtures were rewritten to put a
+# string holding `//` behind the literal under study, which is what makes a
+# mis-read observable at all.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test workflow_trigger_coverage
+mutation_targets sce-build/tests/common/rust_source.rs
+mutation_targets sce-build/tests/workflow_trigger_coverage.rs
+
+# ── The defect itself, restored exactly ────────────────────────────
+#
+# The detector reads the whole file again, prose included. This is the tree as
+# it stood when the gate went red, so a repair that moved the stripping
+# somewhere else without calling it is caught here.
+
+mutation_case "the detector reads the file's prose as well as its code" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     """    let tracked_file_enumeration = concat!("ls-", "files");
+    let code = code_only(src);""",
+     """    let tracked_file_enumeration = concat!("ls-", "files");
+    let code = src.to_string();""")
+PY
+
+# ── The stripper stops recognising a comment ───────────────────────
+#
+# One case per shape a comment takes, because they are separate arms and each
+# can be lost on its own. A line comment is the shape the measured defect
+# arrived in; a block comment nests, and stopping at the first close leaves the
+# rest of the prose standing as code.
+
+mutation_case "a line comment is left standing" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """        if s[i] == '/' && i + 1 < n && s[i + 1] == '/' {
+            while i < n && s[i] != '\\n' {
+                i += 1;
+            }
+            continue;
+        }
+""",
+     "")
+PY
+
+mutation_case "a block comment is never entered" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """        if s[i] == '/' && i + 1 < n && s[i + 1] == '*' {
+            let mut depth = 1usize;""",
+     """        if s[i] == '/' && i + 1 < n && s[i + 1] == '#' {
+            let mut depth = 1usize;""")
+PY
+
+mutation_case "block comments stop nesting" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """                if s[i] == '/' && i + 1 < n && s[i + 1] == '*' {
+                    depth += 1;
+                    i += 2;
+                } else if s[i] == '*' && i + 1 < n && s[i + 1] == '/' {""",
+     """                if s[i] == '*' && i + 1 < n && s[i + 1] == '/' {""")
+PY
+
+# ── The line a diagnostic points at ────────────────────────────────
+#
+# The sibling scan in `gate_selectors_do_not_leak` reports the LINE a bare
+# shell was built on, off the stripped text. A stripper that closed the gaps
+# would send a reader to the wrong line of a file that does have the defect —
+# a diagnostic wrong only when it fires.
+
+mutation_case "a block comment's newlines are dropped with it" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """                } else {
+                    if s[i] == '\\n' {
+                        out.push('\\n');
+                    }
+                    i += 1;
+                }""",
+     """                } else {
+                    i += 1;
+                }""")
+PY
+
+# ── The quiet direction: the stripper eats code ────────────────────
+#
+# Each of these mis-reads one kind of literal, and the fixture behind it holds
+# a `//` the mis-reading turns live.
+
+mutation_case "an escaped quote closes the string it sits in" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """                if s[i] == '\\\\' && i + 1 < n {
+                    out.push(s[i]);
+                    out.push(s[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                out.push(s[i]);
+                i += 1;
+                if s[i - 1] == '"' {""",
+     """                out.push(s[i]);
+                i += 1;
+                if s[i - 1] == '"' {""")
+PY
+
+mutation_case "a raw string is read as an ordinary one" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """    if j >= s.len() || s[j] != 'r' {
+        return None;
+    }""",
+     """    if j >= s.len() || s[j] != 'R' {
+        return None;
+    }""")
+PY
+
+mutation_case "a character literal is read as a lifetime" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """    i + 2 < s.len() && s[i + 2] == '\\''
+}""",
+     """    false
+}""")
+PY
+
+# ── And the other half of that same decision ───────────────────────
+#
+# A lifetime read as a literal does not eat the file — it copies it — so what
+# it loses is the STRIPPING, and the prose it swallowed comes back as a read.
+
+mutation_case "a lifetime is read as a character literal" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """    i + 2 < s.len() && s[i + 2] == '\\''
+}""",
+     """    true
+}""")
+PY

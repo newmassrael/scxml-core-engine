@@ -16,8 +16,8 @@
 # directions and only one of them is loud. Reporting too FEW vanished cases
 # leaves repaid debts on the list, which is the defect. Reporting too MANY
 # empties the list while the debts stand — and that one is silent, so the
-# guards that keep an unreadable label from reading as an absent case get three
-# of the six cases below.
+# guards that keep an unreadable label from reading as an absent case get two
+# of the five cases below.
 #
 # `scripts/mutation-ledger` is a RUNTIME target: the tests drive it as a
 # subprocess, so it is read fresh on every run rather than linked into the test
@@ -57,7 +57,8 @@ PY
 #
 # A parser that drifted off the casefile format would report EVERY hole in the
 # corpus as vanished, and the debt list would empty itself while the debts
-# stood. Three guards hold that shut and each one is attacked below.
+# stood. Two guards hold that shut and each one is attacked below — a third
+# stood here until the ⚠ note beneath them removed it as dead.
 
 mutation_case "an unreadable label is treated as a case that is gone" <<'PY'
 edit("scripts/mutation-ledger",

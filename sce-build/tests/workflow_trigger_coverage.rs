@@ -32,6 +32,9 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod common;
+use common::rust_source::code_only;
+
 /// Test targets whose input set outgrows any path filter.
 ///
 /// `roadmap_marker_gate` and `codegen_binary_resolution` read every
@@ -312,9 +315,18 @@ fn runs_target_by_name(text: &str, target: &str) -> bool {
 /// enumeration, and reading the workflow directory. The former is
 /// assembled at compile time so this file does not match itself on a
 /// signature it never uses.
+///
+/// The prose is stripped first. A signature spelled in a comment is a
+/// file EXPLAINING the input, not reading it, and registering such a
+/// file would put a target with an ordinary glob for its inputs into the
+/// workflow that runs on every push. Measured 2026-08-30:
+/// `gate_selectors_do_not_leak.rs` names a workflow in its opening
+/// comment, to say which caller exports the variables it holds shut, and
+/// opens nothing under that directory — see `common::rust_source`.
 fn inputs_outgrow_a_filter(src: &str) -> bool {
     let tracked_file_enumeration = concat!("ls-", "files");
-    src.contains(tracked_file_enumeration) || src.contains(".github/workflows")
+    let code = code_only(src);
+    code.contains(tracked_file_enumeration) || code.contains(".github/workflows")
 }
 
 fn integration_test_sources() -> Vec<(String, String)> {
@@ -483,6 +495,137 @@ fn the_registry_lists_every_gate_whose_inputs_outgrow_a_filter() {
          inputs: {stale:?}\n\
          Drop the entry so the unfiltered workflow stops carrying a target \
          that a normal path filter would now cover."
+    );
+}
+
+/// Sources the detector has to read the way a compiler would.
+///
+/// Written out rather than drawn from the tree, because a fixture taken
+/// from today's files measures today's files and the reading this gate
+/// gets wrong is the one that arrives tomorrow. The first row is the
+/// reading that turned the registry test red on 2026-08-30: a workflow
+/// named in a comment by a file that opens nothing under it.
+///
+/// Both directions are here on purpose. Stripping too little registers a
+/// gate whose inputs an ordinary `paths:` filter covers, which grows the
+/// workflow that runs on every push; stripping too much drops a gate that
+/// genuinely sweeps the tree, which is the failure the registry exists to
+/// prevent.
+///
+/// The first two positive rows hold the floor: the marker in plain code,
+/// which a stripper that deleted everything would lose. EVERY POSITIVE ROW
+/// AFTER THEM puts a `//` where mis-reading the literal under test turns it
+/// into a live comment that then eats the marker. Without that the row
+/// would answer `true` however the literal was parsed — literals are
+/// copied through verbatim, so only an activated comment can change the
+/// answer — and a row that cannot fail is a row claiming coverage it does
+/// not have.
+#[test]
+fn the_detector_reads_the_code_and_not_the_prose() {
+    let cases: &[(&str, bool, &str)] = &[
+        (
+            "// the round job in .github/workflows/mutation-rounds.yml sets it\n\
+             fn f() {}\n",
+            false,
+            "a whole-line comment naming a workflow",
+        ),
+        (
+            "fn f() {} // reads .github/workflows for the list\n",
+            false,
+            "a comment trailing a line of code",
+        ),
+        (
+            "/* it used to /* even here */ walk .github/workflows/ once,\n   \
+             and it does not any more */\nfn f() {}\n",
+            false,
+            "a block comment whose marker sits past a nested one",
+        ),
+        (
+            "//! it also runs `git ls-files` in the shell script\nfn f() {}\n",
+            false,
+            "an inner doc comment naming the enumeration",
+        ),
+        (
+            "fn f() { read_dir(root.join(\".github/workflows\")).unwrap(); }\n",
+            true,
+            "the directory opened in code",
+        ),
+        (
+            "fn f() { Command::new(\"git\").arg(\"ls-files\").output(); }\n",
+            true,
+            "the tracked-file enumeration in code",
+        ),
+        (
+            "fn f(p: &'a str) {}\n// it once walked .github/workflows and no \
+             longer does\n",
+            false,
+            "a lifetime must not swallow the prose after it",
+        ),
+        (
+            "fn f() { let s = r#\"a \" b\"#; let t = \"u // v\"; \
+             open(\".github/workflows\"); }\n",
+            true,
+            "a raw string's lone quote does not shift what follows it",
+        ),
+        (
+            "fn f() { let s = \"https://example.invalid\"; open(\".github/workflows\"); }\n",
+            true,
+            "a `//` inside a string does not open a comment",
+        ),
+        (
+            "fn f() { let q = '\"'; let t = \"u // v\"; \
+             open(\".github/workflows\"); }\n",
+            true,
+            "a quote inside a character literal does not open a string",
+        ),
+        (
+            "fn f() { let s = \"a \\\" // still data\"; open(\".github/workflows\"); }\n",
+            true,
+            "an escaped quote does not close the string it sits in",
+        ),
+    ];
+
+    // The same two markers carry both verdicts, so a stripper that removes
+    // everything and one that removes nothing each fail this table —
+    // neither direction passes by accident.
+    let yes = cases.iter().filter(|(_, expected, _)| *expected).count();
+    let no = cases.len() - yes;
+    assert!(
+        yes >= 4 && no >= 4,
+        "the table has {yes} positive and {no} negative row(s); it stops \
+         measuring one direction as soon as either side empties"
+    );
+
+    for (src, expected, what) in cases {
+        assert_eq!(
+            inputs_outgrow_a_filter(src),
+            *expected,
+            "{what}: the detector answered {} for:\n{src}",
+            !expected
+        );
+    }
+}
+
+/// Prose comes out, line numbering stays.
+///
+/// The sibling scan in `gate_selectors_do_not_leak` reports the LINE a
+/// bare shell was built on. It reads the stripped text, so a stripper
+/// that closed the gaps would send a reader to the wrong line of a file
+/// that does have the defect — a diagnostic that is wrong only when it
+/// fires, which is the shape nothing catches by accident.
+#[test]
+fn stripping_prose_keeps_the_line_numbering() {
+    let src = "fn a() {}\n// one\n/* two\n   three */\nfn b() {}\n";
+    let code = code_only(src);
+    assert_eq!(
+        code.lines().count(),
+        src.lines().count(),
+        "line count changed:\n{code}"
+    );
+    assert_eq!(
+        code.lines().nth(4),
+        Some("fn b() {}"),
+        "the last line moved:\n{code}"
     );
 }
 
