@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0c86e172c2fe9594af6e85729ce3077686db3dd0850ca7983a9286f577df2546
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -324,8 +324,8 @@ class UnseenEventIsReportedStateMachine(
         event: UnseenEventIsReportedEvent
     ): TransitionResult<UnseenEventIsReportedState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is UnseenEventIsReportedEvent.Poke -> TransitionResult.Internal
-        event is UnseenEventIsReportedEvent.Finish -> TransitionResult.External(UnseenEventIsReportedState.Done, UnseenEventIsReportedState.Working)
+        event is UnseenEventIsReportedEvent.Poke -> TransitionResult.Internal(0)
+        event is UnseenEventIsReportedEvent.Finish -> TransitionResult.External(UnseenEventIsReportedState.Done, UnseenEventIsReportedState.Working, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -371,11 +371,12 @@ class UnseenEventIsReportedStateMachine(
     // SCE-MAP: unseen_event_is_reported.scxml:41 :: _machine
     override fun executeTransitionActions(
         source: UnseenEventIsReportedState,
-        event: UnseenEventIsReportedEvent?
+        event: UnseenEventIsReportedEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is UnseenEventIsReportedState.Working -> when {
-            event is UnseenEventIsReportedEvent.Poke -> {
+        is UnseenEventIsReportedState.Working -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: unseen_event_is_reported.scxml:48 :: working :: _transition_0
 
 

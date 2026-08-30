@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 484e7440f07c529b155abfa6f79282de908af5e2fc4314e70bd834573adce55b
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -141,9 +141,9 @@ class StatechartDelayedHostSendStateMachine(
     private fun processArmed(
         event: StatechartDelayedHostSendEvent
     ): TransitionResult<StatechartDelayedHostSendState> = when {
-        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionResult.External(StatechartDelayedHostSendState.Cancelling, StatechartDelayedHostSendState.Armed)
+        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionResult.External(StatechartDelayedHostSendState.Cancelling, StatechartDelayedHostSendState.Armed, 0)
 
-        event is StatechartDelayedHostSendEvent.Error.Execution -> TransitionResult.External(StatechartDelayedHostSendState.Unserved, StatechartDelayedHostSendState.Armed)
+        event is StatechartDelayedHostSendEvent.Error.Execution -> TransitionResult.External(StatechartDelayedHostSendState.Unserved, StatechartDelayedHostSendState.Armed, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -151,9 +151,9 @@ class StatechartDelayedHostSendStateMachine(
     private fun processCancelling(
         event: StatechartDelayedHostSendEvent
     ): TransitionResult<StatechartDelayedHostSendState> = when {
-        event is StatechartDelayedHostSendEvent.Settle -> TransitionResult.External(StatechartDelayedHostSendState.CancelPending, StatechartDelayedHostSendState.Cancelling)
+        event is StatechartDelayedHostSendEvent.Settle -> TransitionResult.External(StatechartDelayedHostSendState.CancelPending, StatechartDelayedHostSendState.Cancelling, 4)
 
-        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionResult.External(StatechartDelayedHostSendState.CancelLost, StatechartDelayedHostSendState.Cancelling)
+        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionResult.External(StatechartDelayedHostSendState.CancelLost, StatechartDelayedHostSendState.Cancelling, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -161,9 +161,9 @@ class StatechartDelayedHostSendStateMachine(
     private fun processCancelPending(
         event: StatechartDelayedHostSendEvent
     ): TransitionResult<StatechartDelayedHostSendState> = when {
-        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionResult.External(StatechartDelayedHostSendState.CancelLost, StatechartDelayedHostSendState.CancelPending)
+        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionResult.External(StatechartDelayedHostSendState.CancelLost, StatechartDelayedHostSendState.CancelPending, 2)
 
-        event is StatechartDelayedHostSendEvent.Finish -> TransitionResult.External(StatechartDelayedHostSendState.Pass, StatechartDelayedHostSendState.CancelPending)
+        event is StatechartDelayedHostSendEvent.Finish -> TransitionResult.External(StatechartDelayedHostSendState.Pass, StatechartDelayedHostSendState.CancelPending, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -171,9 +171,9 @@ class StatechartDelayedHostSendStateMachine(
     private fun processWaiting(
         event: StatechartDelayedHostSendEvent
     ): TransitionResult<StatechartDelayedHostSendState> = when {
-        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionResult.External(StatechartDelayedHostSendState.TooEarly, StatechartDelayedHostSendState.Waiting)
+        event is StatechartDelayedHostSendEvent.Turn.Done -> TransitionResult.External(StatechartDelayedHostSendState.TooEarly, StatechartDelayedHostSendState.Waiting, 6)
 
-        event is StatechartDelayedHostSendEvent.Probe -> TransitionResult.External(StatechartDelayedHostSendState.Armed, StatechartDelayedHostSendState.Waiting)
+        event is StatechartDelayedHostSendEvent.Probe -> TransitionResult.External(StatechartDelayedHostSendState.Armed, StatechartDelayedHostSendState.Waiting, 7)
 
         else -> TransitionResult.Ignored
     }
@@ -333,7 +333,8 @@ class StatechartDelayedHostSendStateMachine(
     // SCE-MAP: statechart_delayed_host_send.scxml:55 :: _machine
     override fun executeTransitionActions(
         source: StatechartDelayedHostSendState,
-        event: StatechartDelayedHostSendEvent?
+        event: StatechartDelayedHostSendEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

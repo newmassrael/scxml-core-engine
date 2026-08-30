@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -305,9 +305,9 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     private fun processEmit(
         event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent
     ): TransitionResult<AutoforwardEventFieldsSceSynthInvokeInvEchoState> = when {
-        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit)
+        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit, 0)
 
-        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit)
+        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -371,18 +371,19 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardEventFieldsSceSynthInvokeInvEchoState,
-        event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent?
+        event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> when {
-            event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> {
+        is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11 :: emit :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("fieldsPreserved", "")
             }
-            event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> {
+            1 -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18 :: emit :: _transition_1
 
 

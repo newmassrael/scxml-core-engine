@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -382,7 +382,7 @@ class Test422StateMachine(
     private fun processNullS11(
     ): TransitionResult<Test422State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test422State.S12, Test422State.S11)
+        else -> TransitionResult.External(Test422State.S12, Test422State.S11, 4)
     }
 
     // --- Per-State Event Handlers ---
@@ -391,12 +391,12 @@ class Test422StateMachine(
         event: Test422Event
     ): TransitionResult<Test422State> = when {
         // W3C SCXML 3.12.1: Multi-descriptor targetless "invokeS1 invokeS12"
-        (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> TransitionResult.Internal
-        event is Test422Event.InvokeS11 -> TransitionResult.External(Test422State.Fail, Test422State.S1)
+        (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> TransitionResult.Internal(0)
+        event is Test422Event.InvokeS11 -> TransitionResult.External(Test422State.Fail, Test422State.S1, 1)
 
-        event is Test422Event.Timeout && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test422State.Pass, Test422State.S1)
+        event is Test422Event.Timeout && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 2")) -> TransitionResult.External(Test422State.Pass, Test422State.S1, 2)
 
-        event is Test422Event.Timeout -> TransitionResult.External(Test422State.Fail, Test422State.S1)
+        event is Test422Event.Timeout -> TransitionResult.External(Test422State.Fail, Test422State.S1, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -516,11 +516,12 @@ class Test422StateMachine(
     // SCE-MAP: test422.scxml:10 :: _machine
     override fun executeTransitionActions(
         source: Test422State,
-        event: Test422Event?
+        event: Test422Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test422State.S1 -> when {
-            (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
+        is Test422State.S1 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
@@ -528,8 +529,8 @@ class Test422StateMachine(
             }
             else -> {}
         }
-        is Test422State.S11 -> when {
-            (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
+        is Test422State.S11 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
@@ -537,8 +538,8 @@ class Test422StateMachine(
             }
             else -> {}
         }
-        is Test422State.S12 -> when {
-            (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
+        is Test422State.S12 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 

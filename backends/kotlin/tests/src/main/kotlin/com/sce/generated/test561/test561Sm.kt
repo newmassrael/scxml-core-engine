@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -303,10 +303,10 @@ class Test561StateMachine(
     private fun processS0(
         event: Test561Event
     ): TransitionResult<Test561State> = when {
-        event is Test561Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.getElementsByTagName('book')[1].getAttribute('title') == 'title2'")) -> TransitionResult.External(Test561State.Pass, Test561State.S0)
+        event is Test561Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.getElementsByTagName('book')[1].getAttribute('title') == 'title2'")) -> TransitionResult.External(Test561State.Pass, Test561State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test561State.Fail, Test561State.S0)
+        else -> TransitionResult.External(Test561State.Fail, Test561State.S0, 1)
     }
 
 
@@ -366,7 +366,8 @@ class Test561StateMachine(
     // SCE-MAP: test561.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test561State,
-        event: Test561Event?
+        event: Test561Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

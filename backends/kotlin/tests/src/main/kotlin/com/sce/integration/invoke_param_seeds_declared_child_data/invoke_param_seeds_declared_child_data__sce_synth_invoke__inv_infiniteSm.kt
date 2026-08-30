@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -333,10 +333,10 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(
 
     private fun processNullReport(
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'number' && seen > 1e308")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'string'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'number' && seen > 1e308")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'string'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report, 1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report)
+        else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report, 2)
     }
 
     // --- Per-State Event Handlers ---
@@ -382,25 +382,26 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(
     // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState,
-        event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent?
+        event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'number' && seen > 1e308")) -> {
+        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState.Report -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:9 :: report :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("seed.ok", "")
             }
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof seen === 'string'")) -> {
+            1 -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:12 :: report :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("seed.missing", "")
             }
-            event == null -> {
+            2 -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:15 :: report :: _transition_2
 
 

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8703a490654d6980486f0b9dbfaf924b4fcfbd6505e2242f771b46a183bf9e7a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -132,7 +132,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
     private fun processArm(
         event: InvokePrecedesDequeueMidrunEvent
     ): TransitionResult<InvokePrecedesDequeueMidrunState> = when {
-        event is InvokePrecedesDequeueMidrunEvent.Go -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Phase, InvokePrecedesDequeueMidrunState.Arm)
+        event is InvokePrecedesDequeueMidrunEvent.Go -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Phase, InvokePrecedesDequeueMidrunState.Arm, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -141,12 +141,12 @@ class InvokePrecedesDequeueMidrunStateMachine(
         event: InvokePrecedesDequeueMidrunEvent
     ): TransitionResult<InvokePrecedesDequeueMidrunState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InvokePrecedesDequeueMidrunEvent.Kick -> TransitionResult.Internal
+        event is InvokePrecedesDequeueMidrunEvent.Kick -> TransitionResult.Internal(1)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InvokePrecedesDequeueMidrunEvent.Ready -> TransitionResult.Internal
-        event is InvokePrecedesDequeueMidrunEvent.SawKick -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Pass, InvokePrecedesDequeueMidrunState.Phase)
+        event is InvokePrecedesDequeueMidrunEvent.Ready -> TransitionResult.Internal(2)
+        event is InvokePrecedesDequeueMidrunEvent.SawKick -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Pass, InvokePrecedesDequeueMidrunState.Phase, 3)
 
-        event is InvokePrecedesDequeueMidrunEvent.SawNoKick -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Fail, InvokePrecedesDequeueMidrunState.Phase)
+        event is InvokePrecedesDequeueMidrunEvent.SawNoKick -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Fail, InvokePrecedesDequeueMidrunState.Phase, 4)
 
         else -> TransitionResult.Ignored
     }
@@ -232,11 +232,12 @@ class InvokePrecedesDequeueMidrunStateMachine(
     // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42 :: _machine
     override fun executeTransitionActions(
         source: InvokePrecedesDequeueMidrunState,
-        event: InvokePrecedesDequeueMidrunEvent?
+        event: InvokePrecedesDequeueMidrunEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is InvokePrecedesDequeueMidrunState.Phase -> when {
-            event is InvokePrecedesDequeueMidrunEvent.Ready -> {
+        is InvokePrecedesDequeueMidrunState.Phase -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:82 :: phase :: _transition_1
 
 

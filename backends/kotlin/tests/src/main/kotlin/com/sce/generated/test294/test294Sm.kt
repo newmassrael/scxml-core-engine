@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -400,13 +400,13 @@ class Test294StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test294State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test294State.S02, Test294State.S01)
+        else -> TransitionResult.External(Test294State.S02, Test294State.S01, 2)
     }
 
     private fun processNullS11(
     ): TransitionResult<Test294State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test294State.S12, Test294State.S11)
+        else -> TransitionResult.External(Test294State.S12, Test294State.S11, 5)
     }
 
     // --- Per-State Event Handlers ---
@@ -414,9 +414,9 @@ class Test294StateMachine(
     private fun processS0(
         event: Test294Event
     ): TransitionResult<Test294State> = when {
-        event is Test294Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.Var1 == 1")) -> TransitionResult.External(Test294State.S1, Test294State.S0)
+        event is Test294Event.Done.State.S0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.Var1 == 1")) -> TransitionResult.External(Test294State.S1, Test294State.S0, 0)
 
-        event is Test294Event.Done.State.S0 -> TransitionResult.External(Test294State.Fail, Test294State.S0)
+        event is Test294Event.Done.State.S0 -> TransitionResult.External(Test294State.Fail, Test294State.S0, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -424,9 +424,9 @@ class Test294StateMachine(
     private fun processS1(
         event: Test294Event
     ): TransitionResult<Test294State> = when {
-        event is Test294Event.Done.State.S1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 'foo'")) -> TransitionResult.External(Test294State.Pass, Test294State.S1)
+        event is Test294Event.Done.State.S1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data == 'foo'")) -> TransitionResult.External(Test294State.Pass, Test294State.S1, 3)
 
-        event is Test294Event.Done.State.S1 -> TransitionResult.External(Test294State.Fail, Test294State.S1)
+        event is Test294Event.Done.State.S1 -> TransitionResult.External(Test294State.Fail, Test294State.S1, 4)
 
         else -> TransitionResult.Ignored
     }
@@ -571,7 +571,8 @@ class Test294StateMachine(
     // SCE-MAP: test294.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test294State,
-        event: Test294Event?
+        event: Test294Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

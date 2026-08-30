@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -131,11 +131,11 @@ class Test242StateMachine(
     private fun processS0(
         event: Test242Event
     ): TransitionResult<Test242State> = when {
-        event is Test242Event.Timeout -> TransitionResult.External(Test242State.Fail, Test242State.S0)
+        event is Test242Event.Timeout -> TransitionResult.External(Test242State.Fail, Test242State.S0, 0)
 
-        event is Test242Event.Done.Invoke -> TransitionResult.External(Test242State.S02, Test242State.S0)
+        event is Test242Event.Done.Invoke -> TransitionResult.External(Test242State.S02, Test242State.S0, 1)
 
-        event is Test242Event.Timeout1 -> TransitionResult.External(Test242State.S03, Test242State.S0)
+        event is Test242Event.Timeout1 -> TransitionResult.External(Test242State.S03, Test242State.S0, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -143,9 +143,9 @@ class Test242StateMachine(
     private fun processS02(
         event: Test242Event
     ): TransitionResult<Test242State> = when {
-        event is Test242Event.Done.Invoke -> TransitionResult.External(Test242State.Pass, Test242State.S02)
+        event is Test242Event.Done.Invoke -> TransitionResult.External(Test242State.Pass, Test242State.S02, 3)
 
-        event is Test242Event.Timeout2 -> TransitionResult.External(Test242State.Fail, Test242State.S02)
+        event is Test242Event.Timeout2 -> TransitionResult.External(Test242State.Fail, Test242State.S02, 4)
 
         else -> TransitionResult.Ignored
     }
@@ -153,9 +153,9 @@ class Test242StateMachine(
     private fun processS03(
         event: Test242Event
     ): TransitionResult<Test242State> = when {
-        event is Test242Event.Timeout3 -> TransitionResult.External(Test242State.Pass, Test242State.S03)
+        event is Test242Event.Timeout3 -> TransitionResult.External(Test242State.Pass, Test242State.S03, 5)
 
-        event is Test242Event.Done.Invoke -> TransitionResult.External(Test242State.Fail, Test242State.S03)
+        event is Test242Event.Done.Invoke -> TransitionResult.External(Test242State.Fail, Test242State.S03, 6)
 
         else -> TransitionResult.Ignored
     }
@@ -281,7 +281,8 @@ class Test242StateMachine(
     // SCE-MAP: test242.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test242State,
-        event: Test242Event?
+        event: Test242Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

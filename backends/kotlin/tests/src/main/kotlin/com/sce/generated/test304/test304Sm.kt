@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -311,9 +311,9 @@ class Test304StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test304State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test304State.Pass, Test304State.S0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test304State.Pass, Test304State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test304State.Fail, Test304State.S0)
+        else -> TransitionResult.External(Test304State.Fail, Test304State.S0, 1)
     }
 
     // --- Per-State Event Handlers ---
@@ -370,7 +370,8 @@ class Test304StateMachine(
     // SCE-MAP: test304.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test304State,
-        event: Test304Event?
+        event: Test304Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

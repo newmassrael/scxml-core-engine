@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -341,23 +341,23 @@ class Test331StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'internal'")) -> TransitionResult.External(Test331State.S2, Test331State.S1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'internal'")) -> TransitionResult.External(Test331State.S2, Test331State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S1)
+        else -> TransitionResult.External(Test331State.Fail, Test331State.S1, 3)
     }
 
     private fun processNullS3(
     ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'platform'")) -> TransitionResult.External(Test331State.S4, Test331State.S3)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'platform'")) -> TransitionResult.External(Test331State.S4, Test331State.S3, 6)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S3)
+        else -> TransitionResult.External(Test331State.Fail, Test331State.S3, 7)
     }
 
     private fun processNullS5(
     ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'external'")) -> TransitionResult.External(Test331State.Pass, Test331State.S5)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'external'")) -> TransitionResult.External(Test331State.Pass, Test331State.S5, 10)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S5)
+        else -> TransitionResult.External(Test331State.Fail, Test331State.S5, 11)
     }
 
     // --- Per-State Event Handlers ---
@@ -365,29 +365,29 @@ class Test331StateMachine(
     private fun processS0(
         event: Test331Event
     ): TransitionResult<Test331State> = when {
-        event is Test331Event.Foo -> TransitionResult.External(Test331State.S1, Test331State.S0)
+        event is Test331Event.Foo -> TransitionResult.External(Test331State.S1, Test331State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S0)
+        else -> TransitionResult.External(Test331State.Fail, Test331State.S0, 1)
     }
 
     private fun processS2(
         event: Test331Event
     ): TransitionResult<Test331State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test331Event.Error || event is Test331Event.Error.Execution) -> TransitionResult.External(Test331State.S3, Test331State.S2)
+        (event is Test331Event.Error || event is Test331Event.Error.Execution) -> TransitionResult.External(Test331State.S3, Test331State.S2, 4)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S2)
+        else -> TransitionResult.External(Test331State.Fail, Test331State.S2, 5)
     }
 
     private fun processS4(
         event: Test331Event
     ): TransitionResult<Test331State> = when {
-        event is Test331Event.Foo -> TransitionResult.External(Test331State.S5, Test331State.S4)
+        event is Test331Event.Foo -> TransitionResult.External(Test331State.S5, Test331State.S4, 8)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S4)
+        else -> TransitionResult.External(Test331State.Fail, Test331State.S4, 9)
     }
 
 
@@ -496,11 +496,12 @@ class Test331StateMachine(
     // SCE-MAP: test331.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test331State,
-        event: Test331Event?
+        event: Test331Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test331State.S0 -> when {
-            event is Test331Event.Foo -> {
+        is Test331State.S0 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test331.scxml:15 :: s0 :: _transition_0
 
 
@@ -508,8 +509,8 @@ class Test331StateMachine(
             }
             else -> {}
         }
-        is Test331State.S2 -> when {
-            (event is Test331Event.Error || event is Test331Event.Error.Execution) -> {
+        is Test331State.S2 -> when (transitionIndex) {
+            4 -> {
                 // SCE-MAP: test331.scxml:31 :: s2 :: _transition_0
 
 
@@ -517,8 +518,8 @@ class Test331StateMachine(
             }
             else -> {}
         }
-        is Test331State.S4 -> when {
-            event is Test331Event.Foo -> {
+        is Test331State.S4 -> when (transitionIndex) {
+            8 -> {
                 // SCE-MAP: test331.scxml:47 :: s4 :: _transition_0
 
 

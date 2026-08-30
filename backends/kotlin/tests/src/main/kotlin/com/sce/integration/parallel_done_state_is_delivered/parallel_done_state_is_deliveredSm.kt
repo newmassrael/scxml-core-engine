@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4f209294ba851e9f433a2fd839fc088f718569422204e93318892b83dc408fac
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -188,7 +188,7 @@ class ParallelDoneStateIsDeliveredStateMachine(
     private fun processA1(
         event: ParallelDoneStateIsDeliveredEvent
     ): TransitionResult<ParallelDoneStateIsDeliveredState> = when {
-        event is ParallelDoneStateIsDeliveredEvent.Go -> TransitionResult.External(ParallelDoneStateIsDeliveredState.A2, ParallelDoneStateIsDeliveredState.A1)
+        event is ParallelDoneStateIsDeliveredEvent.Go -> TransitionResult.External(ParallelDoneStateIsDeliveredState.A2, ParallelDoneStateIsDeliveredState.A1, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -196,7 +196,7 @@ class ParallelDoneStateIsDeliveredStateMachine(
     private fun processB1(
         event: ParallelDoneStateIsDeliveredEvent
     ): TransitionResult<ParallelDoneStateIsDeliveredState> = when {
-        event is ParallelDoneStateIsDeliveredEvent.Go -> TransitionResult.External(ParallelDoneStateIsDeliveredState.B2, ParallelDoneStateIsDeliveredState.B1)
+        event is ParallelDoneStateIsDeliveredEvent.Go -> TransitionResult.External(ParallelDoneStateIsDeliveredState.B2, ParallelDoneStateIsDeliveredState.B1, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -204,7 +204,7 @@ class ParallelDoneStateIsDeliveredStateMachine(
     private fun processRun(
         event: ParallelDoneStateIsDeliveredEvent
     ): TransitionResult<ParallelDoneStateIsDeliveredState> = when {
-        event is ParallelDoneStateIsDeliveredEvent.Done.State.Run -> TransitionResult.External(ParallelDoneStateIsDeliveredState.Settled, ParallelDoneStateIsDeliveredState.Run)
+        event is ParallelDoneStateIsDeliveredEvent.Done.State.Run -> TransitionResult.External(ParallelDoneStateIsDeliveredState.Settled, ParallelDoneStateIsDeliveredState.Run, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -364,7 +364,8 @@ class ParallelDoneStateIsDeliveredStateMachine(
     // SCE-MAP: parallel_done_state_is_delivered.scxml:32 :: _machine
     override fun executeTransitionActions(
         source: ParallelDoneStateIsDeliveredState,
-        event: ParallelDoneStateIsDeliveredEvent?
+        event: ParallelDoneStateIsDeliveredEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

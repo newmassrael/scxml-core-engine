@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -134,7 +134,7 @@ class Test421StateMachine(
     private fun processS1(
         event: Test421Event
     ): TransitionResult<Test421State> = when {
-        event is Test421Event.ExternalEvent -> TransitionResult.External(Test421State.Fail, Test421State.S1)
+        event is Test421Event.ExternalEvent -> TransitionResult.External(Test421State.Fail, Test421State.S1, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -142,7 +142,7 @@ class Test421StateMachine(
     private fun processS11(
         event: Test421Event
     ): TransitionResult<Test421State> = when {
-        event is Test421Event.InternalEvent3 -> TransitionResult.External(Test421State.S12, Test421State.S11)
+        event is Test421Event.InternalEvent3 -> TransitionResult.External(Test421State.S12, Test421State.S11, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -150,7 +150,7 @@ class Test421StateMachine(
     private fun processS12(
         event: Test421Event
     ): TransitionResult<Test421State> = when {
-        event is Test421Event.InternalEvent4 -> TransitionResult.External(Test421State.Pass, Test421State.S12)
+        event is Test421Event.InternalEvent4 -> TransitionResult.External(Test421State.Pass, Test421State.S12, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -236,7 +236,8 @@ class Test421StateMachine(
     // SCE-MAP: test421.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test421State,
-        event: Test421Event?
+        event: Test421Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

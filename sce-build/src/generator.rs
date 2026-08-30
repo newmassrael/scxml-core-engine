@@ -2704,7 +2704,16 @@ fn render_kotlin(
     let initial_entry_root = analyzer::compute_initial_entry_root(model);
 
     // Kotlin-specific analysis (serde_json output for template rendering)
-    let effective_transitions = kotlin::compute_effective_transitions(model, &ancestor_chains);
+    //
+    // The transition numbering is assigned ONCE and read by both halves of the
+    // generator: the selection emits it onto the `TransitionResult`, the action
+    // dispatch switches on it. Neither counts for itself, because two counters
+    // over two different enumerations — own transitions for selection, self +
+    // ancestors for dispatch — is exactly how the dispatch would come to run
+    // another transition's content.
+    let machine_transition_ids = kotlin::assign_machine_transition_ids(model);
+    let effective_transitions =
+        kotlin::compute_effective_transitions(model, &ancestor_chains, &machine_transition_ids);
     let (ancestors_with_event_transitions, ancestors_with_null_transitions) =
         kotlin::compute_ancestors_with_transitions(model, &ancestor_chains);
     let process_event_needs_else =
@@ -2758,6 +2767,7 @@ fn render_kotlin(
         initial_entry_root => initial_entry_root,
         ancestor_chains => minijinja::Value::from_serialize(&ancestor_chains),
         effective_transitions => minijinja::Value::from_serialize(&effective_transitions),
+        machine_transition_ids => minijinja::Value::from_serialize(&machine_transition_ids),
         parent_map => minijinja::Value::from_serialize(&parent_map),
         leaf_map => minijinja::Value::from_serialize(&leaf_map),
         parallel_descendants => minijinja::Value::from_serialize(&parallel_descendants),

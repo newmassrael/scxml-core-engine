@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 23347f5c092342ad5655a09f8c78eecec8de3c0705a0affd88f1ecbcd658f869
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -438,19 +438,19 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
 
     private fun processNullIdle(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed == 1")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Settled, TargetlessTransitionCompletesMacrostepState.Idle)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed == 1")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Settled, TargetlessTransitionCompletesMacrostepState.Idle, 0)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullRecycled(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("entries < 2")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Recycled, TargetlessTransitionCompletesMacrostepState.Recycled)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("entries < 2")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Recycled, TargetlessTransitionCompletesMacrostepState.Recycled, 6)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullSettled(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("polished == 0")) -> TransitionResult.Internal
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("polished == 0")) -> TransitionResult.Internal(7)
         else -> TransitionResult.Ignored
     }
 
@@ -460,14 +460,14 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
         event: TargetlessTransitionCompletesMacrostepEvent
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is TargetlessTransitionCompletesMacrostepEvent.Quiet -> TransitionResult.Internal
+        event is TargetlessTransitionCompletesMacrostepEvent.Quiet -> TransitionResult.Internal(1)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is TargetlessTransitionCompletesMacrostepEvent.Arm -> TransitionResult.Internal
+        event is TargetlessTransitionCompletesMacrostepEvent.Arm -> TransitionResult.Internal(2)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is TargetlessTransitionCompletesMacrostepEvent.Ping -> TransitionResult.Internal
+        event is TargetlessTransitionCompletesMacrostepEvent.Ping -> TransitionResult.Internal(3)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is TargetlessTransitionCompletesMacrostepEvent.Pong -> TransitionResult.Internal
-        event is TargetlessTransitionCompletesMacrostepEvent.Recycle -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Recycled, TargetlessTransitionCompletesMacrostepState.Idle)
+        event is TargetlessTransitionCompletesMacrostepEvent.Pong -> TransitionResult.Internal(4)
+        event is TargetlessTransitionCompletesMacrostepEvent.Recycle -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Recycled, TargetlessTransitionCompletesMacrostepState.Idle, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -523,43 +523,44 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
     // SCE-MAP: targetless_transition_completes_macrostep.scxml:51 :: _machine
     override fun executeTransitionActions(
         source: TargetlessTransitionCompletesMacrostepState,
-        event: TargetlessTransitionCompletesMacrostepEvent?
+        event: TargetlessTransitionCompletesMacrostepEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is TargetlessTransitionCompletesMacrostepState.Idle -> when {
-            event is TargetlessTransitionCompletesMacrostepEvent.Quiet -> {
-                // SCE-MAP: targetless_transition_completes_macrostep.scxml:93 :: idle :: _transition_1
-
-
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("quiet"), com.sce.runtime.ScriptSource.ecmascript("quiet + 1"))
-            }
-            event is TargetlessTransitionCompletesMacrostepEvent.Arm -> {
-                // SCE-MAP: targetless_transition_completes_macrostep.scxml:100 :: idle :: _transition_2
-
-
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("armed"), com.sce.runtime.ScriptSource.ecmascript("1"))
-            }
-            event is TargetlessTransitionCompletesMacrostepEvent.Ping -> {
-                // SCE-MAP: targetless_transition_completes_macrostep.scxml:107 :: idle :: _transition_3
-
-            raiseInternal(TargetlessTransitionCompletesMacrostepEvent.Pong)
-            }
-            event is TargetlessTransitionCompletesMacrostepEvent.Pong -> {
-                // SCE-MAP: targetless_transition_completes_macrostep.scxml:111 :: idle :: _transition_4
-
-
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("answered"), com.sce.runtime.ScriptSource.ecmascript("answered + 1"))
-            }
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed == 1")) -> {
+        is TargetlessTransitionCompletesMacrostepState.Idle -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:86 :: idle :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("chained"), com.sce.runtime.ScriptSource.ecmascript("chained + 1"))
             }
+            1 -> {
+                // SCE-MAP: targetless_transition_completes_macrostep.scxml:93 :: idle :: _transition_1
+
+
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("quiet"), com.sce.runtime.ScriptSource.ecmascript("quiet + 1"))
+            }
+            2 -> {
+                // SCE-MAP: targetless_transition_completes_macrostep.scxml:100 :: idle :: _transition_2
+
+
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("armed"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            }
+            3 -> {
+                // SCE-MAP: targetless_transition_completes_macrostep.scxml:107 :: idle :: _transition_3
+
+            raiseInternal(TargetlessTransitionCompletesMacrostepEvent.Pong)
+            }
+            4 -> {
+                // SCE-MAP: targetless_transition_completes_macrostep.scxml:111 :: idle :: _transition_4
+
+
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("answered"), com.sce.runtime.ScriptSource.ecmascript("answered + 1"))
+            }
             else -> {}
         }
-        is TargetlessTransitionCompletesMacrostepState.Settled -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("polished == 0")) -> {
+        is TargetlessTransitionCompletesMacrostepState.Settled -> when (transitionIndex) {
+            7 -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:126 :: settled :: _transition_0
 
 

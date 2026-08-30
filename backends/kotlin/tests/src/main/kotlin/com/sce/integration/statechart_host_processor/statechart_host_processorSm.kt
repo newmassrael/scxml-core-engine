@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 484e7440f07c529b155abfa6f79282de908af5e2fc4314e70bd834573adce55b
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -366,11 +366,11 @@ class StatechartHostProcessorStateMachine(
         event: StatechartHostProcessorEvent
     ): TransitionResult<StatechartHostProcessorState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StatechartHostProcessorEvent.Plain.Arrived -> TransitionResult.Internal
+        event is StatechartHostProcessorEvent.Plain.Arrived -> TransitionResult.Internal(0)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StatechartHostProcessorEvent.Turn.Done -> TransitionResult.Internal
+        event is StatechartHostProcessorEvent.Turn.Done -> TransitionResult.Internal(1)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StatechartHostProcessorEvent.Error.Execution -> TransitionResult.Internal
+        event is StatechartHostProcessorEvent.Error.Execution -> TransitionResult.Internal(2)
         else -> TransitionResult.Ignored
     }
 
@@ -436,23 +436,24 @@ class StatechartHostProcessorStateMachine(
     // SCE-MAP: statechart_host_processor.scxml:27 :: _machine
     override fun executeTransitionActions(
         source: StatechartHostProcessorState,
-        event: StatechartHostProcessorEvent?
+        event: StatechartHostProcessorEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is StatechartHostProcessorState.Dispatching -> when {
-            event is StatechartHostProcessorEvent.Plain.Arrived -> {
+        is StatechartHostProcessorState.Dispatching -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: statechart_host_processor.scxml:48 :: dispatching :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("plain"), com.sce.runtime.ScriptSource.ecmascript("plain + 1"))
             }
-            event is StatechartHostProcessorEvent.Turn.Done -> {
+            1 -> {
                 // SCE-MAP: statechart_host_processor.scxml:51 :: dispatching :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("served"), com.sce.runtime.ScriptSource.ecmascript("served + 1"))
             }
-            event is StatechartHostProcessorEvent.Error.Execution -> {
+            2 -> {
                 // SCE-MAP: statechart_host_processor.scxml:54 :: dispatching :: _transition_2
 
 

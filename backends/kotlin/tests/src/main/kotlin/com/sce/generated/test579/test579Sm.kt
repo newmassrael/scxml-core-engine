@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -371,47 +371,47 @@ class Test579StateMachine(
     private fun processS01(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event1 -> TransitionResult.External(Test579State.S02, Test579State.S01)
+        event is Test579Event.Event1 -> TransitionResult.External(Test579State.S02, Test579State.S01, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test579State.Fail, Test579State.S01)
+        else -> TransitionResult.External(Test579State.Fail, Test579State.S01, 1)
     }
 
     private fun processS02(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event2 -> TransitionResult.External(Test579State.S03, Test579State.S02)
+        event is Test579Event.Event2 -> TransitionResult.External(Test579State.S03, Test579State.S02, 2)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test579State.Fail, Test579State.S02)
+        else -> TransitionResult.External(Test579State.Fail, Test579State.S02, 3)
     }
 
     private fun processS03(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event3 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 0")) -> TransitionResult.External(Test579State.S0, Test579State.S03)
+        event is Test579Event.Event3 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 0")) -> TransitionResult.External(Test579State.S0, Test579State.S03, 4)
 
-        event is Test579Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test579State.S2, Test579State.S03)
+        event is Test579Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test579State.S2, Test579State.S03, 5)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test579State.Fail, Test579State.S03)
+        else -> TransitionResult.External(Test579State.Fail, Test579State.S03, 6)
     }
 
     private fun processS2(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event2 -> TransitionResult.External(Test579State.S3, Test579State.S2)
+        event is Test579Event.Event2 -> TransitionResult.External(Test579State.S3, Test579State.S2, 7)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test579State.Fail, Test579State.S2)
+        else -> TransitionResult.External(Test579State.Fail, Test579State.S2, 8)
     }
 
     private fun processS3(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event3 -> TransitionResult.External(Test579State.Fail, Test579State.S3)
+        event is Test579Event.Event3 -> TransitionResult.External(Test579State.Fail, Test579State.S3, 9)
 
-        event is Test579Event.Timeout -> TransitionResult.External(Test579State.Pass, Test579State.S3)
+        event is Test579Event.Timeout -> TransitionResult.External(Test579State.Pass, Test579State.S3, 10)
 
         else -> TransitionResult.Ignored
     }
@@ -551,7 +551,8 @@ class Test579StateMachine(
     // SCE-MAP: test579.scxml:8 :: _machine
     override fun executeTransitionActions(
         source: Test579State,
-        event: Test579Event?
+        event: Test579Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

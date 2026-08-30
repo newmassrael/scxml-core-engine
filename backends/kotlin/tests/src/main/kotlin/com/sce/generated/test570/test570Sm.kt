@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -449,10 +449,10 @@ class Test570StateMachine(
         event: Test570Event
     ): TransitionResult<Test570State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is Test570Event.Done.State.P0s1 -> TransitionResult.Internal
-        event is Test570Event.Done.State.P0s2 -> TransitionResult.External(Test570State.S1, Test570State.P0)
+        event is Test570Event.Done.State.P0s1 -> TransitionResult.Internal(0)
+        event is Test570Event.Done.State.P0s2 -> TransitionResult.External(Test570State.S1, Test570State.P0, 1)
 
-        event is Test570Event.Timeout -> TransitionResult.External(Test570State.Fail, Test570State.P0)
+        event is Test570Event.Timeout -> TransitionResult.External(Test570State.Fail, Test570State.P0, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -460,7 +460,7 @@ class Test570StateMachine(
     private fun processP0s11(
         event: Test570Event
     ): TransitionResult<Test570State> = when {
-        event is Test570Event.E1 -> TransitionResult.External(Test570State.P0s1final, Test570State.P0s11)
+        event is Test570Event.E1 -> TransitionResult.External(Test570State.P0s1final, Test570State.P0s11, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -468,7 +468,7 @@ class Test570StateMachine(
     private fun processP0s21(
         event: Test570Event
     ): TransitionResult<Test570State> = when {
-        event is Test570Event.E2 -> TransitionResult.External(Test570State.P0s2final, Test570State.P0s21)
+        event is Test570Event.E2 -> TransitionResult.External(Test570State.P0s2final, Test570State.P0s21, 4)
 
         else -> TransitionResult.Ignored
     }
@@ -476,10 +476,10 @@ class Test570StateMachine(
     private fun processS1(
         event: Test570Event
     ): TransitionResult<Test570State> = when {
-        event is Test570Event.Done.State.P0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test570State.Pass, Test570State.S1)
+        event is Test570Event.Done.State.P0 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test570State.Pass, Test570State.S1, 5)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test570State.Fail, Test570State.S1)
+        else -> TransitionResult.External(Test570State.Fail, Test570State.S1, 6)
     }
 
 
@@ -664,11 +664,12 @@ class Test570StateMachine(
     // SCE-MAP: test570.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test570State,
-        event: Test570Event?
+        event: Test570Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test570State.P0 -> when {
-            event is Test570Event.Done.State.P0s1 -> {
+        is Test570State.P0 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
@@ -676,8 +677,8 @@ class Test570StateMachine(
             }
             else -> {}
         }
-        is Test570State.P0s1 -> when {
-            event is Test570Event.Done.State.P0s1 -> {
+        is Test570State.P0s1 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
@@ -685,8 +686,8 @@ class Test570StateMachine(
             }
             else -> {}
         }
-        is Test570State.P0s11 -> when {
-            event is Test570Event.Done.State.P0s1 -> {
+        is Test570State.P0s11 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
@@ -694,8 +695,8 @@ class Test570StateMachine(
             }
             else -> {}
         }
-        is Test570State.P0s1final -> when {
-            event is Test570Event.Done.State.P0s1 -> {
+        is Test570State.P0s1final -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
@@ -703,8 +704,8 @@ class Test570StateMachine(
             }
             else -> {}
         }
-        is Test570State.P0s2 -> when {
-            event is Test570Event.Done.State.P0s1 -> {
+        is Test570State.P0s2 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
@@ -712,8 +713,8 @@ class Test570StateMachine(
             }
             else -> {}
         }
-        is Test570State.P0s21 -> when {
-            event is Test570Event.Done.State.P0s1 -> {
+        is Test570State.P0s21 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
@@ -721,8 +722,8 @@ class Test570StateMachine(
             }
             else -> {}
         }
-        is Test570State.P0s2final -> when {
-            event is Test570Event.Done.State.P0s1 -> {
+        is Test570State.P0s2final -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 

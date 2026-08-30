@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c990b384ae6d27b45cff45f6fb75ecde882d112d0f07d342d547b178e6a4257
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -330,23 +330,23 @@ class XmlDataIsADomTreeStateMachine(
 
     private fun processNullReading(
     ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.nodeType === 9 && doc.nodeName === '#document' && doc.documentElement.tagName === 'books' && doc.hasAttribute('count')")) -> TransitionResult.External(XmlDataIsADomTreeState.Traversing, XmlDataIsADomTreeState.Reading)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.nodeType === 9 && doc.nodeName === '#document' && doc.documentElement.tagName === 'books' && doc.hasAttribute('count')")) -> TransitionResult.External(XmlDataIsADomTreeState.Traversing, XmlDataIsADomTreeState.Reading, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(XmlDataIsADomTreeState.NotADocument, XmlDataIsADomTreeState.Reading)
+        else -> TransitionResult.External(XmlDataIsADomTreeState.NotADocument, XmlDataIsADomTreeState.Reading, 1)
     }
 
     private fun processNullReadingText(
     ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.documentElement.firstChild.firstChild.nodeType === 3 && doc.documentElement.firstChild.firstChild.nodeValue === 'first' && doc.documentElement.textContent === 'first' && doc.documentElement.lastChild.hasChildNodes() === false")) -> TransitionResult.External(XmlDataIsADomTreeState.Settled, XmlDataIsADomTreeState.ReadingText)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.documentElement.firstChild.firstChild.nodeType === 3 && doc.documentElement.firstChild.firstChild.nodeValue === 'first' && doc.documentElement.textContent === 'first' && doc.documentElement.lastChild.hasChildNodes() === false")) -> TransitionResult.External(XmlDataIsADomTreeState.Settled, XmlDataIsADomTreeState.ReadingText, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(XmlDataIsADomTreeState.NoText, XmlDataIsADomTreeState.ReadingText)
+        else -> TransitionResult.External(XmlDataIsADomTreeState.NoText, XmlDataIsADomTreeState.ReadingText, 3)
     }
 
     private fun processNullTraversing(
     ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.documentElement.childNodes.length === 2 && doc.documentElement.firstChild.getAttribute('title') === 't1' && doc.documentElement.lastChild.getAttribute('title') === 't2' && doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' && doc.documentElement.firstChild.parentNode.tagName === 'books'")) -> TransitionResult.External(XmlDataIsADomTreeState.ReadingText, XmlDataIsADomTreeState.Traversing)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("doc.documentElement.childNodes.length === 2 && doc.documentElement.firstChild.getAttribute('title') === 't1' && doc.documentElement.lastChild.getAttribute('title') === 't2' && doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' && doc.documentElement.firstChild.parentNode.tagName === 'books'")) -> TransitionResult.External(XmlDataIsADomTreeState.ReadingText, XmlDataIsADomTreeState.Traversing, 4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(XmlDataIsADomTreeState.WrongTree, XmlDataIsADomTreeState.Traversing)
+        else -> TransitionResult.External(XmlDataIsADomTreeState.WrongTree, XmlDataIsADomTreeState.Traversing, 5)
     }
 
     // --- Per-State Event Handlers ---
@@ -443,7 +443,8 @@ class XmlDataIsADomTreeStateMachine(
     // SCE-MAP: xml_data_is_a_dom_tree.scxml:44 :: _machine
     override fun executeTransitionActions(
         source: XmlDataIsADomTreeState,
-        event: XmlDataIsADomTreeEvent?
+        event: XmlDataIsADomTreeEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

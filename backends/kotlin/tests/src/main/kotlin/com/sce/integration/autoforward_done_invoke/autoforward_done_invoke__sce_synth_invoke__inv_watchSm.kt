@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -115,9 +115,9 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
     private fun processWatch(
         event: AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent
     ): TransitionResult<AutoforwardDoneInvokeSceSynthInvokeInvWatchState> = when {
-        event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Done.Invoke.InvShort -> TransitionResult.External(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw, AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch)
+        event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Done.Invoke.InvShort -> TransitionResult.External(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw, AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch, 0)
 
-        event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed, AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch)
+        event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed, AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -174,18 +174,19 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
     // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDoneInvokeSceSynthInvokeInvWatchState,
-        event: AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent?
+        event: AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> when {
-            event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Done.Invoke.InvShort -> {
+        is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:6 :: watch :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawPlatform", "")
             }
-            event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Probe -> {
+            1 -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9 :: watch :: _transition_1
 
 

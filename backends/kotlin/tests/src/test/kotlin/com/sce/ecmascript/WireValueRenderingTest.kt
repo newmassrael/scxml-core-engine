@@ -48,7 +48,7 @@ private class WireProbe : StateMachineEngine<ProbeState, ProbeEvent>() {
 
     override fun onExit(state: ProbeState) {}
 
-    override fun executeTransitionActions(source: ProbeState, event: ProbeEvent?) {}
+    override fun executeTransitionActions(source: ProbeState, event: ProbeEvent?, transitionIndex: Int) {}
 
     fun wire(value: Any?): String = valueToWireString(value)
 

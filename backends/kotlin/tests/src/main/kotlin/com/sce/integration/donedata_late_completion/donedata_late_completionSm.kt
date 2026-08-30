@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -322,12 +322,12 @@ class DonedataLateCompletionStateMachine(
         event: DonedataLateCompletionEvent
     ): TransitionResult<DonedataLateCompletionState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is DonedataLateCompletionEvent.Ready -> TransitionResult.Internal
-        event is DonedataLateCompletionEvent.Done.Invoke.InvLate && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLateCompletionState.Pass, DonedataLateCompletionState.Phase)
+        event is DonedataLateCompletionEvent.Ready -> TransitionResult.Internal(0)
+        event is DonedataLateCompletionEvent.Done.Invoke.InvLate && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLateCompletionState.Pass, DonedataLateCompletionState.Phase, 1)
 
-        event is DonedataLateCompletionEvent.Done.Invoke.InvLate -> TransitionResult.External(DonedataLateCompletionState.Fail, DonedataLateCompletionState.Phase)
+        event is DonedataLateCompletionEvent.Done.Invoke.InvLate -> TransitionResult.External(DonedataLateCompletionState.Fail, DonedataLateCompletionState.Phase, 2)
 
-        event is DonedataLateCompletionEvent.Error.Execution -> TransitionResult.External(DonedataLateCompletionState.Fail, DonedataLateCompletionState.Phase)
+        event is DonedataLateCompletionEvent.Error.Execution -> TransitionResult.External(DonedataLateCompletionState.Fail, DonedataLateCompletionState.Phase, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -398,11 +398,12 @@ class DonedataLateCompletionStateMachine(
     // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
     override fun executeTransitionActions(
         source: DonedataLateCompletionState,
-        event: DonedataLateCompletionEvent?
+        event: DonedataLateCompletionEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is DonedataLateCompletionState.Phase -> when {
-            event is DonedataLateCompletionEvent.Ready -> {
+        is DonedataLateCompletionState.Phase -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: donedata_late_completion.scxml:67 :: phase :: _transition_0
 
 

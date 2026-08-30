@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -197,36 +197,36 @@ class Test413StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test413State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test413State.Fail, Test413State.S1)
+        else -> TransitionResult.External(Test413State.Fail, Test413State.S1, 0)
     }
 
     private fun processNullS2p1(
     ): TransitionResult<Test413State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p1)
+        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p1, 1)
     }
 
     private fun processNullS2p111(
     ): TransitionResult<Test413State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p111)
+        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p111, 2)
     }
 
     private fun processNullS2p112(
     ): TransitionResult<Test413State> = when {
-        isStateActive("s2p122") -> TransitionResult.External(Test413State.Pass, Test413State.S2p112)
+        isStateActive("s2p122") -> TransitionResult.External(Test413State.Pass, Test413State.S2p112, 3)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullS2p121(
     ): TransitionResult<Test413State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p121)
+        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p121, 4)
     }
 
     private fun processNullS2p122(
     ): TransitionResult<Test413State> = when {
-        isStateActive("s2p112") -> TransitionResult.External(Test413State.Pass, Test413State.S2p122)
+        isStateActive("s2p112") -> TransitionResult.External(Test413State.Pass, Test413State.S2p122, 5)
         else -> TransitionResult.Ignored
     }
 
@@ -408,7 +408,8 @@ class Test413StateMachine(
     // SCE-MAP: test413.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test413State,
-        event: Test413Event?
+        event: Test413Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

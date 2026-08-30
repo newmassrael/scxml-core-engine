@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -119,7 +119,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
     private fun processSaw(
         event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent
     ): TransitionResult<InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState> = when {
-        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Ordered, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw)
+        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Ordered, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -127,9 +127,9 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
     private fun processWaiting(
         event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent
     ): TransitionResult<InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState> = when {
-        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Kick -> TransitionResult.External(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting)
+        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Kick -> TransitionResult.External(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting, 1)
 
-        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting)
+        event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -199,11 +199,12 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
     // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState,
-        event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent?
+        event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> when {
-            event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> {
+        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15 :: saw :: _transition_0
 
 
@@ -212,8 +213,8 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
             }
             else -> {}
         }
-        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> when {
-            event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> {
+        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10 :: waiting :: _transition_1
 
 

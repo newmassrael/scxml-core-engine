@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: df2ef2c591564c7e52022e112ae9c5e384db80574b200165584f410ac8201d24
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -353,7 +353,7 @@ class DiscardedEventIsObservableStateMachine(
     private fun processBusy(
         event: DiscardedEventIsObservableEvent
     ): TransitionResult<DiscardedEventIsObservableState> = when {
-        event is DiscardedEventIsObservableEvent.Settle -> TransitionResult.External(DiscardedEventIsObservableState.Done, DiscardedEventIsObservableState.Busy)
+        event is DiscardedEventIsObservableEvent.Settle -> TransitionResult.External(DiscardedEventIsObservableState.Done, DiscardedEventIsObservableState.Busy, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -361,11 +361,11 @@ class DiscardedEventIsObservableStateMachine(
     private fun processIdle(
         event: DiscardedEventIsObservableEvent
     ): TransitionResult<DiscardedEventIsObservableState> = when {
-        event is DiscardedEventIsObservableEvent.Poke -> TransitionResult.External(DiscardedEventIsObservableState.Idle, DiscardedEventIsObservableState.Idle)
+        event is DiscardedEventIsObservableEvent.Poke -> TransitionResult.External(DiscardedEventIsObservableState.Idle, DiscardedEventIsObservableState.Idle, 1)
 
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is DiscardedEventIsObservableEvent.Nudge -> TransitionResult.Internal
-        event is DiscardedEventIsObservableEvent.Go -> TransitionResult.External(DiscardedEventIsObservableState.Busy, DiscardedEventIsObservableState.Idle)
+        event is DiscardedEventIsObservableEvent.Nudge -> TransitionResult.Internal(2)
+        event is DiscardedEventIsObservableEvent.Go -> TransitionResult.External(DiscardedEventIsObservableState.Busy, DiscardedEventIsObservableState.Idle, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -420,17 +420,18 @@ class DiscardedEventIsObservableStateMachine(
     // SCE-MAP: discarded_event_is_observable.scxml:30 :: _machine
     override fun executeTransitionActions(
         source: DiscardedEventIsObservableState,
-        event: DiscardedEventIsObservableEvent?
+        event: DiscardedEventIsObservableEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is DiscardedEventIsObservableState.Idle -> when {
-            event is DiscardedEventIsObservableEvent.Poke -> {
+        is DiscardedEventIsObservableState.Idle -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:38 :: idle :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
-            event is DiscardedEventIsObservableEvent.Nudge -> {
+            2 -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:41 :: idle :: _transition_1
 
 

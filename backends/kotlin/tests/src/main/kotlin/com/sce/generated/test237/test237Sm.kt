@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -120,7 +120,7 @@ class Test237StateMachine(
     private fun processS0(
         event: Test237Event
     ): TransitionResult<Test237State> = when {
-        event is Test237Event.Timeout1 -> TransitionResult.External(Test237State.S1, Test237State.S0)
+        event is Test237Event.Timeout1 -> TransitionResult.External(Test237State.S1, Test237State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -128,10 +128,10 @@ class Test237StateMachine(
     private fun processS1(
         event: Test237Event
     ): TransitionResult<Test237State> = when {
-        event is Test237Event.Done.Invoke -> TransitionResult.External(Test237State.Fail, Test237State.S1)
+        event is Test237Event.Done.Invoke -> TransitionResult.External(Test237State.Fail, Test237State.S1, 1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test237State.Pass, Test237State.S1)
+        else -> TransitionResult.External(Test237State.Pass, Test237State.S1, 2)
     }
 
 
@@ -215,7 +215,8 @@ class Test237StateMachine(
     // SCE-MAP: test237.scxml:8 :: _machine
     override fun executeTransitionActions(
         source: Test237State,
-        event: Test237Event?
+        event: Test237Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

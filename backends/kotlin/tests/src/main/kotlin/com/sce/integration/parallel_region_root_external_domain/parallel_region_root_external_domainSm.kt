@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c3811de69809fcaca1ab0508e94a631fbb8f5a9a57e1924edd0d75fdf7afaa52
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -159,9 +159,9 @@ class ParallelRegionRootExternalDomainStateMachine(
     private fun processAlive(
         event: ParallelRegionRootExternalDomainEvent
     ): TransitionResult<ParallelRegionRootExternalDomainState> = when {
-        event is ParallelRegionRootExternalDomainEvent.Restart -> TransitionResult.External(ParallelRegionRootExternalDomainState.Rebuilding, ParallelRegionRootExternalDomainState.Alive)
+        event is ParallelRegionRootExternalDomainEvent.Restart -> TransitionResult.External(ParallelRegionRootExternalDomainState.Rebuilding, ParallelRegionRootExternalDomainState.Alive, 0)
 
-        event is ParallelRegionRootExternalDomainEvent.Hold -> TransitionResult.External(ParallelRegionRootExternalDomainState.Rebuilding, ParallelRegionRootExternalDomainState.Alive)
+        event is ParallelRegionRootExternalDomainEvent.Hold -> TransitionResult.External(ParallelRegionRootExternalDomainState.Rebuilding, ParallelRegionRootExternalDomainState.Alive, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -169,9 +169,9 @@ class ParallelRegionRootExternalDomainStateMachine(
     private fun processDrive(
         event: ParallelRegionRootExternalDomainEvent
     ): TransitionResult<ParallelRegionRootExternalDomainState> = when {
-        event is ParallelRegionRootExternalDomainEvent.Restart -> TransitionResult.External(ParallelRegionRootExternalDomainState.Restarting, ParallelRegionRootExternalDomainState.Drive)
+        event is ParallelRegionRootExternalDomainEvent.Restart -> TransitionResult.External(ParallelRegionRootExternalDomainState.Restarting, ParallelRegionRootExternalDomainState.Drive, 2)
 
-        event is ParallelRegionRootExternalDomainEvent.Hold -> TransitionResult.InternalToTarget(ParallelRegionRootExternalDomainState.Paused, ParallelRegionRootExternalDomainState.Drive)
+        event is ParallelRegionRootExternalDomainEvent.Hold -> TransitionResult.InternalToTarget(ParallelRegionRootExternalDomainState.Paused, ParallelRegionRootExternalDomainState.Drive, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -320,7 +320,8 @@ class ParallelRegionRootExternalDomainStateMachine(
     // SCE-MAP: parallel_region_root_external_domain.scxml:34 :: _machine
     override fun executeTransitionActions(
         source: ParallelRegionRootExternalDomainState,
-        event: ParallelRegionRootExternalDomainEvent?
+        event: ParallelRegionRootExternalDomainEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

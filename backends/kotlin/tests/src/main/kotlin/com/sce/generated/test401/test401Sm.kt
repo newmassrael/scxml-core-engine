@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -306,10 +306,10 @@ class Test401StateMachine(
     private fun processS0(
         event: Test401Event
     ): TransitionResult<Test401State> = when {
-        event is Test401Event.Foo -> TransitionResult.External(Test401State.Fail, Test401State.S0)
+        event is Test401Event.Foo -> TransitionResult.External(Test401State.Fail, Test401State.S0, 0)
 
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test401Event.Error || event is Test401Event.Error.Execution) -> TransitionResult.External(Test401State.Pass, Test401State.S0)
+        (event is Test401Event.Error || event is Test401Event.Error.Execution) -> TransitionResult.External(Test401State.Pass, Test401State.S0, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -373,7 +373,8 @@ class Test401StateMachine(
     // SCE-MAP: test401.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test401State,
-        event: Test401Event?
+        event: Test401Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

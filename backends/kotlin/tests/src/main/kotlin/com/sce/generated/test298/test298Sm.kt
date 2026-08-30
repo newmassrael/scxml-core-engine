@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -370,7 +370,7 @@ class Test298StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test298State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test298State.S02, Test298State.S01)
+        else -> TransitionResult.External(Test298State.S02, Test298State.S01, 2)
     }
 
     // --- Per-State Event Handlers ---
@@ -378,10 +378,10 @@ class Test298StateMachine(
     private fun processS0(
         event: Test298Event
     ): TransitionResult<Test298State> = when {
-        event is Test298Event.Error.Execution -> TransitionResult.External(Test298State.Pass, Test298State.S0)
+        event is Test298Event.Error.Execution -> TransitionResult.External(Test298State.Pass, Test298State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test298State.Fail, Test298State.S0)
+        else -> TransitionResult.External(Test298State.Fail, Test298State.S0, 1)
     }
 
 
@@ -477,7 +477,8 @@ class Test298StateMachine(
     // SCE-MAP: test298.scxml:4 :: _machine
     override fun executeTransitionActions(
         source: Test298State,
-        event: Test298Event?
+        event: Test298Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

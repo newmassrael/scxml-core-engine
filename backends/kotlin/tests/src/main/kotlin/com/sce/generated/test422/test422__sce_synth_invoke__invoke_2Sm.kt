@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -104,7 +104,7 @@ class Test422SceSynthInvokeInvoke2StateMachine(
     private fun processNullSub2(
     ): TransitionResult<Test422SceSynthInvokeInvoke2State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test422SceSynthInvokeInvoke2State.SubFinal2, Test422SceSynthInvokeInvoke2State.Sub2)
+        else -> TransitionResult.External(Test422SceSynthInvokeInvoke2State.SubFinal2, Test422SceSynthInvokeInvoke2State.Sub2, 0)
     }
 
     // --- Per-State Event Handlers ---
@@ -154,7 +154,8 @@ class Test422SceSynthInvokeInvoke2StateMachine(
     // SCE-MAP: test422__sce_synth_invoke__invoke_2.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test422SceSynthInvokeInvoke2State,
-        event: Test422SceSynthInvokeInvoke2Event?
+        event: Test422SceSynthInvokeInvoke2Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

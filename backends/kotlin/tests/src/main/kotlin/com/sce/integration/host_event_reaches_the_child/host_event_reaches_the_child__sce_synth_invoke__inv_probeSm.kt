@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ceb5ba77c107690ed8824e3a95913c8f850f275ca17535023aec22eab166125d
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -114,9 +114,9 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
     private fun processWatch(
         event: HostEventReachesTheChildSceSynthInvokeInvProbeEvent
     ): TransitionResult<HostEventReachesTheChildSceSynthInvokeInvProbeState> = when {
-        event is HostEventReachesTheChildSceSynthInvokeInvProbeEvent.HostPing -> TransitionResult.External(HostEventReachesTheChildSceSynthInvokeInvProbeState.Forwarded, HostEventReachesTheChildSceSynthInvokeInvProbeState.Watch)
+        event is HostEventReachesTheChildSceSynthInvokeInvProbeEvent.HostPing -> TransitionResult.External(HostEventReachesTheChildSceSynthInvokeInvProbeState.Forwarded, HostEventReachesTheChildSceSynthInvokeInvProbeState.Watch, 0)
 
-        event is HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Marker -> TransitionResult.External(HostEventReachesTheChildSceSynthInvokeInvProbeState.Unforwarded, HostEventReachesTheChildSceSynthInvokeInvProbeState.Watch)
+        event is HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Marker -> TransitionResult.External(HostEventReachesTheChildSceSynthInvokeInvProbeState.Unforwarded, HostEventReachesTheChildSceSynthInvokeInvProbeState.Watch, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -177,18 +177,19 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
     // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: HostEventReachesTheChildSceSynthInvokeInvProbeState,
-        event: HostEventReachesTheChildSceSynthInvokeInvProbeEvent?
+        event: HostEventReachesTheChildSceSynthInvokeInvProbeEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is HostEventReachesTheChildSceSynthInvokeInvProbeState.Watch -> when {
-            event is HostEventReachesTheChildSceSynthInvokeInvProbeEvent.HostPing -> {
+        is HostEventReachesTheChildSceSynthInvokeInvProbeState.Watch -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:9 :: watch :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawHostPing", "")
             }
-            event is HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Marker -> {
+            1 -> {
                 // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:12 :: watch :: _transition_1
 
 

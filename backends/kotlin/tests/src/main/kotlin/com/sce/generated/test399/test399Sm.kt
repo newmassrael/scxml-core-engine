@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -196,7 +196,7 @@ class Test399StateMachine(
     private fun processS0(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
-        event is Test399Event.Timeout -> TransitionResult.External(Test399State.Fail, Test399State.S0)
+        event is Test399Event.Timeout -> TransitionResult.External(Test399State.Fail, Test399State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -205,7 +205,7 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Prefix match for "foo bar"
-        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S02, Test399State.S01)
+        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S02, Test399State.S01, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -214,7 +214,7 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Prefix match for "foo bar"
-        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S03, Test399State.S02)
+        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S03, Test399State.S02, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -223,7 +223,7 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Prefix match for "foo bar"
-        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S04, Test399State.S03)
+        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S04, Test399State.S03, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -232,9 +232,9 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Prefix match for "foo"
-        (event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.Fail, Test399State.S04)
+        (event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.Fail, Test399State.S04, 4)
 
-        event is Test399Event.Foos -> TransitionResult.External(Test399State.S05, Test399State.S04)
+        event is Test399Event.Foos -> TransitionResult.External(Test399State.S05, Test399State.S04, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -242,7 +242,7 @@ class Test399StateMachine(
     private fun processS05(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
-        event is Test399Event.Foo.Zoo -> TransitionResult.External(Test399State.S06, Test399State.S05)
+        event is Test399Event.Foo.Zoo -> TransitionResult.External(Test399State.S06, Test399State.S05, 6)
 
         else -> TransitionResult.Ignored
     }
@@ -251,7 +251,7 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test399State.Pass, Test399State.S06)
+        else -> TransitionResult.External(Test399State.Pass, Test399State.S06, 7)
     }
 
 
@@ -375,7 +375,8 @@ class Test399StateMachine(
     // SCE-MAP: test399.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test399State,
-        event: Test399Event?
+        event: Test399Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

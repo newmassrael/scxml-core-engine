@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -161,7 +161,7 @@ class Test347StateMachine(
     private fun processS0(
         event: Test347Event
     ): TransitionResult<Test347State> = when {
-        event is Test347Event.Timeout -> TransitionResult.External(Test347State.Fail, Test347State.S0)
+        event is Test347Event.Timeout -> TransitionResult.External(Test347State.Fail, Test347State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -169,7 +169,7 @@ class Test347StateMachine(
     private fun processS01(
         event: Test347Event
     ): TransitionResult<Test347State> = when {
-        event is Test347Event.ChildToParent -> TransitionResult.External(Test347State.S02, Test347State.S01)
+        event is Test347Event.ChildToParent -> TransitionResult.External(Test347State.S02, Test347State.S01, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -177,10 +177,10 @@ class Test347StateMachine(
     private fun processS02(
         event: Test347Event
     ): TransitionResult<Test347State> = when {
-        event is Test347Event.Done.Invoke -> TransitionResult.External(Test347State.Pass, Test347State.S02)
+        event is Test347Event.Done.Invoke -> TransitionResult.External(Test347State.Pass, Test347State.S02, 2)
 
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test347Event.Error || event is Test347Event.Error.Execution) -> TransitionResult.External(Test347State.Fail, Test347State.S02)
+        (event is Test347Event.Error || event is Test347Event.Error.Execution) -> TransitionResult.External(Test347State.Fail, Test347State.S02, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -276,7 +276,8 @@ class Test347StateMachine(
     // SCE-MAP: test347.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test347State,
-        event: Test347Event?
+        event: Test347Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

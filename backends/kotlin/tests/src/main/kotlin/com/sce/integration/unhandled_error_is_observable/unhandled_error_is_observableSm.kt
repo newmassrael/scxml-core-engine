@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 88c46d955f89d1b6f7eb00aaedced29c5fbacc4db8ed4464fa38145a023ef16c
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -418,9 +418,9 @@ class UnhandledErrorIsObservableStateMachine(
     private fun processGuarded(
         event: UnhandledErrorIsObservableEvent
     ): TransitionResult<UnhandledErrorIsObservableState> = when {
-        event is UnhandledErrorIsObservableEvent.Boom -> TransitionResult.External(UnhandledErrorIsObservableState.Guarded, UnhandledErrorIsObservableState.Guarded)
+        event is UnhandledErrorIsObservableEvent.Boom -> TransitionResult.External(UnhandledErrorIsObservableState.Guarded, UnhandledErrorIsObservableState.Guarded, 0)
 
-        event is UnhandledErrorIsObservableEvent.Error.Execution -> TransitionResult.External(UnhandledErrorIsObservableState.Guarded, UnhandledErrorIsObservableState.Guarded)
+        event is UnhandledErrorIsObservableEvent.Error.Execution -> TransitionResult.External(UnhandledErrorIsObservableState.Guarded, UnhandledErrorIsObservableState.Guarded, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -428,15 +428,15 @@ class UnhandledErrorIsObservableStateMachine(
     private fun processIdle(
         event: UnhandledErrorIsObservableEvent
     ): TransitionResult<UnhandledErrorIsObservableState> = when {
-        event is UnhandledErrorIsObservableEvent.Poke -> TransitionResult.External(UnhandledErrorIsObservableState.Idle, UnhandledErrorIsObservableState.Idle)
+        event is UnhandledErrorIsObservableEvent.Poke -> TransitionResult.External(UnhandledErrorIsObservableState.Idle, UnhandledErrorIsObservableState.Idle, 2)
 
-        event is UnhandledErrorIsObservableEvent.Whisper -> TransitionResult.External(UnhandledErrorIsObservableState.Idle, UnhandledErrorIsObservableState.Idle)
+        event is UnhandledErrorIsObservableEvent.Whisper -> TransitionResult.External(UnhandledErrorIsObservableState.Idle, UnhandledErrorIsObservableState.Idle, 3)
 
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is UnhandledErrorIsObservableEvent.Heard -> TransitionResult.Internal
-        event is UnhandledErrorIsObservableEvent.Boom -> TransitionResult.External(UnhandledErrorIsObservableState.Idle, UnhandledErrorIsObservableState.Idle)
+        event is UnhandledErrorIsObservableEvent.Heard -> TransitionResult.Internal(4)
+        event is UnhandledErrorIsObservableEvent.Boom -> TransitionResult.External(UnhandledErrorIsObservableState.Idle, UnhandledErrorIsObservableState.Idle, 5)
 
-        event is UnhandledErrorIsObservableEvent.Go -> TransitionResult.External(UnhandledErrorIsObservableState.Guarded, UnhandledErrorIsObservableState.Idle)
+        event is UnhandledErrorIsObservableEvent.Go -> TransitionResult.External(UnhandledErrorIsObservableState.Guarded, UnhandledErrorIsObservableState.Idle, 6)
 
         else -> TransitionResult.Ignored
     }
@@ -480,11 +480,12 @@ class UnhandledErrorIsObservableStateMachine(
     // SCE-MAP: unhandled_error_is_observable.scxml:40 :: _machine
     override fun executeTransitionActions(
         source: UnhandledErrorIsObservableState,
-        event: UnhandledErrorIsObservableEvent?
+        event: UnhandledErrorIsObservableEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is UnhandledErrorIsObservableState.Guarded -> when {
-            event is UnhandledErrorIsObservableEvent.Boom -> {
+        is UnhandledErrorIsObservableState.Guarded -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_0
 
 
@@ -494,7 +495,7 @@ class UnhandledErrorIsObservableStateMachine(
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
-            event is UnhandledErrorIsObservableEvent.Error.Execution -> {
+            1 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:94 :: guarded :: _transition_1
 
 
@@ -505,14 +506,14 @@ class UnhandledErrorIsObservableStateMachine(
             }
             else -> {}
         }
-        is UnhandledErrorIsObservableState.Idle -> when {
-            event is UnhandledErrorIsObservableEvent.Poke -> {
+        is UnhandledErrorIsObservableState.Idle -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:55 :: idle :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
-            event is UnhandledErrorIsObservableEvent.Whisper -> {
+            3 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:58 :: idle :: _transition_1
 
             raiseInternal(UnhandledErrorIsObservableEvent.Unheard)
@@ -521,13 +522,13 @@ class UnhandledErrorIsObservableStateMachine(
 
             raiseInternal(UnhandledErrorIsObservableEvent.Heard)
             }
-            event is UnhandledErrorIsObservableEvent.Heard -> {
+            4 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:80 :: idle :: _transition_2
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("heards"), com.sce.runtime.ScriptSource.ecmascript("heards + 1"))
             }
-            event is UnhandledErrorIsObservableEvent.Boom -> {
+            5 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:83 :: idle :: _transition_3
 
 

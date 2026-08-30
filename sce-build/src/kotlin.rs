@@ -506,28 +506,108 @@ pub fn process_null_event_needs_else(
     })
 }
 
+/// The key a Kotlin machine's action dispatch switches on.
+///
+/// Named `machine_transition_index` wherever it is read, and MACHINE-WIDE,
+/// which is the whole reason it exists separately from the model's own
+/// [`transition_index`](crate::model::Transition::transition_index).
+///
+/// # Why the per-state index cannot serve
+///
+/// C++ dispatches on `(source state, index within THAT state's transition
+/// list)`, and that pair is unique because the switch it feeds is nested:
+/// `switch (lastTransitionSourceState_) { case X: switch (index) { … } }`.
+///
+/// Kotlin's dispatch table for a state is its EFFECTIVE transitions — its own
+/// followed by every ancestor's, because §scxml-3.13 ancestor routing lets a
+/// leaf take a transition written on an ancestor. So under one `source` the
+/// child's transition 0 and the ancestor's transition 0 are two different
+/// transitions wearing one number. The old template resolved that collision by
+/// RE-EVALUATING each candidate's `cond`, which is the defect this numbering
+/// removes.
+///
+/// # One assigner, two readers
+///
+/// The selection half (`process_event.kt.jinja2`) and the dispatch half
+/// (`transition_actions.kt.jinja2`) must agree on the number or the machine
+/// runs some other transition's content. They agree by both READING what this
+/// function assigned, never by counting for themselves — `machine_transition_ids`
+/// for the selection, the `machine_transition_index` injected into
+/// [`compute_effective_transitions`] for the dispatch.
+///
+/// Iteration is over `model.states`, a `BTreeMap`, so the order is by state id
+/// and matches the templates' own `model.states | sort`. Deterministic across
+/// runs, which the reproducibility gates require.
+pub fn assign_machine_transition_ids(model: &SCXMLModel) -> BTreeMap<String, Vec<usize>> {
+    let mut ids = BTreeMap::new();
+    let mut next = 0usize;
+    for (state_id, state) in &model.states {
+        let mut per_state = Vec::with_capacity(state.transitions.len());
+        for _ in &state.transitions {
+            per_state.push(next);
+            next += 1;
+        }
+        ids.insert(state_id.clone(), per_state);
+    }
+    ids
+}
+
 /// §scxml-3.13: Compute effective transitions (self + ancestors).
 ///
 /// For each state, collects its own transitions followed by all ancestor transitions.
 /// Serialized as JSON for template rendering.
+///
+/// Each serialized transition carries `machine_transition_index`, injected from
+/// [`assign_machine_transition_ids`]. It is injected rather than left to the
+/// template because the template sees a FLATTENED list in which a transition's
+/// position says nothing about which state owns it — and the owner is what
+/// decides the number.
 pub fn compute_effective_transitions(
     model: &SCXMLModel,
     ancestor_chains: &BTreeMap<String, Vec<String>>,
+    machine_transition_ids: &BTreeMap<String, Vec<usize>>,
 ) -> BTreeMap<String, serde_json::Value> {
     let mut effective_transitions = BTreeMap::new();
+
+    // One transition of one state, serialized with the machine-wide id its
+    // owner gives it. `position` is the transition's index in `owner`'s own
+    // list, which is what `machine_transition_ids` is keyed by.
+    let render = |owner: &str, position: usize, t: &crate::model::Transition| {
+        let mut value = serde_json::to_value(t).unwrap_or_default();
+        if let Some(object) = value.as_object_mut() {
+            let id = machine_transition_ids
+                .get(owner)
+                .and_then(|list| list.get(position))
+                .copied();
+            // No fallback number. A transition whose id could not be resolved
+            // gets JSON `null`, which the template's `{% if %}` reads as absent
+            // and which cannot be mistaken for transition 0 — the mistake a
+            // defaulted 0 would make, and it would run the first transition's
+            // content for every unresolvable one.
+            object.insert(
+                "machine_transition_index".to_string(),
+                match id {
+                    Some(n) => serde_json::Value::from(n),
+                    None => serde_json::Value::Null,
+                },
+            );
+        }
+        value
+    };
 
     for (state_id, state) in &model.states {
         let mut transitions: Vec<serde_json::Value> = state
             .transitions
             .iter()
-            .map(|t| serde_json::to_value(t).unwrap_or_default())
+            .enumerate()
+            .map(|(position, t)| render(state_id, position, t))
             .collect();
 
         if let Some(chain) = ancestor_chains.get(state_id) {
             for anc_id in chain {
                 if let Some(anc_state) = model.states.get(anc_id) {
-                    for t in &anc_state.transitions {
-                        transitions.push(serde_json::to_value(t).unwrap_or_default());
+                    for (position, t) in anc_state.transitions.iter().enumerate() {
+                        transitions.push(render(anc_id, position, t));
                     }
                 }
             }

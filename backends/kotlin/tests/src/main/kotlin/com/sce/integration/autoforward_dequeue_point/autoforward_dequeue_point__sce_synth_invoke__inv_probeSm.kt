@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -127,9 +127,9 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
     private fun processAwaiting(
         event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent
     ): TransitionResult<AutoforwardDequeuePointSceSynthInvokeInvProbeState> = when {
-        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Mark -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting)
+        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Mark -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting, 0)
 
-        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting)
+        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -137,7 +137,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
     private fun processMarked(
         event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent
     ): TransitionResult<AutoforwardDequeuePointSceSynthInvokeInvProbeState> = when {
-        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked)
+        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -145,7 +145,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
     private fun processProbe(
         event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent
     ): TransitionResult<AutoforwardDequeuePointSceSynthInvokeInvProbeState> = when {
-        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.First -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe)
+        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.First -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -224,11 +224,12 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
     // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDequeuePointSceSynthInvokeInvProbeState,
-        event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent?
+        event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> when {
-            event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> {
+        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:13 :: awaiting :: _transition_1
 
 
@@ -237,8 +238,8 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
             }
             else -> {}
         }
-        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> when {
-            event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> {
+        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18 :: marked :: _transition_0
 
 
