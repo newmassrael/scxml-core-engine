@@ -139,6 +139,23 @@ mutation_ledger_case() {
     if [[ -n "$red_file" && -s "$red_file" ]]; then
         red="$(tr '\n' "$MUTATION_LEDGER_RS" <"$red_file")"
     fi
+    # ONE ROW IS ONE LINE, and `detail` is where that stops being obvious: an
+    # INCONCLUSIVE carries the compiler's own refusal, which is a paragraph.
+    #
+    # Measured 2026-08-30: a round with two cases the compiler refused wrote
+    # rows whose first line held two separators instead of three, the reader
+    # died with `not enough values to unpack (expected 4, got 3)`, and the
+    # WHOLE ROUND went unrecorded — six verdicts lost to a newline, with
+    # `recorded:` printing an empty path underneath them. The record is the
+    # part a later session reads, so losing it silently is worse than losing
+    # the terminal output.
+    #
+    # Newlines become the record separator the `red` field already uses, and
+    # the reader turns them back. Applied to the label too: a casefile is free
+    # to spell a case name across two lines, and the row format is not.
+    verdict="${verdict//$'\n'/$MUTATION_LEDGER_RS}"
+    label="${label//$'\n'/$MUTATION_LEDGER_RS}"
+    detail="${detail//$'\n'/$MUTATION_LEDGER_RS}"
     printf '%s%s%s%s%s%s%s\n' \
         "$verdict" "$MUTATION_LEDGER_FS" \
         "$label" "$MUTATION_LEDGER_FS" \
@@ -183,10 +200,24 @@ with open(rows_path) as fh:
         line = line.rstrip("\n")
         if not line:
             continue
-        verdict, label, detail, red = line.split(fs)
-        case = {"verdict": verdict, "label": label}
+        parts = line.split(fs, 3)
+        if len(parts) != 4:
+            # A row this reader cannot parse is recorded AS a row it cannot
+            # parse. The alternative is the one measured on 2026-08-30: the
+            # unpack raised, the commit died, and every verdict in the round
+            # was lost rather than the one row that was malformed.
+            cases.append({
+                "verdict": "UNREADABLE",
+                "label": f"a ledger row carrying {len(parts)} field(s), not 4",
+                "detail": line,
+            })
+            continue
+        verdict, label, detail, red = parts
+        # The writer folded newlines into the record separator so one row stays
+        # one line; this is where a paragraph becomes a paragraph again.
+        case = {"verdict": verdict, "label": label.replace(rs, "\n")}
         if detail:
-            case["detail"] = detail
+            case["detail"] = detail.replace(rs, "\n")
         names = [n for n in red.split(rs) if n]
         if names:
             case["red"] = names
