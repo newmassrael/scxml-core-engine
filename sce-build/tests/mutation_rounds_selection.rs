@@ -41,6 +41,9 @@ use std::process::Command;
 
 use tempfile::tempdir;
 
+mod common;
+use common::gate_selectors::gate_shell;
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -81,12 +84,11 @@ fn selection_without_a_cmake_tree(changed: &[&str]) -> (bool, BTreeMap<String, S
     let changed_file = dir.path().join("changed.txt");
     fs::write(&changed_file, changed.join("\n") + "\n").expect("write change set");
 
-    let out = Command::new("bash")
+    let out = gate_shell()
         .arg("scripts/gates/mutation-rounds.sh")
         .current_dir(dir.path())
         .env("SCE_GATE_CHANGED_FILE", &changed_file)
         .env("SCE_MUTATION_ROUNDS_DRY_RUN", "1")
-        .env_remove("SCE_MUTATION_ROUNDS")
         .output()
         .expect("run the gate");
     (
@@ -152,15 +154,14 @@ fn selection_for(changed: &[&str]) -> (bool, BTreeMap<String, String>, String) {
     let changed_file = dir.path().join("changed.txt");
     fs::write(&changed_file, changed.join("\n") + "\n").expect("write change set");
 
-    let out = Command::new("bash")
+    // Every selector the gate reads is cleared by `gate_shell`, so what
+    // follows is this scenario's whole input rather than its input plus
+    // whatever the caller's environment happened to hold.
+    let out = gate_shell()
         .arg("scripts/gates/mutation-rounds.sh")
         .current_dir(repo_root())
         .env("SCE_GATE_CHANGED_FILE", &changed_file)
         .env("SCE_MUTATION_ROUNDS_DRY_RUN", "1")
-        // Cleared rather than left inherited: a developer running the suite
-        // with a subset pinned in their environment would otherwise get that
-        // subset here and a green test about nothing.
-        .env_remove("SCE_MUTATION_ROUNDS")
         .output()
         .expect("run the gate");
 
@@ -545,17 +546,17 @@ fn lane_selection(script: &str, changed: &str) -> (BTreeMap<String, String>, Str
     // (`shell: /usr/bin/bash -e {0}`), and the difference matters: a step
     // whose script only works when sourced by an interactive shell is not the
     // step CI runs.
-    let out = Command::new("bash")
+    let out = gate_shell()
         .arg("-e")
         .arg(&step)
         .current_dir(repo_root())
         // The step-level `env:` of that job, supplied here because the test
-        // executes the body rather than the YAML around it.
+        // executes the body rather than the YAML around it. What the job does
+        // NOT set is cleared by `gate_shell`, which is the same list this step
+        // would inherit on a real runner.
         .env("SCE_GATE_CHANGED_FILE", &changed_file)
         .env("GITHUB_OUTPUT", &github_output)
         .env("RUNNER_TEMP", &runner_temp)
-        .env_remove("SCE_MUTATION_ROUNDS")
-        .env_remove("SCE_MUTATION_ROUNDS_DRY_RUN")
         .output()
         .expect("run the workflow's selection step");
 
@@ -1063,15 +1064,15 @@ fn the_selection_narrows_and_the_round_only_obeys() {
 /// scheduled run fill the second — so both are driven here rather than
 /// asserted about.
 fn selection_named(subset: &str) -> (bool, BTreeMap<String, String>, String) {
-    let out = Command::new("bash")
+    // No change set at all, which is the state a scheduled run is in: the
+    // workflow's `Resolve the change set` step writes no file for an event
+    // that carries no range. `gate_shell` is what makes that absence real
+    // rather than dependent on the caller's environment.
+    let out = gate_shell()
         .arg("scripts/gates/mutation-rounds.sh")
         .current_dir(repo_root())
         .env("SCE_MUTATION_ROUNDS_DRY_RUN", "1")
         .env("SCE_MUTATION_ROUNDS", subset)
-        // No change set at all, which is the state a scheduled run is in: the
-        // workflow's `Resolve the change set` step writes no file for an event
-        // that carries no range.
-        .env_remove("SCE_GATE_CHANGED_FILE")
         .output()
         .expect("run the gate");
 
@@ -1243,7 +1244,12 @@ fn prepared_by(body: &str) -> (Vec<String>, String) {
 
     // `bash -e <file>` is how the runner invokes a `run:` block
     // (`shell: /usr/bin/bash -e {0}`).
-    let out = Command::new("bash")
+    //
+    // Through `gate_shell` even though this step prepares a tree rather than
+    // running the gate: it is a step of the SAME job, so on a real runner it
+    // carries that job's selectors, and a step that starts calling the gate
+    // tomorrow would otherwise reintroduce the leak silently.
+    let out = gate_shell()
         .arg("-e")
         .arg(&step)
         .current_dir(root)
@@ -1636,7 +1642,7 @@ fn rounds_observed(rounds: &[&str]) -> RoundsRun {
         assert!(out.status.success(), "git {args:?} failed in the fixture");
     }
 
-    let out = Command::new("bash")
+    let out = gate_shell()
         .arg("scripts/gates/mutation-rounds.sh")
         .current_dir(root)
         .env("SCE_MUTATION_ROUNDS", rounds.join(","))
@@ -1655,8 +1661,8 @@ fn rounds_observed(rounds: &[&str]) -> RoundsRun {
         // The selection is settled by the variable above; a dry run would stop
         // the gate before the loop this test is about, and a change set left in
         // a developer's environment would choose a different set of rounds.
-        .env_remove("SCE_MUTATION_ROUNDS_DRY_RUN")
-        .env_remove("SCE_GATE_CHANGED_FILE")
+        // Both are cleared by `gate_shell`, along with the shard — which is the
+        // one this site was measured leaking on 2026-08-30.
         .output()
         .expect("run the gate");
 

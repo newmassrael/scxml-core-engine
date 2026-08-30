@@ -24,6 +24,7 @@
 
 use std::process::{Command, Output};
 
+pub mod gate_selectors;
 pub mod workflow;
 
 /// What one probe run did, so a caller can assert on the route rather than
