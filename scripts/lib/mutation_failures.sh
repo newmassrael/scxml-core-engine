@@ -68,6 +68,36 @@ mutation_detail_from_gtest() {
     }'
 }
 
+# libtest's own tally out of a cargo test binary: `"<run> <failed>"`.
+#
+# Both numbers come from lines libtest OWNS THE START OF — `running N tests`
+# and `test result: …` — and that anchoring is the whole point. The failed
+# count used to be read with `.*[0-9]* passed; \([0-9]*\) failed.*`, which
+# matches anywhere on any line, so a test that QUOTED another run's summary
+# had that run's failures added to its own.
+#
+# Measured 2026-08-30: `a_selector_in_the_callers_environment_does_not_reach_
+# the_gate` re-executes this binary as a child and quotes what it printed when
+# the child fails. A mutation round over that suite then reported `3/8 red`
+# while naming two tests — the third "failure" was the child's own summary
+# line, counted here and correctly ignored by the name parser below. The
+# verdict happened to survive that, because CAUGHT only needs a non-zero
+# count; a SURVIVED verdict read the same way would not have.
+#
+# `run` is totalled rather than taken from the last line: one binary can print
+# several `running N tests` headers.
+mutation_counts_from_cargo() {
+    awk '
+        /^running [0-9]+ test/ { run += $2 }
+        /^test result:/ {
+            for (i = 2; i <= NF; i++) {
+                if ($i == "failed;" || $i == "failed") failed += $(i - 1)
+            }
+        }
+        END { printf "%d %d\n", run + 0, failed + 0 }
+    '
+}
+
 # libtest's verdict lines out of a cargo test binary.
 #
 # The per-test line only, not the `failures:` block that repeats the names
