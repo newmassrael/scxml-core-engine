@@ -44,10 +44,10 @@ package com.sce.scripting.lua
  * ## Refusal is an answer
  *
  * [lowerValue] and its neighbours answer `null` when the frontend will not
- * lower the text. On this backend that is not yet FINAL — `LuaScriptEngine`
- * still falls back to [EcmaScriptToLuaTransformer], which is what lets the
- * frontend be adopted one class of expression at a time rather than all at
- * once, and is the state the C++ engine passed through before its own
+ * lower the text, and on this backend that is now FINAL: `LuaScriptEngine`
+ * reports the refusal (W3C SCXML §scxml-5.9.1) instead of handing the text to
+ * a second translator. It was not final while the text rewriter stood behind
+ * it — that is the state the C++ engine passed through too, before its own
  * `retire-rewriter` row closed.
  */
 internal class LoweringScope : AutoCloseable {

@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/autoforward_dequeue_point/autoforward_dequeue_point.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/autoforward_dequeue_point"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/autoforward_dequeue_point"
 STEM="autoforward_dequeue_point"
 INPUT_ROOT="integration_resources/autoforward_dequeue_point"
 PACKAGE_PREFIX="com.sce.integration"

@@ -28,6 +28,7 @@
 
 package com.sce.ecmascript
 
+import com.sce.runtime.ScriptSource
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.scripting.RhinoScriptEngine
 import com.sce.scripting.lua.LuaScriptEngine
@@ -97,6 +98,12 @@ class DomReadSurfaceTest {
         cases.forEachIndexed { index, case ->
             val sessionId = "dom_surface_$index"
             val source = if (lowered) case.lua else case.source
+            // Tagged with the language it is in, which is the whole reason
+            // `ScriptSource` exists. Handing the Lua spelling through the
+            // `String` door would claim it is ECMAScript, and the engine would
+            // offer it to a parser that correctly refuses to read it.
+            val unit =
+                if (lowered) ScriptSource.lua(case.lua, case.source) else ScriptSource.ecmascript(case.source)
             engine.createSession(sessionId)
             try {
                 engine.setupSystemVariables(sessionId, "dom_surface")
@@ -108,7 +115,7 @@ class DomReadSurfaceTest {
                 engine.setVariable(sessionId, "var1", bound)
                 val answered =
                     try {
-                        engine.evaluateExpr(sessionId, source)
+                        engine.evaluateExpr(sessionId, unit)
                     } catch (failure: Exception) {
                         failures += "[$source] failed to evaluate: ${failure.message} (${case.clause})"
                         return@forEachIndexed

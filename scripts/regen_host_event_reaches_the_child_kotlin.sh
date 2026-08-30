@@ -36,7 +36,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/host_event_reaches_the_child/host_event_reaches_the_child.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/host_event_reaches_the_child"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/host_event_reaches_the_child"
 STEM="host_event_reaches_the_child"
 INPUT_ROOT="integration_resources/host_event_reaches_the_child"
 PACKAGE_PREFIX="com.sce.integration"

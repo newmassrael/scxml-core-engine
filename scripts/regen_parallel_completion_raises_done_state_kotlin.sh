@@ -31,7 +31,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/parallel_completion_raises_done_state/parallel_completion_raises_done_state.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_completion_raises_done_state"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/parallel_completion_raises_done_state"
 STEM="parallel_completion_raises_done_state"
 INPUT_ROOT="integration_resources/parallel_completion_raises_done_state"
 PACKAGE_PREFIX="com.sce.integration"

@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/autoforward_internal_queue/autoforward_internal_queue.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/autoforward_internal_queue"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/autoforward_internal_queue"
 STEM="autoforward_internal_queue"
 INPUT_ROOT="integration_resources/autoforward_internal_queue"
 PACKAGE_PREFIX="com.sce.integration"

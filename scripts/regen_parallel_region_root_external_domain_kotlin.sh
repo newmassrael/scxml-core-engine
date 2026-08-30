@@ -49,7 +49,7 @@ source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 FIXTURE="tests/integration/parallel_region_root_external_domain.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_region_root_external_domain"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/parallel_region_root_external_domain"
 PACKAGE_PREFIX="com.sce.integration"
 
 TMP="$(mktemp -d)"

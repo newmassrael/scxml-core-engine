@@ -5,7 +5,7 @@
 //
 // Drop-in replacement for RhinoScriptEngine using Lua 5.4 via JNI.
 // ECMAScript expressions are lowered to Lua by sce-build's ECMAScript frontend,
-// with EcmaScriptToLuaTransformer as the fallback for what it refuses.
+// and what it refuses is refused (W3C SCXML §scxml-5.9.1) rather than guessed at.
 // Each session gets an isolated lua_State for full variable isolation.
 //
 // C++ parity: sce/src/scripting/LuaEngine.cpp
@@ -51,14 +51,15 @@ import org.w3c.dom.Node
  * fifty. The shared table had meanwhile grown to 98 cases, so both
  * denominators named a table that no longer existed.
  *
- * ⚠ **[EcmaScriptToLuaTransformer] is still the FALLBACK.** An expression the
- * frontend refuses — one naming something the session's [LoweringScope] has
- * not been told about, or text its parser will not read — is handed to the old
- * rewriter and guessed at rather than refused. An empty divergence list says
- * the frontend answers the shared table; it does not say there is no second
- * answer left. That second claim is `retire-rewriter`'s, which
- * `docs/SCE_LUA_TRANSLATION_SEAM.md` records for C++ and has open for this
- * backend.
+ * ⚠ **There is no second answer left.** An expression the frontend refuses —
+ * one naming something the session's [LoweringScope] has not been told about,
+ * or text its parser will not read — is REFUSED (§scxml-5.9.1), and the caller
+ * raises `error.execution`. It used to be handed to a text rewriter and
+ * guessed at instead; an empty divergence list said the frontend answers the
+ * shared table and never said anything about that second answer, which is why
+ * `kotlin-retire-rewriter` was its own claim with its own witness rather than
+ * a corollary of the list emptying. `docs/SCE_LUA_TRANSLATION_SEAM.md` records
+ * both halves, now closed on both backends.
  *
  * This header used to read "For AOSP/AAOS production, this replaces Rhino
  * with a faster native engine". It is faster, and while a rewriting pass was
@@ -108,22 +109,31 @@ class LuaScriptEngine : ScxmlScriptEngine {
          * correctness; it keeps a `<data id>` that is assigned on every
          * macrostep from crossing the JNI boundary once per assignment.
          */
-        val offeredToScope: MutableSet<String> = mutableSetOf()
+        val offeredToScope: MutableSet<String> = mutableSetOf(),
+        /**
+         * The global names the RUNTIME installed, taken before the document
+         * ran anything.
+         *
+         * Every later reading of Lua's global table is read against this, so
+         * that [offerDocumentGlobalsToScope] offers the datamodel's names and
+         * not the interpreter's own furniture.
+         */
+        val runtimeGlobals: MutableSet<String> = mutableSetOf()
     )
 
     private val sessions = mutableMapOf<String, Session>()
-    private val transformer = EcmaScriptToLuaTransformer()
 
     /**
-     * Record that the frontend refused a text and [transformer] answered it.
+     * Record which half answered one lowering: the frontend, or a refusal.
      *
-     * ⚠ THIS IS THE COUNTER `kotlin-retire-rewriter` NEEDS, and it did not
+     * ⚠ THIS IS THE COUNTER `kotlin-retire-rewriter` NEEDED, and it did not
      * exist before 2026-08-30. The seam document said "empty is not retired"
      * and named the fallback as the remaining claim, but nothing counted the
      * fallback, so "how far is this backend from retirement" had no answer a
      * reader could re-derive — only prose saying some expressions still reach
-     * it. `w3c-kotlin` turns this file into a census line and holds it under a
-     * ceiling, so the distance to zero is a number rather than a sentence.
+     * it. It counted `rewriter` while the rewriter stood; the rewriter is
+     * retired, so the second half is now `refused`, which is the event that
+     * replaced it at exactly those call sites.
      *
      * ⚠⚠ THE SILENT PATH IS DELIBERATE. With no property set this is one
      * `getProperty` and a return, so a production run pays nothing and no file
@@ -146,8 +156,12 @@ class LuaScriptEngine : ScxmlScriptEngine {
     override fun createSession(sessionId: String) {
         val handle = LuaNative.newState()
         if (handle == 0L) throw ScriptEngineException("Failed to create Lua state")
-        sessions[sessionId] = Session(handle)
+        val session = Session(handle)
+        sessions[sessionId] = session
         registerBuiltins(handle)
+        // Taken here and nowhere else: after the runtime has installed
+        // everything it installs and before the document has run anything.
+        session.runtimeGlobals.addAll(LuaNative.globalNames(handle))
     }
 
     override fun destroySession(sessionId: String) {
@@ -219,14 +233,33 @@ class LuaScriptEngine : ScxmlScriptEngine {
      *
      * Lua is what it evaluates. What lets it accept the author's ECMAScript as
      * well is `sce-build`'s frontend, linked beside `lua54` and reached through
-     * [LoweringScope], with [EcmaScriptToLuaTransformer] behind it for what the
-     * frontend refuses — which is why [acceptsLanguage] is true for both, and
+     * [LoweringScope] — which is why [acceptsLanguage] is true for both, and
      * why a case this engine answers differently from ECMA-262 is a fact about
      * that pair, enumerated in `tests/ecmascript/kotlin_lua_divergences.json`,
      * not a fact about Lua.
      */
     override fun nativeLanguage(): ScriptLanguage = ScriptLanguage.Lua
 
+    /**
+     * Both languages, unconditionally — and the retirement did NOT change this.
+     *
+     * `docs/SCE_LUA_TRANSLATION_SEAM.md` predicted that deleting the fallback
+     * would turn this into "a claim about the frontend being linked rather than
+     * an unconditional `true`". Measured when the fallback went: there is no
+     * build of this backend without the frontend.
+     * `backends/kotlin/lua/src/main/cpp/CMakeLists.txt` links `SCE::Lowering`
+     * into `sce_lua_jni` with no option guarding it and says why ("Not
+     * optional, and that is the substance rather than caution"). The C++
+     * sibling is conditional because `SCE_HAS_LOWERING_FFI` is a real
+     * configure-time choice there; making this one conditional would be a
+     * predicate whose false arm nothing can reach.
+     *
+     * ⚠ That CMake comment promised a check called `theFrontendIsLinked` and
+     * nothing carried the name for four rounds — a sentence nobody could
+     * fault. It exists now (`ScriptLanguageSeamTest`), and this retirement is
+     * what makes it exact: with no rewriter behind the frontend, an answer to
+     * a closed ECMAScript expression can only have come from the frontend.
+     */
     override fun acceptsLanguage(language: ScriptLanguage): Boolean = true
 
     /**
@@ -235,9 +268,8 @@ class LuaScriptEngine : ScxmlScriptEngine {
      *
      * Lua the frontend already emitted passes through untouched. The author's
      * ECMAScript is offered to `sce-build`'s ECMAScript frontend, which PARSES
-     * it, and only text the frontend refuses reaches
-     * [EcmaScriptToLuaTransformer], which replaces text without a parse and so
-     * cannot say where an operand ends.
+     * it, and what the frontend refuses is REFUSED — there is no second
+     * translator behind this any more.
      *
      * What the frontend can answer is decided by the SESSION'S SCOPE: it
      * refuses any expression naming something the scope has not been told
@@ -245,31 +277,27 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * session that has declared its `<data id>`s admits the ones that name
      * them. `LoweringScope` carries why.
      *
-     * The fallback is deliberate and temporary. The C++ engine passed through
-     * this same state — frontend first, rewriter behind it — before its
-     * `retire-rewriter` row closed and refusal became the final answer
-     * (§scxml-5.9.1). Keeping it here means the frontend is adopted one class
-     * of expression at a time, and an expression it refuses answers exactly
-     * what it answered before rather than newly failing.
+     * Refusal is a normal answer and it is now the LAST one, which is what
+     * §scxml-5.9.1 asks for: an expression the datamodel cannot evaluate
+     * places `error.execution` on the internal queue. While
+     * `EcmaScriptToLuaTransformer` stood behind this, text the parser could
+     * not read was answered WRONGLY rather than refused — `-7 % 3` as 2,
+     * `5 ^ 3` as 125 — with no diagnostic anywhere. The C++ engine passed
+     * through the same two states and closed its `retire-rewriter` row the
+     * same way.
      *
      * The `ReferenceError` below is built from [ScriptSource.source] while the
      * check runs on the lowered text, which is the two-string requirement
      * `ScriptSource` exists for: a document that wrote `nosuchvar[0]` must not
      * be told about `nosuchvar[1]`.
      */
-    private fun loweredTextOf(
-        expr: ScriptSource,
-        session: Session,
-        context: EcmaScriptToLuaTransformer.ExpressionContext =
-            EcmaScriptToLuaTransformer.ExpressionContext.General,
-    ): String =
+    private fun loweredTextOf(expr: ScriptSource, session: Session): String =
         if (expr.language == ScriptLanguage.Lua) {
             expr.text
         } else {
             session.loweringScope.lowerValue(expr.text)
                 ?.also { recordLowering("frontend", "value", expr.text) }
-                ?: transformer.transform(expr.text, context)
-                    .also { recordLowering("rewriter", "value", expr.text) }
+                ?: refusedToLower(expr, "value", "expression")
         }
 
     /**
@@ -279,8 +307,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * §scxml-5.9 truthiness is not Lua's — `0`, `''` and `NaN` are false in
      * ECMAScript and true in Lua — so a guard has to arrive already wrapped in
      * the shared truthiness helper, which is what `to_lua_guard` does and
-     * `to_lua_expr` does not. The rewriter's own answer to the same question is
-     * its `Guard` context, which is why that is what the fallback passes.
+     * `to_lua_expr` does not.
      */
     private fun loweredConditionOf(expr: ScriptSource, session: Session): String =
         if (expr.language == ScriptLanguage.Lua) {
@@ -288,8 +315,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
         } else {
             session.loweringScope.lowerCondition(expr.text)
                 ?.also { recordLowering("frontend", "cond", expr.text) }
-                ?: transformer.transform(expr.text, EcmaScriptToLuaTransformer.ExpressionContext.Guard)
-                    .also { recordLowering("rewriter", "cond", expr.text) }
+                ?: refusedToLower(expr, "cond", "condition")
         }
 
     /**
@@ -299,8 +325,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * `to_lua_location` rather than `to_lua_expr`, because a write is how this
      * datamodel's globals come into existence and the target is therefore not
      * resolved against what the document declares — which is why the frontend
-     * entry point for it takes no scope. The runtime rewriter has no separate
-     * location arm, so its fallback goes through the general one.
+     * entry point for it takes no scope.
      */
     private fun loweredLocationOf(location: ScriptSource, session: Session): String =
         if (location.language == ScriptLanguage.Lua) {
@@ -308,8 +333,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
         } else {
             session.loweringScope.lowerLocation(location.text)
                 ?.also { recordLowering("frontend", "location", location.text) }
-                ?: transformer.transform(location.text)
-                    .also { recordLowering("rewriter", "location", location.text) }
+                ?: refusedToLower(location, "location", "assignment target")
         }
 
     /**
@@ -327,9 +351,32 @@ class LuaScriptEngine : ScxmlScriptEngine {
         } else {
             session.loweringScope.lowerScript(script.text)
                 ?.also { recordLowering("frontend", "script", script.text) }
-                ?: transformer.transformScript(script.text)
-                    .also { recordLowering("rewriter", "script", script.text) }
+                ?: refusedToLower(script, "script", "script")
         }
+
+    /**
+     * W3C SCXML §scxml-5.9.1: an expression the datamodel cannot evaluate
+     * places `error.execution` on the internal queue. That is the
+     * specification's whole answer, and it is the one this engine now gives —
+     * the refusal is reported, not repaired.
+     *
+     * The author's own text, never the lowering: this message travels out on
+     * `_event.data`, and a refusal has no lowering to name anyway.
+     *
+     * ⚠ It is recorded in the census as well as thrown. A refusal is a REAL
+     * event with a text behind it, so the count of them is what replaced the
+     * rewriter's count as this backend's distance measure — and unlike a
+     * rewrite, some refusals are the specification working as designed. Which
+     * ones is `tests/ecmascript/kotlin_frontend_refusals.json`, held in both
+     * directions by `scripts/gates/w3c-kotlin.sh`: an undeclared refusal is
+     * red, and so is a declared one nothing produces.
+     */
+    private fun refusedToLower(source: ScriptSource, kind: String, role: String): Nothing {
+        recordLowering("refused", kind, source.source)
+        throw ScriptEngineException(
+            "SCE's ECMAScript frontend does not accept this $role: ${source.source}",
+        )
+    }
 
     override fun evaluateExpr(sessionId: String, expr: String): Any? =
         doEvaluateExpr(sessionId, ScriptSource.ecmascript(expr))
@@ -389,19 +436,25 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // Only after a successful run: a chunk that raised declared whatever it
         // reached and this cannot say where it stopped.
         //
-        // Only for ECMAScript, because this asks the frontend's own PARSER to
-        // read the chunk's top level and Lua text has no ECMAScript parse to
-        // ask. A name a Lua-language `<script>` introduced is therefore one the
-        // frontend will not resolve, and an ECMAScript expression naming it
-        // falls back to the rewriter — the answer it had before this seam
-        // existed. Codegen does not produce that mixture (an artifact is
-        // generated for one language and hands over that language everywhere),
-        // so it is a residue of the engine accepting both rather than a case
-        // any document reaches; C++ closes it by sweeping Lua's global table,
-        // which needs a name for every global this engine installs and is its
-        // own piece of work.
+        // Lua text has no ECMAScript parse to ask, and it used to be skipped
+        // entirely on the reasoning that a generated artifact lowers at build
+        // time and never asks this engine for a lowering. That reasoning is
+        // about a DOCUMENT, and the engine's contract is about a SESSION: it
+        // accepts both languages into one global namespace, so a name the Lua
+        // door introduced is a name the ECMAScript door must resolve. Lua's own
+        // global table is what can say which names those are.
+        //
+        // ⚠ The two are NOT one call with a different argument, and neither
+        // subsumes the other. `var x;` binds a name to undefined — the parser
+        // reports it and Lua's global table does not, because assigning nil is
+        // how Lua REMOVES a global. A chunk the frontend's parser refuses
+        // declares nothing through `declareChunk` and its globals are still in
+        // the table. Collapsing this into one reader would silently drop one of
+        // those.
         if (script.language == ScriptLanguage.ECMAScript) {
             session.loweringScope.declareChunk(script.text)
+        } else {
+            offerDocumentGlobalsToScope(session)
         }
     }
 
@@ -428,6 +481,23 @@ class LuaScriptEngine : ScxmlScriptEngine {
             return
         }
         session.loweringScope.declare(name)
+    }
+
+    /**
+     * Tell the frontend about the names a Lua chunk left in the global table.
+     *
+     * The other half of [offerToScope]'s job, for the door the ECMAScript
+     * parser cannot see through. Read against the snapshot taken when the
+     * session was made, so the interpreter's own furniture — `string`, `math`,
+     * the builtins this engine registers — is not offered as if the document
+     * had declared it.
+     */
+    private fun offerDocumentGlobalsToScope(session: Session) {
+        for (name in LuaNative.globalNames(session.handle)) {
+            if (name !in session.runtimeGlobals) {
+                offerToScope(session, name)
+            }
+        }
     }
 
     override fun getVariable(sessionId: String, name: String): Any? {

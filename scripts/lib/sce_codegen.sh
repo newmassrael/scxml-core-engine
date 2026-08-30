@@ -75,11 +75,91 @@ sce_codegen_path() {
 # already asks it at configure time); asking it here costs one process
 # and makes "regenerate and expect no diff" true of a tree whose sources
 # just moved.
+# Wrap a resolved binary so every `generate` it is asked for names a
+# script-engine language, and print the wrapper's path.
+#
+# `generate-integration` dispatches to 38 per-stem regen scripts, and each one
+# spells its own `sce-codegen generate` invocation — some of them twice, for a
+# synth-invoke child. Threading a `--script-engine` flag through all of them
+# would put ONE decision in 38 places, which is the drift this repository has
+# already paid for in this exact seam. They share one thing, and it is the
+# binary this file resolves for them, so that is where the selection goes.
+#
+# ⚠ It rewrites `generate` and nothing else. `verify-generator` — which this
+# file itself calls, and `cmake/SCEFindCodegen.cmake` calls at configure time —
+# must reach the real binary untouched, and so must `generate-w3c`, which
+# carries the flag as a first-class argument already.
+#
+# ⚠⚠ A caller that named the language itself WINS. Appending a second
+# `--script-engine` would leave which one applies to clap's last-wins rule,
+# which is a decision nobody wrote down; a script that already made the choice
+# keeps it.
+# Which backend's emissions the script-engine selection applies to.
+#
+# ⚠ REFUSED when unset rather than defaulted to `kotlin`. A default would make
+# the pairing invisible at exactly the site that has to state it, and the
+# script this scope exists for emits three backends from one file — so "which
+# one did I mean" is a question with a wrong answer available.
+sce_codegen_shim_backend() {
+    if [[ -z "${SCE_SCRIPT_ENGINE_FOR:-}" ]]; then
+        echo "error: SCE_SCRIPT_ENGINE=$SCE_SCRIPT_ENGINE was set without" >&2
+        echo "  SCE_SCRIPT_ENGINE_FOR naming the backend it applies to. A regen" >&2
+        echo "  script may emit several backends from one file and only one of" >&2
+        echo "  them can take that selection." >&2
+        return 1
+    fi
+    printf '%s\n' "$SCE_SCRIPT_ENGINE_FOR"
+}
+
+# ⚠⚠⚠ SCOPED TO ONE BACKEND LANGUAGE, and that is not caution either.
+# Measured 2026-08-30: `scripts/regen_native_action.sh` emits the Rust, Go AND
+# Kotlin trees from a single script, so a shim that rewrote every `generate`
+# handed Rust `--script-engine ecmascript` and the generator refused —
+# *"backend 'rust' cannot emit for --script-engine ecmascript"*. The selection
+# belongs to the emissions for ONE backend, exactly as
+# `SCE_KOTLIN_GENERATED_ROOT` does, so the scope is read from the `-l` the
+# caller already spells rather than guessed.
+sce_codegen_shim() {
+    local real="$1" engine="$2" root="$3" backend="$4"
+    local shim="$root/target/sce-codegen-shim-$backend-$engine"
+    cat >"$shim" <<SHIM
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "\${1:-}" = "generate" ]; then
+    scoped=0
+    previous=""
+    for arg in "\$@"; do
+        if [ "\$arg" = "--script-engine" ]; then
+            exec "$real" "\$@"
+        fi
+        if [ "\$previous" = "-l" ] || [ "\$previous" = "--language" ]; then
+            if [ "\$arg" = "$backend" ]; then
+                scoped=1
+            fi
+        fi
+        previous="\$arg"
+    done
+    if [ "\$scoped" = "1" ]; then
+        shift
+        exec "$real" generate "\$@" --script-engine "$engine"
+    fi
+fi
+exec "$real" "\$@"
+SHIM
+    chmod +x "$shim"
+    printf '%s\n' "$shim"
+}
+
 sce_codegen_require() {
     local root="${1:-$(git rev-parse --show-toplevel)}"
     local path
     if path="$(sce_codegen_path "$root")" \
         && "$path" verify-generator --root "$root" >/dev/null 2>&1; then
+        if [[ -n "${SCE_SCRIPT_ENGINE:-}" ]]; then
+            sce_codegen_shim "$path" "$SCE_SCRIPT_ENGINE" "$root" \
+                "$(sce_codegen_shim_backend)"
+            return 0
+        fi
         printf '%s\n' "$path"
         return 0
     fi
@@ -95,6 +175,15 @@ sce_codegen_require() {
     sce_codegen_drop_stale_release "$root"
     (cd "$root" && cargo build --bin sce-codegen --features cli -p sce-build) >&2
     if path="$(sce_codegen_path "$root")"; then
+        # Both exits shim, and that is not tidiness: the branch above is taken
+        # on a warm tree and this one on a cold one, so a selection honoured by
+        # only one of them would depend on whether `target/` happened to hold a
+        # current binary.
+        if [[ -n "${SCE_SCRIPT_ENGINE:-}" ]]; then
+            sce_codegen_shim "$path" "$SCE_SCRIPT_ENGINE" "$root" \
+                "$(sce_codegen_shim_backend)"
+            return 0
+        fi
         printf '%s\n' "$path"
         return 0
     fi

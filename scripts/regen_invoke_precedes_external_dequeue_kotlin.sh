@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/invoke_precedes_external_dequeue/invoke_precedes_external_dequeue.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/invoke_precedes_external_dequeue"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/invoke_precedes_external_dequeue"
 STEM="invoke_precedes_external_dequeue"
 INPUT_ROOT="integration_resources/invoke_precedes_external_dequeue"
 PACKAGE_PREFIX="com.sce.integration"

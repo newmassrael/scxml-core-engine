@@ -26,7 +26,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/unseen_event_is_reported/unseen_event_is_reported.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/unseen_event_is_reported"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/unseen_event_is_reported"
 STEM="unseen_event_is_reported"
 INPUT_ROOT="integration_resources/unseen_event_is_reported"
 PACKAGE_PREFIX="com.sce.integration"

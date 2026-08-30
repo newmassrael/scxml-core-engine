@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/event_origin_is_a_location/event_origin_is_a_location.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/event_origin_is_a_location"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/event_origin_is_a_location"
 STEM="event_origin_is_a_location"
 INPUT_ROOT="integration_resources/event_origin_is_a_location"
 PACKAGE_PREFIX="com.sce.integration"

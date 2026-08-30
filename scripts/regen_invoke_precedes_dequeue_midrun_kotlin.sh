@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/invoke_precedes_dequeue_midrun/invoke_precedes_dequeue_midrun.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/invoke_precedes_dequeue_midrun"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/invoke_precedes_dequeue_midrun"
 STEM="invoke_precedes_dequeue_midrun"
 INPUT_ROOT="integration_resources/invoke_precedes_dequeue_midrun"
 PACKAGE_PREFIX="com.sce.integration"

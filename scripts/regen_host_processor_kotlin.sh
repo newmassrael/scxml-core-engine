@@ -36,7 +36,7 @@ source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml"
 INPUT_ROOT="sce-build/tests/fixtures/host_processor"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_host_processor"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_host_processor"
 PACKAGE_PREFIX="com.sce.integration"
 
 # Kept in one place here and asserted from the runtime test, so the string the
@@ -67,7 +67,7 @@ done
 # because a Kotlin package is a directory, like the Go half of
 # scripts/regen_host_processor.sh.
 DELAYED_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml"
-DELAYED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_delayed_host_send"
+DELAYED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_delayed_host_send"
 DELAYED_TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" "$DELAYED_TMP"' EXIT
 

@@ -26,7 +26,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/error_cascade_is_bounded/error_cascade_is_bounded.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/error_cascade_is_bounded"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/error_cascade_is_bounded"
 STEM="error_cascade_is_bounded"
 INPUT_ROOT="integration_resources/error_cascade_is_bounded"
 PACKAGE_PREFIX="com.sce.integration"

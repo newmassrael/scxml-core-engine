@@ -36,7 +36,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/invoke_unsupported_type"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/invoke_unsupported_type"
 PACKAGE_PREFIX="com.sce.integration"
 
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"

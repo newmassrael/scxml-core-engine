@@ -31,7 +31,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/parallel_self_transition_keeps_its_leaf/parallel_self_transition_keeps_its_leaf.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_self_transition_keeps_its_leaf"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/parallel_self_transition_keeps_its_leaf"
 STEM="parallel_self_transition_keeps_its_leaf"
 INPUT_ROOT="integration_resources/parallel_self_transition_keeps_its_leaf"
 PACKAGE_PREFIX="com.sce.integration"
