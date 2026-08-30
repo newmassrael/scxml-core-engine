@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/late_tick_honours_cancel/late_tick_honours_cancel.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/late_tick_honours_cancel"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/late_tick_honours_cancel"
 STEM="late_tick_honours_cancel"
 INPUT_ROOT="integration_resources/late_tick_honours_cancel"
 PACKAGE_PREFIX="com.sce.integration"

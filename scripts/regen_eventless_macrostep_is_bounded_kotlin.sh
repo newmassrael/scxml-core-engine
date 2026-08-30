@@ -26,7 +26,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/eventless_macrostep_is_bounded/eventless_macrostep_is_bounded.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/eventless_macrostep_is_bounded"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/eventless_macrostep_is_bounded"
 STEM="eventless_macrostep_is_bounded"
 INPUT_ROOT="integration_resources/eventless_macrostep_is_bounded"
 PACKAGE_PREFIX="com.sce.integration"

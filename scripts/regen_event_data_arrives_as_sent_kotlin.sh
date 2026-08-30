@@ -31,7 +31,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/event_data_arrives_as_sent"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/event_data_arrives_as_sent"
 STEM="event_data_arrives_as_sent"
 INPUT_ROOT="integration_resources/event_data_arrives_as_sent"
 PACKAGE_PREFIX="com.sce.integration"

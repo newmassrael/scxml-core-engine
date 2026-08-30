@@ -38,7 +38,7 @@ CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 FIXTURE="examples/ai_loop/ai_loop.scxml"
 INPUT_ROOT="examples/ai_loop"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/ai_loop"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/ai_loop"
 PACKAGE_PREFIX="com.sce.integration"
 
 # Kept in one place here and asserted from the driver, so the string the build

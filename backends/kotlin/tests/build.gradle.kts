@@ -61,26 +61,60 @@ val hasCodegen: Boolean = sceCodegenBinary != null
 // result. Nothing about which language is which lives here — a second copy of
 // that decision is exactly the drift this seam has already paid for twice.
 //
-// Only `com/sce/generated` moves. The generated JUnit classes under
-// `com/sce/w3c` do not mention the engine language at all, and the gate holds
-// that to a diff rather than to this comment.
+// WHICH populations move is DERIVED from what the overlay carries, and is
+// never listed here.
+//
+// ⚠ This comment said "only `com/sce/generated` moves" and the code below
+// hardcoded that one name. The day the backend's default artifact flipped to
+// Lua it cost over an hour of a CI runner: `com/sce/integration` holds 41 more
+// generated machine directories, they stayed in the committed language, were
+// compiled beside the overlay and handed to an engine that cannot read them.
+// That does not fail the suite — it HANGS it, because Rhino answers every
+// `setCurrentEvent` with an `EcmaError` and the eventless drain never settles.
+//
+// Reading the overlay's own directories means a caller that generates a
+// population this file has never heard of replaces it too, with nothing here
+// to update. What this CANNOT do is notice a population the caller forgot to
+// generate; that is `scripts/gates/w3c-kotlin.sh`, which refuses an overlay
+// not covering every committed source that carries a script-engine language.
+//
+// The generated JUnit classes under `com/sce/w3c` do not mention the engine
+// language at all and stay committed, which the gate holds to a diff rather
+// than to this comment. The 40 integration test classes are hand-written and
+// carry no `// Source:` line, so there is nothing to compare for them.
 val generatedOverlay: String? = providers.gradleProperty("sce.generated.overlay").orNull
-val overlayMachines: String? = generatedOverlay?.let { "$it/src/main/kotlin/com/sce/generated" }
+val overlayPackages: File? = generatedOverlay?.let { File("$it/src/main/kotlin/com/sce") }
 
-if (overlayMachines != null) {
-    require(File(overlayMachines).isDirectory) {
+if (overlayPackages != null) {
+    require(overlayPackages.isDirectory) {
         "sce.generated.overlay=$generatedOverlay names no generated tree at " +
-            "$overlayMachines. The overlay replaces the committed machines rather " +
+            "$overlayPackages. The overlay replaces the committed machines rather " +
             "than adding to them, so an empty one would compile a suite with no " +
             "state machines in it and report that as a pass."
     }
-    sourceSets["main"].kotlin.srcDir(overlayMachines)
-    // The committed machines are the OTHER language's. Excluding them is what
-    // makes this a replacement: kept, they would be duplicate declarations of
-    // every generated class, and dropped from the exclude they would be the
-    // ones that compiled.
-    sourceSets["main"].kotlin.exclude("com/sce/generated/**")
+    val overlaid =
+        overlayPackages.listFiles().orEmpty().filter { it.isDirectory }.map { it.name }.sorted()
+    require(overlaid.isNotEmpty()) {
+        "sce.generated.overlay=$generatedOverlay carries no package directory under " +
+            "$overlayPackages, so this build would replace nothing while compiling the " +
+            "committed machines under a property that says otherwise."
+    }
+    for (name in overlaid) {
+        // Each population is added at its OWN directory rather than at the
+        // shared `src/main/kotlin` root, and that is load-bearing: a file in
+        // the overlay is then reached at `<stem>/<file>.kt`, which the
+        // exclusion below cannot match, while its committed copy is reached at
+        // `com/sce/<name>/<stem>/<file>.kt`, which it does. Adding the root
+        // instead would exclude BOTH copies and compile neither.
+        sourceSets["main"].kotlin.srcDir(File(overlayPackages, name))
+        // The committed copies are the OTHER language's. Excluding them is what
+        // makes this a replacement: kept, they would be duplicate declarations
+        // of every generated class, and dropped from the exclude they would be
+        // the ones that compiled.
+        sourceSets["main"].kotlin.exclude("com/sce/$name/**")
+    }
 }
+val overlayMachines: String? = generatedOverlay?.let { "$it/src/main/kotlin/com/sce/generated" }
 
 val generateScxml by tasks.registering(Exec::class) {
     group = "code generation"

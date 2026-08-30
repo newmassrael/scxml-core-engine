@@ -130,34 +130,39 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # unmeasured.
 KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript lua:lua)
 
-# ── How far this backend is from `kotlin-retire-rewriter` ──────────
+# ── What this backend still cannot lower ───────────────────────────
 #
-# `EcmaScriptToLuaTransformer` is the FALLBACK behind every lowering entry
-# point in `LuaScriptEngine`: text `sce-build`'s frontend refuses is rewritten
-# rather than refused (§scxml-5.9.1). The seam document has said so in prose
-# since the frontend landed, and NOTHING COUNTED IT — so "how far is Kotlin
-# from retiring the rewriter" had no answer anyone could re-derive, and the
-# 1175-line unit's distance to deletion was a sentence.
+# `EcmaScriptToLuaTransformer` WAS the fallback behind every lowering entry
+# point in `LuaScriptEngine`: text `sce-build`'s frontend refused was rewritten
+# rather than refused. The seam document said so in prose since the frontend
+# landed and NOTHING COUNTED IT, so this block was born as a ratchet — a
+# ceiling over the fallback's uses, driven down toward `kotlin-retire-rewriter`.
 #
-# It is a number now. The engine appends one line per lowering, saying which
-# half answered, and this gate reads the file the suite wrote.
+# ⚠ THE CEILING RETIRED WITH ITS SUBJECT, on 2026-08-30, and replacing it was
+# not optional. With the fallback deleted, `rewriter=0` is a STRUCTURAL zero:
+# nothing in this tree can raise it and nothing can lower it, so holding it
+# under a ceiling would be a gate that cannot fail — the exact shape this
+# repository keeps paying for.
 #
-# ⚠ THE CEILING IS THE POINT, and it is a RATCHET rather than a budget: every
-# entry above zero is an expression someone is expected to move to the
-# frontend or to re-tag as Lua, and the row closes when it reaches 0. Raising
-# it is a claim to argue in `docs/SCE_LUA_TRANSLATION_SEAM.md`, not a way to
-# make this lane green.
-REWRITER_CEILING=100
+# ⚠⚠ What those four call sites became is a REFUSAL (§scxml-5.9.1), which is a
+# real event with a text behind it. It cannot be a ceiling either, because some
+# refusals are the specification working: a suite asking for `foo` with nothing
+# named `foo` gets exactly the `error.execution` the clause requires. So the
+# census is held by CLASSIFICATION rather than by count — every refused text
+# matches a declared entry in the file below, in both directions — and an
+# undeclared refusal is red. That is the ratchet now: the file goes DOWN as the
+# frontend learns shapes and callers re-tag, and the entries that remain are
+# the ones carrying a clause that says they should.
+REFUSALS_JSON="tests/ecmascript/kotlin_frontend_refusals.json"
 
-# ⚠⚠ AND A FLOOR UNDER THE FRONTEND, which is not decoration. Measured
+# ⚠⚠⚠ AND A FLOOR UNDER THE FRONTEND, which is not decoration. Measured
 # 2026-08-30, twice: a probe that wrote to `System.err` reported ZERO
 # fallbacks over a run that in fact took the fallback 100 times, because
 # Gradle swallows the test JVM's stderr. A census that never arrives and a
-# census of a run with nothing left to rewrite BOTH read zero, so the low
-# number alone cannot tell "we are done" from "nobody measured". The
-# frontend's own successes are what separates them: on this suite it answers
-# tens of thousands of times, so anything near zero means the census did not
-# happen.
+# census of a run with nothing to report BOTH read zero, so the low number
+# alone cannot tell "we are done" from "nobody measured". The frontend's own
+# successes are what separates them: on this suite it answers tens of thousands
+# of times, so anything near zero means the census did not happen.
 FRONTEND_FLOOR=1000
 CENSUS="$LOG/lowering-census.tsv"
 REPORTS="backends/kotlin/tests/build/test-results/test"
@@ -339,6 +344,186 @@ kotlin_tree_for_language() {
         if diff -rq "$COMMITTED_MACHINES" "$machines" >/dev/null 2>&1; then
             sce_gate_fail "\`generate-w3c --script-engine $language\` produced machines identical to the committed $COMMITTED_LANGUAGE ones, so the selection did not reach the templates. Running this pair would hand the $language engine $COMMITTED_LANGUAGE and report it as $language coverage."
         fi
+
+        # ── The integration stems, which `generate-w3c` does not emit ─────
+        #
+        # `generate-w3c` covers `com/sce/generated` and stops there. The other
+        # 41 committed machine directories are integration stems, emitted by
+        # per-stem regen scripts, and they follow the DEFAULT script-engine
+        # language — so on a row whose language is not the committed one they
+        # are the mis-supply the check below refuses.
+        #
+        # ⚠ TWO halves, and both are derived rather than listed.
+        # `generate-integration` enumerates `integration_resources/`, which is
+        # 34 of them; the rest keep their fixture somewhere else
+        # (`examples/ai_loop/ai_loop.scxml`, a `--host-processor` flag the
+        # fan-out cannot carry) and are reachable only as their own scripts.
+        # Naming those would be a list to keep current, so the split is asked
+        # of the tree: a script whose stem has no `integration_resources/`
+        # directory is one the fan-out did not drive.
+        #
+        # ⚠⚠ And the producers are found by WHAT THEY WRITE, not by what they
+        # are called. Measured 2026-08-30: `regen_native_action.sh` emits the
+        # Rust, Go AND Kotlin trees from one script, so a glob over
+        # `regen_*_kotlin.sh` misses `com/sce/integration/statechart_native_action`
+        # — which would leave exactly one directory in the committed language
+        # and hang this suite for the same reason the whole block exists.
+        local kt_root="$tree/backends/kotlin/tests/src/main/kotlin"
+        "$(sce_gate_codegen)" generate-integration -l kotlin \
+            --script-engine "$language" --output-dir "$kt_root" >/dev/null \
+            || sce_gate_fail "generating the Kotlin integration stems for --script-engine $language"
+
+        local producer stem
+        for producer in scripts/regen_*.sh; do
+            grep -q 'backends/kotlin/tests/src/main/kotlin}\?/com/sce/integration' "$producer" \
+                || continue
+            stem="$(basename "$producer" .sh)"; stem="${stem#regen_}"; stem="${stem%_kotlin}"
+            [ -d "integration_resources/$stem" ] && continue
+            SCE_SCRIPT_ENGINE="$language" SCE_SCRIPT_ENGINE_FOR=kotlin \
+            SCE_KOTLIN_GENERATED_ROOT="$kt_root" \
+                bash "$producer" >/dev/null \
+                || sce_gate_fail "$producer failed emitting its Kotlin machines for --script-engine $language"
+        done
+
+        # ── Every source that CARRIES a language must be IN the overlay ────
+        #
+        # ⚠ Measured 2026-08-30, from a run that did not fail — it HUNG.
+        # `sce.generated.overlay` replaces `com/sce/generated` and nothing
+        # else, so the 42 committed integration stems stayed in
+        # `$COMMITTED_LANGUAGE` and were compiled beside the overlay and handed
+        # to an engine that does not read that language. Rhino answered every
+        # `setCurrentEvent` with an `EcmaError` out of `JSON.parse`, the
+        # eventless drain never settled, and ONE ForkJoin worker burned 1047
+        # CPU-seconds of 1056 elapsed inside it. The case that exists to stop a
+        # macrostep that cannot end — `EventlessMacrostepIsBounded` — fails
+        # under the same mismatch, so nothing stopped it, and the CI job has no
+        # `timeout-minutes` to end it either: it ran for over an hour before a
+        # person looked.
+        #
+        # ⚠⚠ A mis-supply is therefore NOT reliably a red. That is the whole
+        # reason this is a precondition rather than something the suite's own
+        # result is trusted to show: a suite that never returns reports
+        # nothing at all, and a lane waiting on it looks exactly like a lane
+        # doing work.
+        #
+        # The population is DERIVED rather than listed. A file that constructs
+        # a `ScriptSource` hands its engine text in a NAMED language and can be
+        # mis-supplied; a file that constructs none cannot. `com/sce/http` and
+        # `com/sce/interpreter` hold one support file each and construct none,
+        # so they leave this set on their own — no exemption names them, and
+        # nothing has to be remembered when a fifth directory arrives.
+        local committed_root="backends/kotlin/tests/src/main/kotlin"
+        local overlay_root="$tree/$committed_root"
+        local replaced overlay_files committed_in_replaced uncovered
+        local carriers carrier_count stray name
+
+        # WHICH populations the build will replace, asked of the overlay
+        # exactly as `backends/kotlin/tests/build.gradle.kts` asks it: it adds
+        # each `com/sce/<name>` the overlay carries as a source directory and
+        # excludes the committed `com/sce/<name>/**` wholesale.
+        replaced="$(cd "$overlay_root/com/sce" 2>/dev/null \
+            && find . -mindepth 1 -maxdepth 1 -type d | sed 's|^\./||' | sort || true)"
+        [ -n "$replaced" ] \
+            || sce_gate_fail "the $language overlay carries no package directory under $overlay_root/com/sce, so the build would replace nothing and compile the committed machines while this row claims to measure $language"
+
+        overlay_files="$(cd "$overlay_root" 2>/dev/null && find . -name '*.kt' \
+            | sed 's|^\./||' | sort -u || true)"
+
+        # ── The hand-authored files inside a replaced population ──────────
+        #
+        # A replaced directory is excluded WHOLESALE, and not everything in one
+        # is generated. `com/sce/integration/package-info.kt` says so in its own
+        # KDoc — *"the only hand-authored file under `com.sce.integration`"* —
+        # and no generator emits it, so no amount of regeneration would put it
+        # back. It also cannot vary with the script-engine language, having no
+        # machine in it, so carrying the committed copy across is exact rather
+        # than approximate.
+        #
+        # ⚠ The discriminator is this repository's own `// Source:` marker, and
+        # it is what keeps this from becoming a hole: a GENERATED file missing
+        # from the overlay is a producer that did not run, and copying it here
+        # would paper over exactly the defect the check below exists to find.
+        # Only files without the marker move.
+        local handwritten
+        handwritten="$(
+            for name in $replaced; do
+                find "$committed_root/com/sce/$name" -name '*.kt' \
+                    -exec grep -L '^// Source:' {} \; 2>/dev/null
+            done | sed "s|^$committed_root/||" | sort -u
+        )"
+        while IFS= read -r hand; do
+            [ -n "$hand" ] || continue
+            [ -e "$overlay_root/$hand" ] && continue
+            mkdir -p "$overlay_root/$(dirname "$hand")"
+            cp "$committed_root/$hand" "$overlay_root/$hand" \
+                || sce_gate_fail "could not carry the hand-authored $hand into the $language overlay"
+        done <<<"$handwritten"
+
+        # ⚠ Re-read, because the copies above changed it.
+        overlay_files="$(cd "$overlay_root" 2>/dev/null && find . -name '*.kt' \
+            | sed 's|^\./||' | sort -u || true)"
+
+        # (1) EVERY committed file in a replaced population must be in the
+        # overlay — not only the ones that carry a language.
+        #
+        # ⚠ Measured 2026-08-30, and this check was WRONG the first time. It
+        # compared only the sources constructing a `ScriptSource`, passed with
+        # "covers all 200", and the build then failed to compile: the exclusion
+        # is per-DIRECTORY, so `statechart_bytes` and
+        # `statechart_delayed_host_send` — two stems that carry no script at
+        # all — were excluded with their neighbours and the overlay had no copy
+        # to put back. A predicate narrower than the exclusion it guards is a
+        # predicate that passes for the wrong reason.
+        committed_in_replaced="$(
+            for name in $replaced; do
+                find "$committed_root/com/sce/$name" -name '*.kt' 2>/dev/null
+            done | sed "s|^$committed_root/||" | sort -u
+        )"
+        uncovered="$(comm -23 \
+            <(printf '%s\n' "$committed_in_replaced" | grep -v '^$') \
+            <(printf '%s\n' "$overlay_files" | grep -v '^$'))"
+        if [ -n "$uncovered" ]; then
+            printf '%s\n' "committed sources the $language overlay excludes without replacing:" >&2
+            printf '%s\n' "$uncovered" | head -n 10 >&2
+            sce_gate_fail "the $language overlay replaces $(printf '%s\n' "$replaced" | tr '\n' ' ')but does not carry $(printf '%s\n' "$uncovered" | wc -l) committed file(s) inside them. The build excludes those directories wholesale, so each missing file is an unresolved reference at compile time. Generate those stems for $language too"
+        fi
+
+        # (2) And every source that CARRIES a language must be inside a
+        # replaced population, or it survives the exclusion in the committed
+        # language and is handed to this row's engine anyway — which is the
+        # mis-supply that HANGS rather than fails.
+        carriers="$(grep -rlE 'ScriptSource\.(lua|ecmascript)\(' "$committed_root" \
+            --include='*.kt' 2>/dev/null | sed "s|^$committed_root/||" | sort -u || true)"
+        carrier_count="$(printf '%s\n' "$carriers" | grep -c . || true)"
+
+        # ⚠⚠ The floor, and it is the half a reader deletes as redundant. If
+        # the pattern above ever stops matching, check (2) compares an EMPTY
+        # set and passes — reporting full coverage for a tree it could not
+        # read. Measured 2026-08-30: 200 committed sources construct a
+        # `ScriptSource` (159 under `generated`, 41 under `integration`), so a
+        # number near zero means the reading failed rather than that nothing
+        # carries a language.
+        local CARRIER_FLOOR=100
+        if (( carrier_count < CARRIER_FLOOR )); then
+            sce_gate_fail "only $carrier_count committed Kotlin source(s) were read as carrying a script-engine language, under the floor of $CARRIER_FLOOR. This tree emits a \`ScriptSource\` in every machine that has a script, so a number this low means the reading failed — and a reading that failed reports every overlay as complete"
+        fi
+
+        stray=""
+        while IFS= read -r carrier; do
+            [ -n "$carrier" ] || continue
+            case "$carrier" in
+                com/sce/*) name="${carrier#com/sce/}"; name="${name%%/*}" ;;
+                *) name="" ;;
+            esac
+            printf '%s\n' "$replaced" | grep -qx "$name" || stray="$stray$carrier"$'\n'
+        done <<<"$carriers"
+        if [ -n "$stray" ]; then
+            printf '%s\n' "committed sources that carry a language and are outside every replaced population:" >&2
+            printf '%s\n' "$stray" | head -n 10 >&2
+            sce_gate_fail "$(printf '%s\n' "$stray" | grep -c .) committed source(s) carry a script-engine language and sit outside the directories this $language overlay replaces, so they compile as $COMMITTED_LANGUAGE and are handed to the $language row's engine. That mis-supply does not fail this suite, it HANGS it — a machine whose events the engine cannot read never settles its eventless macrostep"
+        fi
+
+        sce_gate_step "the $language overlay replaces $(printf '%s\n' "$replaced" | tr '\n' ' ')and carries every committed file inside them, including all $carrier_count that carry a language"
     fi
     KOTLIN_TREE_FOR_LANGUAGE="$tree"
 }
@@ -399,26 +584,139 @@ done
 
 # ── The lowering census, read from the file the suite wrote ────────
 #
-# Held in BOTH directions, for the reason the ceiling block above states: a
-# missing census and a finished migration are the same small number, so the
-# frontend's successes are asserted as well as the rewriter's uses.
+# Held in BOTH directions, for the reason the block above states: a missing
+# census and a run with nothing to report are the same small number, so the
+# frontend's successes are asserted as well as the refusals.
 [ -f "$CENSUS" ] \
-    || sce_gate_fail "no lowering census at $CENSUS — the suite ran without recording which half answered each expression, so this run cannot say how far the Kotlin backend is from retiring EcmaScriptToLuaTransformer. The property is forwarded by backends/kotlin/tests/build.gradle.kts; a Test task that stopped forwarding it would look exactly like a backend with nothing left to rewrite"
+    || sce_gate_fail "no lowering census at $CENSUS — the suite ran without recording which half answered each expression, so this run cannot say what the Kotlin backend refused. The property is forwarded by backends/kotlin/tests/build.gradle.kts; a Test task that stopped forwarding it would look exactly like a backend that refused nothing"
 
 frontend_hits="$(grep -c '^frontend' "$CENSUS" || true)"; frontend_hits="${frontend_hits:-0}"
-rewriter_hits="$(grep -c '^rewriter' "$CENSUS" || true)"; rewriter_hits="${rewriter_hits:-0}"
+refused_hits="$(grep -c '^refused' "$CENSUS" || true)"; refused_hits="${refused_hits:-0}"
 
 if (( frontend_hits < FRONTEND_FLOOR )); then
-    sce_gate_fail "the census records only $frontend_hits frontend lowering(s), under the floor of $FRONTEND_FLOOR. This suite lowers tens of thousands of expressions, so a number this low means the census did not happen rather than that the frontend was not used — and a census that did not happen reports zero rewriter uses too"
+    sce_gate_fail "the census records only $frontend_hits frontend lowering(s), under the floor of $FRONTEND_FLOOR. This suite lowers tens of thousands of expressions, so a number this low means the census did not happen rather than that the frontend was not used — and a census that did not happen reports zero refusals too"
 fi
 
-if (( rewriter_hits > REWRITER_CEILING )); then
-    printf '%s\n' "the expressions that reached the rewriter:" >&2
-    sort "$CENSUS" | grep '^rewriter' | uniq -c | sort -rn | head -n 20 >&2
-    sce_gate_fail "EcmaScriptToLuaTransformer answered $rewriter_hits expression(s), over the ceiling of $REWRITER_CEILING. Every one of them is text sce-build's frontend refused: either an ECMAScript shape the frontend should learn, or Lua a caller tagged as ECMAScript and should re-tag. The ceiling is a ratchet toward kotlin-retire-rewriter, so it goes DOWN"
+# Every refusal is CLASSIFIED, in both directions.
+#
+# ⚠ A ceiling cannot outlive the retirement it was measuring. This block held
+# `rewriter_hits` under `REWRITER_CEILING` while the fallback stood; the
+# fallback is deleted, so that count is structurally zero — no change to this
+# tree can move it — and a predicate nothing can move is not a measurement.
+#
+# ⚠⚠ What the fallback's four call sites became is a REFUSAL, and refusals
+# cannot be held under a ceiling either: §scxml-5.9.1 makes some of them the
+# specification working as designed (a suite asking for `foo` with nothing
+# named `foo` is asking for exactly that), and "how many" cannot tell those
+# from a gap in the frontend. WHICH ONES can. So each refused text is matched
+# against a declared entry, and an undeclared refusal is RED rather than
+# counted — which is the rule an exemption list has to obey to be one.
+[ -f "$REFUSALS_JSON" ] \
+    || sce_gate_fail "the declared refusals are missing at $REFUSALS_JSON. Every refusal the census records is matched against that file in both directions, so without it this gate measures nothing"
+
+# ⚠ Every declaration carries its JUSTIFICATION, not just its text.
+#
+# Measured 2026-08-30: the first form of this block read `entry['text']` and
+# nothing else, so `{"text": "…"}` with no kind, no clause and no reason was a
+# valid declaration — an exemption list that silences the very check it exists
+# to arm. Proved by running that reader against exactly such an entry: it
+# printed the text and exited 0.
+#
+# The reader below has NO default arm. A kind it does not know is not "other",
+# it is unclassified, and unclassified is the state this file exists to make
+# red.
+#
+# It also reduces each kind to a DISPOSITION, which is what lets the ratchet
+# below be honest. `specification` and `control` refusals have no path to zero
+# — the clause requires them — so a ceiling over the whole list would be a
+# predicate whose zero is unreachable by construction, which is the shape the
+# retired `REWRITER_CEILING` had on the day its subject was deleted.
+declared_rows="$(python3 - "$REFUSALS_JSON" <<'PY'
+import json
+import sys
+
+DISPOSITION = {
+    "specification": "stays",
+    "control": "stays",
+    "frontend-gap": "leaves",
+    "caller-mistag": "leaves",
+}
+
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+entries = doc["refusals"]
+
+faults = []
+for index, entry in enumerate(entries):
+    text = entry.get("text")
+    if not isinstance(text, str) or not text:
+        faults.append(f"entry {index} carries no `text`")
+        continue
+    kind = entry.get("kind")
+    if kind not in DISPOSITION:
+        faults.append(
+            f"{text!r} carries kind {kind!r}, which is not one of "
+            + ", ".join(sorted(DISPOSITION))
+        )
+    if not entry.get("clause"):
+        faults.append(f"{text!r} cites no `clause`")
+    if not entry.get("why"):
+        faults.append(f"{text!r} gives no `why`")
+
+if faults:
+    for fault in faults:
+        print(fault, file=sys.stderr)
+    sys.exit(1)
+
+for entry in entries:
+    print(f"{DISPOSITION[entry['kind']]}\t{entry['text']}")
+PY
+)" || sce_gate_fail "$REFUSALS_JSON does not declare its refusals in full. Every entry carries a kind from the closed set, the clause it rests on, and why it is a refusal rather than a gap; an entry missing any of them is a text somebody added to quiet this lane rather than a refusal anybody classified"
+
+declared_refusals="$(printf '%s\n' "$declared_rows" | cut -f2-)"
+observed_refusals="$(grep '^refused' "$CENSUS" | cut -f3- | sort -u || true)"
+
+undeclared="$(comm -23 \
+    <(printf '%s\n' "$observed_refusals" | grep -v '^$' | sort -u) \
+    <(printf '%s\n' "$declared_refusals" | grep -v '^$' | sort -u))"
+if [ -n "$undeclared" ]; then
+    printf '%s\n' "the texts this run refused without a declaration:" >&2
+    printf '%s\n' "$undeclared" >&2
+    sce_gate_fail "the Kotlin Lua engine refused $(printf '%s\n' "$undeclared" | wc -l) text(s) that $REFUSALS_JSON does not declare. Each is either an ECMAScript shape the frontend should learn, Lua a caller tagged as ECMAScript and should re-tag, or a refusal §scxml-5.9.1 wants — and only the last belongs in that file, carrying the clause that makes it one. Unclassified is RED: a refusal nobody classified is a gap nobody looked at"
 fi
 
-sce_gate_step "KotlinLowering census: frontend=$frontend_hits rewriter=$rewriter_hits ceiling=$REWRITER_CEILING"
+unseen="$(comm -13 \
+    <(printf '%s\n' "$observed_refusals" | grep -v '^$' | sort -u) \
+    <(printf '%s\n' "$declared_refusals" | grep -v '^$' | sort -u))"
+if [ -n "$unseen" ]; then
+    printf '%s\n' "declared refusals this run never produced:" >&2
+    printf '%s\n' "$unseen" >&2
+    sce_gate_fail "$REFUSALS_JSON declares $(printf '%s\n' "$unseen" | wc -l) refusal(s) this run did not produce. Remove them — a list that keeps an entry nothing reaches cannot be trusted in the other direction either, and each one it keeps is a case a reader believes is still exercised"
+fi
+
+# ⚠⚠ THE RATCHET, and it is over the half that can actually reach zero.
+#
+# A `leaves` entry is a shape the frontend should learn or a caller that should
+# re-tag: both have a repair, and the file itself says adding one is a claim to
+# argue in `docs/SCE_LUA_TRANSLATION_SEAM.md` rather than a way to make this
+# lane green. So the ceiling is ZERO and it ratchets, exactly as the count it
+# replaced did.
+#
+# ⚠⚠⚠ Why not the whole list. `specification` and `control` refusals cannot
+# leave — §scxml-5.9.1 requires the first and a deliberate mis-tag measures the
+# second — so a ceiling over every entry would mix in roles whose zero is
+# unreachable by construction, and a predicate that cannot reach its own target
+# measures nobody's progress. Splitting by disposition is what makes the zero
+# both true today and losable tomorrow.
+REFUSAL_GAP_CEILING=0
+leaving="$(printf '%s\n' "$declared_rows" | grep '^leaves' | cut -f2- || true)"
+leaving_count="$(printf '%s\n' "$leaving" | grep -c . || true)"; leaving_count="${leaving_count:-0}"
+if (( leaving_count > REFUSAL_GAP_CEILING )); then
+    printf '%s\n' "declared refusals that are gaps rather than the specification working:" >&2
+    printf '%s\n' "$leaving" >&2
+    sce_gate_fail "$REFUSALS_JSON declares $leaving_count refusal(s) of a kind that HAS a repair — a shape the frontend should learn, or a caller handing Lua through the ECMAScript door — over the ceiling of $REFUSAL_GAP_CEILING. Recording one honestly is not a way to make this lane green: fix the frontend or re-tag the caller, and argue the entry in docs/SCE_LUA_TRANSLATION_SEAM.md if it must stay"
+fi
+
+sce_gate_step "KotlinLowering census: frontend=$frontend_hits refused=$refused_hits, every refusal declared in $REFUSALS_JSON, $leaving_count of them a gap (ceiling $REFUSAL_GAP_CEILING)"
 
 # The pin is the reason this gate can exist locally at all, so it is checked
 # rather than assumed: a run that rewrites the tree it was handed has

@@ -16,6 +16,7 @@ extern "C" {
 
 #include <cstring>
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Helper: Convert jstring to std::string (handles null)
@@ -244,6 +245,49 @@ JNIEXPORT void JNICALL JNI_METHOD(setGlobal)(JNIEnv *env, jclass, jlong handle, 
 JNIEXPORT jint JNICALL JNI_METHOD(getGlobal)(JNIEnv *env, jclass, jlong handle, jstring name) {
     std::string n = jstringToString(env, name);
     return lua_getglobal(toState(handle), n.c_str());
+}
+
+// Every string key of the global table, in one crossing.
+//
+// The JVM half of `forEachGlobalName` in `sce/src/scripting/LuaEngine.cpp`,
+// and it COLLECTS rather than visits for the reason the boundary imposes: a
+// callback per global would cross JNI once per name, and the caller wants the
+// whole set at once anyway — it compares this reading against the one taken
+// when the session was made.
+//
+// `lua_next` is the only way to enumerate a table and it is fragile in one
+// specific way: `lua_tostring` on a NUMBER key rewrites that key in place and
+// the traversal then loses its position. So the type is checked BEFORE the key
+// is read, which also happens to be the filter this wants — a global whose
+// name is not a string is not a name any datamodel can spell.
+JNIEXPORT jobjectArray JNICALL JNI_METHOD(globalNames)(JNIEnv *env, jclass, jlong handle) {
+    lua_State *L = toState(handle);
+    std::vector<std::string> names;
+
+    lua_pushglobaltable(L);
+    lua_pushnil(L);
+    while (lua_next(L, -2) != 0) {
+        if (lua_type(L, -2) == LUA_TSTRING) {
+            names.emplace_back(lua_tostring(L, -2));
+        }
+        lua_pop(L, 1);  // the value; the key stays for the next step
+    }
+    lua_pop(L, 1);  // the global table
+
+    jclass stringClass = env->FindClass("java/lang/String");
+    if (!stringClass) {
+        return nullptr;
+    }
+    jobjectArray out = env->NewObjectArray(static_cast<jsize>(names.size()), stringClass, nullptr);
+    if (!out) {
+        return nullptr;
+    }
+    for (jsize i = 0; i < static_cast<jsize>(names.size()); ++i) {
+        jstring name = env->NewStringUTF(names[static_cast<size_t>(i)].c_str());
+        env->SetObjectArrayElement(out, i, name);
+        env->DeleteLocalRef(name);
+    }
+    return out;
 }
 
 // === Error Handling ===

@@ -18,7 +18,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/empty_finalize_updates_the_location"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/empty_finalize_updates_the_location"
 STEM="empty_finalize_updates_the_location"
 INPUT_ROOT="integration_resources/empty_finalize_updates_the_location"
 PACKAGE_PREFIX="com.sce.integration"

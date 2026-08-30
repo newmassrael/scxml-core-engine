@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/autoforward_event_fields/autoforward_event_fields.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/autoforward_event_fields"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/autoforward_event_fields"
 STEM="autoforward_event_fields"
 INPUT_ROOT="integration_resources/autoforward_event_fields"
 PACKAGE_PREFIX="com.sce.integration"

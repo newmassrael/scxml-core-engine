@@ -85,7 +85,7 @@ done
 
 # The Kotlin half. Its own directory because a Kotlin package is a directory,
 # the same constraint the Go half states above.
-KT_GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_native_action"
+KT_GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_native_action"
 KT_PACKAGE_PREFIX="com.sce.integration"
 KT_TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" "$GO_TMP" "$KT_TMP"' EXIT

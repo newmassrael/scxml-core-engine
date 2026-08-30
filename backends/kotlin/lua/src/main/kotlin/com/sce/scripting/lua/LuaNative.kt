@@ -77,6 +77,16 @@ object LuaNative {
     @JvmStatic external fun setGlobal(handle: Long, name: String)
     @JvmStatic external fun getGlobal(handle: Long, name: String): Int
 
+    /**
+     * Every string key of the global table, in one crossing.
+     *
+     * The names a Lua `<script>` introduced are only readable here: a chunk
+     * the ECMAScript parser will not read declares nothing through
+     * `declareChunk`, and Lua's own global table is what can still say which
+     * names it left behind.
+     */
+    @JvmStatic external fun globalNames(handle: Long): Array<String>
+
     // Error handling
     @JvmStatic external fun getError(handle: Long): String?
 

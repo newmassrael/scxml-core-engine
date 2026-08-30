@@ -23,7 +23,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/send_namelist_over_http/send_namelist_over_http.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/send_namelist_over_http"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/send_namelist_over_http"
 STEM="send_namelist_over_http"
 INPUT_ROOT="integration_resources/send_namelist_over_http"
 PACKAGE_PREFIX="com.sce.integration"

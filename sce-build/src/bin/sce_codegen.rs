@@ -1703,6 +1703,26 @@ enum Commands {
         /// `integration_resources/<stem>/` directory is processed.
         #[arg(long)]
         stem: Option<String>,
+        /// Which language the generated machines hand their script engine,
+        /// for every stem this run regenerates.
+        ///
+        /// It reaches the per-stem scripts through `SCE_SCRIPT_ENGINE`, which
+        /// `scripts/lib/sce_codegen.sh` reads where every one of them already
+        /// asks for the binary — so the selection lives in ONE place instead
+        /// of in each script's own `generate` invocation. Thirty-eight command
+        /// lines carrying one decision is the drift that seam has already paid
+        /// for.
+        #[arg(long, value_name = "LANG")]
+        script_engine: Option<String>,
+        /// Where the artefacts land, replacing the committed source root.
+        ///
+        /// ⚠ Without it these scripts write IN PLACE, which is what a
+        /// committed tree wants and what a caller asking for the OTHER
+        /// script-engine language must not do: `scripts/gates/w3c-kotlin.sh`
+        /// needs one tree per engine/language pair and cannot get it by
+        /// dirtying the tree it is checking.
+        #[arg(long, value_name = "DIR")]
+        output_dir: Option<String>,
     },
     /// Fix SCXML name attribute (ensure <scxml name="testXXX">)
     FixScxmlName {
@@ -2204,9 +2224,18 @@ fn main() {
         Commands::Check(args) => cmd_check(*args, error_format),
         Commands::Orchestrate(args) => cmd_orchestrate(*args, error_format),
         Commands::GenerateW3c(args) => cmd_generate_w3c(*args),
-        Commands::GenerateIntegration { language, stem } => {
-            cmd_generate_integration(&language, stem.as_deref(), error_format)
-        }
+        Commands::GenerateIntegration {
+            language,
+            stem,
+            script_engine,
+            output_dir,
+        } => cmd_generate_integration(
+            &language,
+            stem.as_deref(),
+            script_engine.as_deref(),
+            output_dir.as_deref(),
+            error_format,
+        ),
         Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
@@ -7192,7 +7221,13 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
 /// not supported here — they emit at CMake / CI time without a
 /// committed tree, so there is nothing for `generate-integration` to
 /// drive.
-fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: ErrorFormat) {
+fn cmd_generate_integration(
+    language: &str,
+    stem: Option<&str>,
+    script_engine: Option<&str>,
+    output_dir: Option<&str>,
+    error_format: ErrorFormat,
+) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
         error_format.emit_and_exit(
             &CliError::UnknownLanguage {
@@ -7221,6 +7256,25 @@ fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: Er
             "",
         ),
     };
+
+    // ⚠ `--output-dir` is wired for Kotlin and for nothing else, so it is
+    // REFUSED elsewhere rather than ignored. Only the Kotlin stem scripts read
+    // `SCE_KOTLIN_GENERATED_ROOT`; a Rust or Go run that accepted the flag
+    // would write in place and report success, which is the failure mode a
+    // caller reaches for this flag precisely to avoid — it would dirty the
+    // tree it was trying to leave alone, and say nothing.
+    if output_dir.is_some() && lang != Language::Kotlin {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "generate-integration",
+            detail: format!(
+                "--output-dir is honoured by the Kotlin stem scripts alone, and \
+                 `{}` was asked for. The other backends' scripts write into their \
+                 committed tree; accepting the flag for them would dirty that tree \
+                 and report success",
+                lang.canonical_name()
+            ),
+        });
+    }
 
     let project_root = find_project_root();
     let integration_root = project_root.join("integration_resources");
@@ -7258,16 +7312,32 @@ fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: Er
                 ),
             });
         }
-        let status = std::process::Command::new("bash")
-            .arg(&script)
-            .current_dir(&project_root)
-            .status()
-            .unwrap_or_else(|e| {
-                cli_exit(CliError::ReadInput {
-                    path: script.display().to_string(),
-                    source: e,
-                })
-            });
+        let mut command = std::process::Command::new("bash");
+        command.arg(&script).current_dir(&project_root);
+        // The two selections reach the stem script as environment rather than
+        // as arguments, and that is the point rather than a shortcut: the
+        // script decides its own `generate` command line, and 38 of them do.
+        // `SCE_SCRIPT_ENGINE` is read once, by the codegen locator every one
+        // of them already sources; `SCE_KOTLIN_GENERATED_ROOT` opens the one
+        // line each of them spells the same way.
+        if let Some(engine) = script_engine {
+            command.env("SCE_SCRIPT_ENGINE", engine);
+            // ⚠ And WHICH backend it applies to, because a stem script may emit
+            // several from one file: `regen_native_action.sh` writes the Rust,
+            // Go and Kotlin trees, and Rust has no arm that emits ECMAScript.
+            // Without this scope the selection reaches all three and the
+            // generator refuses the first one it does not fit.
+            command.env("SCE_SCRIPT_ENGINE_FOR", lang.canonical_name());
+        }
+        if let Some(dir) = output_dir {
+            command.env("SCE_KOTLIN_GENERATED_ROOT", dir);
+        }
+        let status = command.status().unwrap_or_else(|e| {
+            cli_exit(CliError::ReadInput {
+                path: script.display().to_string(),
+                source: e,
+            })
+        });
         if !status.success() {
             cli_exit(CliError::ScxmlGenerate {
                 stage: "generate-integration",

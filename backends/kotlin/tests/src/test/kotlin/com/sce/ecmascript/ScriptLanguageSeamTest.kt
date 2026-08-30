@@ -2,16 +2,22 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // The language seam on `ScxmlScriptEngine`: does handing an engine Lua the
-// frontend already produced actually SKIP the rewriter, and does an engine
-// that cannot read Lua refuse it?
+// frontend already produced actually SKIP the run-time lowering, and does an
+// engine that cannot read Lua refuse it?
 //
 // The Kotlin sibling of `tests/engine/ScriptLanguageSeamTest.cpp` (ctest
 // `ScriptLanguageSeam`), and it is built the same way for the same reason:
 // every case carries its own CONTROL, so none of them can pass by measuring
 // nothing. A test that only asserted "lowered `a[1]` answers 10" would pass on
-// an engine that ignored the tag entirely and got there by rewriting — the
-// control is the same characters tagged ECMAScript, which must answer
-// something DIFFERENT.
+// an engine that ignored the tag entirely and lowered everything — the control
+// is the same characters tagged ECMAScript, which must answer something
+// DIFFERENT.
+//
+// ⚠ The controls survived `EcmaScriptToLuaTransformer`'s retirement because
+// none of them depended on the rewriter EXISTING — only on the two arms
+// answering differently, which a zero-based author index and a one-based
+// lowered one do whichever half performs the lowering. The one that narrowed
+// says so in its own KDoc.
 
 package com.sce.ecmascript
 
@@ -46,40 +52,47 @@ class ScriptLanguageSeamTest {
      * `a[1]` means different elements in the two languages — ECMAScript is
      * zero-based and Lua is one-based — so the SAME CHARACTERS answer the
      * author's second element when tagged `ecmascript` and the author's first
-     * when tagged `lua`. An engine that ignored the tag and rewrote everything
+     * when tagged `lua`. An engine that ignored the tag and lowered everything
      * would answer the same value twice, and that is what
      * [assertNotEquals] refuses.
      *
      * This is the shape a lowered artifact actually hits: `sce-build`'s
-     * frontend emits one-based Lua indices, and an engine that rewrote them
+     * frontend emits one-based Lua indices, and an engine that lowered them
      * again would shift a correct expression off by one — silently, because
      * both readings are valid Lua.
+     *
+     * ⚠ The control arm depends on the session's scope knowing `a`, and the
+     * setup declares it in LUA. What tells the frontend about a name a Lua
+     * chunk introduced is `offerDocumentGlobalsToScope`, reading Lua's own
+     * global table — the ECMAScript parser cannot see through that door. Before
+     * that reader existed the control was answered by the text rewriter
+     * instead, which is the same 20 by a route that no longer exists.
      */
     @Test
-    fun theLoweredArmSkipsTheRewriterAndTheControlProvesIt() {
+    fun theLoweredArmSkipsTheRunTimeLoweringAndTheControlProvesIt() {
         val engine = LuaScriptEngine()
         withSession(engine, "seam_lowered_index") { id ->
             engine.executeScript(id, ScriptSource.lua("a = {10, 20}", "var a = [10, 20];"))
 
             val lowered = engine.evaluateExpr(id, ScriptSource.lua("a[1]", "a[0]"))
-            val rewritten = engine.evaluateExpr(id, ScriptSource.ecmascript("a[1]"))
+            val authored = engine.evaluateExpr(id, ScriptSource.ecmascript("a[1]"))
 
             assertEquals(
                 10L,
                 (lowered as Number).toLong(),
                 "lowered `a[1]` must read the author's FIRST element: the frontend already " +
-                    "emitted a one-based index, and an engine that rewrote it again would " +
+                    "emitted a one-based index, and an engine that lowered it again would " +
                     "shift a correct expression off by one",
             )
             assertEquals(
                 20L,
-                (rewritten as Number).toLong(),
-                "the author's `a[1]` is zero-based, so the rewriter must turn it into the " +
-                    "SECOND element — this is the control",
+                (authored as Number).toLong(),
+                "the author's `a[1]` is zero-based, so lowering it must produce the SECOND " +
+                    "element — this is the control",
             )
             assertNotEquals(
                 lowered.toLong(),
-                rewritten.toLong(),
+                authored.toLong(),
                 "the two arms answered the same value, so the tag changed nothing and this " +
                     "suite is measuring one path twice",
             )
@@ -90,31 +103,37 @@ class ScriptLanguageSeamTest {
      * The script arm, and its control, on the same defect shape.
      *
      * `executeScript` is the other half of what `LoweredEcma262Test` needs: a
-     * case's setup is a script, and a setup that got rewritten would leave the
-     * session in a state no lowered artifact would produce.
+     * case's setup is a script, and a setup that got lowered a second time
+     * would leave the session in a state no lowered artifact would produce.
+     *
+     * ⚠ **What the control observes narrowed when the rewriter was retired,
+     * and it got stronger rather than weaker.** The text below is a Lua table
+     * constructor with a bracketed key — not ECMAScript. Tagged `ecmascript`
+     * it used to be handed to `EcmaScriptToLuaTransformer`, which mangled it
+     * into something that ran and left no readable `o.k`; it is now REFUSED,
+     * which the same assertion reads as the same "not 7". A wrong answer and a
+     * refusal are both "the tag was not ignored", and only the refusal is what
+     * §scxml-5.9.1 asks for.
      */
     @Test
-    fun theLoweredScriptArmSkipsTheRewriterToo() {
+    fun theLoweredScriptArmSkipsTheRunTimeLoweringToo() {
         val engine = LuaScriptEngine()
         withSession(engine, "seam_lowered_script") { id ->
-            // A Lua table constructor with a bracketed key. The rewriter
-            // mangles this shape — it is one of the twelve cases
-            // `kotlin_lowered_ecma262.json` declares unreachable — so a run
-            // that skipped the rewriter can read the key back and a run that
-            // did not cannot.
             engine.executeScript(id, ScriptSource.lua("""o = {["k"] = 7}""", """var o = {k: 7};"""))
             val lowered = engine.evaluateExpr(id, ScriptSource.lua("o.k", "o.k"))
             assertEquals(
                 7L,
                 (lowered as Number).toLong(),
-                "a lowered script must reach the interpreter as written: this table " +
-                    "constructor is one of the shapes the rewriter destroys",
+                "a lowered script must reach the interpreter as written: an engine that " +
+                    "offered this table constructor to an ECMAScript parser would be refused " +
+                    "by it",
             )
         }
 
         // The control, in its own session so the first cannot have set it up:
-        // the same Lua handed over as if the author had written it comes back
-        // through the rewriter, and does NOT produce a readable `o.k`.
+        // the same Lua handed over as if the author had written it is offered
+        // to a parser that reads ECMAScript, which refuses it — so there is no
+        // readable `o.k` afterwards.
         val control = LuaScriptEngine()
         withSession(control, "seam_control_script") { id ->
             val readBack = try {
@@ -126,8 +145,8 @@ class ScriptLanguageSeamTest {
             assertNotEquals(
                 7L,
                 (readBack as? Number)?.toLong(),
-                "the same characters tagged `ecmascript` came back readable, so the rewriter " +
-                    "left them alone and this case's control proves nothing about the seam",
+                "the same characters tagged `ecmascript` came back readable, so the tag " +
+                    "changed nothing and this case's control proves nothing about the seam",
             )
         }
     }
@@ -139,38 +158,40 @@ class ScriptLanguageSeamTest {
      * transition carries one — and it was the last of the five to get an arm.
      * The same characters answer differently in the two languages for the same
      * reason the expression arm does, so a `true` here against a `false` in the
-     * control is what proves the tag reached the rewriter's door and stopped
+     * control is what proves the tag reached the lowering's door and stopped
      * it.
      *
-     * Not folded into [theLoweredArmSkipsTheRewriterAndTheControlProvesIt]
-     * because a guard is a different route through this engine: it hands the
-     * rewriter `ExpressionContext.Guard`, a cache and a wrapping the general
-     * path never uses, so a seam that covered `evaluateExpr` alone would leave
-     * this one rewriting and nothing would have noticed.
+     * Not folded into
+     * [theLoweredArmSkipsTheRunTimeLoweringAndTheControlProvesIt] because a
+     * guard is a different route through this engine: §scxml-5.9 truthiness is
+     * not Lua's, so it reaches a SEPARATE frontend entry point
+     * (`lowerCondition`, the `to_lua_guard` wrapping) that the general path
+     * never uses — and a seam that covered `evaluateExpr` alone would leave
+     * this one lowering unconditionally with nothing to notice.
      */
     @Test
-    fun theLoweredGuardArmSkipsTheRewriterAndTheControlProvesIt() {
+    fun theLoweredGuardArmSkipsTheRunTimeLoweringAndTheControlProvesIt() {
         val engine = LuaScriptEngine()
         withSession(engine, "seam_lowered_guard") { id ->
             engine.executeScript(id, ScriptSource.lua("a = {10, 20}", "var a = [10, 20];"))
 
             val lowered = engine.evaluateCondition(id, ScriptSource.lua("a[1] == 10", "a[0] == 10"))
-            val rewritten = engine.evaluateCondition(id, ScriptSource.ecmascript("a[1] == 10"))
+            val authored = engine.evaluateCondition(id, ScriptSource.ecmascript("a[1] == 10"))
 
             assertTrue(
                 lowered,
                 "a lowered guard must read the author's FIRST element: the frontend already " +
-                    "emitted a one-based index, and a guard rewritten again compares the " +
+                    "emitted a one-based index, and a guard lowered again compares the " +
                     "wrong element",
             )
             assertTrue(
-                !rewritten,
-                "the author's `a[1]` is zero-based, so the rewriter must compare the SECOND " +
+                !authored,
+                "the author's `a[1]` is zero-based, so lowering it must compare the SECOND " +
                     "element and answer false — this is the control",
             )
             assertNotEquals(
                 lowered,
-                rewritten,
+                authored,
                 "both arms answered the same, so the tag changed nothing on the guard route",
             )
         }
@@ -181,11 +202,11 @@ class ScriptLanguageSeamTest {
      *
      * §scxml-5.4 `<assign expr="…">` reaches the engine through its own entry
      * point — the engine evaluates AND stores — so a lowered artifact whose
-     * assignments still went through the rewriter would write the wrong value
-     * into the datamodel with nothing raised.
+     * assignments were lowered a second time would write the wrong value into
+     * the datamodel with nothing raised.
      */
     @Test
-    fun theLoweredAssignArmSkipsTheRewriterAndTheControlProvesIt() {
+    fun theLoweredAssignArmSkipsTheRunTimeLoweringAndTheControlProvesIt() {
         val engine = LuaScriptEngine()
         withSession(engine, "seam_lowered_assign") { id ->
             engine.executeScript(id, ScriptSource.lua("a = {10, 20}", "var a = [10, 20];"))
@@ -202,17 +223,17 @@ class ScriptLanguageSeamTest {
             )
 
             val lowered = (engine.getVariable(id, "fromLowered") as Number).toLong()
-            val rewritten = (engine.getVariable(id, "fromAuthor") as Number).toLong()
+            val authored = (engine.getVariable(id, "fromAuthor") as Number).toLong()
 
             assertEquals(10L, lowered, "a lowered assign must store the author's FIRST element")
             assertEquals(
                 20L,
-                rewritten,
+                authored,
                 "the author's zero-based `a[1]` is the SECOND element — this is the control",
             )
             assertNotEquals(
                 lowered,
-                rewritten,
+                authored,
                 "both arms stored the same value, so the tag changed nothing on the assign route",
             )
         }
@@ -223,14 +244,14 @@ class ScriptLanguageSeamTest {
      *
      * §scxml-4.6 `<foreach array="…">` is the one entry point whose expression
      * must evaluate to a COLLECTION, and the engine reports a non-collection as
-     * `error.execution`. An array expression rewritten a second time therefore
+     * `error.execution`. An array expression lowered a second time therefore
      * does not merely iterate the wrong elements — it can iterate a different
      * object entirely, which is what this case measures: the same characters
      * select the first row of a table of rows when tagged `lua` and the second
      * when tagged `ecmascript`.
      */
     @Test
-    fun theLoweredForeachArmSkipsTheRewriterAndTheControlProvesIt() {
+    fun theLoweredForeachArmSkipsTheRunTimeLoweringAndTheControlProvesIt() {
         val engine = LuaScriptEngine()
         withSession(engine, "seam_lowered_foreach") { id ->
             engine.executeScript(
@@ -247,7 +268,7 @@ class ScriptLanguageSeamTest {
             }
 
             val lowered = collect(ScriptSource.lua("m[1]", "m[0]"))
-            val rewritten = collect(ScriptSource.ecmascript("m[1]"))
+            val authored = collect(ScriptSource.ecmascript("m[1]"))
 
             assertEquals(
                 listOf(1L, 2L),
@@ -257,12 +278,12 @@ class ScriptLanguageSeamTest {
             )
             assertEquals(
                 listOf(3L, 4L),
-                rewritten,
+                authored,
                 "the author's zero-based `m[1]` is the SECOND row — this is the control",
             )
             assertNotEquals(
                 lowered,
-                rewritten,
+                authored,
                 "both arms iterated the same row, so the tag changed nothing on the foreach route",
             )
         }
@@ -372,10 +393,52 @@ class ScriptLanguageSeamTest {
         assertEquals(ScriptLanguage.Lua, engine.nativeLanguage())
         assertTrue(
             engine.acceptsLanguage(ScriptLanguage.ECMAScript),
-            "`EcmaScriptToLuaTransformer` is this engine's adapter, so it accepts the " +
-                "author's text as well — that is what the divergence list measures",
+            "`sce-build`'s ECMAScript frontend is this engine's adapter — linked into " +
+                "`sce_lua_jni` and reached through `LoweringScope` — so it accepts the " +
+                "author's text as well, and that is what the divergence list measures",
         )
         assertTrue(engine.acceptsLanguage(ScriptLanguage.Lua))
+    }
+
+    /**
+     * `sce-build`'s ECMAScript frontend really is linked into `sce_lua_jni`.
+     *
+     * ⚠ **This test is named in two comments that predate it by four rounds,
+     * and until 2026-08-30 it did not exist.**
+     * `backends/kotlin/lua/src/main/cpp/CMakeLists.txt` says the link is "not
+     * optional" and that *"`theFrontendIsLinked` refuses a build that reached
+     * here without it"*; nothing in the tree carried that name. A check named
+     * in prose is a promise that something re-derives the sentence beside it,
+     * and this one was keeping a sentence nobody could fault — the same defect
+     * `lowering_decision_ledger`'s own sweep exists to catch one document over.
+     *
+     * ⚠⚠ **The retirement is what makes the predicate exact**, which is why it
+     * lands with it rather than earlier. While `EcmaScriptToLuaTransformer`
+     * stood behind the frontend, an ECMAScript expression could be answered by
+     * either half, so "this engine answered ECMAScript" said nothing about the
+     * link. With the fallback gone the frontend is the ONLY thing that can
+     * answer one: a library built without it hands every expression to
+     * `refusedToLower`. So an answer here is the link, and a refusal is its
+     * absence.
+     *
+     * `1 + 1` deliberately names nothing. A scope with nothing declared admits
+     * exactly the closed expressions, so this asks the frontend the one
+     * question that cannot fail for a reason of its own.
+     */
+    @Test
+    fun theFrontendIsLinked() {
+        val engine = LuaScriptEngine()
+        withSession(engine, "seam_frontend_linked") { id ->
+            val answered = engine.evaluateExpr(id, ScriptSource.ecmascript("1 + 1"))
+            assertEquals(
+                2L,
+                (answered as Number).toLong(),
+                "the Lua engine did not answer a closed ECMAScript expression. Since the " +
+                    "rewriter was retired the frontend is the only thing that can, so this " +
+                    "says `SCE::Lowering` is not in `sce_lua_jni` — a build that answers " +
+                    "`datamodel=\"ecmascript\"` by refusing every expression in it",
+            )
+        }
     }
 
     /**
@@ -431,15 +494,25 @@ class ScriptLanguageSeamTest {
     }
 
     /**
-     * Every rewrite this engine performs is reached through the branch that
+     * Every lowering this engine performs is reached through the branch that
      * asks what language the text is in.
      *
      * This is the predicate that replaces a count in a comment, and it is the
      * one that would have been red for the day `evaluateCondition`, `assign`
-     * and `executeForeach` still called the rewriter unconditionally while the
-     * interface's own header said the seam existed. A sentence claiming "the
-     * seam is landed" is not measurable; "no rewrite happens outside the branch
-     * that decides the language" is.
+     * and `executeForeach` still lowered unconditionally while the interface's
+     * own header said the seam existed. A sentence claiming "the seam is
+     * landed" is not measurable; "no lowering happens outside the branch that
+     * decides the language" is.
+     *
+     * ⚠ **Its subject moved when `EcmaScriptToLuaTransformer` was retired, and
+     * the property did not.** It used to count calls into that rewriter; it
+     * counts calls into the frontend now, because the frontend is what stands
+     * behind the same branch. The defect is the same shape and the diagnostic
+     * is what changed: an entry point that lowers unconditionally used to
+     * rewrite already-lowered Lua and shift a correct index off by one, and now
+     * offers it to a parser that refuses to read it as ECMAScript. Both are
+     * silent about the cause at the call site, which is why the branch — not
+     * the callee — is what this holds.
      *
      * It is deliberately not a list of approved call sites. The failure this
      * repository keeps paying for is the SIXTH entry point — the one nobody
@@ -451,15 +524,12 @@ class ScriptLanguageSeamTest {
      * source under `backends/kotlin` declaring a [ScxmlScriptEngine]
      * implementation — and then the members of each. It named one file by path
      * until 2026-08-30, which would have missed a second engine that adopted
-     * the rewriter. ⚠ The obvious widening, "every file that calls the
-     * rewriter", is wrong and was measured to be: `LoweredEcma262Test` calls it
-     * on purpose, because comparing the rewritten arm against the lowered one
-     * IS its measurement. Deriving the population as *engines* keeps that file
-     * out by what it is, rather than by an exemption entry — which is the
+     * the seam. Deriving the population as *engines* also keeps the suites
+     * out by WHAT THEY ARE rather than by an exemption entry, which is the
      * escape hatch this gate exists to refuse.
      *
      * Within each engine the split is at the class-level `fun` declarations,
-     * and the sweep carries two floors: the engine count, and the rewriter
+     * and the sweep carries two floors: the engine count, and the lowering
      * calls the seam branch itself holds. A walk that stopped finding either
      * would pass this test by examining nothing.
      *
@@ -473,7 +543,7 @@ class ScriptLanguageSeamTest {
      * working.
      */
     @Test
-    fun everyRewriteIsReachedThroughTheSeamBranch() {
+    fun everyLoweringIsReachedThroughTheSeamBranch() {
         val engines = engineSources()
         assertTrue(
             engines.size >= ENGINE_FLOOR,
@@ -483,13 +553,14 @@ class ScriptLanguageSeamTest {
                 "this test by examining nothing.",
         )
 
-        val rewrites = engines.sumOf { (_, body) -> REWRITE_CALL.findAll(body).count() }
+        val lowerings = engines.sumOf { (_, body) -> LOWER_CALL.findAll(body).count() }
         assertTrue(
-            rewrites >= REWRITE_FLOOR,
-            "found $rewrites rewriter call(s) across ${engines.size} engine(s) and the " +
-                "seam branch alone holds $REWRITE_FLOOR (`loweredTextOf`, " +
-                "`loweredScriptOf`). Fewer means the rewriter moved out of the engines and " +
-                "this sweep is no longer looking at it.",
+            lowerings >= LOWER_FLOOR,
+            "found $lowerings frontend lowering call(s) across ${engines.size} engine(s) " +
+                "and the seam branch alone holds $LOWER_FLOOR (`loweredTextOf`, " +
+                "`loweredConditionOf`, `loweredLocationOf`, `loweredScriptOf`). Fewer means " +
+                "the lowering moved out of the engines and this sweep is no longer looking " +
+                "at it.",
         )
 
         val unguarded = engines.flatMap { (file, body) ->
@@ -500,20 +571,21 @@ class ScriptLanguageSeamTest {
                 members.lastOrNull()?.second?.append(line)?.append('\n')
             }
             members
-                .filter { (_, text) -> REWRITE_CALL.containsMatchIn(text) }
+                .filter { (_, text) -> LOWER_CALL.containsMatchIn(text) }
                 .filterNot { (_, text) -> LANGUAGE_BRANCH.containsMatchIn(text) }
                 .map { (name, _) -> "${file.path}: $name" }
         }
 
         assertTrue(
             unguarded.isEmpty(),
-            "${unguarded.size} engine member(s) call the ECMAScript-to-Lua rewriter " +
+            "${unguarded.size} engine member(s) lower text through the ECMAScript frontend " +
                 "without asking what language the text is in: " +
-                "${unguarded.joinToString(", ")}. An entry point that rewrites " +
+                "${unguarded.joinToString(", ")}. An entry point that lowers " +
                 "unconditionally cannot be handed Lua the build-time frontend already " +
-                "produced — it rewrites it a second time, which shifts a correct index off " +
-                "by one with no diagnostic. Take a `ScriptSource` and go through " +
-                "`loweredTextOf` / `loweredScriptOf`.",
+                "produced — it offers it to a parser that reads ECMAScript, which refuses " +
+                "text that is already correct. Take a `ScriptSource` and go through " +
+                "`loweredTextOf` / `loweredConditionOf` / `loweredLocationOf` / " +
+                "`loweredScriptOf`.",
         )
     }
 
@@ -537,26 +609,29 @@ class ScriptLanguageSeamTest {
         /** A class that declares itself an engine, however it spells the supertype list. */
         val IMPLEMENTS_ENGINE = Regex("""class\s+\w+[^{]*:\s*[^{]*\bScxmlScriptEngine\b""")
 
-        /** A call into `EcmaScriptToLuaTransformer`, whichever of its two entry points. */
-        val REWRITE_CALL = Regex("""\btransformer\.transform(Script)?\s*\(""")
+        /** A call into `sce-build`'s ECMAScript frontend, whichever entry point. */
+        val LOWER_CALL = Regex("""\bloweringScope\.lower\w+\s*\(""")
 
-        /** The branch that decides whether the text needs rewriting at all. */
+        /** The branch that decides whether the text needs lowering at all. */
         val LANGUAGE_BRANCH = Regex("""==\s*ScriptLanguage\.Lua""")
 
         /** A member declaration at class indentation, and its name. */
         val MEMBER_DECLARATION = Regex("""^\s{4}(?:\w+\s+)*fun\s+(\w+)""")
 
         /**
-         * `loweredTextOf`, `loweredScriptOf` and `loweredLocationOf` — the
-         * branch is three calls wide.
+         * `loweredTextOf`, `loweredConditionOf`, `loweredLocationOf` and
+         * `loweredScriptOf` — the branch is four calls wide.
          *
-         * A FLOOR and not an equality, so a fourth arm does not fail this on
+         * A FLOOR and not an equality, so a fifth arm does not fail this on
          * the day it lands; what it defends is the sweep still finding the
-         * rewriter at all. It moved 2 → 3 on 2026-08-29 when an `<assign>`
+         * lowering at all. It moved 2 → 3 on 2026-08-29 when an `<assign>`
          * LOCATION started carrying its language too, which it has to: the
          * Lua arm splices the location in front of `=` and runs the result.
+         * It moved 3 → 4 when the rewriter was retired, because until then
+         * the `cond` arm reached its fallback rather than a separate frontend
+         * entry point and the sweep was counting the fallback.
          */
-        const val REWRITE_FLOOR = 3
+        const val LOWER_FLOOR = 4
 
         /**
          * An `override` of a guarded entry point — the two-argument

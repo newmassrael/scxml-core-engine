@@ -26,7 +26,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/unhandled_error_is_observable/unhandled_error_is_observable.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/unhandled_error_is_observable"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/unhandled_error_is_observable"
 STEM="unhandled_error_is_observable"
 INPUT_ROOT="integration_resources/unhandled_error_is_observable"
 PACKAGE_PREFIX="com.sce.integration"

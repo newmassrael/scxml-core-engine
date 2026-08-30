@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/session_ids_are_distinct/session_ids_are_distinct.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/session_ids_are_distinct"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/session_ids_are_distinct"
 STEM="session_ids_are_distinct"
 INPUT_ROOT="integration_resources/session_ids_are_distinct"
 PACKAGE_PREFIX="com.sce.integration"

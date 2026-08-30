@@ -31,7 +31,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/xml_data_is_a_dom_tree/xml_data_is_a_dom_tree.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/xml_data_is_a_dom_tree"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/xml_data_is_a_dom_tree"
 STEM="xml_data_is_a_dom_tree"
 INPUT_ROOT="integration_resources/xml_data_is_a_dom_tree"
 PACKAGE_PREFIX="com.sce.integration"

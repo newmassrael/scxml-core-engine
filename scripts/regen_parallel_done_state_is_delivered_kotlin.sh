@@ -31,7 +31,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/parallel_done_state_is_delivered/parallel_done_state_is_delivered.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_done_state_is_delivered"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/parallel_done_state_is_delivered"
 STEM="parallel_done_state_is_delivered"
 INPUT_ROOT="integration_resources/parallel_done_state_is_delivered"
 PACKAGE_PREFIX="com.sce.integration"

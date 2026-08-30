@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/nested_final_not_terminal/nested_final_not_terminal.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/nested_final_not_terminal"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/nested_final_not_terminal"
 STEM="nested_final_not_terminal"
 INPUT_ROOT="integration_resources/nested_final_not_terminal"
 PACKAGE_PREFIX="com.sce.integration"

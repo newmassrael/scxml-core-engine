@@ -35,7 +35,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 FIXTURE="integration_resources/autoforward_done_invoke/autoforward_done_invoke.scxml"
-GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/autoforward_done_invoke"
+GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/autoforward_done_invoke"
 STEM="autoforward_done_invoke"
 INPUT_ROOT="integration_resources/autoforward_done_invoke"
 PACKAGE_PREFIX="com.sce.integration"

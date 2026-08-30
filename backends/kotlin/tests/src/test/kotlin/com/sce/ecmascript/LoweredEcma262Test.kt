@@ -5,11 +5,13 @@
 // as opposed to for what the author wrote.
 //
 // `EcmaScriptSemanticsTest` beside this one measures the other route: the
-// author's ECMAScript handed to `LuaScriptEngine`, rewritten on the spot by
-// `EcmaScriptToLuaTransformer`, answering 46 of the shared table's cases
-// differently. That measurement says nothing about the route this file is
-// about, because the two share no code past the session: one runs a text
-// rewriter, the other runs Lua the frontend already produced.
+// author's ECMAScript handed to `LuaScriptEngine` and lowered on the spot.
+// That measurement says nothing about the route this file is about, because
+// the two differ in WHEN the frontend ran — one lowers against the session's
+// scope at run time and can be refused by it, the other runs Lua the frontend
+// already produced at build time and cannot be. The route kept the name
+// `runtime-rewriter` in `diverges_on` because `EcmaScriptToLuaTransformer` is
+// what used to do that lowering; since it was retired the frontend does.
 //
 // Until this file existed nothing on this backend asked the second question,
 // and `docs/SCE_LUA_TRANSLATION_SEAM.md` recorded the consequence: the
@@ -28,7 +30,6 @@
 package com.sce.ecmascript
 
 import com.sce.runtime.ScriptSource
-import com.sce.scripting.lua.EcmaScriptToLuaTransformer
 import com.sce.scripting.lua.LuaScriptEngine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
@@ -50,96 +51,30 @@ private class Emission(val source: String, val setup: String, val expression: St
 
 class LoweredEcma262Test {
 
-    /**
-     * The precondition the measurement rests on, asserted instead of assumed.
-     *
-     * ⚠ This backend has no way to hand its Lua engine text that is ALREADY
-     * Lua. Every entry point on `LuaScriptEngine` — `evaluateExpr`,
-     * `evaluateCondition`, `executeScript`, `executeForeach` — runs
-     * `EcmaScriptToLuaTransformer` over its argument first, because the
-     * generated Kotlin hands it the author's ECMAScript at every site
-     * (`Language::Kotlin.supports_script_engine_target(Lua)` is false, and
-     * `sce-codegen --script-engine lua -l kotlin` refuses, naming the sites
-     * still to move). So a suite that feeds the emission through
-     * `evaluateExpr` is running `rewriter(lowered)`, and where the rewriter
-     * changes anything it would report ITS answer while claiming to measure
-     * the frontend's.
-     *
-     * That is not hypothetical carelessness. Two fixtures beside this one —
-     * `DomReadSurfaceTest` and `EventDataReadingsTest` — say in their own
-     * comments that the Lua engine "is handed what the frontend lowered", and
-     * neither could be: both pass through the same rewriting entry point.
-     * What makes their result mean anything is exactly the property asserted
-     * here, and nothing was asserting it.
-     *
-     * So the set of cases the rewriter CHANGES is enumerated rather than
-     * counted, and held in both directions. Where it leaves the emission
-     * alone, `rewriter(lowered) == lowered` and the measurement below is
-     * about the Lua interpreter and the runtime library underneath it —
-     * which is what a `--script-engine lua` artifact would run.
-     */
-    @Test
-    fun theRewriterChangesExactlyTheCasesDeclaredUnreachable() {
-        val cases = loadSharedTable()
-        val emitted = loadEmission(cases)
-        val transformer = EcmaScriptToLuaTransformer()
-
-        val changed = mutableMapOf<Key, String>()
-        cases.forEachIndexed { index, case ->
-            val emission = emitted[index]
-            val notes = mutableListOf<String>()
-            val rewrittenExpr = transformer.transform(emission.expression)
-            if (rewrittenExpr != emission.expression) {
-                notes += "expression\n      emitted:   ${emission.expression}" +
-                    "\n      rewritten: $rewrittenExpr"
-            }
-            if (emission.setup.isNotEmpty()) {
-                val rewrittenSetup = transformer.transformScript(emission.setup)
-                if (rewrittenSetup != emission.setup) {
-                    notes += "setup\n      emitted:   ${emission.setup}" +
-                        "\n      rewritten: $rewrittenSetup"
-                }
-            }
-            if (notes.isNotEmpty()) {
-                changed[case.key] = notes.joinToString("\n    ")
-            }
-        }
-
-        val declared = loadDeclaredKeys("rewriter_mangles")
-
-        // Ordered before anything else: a run where the rewriter started
-        // touching a case prints it in the shape the file takes, rather than
-        // failing further down with nothing for the person who has to write
-        // the entry.
-        val undeclared = changed.keys.filterNot { it in declared }
-        assertTrue(
-            undeclared.isEmpty(),
-            "${undeclared.size} emitted case(s) are CHANGED by " +
-                "`EcmaScriptToLuaTransformer` without being declared in " +
-                "`rewriter_mangles` of $LOWERED_PATH. That list is what says the lowered " +
-                "entry point is load-bearing rather than decorative: for these cases the " +
-                "two arms are not the same code path, and a case that quietly joined them " +
-                "would make this suite's control weaker without anything saying so. These " +
-                "are the entries to add:\n" +
-                undeclared.joinToString(",\n") {
-                    "    { \"source\": ${jsonQuoted(it.source)}, " +
-                        "\"clause\": ${jsonQuoted(it.clause)} }"
-                } +
-                "\n\nWhat the rewriter did:\n" +
-                undeclared.joinToString("\n") { "  [${it.source}] ${changed[it]}" },
-        )
-
-        val nowUntouched = declared.filterNot { it in changed.keys }
-        assertTrue(
-            nowUntouched.isEmpty(),
-            "${nowUntouched.size} case(s) declared in `rewriter_mangles` of $LOWERED_PATH " +
-                "now pass through the rewriter unchanged. Remove them — a list that keeps " +
-                "a case it no longer describes cannot be trusted in the other direction " +
-                "either, and each entry it keeps overstates how much the lowered entry " +
-                "point is doing.\n" +
-                nowUntouched.joinToString("\n") { "  ${it.source}  (${it.clause})" },
-        )
-    }
+    // ⚠ A CASE STOOD HERE AND IT RETIRED WITH ITS SUBJECT.
+    //
+    // `theRewriterChangesExactlyTheCasesDeclaredUnreachable` enumerated the
+    // emitted cases `EcmaScriptToLuaTransformer` CHANGED, held against
+    // `rewriter_mangles` in `kotlin_lowered_ecma262.json` in both directions.
+    // What it bought was a control: this suite feeds the frontend's own
+    // emission back through `LuaScriptEngine`, and while every entry point
+    // rewrote its argument first, "the engine answered the emission" and "the
+    // engine answered a rewrite of the emission" were the same run. Naming the
+    // cases where the two differ is what made the difference visible.
+    //
+    // The rewriter is retired, so there is no second reading to separate: text
+    // tagged `ScriptSource.lua` reaches the interpreter as written, and text
+    // the frontend refuses is REFUSED rather than answered by someone else.
+    // Keeping the case would have meant keeping the unit it measured — and the
+    // `rewriter_mangles` array went with it, because a list nothing reads is a
+    // measurement nothing re-answers.
+    //
+    // What still holds the property it was buying is `ScriptLanguageSeamTest`,
+    // whose cases each carry their own control in the surviving shape: the
+    // same characters tagged `ecmascript` must answer DIFFERENTLY (the
+    // frontend lowers a zero-based index, Lua's is one-based) or be refused
+    // outright. That control does not depend on a rewriter existing, which is
+    // why it is the one that outlived it.
 
     /**
      * The measurement: the emission, run on the engine this backend ships.
