@@ -121,6 +121,27 @@ edit("scripts/gates/w3c-kotlin.sh",
      'COMMITTED_LANGUAGE=ecmascript  # $(')
 PY
 
+# ── The selection is allowed not to reach the templates ────────────
+#
+# The narrowest of the escape hatches, and the only guard in this gate whose
+# loss is answered by NOTHING downstream. A floor that goes missing shows up
+# as an empty run; a verdict that stops failing shows up as a failing pair.
+# A `generate-w3c --script-engine lua` that accepted the flag and emitted the
+# committed ECMAScript anyway produces a tree the Lua engine accepts through
+# its adapter and passes — so the row goes green while measuring the run-time
+# route it was written to stop measuring.
+#
+# `false &&` rather than deleting the block: the refusal message stays in the
+# file, which is what a reader would check, and only the comparison stops
+# happening. That is the shape this repository has already been bitten by —
+# the paragraph surviving the code it explained.
+
+mutation_case "a generated tree identical to the committed one is accepted" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     'if diff -rq "$COMMITTED_MACHINES" "$machines" >/dev/null 2>&1; then',
+     'if false && diff -rq "$COMMITTED_MACHINES" "$machines" >/dev/null 2>&1; then')
+PY
+
 # ── The suite stops re-reading the gate ────────────────────────────
 #
 # `GateEnginePairsTest` holds the array to the routes this backend has, by
