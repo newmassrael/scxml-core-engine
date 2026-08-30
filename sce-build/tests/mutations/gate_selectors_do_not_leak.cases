@@ -1,0 +1,114 @@
+# Mutation cases for "a selector in the caller's environment does not become
+# the test's scenario".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/gate_selectors_do_not_leak.cases`.
+#
+# The defect was six hand-written subtraction lists. Six test sites drove the
+# `mutation-rounds` gate as a subprocess, each clearing the selectors it
+# happened to think of; between them they cleared `SCE_MUTATION_ROUNDS` six
+# times, `SCE_GATE_CHANGED_FILE` five, the dry-run flag six, and
+# `SCE_MUTATION_SHARD` ZERO — while the workflow job that runs those very tests
+# sets the shard on purpose. Measured 2026-08-30: with `SCE_MUTATION_SHARD=1/2`
+# exported, `the_gate_starts_the_declared_service_for_that_round_and_no_other`
+# failed with `names a slice, but 3 casefile(s) are selected`.
+#
+# The repair replaces the six lists with one DERIVED list and one command
+# builder, and these cases attack the three joints that repair rests on: the
+# derivation (which name is a selector), the builder (which of them is
+# cleared), and the call sites (which shells go through the builder). The
+# derivation cases matter more than they look — a scan that reads too little
+# reintroduces the leak, and one that reads too much clears a name no caller
+# sets, which is the same defect wearing the other sign.
+#
+# `mutation_rounds_selection.rs` is a RUNTIME target: the oracle reads its text
+# rather than linking it, so an edit reaches the verdict without that binary
+# being rebuilt. `common/gate_selectors.rs` is a compiled one — it is linked
+# into the oracle's own binary.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test gate_selectors_do_not_leak
+mutation_targets sce-build/tests/common/gate_selectors.rs
+mutation_runtime_targets sce-build/tests/mutation_rounds_selection.rs
+
+# ── The original defect, restored exactly ──────────────────────────
+#
+# The set is sorted, so the shard is the name that falls off the end — which
+# is the one the six hand-written lists had missed. If only the object check
+# noticed this, the probe would be decoration; both must red.
+
+mutation_case "the builder clears all but the last selector" <<'PY'
+edit("sce-build/tests/common/gate_selectors.rs",
+     """    for name in mutation_rounds_selectors() {
+        cmd.env_remove(name);
+    }""",
+     """    for name in mutation_rounds_selectors().iter().take(3) {
+        cmd.env_remove(name);
+    }""")
+PY
+
+# ── Clearing everything is not clearing the selectors ──────────────
+#
+# The tempting one-liner. It passes "no selector reached the child" and breaks
+# every caller, because a gate started with an empty environment cannot find
+# the tools it shells out to.
+
+mutation_case "the builder empties the environment instead" <<'PY'
+edit("sce-build/tests/common/gate_selectors.rs",
+     """    let mut cmd = Command::new("bash");
+    for name in mutation_rounds_selectors() {""",
+     """    let mut cmd = Command::new("bash");
+    cmd.env_clear();
+    for name in mutation_rounds_selectors() {""")
+PY
+
+# ── A derivation that reads prose ──────────────────────────────────
+#
+# A name that survives only in a comment is a name the gate stopped reading.
+# Clearing it is a rule kept alive by its own explanation.
+
+mutation_case "the derivation stops stripping comments" <<'PY'
+edit("sce-build/tests/common/gate_selectors.rs",
+     """        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect();""",
+     """        .collect();""")
+PY
+
+# ── A derivation that cannot tell a local from a selector ──────────
+
+mutation_case "the derivation counts the script's own locals" <<'PY'
+edit("sce-build/tests/common/gate_selectors.rs",
+     """    if !text.starts_with("SCE_") {
+        return None;
+    }""",
+     """    if text.starts_with("SCE_") {
+        return None;
+    }""")
+PY
+
+# ── A scan that splits a longer identifier ─────────────────────────
+#
+# Without the name boundary, `MY_SCE_MUTATION_ROUNDS` contributes a selector no
+# caller ever sets, and every site clears a ghost.
+
+mutation_case "the scan drops the name boundary" <<'PY'
+edit("sce-build/tests/common/gate_selectors.rs",
+     "        if starts_a_name && end > i + 4 {",
+     "        if starts_a_name || end > i + 4 {")
+PY
+
+# ── A call site that goes back to a bare shell ─────────────────────
+#
+# The seventh site, in the shape it would actually arrive: someone writes a new
+# scenario by copying an old one from before this repair.
+
+mutation_case "a call site builds a bare bash again" <<'PY'
+edit("sce-build/tests/mutation_rounds_selection.rs",
+     """    let out = gate_shell()
+        .arg("scripts/gates/mutation-rounds.sh")
+        .current_dir(dir.path())""",
+     """    let out = Command::new("bash")
+        .arg("scripts/gates/mutation-rounds.sh")
+        .current_dir(dir.path())""")
+PY

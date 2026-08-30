@@ -48,7 +48,9 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+mod common;
+use common::gate_selectors::gate_shell;
 
 /// What one case costs, in minutes, by runner: `(setup, per-case)`.
 ///
@@ -202,7 +204,10 @@ fn the_gate_sizes_every_slice_it_hands_the_lane() {
     // lane uses. Driving it rather than restating its arithmetic is the point:
     // what is checked below is that the shard count it PRINTS partitions the
     // casefile into slices no larger than the number this test just read.
-    let out = Command::new("bash")
+    // `gate_shell` rather than a bare `bash`: this site declared neither
+    // `SCE_GATE_CHANGED_FILE` nor `SCE_MUTATION_SHARD`, so "the whole corpus"
+    // was the whole corpus only as long as nobody's environment said otherwise.
+    let out = gate_shell()
         .arg("scripts/gates/mutation-rounds.sh")
         .current_dir(&root)
         .env("SCE_MUTATION_ROUNDS_DRY_RUN", "1")
