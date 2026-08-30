@@ -223,6 +223,50 @@ edit("scripts/gates/w3c-kotlin.sh",
      'unseen="$(comm -23')
 PY
 
+# ── A declaration's stated reason stops being checkable ────────────
+#
+# The two directions above hold the declared list against the CENSUS. They say
+# nothing about whether an entry's reason still points at anything: a text the
+# engine really does refuse goes on being declared, correctly, by an entry
+# whose `why` rests on a fixture retired three rounds ago. `produced_by` is
+# what asks the tree, and these three cases are why it is not decoration.
+#
+# ⚠ THE REMOVAL IS INVISIBLE DOWNSTREAM, which is what makes an anchor the
+# only possible witness. Take the resolution out and the census still matches,
+# both `comm` directions still pass, the ceiling is still zero, and the lane
+# stays green over a file whose reasons nobody can follow. That is the shape
+# this repository already paid for once, when a `diff -rq` stopped comparing
+# and both trees went on running and passing.
+#
+# ⚠⚠ Written as INVERSIONS rather than as `False and …`. A short-circuit
+# leaves the anchor's text in the file, so `contains` would go on finding it
+# while the comparison did nothing — the "mutation hidden behind its own
+# short-circuit" this corpus has a casefile for. Flipping the operator moves
+# the text AND the meaning: the resolution starts answering the opposite
+# question, so a passing gate would be accepting the very names it exists to
+# reject.
+#
+# THREE cases because the reader has three separable parts and none implies
+# another: the field being read at all, and one population per kind of name.
+
+mutation_case "the producers of a declaration are never read" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     'producers = entry.get("produced_by")',
+     'producers = entry.get("produced_by_names")')
+PY
+
+mutation_case "a numeric producer stops being resolved against the registry" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     "if name not in fixtures:",
+     "if name in fixtures:")
+PY
+
+mutation_case "a named producer stops being resolved against the test sources" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     "elif name not in classes:",
+     "elif name in classes:")
+PY
+
 # ── The census is measured, and the measurement never happened ─────
 #
 # ⚠ THE HALF THAT LOOKS REDUNDANT AND IS NOT. A run whose census never arrived

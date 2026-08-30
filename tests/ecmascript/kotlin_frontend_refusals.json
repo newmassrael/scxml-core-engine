@@ -35,13 +35,43 @@
     "this lane green.",
     "",
     "`text` is the AUTHOR'S spelling — `ScriptSource.source`, the text the",
-    "document wrote — and not the lowering, because a refusal has no lowering."
+    "document wrote — and not the lowering, because a refusal has no lowering.",
+    "",
+    "`produced_by` NAMES WHAT REACHES IT, and it is what keeps the rest of an",
+    "entry from being a story. Every `why` below claims some case exercises its",
+    "text; until this field existed nothing re-read that claim, and a sentence",
+    "nobody re-reads is the kind this repository has watched rot twice already.",
+    "So each entry names its producers and the gate RESOLVES every name against",
+    "the tree: a run of digits must be a fixture that",
+    "`tests/w3c/conformance/fixtures.json` registers, and anything else must be",
+    "a Kotlin test class that exists under",
+    "`backends/kotlin/tests/src/test/kotlin`. A name that is neither is RED,",
+    "never skipped — retiring test307 has to take this file's `Var1` entry with",
+    "it rather than leaving behind a reason no reader can follow.",
+    "",
+    "⚠ What it does NOT prove, stated rather than hidden: that the named case",
+    "is the one that produced the text ON THIS RUN. The census records the text",
+    "and not its caller, so the honest strength of this field is that every",
+    "producer named still exists. The `unseen` direction covers the rest — a",
+    "text no run produces is red however well its producers are spelled — and",
+    "the two together are why neither alone would do.",
+    "",
+    "⚠⚠ A refusal can be raised at BUILD time on one artifact and at RUN time",
+    "on another, from the same document. The generator lowers against what the",
+    "DOCUMENT declares; the engine's run-time frontend is handed the SESSION's",
+    "scope. Three of the entries below are only reached over an ECMAScript",
+    "artifact for that reason, which is why the census this file is matched",
+    "against is the one accumulated across ALL of `KOTLIN_ENGINE_PAIRS` rather",
+    "than any single pair's."
   ],
   "refusals": [
     {
       "text": "JSON.stringify(never_declared)",
       "kind": "specification",
       "clause": "W3C SCXML §scxml-5.9.1",
+      "produced_by": [
+        "DatamodelReadJsonTest"
+      ],
       "why": [
         "`never_declared` is a name the session's scope has never been told",
         "about, so the frontend refuses the expression and the engine reports",
@@ -61,6 +91,9 @@
       "text": "o = {[\"k\"] = 7}",
       "kind": "control",
       "clause": "W3C SCXML §scxml-5.9.1",
+      "produced_by": [
+        "ScriptLanguageSeamTest"
+      ],
       "why": [
         "A Lua table constructor with a bracketed key, handed through the",
         "ECMAScript door ON PURPOSE. It is the control half of",
@@ -79,6 +112,92 @@
         "THIS ENTRY DOES NOT LEAVE EITHER, for as long as that case does: it",
         "is a deliberate mis-tag, not a shape the frontend should learn. A",
         "frontend that accepted it would be parsing Lua as ECMAScript."
+      ]
+    },
+    {
+      "text": "return",
+      "kind": "specification",
+      "clause": "W3C SCXML §scxml-5.9.1",
+      "produced_by": [
+        "309",
+        "344"
+      ],
+      "why": [
+        "The guard the W3C IRP suite writes where its `conf:nonBoolean`",
+        "placeholder goes. test344 states the requirement in its own comment —",
+        "the placeholder \"will have to be mapped onto something that produces a",
+        "syntax error or something similarly invalid\" — and a reserved word used",
+        "as a value is that invalid thing. test309 asks for the same from the",
+        "other side: \"an expression that cannot be interpreted as a boolean is",
+        "treated as false\".",
+        "",
+        "So the frontend refusing it is the test passing. An ECMAScript frontend",
+        "that accepted `return` as an expression would have stopped being one,",
+        "which is why this is not a shape to learn.",
+        "",
+        "⚠ It reaches the census only over an ECMAScript artifact. Generating",
+        "the same document for Lua moves the refusal to BUILD time — the guard",
+        "is emitted as `error(\"…reserved word 'return' used as a value…\")` — so",
+        "the committed machines carry the refusal as text and never ask the",
+        "engine for it. Both routes land on this clause; only one lands at run",
+        "time.",
+        "",
+        "THIS ENTRY DOES NOT LEAVE while test309 and test344 are registered."
+      ]
+    },
+    {
+      "text": "foo",
+      "kind": "specification",
+      "clause": "W3C SCXML §scxml-5.9.1",
+      "produced_by": [
+        "343"
+      ],
+      "why": [
+        "test343 — \"test that illegal <param> produces error.execution and empty",
+        "event.data\" — carries `<param location=\"foo\" name=\"someParam\"/>` in a",
+        "document that never declares `foo`. Reading it is the illegal act the",
+        "test is built on, so the refusal is the expected result rather than a",
+        "gap standing in front of one.",
+        "",
+        "⚠ Both artifacts refuse it, and in the same place: the generator's",
+        "frontend declines at build time too and emits `error(\"SCXML expr is not",
+        "valid ECMAScript: foo: foo is not declared by this document\")`. Two",
+        "routes agreeing is what a specification refusal should look like.",
+        "",
+        "THIS ENTRY DOES NOT LEAVE while test343 is registered."
+      ]
+    },
+    {
+      "text": "Var1",
+      "kind": "specification",
+      "clause": "W3C SCXML §scxml-5.9.1",
+      "produced_by": [
+        "307"
+      ],
+      "why": [
+        "test307 is the `binding=\"late\"` test and its comment states the shape:",
+        "\"in s0 we access a variable that isn't created until we get to s1\".",
+        "Late binding means `Var1` is not in the session's scope when s0's `<log",
+        "expr=\"Var1\"/>` runs, so an ECMAScript datamodel owes a ReferenceError",
+        "there and the engine reports one.",
+        "",
+        "⚠⚠ This is the entry where the two artifacts DIVERGE, and the",
+        "divergence is the binding rule rather than a defect. The generator",
+        "lowers against what the DOCUMENT declares — every `<data id>` in it,",
+        "whenever bound — so over the committed Lua machines `Var1` lowers to",
+        "`Var1` and the same ReferenceError arrives one step later, from",
+        "`LuaScriptEngine.isUndeclaredSimpleVariable`, off the interpreter's own",
+        "globals. Over the ECMAScript artifact the run-time frontend is handed",
+        "the SESSION's scope, which does not hold `Var1` yet, and refuses. One",
+        "clause, one observable event, two places it can be raised.",
+        "",
+        "⚠ `Var1` is the suite's most common variable name and almost every",
+        "other document declares it early, so almost none of them refuse it —",
+        "test342 evaluates this very text as a `<send eventexpr>` and is NOT",
+        "refused. The late-bound read is the one that is, which is why this",
+        "entry names test307 alone.",
+        "",
+        "THIS ENTRY DOES NOT LEAVE while test307 is registered."
       ]
     }
   ]

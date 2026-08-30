@@ -155,6 +155,20 @@ KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript lua:lua)
 # the ones carrying a clause that says they should.
 REFUSALS_JSON="tests/ecmascript/kotlin_frontend_refusals.json"
 
+# ⚠ And the two populations a declaration's PRODUCERS are resolved against.
+#
+# Every entry in the file above carries a sentence of the shape "THIS ENTRY
+# DOES NOT LEAVE while test307 is registered". Nothing re-read those sentences
+# until 2026-08-30, which makes them exactly the kind this repository has
+# already watched rot twice — a per-call figure quoted from a deleted probe,
+# and a lane size lifted out of a neighbouring measurement. So each entry names
+# its producers and the reader below RESOLVES every name here: a run of digits
+# against the conformance registry, anything else against the Kotlin test
+# sources. A name that is neither is red rather than skipped, which is what
+# makes retiring test307 take that entry with it.
+FIXTURES_JSON="tests/w3c/conformance/fixtures.json"
+KOTLIN_TEST_SOURCES="backends/kotlin/tests/src/test/kotlin"
+
 # ⚠⚠⚠ AND A FLOOR UNDER THE FRONTEND, which is not decoration. Measured
 # 2026-08-30, twice: a probe that wrote to `System.err` reported ZERO
 # fallbacks over a run that in fact took the fallback 100 times, because
@@ -631,8 +645,17 @@ fi
 # — the clause requires them — so a ceiling over the whole list would be a
 # predicate whose zero is unreachable by construction, which is the shape the
 # retired `REWRITER_CEILING` had on the day its subject was deleted.
-declared_rows="$(python3 - "$REFUSALS_JSON" <<'PY'
+#
+# ⚠⚠ And every declaration RESOLVES its producers, which is the half that
+# stops a `why` from being a story. Each entry ends by promising it stays "while
+# test307 is registered"; nothing re-read that promise until the reader below
+# did, and this repository has already paid twice for a quotable sentence that
+# nobody re-measured. Digits resolve against the conformance registry and
+# anything else against the Kotlin test sources — a name that is neither is
+# unclassified, and unclassified is red rather than skipped.
+declared_rows="$(python3 - "$REFUSALS_JSON" "$FIXTURES_JSON" "$KOTLIN_TEST_SOURCES" <<'PY'
 import json
+import pathlib
 import sys
 
 DISPOSITION = {
@@ -644,6 +667,16 @@ DISPOSITION = {
 
 doc = json.load(open(sys.argv[1], encoding="utf-8"))
 entries = doc["refusals"]
+
+# The two populations a producer name is resolved against. Neither is a
+# spelling: the registry is what `generate-w3c` and the CMake registration both
+# read, and the class set is the files that actually exist, so an entry cannot
+# outlive the case it names.
+fixtures = {
+    fixture["id"]
+    for fixture in json.load(open(sys.argv[2], encoding="utf-8"))["fixtures"]
+}
+classes = {path.stem for path in pathlib.Path(sys.argv[3]).rglob("*.kt")}
 
 faults = []
 for index, entry in enumerate(entries):
@@ -662,6 +695,29 @@ for index, entry in enumerate(entries):
     if not entry.get("why"):
         faults.append(f"{text!r} gives no `why`")
 
+    producers = entry.get("produced_by")
+    if not isinstance(producers, list) or not producers:
+        faults.append(
+            f"{text!r} names no `produced_by`. An entry that says nothing "
+            f"reaches it cannot be checked against the tree at all"
+        )
+        continue
+    for name in producers:
+        if not isinstance(name, str) or not name:
+            faults.append(f"{text!r} names an empty producer")
+        elif name.isdigit():
+            if name not in fixtures:
+                faults.append(
+                    f"{text!r} names W3C fixture {name!r}, which "
+                    f"{sys.argv[2]} does not register"
+                )
+        elif name not in classes:
+            faults.append(
+                f"{text!r} names producer {name!r}, which is neither a "
+                f"registered W3C fixture id nor a test class under "
+                f"{sys.argv[3]}"
+            )
+
 if faults:
     for fault in faults:
         print(fault, file=sys.stderr)
@@ -670,7 +726,7 @@ if faults:
 for entry in entries:
     print(f"{DISPOSITION[entry['kind']]}\t{entry['text']}")
 PY
-)" || sce_gate_fail "$REFUSALS_JSON does not declare its refusals in full. Every entry carries a kind from the closed set, the clause it rests on, and why it is a refusal rather than a gap; an entry missing any of them is a text somebody added to quiet this lane rather than a refusal anybody classified"
+)" || sce_gate_fail "$REFUSALS_JSON does not declare its refusals in full. Every entry carries a kind from the closed set, the clause it rests on, why it is a refusal rather than a gap, and the producers that reach it — each of which must resolve to a fixture $FIXTURES_JSON registers or a test class under $KOTLIN_TEST_SOURCES. An entry missing any of them is a text somebody added to quiet this lane rather than a refusal anybody classified"
 
 declared_refusals="$(printf '%s\n' "$declared_rows" | cut -f2-)"
 observed_refusals="$(grep '^refused' "$CENSUS" | cut -f3- | sort -u || true)"

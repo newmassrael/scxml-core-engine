@@ -130,6 +130,19 @@ edit("sce-build/tests/lowering_decision_ledger.rs",
      '            population.len() >= TRACKED_CPP_FLOOR,')
 PY
 
+# ⚠ The extension filter is the third way this population can empty, and until
+# 2026-08-30 only the KOTLIN half had a case for it — found while re-aiming
+# that one. The two halves have the same shape (`is_cpp_source` against
+# `TRACKED_CPP_FLOOR`, `is_kotlin_source` against `TRACKED_KOTLIN_FLOOR`), so a
+# guard exercised on one side and not the other is a gap rather than a
+# judgement about C++. Anchored on the fragment `rustfmt` keeps on one line,
+# for the reason the Kotlin case now spells out.
+mutation_case "the C++ sweep is pointed at an extension nothing carries" <<'PY'
+edit("sce-build/tests/lowering_decision_ledger.rs",
+     '        Some("cpp" | "cc" | "cxx" | "h" | "hpp" | "c")\n',
+     '        Some("cppx" | "ccx" | "cxxx" | "hx" | "hppx" | "cx")\n')
+PY
+
 # ⚠⚠⚠ The one that matters most. The mention control is the ONLY thing left
 # standing between "no file reaches the rewriter" and "no file was read", now
 # that the unit whose own files used to prove the predicate can see is gone.
@@ -253,10 +266,22 @@ PY
 # and the mention control are the three ways it can come to read nothing while
 # still reporting success.
 
+# ⚠ RE-AIMED 2026-08-30, and the reason is worth more than the repair. The
+# first form quoted the whole `matches!(…)` on ONE line. That broke no rule
+# this repository had written down — it is the case's own subject, not an
+# argument list — and it was stale the moment it landed, because `rustfmt`
+# wraps that call across three lines and a one-line quotation matches no byte
+# sequence in the file. `mutation-cases` reported it as INCONCLUSIVE, which
+# would have read as SURVIVED on any round that did not look.
+#
+# ▶ The general form to carry: an anchor in Rust must be a fragment `rustfmt`
+# KEEPS on one line. `Some("kt" | "kts")` is that fragment here, it occurs
+# exactly once in the file, and the extension set is what the case is aiming
+# at anyway.
 mutation_case "the Kotlin sweep is pointed at an extension nothing carries" <<'PY'
 edit("sce-build/tests/lowering_decision_ledger.rs",
-     'matches!(path.rsplit_once(\'.\').map(|(_, ext)| ext), Some("kt" | "kts"))',
-     'matches!(path.rsplit_once(\'.\').map(|(_, ext)| ext), Some("ktx" | "ktsx"))')
+     '        Some("kt" | "kts")\n',
+     '        Some("ktx" | "ktsx")\n')
 PY
 
 mutation_case "the control that proves the Kotlin sweep reads goes blind" <<'PY'
