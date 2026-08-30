@@ -154,7 +154,7 @@ class DonedataLocalInvokeStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'param_ok' with expr
         try {
-            val initResult_paramOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("false"))
+            val initResult_paramOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false"))
             engine.setVariable(sid, "param_ok", initResult_paramOk)
         } catch (e: Exception) {
             raisePlatformError(DonedataLocalInvokeEvent.Error.Execution, "<data id='param_ok'> expr failed to evaluate")
@@ -344,7 +344,7 @@ class DonedataLocalInvokeStateMachine(
     private fun processPhaseContent(
         event: DonedataLocalInvokeEvent
     ): TransitionResult<DonedataLocalInvokeState> = when {
-        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("param_ok && _event.data === 'hello_content'")) -> TransitionResult.External(DonedataLocalInvokeState.Pass, DonedataLocalInvokeState.PhaseContent, 0)
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvContent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(param_ok) and (_event.data == \"hello_content\"))", "param_ok && _event.data === 'hello_content'")) -> TransitionResult.External(DonedataLocalInvokeState.Pass, DonedataLocalInvokeState.PhaseContent, 0)
 
         event is DonedataLocalInvokeEvent.Done.Invoke.InvContent -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseContent, 1)
 
@@ -356,7 +356,7 @@ class DonedataLocalInvokeStateMachine(
     private fun processPhaseParam(
         event: DonedataLocalInvokeEvent
     ): TransitionResult<DonedataLocalInvokeState> = when {
-        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLocalInvokeState.PhaseContent, DonedataLocalInvokeState.PhaseParam, 3)
+        event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.result == 42))", "_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLocalInvokeState.PhaseContent, DonedataLocalInvokeState.PhaseParam, 3)
 
         event is DonedataLocalInvokeEvent.Done.Invoke.InvParam -> TransitionResult.External(DonedataLocalInvokeState.Fail, DonedataLocalInvokeState.PhaseParam, 4)
 
@@ -463,7 +463,7 @@ class DonedataLocalInvokeStateMachine(
                 // SCE-MAP: donedata_local_invoke.scxml:47 :: phase_param :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("param_ok"), com.sce.runtime.ScriptSource.ecmascript("true"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("param_ok", "param_ok"), com.sce.runtime.ScriptSource.lua("true", "true"))
             }
             else -> {}
         }

@@ -160,14 +160,14 @@ class InvokeParamErrorStartsTheChildStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'nothing' with expr
         try {
-            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("null"))
+            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
             engine.setVariable(sid, "nothing", initResult_nothing)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sawParamError' with expr
         try {
-            val initResult_sawParamError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_sawParamError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "sawParamError", initResult_sawParamError)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='sawParamError'> expr failed to evaluate")
@@ -358,11 +358,11 @@ class InvokeParamErrorStartsTheChildStateMachine(
     ): TransitionResult<InvokeParamErrorStartsTheChildState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is InvokeParamErrorStartsTheChildEvent.Error.Execution -> TransitionResult.Internal(0)
-        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawParamError !== 1")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailNoParamError, InvokeParamErrorStartsTheChildState.ParamPhase, 1)
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawParamError ~= 1)", "sawParamError !== 1")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailNoParamError, InvokeParamErrorStartsTheChildState.ParamPhase, 1)
 
-        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.kept !== 'here'")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailGoodParamLost, InvokeParamErrorStartsTheChildState.ParamPhase, 2)
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.kept ~= \"here\")", "_event.data.kept !== 'here'")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailGoodParamLost, InvokeParamErrorStartsTheChildState.ParamPhase, 2)
 
-        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.brokenPlaceholder === true")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded, InvokeParamErrorStartsTheChildState.ParamPhase, 3)
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.brokenPlaceholder == true)", "_event.data.brokenPlaceholder === true")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded, InvokeParamErrorStartsTheChildState.ParamPhase, 3)
 
         event is InvokeParamErrorStartsTheChildEvent.ChildUp -> TransitionResult.External(InvokeParamErrorStartsTheChildState.Pass, InvokeParamErrorStartsTheChildState.ParamPhase, 4)
 
@@ -438,7 +438,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["kept"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("'here'"))
+                        invokeParams["kept"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"here\"", "'here'"))
                     } catch (_: Exception) {
                         raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='kept'> expr failed to evaluate")
                     }
@@ -459,7 +459,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
                     // insert is inside the `try`, so a failure leaves the name
                     // absent, which is the clause's other half.
                     try {
-                        invokeParams["broken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.ecmascript("nothing.deep"))
+                        invokeParams["broken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep"))
                     } catch (_: Exception) {
                         raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='broken'> expr failed to evaluate")
                     }
@@ -530,7 +530,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:117 :: paramPhase :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("sawParamError"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("sawParamError", "sawParamError"), com.sce.runtime.ScriptSource.lua("1", "1"))
             }
             else -> {}
         }

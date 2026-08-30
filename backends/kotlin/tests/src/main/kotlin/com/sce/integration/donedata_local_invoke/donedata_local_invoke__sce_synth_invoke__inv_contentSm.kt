@@ -306,7 +306,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.ecmascript("'hello_content'"))
+                        val contentResult = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("\"hello_content\"", "'hello_content'"))
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {

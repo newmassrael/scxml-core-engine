@@ -258,28 +258,28 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'defaulted' with expr
         try {
-            val initResult_defaulted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_defaulted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "defaulted", initResult_defaulted)
         } catch (e: Exception) {
             raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='defaulted'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'lobbied' with expr
         try {
-            val initResult_lobbied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_lobbied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "lobbied", initResult_lobbied)
         } catch (e: Exception) {
             raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='lobbied'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'idled' with expr
         try {
-            val initResult_idled = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_idled = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "idled", initResult_idled)
         } catch (e: Exception) {
             raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='idled'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'targeted' with expr
         try {
-            val initResult_targeted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_targeted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "targeted", initResult_targeted)
         } catch (e: Exception) {
             raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='targeted'> expr failed to evaluate")
@@ -482,13 +482,13 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
     ): TransitionResult<AncestorEntryIsNotDefaultEntryState> = when {
         event is AncestorEntryIsNotDefaultEntryEvent.Back -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Lobby, AncestorEntryIsNotDefaultEntryState.Chosen, 1)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("defaulted != 0")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailDefaulted, AncestorEntryIsNotDefaultEntryState.Chosen, 2)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(defaulted, 0))", "defaulted != 0")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailDefaulted, AncestorEntryIsNotDefaultEntryState.Chosen, 2)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("lobbied != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailLobbied, AncestorEntryIsNotDefaultEntryState.Chosen, 3)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(lobbied, 1))", "lobbied != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailLobbied, AncestorEntryIsNotDefaultEntryState.Chosen, 3)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("idled != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailIdled, AncestorEntryIsNotDefaultEntryState.Chosen, 4)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(idled, 1))", "idled != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailIdled, AncestorEntryIsNotDefaultEntryState.Chosen, 4)
 
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("targeted != 2")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailTargeted, AncestorEntryIsNotDefaultEntryState.Chosen, 5)
+        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(targeted, 2))", "targeted != 2")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailTargeted, AncestorEntryIsNotDefaultEntryState.Chosen, 5)
 
         event is AncestorEntryIsNotDefaultEntryEvent.Check -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Settled, AncestorEntryIsNotDefaultEntryState.Chosen, 6)
 
@@ -520,7 +520,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
                 if (!activeStateIds.add("by_default")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("defaulted"), com.sce.runtime.ScriptSource.ecmascript("defaulted + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("defaulted", "defaulted"), com.sce.runtime.ScriptSource.lua("_scxml_add(defaulted, 1)", "defaulted + 1"))
             }
             is AncestorEntryIsNotDefaultEntryState.Chosen -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:127 :: chosen :: _state_body
@@ -528,7 +528,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
                 if (!activeStateIds.add("chosen")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("targeted"), com.sce.runtime.ScriptSource.ecmascript("targeted + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("targeted", "targeted"), com.sce.runtime.ScriptSource.lua("_scxml_add(targeted, 1)", "targeted + 1"))
             }
             is AncestorEntryIsNotDefaultEntryState.Drive -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:95 :: drive :: _state_body
@@ -573,7 +573,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
                 if (!activeStateIds.add("idle")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("idled"), com.sce.runtime.ScriptSource.ecmascript("idled + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("idled", "idled"), com.sce.runtime.ScriptSource.lua("_scxml_add(idled, 1)", "idled + 1"))
             }
             is AncestorEntryIsNotDefaultEntryState.Lobby -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:102 :: lobby :: _state_body
@@ -581,7 +581,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
                 if (!activeStateIds.add("lobby")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("lobbied"), com.sce.runtime.ScriptSource.ecmascript("lobbied + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("lobbied", "lobbied"), com.sce.runtime.ScriptSource.lua("_scxml_add(lobbied, 1)", "lobbied + 1"))
             }
             is AncestorEntryIsNotDefaultEntryState.Outer -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:109 :: outer :: _state_body

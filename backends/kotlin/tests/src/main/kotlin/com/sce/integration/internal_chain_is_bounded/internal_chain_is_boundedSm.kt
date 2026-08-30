@@ -249,49 +249,49 @@ class InternalChainIsBoundedStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'laps' with expr
         try {
-            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "laps", initResult_laps)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='laps'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'links' with expr
         try {
-            val initResult_links = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_links = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "links", initResult_links)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='links'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'beats' with expr
         try {
-            val initResult_beats = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_beats = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "beats", initResult_beats)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='beats'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'alts' with expr
         try {
-            val initResult_alts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_alts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "alts", initResult_alts)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='alts'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'ignores' with expr
         try {
-            val initResult_ignores = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_ignores = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "ignores", initResult_ignores)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='ignores'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'pending' with expr
         try {
-            val initResult_pending = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pending = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pending", initResult_pending)
         } catch (e: Exception) {
             raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pending'> expr failed to evaluate")
@@ -490,7 +490,7 @@ class InternalChainIsBoundedStateMachine(
 
     private fun processNullAlt(
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("pending == 1")) -> TransitionResult.Internal(1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(pending, 1)", "pending == 1")) -> TransitionResult.Internal(1)
         else -> TransitionResult.Ignored
     }
 
@@ -509,7 +509,7 @@ class InternalChainIsBoundedStateMachine(
     private fun processBounded(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 999")) -> TransitionResult.Internal(3)
+        event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 999)", "laps < 999")) -> TransitionResult.Internal(3)
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is InternalChainIsBoundedEvent.Link -> TransitionResult.Internal(4)
         // W3C SCXML 3.13: Targetless transition (actions only)
@@ -538,7 +538,7 @@ class InternalChainIsBoundedStateMachine(
     private fun processIgnoring(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("ignores < 999")) -> TransitionResult.Internal(12)
+        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(ignores < 999)", "ignores < 999")) -> TransitionResult.Internal(12)
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is InternalChainIsBoundedEvent.Beatless -> TransitionResult.Internal(13)
         // W3C SCXML 3.13: Targetless transition (actions only)
@@ -549,7 +549,7 @@ class InternalChainIsBoundedStateMachine(
     private fun processResuming(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("beats < 1499")) -> TransitionResult.Internal(15)
+        event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(beats < 1499)", "beats < 1499")) -> TransitionResult.Internal(15)
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is InternalChainIsBoundedEvent.Beat -> TransitionResult.Internal(16)
         // W3C SCXML 3.13: Targetless transition (actions only)
@@ -651,16 +651,16 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:212 :: alt :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("alts"), com.sce.runtime.ScriptSource.ecmascript("alts + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("alts", "alts"), com.sce.runtime.ScriptSource.lua("_scxml_add(alts, 1)", "alts + 1"))
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pending"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pending", "pending"), com.sce.runtime.ScriptSource.lua("1", "1"))
             }
             1 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:216 :: alt :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pending"), com.sce.runtime.ScriptSource.ecmascript("0"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pending", "pending"), com.sce.runtime.ScriptSource.lua("0", "0"))
 
             raiseInternal(InternalChainIsBoundedEvent.Tick)
             }
@@ -668,7 +668,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:220 :: alt :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             else -> {}
         }
@@ -677,7 +677,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:154 :: bounded :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
@@ -685,13 +685,13 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:158 :: bounded :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))
             }
             5 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:163 :: bounded :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             else -> {}
         }
@@ -700,7 +700,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:123 :: idle :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             7 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:126 :: idle :: _transition_1
@@ -734,7 +734,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:245 :: ignoring :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("ignores"), com.sce.runtime.ScriptSource.ecmascript("ignores + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("ignores", "ignores"), com.sce.runtime.ScriptSource.lua("_scxml_add(ignores, 1)", "ignores + 1"))
 
             raiseInternal(InternalChainIsBoundedEvent.Unheard)
 
@@ -744,13 +744,13 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:250 :: ignoring :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("ignores"), com.sce.runtime.ScriptSource.ecmascript("ignores + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("ignores", "ignores"), com.sce.runtime.ScriptSource.lua("_scxml_add(ignores, 1)", "ignores + 1"))
             }
             14 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:253 :: ignoring :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             else -> {}
         }
@@ -759,7 +759,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("beats"), com.sce.runtime.ScriptSource.ecmascript("beats + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("beats", "beats"), com.sce.runtime.ScriptSource.lua("_scxml_add(beats, 1)", "beats + 1"))
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
             }
@@ -767,13 +767,13 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:197 :: resuming :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("beats"), com.sce.runtime.ScriptSource.ecmascript("beats + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("beats", "beats"), com.sce.runtime.ScriptSource.lua("_scxml_add(beats, 1)", "beats + 1"))
             }
             17 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:200 :: resuming :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             else -> {}
         }
@@ -782,7 +782,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:175 :: spin :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("links"), com.sce.runtime.ScriptSource.ecmascript("links + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("links", "links"), com.sce.runtime.ScriptSource.lua("_scxml_add(links, 1)", "links + 1"))
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
@@ -790,7 +790,7 @@ class InternalChainIsBoundedStateMachine(
                 // SCE-MAP: internal_chain_is_bounded.scxml:179 :: spin :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             else -> {}
         }

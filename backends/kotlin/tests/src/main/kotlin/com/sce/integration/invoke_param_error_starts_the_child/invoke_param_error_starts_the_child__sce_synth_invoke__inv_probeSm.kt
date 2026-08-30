@@ -377,14 +377,14 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsP, "kept", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.ecmascript("kept")))
+                    putParam(paramsP, "kept", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("kept", "kept")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution, "<send> <param name='kept'> expr failed to evaluate")
                 }
 
                 try {
-                    putParam(paramsP, "brokenPlaceholder", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.ecmascript("broken === ''")))
+                    putParam(paramsP, "brokenPlaceholder", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("(broken == \"\")", "broken === ''")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution, "<send> <param name='brokenPlaceholder'> expr failed to evaluate")

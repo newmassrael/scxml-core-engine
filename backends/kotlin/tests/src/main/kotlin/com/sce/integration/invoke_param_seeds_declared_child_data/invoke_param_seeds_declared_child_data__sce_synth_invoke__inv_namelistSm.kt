@@ -136,7 +136,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'token' with expr
         try {
-            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'unset'"))
+            val initResult_token = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'"))
             engine.setVariable(sid, "token", initResult_token)
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent.Error.Execution, "<data id='token'> expr failed to evaluate")
@@ -330,7 +330,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(
 
     private fun processNullReport(
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("token === 'parent'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(token == \"parent\")", "token === 'parent'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState.Report, 1)
     }

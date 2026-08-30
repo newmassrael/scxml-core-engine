@@ -305,7 +305,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     private fun processEmit(
         event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent
     ): TransitionResult<AutoforwardEventFieldsSceSynthInvokeInvEchoState> = when {
-        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit, 0)
+        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= \"\")) and (_event.invokeid ~= \"\"))", "_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit, 0)
 
         event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit, 1)
 
@@ -331,7 +331,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsP, "value", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.ecmascript("42")))
+                    putParam(paramsP, "value", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("42", "42")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.Error.Execution, "<send> <param name='value'> expr failed to evaluate")

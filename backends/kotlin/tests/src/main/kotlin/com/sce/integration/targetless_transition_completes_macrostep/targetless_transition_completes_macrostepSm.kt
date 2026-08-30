@@ -207,42 +207,42 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'quiet' with expr
         try {
-            val initResult_quiet = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_quiet = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "quiet", initResult_quiet)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='quiet'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'armed' with expr
         try {
-            val initResult_armed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_armed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "armed", initResult_armed)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='armed'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'chained' with expr
         try {
-            val initResult_chained = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_chained = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "chained", initResult_chained)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='chained'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'polished' with expr
         try {
-            val initResult_polished = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_polished = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "polished", initResult_polished)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='polished'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'answered' with expr
         try {
-            val initResult_answered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_answered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "answered", initResult_answered)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='answered'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'entries' with expr
         try {
-            val initResult_entries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_entries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "entries", initResult_entries)
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='entries'> expr failed to evaluate")
@@ -438,19 +438,19 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
 
     private fun processNullIdle(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("armed == 1")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Settled, TargetlessTransitionCompletesMacrostepState.Idle, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(armed, 1)", "armed == 1")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Settled, TargetlessTransitionCompletesMacrostepState.Idle, 0)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullRecycled(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("entries < 2")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Recycled, TargetlessTransitionCompletesMacrostepState.Recycled, 6)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(entries < 2)", "entries < 2")) -> TransitionResult.External(TargetlessTransitionCompletesMacrostepState.Recycled, TargetlessTransitionCompletesMacrostepState.Recycled, 6)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullSettled(
     ): TransitionResult<TargetlessTransitionCompletesMacrostepState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("polished == 0")) -> TransitionResult.Internal(7)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(polished, 0)", "polished == 0")) -> TransitionResult.Internal(7)
         else -> TransitionResult.Ignored
     }
 
@@ -489,7 +489,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 if (!activeStateIds.add("recycled")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("entries"), com.sce.runtime.ScriptSource.ecmascript("entries + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("entries", "entries"), com.sce.runtime.ScriptSource.lua("_scxml_add(entries, 1)", "entries + 1"))
             }
             is TargetlessTransitionCompletesMacrostepState.Settled -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:125 :: settled :: _state_body
@@ -532,19 +532,19 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:86 :: idle :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("chained"), com.sce.runtime.ScriptSource.ecmascript("chained + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("chained", "chained"), com.sce.runtime.ScriptSource.lua("_scxml_add(chained, 1)", "chained + 1"))
             }
             1 -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:93 :: idle :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("quiet"), com.sce.runtime.ScriptSource.ecmascript("quiet + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("quiet", "quiet"), com.sce.runtime.ScriptSource.lua("_scxml_add(quiet, 1)", "quiet + 1"))
             }
             2 -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:100 :: idle :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("armed"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("armed", "armed"), com.sce.runtime.ScriptSource.lua("1", "1"))
             }
             3 -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:107 :: idle :: _transition_3
@@ -555,7 +555,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:111 :: idle :: _transition_4
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("answered"), com.sce.runtime.ScriptSource.ecmascript("answered + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("answered", "answered"), com.sce.runtime.ScriptSource.lua("_scxml_add(answered, 1)", "answered + 1"))
             }
             else -> {}
         }
@@ -564,7 +564,7 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:126 :: settled :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("polished"), com.sce.runtime.ScriptSource.ecmascript("polished + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("polished", "polished"), com.sce.runtime.ScriptSource.lua("_scxml_add(polished, 1)", "polished + 1"))
             }
             else -> {}
         }

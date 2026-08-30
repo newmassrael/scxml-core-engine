@@ -146,14 +146,14 @@ class UndecodablePayloadIsReportedStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'answers' with expr
         try {
-            val initResult_answers = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_answers = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "answers", initResult_answers)
         } catch (e: Exception) {
             raisePlatformError(UndecodablePayloadIsReportedEvent.Error.Execution, "<data id='answers'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'notes' with expr
         try {
-            val initResult_notes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_notes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "notes", initResult_notes)
         } catch (e: Exception) {
             raisePlatformError(UndecodablePayloadIsReportedEvent.Error.Execution, "<data id='notes'> expr failed to evaluate")
@@ -342,7 +342,7 @@ class UndecodablePayloadIsReportedStateMachine(
     private fun processWaiting(
         event: UndecodablePayloadIsReportedEvent
     ): TransitionResult<UndecodablePayloadIsReportedState> = when {
-        event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.done")) -> TransitionResult.External(UndecodablePayloadIsReportedState.Accepted, UndecodablePayloadIsReportedState.Waiting, 0)
+        event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> TransitionResult.External(UndecodablePayloadIsReportedState.Accepted, UndecodablePayloadIsReportedState.Waiting, 0)
 
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is UndecodablePayloadIsReportedEvent.Answer -> TransitionResult.Internal(1)
@@ -401,13 +401,13 @@ class UndecodablePayloadIsReportedStateMachine(
                 // SCE-MAP: undecodable_payload_is_reported.scxml:65 :: waiting :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("answers"), com.sce.runtime.ScriptSource.ecmascript("answers + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("answers", "answers"), com.sce.runtime.ScriptSource.lua("_scxml_add(answers, 1)", "answers + 1"))
             }
             2 -> {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:68 :: waiting :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("notes"), com.sce.runtime.ScriptSource.ecmascript("notes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("notes", "notes"), com.sce.runtime.ScriptSource.lua("_scxml_add(notes, 1)", "notes + 1"))
             }
             else -> {}
         }

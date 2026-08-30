@@ -206,14 +206,14 @@ class SendParamPayloadStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'nothing' with expr
         try {
-            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("null"))
+            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
             engine.setVariable(sid, "nothing", initResult_nothing)
         } catch (e: Exception) {
             raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'sawParamError' with expr
         try {
-            val initResult_sawParamError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_sawParamError = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "sawParamError", initResult_sawParamError)
         } catch (e: Exception) {
             raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='sawParamError'> expr failed to evaluate")
@@ -222,7 +222,7 @@ class SendParamPayloadStateMachine(
         // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
         // State 'typedPhase' variable 'tag'
         try {
-            val initResult_tag = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'kept'"))
+            val initResult_tag = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"kept\"", "'kept'"))
             engine.setVariable(sid, "tag", initResult_tag)
         } catch (e: Exception) {
             raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='tag'> expr failed to evaluate")
@@ -413,7 +413,7 @@ class SendParamPayloadStateMachine(
     private fun processAwaitChild(
         event: SendParamPayloadEvent
     ): TransitionResult<SendParamPayloadState> = when {
-        event is SendParamPayloadEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === '42'")) -> TransitionResult.External(SendParamPayloadState.InternalPhase, SendParamPayloadState.AwaitChild, 0)
+        event is SendParamPayloadEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.value == \"42\"))", "_event.data && _event.data.value === '42'")) -> TransitionResult.External(SendParamPayloadState.InternalPhase, SendParamPayloadState.AwaitChild, 0)
 
         event is SendParamPayloadEvent.FromChild -> TransitionResult.External(SendParamPayloadState.FailChildPayload, SendParamPayloadState.AwaitChild, 1)
 
@@ -423,7 +423,7 @@ class SendParamPayloadStateMachine(
     private fun processInternalPhase(
         event: SendParamPayloadEvent
     ): TransitionResult<SendParamPayloadState> = when {
-        event is SendParamPayloadEvent.Loopback && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.carried === 'kept'")) -> TransitionResult.External(SendParamPayloadState.TypedPhase, SendParamPayloadState.InternalPhase, 2)
+        event is SendParamPayloadEvent.Loopback && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.carried == \"kept\"))", "_event.data && _event.data.carried === 'kept'")) -> TransitionResult.External(SendParamPayloadState.TypedPhase, SendParamPayloadState.InternalPhase, 2)
 
         event is SendParamPayloadEvent.Loopback -> TransitionResult.External(SendParamPayloadState.FailInternalPayload, SendParamPayloadState.InternalPhase, 3)
 
@@ -435,11 +435,11 @@ class SendParamPayloadStateMachine(
     ): TransitionResult<SendParamPayloadState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is SendParamPayloadEvent.Error.Execution -> TransitionResult.Internal(4)
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawParamError !== 1")) -> TransitionResult.External(SendParamPayloadState.FailNoParamError, SendParamPayloadState.ParamErrorPhase, 5)
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawParamError ~= 1)", "sawParamError !== 1")) -> TransitionResult.External(SendParamPayloadState.FailNoParamError, SendParamPayloadState.ParamErrorPhase, 5)
 
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.broken === ''")) -> TransitionResult.External(SendParamPayloadState.FailBrokenParamDelivered, SendParamPayloadState.ParamErrorPhase, 6)
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.broken == \"\")", "_event.data.broken === ''")) -> TransitionResult.External(SendParamPayloadState.FailBrokenParamDelivered, SendParamPayloadState.ParamErrorPhase, 6)
 
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.kept === 'here'")) -> TransitionResult.External(SendParamPayloadState.Pass, SendParamPayloadState.ParamErrorPhase, 7)
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.kept == \"here\")", "_event.data.kept === 'here'")) -> TransitionResult.External(SendParamPayloadState.Pass, SendParamPayloadState.ParamErrorPhase, 7)
 
         event is SendParamPayloadEvent.WithBadParam -> TransitionResult.External(SendParamPayloadState.FailSiblingParamLost, SendParamPayloadState.ParamErrorPhase, 8)
 
@@ -449,11 +449,11 @@ class SendParamPayloadStateMachine(
     private fun processTypedPhase(
         event: SendParamPayloadEvent
     ): TransitionResult<SendParamPayloadState> = when {
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.n !== 7")) -> TransitionResult.External(SendParamPayloadState.FailNumberType, SendParamPayloadState.TypedPhase, 9)
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.n ~= 7)", "_event.data.n !== 7")) -> TransitionResult.External(SendParamPayloadState.FailNumberType, SendParamPayloadState.TypedPhase, 9)
 
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.s !== 'kept'")) -> TransitionResult.External(SendParamPayloadState.FailStringType, SendParamPayloadState.TypedPhase, 10)
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.s ~= \"kept\")", "_event.data.s !== 'kept'")) -> TransitionResult.External(SendParamPayloadState.FailStringType, SendParamPayloadState.TypedPhase, 10)
 
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.d.length === 2 && _event.data.d[0] === 1 && _event.data.d[1] === 2")) -> TransitionResult.External(SendParamPayloadState.ParamErrorPhase, SendParamPayloadState.TypedPhase, 11)
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((#_event.data.d == 2) and (_event.data.d[1] == 1)) and (_event.data.d[2] == 2))", "_event.data.d.length === 2 && _event.data.d[0] === 1 && _event.data.d[1] === 2")) -> TransitionResult.External(SendParamPayloadState.ParamErrorPhase, SendParamPayloadState.TypedPhase, 11)
 
         event is SendParamPayloadEvent.Typed -> TransitionResult.External(SendParamPayloadState.FailDuplicateParams, SendParamPayloadState.TypedPhase, 12)
 
@@ -568,7 +568,7 @@ class SendParamPayloadStateMachine(
                 val paramsI = mutableMapOf<String, Any?>()
                 putParam(paramsI, "kept", "here")
                 try {
-                    putParam(paramsI, "broken", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.ecmascript("nothing.deep")))
+                    putParam(paramsI, "broken", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='broken'> expr failed to evaluate")
@@ -599,28 +599,28 @@ class SendParamPayloadStateMachine(
                 val sidI = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsI = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsI, "n", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.ecmascript("7")))
+                    putParam(paramsI, "n", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("7", "7")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='n'> expr failed to evaluate")
                 }
 
                 try {
-                    putParam(paramsI, "s", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.ecmascript("tag")))
+                    putParam(paramsI, "s", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("tag", "tag")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='s'> expr failed to evaluate")
                 }
 
                 try {
-                    putParam(paramsI, "d", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.ecmascript("1")))
+                    putParam(paramsI, "d", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("1", "1")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> expr failed to evaluate")
                 }
 
                 try {
-                    putParam(paramsI, "d", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.ecmascript("2")))
+                    putParam(paramsI, "d", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("2", "2")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> expr failed to evaluate")
@@ -709,7 +709,7 @@ class SendParamPayloadStateMachine(
                 // SCE-MAP: send_param_payload.scxml:199 :: paramErrorPhase :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("sawParamError"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("sawParamError", "sawParamError"), com.sce.runtime.ScriptSource.lua("1", "1"))
             }
             else -> {}
         }

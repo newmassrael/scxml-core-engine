@@ -134,7 +134,7 @@ class UnseenEventIsReportedStateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'pokes' with expr
         try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
             raisePlatformError(UnseenEventIsReportedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
@@ -380,7 +380,7 @@ class UnseenEventIsReportedStateMachine(
                 // SCE-MAP: unseen_event_is_reported.scxml:48 :: working :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
             else -> {}
         }
