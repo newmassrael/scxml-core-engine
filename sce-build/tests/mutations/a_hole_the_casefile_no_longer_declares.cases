@@ -1,0 +1,106 @@
+# Mutation cases for "a case the casefile no longer declares is not open work".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_hole_the_casefile_no_longer_declares.cases`.
+#
+# The defect was a debt list that named repaid debts. A ledger record is a
+# reading of a casefile AS IT WAS, and `holes` walked the newest record without
+# ever asking whether the cases in it still existed. Measured 2026-08-30: the
+# corpus reported seven holes and FOUR of them were gone —
+# `lua_engine_reads_ecmascript` had been judged holding eight cases, retiring
+# the rewriter cut it to three, and the four survivors moved with the member
+# surface to `the_frontend_now_owns_the_member_surface`, where a cargo round
+# caught every one. `stale` knew that casefile had moved and said so in its own
+# subcommand; nothing carried the fact into this one.
+#
+# The repair has two edges and both are here, because they fail in opposite
+# directions and only one of them is loud. Reporting too FEW vanished cases
+# leaves repaid debts on the list, which is the defect. Reporting too MANY
+# empties the list while the debts stand — and that one is silent, so the
+# guards that keep an unreadable label from reading as an absent case get three
+# of the six cases below.
+#
+# `scripts/mutation-ledger` is a RUNTIME target: the tests drive it as a
+# subprocess, so it is read fresh on every run rather than linked into the test
+# binary, and the evidence a mutation reached what ran is the file differing on
+# disk while the tests ran.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+# ⚠ `ledger_holes_are_still_declared` and NOT `mutation_ledger`, which holds
+# the rest of this tool's contract. That suite cannot be a baseline: one of its
+# tests drives `scripts/mutate --check`, which calls `cargo metadata`, and
+# inside a cargo round that comes back `cargo metadata failed — the selector
+# cannot be checked` (measured 2026-08-30, through the run diagnostics the
+# baseline refusal now prints). A suite that cannot be a baseline cannot be an
+# oracle, which is why the contract these cases hold was given a file of its
+# own.
+mutation_tests -p sce-build --test ledger_holes_are_still_declared
+mutation_runtime_targets scripts/mutation-ledger
+
+# ── The defect itself ──────────────────────────────────────────────
+#
+# Never ask whether the case is still there, and every stale record's holes
+# come back as open work.
+
+mutation_case "a hole is never asked whether its case still exists" <<'PY'
+edit("scripts/mutation-ledger",
+     """    if any(l == "" for l in entry["labels"]):
+        return None
+    return label in entry["labels"]""",
+     """    if any(l == "" for l in entry["labels"]):
+        return None
+    return True""")
+PY
+
+# ── The silent direction: an unreadable label reads as an absent case ──
+#
+# A parser that drifted off the casefile format would report EVERY hole in the
+# corpus as vanished, and the debt list would empty itself while the debts
+# stood. Three guards hold that shut and each one is attacked below.
+
+mutation_case "an unreadable label is treated as a case that is gone" <<'PY'
+edit("scripts/mutation-ledger",
+     """    if any(l == "" for l in entry["labels"]):
+        return None
+""",
+     "")
+PY
+
+# ⚠ A sibling case stood here — "a label list that disagrees with the count is
+# trusted" — and it SURVIVED, along with the one below it, because the tree
+# carried TWO guards over the same ground: a length check against the case
+# count, and the `int(cases)` test in the line this case edits. Each covered
+# the other, so removing either changed nothing observable. The length check
+# was the dead one and is gone; the survivors are how that was found.
+
+mutation_case "an empty label list and an unreadable label are the same thing" <<'PY'
+edit("scripts/mutation-ledger",
+     """        label_list = labels.split("\\x1f") if int(cases) else []""",
+     """        label_list = labels.split("\\x1f") if labels else []""")
+PY
+
+# ── The reader is left to find the new home alone ──────────────────
+#
+# A label another casefile declares is a case that MOVED, and saying so is what
+# turns "this hole vanished" from something to investigate into something
+# already answered.
+
+mutation_case "a moved case is not followed to its new casefile" <<'PY'
+edit("scripts/mutation-ledger",
+     """                elsewhere = sorted(label_home.get(case["label"], set())
+                                   - {entry["stem"]})""",
+     """                elsewhere = []""")
+PY
+
+# ── The summary folds the two kinds of work back together ──────────
+#
+# An open case needs a repair; a vanished one needs a round. One number holding
+# both says neither, which is the state this whole repair started from.
+
+mutation_case "the summary counts a vanished case as open work" <<'PY'
+edit("scripts/mutation-ledger",
+     """                  if case["verdict"] != "CAUGHT"
+                  and case_is_still_declared(e, case["label"]) is not False]""",
+     """                  if case["verdict"] != "CAUGHT"]""")
+PY

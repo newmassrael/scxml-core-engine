@@ -91,7 +91,12 @@ cd "$SCE_REPO_ROOT"
 # shellcheck source=scripts/lib/mutation_ledger.sh
 source "$SCE_REPO_ROOT/scripts/lib/mutation_ledger.sh"
 
-MUTATION_CORPUS_DIR="sce-build/tests/mutations"
+# Where the casefiles live. Overridable for the same reason the ledger's own
+# directory is: a test that needs a corpus with a particular shape in it — a
+# case whose label this tool cannot read, say — must be able to hand one over
+# rather than edit the real one, and a second copy of the parser written into
+# the test would be a second answer to "what does this corpus declare".
+MUTATION_CORPUS_DIR="${SCE_MUTATION_CORPUS_DIR:-sce-build/tests/mutations}"
 
 usage() {
     cat <<'USAGE'
@@ -101,7 +106,11 @@ usage: scripts/mutation-ledger <command> [args]
   unjudged            casefiles no round has measured, one per line
   judged              casefiles a round has measured, and its newest verdict
   holes               cases a measured round did not catch: SURVIVED or
-                      INCONCLUSIVE in the newest reading
+                      INCONCLUSIVE in the newest reading. A case the record
+                      names but the casefile no longer declares is reported
+                      as VANISHED instead, with the casefile that declares
+                      it now when one does — its record is older than its
+                      casefile, so the repair is a round, not a fix
   claimed             unjudged casefiles carrying an assertion that a round
                       once passed, with the note that says who claimed it
   stale               judged casefiles edited since the round that judged them
@@ -144,17 +153,30 @@ import sys
 runners = {"mutation_ctest": "ctest", "mutation_go": "go",
            "mutation_gradle": "gradle", "mutation_pytest": "pytest",
            "mutation_tests": "cargo"}
+# The label a case declares, so a reader can ask whether a case a RECORD
+# names still exists. An unreadable label is emitted as the empty string
+# rather than skipped: the count and the list must stay the same length, and
+# a caller that cannot read a label must be able to say so rather than
+# concluding the case is gone.
+LABEL = re.compile(r"""^mutation_case\s+("([^"]*)"|'([^']*)')""")
 for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.cases"))):
-    runner, cases = "unknown", 0
+    runner, labels = "unknown", []
     with open(path) as fh:
         for line in fh:
             verb = line.split(" ", 1)[0].strip()
             if verb in runners:
                 runner = runners[verb]
             elif verb == "mutation_case":
-                cases += 1
+                found = LABEL.match(line)
+                labels.append("" if found is None
+                              else (found.group(2) if found.group(2) is not None
+                                    else found.group(3)))
     stem = os.path.basename(path)[: -len(".cases")]
-    print("\t".join([stem, runner, str(cases), path]))
+    # The case COUNT is the length of that list rather than a second tally:
+    # two counters over one loop is two things to keep in step, and the
+    # question below ("is this case still here") is answered against the list.
+    print("\t".join([stem, runner, str(len(labels)), path,
+                     "\x1f".join(labels)]))
 PY
 }
 
@@ -191,9 +213,56 @@ argument = sys.argv[4] if len(sys.argv) > 4 else ""
 corpus = []
 with os.fdopen(3) as fh:
     for line in fh:
-        stem, runner, cases, path = line.rstrip("\n").split("\t")
+        stem, runner, cases, path, labels = line.rstrip("\n").split("\t")
+        # `""` is a casefile with no cases AND a casefile whose one case has an
+        # unreadable label, and those must not fold together: the second has a
+        # label list of one empty string, which is what makes "is this case
+        # still declared" unanswerable rather than false. Measured 2026-08-30 —
+        # written as `if labels else []` first, a fixture whose single label
+        # could not be read reported its hole as VANISHED, which is the debt
+        # list emptying itself.
+        #
+        # ⚠ A length check against `cases` stood here and was removed: the two
+        # come out of ONE loop in `corpus_facts`, so they cannot disagree, and
+        # a mutation round proved it — the case that deleted the check
+        # SURVIVED, and so did the case that broke the line above it, because
+        # each guard covered the other. Two guards where one is reachable is
+        # one guard and one piece of dead code, and the dead one is the half
+        # that looks like diligence.
+        #
+        # What holds the pairing true is measured instead, over the shipped
+        # corpus, by `the_corpus_this_repository_ships_has_every_label_readable`.
+        label_list = labels.split("\x1f") if int(cases) else []
         corpus.append({"stem": stem, "runner": runner,
-                       "cases": int(cases), "path": path})
+                       "cases": int(cases), "path": path,
+                       "labels": label_list})
+
+# Which casefile carries a given case label, today.
+#
+# A case that a record calls a hole may have MOVED. The repair for
+# `lua_engine_reads_ecmascript`'s four survivors was to take the member
+# surface away from the Lua engine entirely, and the cases went with it to
+# `the_frontend_now_owns_the_member_surface`, where a cargo round caught all
+# four. Naming the new home turns "this hole vanished" from something to
+# investigate into something already answered.
+label_home = {}
+for entry in corpus:
+    for label in entry["labels"]:
+        if label:
+            label_home.setdefault(label, set()).add(entry["stem"])
+
+
+def case_is_still_declared(entry, label):
+    """Does this casefile still declare a case by that name?
+
+    Returns None — "cannot be asked" — when any of the casefile's labels came
+    back unreadable, because a parser that had drifted off the casefile format
+    would otherwise report every case in it as gone. That is the direction
+    that matters: a false "vanished" retires a real hole in silence.
+    """
+    if any(l == "" for l in entry["labels"]):
+        return None
+    return label in entry["labels"]
 
 # Two indexes over the same lines, because "what is recorded about this
 # casefile" and "what has been MEASURED about it" are different questions and
@@ -321,8 +390,43 @@ if command == "holes":
         for case in record["cases"]:
             if case["verdict"] == "CAUGHT":
                 continue
-            print(line_for(entry, "  %-12s %s" % (case["verdict"],
-                                                  case["label"])))
+            # Is the case this record calls a hole still IN the casefile?
+            #
+            # Measured 2026-08-30: four of the seven holes this corpus
+            # reported were cases that no longer existed. `lua_engine_reads_
+            # ecmascript` had been judged when it held eight cases; the
+            # rewriter's retirement cut it to three, and the four survivors
+            # went with the member surface to another casefile, where a cargo
+            # round CAUGHT every one. The ledger went on reporting them as
+            # open work — and a debt list that names repaid debts is one
+            # nobody reads, which is the failure `holes` exists to prevent.
+            #
+            # `stale` knew that casefile had moved and said so in its own
+            # subcommand; it never reached this one. Asking the LABEL rather
+            # than the blob is the sharper question anyway: a casefile can be
+            # edited without touching the case a hole names, and then the hole
+            # is still a hole.
+            still_here = case_is_still_declared(entry, case["label"])
+            verdict = case["verdict"] if still_here is not False else "VANISHED"
+            suffix = "" if still_here is not False else " (was %s)" % case["verdict"]
+            print(line_for(entry, "  %-12s %s%s" % (verdict, case["label"],
+                                                    suffix)))
+            if still_here is False:
+                # Where it went, when that can be answered. A label found in
+                # another casefile is a case that MOVED; finding nothing is
+                # not proof it was retired — the repair may have renamed it,
+                # which is what happened to two of the four measured above.
+                elsewhere = sorted(label_home.get(case["label"], set())
+                                   - {entry["stem"]})
+                if elsewhere:
+                    print("             now declared in: %s"
+                          % ", ".join(elsewhere))
+                else:
+                    print("             no casefile declares this label; it was"
+                          " retired or renamed — re-run the round to settle it")
+            elif still_here is None:
+                print("             (this casefile's labels could not all be"
+                      " read, so whether the case still exists is unknown)")
             if not detail:
                 continue
             # The runner's own words about why, which is what says how to
@@ -412,7 +516,17 @@ if command == "status":
     # and did not catch appear in no other line of this summary.
     open_cases = [(e, case) for e in judged
                   for case in newest(e["stem"])["cases"]
-                  if case["verdict"] != "CAUGHT"]
+                  if case["verdict"] != "CAUGHT"
+                  and case_is_still_declared(e, case["label"]) is not False]
+    # Split out rather than folded in, because the two are different work: an
+    # open case needs a REPAIR, a vanished one needs a ROUND — its record is
+    # simply older than its casefile. Measured 2026-08-30, this summary read
+    # `7 case(s) not caught` while four of the seven had already been caught
+    # under another casefile's name.
+    vanished = [(e, case) for e in judged
+                for case in newest(e["stem"])["cases"]
+                if case["verdict"] != "CAUGHT"
+                and case_is_still_declared(e, case["label"]) is False]
     # Counted here for the reason `stale` is, and with a sharper edge: a
     # record with no blob does not merely go uncounted by `stale`, it makes
     # `stale` answer "no" to a question it never asked. Left off this summary
@@ -424,6 +538,8 @@ if command == "status":
           " asked)" % unverifiable)
     print("of the judged: %d case(s) not caught, in %d casefile(s)"
           % (len(open_cases), len({e["stem"] for e, _ in open_cases})))
+    print("of the judged: %d case(s) the record names but the casefile no"
+          " longer declares" % len(vanished))
     print("of the unjudged: %d claimed (a round is asserted, its log gone)"
           % claimed)
     sys.exit(0)
