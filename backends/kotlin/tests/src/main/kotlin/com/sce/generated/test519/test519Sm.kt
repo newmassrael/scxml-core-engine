@@ -309,7 +309,7 @@ class Test519StateMachine(
     private fun processS0(
         event: Test519Event
     ): TransitionResult<Test519State> = when {
-        event is Test519Event.Test && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data[\"param1\"] == 1")) -> TransitionResult.External(Test519State.Pass, Test519State.S0, 0)
+        event is Test519Event.Test && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data.param1, 1)", "_event.data[\"param1\"] == 1")) -> TransitionResult.External(Test519State.Pass, Test519State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test519State.Fail, Test519State.S0, 1)
@@ -351,7 +351,7 @@ class Test519StateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['basichttp'].location"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
@@ -381,7 +381,7 @@ class Test519StateMachine(
                 val sidH = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val httpParams = mutableMapOf<String, List<String>>()
                 try {
-                    val v = engineH.evaluateExpr(sidH, com.sce.runtime.ScriptSource.ecmascript("1"))
+                    val v = engineH.evaluateExpr(sidH, com.sce.runtime.ScriptSource.lua("1", "1"))
                     // W3C SCXML C.2: the param crosses as text. `toString()` is
                     // the platform's spelling of the value; this is the document's.
                     httpParams["param1"] = listOf(valueToWireString(v))

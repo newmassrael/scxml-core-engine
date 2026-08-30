@@ -303,7 +303,7 @@ class Test560StateMachine(
     private fun processS0(
         event: Test560Event
     ): TransitionResult<Test560State> = when {
-        event is Test560Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.aParam == 1")) -> TransitionResult.External(Test560State.Pass, Test560State.S0, 0)
+        event is Test560Event.Foo && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.data.aParam, 1)", "_event.data.aParam == 1")) -> TransitionResult.External(Test560State.Pass, Test560State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test560State.Fail, Test560State.S0, 1)
@@ -342,7 +342,7 @@ class Test560StateMachine(
                 val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsE = mutableMapOf<String, Any?>()
                 try {
-                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.ecmascript("1")))
+                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("1", "1")))
                 } catch (_: Exception) {
                     // W3C SCXML 5.7.1: report the failure and omit the name and value.
                     raisePlatformError(Test560Event.Error.Execution, "<send> <param name='aParam'> expr failed to evaluate")

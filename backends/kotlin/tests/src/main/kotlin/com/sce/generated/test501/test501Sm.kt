@@ -124,7 +124,7 @@ class Test501StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors['scxml']['location']"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.scxml.location", "_ioprocessors['scxml']['location']"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test501Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")

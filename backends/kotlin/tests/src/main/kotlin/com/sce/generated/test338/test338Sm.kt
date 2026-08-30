@@ -339,7 +339,7 @@ class Test338StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test338State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 === Var2")) -> TransitionResult.External(Test338State.Pass, Test338State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(Var1 == Var2)", "Var1 === Var2")) -> TransitionResult.External(Test338State.Pass, Test338State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test338State.Fail, Test338State.S1, 3)
     }
@@ -450,7 +450,7 @@ class Test338StateMachine(
                 // SCE-MAP: test338.scxml:27 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_event.invokeid"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.invokeid", "_event.invokeid"))
             }
             else -> {}
         }

@@ -141,7 +141,7 @@ class Test530StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test530Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -362,7 +362,7 @@ class Test530StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"><final></final></scxml>'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"<scxml xmlns=\\\"http://www.w3.org/2005/07/scxml\\\" version=\\\"1.0\\\"><final></final></scxml>\"", "'<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"><final></final></scxml>'"))
 
 
             scheduleSend("__send_0", 2000L, Test530Event.Timeout)
@@ -376,7 +376,7 @@ class Test530StateMachine(
                         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         try {
                             // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child
-                            val contentResult = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"))
+                            val contentResult = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
                             val scxmlContent = contentResult?.toString() ?: return@deferInvoke
                             val childSM = ScxmlRuntimeInterpreter.fromString(scxmlContent, scriptEngine)
                             startInvoke("_invoke_0", childSM, false, Test530Event.Done.Invoke, "", generatedInvokeId)

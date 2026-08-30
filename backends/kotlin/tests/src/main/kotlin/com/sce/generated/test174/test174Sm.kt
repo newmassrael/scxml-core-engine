@@ -340,7 +340,7 @@ class Test174StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\"", "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"))
 
 
             send(Test174Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))

@@ -129,7 +129,7 @@ class Test326StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test326Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -330,8 +330,8 @@ class Test326StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test326State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test326State.S1, Test326State.S0, 0)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("true")) -> TransitionResult.External(Test326State.Fail, Test326State.S0, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var1) ~= \"undefined\")", "typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test326State.S1, Test326State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("true", "true")) -> TransitionResult.External(Test326State.Fail, Test326State.S0, 1)
         else -> TransitionResult.Ignored
     }
 
@@ -383,7 +383,7 @@ class Test326StateMachine(
                 if (!activeStateIds.add("s1")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))
 
             raiseInternal(Test326Event.Foo)
             }
@@ -393,7 +393,7 @@ class Test326StateMachine(
                 if (!activeStateIds.add("s2")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var2"), com.sce.runtime.ScriptSource.ecmascript("_ioprocessors"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_ioprocessors", "_ioprocessors"))
             }
         }
     }

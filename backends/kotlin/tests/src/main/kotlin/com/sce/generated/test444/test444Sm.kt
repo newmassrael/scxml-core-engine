@@ -132,7 +132,7 @@ class Test444StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'var1' with expr
         try {
-            val initResult_var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("1"))
+            val initResult_var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
             engine.setVariable(sid, "var1", initResult_var1)
         } catch (e: Exception) {
             raisePlatformError(Test444Event.Error.Execution, "<data id='var1'> expr failed to evaluate")
@@ -326,7 +326,7 @@ class Test444StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test444State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("++var1==2")) -> TransitionResult.External(Test444State.Pass, Test444State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq((function() var1 = _scxml_tonumber(var1) + 1 return var1 end)(), 2)", "++var1==2")) -> TransitionResult.External(Test444State.Pass, Test444State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test444State.Fail, Test444State.S0, 1)
     }

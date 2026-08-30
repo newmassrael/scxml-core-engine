@@ -138,7 +138,7 @@ class Test173StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("'invalid_session_id'"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"invalid_session_id\"", "'invalid_session_id'"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test173Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -359,7 +359,7 @@ class Test173StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("'#_internal'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'"))
 
 
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="Var1")
@@ -369,7 +369,7 @@ class Test173StateMachine(
                 val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("Var1"))
+                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {

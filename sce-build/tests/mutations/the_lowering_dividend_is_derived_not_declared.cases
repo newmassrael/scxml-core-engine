@@ -190,12 +190,17 @@ PY
 # the target OPEN, which was the defect then; since the templates crossed,
 # forcing it open is a NO-OP and a no-op case can never be caught — the
 # discriminator this repository pays for whenever a case SURVIVES twice.
+#
+# ⚠ The anchor quotes the arm's ANSWER, not the predicate's body. It used to
+# inline the two `…_expression_sites().is_empty()` calls, and the round that
+# gave Kotlin a Lua default lifted exactly that body into
+# `can_lower_expressions_on_request` so the default and the refusal would read
+# ONE predicate — a refactor that moved no behaviour and still left this case
+# INCONCLUSIVE. What the case asks is whether the arm still DERIVES its answer,
+# so the anchor is the arm, and the body it delegates to is free to move.
 
 mutation_case "the backend loses the route its list declares" <<'PY'
 edit("sce-build/src/generator.rs",
-     """            ScriptEngineTarget::Lua => {
-                self.unmigrated_expression_sites().is_empty()
-                    && self.unclassified_expression_sites().is_empty()
-            }""",
+     """            ScriptEngineTarget::Lua => self.can_lower_expressions_on_request(),""",
      """            ScriptEngineTarget::Lua => false,""")
 PY

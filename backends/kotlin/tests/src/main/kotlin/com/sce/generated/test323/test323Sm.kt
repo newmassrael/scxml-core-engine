@@ -118,7 +118,7 @@ class Test323StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_name"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_name", "_name"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test323Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -312,8 +312,8 @@ class Test323StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test323State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test323State.Pass, Test323State.S0, 0)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("true")) -> TransitionResult.External(Test323State.Fail, Test323State.S0, 1)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(Var1) ~= \"undefined\")", "typeof Var1 !== 'undefined'")) -> TransitionResult.External(Test323State.Pass, Test323State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("true", "true")) -> TransitionResult.External(Test323State.Fail, Test323State.S0, 1)
         else -> TransitionResult.Ignored
     }
 

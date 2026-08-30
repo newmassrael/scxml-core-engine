@@ -504,10 +504,14 @@ fn every_list_declares_the_paths_its_backend_actually_has() {
             derived,
             "{list} declares `paths` that are not the routes `sce-build` derives for \
              {lang:?}. This key is not a preference: each path names a code path with its \
-             own suite holding it, and the derivation is `default_script_engine_target` \
-             (does this backend hand the engine the author's text?) plus \
-             `supports_script_engine_target(Lua)` (can it emit a lowered artifact?). A \
-             backend that crosses the seam must take its divergence list with it."
+             own suite holding it, and the derivation is \
+             `supports_script_engine_target(EcmaScript)` (CAN this backend hand the engine \
+             the author's text?) plus `supports_script_engine_target(Lua)` (can it emit a \
+             lowered artifact?). Both halves are capabilities on purpose — reading the \
+             first from `default_script_engine_target` would have stripped \
+             `runtime-rewriter` from Kotlin the day its default moved, without changing \
+             one answer either suite gives. A backend that crosses the seam must take its \
+             divergence list with it."
         );
     }
 }

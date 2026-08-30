@@ -132,7 +132,7 @@ class Test303StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test303Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -326,7 +326,7 @@ class Test303StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test303State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test303State.Pass, Test303State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test303State.Pass, Test303State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test303State.Fail, Test303State.S0, 1)
     }
@@ -359,10 +359,10 @@ class Test303StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("2"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("2", "2"))
 
 
-            executeScriptBlock(com.sce.runtime.ScriptSource.ecmascript("Var1 = 1"))
+            executeScriptBlock(com.sce.runtime.ScriptSource.lua("Var1 = 1", "Var1 = 1"))
             }
         }
     }

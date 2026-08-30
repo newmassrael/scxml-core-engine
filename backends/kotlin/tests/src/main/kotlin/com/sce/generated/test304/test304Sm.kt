@@ -120,7 +120,7 @@ class Test304StateMachine(
 
         // W3C SCXML 5.8: Execute global scripts at document load time
         try {
-            engine.executeScript(sid, com.sce.runtime.ScriptSource.ecmascript("Var1 = 1"))
+            engine.executeScript(sid, com.sce.runtime.ScriptSource.lua("Var1 = 1", "Var1 = 1"))
         } catch (e: Exception) {
             raisePlatformError(Test304Event.Error.Execution, "a top-level <script> failed to execute")
         }
@@ -311,7 +311,7 @@ class Test304StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test304State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test304State.Pass, Test304State.S0, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test304State.Pass, Test304State.S0, 0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test304State.Fail, Test304State.S0, 1)
     }

@@ -341,21 +341,21 @@ class Test331StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'internal'")) -> TransitionResult.External(Test331State.S2, Test331State.S1, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"internal\")", "Var1 == 'internal'")) -> TransitionResult.External(Test331State.S2, Test331State.S1, 2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test331State.Fail, Test331State.S1, 3)
     }
 
     private fun processNullS3(
     ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'platform'")) -> TransitionResult.External(Test331State.S4, Test331State.S3, 6)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"platform\")", "Var1 == 'platform'")) -> TransitionResult.External(Test331State.S4, Test331State.S3, 6)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test331State.Fail, Test331State.S3, 7)
     }
 
     private fun processNullS5(
     ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'external'")) -> TransitionResult.External(Test331State.Pass, Test331State.S5, 10)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"external\")", "Var1 == 'external'")) -> TransitionResult.External(Test331State.Pass, Test331State.S5, 10)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test331State.Fail, Test331State.S5, 11)
     }
@@ -505,7 +505,7 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:15 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.type"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))
             }
             else -> {}
         }
@@ -514,7 +514,7 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:31 :: s2 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.type"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))
             }
             else -> {}
         }
@@ -523,7 +523,7 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:47 :: s4 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.type"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))
             }
             else -> {}
         }

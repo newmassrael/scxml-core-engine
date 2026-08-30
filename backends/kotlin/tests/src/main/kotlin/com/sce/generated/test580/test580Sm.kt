@@ -178,7 +178,7 @@ class Test580StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test580Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -393,8 +393,8 @@ class Test580StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test580State> = when {
         isStateActive("sh1") -> TransitionResult.External(Test580State.Fail, Test580State.S1, 2)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 0")) -> TransitionResult.External((historyStore["sh1"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test580State.S11), Test580State.S1, 3)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 1")) -> TransitionResult.External(Test580State.Pass, Test580State.S1, 4)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 0)", "Var1 == 0")) -> TransitionResult.External((historyStore["sh1"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test580State.S11), Test580State.S1, 3)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test580State.Pass, Test580State.S1, 4)
         else -> TransitionResult.Ignored
     }
 
@@ -547,7 +547,7 @@ class Test580StateMachine(
                 activeStateIds.remove("s1")
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("Var1 + 1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
             }
             is Test580State.S11 -> {
                 // SCE-MAP: test580.scxml:32 :: s11 :: _state_body

@@ -379,12 +379,15 @@ fn the_migration_scan_leaves_the_forge_tree_alone() {
 fn kotlin_offers_the_lua_target_exactly_when_no_site_is_left_behind() {
     assert_eq!(
         Language::Kotlin.default_script_engine_target(),
-        ScriptEngineTarget::EcmaScript,
-        "crossing the seam gave Kotlin a LOWERED ARM, not a new default. Its \
-         hosts take the engine by injection and default to Rhino \
-         (`W3CTestBase.DEFAULT_ENGINE`), so a manifest that answered `lua` here \
-         would send every existing consumer a Lua engine for a machine that \
-         hands it ECMAScript — the exact mis-supply the field exists to prevent."
+        ScriptEngineTarget::Lua,
+        "Kotlin's default artifact is LOWERED. It answered `ecmascript` until \
+         2026-08-30, and the reason it gave was a host fact rather than a \
+         template one: its hosts take the engine by injection and the two this \
+         tree ships — `W3CTestBase.DEFAULT_ENGINE` and the Spring starter's \
+         `scxmlScriptEngine` bean — both named Rhino, which refuses Lua. Those \
+         two moved to the Lua engine in the same commit as this line, which is \
+         what makes the pairing hold; `scripts/gates/w3c-kotlin.sh` is what \
+         keeps them from drifting apart afterwards."
     );
 
     let remaining = Language::Kotlin.unmigrated_expression_sites();
@@ -493,6 +496,138 @@ fn the_scan_reaches_expressions_bound_by_a_set_statement() {
              answer here means the scan stopped following the alias, and every \
              site it stops seeing drops out of the refusal it feeds.",
             lang.canonical_name()
+        );
+    }
+}
+
+/// Every backend is classified by its ARMS, and the classification is total.
+///
+/// The default this file pins for each backend is now one of three answers,
+/// and which one it is depends on how many languages the templates can emit:
+///
+/// * lowers unconditionally → Lua, because nothing else is emittable;
+/// * cannot be asked for Lua → ECMAScript, for the same reason;
+/// * both → a POLICY, made in `Language::two_armed_default`.
+///
+/// ⚠ The vacuity check is the point of the two counters. A predicate that
+/// silently answered "one-armed" for everything would leave the policy arm
+/// unreached and this case green — the shape
+/// `an_oracle_that_restates_its_predicates_definition_is_vacuous` names. So
+/// BOTH populations are asserted non-empty: today four backends are one-armed
+/// and two carry both arms, and a reading that collapses them is red here
+/// before it is anything else.
+#[test]
+fn every_backends_default_is_the_one_its_arms_allow() {
+    let mut one_armed = 0usize;
+    let mut two_armed = 0usize;
+
+    for language in Language::ALL.iter().copied() {
+        let lowers = language.lowers_expressions_at_build_time();
+        let can_lower = language.can_lower_expressions_on_request();
+        let default = language.default_script_engine_target();
+
+        match (lowers, can_lower) {
+            (true, _) => {
+                one_armed += 1;
+                assert_eq!(
+                    default,
+                    ScriptEngineTarget::Lua,
+                    "{} lowers unconditionally, so Lua is the only artifact it can \
+                     produce and the default cannot be anything else",
+                    language.canonical_name()
+                );
+                assert!(
+                    !language.supports_script_engine_target(ScriptEngineTarget::EcmaScript),
+                    "{} lowers unconditionally and still claims a source-emitting arm",
+                    language.canonical_name()
+                );
+            }
+            (false, false) => {
+                one_armed += 1;
+                assert_eq!(
+                    default,
+                    ScriptEngineTarget::EcmaScript,
+                    "{} has no lowered arm, so the author's text is the only artifact \
+                     it can produce",
+                    language.canonical_name()
+                );
+            }
+            (false, true) => {
+                two_armed += 1;
+                assert!(
+                    ScriptEngineTarget::ALL.contains(&default),
+                    "{} carries both arms and its policy answered a target that is not \
+                     on the wire",
+                    language.canonical_name()
+                );
+                // Reaching here already proves `two_armed_default` did not take
+                // its `unreachable!` arm for this backend — that arm panics.
+                assert!(
+                    language.supports_script_engine_target(ScriptEngineTarget::Lua)
+                        && language.supports_script_engine_target(ScriptEngineTarget::EcmaScript),
+                    "{} was classified as two-armed and refuses one of the two",
+                    language.canonical_name()
+                );
+            }
+        }
+    }
+
+    assert!(
+        one_armed > 0 && two_armed > 0,
+        "the arm classification collapsed: {one_armed} one-armed and {two_armed} \
+         two-armed backend(s). Both populations are non-empty in this tree, so a \
+         zero on either side means the predicates stopped telling them apart and \
+         every assertion above is being made about one bucket."
+    );
+}
+
+/// The two-armed policy has no catch-all arm.
+///
+/// ⚠ This is the escape hatch that would defeat everything above. A `_ =>` in
+/// `two_armed_default` would answer for a backend that LATER grows a second
+/// arm — turning a forced answer into an unexamined policy with nothing red —
+/// and no behavioural test can see it, because on today's tree the catch-all
+/// and the enumeration return the same values for the same backends. The only
+/// witness is the source, so the source is what this reads.
+///
+/// Read as CODE, not as text: the rationale above `two_armed_default` talks
+/// about `_` arms, and a scan that matched its own documentation is a mistake
+/// this seam has already made once (`reach_of`, 2026-08-30).
+#[test]
+fn the_two_armed_policy_names_every_backend() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/generator.rs"),
+    )
+    .expect("the generator source is readable from its own crate");
+
+    let start = source
+        .find("fn two_armed_default(self) -> ScriptEngineTarget {")
+        .expect("`two_armed_default` is where the two-armed policy is made");
+    let body = &source[start..];
+    let end = body
+        .find("\n    }\n")
+        .expect("the function is brace-balanced");
+    let body: String = body[..end]
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| !line.starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        !body.contains("_ =>"),
+        "`two_armed_default` grew a catch-all arm. Every backend must be named \
+         there: a backend that falls through gets another backend's policy \
+         without anyone choosing it, and nothing else in this file can tell.\n{body}"
+    );
+    for language in Language::ALL.iter().copied() {
+        assert!(
+            body.contains(&format!("Language::{language:?}")),
+            "`two_armed_default` does not name `Language::{language:?}`. Every \
+             backend is named — the one-armed ones by an `unreachable!` that says \
+             what growing a second arm would mean — so that adding a backend, or \
+             moving one across the seam, is a compile error rather than a silent \
+             default.\n{body}"
         );
     }
 }

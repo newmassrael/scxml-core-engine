@@ -130,9 +130,12 @@ engine.destroySession("session1");
 ```
 
 Three script engines available for Kotlin/JVM:
-- **Rhino** (default) — Pure JVM, fastest on server, zero JNI
-- **Lua 5.4** — Native JNI, fastest on Android (20/29 benchmarks won)
-- **QuickJS** — Native JNI, full ES6 compatibility
+- **Lua 5.4** (default) — Native JNI, fastest on Android (20/29 benchmarks won).
+  It is the default because the default Kotlin artifact is lowered to Lua at
+  build time; it also accepts the author's ECMAScript, so it keeps working for
+  a tree generated with `--script-engine ecmascript`.
+- **Rhino** — Pure JVM, zero JNI. Use it with `--script-engine ecmascript`.
+- **QuickJS** — Native JNI, full ES6 compatibility. Same selection as Rhino.
 
 ### 📐 W3C SCXML 1.0 Compliance
 
@@ -1251,11 +1254,13 @@ cargo test --release -p sce-rust-tests test144
 ### Kotlin/JVM Tests
 
 ```bash
-# W3C conformance (Rhino, default)
+# W3C conformance (Lua, default — the committed machines are lowered Lua)
 ./gradlew :sce-kotlin-tests:test
 
-# W3C conformance (Lua engine)
-./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua
+# W3C conformance (Rhino or QuickJS) — needs machines emitted for ECMAScript
+sce-codegen generate-w3c -l kotlin --script-engine ecmascript --output-dir /tmp/kt-ecma
+./gradlew :sce-kotlin-tests:test -Psce.script.engine=rhino \
+    -Psce.generated.overlay=/tmp/kt-ecma/backends/kotlin/tests
 
 # JMH benchmark (quick)
 ./gradlew :sce-kotlin-benchmark:jmh --no-configuration-cache -Pjmh.f=1 -Pjmh.wi=1 -Pjmh.i=1

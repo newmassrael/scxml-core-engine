@@ -390,8 +390,8 @@ class Test253StateMachine(
 
     private fun processNullS02(
     ): TransitionResult<Test253State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253State.S03, Test253State.S02, 2)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == 'scxml'")) -> TransitionResult.External(Test253State.S03, Test253State.S02, 3)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\")", "Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")) -> TransitionResult.External(Test253State.S03, Test253State.S02, 2)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"scxml\")", "Var1 == 'scxml'")) -> TransitionResult.External(Test253State.S03, Test253State.S02, 3)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test253State.Fail, Test253State.S02, 4)
     }
@@ -529,7 +529,7 @@ class Test253StateMachine(
                 // SCE-MAP: test253.scxml:54 :: s01 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("Var1"), com.sce.runtime.ScriptSource.ecmascript("_event.origintype"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype"))
             }
             else -> {}
         }

@@ -85,8 +85,30 @@ abstract class W3CTestBase<S : State, E : Event> {
             )
         }
 
-        /** Default when nothing asks for one. */
-        const val DEFAULT_ENGINE: String = "rhino"
+        /**
+         * Default when nothing asks for one.
+         *
+         * ⚠ It is not a preference. The committed machines under
+         * `com/sce/generated/` are emitted for ONE language — whichever
+         * `Language::Kotlin.default_script_engine_target()` answers — and a
+         * run with no `-Psce.script.engine` hands them to whatever this
+         * names. So this constant has to name an engine that ACCEPTS that
+         * language, or the suite's own default run is the mis-supply
+         * `ScriptSource` exists to prevent.
+         *
+         * It said `rhino` until 2026-08-30, correctly, while the backend's
+         * default artifact carried the author's ECMAScript. That default
+         * moved to Lua, and Rhino refuses Lua — so this moved with it. The
+         * pairing is not left to this comment: `scripts/gates/w3c-kotlin.sh`
+         * asks the generator's manifest which language the committed machines
+         * hold and refuses a run whose default engine does not take it.
+         *
+         * The Lua engine is the right default for a second reason it is worth
+         * naming: it accepts BOTH languages (`acceptsLanguage`), so it is the
+         * only one of the three that keeps working whichever way the artifact
+         * default moves next.
+         */
+        const val DEFAULT_ENGINE: String = "lua"
 
         /**
          * Spelled once, and read by [createEngine]'s refusal and by the test

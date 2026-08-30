@@ -129,7 +129,7 @@ class Test322StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("_sessionid"))
+            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"))
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raisePlatformError(Test322Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
@@ -336,7 +336,7 @@ class Test322StateMachine(
 
     private fun processNullS2(
     ): TransitionResult<Test322State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("Var1 == _sessionid")) -> TransitionResult.External(Test322State.Pass, Test322State.S2, 3)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, _sessionid)", "Var1 == _sessionid")) -> TransitionResult.External(Test322State.Pass, Test322State.S2, 3)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External(Test322State.Fail, Test322State.S2, 4)
     }
@@ -383,7 +383,7 @@ class Test322StateMachine(
                 if (!activeStateIds.add("s1")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_sessionid"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))
 
             raiseInternal(Test322Event.Foo)
             }

@@ -353,7 +353,7 @@ class Test324StateMachine(
                 if (!activeStateIds.add("s1")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("_name"), com.sce.runtime.ScriptSource.ecmascript("'otherName'"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("_name", "_name"), com.sce.runtime.ScriptSource.lua("\"otherName\"", "'otherName'"))
             }
         }
     }

@@ -135,7 +135,7 @@ class Test452StateMachine(
 
         // W3C SCXML 5.3: Initialize variable 'foo' with expr
         try {
-            val initResult_foo = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.ecmascript("0"))
+            val initResult_foo = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
             engine.setVariable(sid, "foo", initResult_foo)
         } catch (e: Exception) {
             raisePlatformError(Test452Event.Error.Execution, "<data id='foo'> expr failed to evaluate")
@@ -144,7 +144,7 @@ class Test452StateMachine(
 
         // W3C SCXML 5.8: Execute global scripts at document load time
         try {
-            engine.executeScript(sid, com.sce.runtime.ScriptSource.ecmascript("function testobject() {\n    this.bar = 0;}"))
+            engine.executeScript(sid, com.sce.runtime.ScriptSource.lua("testobject = function() local self = {} self.bar = 0 return self end", "function testobject() {\n    this.bar = 0;}"))
         } catch (e: Exception) {
             raisePlatformError(Test452Event.Error.Execution, "a top-level <script> failed to execute")
         }
@@ -330,7 +330,7 @@ class Test452StateMachine(
     private fun processS0(
         event: Test452Event
     ): TransitionResult<Test452State> = when {
-        event is Test452Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("foo.bar == 1")) -> TransitionResult.External(Test452State.Pass, Test452State.S0, 0)
+        event is Test452Event.Event1 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(foo.bar, 1)", "foo.bar == 1")) -> TransitionResult.External(Test452State.Pass, Test452State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test452State.Fail, Test452State.S0, 1)
@@ -362,10 +362,10 @@ class Test452StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("foo"), com.sce.runtime.ScriptSource.ecmascript("new testobject();"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("foo", "foo"), com.sce.runtime.ScriptSource.lua("testobject()", "new testobject();"))
 
 
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("foo.bar"), com.sce.runtime.ScriptSource.ecmascript("1"))
+            executeAssign(com.sce.runtime.ScriptSource.lua("foo.bar", "foo.bar"), com.sce.runtime.ScriptSource.lua("1", "1"))
 
             raiseInternal(Test452Event.Event1)
             }

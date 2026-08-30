@@ -306,18 +306,102 @@ impl Language {
     }
 
     /// The engine language this backend emits for when nobody asks for
-    /// another — today's derived answer, unchanged.
+    /// another.
     ///
-    /// A *default*, not a fact, since `--script-engine` exists: the run's
-    /// selection is what the manifest reports and what the templates render
-    /// against. Keeping the default derived means a backend that gains a
-    /// lowering arm moves its own default with it.
+    /// Three answers, and only the first two are forced by the templates:
+    ///
+    /// * A backend whose templates lower UNCONDITIONALLY
+    ///   ([`Self::lowers_expressions_at_build_time`]) has no arm that emits
+    ///   the author's text, so Lua is the only thing it can produce.
+    /// * A backend that cannot be asked for Lua
+    ///   ([`Self::can_lower_expressions_on_request`]) has no lowered arm, so
+    ///   ECMAScript is the only thing it can produce.
+    /// * A backend carrying BOTH arms has a genuine choice, and the choice is
+    ///   a POLICY about hosts rather than a fact about templates.
+    ///   [`Self::two_armed_default`] is where it is made, one backend at a
+    ///   time, each arm naming the host fact that decides it.
+    ///
+    /// ⚠ This used to read the FIRST predicate alone — `if lowers { Lua }
+    /// else { EcmaScript }` — and that conflates *can emit the author's text*
+    /// with *should, by default*. It was a correct derivation while every
+    /// backend had exactly one arm, and the pair filter refuted it: the day
+    /// C++ and Kotlin gained a lowered arm, the `else` went on answering
+    /// ECMAScript for them without anyone choosing it. A policy nobody stated
+    /// is still a policy; what changed here is that it is now stated where it
+    /// can be argued with.
     pub fn default_script_engine_target(self) -> ScriptEngineTarget {
-        if self.lowers_expressions_at_build_time() {
-            ScriptEngineTarget::Lua
-        } else {
-            ScriptEngineTarget::EcmaScript
+        match (
+            self.lowers_expressions_at_build_time(),
+            self.can_lower_expressions_on_request(),
+        ) {
+            (true, _) => ScriptEngineTarget::Lua,
+            (false, false) => ScriptEngineTarget::EcmaScript,
+            (false, true) => self.two_armed_default(),
         }
+    }
+
+    /// The default for a backend that can emit EITHER language — the one
+    /// answer on this seam the template tree cannot give.
+    ///
+    /// ⚠ It is about HOSTS. `script_engine_language` is what a host reads to
+    /// decide which engine to supply, so the DEFAULT ARTIFACT and the DEFAULT
+    /// HOST WIRING have to name the same language. A disagreement is the
+    /// mis-supply [`ScriptEngineTarget`] exists to prevent, and it is silent
+    /// at build time: a Rhino handed lowered Lua fails at the first guard, in
+    /// the host's process, at run time.
+    ///
+    /// So each arm names the host fact that decides it, and each of those
+    /// facts is CHECKED elsewhere rather than asserted here:
+    ///
+    /// * **C++ → ECMAScript.** `sce/CMakeLists.txt` sets `SCE_SCRIPT_ENGINE`
+    ///   to `quickjs` by default, and `cmake/SCECodegen.cmake` is what makes
+    ///   a tree generated for one engine and compiled against another fail.
+    /// * **Kotlin → Lua.** Kotlin hosts take the engine by injection, and the
+    ///   two defaults this tree ships are `W3CTestBase.DEFAULT_ENGINE` and
+    ///   the Spring starter's `scxmlScriptEngine` bean. Both name the Lua
+    ///   engine, and `scripts/gates/w3c-kotlin.sh` asks THIS function through
+    ///   the manifest and refuses a run whose shipped defaults name an engine
+    ///   that does not accept the answer — so the two cannot drift apart
+    ///   silently, which is the only way this policy could go wrong.
+    ///
+    /// The one-armed backends are `unreachable!` rather than folded into a
+    /// `_`. A `_` would answer for a backend that later grows a second arm,
+    /// turning a forced answer into an unexamined policy without a word —
+    /// which is exactly the shape this function was split up to stop.
+    fn two_armed_default(self) -> ScriptEngineTarget {
+        match self {
+            Language::Kotlin => ScriptEngineTarget::Lua,
+            Language::Cpp => ScriptEngineTarget::EcmaScript,
+            Language::Rust | Language::Go | Language::Python | Language::C11 => unreachable!(
+                "{self:?} carries BOTH arms now — it can emit the author's text and it can \
+                 be asked to lower — so its default stopped being forced and became a \
+                 choice. Give it an arm here naming the host fact that decides it; falling \
+                 through to another backend's answer would make the choice by accident."
+            ),
+        }
+    }
+
+    /// Whether this backend's templates can be ASKED for Lua: every
+    /// engine-bound site routes through the pair filter, and no site is
+    /// unadjudicated.
+    ///
+    /// BOTH lists, and the second is not a formality. `unmigrated` is the
+    /// population this file knows how to classify; `unclassified` is the one
+    /// it does NOT — a site mentioning a model expression whose callee is
+    /// absent from `ENGINE_ENTRY_POINTS`. Reading the first alone would let
+    /// the escape hatch defeat the refusal: measured 2026-08-28, `unmigrated`
+    /// reached 0 while 9 sites were still unadjudicated, and any one of them
+    /// that turns out to evaluate would make exactly the mixed artifact this
+    /// predicate guards against.
+    ///
+    /// Extracted so [`Self::supports_script_engine_target`] and
+    /// [`Self::default_script_engine_target`] read ONE predicate. Two copies
+    /// of "both lists are empty" would be free to disagree about what
+    /// migrated means, and the default would then offer a language the
+    /// refusal was still withholding.
+    pub fn can_lower_expressions_on_request(self) -> bool {
+        self.unmigrated_expression_sites().is_empty()
+            && self.unclassified_expression_sites().is_empty()
     }
 
     /// Whether this backend's templates lower expressions through the
@@ -373,19 +457,11 @@ impl Language {
             return true;
         }
         match target {
-            // BOTH lists, and the second is not a formality. `unmigrated` is
-            // the population this file knows how to classify; `unclassified`
-            // is the population it does NOT — a site mentioning a model
-            // expression whose callee is absent from `ENGINE_ENTRY_POINTS`.
-            // Opening the Lua target on the first alone would let the escape
-            // hatch defeat the gate: measured 2026-08-28, `unmigrated` reached
-            // 0 while 9 sites were still unadjudicated, and any one of them
-            // that turns out to evaluate would make exactly the mixed artifact
-            // this refusal exists to prevent.
-            ScriptEngineTarget::Lua => {
-                self.unmigrated_expression_sites().is_empty()
-                    && self.unclassified_expression_sites().is_empty()
-            }
+            // The same predicate `default_script_engine_target` reads to know
+            // whether there is a second arm to choose between at all — see
+            // `can_lower_expressions_on_request` for why it is BOTH lists and
+            // for the measurement that put the second one there.
+            ScriptEngineTarget::Lua => self.can_lower_expressions_on_request(),
             // The other direction, DERIVED rather than refused outright.
             //
             // This arm was a flat `false`, on the reading that "a backend that
