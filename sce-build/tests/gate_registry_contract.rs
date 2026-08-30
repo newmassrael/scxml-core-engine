@@ -777,6 +777,68 @@ fn the_kotlin_lane_classifies_every_refusal() {
     );
 }
 
+/// A declared refusal names PRODUCERS, and each one resolves to something the
+/// tree still carries.
+///
+/// ⚠ Its own test rather than an assertion inside the one above, because the
+/// two hold different things and neither implies the other. That one holds the
+/// census against the declared list — observed against declared, both ways.
+/// This one holds the declared list against the TREE, and a list can satisfy
+/// either while failing the other: a text the engine still refuses goes on
+/// being declared, correctly, by an entry whose stated reason points at a
+/// fixture that was retired three rounds ago.
+///
+/// ⚠⚠ WHY IT HAD TO BECOME A PREDICATE. Every entry in
+/// `tests/ecmascript/kotlin_frontend_refusals.json` ends with a sentence of
+/// the shape *"THIS ENTRY DOES NOT LEAVE while test307 is registered"*. Until
+/// 2026-08-30 that was prose, and prose is what this repository has twice
+/// watched rot in this very file's neighbourhood — a per-call figure quoted
+/// from a `/tmp` probe deleted when its round ended, and "159 of 382" lifted
+/// out of a neighbouring measurement and reused as a lane's size. Both read as
+/// measured. What separated them from a measurement was that nothing asked the
+/// tree, which is exactly what `produced_by` now makes the gate do.
+///
+/// ⚠⚠⚠ AND IT NEEDS THIS ANCHOR RATHER THAN A BEHAVIOURAL WITNESS. Delete the
+/// resolution from the gate and nothing downstream looks different: the census
+/// still matches the declared texts, both `comm` directions still pass, the
+/// ceiling is still zero, and the lane stays green over a file whose reasons
+/// have quietly stopped being checkable. A guard whose removal changes nothing
+/// visible is one that needs its own predicate — the rule this repository
+/// arrived at when a `diff -rq` that had stopped comparing left both trees
+/// running and both trees passing.
+///
+/// The two populations are named separately because they do not imply each
+/// other: a reader that resolved only fixtures would accept `NoSuchTest`, and
+/// one that resolved only classes would accept fixture `999`.
+#[test]
+fn a_declared_refusal_names_producers_that_exist() {
+    let gate = std::fs::read_to_string(repo_root().join("scripts/gates/w3c-kotlin.sh"))
+        .expect("the Kotlin W3C gate script is readable");
+    let code: String = code_lines(&gate).collect::<Vec<_>>().join("\n");
+
+    assert!(
+        code.contains("entry.get(\"produced_by\")"),
+        "⚠ `scripts/gates/w3c-kotlin.sh` no longer reads `produced_by`, so \
+         every entry's stated reason is back to being prose. An entry may then \
+         name a fixture that has been retired, and the lane goes on passing \
+         while a reader follows the reason to nothing."
+    );
+    assert!(
+        code.contains("name not in fixtures"),
+        "⚠⚠ the Kotlin gate no longer resolves a numeric producer against the \
+         conformance registry. Retiring a W3C fixture has to take the refusal \
+         entries that rest on it, and this comparison is the only thing that \
+         says so — nothing else in the lane reads the registry for this."
+    );
+    assert!(
+        code.contains("name not in classes"),
+        "⚠⚠ the Kotlin gate no longer resolves a named producer against the \
+         Kotlin test sources. Renaming or deleting a test class would leave \
+         its refusal entry pointing at a class that does not exist, and the \
+         census cannot notice: it records the refused TEXT and not its caller."
+    );
+}
+
 /// The Kotlin test task forwards the census property to the test JVM.
 ///
 /// ⚠ A Gradle `Test` task FORKS. `-Dsce.lua.loweringCensus=…` handed to Gradle
