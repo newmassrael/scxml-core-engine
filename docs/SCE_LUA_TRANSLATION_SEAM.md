@@ -3643,7 +3643,9 @@ that can be green over a wrong artifact, so it carries three separate limits:
   source-control-refused=<unevaluated> source-control-evaluable=1`
 - the pair: **458** `ScriptSource.lua(...)` call sites in the subject against
   **458** `ScriptSource.ecmascript(...)` in the control, the helper's other arm
-  once in each.
+  once in each. ⚠ That number is this day's, not the tree's: the round below
+  took it to **439** by removing the guard evaluations the dispatch used to
+  make. Re-derive it from the gate, never from this line.
 - from `:sce-kotlin-lowered-ecma262:clean`, every task EXECUTED:
   `generateLoweredFixture`, `generateEcma262Source`, `generateEcma262Lowered`,
   `compileKotlin`, `compileTestKotlin`, `test`.
@@ -3711,10 +3713,142 @@ matches a comment saying the opposite of what the code does.
   still ECMAScript, and `EcmaScriptToLuaTransformer` still exists. What this
   round removes is the reason to distrust the flip on Kotlin: the lowered
   artifact now answers the shared table under EXECUTION, not by assertion.
-- **The `cond`-twice defect.** One entry in
-  `kotlin_lowered_artifact_defects.json`, with its cause and its fix, and the
-  suite reds when it is fixed and not removed.
+- ~~**The `cond`-twice defect.**~~ CLOSED by the round below, and the entry is
+  gone because the suite went red asking for it to go.
 - **C++ still has the flag and no pair**, unchanged by this round.
 - **This lane has no hosted history.** Its supersession row is an upper bound
   borrowed from a sibling; replace it with the lane's own median once it has
   runs to take one over.
+
+## Landed 2026-08-30 (fourteenth round): the action dispatch is TOLD which transition ran
+
+`ecma262-lowered-kotlin` found the defect on its first run, and this round
+repaid it. `tests/ecmascript/kotlin_lowered_artifact_defects.json` is an EMPTY
+list now, and it got there the way the list was built to allow.
+
+### Why only a compiled artifact could have seen it
+
+The generated Kotlin evaluated a transition's `cond` TWICE: once in
+`processNull<State>()` to choose the target, and again in
+`executeTransitionActions` to decide which arm's executable content to run.
+Invisible for a pure guard, WRONG for a side-effecting one. `cond="++v == 2"`
+incremented to 2 and took its transition, then incremented to 3 at dispatch
+time, missed its own arm, and ran the other one's content.
+
+Nothing else in this tree could have found it. No W3C fixture guards on a side
+effect, and `EcmaScriptSemanticsTest` / `LoweredEcma262Test` reach the ENGINE
+with text a test chose — neither compiles a machine.
+
+⚠ **And it was not confined to the fixture.** Over the 312 committed Kotlin
+machines, `executeTransitionActions` carried **41** guard re-evaluations across
+**26** files at `aecea0c0d1`, and carries **0** now. None of those 26 answered
+wrongly, because no committed fixture guards on a side effect — the defect was
+latent in every one of them.
+
+### The repair, and where the number comes from
+
+`TransitionResult` carries a `transitionIndex`; `executeTransitionActions`
+takes it as a third parameter, with NO default and NO two-argument overload, so
+an unmigrated override fails to compile rather than going on re-deciding. The
+dispatch is a `when (transitionIndex)`.
+
+⚠ The index is MACHINE-WIDE, which is what separates it from the per-state one
+C++ switches on. C++ dispatches on `(source state, index within that state's
+own list)` and that pair is unique because its switch is nested. Kotlin's
+dispatch table for a state is its EFFECTIVE transitions — its own followed by
+every ancestor's, because §scxml-3.13 ancestor routing lets a leaf take a
+transition written on an ancestor — so under one `source` a child's transition
+0 and its ancestor's transition 0 are two transitions wearing one number.
+
+⚠⚠ ONE assigner, TWO readers. `kotlin::assign_machine_transition_ids` decides
+the numbering; the selection template reads `machine_transition_ids`, the
+dispatch template reads the `machine_transition_index` injected into
+`compute_effective_transitions`. Neither counts for itself. A `loop.index0` in
+either would enumerate a DIFFERENT population — own transitions on one side,
+effective transitions on the other — and the two would silently disagree for
+every state that inherits one.
+
+That the other backends had this from the start is not a memory:
+`git grep -l transition_index aecea0c0d1 -- tools/codegen/templates/` returns
+C, C++, Go, Python and Rust, and no Kotlin file.
+
+### The list reached zero, and reaching zero was a MEASUREMENT
+
+The entry was not deleted because someone judged the defect fixed. The suite
+went RED over it, on both routes, and removing it is what turned that red
+green. An EMPTY list is the intended steady state: `++v == 2` is still 1 of the
+98 cases in `ecma262_semantics.json` and is answered correctly now; what
+changed is that nothing excuses it.
+
+### The lane could not see its own generator change
+
+Found the same day, one level up, and it is this lane's own subject turned
+against it. `GenerateLoweredArtifact` declared the generator as `@get:Input
+codegen: Property<String>` — the PATH. A `cargo build` that changed what the
+generator EMITS therefore left the task UP-TO-DATE, and the suite compiled
+machines from the PREVIOUS generator while reporting on this tree.
+
+It surfaced only by luck: this round also moved a runtime signature, so the
+stale Kotlin failed to compile. A change that altered emitted BEHAVIOUR alone
+would have gone green over the old artifact. The task now declares the
+binary's CONTENT (`@get:InputFile`); `NAME_ONLY` would be wrong because the
+build machine and CI put the binary at different absolute paths.
+
+### Measured in the turn that landed it
+
+- `scripts/gate ecma262-lowered-kotlin` **rc=0**, census printed by the GREEN
+  run: `LoweredEcma262Kotlin census: cases=98 declared=0 codegen-defects=0
+  lowered-control-refused=<unevaluated> lowered-control-evaluable=1
+  source-control-refused=<unevaluated> source-control-evaluable=1` —
+  `codegen-defects=0` where the landing round read `1`.
+- the pair is **439** against **439**, where that round read 458 against 458.
+  What left is what the dispatch no longer does: `executeTransitionActions` in
+  the emitted subject carries **0** `safeEvaluateGuard(` and **19**
+  `when (transitionIndex)`.
+- the `++v == 2` guard is emitted in `processNullD43` — the SELECTION — and
+  nowhere in the dispatch. Before, the identical string appeared in both.
+- `scripts/gate w3c-kotlin` **rc=0** — 4 engine/language pairs x 373 cases,
+  `committed tree unchanged after 4 engine/language pair(s)`.
+- `cargo test -p sce-build --features cli --test gate_registry_contract`
+  **30 passed**, both new tests named in the run.
+- `scripts/regen_all_committed_trees.sh` over the working tree left the diff
+  BYTE-IDENTICAL — 1719 files before, 1719 after, same `git diff | sha256sum`.
+  Of those, 992 are non-Kotlin trees whose only changed line is
+  `template-hash`, asserted per file rather than sampled: `git diff --numstat`
+  reads `1 1` for every one of them.
+
+### Shown red before it was believed
+
+| red witness | what it models | verdict |
+|---|---|---|
+| `scripts/mutate …/ecma262_lowered_kotlin.cases` | the casefile entire, 9 cases | **9/9 CAUGHT**, baseline 32 tests 0 failing |
+| `@get:InputFile` → `@get:Internal` on `codegenBinary` | the lane stops seeing its generator change | RED — `the_lowered_lane_regenerates_when_the_generator_itself_changes` |
+| `when (transitionIndex)` → a `safeEvaluateGuard` arm | the dispatch decides again instead of being told | RED — `the_kotlin_action_dispatch_switches_on_the_selection_it_was_given` |
+| the `++v == 2` entry put BACK into the defect list | an entry that stopped being true sits there unfalsifiable | gate **rc=1** on BOTH routes: *"declared … and the artifact answers it correctly. The defect is fixed: remove the entry."* |
+| `assign_machine_transition_ids` reset per state | the numbering goes back to the per-state one | **the compiler refuses it**: `test403bSm.kt` gets `[0, 0]` where it had `[0, 3]`, and `-Werror` turns *"Duplicate branch condition in 'when'"* into `compileKotlin FAILED` |
+| the dispatch's number alone skewed by `+1` | selection and dispatch stop agreeing, with no duplicate to catch | compiles clean, then **`Test 403b -- W3C SCXML 3.13 > testW3CConformance() FAILED`** — `expected Pass but reached Fail` |
+
+⚠ The last two are a PAIR, and neither alone would do. A duplicate number is
+caught by the Kotlin compiler before anything runs — the good failure, but not
+evidence that a wrong number produces a wrong ANSWER. Skewing the dispatch
+alone leaves no duplicate to warn about, so it reaches execution, and that is
+what shows the numbering is load-bearing rather than decorative.
+
+⚠⚠ `test403b` is the oracle for both because of what it is: *"we test that
+'optimally enabled set' really is a set"*. Its `s0` carries an `event1`
+transition documented as one that should NEVER be taken, and its `p0` carries
+another `event1` transition that must run exactly once — two transitions that
+land in one dispatch table through §scxml-3.13 ancestor routing. That is the
+exact shape the machine-wide numbering exists for, and 3 of the 312 committed
+machines have it (`P0`, `P0s1`, `P0s2`, all in `test403b`), which is why an arm
+list of `[0, 3]` rather than `[0, 1]` is the tree's own signature of the
+collision being avoided.
+
+### What this round leaves open
+
+- **The flip itself**, still. `Language::Kotlin.default_script_engine_target()`
+  is ECMAScript and `EcmaScriptToLuaTransformer` is 1175 lines. This round
+  removes a reason to distrust the flip rather than performing it.
+- **`Mutation Rounds` was red at `aecea0c0d1`**, and not from this work: both
+  shards of `mutation_rounds_selection.cases` failed while
+  `ecma262_lowered_kotlin.cases` passed. It is a debt of its own round.
