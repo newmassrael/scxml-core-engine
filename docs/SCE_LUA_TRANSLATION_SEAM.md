@@ -3339,6 +3339,9 @@ sweep.
   `w3c-kotlin` runs on Rhino and QuickJS — two engines that refuse Lua. So the
   flip needs the suite to generate per engine first, which is also what would
   let `lua` join `KOTLIN_ENGINES` and close that gate's own standing note.
+  ✅ **The per-engine generation landed 2026-08-30 (the round below), and `lua`
+  joined.** The array is `KOTLIN_ENGINE_PAIRS` now and the flip is no longer
+  blocked by this gate; what the flip still needs is its own round.
 
 ### The one thing that made the flip unsafe, removed — and it changes nothing yet
 
@@ -3377,3 +3380,161 @@ the substance instead:
 `rust` accepted `--script-engine ecmascript` and emitted an artifact that
 carries `_scxml_truthy(_event.data)`.
 ```
+
+## Landed 2026-08-30 (twelfth round): the conformance gate generates per engine, and `lua` joined it
+
+`scripts/gate w3c-kotlin` ran two engines against one tree. It now runs four
+`engine:language` **pairs**, each against the tree that engine can read:
+
+```sh
+KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript lua:lua)
+```
+
+The row that did not exist before is `lua:lua` — the build-time lowering route,
+measured above the expression level for the first time. `lua:ecmascript` is the
+run-time route the gate already had, now labelled as the one it is rather than
+described as covering both.
+
+### Why an engine stopped identifying a run
+
+This backend emits machines for two script-engine languages and the committed
+tree can hold only one. Handing the other engine that tree is not a weaker
+measurement, it is a broken one: `ScxmlScriptEngine` refuses a language it does
+not accept, so `rhino` over lowered Lua is a suite of refusals. Two halves lift
+that:
+
+- **`sce-codegen generate-w3c --script-engine <LANG>`** — the batch counterpart
+  of the single-document flag, resolved through the same
+  `supports_script_engine_target` refusal. `KotlinBackend` and `CppBackend`
+  carry the run's selection and call `generate_*_for_engine`; the other four
+  backends have one arm each, and it is that refusal — not silence here — that
+  turns asking them for the other one into an error.
+- **`-Psce.generated.overlay=<tree>`** — the Kotlin test build compiles that
+  tree's `com/sce/generated` and excludes the committed one. Only the machines
+  move; the generated JUnit classes do not vary with the language, and the gate
+  holds that to a `cmp` per class rather than to this sentence.
+
+### What the gate derives instead of declaring
+
+`COMMITTED_LANGUAGE` is read from the manifest of a probe generation
+(`script_engine_language`), never written down. A literal would be correct
+until the day `default_script_engine_target()` flips — the day this gate has to
+be right — and silently wrong after it.
+`the_kotlin_gate_runs_every_engine_it_claims` fails on a literal assignment.
+
+⚠ **The first attempt asked the TREE and would have been wrong.** Counting
+files carrying `ScriptSource.lua(` against `ScriptSource.ecmascript(` reads
+**159 against 159 on the same tree**, and the gate would have refused it as
+"mixed". A generated machine emits BOTH arms of the run-time helper that
+re-wraps a `ScriptSource` it was handed — `evaluateSendContent` switches on
+`source.language` — so both spellings appear in every machine that has one.
+What varies with the selection is the call site carrying the author's
+expression, and telling those apart by grep is a parse of Kotlin.
+
+### The population claim splits along the seam, and each half is asserted where its answer lives
+
+`KOTLIN_ENGINE_PAIRS` makes a POPULATION claim — "these are the ways a
+generated machine can reach an engine in this backend" — and until this round
+nothing checked it. The array said `(rhino quickjs)` for months while a third
+engine shipped, and the omission survived every push because the only thing
+that could have contradicted it was the same array.
+
+The claim has two halves, and neither implies the other:
+
+- **The generator half** — every language this backend can EMIT an artifact
+  for has a row. Answered in Rust by
+  `the_kotlin_gate_runs_every_language_the_generator_can_emit`, which sweeps
+  `ScriptEngineTarget::ALL` through
+  `Language::Kotlin.supports_script_engine_target`. A language it says yes to
+  with no row is an artifact SCE ships and no lane executes.
+- **The engine half** — every language each engine will ACCEPT has a row.
+  Answered on the JVM by `GateEnginePairsTest`
+  (`W3CTestBase.KNOWN_ENGINES` × `ScxmlScriptEngine.acceptsLanguage`), because
+  it is the engines that answer. An engine added to the suite, or an existing
+  one that gains an adapter, turns the array red rather than going unmeasured.
+
+An emittable artifact nothing runs and a running engine nothing emits for are
+different holes, which is why these are two assertions rather than one
+restated twice.
+
+⚠ **Containment on the generator side, equality on the engine side**, and the
+asymmetry is deliberate. A row naming a language the backend cannot emit fails
+LOUDLY the first time the gate runs — `generate-w3c` refuses through the same
+`supports_script_engine_target` call — so nothing needs asserting for that
+direction in Rust. On the JVM there is no such refusal for a pair that stopped
+being supported, so equality is what keeps the minutes honest.
+
+⚠⚠ **The escape hatch is closed too.** The generator-side check enumerates
+through `ScriptEngineTarget::ALL`, so shrinking that constant would leave the
+comparison running, passing, and asking about one language — a gate that
+cannot be wrong rather than a gate that is right.
+`the_target_population_is_the_wire_vocabulary` holds `ALL` to
+`SCRIPT_ENGINE_LANGUAGES`, which is itself pinned to the manifest schema's
+`enum`: a third target cannot reach the wire without reaching the sweeps, and
+cannot be added to the sweeps without the schema admitting it. Both directions
+are mutation cases in `kotlin_engine_selection.cases`, and the repairs they
+point at are opposite — one says "add the row", the other says "the population
+is not the array's to narrow".
+
+⚠⚠ **The predicate was inert when written, and the mutation is what showed
+it.** Deleting the `lua:lua` row left `:sce-kotlin-tests:test` reporting BUILD
+SUCCESSFUL in 500 ms with no test run: Gradle cannot see a test reading a file
+off disk, so the gate was not an input of the test task. The same shape the
+shared ECMA-262 tables already carried, for the same reason. Declared now, and
+`the_kotlin_suite_reruns_when_the_gate_it_reads_changes` fails if the
+declaration goes — a suite cannot observe its own staleness, because the run
+that would report it is the run that does not happen.
+
+### Two gate defects found while writing it
+
+- `sce_gate_fail` was reachable from inside a `$( … )`. It is an `exit`, so it
+  would have ended the subshell and let the gate carry on past a tree it had
+  just refused. The helper returns through a variable now.
+- A `[ … ] && …` loop body made the loop's status that of its LAST iteration
+  under `set -e`, which for today's array is `lua:lua` against a committed
+  `ecmascript` — the gate would have ended silently, with no message, exactly
+  as arranged.
+
+### The refusal's Kotlin witness was vacuous, and a mutation is what showed it
+
+`supports_script_engine_target(Lua)` is DEFINED as "both scan lists are
+empty". The Kotlin case guarding it asserted that the two AGREE:
+
+```rust
+assert_eq!(
+    Language::Kotlin.supports_script_engine_target(ScriptEngineTarget::Lua),
+    remaining.is_empty() && unknown.is_empty(),
+);
+```
+
+That holds however the scan answers — see the site and both sides go false,
+miss it and both go true. It is `A == A` against the scan, and it earns its
+place only for the `target == default` shortcut inside the refusal, which is a
+different question.
+
+Measured: the mutation case *"the callee sits further away than the window
+reached"* — which restores an unmigrated Kotlin `<send>` site whose callee sits
+above its argument, the shape the scan lost once already — was SURVIVED on CI
+while its two C++ siblings were CAUGHT. The difference was that C++ had a
+POSITIVE assertion
+(`the_cpp_migration_is_complete_and_the_lua_target_is_offered`) and Kotlin had
+only the biconditional. The Kotlin twin
+(`the_kotlin_migration_is_complete_and_the_lua_target_is_offered`) turned the
+same case CAUGHT the moment it existed.
+
+⚠ The general shape, worth carrying past this seam: **when an oracle compares
+two values and one is derived from the other, it cannot fail.** A refusal built
+on a scan needs a witness that asserts the scan's ANSWER, not its consistency.
+
+### What this leaves open
+
+- **The flip itself.** `lowers_expressions_at_build_time` is still false. This
+  gate no longer blocks it — the pairs keep meaning the same thing across it,
+  and `COMMITTED_LANGUAGE` follows it — but nothing else was checked for the
+  flip, and `EcmaScriptToLuaTransformer`'s retirement is a separate row.
+- **`ecma262-lowered-kotlin`.** `lua:lua` runs the generated machines over
+  lowered artifacts; it does not run the 98-case shared table over one. That is
+  still `LoweredEcma262Test` feeding the engine, not an artifact.
+- **C++ has the flag and no pair.** `generate-w3c --script-engine` reaches
+  `CppBackend`, and `w3c-cpp` runs one language. The same argument applies
+  there and was not made this round.

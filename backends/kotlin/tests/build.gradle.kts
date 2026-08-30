@@ -45,9 +45,52 @@ val sceCodegenAbsoluteOrNull: String? by rootProject.extra
 val sceCodegenBinary: String? = sceCodegenAbsoluteOrNull
 val hasCodegen: Boolean = sceCodegenBinary != null
 
+// ---------------------------------------------------------------------------
+// The committed tree carries ONE language; this backend emits for two.
+//
+// `Language::Kotlin` owns both arms of the language seam: the machines can
+// hand their engine the author's ECMAScript, or the Lua that `sce-build`'s
+// frontend lowered at build time (`sce-codegen generate-w3c --script-engine`).
+// Only one of those can be the committed tree, and the engines are not
+// interchangeable about which they are handed — `ScxmlScriptEngine` refuses a
+// language it does not accept rather than guessing.
+//
+// So the other language's machines are generated somewhere else and named
+// here. The caller owns that directory: `scripts/gates/w3c-kotlin.sh` decides
+// which language each engine needs, generates it, and points this at the
+// result. Nothing about which language is which lives here — a second copy of
+// that decision is exactly the drift this seam has already paid for twice.
+//
+// Only `com/sce/generated` moves. The generated JUnit classes under
+// `com/sce/w3c` do not mention the engine language at all, and the gate holds
+// that to a diff rather than to this comment.
+val generatedOverlay: String? = providers.gradleProperty("sce.generated.overlay").orNull
+val overlayMachines: String? = generatedOverlay?.let { "$it/src/main/kotlin/com/sce/generated" }
+
+if (overlayMachines != null) {
+    require(File(overlayMachines).isDirectory) {
+        "sce.generated.overlay=$generatedOverlay names no generated tree at " +
+            "$overlayMachines. The overlay replaces the committed machines rather " +
+            "than adding to them, so an empty one would compile a suite with no " +
+            "state machines in it and report that as a pass."
+    }
+    sourceSets["main"].kotlin.srcDir(overlayMachines)
+    // The committed machines are the OTHER language's. Excluding them is what
+    // makes this a replacement: kept, they would be duplicate declarations of
+    // every generated class, and dropped from the exclude they would be the
+    // ones that compiled.
+    sourceSets["main"].kotlin.exclude("com/sce/generated/**")
+}
+
 val generateScxml by tasks.registering(Exec::class) {
     group = "code generation"
     description = "Generate Kotlin state machines and test classes from W3C SCXML tests"
+
+    // An overlay run compiles machines the caller generated, so regenerating
+    // the committed ones would be work whose output nothing reads — and, on
+    // a tree whose SOURCE_DATE_EPOCH pin ever slipped, a write into the
+    // committed tree that this run has no reason to make.
+    enabled = hasCodegen && overlayMachines == null
 
     workingDir = File(rootDir)
     commandLine(sceCodegenBinary ?: "sce-codegen", "generate-w3c", "-l", "kotlin")
@@ -86,7 +129,6 @@ val generateScxml by tasks.registering(Exec::class) {
 
     // Skip if sce-codegen is not available (use existing generated files)
     isIgnoreExitValue = false
-    enabled = hasCodegen
 }
 
 tasks.named("compileKotlin") {
@@ -114,6 +156,18 @@ tasks.test {
     // which is the failure mode the list was written to remove.
     inputs.dir(File(rootDir, "tests/ecmascript"))
         .withPropertyName("sharedEcmaScriptTables")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // Same reason, same failure mode, measured the same way.
+    // `GateEnginePairsTest` reads the conformance gate and holds its
+    // `KOTLIN_ENGINE_PAIRS` array to the routes this backend actually has.
+    // The gate is not on the compile classpath either, so editing it left
+    // `:sce-kotlin-tests:test UP-TO-DATE`: measured 2026-08-30 by deleting the
+    // `lua:lua` row — the row that whole change exists to add — which the test
+    // must reject and instead reported BUILD SUCCESSFUL in 500ms without
+    // running a test. A gate nothing re-reads is a gate that cannot be wrong.
+    inputs.file(File(rootDir, "scripts/gates/w3c-kotlin.sh"))
+        .withPropertyName("kotlinConformanceGate")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
     // Native library paths (Lua + QuickJS JNI)

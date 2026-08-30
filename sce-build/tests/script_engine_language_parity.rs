@@ -226,7 +226,11 @@ fn the_targets_a_backend_claims_are_the_targets_it_generates_for() {
 
     for lang in Language::ALL {
         let name = lang.canonical_name();
-        for target in [ScriptEngineTarget::EcmaScript, ScriptEngineTarget::Lua] {
+        // `ScriptEngineTarget::ALL`, not the two spelled out: this sweep is
+        // one of the places a third engine language must reach on the day it
+        // lands, and a restated pair here would leave it measured for two
+        // targets while the wire admitted three.
+        for target in ScriptEngineTarget::ALL.iter().copied() {
             let wire = target.wire_name();
             let claimed = lang.supports_script_engine_target(target);
             let artifact = asks_for(name, wire, "seam-target-parity");
