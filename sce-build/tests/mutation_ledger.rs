@@ -33,38 +33,12 @@ use std::process::Command;
 
 use tempfile::{tempdir, TempDir};
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build has a parent directory")
-        .to_path_buf()
-}
-
-/// Run a snippet with the ledger library sourced, and return its stdout.
-///
-/// `HOME` is pointed at a directory of the test's own so nothing here writes
-/// into the real ledger, and `XDG_DATA_HOME` is deliberately pointed
-/// somewhere else entirely — every test below is entitled to assume the
-/// record lands under `HOME`, and the one that checks it says so.
-fn with_library(home: &Path, snippet: &str) -> String {
-    let out = Command::new("bash")
-        .arg("-c")
-        .arg(format!(
-            "set -euo pipefail; source scripts/lib/mutation_ledger.sh; {snippet}"
-        ))
-        .current_dir(repo_root())
-        .env("HOME", home)
-        .env("XDG_DATA_HOME", home.join("decoy"))
-        .output()
-        .expect("run bash with the ledger library sourced");
-    assert!(
-        out.status.success(),
-        "the snippet failed:\n{}\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).into_owned()
-}
+mod common;
+// Shared with `ledger_holes_are_still_declared`, which is a separate suite for
+// a reason that is not subject matter — see the note on its own header. Both
+// need to seed a round and then ask the tool about it, and a second copy of
+// either half would be a second answer to what the ledger holds.
+use common::ledger::{ask, labels_of, repo_root, with_library};
 
 /// The ledger's location, as the library computes it under a given `HOME`.
 fn ledger_dir(home: &Path) -> String {
@@ -335,28 +309,22 @@ fn a_check_writes_no_verdict_because_it_read_none() {
     );
 }
 
-/// Ask `scripts/mutation-ledger` a question against a ledger of our own.
-fn ask(ledger: &Path, args: &[&str]) -> String {
-    let out = Command::new(repo_root().join("scripts/mutation-ledger"))
-        .args(args)
-        .current_dir(repo_root())
-        .env("SCE_MUTATION_LEDGER_DIR", ledger)
-        .output()
-        .expect("run scripts/mutation-ledger");
-    assert!(
-        out.status.success(),
-        "mutation-ledger {args:?} failed:\n{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).into_owned()
-}
-
 /// A casefile the corpus really holds, so the queries below are asked about
 /// something `scripts/mutation-ledger` derives from the tree rather than from
 /// a list this test wrote.
 const A_REAL_CASEFILE: &str = "sce-build/tests/mutations/driver_fixture_citation.cases";
 const A_REAL_STEM: &str = "driver_fixture_citation";
+
+/// A second real casefile, holding several cases, for the questions that need
+/// a record to name cases the casefile REALLY declares.
+///
+/// `holes` asks whether a case its record names is still in the casefile, so a
+/// seeded record carrying invented labels would answer that question the wrong
+/// way — every hole would read as a case that had vanished. This one is the
+/// harness's own liveness casefile: it exists to keep `scripts/mutate` honest,
+/// so it outlives the features around it.
+const A_MULTI_CASE_CASEFILE: &str = "sce-build/tests/mutations/mutation_case_liveness.cases";
+const A_MULTI_CASE_STEM: &str = "mutation_case_liveness";
 
 #[test]
 fn an_assertion_never_counts_as_a_measurement() {
@@ -487,30 +455,42 @@ fn a_case_the_round_did_not_catch_is_reported_as_a_hole() {
     // which has no hole in it today: a witness that asked the real ledger
     // would assert against an empty sweep and stay green for exactly as long
     // as that held — the shape of test this repository has retired before.
+    //
+    // The LABELS are read off a casefile rather than invented, because `holes`
+    // now asks whether a case its record names is still declared there.
+    // Invented labels would every one of them come back VANISHED, and this
+    // test would be measuring that instead of what it says it measures.
+    let labels = labels_of(A_MULTI_CASE_CASEFILE);
+    assert!(
+        labels.len() >= 3,
+        "{A_MULTI_CASE_CASEFILE} declares {} case(s); this test needs three \
+         real labels to seed one verdict of each kind",
+        labels.len()
+    );
     with_library(
         home.path(),
         &format!(
             "export SCE_MUTATION_LEDGER_DIR={:?}; \
              rows=\"$(mktemp)\"; \
-             mutation_ledger_begin {A_REAL_CASEFILE} \"$rows\"; \
-             mutation_ledger_case CAUGHT 'a driver cites a fixture that was never real' '1/2 red'; \
-             mutation_ledger_case SURVIVED 'the citation is never compared' '0/2 red'; \
-             mutation_ledger_case INCONCLUSIVE 'the comparison is deleted' 'the mutated tree did not compile'; \
+             mutation_ledger_begin {A_MULTI_CASE_CASEFILE} \"$rows\"; \
+             mutation_ledger_case CAUGHT {:?} '1/2 red'; \
+             mutation_ledger_case SURVIVED {:?} '0/2 red'; \
+             mutation_ledger_case INCONCLUSIVE {:?} 'the mutated tree did not compile'; \
              mutation_ledger_commit cargo 1 >/dev/null; \
              rm -f \"$rows\"",
-            ledger.path().display().to_string()
+            ledger.path().display().to_string(),
+            labels[0],
+            labels[1],
+            labels[2],
         ),
     );
 
     let holes = ask(ledger.path(), &["holes"]);
-    for (verdict, label) in [
-        ("SURVIVED", "the citation is never compared"),
-        ("INCONCLUSIVE", "the comparison is deleted"),
-    ] {
+    for (verdict, label) in [("SURVIVED", &labels[1]), ("INCONCLUSIVE", &labels[2])] {
         assert!(
-            holes.lines().any(|line| line.starts_with(A_REAL_STEM)
+            holes.lines().any(|line| line.starts_with(A_MULTI_CASE_STEM)
                 && line.contains(verdict)
-                && line.contains(label)),
+                && line.contains(label.as_str())),
             "`holes` does not name the {verdict} case:\n{holes}"
         );
     }
@@ -518,7 +498,7 @@ fn a_case_the_round_did_not_catch_is_reported_as_a_hole() {
     // The half that makes this a question rather than a listing: printing
     // every case the round measured would satisfy both assertions above.
     assert!(
-        !holes.contains("a driver cites a fixture that was never real"),
+        !holes.contains(labels[0].as_str()),
         "a CAUGHT case is reported as a hole:\n{holes}"
     );
 
@@ -529,7 +509,7 @@ fn a_case_the_round_did_not_catch_is_reported_as_a_hole() {
     assert!(
         !ask(ledger.path(), &["unjudged"])
             .lines()
-            .any(|line| line == A_REAL_STEM),
+            .any(|line| line == A_MULTI_CASE_STEM),
         "a round that left a hole put its casefile back on the unjudged list"
     );
 
