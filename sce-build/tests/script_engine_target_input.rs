@@ -620,7 +620,7 @@ fn the_two_armed_policy_names_every_backend() {
          there: a backend that falls through gets another backend's policy \
          without anyone choosing it, and nothing else in this file can tell.\n{body}"
     );
-    for language in Language::ALL.iter().copied() {
+    for language in Language::ALL {
         assert!(
             body.contains(&format!("Language::{language:?}")),
             "`two_armed_default` does not name `Language::{language:?}`. Every \
