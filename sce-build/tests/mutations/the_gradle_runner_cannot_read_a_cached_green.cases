@@ -1,0 +1,82 @@
+# Mutation cases for "a Gradle round's green is a run, not a restored report".
+#
+# Run with `scripts/mutate
+# sce-build/tests/mutations/the_gradle_runner_cannot_read_a_cached_green.cases`.
+#
+# Gradle is the one runner in this harness that hands back a verdict without
+# running anything, twice over: up-to-date checking skips a task whose declared
+# inputs have not moved, and the build cache — `org.gradle.caching=true` in this
+# repository's `gradle.properties` — RESTORES a task's outputs, its JUnit XML
+# included, from an earlier build.
+#
+# Measured 2026-08-30, both escapes removed from the init script and the same
+# invocation issued twice: the second answered `FROM-CACHE`, wrote NO classpath
+# listing, and still left one green JUnit XML behind with two passing tests in
+# it. A harness reading only the report would have called that a run — and then
+# compared every mutation against it.
+#
+# Two guards close that, in two files, and they are complementary rather than
+# redundant: the init script stops the situation arising, and the runner
+# refuses a report no test task produced if it ever arises anyway. The same day,
+# with the escapes removed, a full round over `kotlin_engine_pairs_jvm.cases`
+# exited 2 at the baseline rather than reporting verdicts drawn from a cache.
+#
+# ⚠ These are TEXT predicates over two shell files — that is what a lane can
+# afford on every push — so each case here disables a guard by editing what the
+# predicate reads. What they cannot cover is a third way of defeating the same
+# property, and the oracle's own header says so rather than leaving it implied.
+
+mutation_tests -p sce-build --features cli --test gradle_mutation_runner_contract
+
+# Both files are READ AT RUN TIME by the tests — one is parsed as text, the
+# other is a shell script the harness executes — so no compiled artifact
+# changes when they do, and the changed-binary rule would call every case here
+# INCONCLUSIVE.
+mutation_runtime_targets scripts/mutate scripts/lib/mutation-gradle-init.gradle
+
+# ── The build cache is left open ───────────────────────────────────
+#
+# The escape that survives `upToDateWhen { false }`: an up-to-date check
+# refuses to SKIP the task, and the cache then hands back its outputs anyway.
+# Closing one and calling it done is the shape this case restores.
+mutation_case "the test task becomes cacheable again" <<'PY'
+edit("scripts/lib/mutation-gradle-init.gradle",
+     "            testTask.outputs.cacheIf { false }",
+     "            // testTask.outputs.cacheIf { false }")
+PY
+
+# ── The compile step starts running tests ──────────────────────────
+#
+# With the Test tasks enabled under `compileOnly`, the round's build step
+# exits non-zero for a red suite as readily as for a tree that stopped
+# compiling — and the two are the verdicts a round exists to keep apart.
+mutation_case "the compile step of a round is allowed to run tests" <<'PY'
+edit("scripts/lib/mutation-gradle-init.gradle",
+     "                testTask.enabled = false",
+     "                testTask.enabled = true")
+PY
+
+# ── The second guard is inverted rather than removed ───────────────
+#
+# The line stays; only its sense moves. A guard that fires on the runs that DID
+# execute reports every honest round as unreadable and every cached one as
+# fine — and a predicate asserting the call rather than the condition would go
+# on passing. That defect has a precedent in this tree: a ratchet whose test
+# asserted the constant's NAME survived its own mutation for a round.
+mutation_case "the cached-report guard is asked the wrong way round" <<'PY'
+edit("scripts/mutate",
+     'if ! compgen -G "$MUTATION_GRADLE_CLASSPATH_DIR/*.txt" >/dev/null; then',
+     'if compgen -G "$MUTATION_GRADLE_CLASSPATH_DIR/*.txt" >/dev/null; then')
+PY
+
+# ── The classpath directory is not cleared ─────────────────────────
+#
+# The guard reads a listing that `doFirst` writes. Left uncleared, the listing
+# from the PREVIOUS invocation answers for this one, and the guard passes on
+# evidence from the wrong run — which is the same silence it was built to end,
+# one indirection further out.
+mutation_case "the guard reads the previous invocation's listing" <<'PY'
+edit("scripts/mutate",
+     'rm -rf "$MUTATION_GRADLE_REPORT_DIR" "$MUTATION_GRADLE_CLASSPATH_DIR"',
+     'rm -rf "$MUTATION_GRADLE_REPORT_DIR"')
+PY

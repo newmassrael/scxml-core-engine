@@ -1,0 +1,92 @@
+# Mutation cases for "the Kotlin gate's engine/language array is the routes
+# this backend actually has" — the JVM half of that claim.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/kotlin_engine_pairs_jvm.cases`.
+#
+# ## Why this file exists beside `kotlin_engine_selection.cases`
+#
+# The population claim `scripts/gates/w3c-kotlin.sh` makes with
+# `KOTLIN_ENGINE_PAIRS` is answered in two places that do not imply each
+# other. The GENERATOR side — which languages `sce-codegen` can emit a Kotlin
+# artifact for — is Rust, and `kotlin_engine_selection.cases` reaches it
+# through a cargo round. The ENGINE side — which languages each engine says it
+# accepts — is Kotlin, and until the Gradle runner existed nothing in the
+# corpus could reach it at all. Its red witness was bought by hand on
+# 2026-08-30 (delete the `lua:lua` row, run the suite, read `expected 4 pairs,
+# was 3`, put it back), and a hand-bought red is evidence about the day it was
+# bought: `--check` never asks whether it still applies, and the weekly sweep
+# cannot re-prove it.
+#
+# So this is the first casefile in the corpus driven by `mutation_gradle`, and
+# what it studies is `GateEnginePairsTest` — the test that derives the
+# population from `W3CTestBase.KNOWN_ENGINES` × `ScxmlScriptEngine
+# .acceptsLanguage` and compares it with the array the gate declares.
+#
+# ⚠ The direction that matters is the MISSING row. A row naming a pair
+# nothing supports fails loudly the moment the gate runs it — the engine
+# refuses the language, in its own words. A pair the array OMITS fails
+# nowhere: the gate spends its minutes on the rows it has and reports success.
+# Case 1 is that direction, and it is the reason the test was written.
+
+# The suite is selected by task path and narrowed by `--tests`, which is
+# scoped to the task named beside it. `:sce-kotlin-tests:test` unfiltered is
+# 373 conformance cases per run and this round rebuilds between every case;
+# the filter is what makes a JVM round affordable rather than daily.
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.w3c.GateEnginePairsTest'
+
+# Named explicitly, because only a cargo selector carries its oracle inside
+# itself (`--test <name>`). Without this the round would report verdicts that
+# nothing re-proves when the assertions behind them are weakened.
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/w3c/GateEnginePairsTest.kt
+
+# The gate is READ AT RUN TIME — `GateEnginePairsTest` opens the file and
+# parses the array out of it — so it is a runtime target: no compiled artifact
+# changes when it is edited, and demanding a changed one would call every case
+# here INCONCLUSIVE.
+mutation_runtime_targets scripts/gates/w3c-kotlin.sh
+
+# The engine side is COMPILED INTO the suite through the module graph, so
+# these are ordinary targets and the round can hash what the edit produced.
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt
+mutation_targets backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt
+
+# ── The gate stops naming a route the backend has ──────────────────
+#
+# `lua:lua` is the row that took a year to arrive: the build-time lowering
+# path, an engine handed an artifact generated for Lua. Deleting it leaves the
+# gate green — it runs three pairs and passes all three — and the route goes
+# unmeasured. Equality, not containment, is what turns that red.
+mutation_case "the gate drops the engine/language pair that measures lowering" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     "KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript lua:lua)",
+     "KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript)")
+PY
+
+# ── The engine stops claiming the language it adapts ───────────────
+#
+# The other side of the same equality. `LuaScriptEngine` accepts both
+# languages because it owns the seam that lowers ECMAScript; narrowing it to
+# the native language alone leaves the gate declaring `lua:ecmascript`, a row
+# no engine answers. The population derivation must notice, or the array is
+# being compared against a list this test keeps rather than against the code.
+mutation_case "the Lua engine stops accepting the language it has an adapter for" <<'PY'
+edit("backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt",
+     "override fun acceptsLanguage(language: ScriptLanguage): Boolean = true",
+     "override fun acceptsLanguage(language: ScriptLanguage): Boolean =\n"
+     "        language == nativeLanguage()")
+PY
+
+# ── Every engine claims every language ─────────────────────────────
+#
+# The default `acceptsLanguage` is what makes an ECMAScript engine refuse Lua
+# rather than fail inside somebody else's syntax. Widened to `true`, Rhino and
+# QuickJS both claim a Lua route neither has, and the derived population grows
+# past the array. This is the direction the gate would otherwise catch by
+# running the row and watching the engine refuse — the point of the case is
+# that the DERIVATION catches it first, without spending the minutes.
+mutation_case "the default engine contract accepts every language" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+     "fun acceptsLanguage(language: ScriptLanguage): Boolean = language == nativeLanguage()",
+     "fun acceptsLanguage(language: ScriptLanguage): Boolean = true")
+PY

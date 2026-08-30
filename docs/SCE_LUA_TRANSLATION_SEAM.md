@@ -2697,10 +2697,12 @@ corpus would leave a suite that passes by asking nothing.
   "today's two" over an array of one. Re-derived and repaired in the same
   turn; recorded here because the prose named the missing entry and nothing
   compared the two halves of the same file.
-- **The mutation harness has no Gradle runner**, so this suite cannot carry a
+- ~~**The mutation harness has no Gradle runner**, so this suite cannot carry a
   durable casefile the way a `cargo` or `ctest` suite can. The two reds above
   were applied and reverted by hand. `scripts/mutate` grows a third runner or
-  this backend keeps buying its control one round at a time.
+  this backend keeps buying its control one round at a time.~~ **CLOSED
+  2026-08-30** — `mutation_gradle` exists and the corpus declares it; see
+  "Landed 2026-08-30: the JVM half of the corpus" below.
 - **No gate holds "every backend that runs Lua answers the lowered route".**
   Four readers of the emission plus one artifact route (`ecma262-lowered-cpp`)
   is a population five wide, derived from nobody. That gate is what would have
@@ -4025,3 +4027,109 @@ survived one round of its own mutation before being re-aimed.
   measurement in progress, so it lives in the lane's census until it is zero
   and the row can be added CLOSED.
 - **The flip**, on its own terms, above.
+
+## Landed 2026-08-30: the JVM half of the corpus — `mutation_gradle`
+
+Every red witness this backend has ever shown was bought BY HAND. Edit the
+file, run the suite, read the failure, put it back — and the rounds above say
+so in their own words, three times: *"bought by hand because `scripts/mutate`
+still has no Gradle runner"*, *"the two reds above were applied and reverted by
+hand"*, *"Kotlin 엔 mutate 러너가 없다"*. A hand-bought red is evidence about
+the day it was bought. It is not in the corpus, `scripts/mutate --check` never
+asks whether it still applies, and the weekly sweep cannot re-prove it. So
+`scripts/mutate` grows a fifth runner.
+
+### What Gradle would not answer on its own
+
+A round asks three things of a runner — which artifacts will run, did the
+mutation change them, did the same tests run — and `./gradlew test` answers
+none of them. Worse, it will hand back a verdict having run nothing, by two
+separate routes: up-to-date checking skips a task whose declared inputs have
+not moved, and the build cache (`org.gradle.caching=true`, in this repository's
+own `gradle.properties`) RESTORES a task's outputs, JUnit XML included, from an
+earlier build.
+
+So the three answers are taken from the build that is about to happen, through
+`scripts/lib/mutation-gradle-init.gradle`:
+
+| what the harness needs | how the init script gets it |
+|---|---|
+| which artifacts will run | each Test task writes its own `testClassesDirs + classpath` from `doFirst`, narrowed by the harness to entries inside the repository |
+| did the same tests run | every Test task's JUnit XML is redirected to one directory under the round's `$WORK`, so no module's stale report can be counted |
+| did the task run at all | `outputs.upToDateWhen { false }` and `outputs.cacheIf { false }`, on the Test tasks only — compilation stays cacheable and incremental, which is most of a round's time |
+
+And two Gradle invocations per case rather than one, because a mutation that
+stops the tree COMPILING is inconclusive while one that leaves it compiling and
+turns the suite red is CAUGHT, and a single non-zero exit cannot tell those
+apart. The compile step runs with `sce.mutation.compileOnly=true` — every Test
+task disabled, their dependencies still built — so its exit status is a compile
+verdict and nothing else.
+
+A JVM artifact is a DIRECTORY, and `mutation_artifact_hash` learned to hash one
+over its contents and its names. `:sce-kotlin-tests` alone holds 4,230 class
+files; listing them individually would put four thousand entries in a set the
+round rehashes between every case, at three processes each. The classpath hands
+over 27 entries, 10 of them inside this repository, 6 of which exist: two class
+output directories and four module jars.
+
+### The second guard, and why one is not enough
+
+`upToDateWhen` and `cacheIf` close the two escapes at the task. What closes
+them if the init script ever stops doing so is in the runner: `doFirst` runs
+only when a task's ACTIONS run — never on a cache hit, never on UP-TO-DATE — so
+an empty classpath directory after an invocation means no test task executed,
+whatever the report says. The runner reports that through `MUTATION_UNREADABLE`
+rather than as zero tests, because *the suite ran nothing* and *the suite was
+never asked* are different facts and only the first is about the mutation.
+
+### Measured in the turn that landed it
+
+- `scripts/mutate sce-build/tests/mutations/kotlin_engine_pairs_jvm.cases`
+  **3/3 CAUGHT**, baseline 2 tests 0 failing, `resolved 6 test artifact(s) via
+  gradle`. The first casefile in the corpus driven by `mutation_gradle`, and it
+  studies `GateEnginePairsTest` — the engine side of the population claim
+  `kotlin_engine_selection.cases` reaches only the generator side of.
+- `scripts/mutate
+  sce-build/tests/mutations/the_gradle_runner_cannot_read_a_cached_green.cases`
+  **4/4 CAUGHT**, baseline 3 tests 0 failing.
+- `cargo test -p sce-build --features cli --test gradle_mutation_runner_contract
+  --test mutation_rounds_selection` **16/16**, on the build machine.
+- `scripts/mutate --check` on both new casefiles: **3/3** and **4/4 still
+  apply**, and the Gradle selector checker resolves `:sce-kotlin-tests:test`
+  against `settings.gradle.kts` without a configuration phase.
+
+### Shown red before it was believed
+
+| red witness | what it models | verdict |
+|---|---|---|
+| both escapes removed, same invocation twice | the two ways Gradle answers without running | 2nd run **FROM-CACHE**, classpath listing **absent**, JUnit XML **present and green** — the report alone would have read as a run |
+| the same, through a full round | what a harness reading only the report would do | round **rc=2** at the baseline: *"no Test task executed"*, before a single case was applied |
+| `outputs.cacheIf { false }` commented out | the escape closed on one side only | **SURVIVED at first** — the predicate matched the DISABLED copy. Re-aimed through `code_lines`; CAUGHT |
+| `testTask.enabled = false` → `true` under `compileOnly` | the compile step starts running tests | CAUGHT |
+| the cached-report guard's `!` removed | a guard whose sense is inverted, its call still present | CAUGHT — the predicate asserts the whole condition, not the call |
+| the classpath directory left uncleared | the guard reads the previous invocation's listing | CAUGHT |
+
+⚠ The third row is the one worth keeping, and it is the same defect this
+document already records one round earlier in a different alphabet: a
+predicate that reads a file for a string finds it in a commented-out line, so
+a guard can be disabled without the guard-checker noticing. The fix is not a
+stronger mutation — it is stripping line-leading comments before the search.
+
+### What this leaves open
+
+- **The three predicates over the two guards are TEXT.** They are what a lane
+  can afford on every push, and a third way of defeating the same property — a
+  Gradle release that stops running `doFirst` on an executed task — would pass
+  all three while the behaviour changed. The behavioural measurement is the two
+  A/B rows above, and it was bought by hand, which is the very thing this round
+  set out to stop doing. Naming it rather than implying it: this runner's own
+  contract is one round behind the suites it now lets the corpus reach.
+- **One Gradle casefile, one suite.** `mutation_gradle` exists; what it
+  currently reaches is `GateEnginePairsTest`. `LoweredEcma262Test`,
+  `ScriptLanguageSeamTest` and `LoweredEcma262ArtifactTest` are all suites whose
+  reds are still hand-bought, and each is now a casefile away.
+- **Cost.** A Gradle round is two JVM invocations per case over a warm daemon;
+  the first casefile's three cases ran inside the lane's ordinary budget, but
+  a casefile selecting `:sce-kotlin-tests:test` UNFILTERED would be 373
+  conformance cases per case. The `--tests` filter is not a convenience there,
+  it is the affordability, and nothing yet refuses a casefile that omits it.

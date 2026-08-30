@@ -123,7 +123,8 @@ usage: scripts/mutation-ledger <command> [args]
                       provenance=asserted — never counted as measured evidence
 
 Options for `unjudged`, `judged`, `holes`, `stale`, `unverifiable`, `claimed`:
-  --runner cargo|ctest   only casefiles driven by that runner
+  --runner <kind>     only casefiles driven by that runner (cargo, ctest,
+                      go, gradle, pytest)
   --detail               prefix each line with runner and case count, and for
                          `holes` add the runner's own words about the case
 USAGE
@@ -141,7 +142,8 @@ import re
 import sys
 
 runners = {"mutation_ctest": "ctest", "mutation_go": "go",
-           "mutation_pytest": "pytest", "mutation_tests": "cargo"}
+           "mutation_gradle": "gradle", "mutation_pytest": "pytest",
+           "mutation_tests": "cargo"}
 for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.cases"))):
     runner, cases = "unknown", 0
     with open(path) as fh:
@@ -449,6 +451,7 @@ casefile_runner() {
         case "$verb" in
             mutation_ctest) printf 'ctest\n'; return ;;
             mutation_go) printf 'go\n'; return ;;
+            mutation_gradle) printf 'gradle\n'; return ;;
             mutation_pytest) printf 'pytest\n'; return ;;
             mutation_tests) printf 'cargo\n'; return ;;
         esac
