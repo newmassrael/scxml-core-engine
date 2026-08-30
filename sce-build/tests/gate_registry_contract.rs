@@ -621,6 +621,26 @@ fn the_kotlin_gate_runs_every_engine_it_claims() {
         "⚠ the gate assigns COMMITTED_LANGUAGE a literal. That is the constant \
          the derivation replaced."
     );
+
+    // A generated tree byte-identical to the committed one means the
+    // `--script-engine` selection never reached the templates, and the row
+    // built on it would hand its engine the OTHER language under this one's
+    // name — a green row measuring the route it exists to stop measuring.
+    //
+    // Asserted here because the refusal is the ONLY thing standing between
+    // that and a pass. Every other guard in this gate is answered by
+    // something downstream: a floor that goes missing shows up as an empty
+    // run, a verdict that stops failing shows up as a failing pair. A
+    // comparison that stops comparing shows up as nothing at all, since both
+    // trees then run and both pass.
+    assert!(
+        code.contains(r#"if diff -rq "$COMMITTED_MACHINES" "$machines""#),
+        "⚠ the gate no longer compares a generated tree against the committed \
+         machines. Without that comparison, a `generate-w3c --script-engine` \
+         that accepted the flag and emitted its default anyway would give this \
+         gate a row running the committed language under the other one's name, \
+         and every case in it would pass."
+    );
 }
 
 /// Every artifact this backend can emit is run by some row of the gate.
