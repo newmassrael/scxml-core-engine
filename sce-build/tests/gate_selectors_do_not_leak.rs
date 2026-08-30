@@ -46,6 +46,7 @@ use std::process::Command;
 
 mod common;
 use common::gate_selectors::{gate_shell, mutation_rounds_selectors, selectors_in, GATE_SCRIPT};
+use common::rust_source::code_only;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -209,10 +210,13 @@ fn a_scenario_can_still_set_a_selector_it_means() {
 ///
 /// Two narrowings, and both were forced by a measurement rather than chosen.
 ///
-/// COMMENTS ARE STRIPPED. `workflow_trigger_coverage.rs` names the gate script
-/// in a comment and runs nothing; on the first draft of this scan it landed in
-/// the population and failed for having no `gate_shell`, which is a demand it
-/// can never satisfy — a population holding a role that cannot reach zero.
+/// COMMENTS ARE STRIPPED, through `common::rust_source` rather than here.
+/// `workflow_trigger_coverage.rs` names the gate script in a comment and runs
+/// nothing; on the first draft of this scan it landed in the population and
+/// failed for having no `gate_shell`, which is a demand it can never satisfy —
+/// a population holding a role that cannot reach zero. That same file's own
+/// scan then made the mirror-image mistake against THIS file, which is why
+/// the stripping is one shared answer and not a line in each scan.
 ///
 /// AND THE NAME MUST BE AN ARGUMENT. Reading the gate's text is not running
 /// it: `mutation_corpus_fits_its_lane` parses the script for its per-job
@@ -222,6 +226,8 @@ fn a_scenario_can_still_set_a_selector_it_means() {
 /// WORKFLOW STEP without ever naming the gate script would not be found here.
 /// None does today — `mutation_rounds_selection` does both — and the leak probe
 /// below is what would still catch such a site if it ever drove the gate.
+/// The second element is the file's CODE — prose removed, line numbering
+/// untouched, so the line a caller reports is still the file's own.
 fn files_that_drive_the_gate() -> Vec<(PathBuf, String)> {
     let dir = repo_root().join("sce-build/tests");
     let mut found: Vec<(PathBuf, String)> = fs::read_dir(&dir)
@@ -229,12 +235,11 @@ fn files_that_drive_the_gate() -> Vec<(PathBuf, String)> {
         .map(|entry| entry.expect("a directory entry").path())
         .filter(|path| path.extension().is_some_and(|e| e == "rs"))
         .filter_map(|path| {
-            let body = fs::read_to_string(&path).ok()?;
-            let runs_it = body
+            let code = code_only(&fs::read_to_string(&path).ok()?);
+            let runs_it = code
                 .lines()
-                .filter(|line| !line.trim_start().starts_with("//"))
                 .any(|line| line.contains("arg(") && line.contains(GATE_SCRIPT));
-            runs_it.then_some((path, body))
+            runs_it.then_some((path, code))
         })
         .collect();
     found.sort_by(|a, b| a.0.cmp(&b.0));
@@ -256,7 +261,6 @@ fn every_suite_that_drives_the_gate_builds_its_shell_through_the_helper() {
         let bare: Vec<usize> = body
             .lines()
             .enumerate()
-            .filter(|(_, line)| !line.trim_start().starts_with("//"))
             .filter(|(_, line)| line.contains("Command::new(\"bash\")"))
             .map(|(i, _)| i + 1)
             .collect();
