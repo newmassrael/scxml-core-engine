@@ -1,0 +1,124 @@
+# Mutation cases for "a red baseline says why, not only which".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_red_baseline_says_why.cases`.
+#
+# The defect was a silence with a measured price. `scripts/mutate` refused a
+# round whose baseline was not green, listed the failing tests by name, and
+# threw away the runner's own account of them — the panic, the traceback, the
+# expectation block — because the harness parsed names out of the runner's
+# output and dropped the output. A leaked `SCE_MUTATION_SHARD` then held
+# `mutation_rounds_selection.cases` red for six days behind a CI log with zero
+# occurrences of `panicked at` or `assertion`.
+#
+# The repair has three moving parts and each case here disables exactly one of
+# them, because they fail independently: a parser that drifts off its runner's
+# format, a runner that never calls its parser, and a refusal that never prints
+# what the parser produced. Two further cases attack the reporting rules the
+# repair itself depends on — an empty account must SAY it is empty, and a
+# capped one must say how much it hid — since both are the shape in which this
+# silence would come back wearing the repair's clothes.
+#
+# `scripts/mutate` and `scripts/lib/mutation_failures.sh` are runtime targets:
+# the tests drive the script as a subprocess and source the library in a fresh
+# shell, so they are read afresh on every run rather than linked into the test
+# binary, and the evidence that a mutation reached what ran is the file
+# differing on disk while the tests ran. Mutating the harness with the harness
+# is not circular — the copy under study is the one the TESTS execute, while
+# the round itself is driven by the snapshot the shell already sourced.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test mutation_baseline_says_why
+mutation_runtime_targets scripts/mutate scripts/lib/mutation_failures.sh
+
+# ── The refusal stops asking ───────────────────────────────────────
+#
+# The whole defect in one line: everything is parsed, kept and then not
+# printed. The behavioural test loses its marker and the structural one loses
+# a caller, which is the pair that says the repair is measured from both ends.
+
+mutation_case "the baseline refusal keeps the account to itself" <<'PY'
+edit("scripts/mutate",
+     """        red "              the runner's own account of those failures:"
+        mutation_run_diagnostics""",
+     """        red "              the runner's own account of those failures:\"""")
+PY
+
+# ── A runner that never calls its parser ───────────────────────────
+#
+# The half a parser test cannot see. `mutation_detail_from_pytest` goes on
+# working perfectly against captured output while no round ever feeds it one.
+
+mutation_case "the pytest runner stops collecting the account" <<'PY'
+edit("scripts/mutate",
+     """    mutation_detail_from_pytest < "$console" > "$MUTATION_FAILURE_DETAIL"
+""",
+     "")
+PY
+
+# ── An empty account reads as no trouble ───────────────────────────
+#
+# The silence returning one level down. A detail parser that has drifted off
+# its format produces nothing, and nothing prints as an absence of trouble
+# rather than as an absence of reading.
+
+mutation_case "an empty account is printed as a blank space again" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     """                print "(the runner printed nothing this harness could read about those"
+                print " failures — its detail parser may have drifted off the format)"
+""",
+     "")
+PY
+
+# ── A cap that hides what it hid ───────────────────────────────────
+#
+# A reader who cannot tell a truncated account from a short one reads a
+# missing failure as a failure that did not happen.
+
+mutation_case "the cap stops saying how many lines it dropped" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     """                printf "(+%d more line(s) — raise MUTATION_BASELINE_DETAIL_LINES to see them)\\n", n - limit
+""",
+     "")
+PY
+
+# ── A parser that reads outside its bracket ────────────────────────
+#
+# gtest repeats every failure in an end-of-run summary that opens no
+# `[ RUN      ]` bracket. Without the guard the summary's count line is
+# attached to the previous test's diagnosis as if it were part of it.
+
+mutation_case "the gtest parser reads the end-of-run summary as detail" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     """        if (!open) next
+""",
+     "")
+PY
+
+# ── A parser that drops the only name that localises the failure ───
+#
+# Go names the broken row of a table in an INDENTED verdict under the parent's,
+# and the name parser deliberately counts the parent only — so dropping these
+# leaves the round unable to say which case of a table the mutation reached.
+
+mutation_case "the go parser drops the failing subtest's verdict" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     """        trailing && /^ +--- (FAIL|PASS|SKIP): / { print; next }
+""",
+     "")
+PY
+
+# ── Half of the JVM's account ──────────────────────────────────────
+#
+# JUnit splits a failure in two: the assertion is an attribute and the stack
+# trace is the element's text. Keeping only the trace leaves a reader with a
+# location and no claim.
+
+mutation_case "the JVM account loses the assertion and keeps only the trace" <<'PY'
+edit("scripts/mutate",
+     """                    if message:
+                        detail.append(message)
+""",
+     "")
+PY
