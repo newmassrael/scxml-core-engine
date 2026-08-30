@@ -769,7 +769,8 @@ GATES: dict[str, dict] = {
                    "cost. What is given up is that a Kotlin AOT regression "
                    "now reaches main and is answered a round later.",
         "cost_s": 152,
-        "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS)",
+        "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS + Lua, "
+                   "each over the machines emitted for the language it reads)",
     },
     "w3c-python": {
         "workflows": ["w3c-tests.yml"],

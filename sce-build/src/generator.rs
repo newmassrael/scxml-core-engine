@@ -83,6 +83,17 @@ pub enum ScriptEngineTarget {
 }
 
 impl ScriptEngineTarget {
+    /// Every script-engine language a backend can be asked to emit for.
+    ///
+    /// The same role [`Language::ALL`] plays for backends, and it exists for
+    /// the same reason: a third target lands here once, and every site that
+    /// sweeps the seam widens with it. The alternative — each site restating
+    /// the two — is how a new target ends up covered by some of them and
+    /// silently skipped by the rest, which on this seam means an emittable
+    /// artifact that no lane runs.
+    pub const ALL: &'static [ScriptEngineTarget] =
+        &[ScriptEngineTarget::EcmaScript, ScriptEngineTarget::Lua];
+
     /// The wire spelling, shared with `script_engine_language`.
     pub fn wire_name(self) -> &'static str {
         match self {

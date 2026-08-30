@@ -91,6 +91,38 @@ fn the_flag_accepts_exactly_the_wire_vocabulary() {
     assert!(ScriptEngineTarget::parse("").is_none());
 }
 
+/// `ScriptEngineTarget::ALL` is the wire vocabulary, not a second copy of it.
+///
+/// The constant exists so a site that must sweep every engine language — the
+/// Kotlin conformance gate's population check is the first — can ask the enum
+/// instead of restating the two. A constant that could fall behind would make
+/// those sweeps quietly narrower than they read, which on this seam means an
+/// emittable artifact no lane runs.
+///
+/// Held to `SCRIPT_ENGINE_LANGUAGES` rather than to a literal here, because
+/// that list is already pinned to the manifest schema's `enum`: a third
+/// target cannot reach the wire without reaching this constant, and cannot be
+/// added here without the schema admitting it.
+#[test]
+fn the_target_population_is_the_wire_vocabulary() {
+    use std::collections::BTreeSet;
+
+    let from_wire: BTreeSet<&str> = sce_build::manifest::SCRIPT_ENGINE_LANGUAGES
+        .iter()
+        .copied()
+        .collect();
+    let from_all: BTreeSet<&str> = ScriptEngineTarget::ALL
+        .iter()
+        .map(|target| target.wire_name())
+        .collect();
+    assert_eq!(
+        from_wire, from_all,
+        "ScriptEngineTarget::ALL and the wire's script-engine vocabulary \
+         disagree. A target on the wire and missing from ALL is one that every \
+         sweep written against ALL silently skips."
+    );
+}
+
 /// The four lowering backends cannot emit the author's source, and say so
 /// without pretending a migration is in progress.
 #[test]
@@ -335,6 +367,14 @@ fn the_migration_scan_leaves_the_forge_tree_alone() {
 /// this file's history is made of. A backend that HAS crossed and still
 /// refuses is a refusal nobody can explain; one that has NOT and accepts is
 /// the mixed artifact.
+///
+/// ⚠ What this case can and cannot see. The equality below is a BICONDITIONAL
+/// against a value derived from the same two lists, so it holds however the
+/// scan answers — it guards the `target == default` shortcut inside
+/// `supports_script_engine_target`, and the default assertion above it, and
+/// not the scan's reach. The positive claim, which is what a lost scan shape
+/// makes red, is
+/// `the_kotlin_migration_is_complete_and_the_lua_target_is_offered` below.
 #[test]
 fn kotlin_offers_the_lua_target_exactly_when_no_site_is_left_behind() {
     assert_eq!(
@@ -369,6 +409,57 @@ fn kotlin_offers_the_lua_target_exactly_when_no_site_is_left_behind() {
         "no Kotlin site is unmigrated AND none routes through the pair filter, \
          which is what a scanner reading nothing looks like — not a finished \
          migration"
+    );
+}
+
+/// Kotlin's migration is complete, asserted POSITIVELY.
+///
+/// The twin of `the_cpp_migration_is_complete_and_the_lua_target_is_offered`,
+/// and it had to be written because the biconditional above cannot replace it.
+/// `supports_script_engine_target(Lua)` is DEFINED as "both scan lists are
+/// empty", so an assertion that the two agree holds however the scan answers:
+/// see the site and both sides go false, miss it and both go true. That check
+/// earns its place guarding the `target == default` shortcut, not the scan.
+///
+/// Measured 2026-08-30: the mutation case *"the callee sits further away than
+/// the window reached"* — which restores an unmigrated Kotlin `<send>` site
+/// whose callee sits above its argument, the shape the scan lost once already
+/// — was SURVIVED on CI for exactly this reason, while its two C++ siblings
+/// were CAUGHT by the positive C++ assertion. A backend with a positive
+/// witness was measured; the one without it was not.
+#[test]
+fn the_kotlin_migration_is_complete_and_the_lua_target_is_offered() {
+    let remaining = Language::Kotlin.unmigrated_expression_sites();
+    let unknown = Language::Kotlin.unclassified_expression_sites();
+    let migrated = Language::Kotlin.migrated_expression_sites();
+
+    assert!(
+        remaining.is_empty(),
+        "{} Kotlin site(s) still hand the engine the author's text:\n  {}",
+        remaining.len(),
+        remaining.join("\n  ")
+    );
+    assert!(
+        unknown.is_empty(),
+        "{} Kotlin site(s) reach a destination nobody has judged. Each needs \
+         one decision: add the callee to ENGINE_ENTRY_POINTS and migrate the \
+         site, or to INERT_DESTINATIONS with the evidence:\n  {}",
+        unknown.len(),
+        unknown.join("\n  ")
+    );
+    // A floor, not a count: 30 was measured on 2026-08-30 and sites move, so
+    // what is written down is the level below which "finished migration" and
+    // "scan that reads almost nothing" stop being distinguishable. Same shape
+    // and same reason as the C++ floor above it.
+    assert!(
+        migrated.len() >= 20,
+        "only {} Kotlin site(s) route through the pair filter, which reads as \
+         a scanner that stopped working rather than a finished migration",
+        migrated.len()
+    );
+    assert!(
+        Language::Kotlin.supports_script_engine_target(ScriptEngineTarget::Lua),
+        "every Kotlin site is accounted for and the Lua target is still refused"
     );
 }
 

@@ -112,7 +112,7 @@ kotlin_tree_hashes() {
 }
 TREE_BEFORE="$(kotlin_tree_hashes)"
 
-# Both script engines SCE offers for the ECMAScript datamodel on the JVM, not
+# Every script engine SCE offers for the ECMAScript datamodel on the JVM, not
 # just the default.
 #
 # `EcmaScriptSemanticsTest` already measures all three engines against the
@@ -130,9 +130,18 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # `setCurrentEvent`, `executeForeach`, the `In()` state-query callback. A
 # defect there is invisible to both the table and a Rhino-only suite.
 #
-# Lua is deliberately absent, and the reason is sound: running it here would
-# assert that SCE offers it for the ECMAScript datamodel, which is the opposite
-# of what `luaIsNotAnEcmaScriptEngineAndSaysSo` establishes.
+# ⚠ Lua WAS deliberately absent, on the reasoning that running it here would
+# assert SCE offers it for the ECMAScript datamodel — the opposite of what the
+# suite's own case then established. That premise was retired on 2026-08-30
+# together with the case it named: `sce-build`'s ECMAScript frontend is linked
+# into this backend's Lua engine, `tests/ecmascript/kotlin_lua_divergences.json`
+# holds nothing, and the case is now
+# `theLuaEngineDivergesExactlyWhereItIsDeclaredTo`. Running the selection here
+# asserts what is measured rather than what was hoped.
+#
+# ⚠⚠ Running Lua here does NOT assert that Lua is an ECMAScript engine. The
+# claim each row makes is per-pair and bounded: the generated machines,
+# emitted for the LANGUAGE named, run correctly on the ENGINE named.
 #
 # ⚠ What this comment ALSO said until 2026-08-29 — "It passes this suite
 # (measured: 230 cases)" — was false. Run that day with
@@ -154,30 +163,170 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # one does. The FAILING CASES are named instead: those two names are what a
 # reader can act on, and a name does not rot the way a denominator does.
 #
-# ⚠⚠⚠ NO CI LANE STILL MEASURES THIS ENGINE ABOVE THE EXPRESSION LEVEL, and
-# the reason it is not simply added to this array has CHANGED. It used to be
-# that running it here would assert a conformance the engine did not have. That
-# premise is gone — the divergence list is empty and the suite is green on the
-# selection — and what is left is a MECHANICAL blocker: the committed Kotlin
-# tree is generated for the ECMAScript target, which is what rhino and quickjs
-# need, and adding `lua` here would run that same tree on an engine whose
-# frontend answers it correctly only through the run-time route. Measuring the
-# lowered route above the expression level needs the suite to generate PER
-# ENGINE. Until it does, this note is a debt, deliberately written where the
-# next person to widen the array will read it.
-KOTLIN_ENGINES=(rhino quickjs)
+# ── What the rows are, and why they are PAIRS ─────────────────────
+#
+# `engine:language`. The engine is what evaluates; the language is what the
+# generated machines were emitted for. They were one field while every engine
+# read one language, and the MECHANICAL blocker this gate carried as a debt
+# until 2026-08-30 was exactly that conflation: the committed Kotlin tree is
+# emitted for ONE language, so an engine reading the other one had nothing to
+# be handed. `generate-w3c --script-engine` and `-Psce.generated.overlay` are
+# the two halves that lift it — the suite now generates per language and the
+# committed tree is only used by the engines whose language it is.
+#
+# ⚠⚠⚠ This is also what keeps the gate honest THROUGH the day the backend's
+# default flips. `Language::Kotlin.default_script_engine_target()` moving to
+# Lua re-emits the committed tree as lowered Lua, and rows pinned to "the
+# committed tree" would then hand Rhino and QuickJS a language they refuse —
+# 226 failures each, reported as a conformance regression rather than as the
+# artifact swap it is. Rows naming their language keep meaning the same thing
+# across that flip, and it is `COMMITTED_LANGUAGE` below, derived from the
+# tree, that follows the flip instead of a constant that would not.
+#
+# The POPULATION is not this array's to choose. Every language an engine
+# accepts is a route into it that something must run, and
+# `GateEnginePairsTest` fails when a row is missing — it reads this array and
+# asks each engine, through `acceptsLanguage`, which languages it takes. An
+# engine added to `W3CTestBase.KNOWN_ENGINES`, or an existing one that gains
+# an adapter, therefore turns this array red rather than being silently
+# unmeasured.
+KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript lua:lua)
 REPORTS="backends/kotlin/tests/build/test-results/test"
 
-for engine in "${KOTLIN_ENGINES[@]}"; do
-    sce_gate_step "generating and running the Kotlin W3C suite on $engine"
+# ── Which language the committed machines are emitted for ─────────
+#
+# Asked of the GENERATOR, never declared here. This backend emits for two
+# languages and the committed tree holds one of them; writing down which would
+# be a constant that is correct until the day it matters most — the day the
+# default flips — and silently wrong after it.
+#
+# ⚠ The first attempt asked the TREE instead, by counting files carrying
+# `ScriptSource.lua(` against `ScriptSource.ecmascript(`. Measured 2026-08-30,
+# that reads 159 against 159 on the SAME tree, and would have failed as
+# "mixed": a generated machine emits BOTH arms of the run-time helper that
+# re-wraps a `ScriptSource` it was handed (`evaluateSendContent` switches on
+# `source.language`), so both spellings appear in every machine that has one.
+# What varies with the selection is the CALL SITE that carries the author's
+# expression, and telling those apart by grep is a parse of Kotlin. The
+# manifest already answers the question exactly.
+#
+# The step from "the generator's default" to "what the committed tree holds"
+# is not assumed either: `generateScxml` regenerates that tree in place on
+# every row whose language is this one, and the tree-hash comparison at the
+# bottom of this gate fails if the result differs from what is committed. So
+# the committed tree IS the default-target output, checked on this run, not
+# claimed.
+# The committed machines. Named once: the overlay replaces exactly this
+# directory, and the "did the selection reach the templates" check below
+# compares against exactly it.
+COMMITTED_MACHINES="backends/kotlin/tests/src/main/kotlin/com/sce/generated"
+[ -d "$COMMITTED_MACHINES" ] \
+    || sce_gate_fail "$COMMITTED_MACHINES is missing — there are no committed Kotlin machines for the rows below to run or to compare a generated tree against."
+
+PROBE_DOC="resources/150/test150.scxml"
+[ -f "$PROBE_DOC" ] \
+    || sce_gate_fail "$PROBE_DOC is missing. It is the document this gate generates to ask the manifest which script-engine language this backend emits for by default; without an answer, no row below can tell whether it needs its own tree."
+_probe_dir="$LOG/language-probe"
+mkdir -p "$_probe_dir"
+COMMITTED_LANGUAGE="$(
+    "$(sce_gate_codegen)" generate "$PROBE_DOC" -o "$_probe_dir" -l kotlin 2>/dev/null \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("script_engine_language",""))'
+)"
+[ -n "$COMMITTED_LANGUAGE" ] \
+    || sce_gate_fail "the manifest for $PROBE_DOC carries no \`script_engine_language\`, so the language the committed machines are emitted for is unknown. That field is present only when the document needs a script engine — if this document stopped needing one, point PROBE_DOC at one that does rather than defaulting, because every row below reads this to decide whether it must generate its own tree."
+sce_gate_step "the generator emits $COMMITTED_LANGUAGE by default, so that is what the committed machines hold"
+
+# At least one row must run against the committed tree, and not for tidiness:
+# the in-place regeneration those rows perform is what the tree-hash check at
+# the bottom compares, and it is that comparison — not this script — that ties
+# `COMMITTED_LANGUAGE` to the files in git. Every row overlaying its own tree
+# would leave the committed one compiled by nothing and regenerated by
+# nothing, with the gate still green.
+_committed_rows=0
+for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
+    # `if`, not `[ … ] && …`. Under `set -e` the second form makes the loop's
+    # status that of its LAST iteration, so a final row whose language is not
+    # the committed one would end this script — silently, with no gate message
+    # — exactly when the array is arranged as it is today.
+    if [ "${pair##*:}" = "$COMMITTED_LANGUAGE" ]; then
+        _committed_rows=$((_committed_rows + 1))
+    fi
+done
+(( _committed_rows > 0 )) \
+    || sce_gate_fail "no row in KOTLIN_ENGINE_PAIRS names the committed language ($COMMITTED_LANGUAGE), so nothing regenerates the committed tree in place and the tree-hash check below would compare it against itself untouched. Add the pair for whichever engine reads $COMMITTED_LANGUAGE."
+
+# The generated tree for a language the committed one is not, produced once
+# and reused by every row that names it. The path lands in
+# `KOTLIN_TREE_FOR_LANGUAGE` rather than on stdout, because every refusal
+# below calls `sce_gate_fail` and `sce_gate_fail` is an `exit`: called from
+# inside a `$( … )` it would end the SUBSHELL, and the gate would carry on
+# past a tree it had just refused to accept.
+KOTLIN_TREE_FOR_LANGUAGE=""
+kotlin_tree_for_language() {
+    local language="$1" tree="$LOG/tree-$1"
+    if [ ! -d "$tree" ]; then
+        "$(sce_gate_codegen)" generate-w3c -l kotlin --script-engine "$language" \
+            --output-dir "$tree" >/dev/null \
+            || sce_gate_fail "generating the Kotlin W3C machines for --script-engine $language"
+
+        # The overlay replaces the MACHINES and keeps the committed JUnit
+        # classes, which is only sound while those classes do not vary with
+        # the language. They do not today — the engine language reaches a test
+        # class through the machine it constructs and nowhere else — but that
+        # is a property of the templates rather than a law, so it is compared
+        # rather than assumed. A test class that starts varying makes this
+        # fail here instead of running the wrong pairing quietly.
+        local emitted committed name
+        for emitted in "$tree/backends/kotlin/tests/src/test/kotlin/com/sce/w3c/"Test*.kt; do
+            [ -e "$emitted" ] || sce_gate_fail "the $language generation emitted no JUnit classes under $tree"
+            name="$(basename "$emitted")"
+            committed="backends/kotlin/tests/src/test/kotlin/com/sce/w3c/$name"
+            cmp -s "$emitted" "$committed" \
+                || sce_gate_fail "the generated JUnit class $name differs between the $COMMITTED_LANGUAGE and $language artifacts, so overlaying only the machines would run the committed test class against machines it was not generated with. Widen the overlay to the test sources, or keep the classes language-independent."
+        done
+
+        # ⚠ The row is only worth its minutes while the selection REACHED the
+        # templates. A `generate-w3c` that accepted `--script-engine` and
+        # generated its default anyway would produce machines byte-identical to
+        # the committed ones — and this gate would then hand the Lua engine
+        # ECMAScript under the name `lua:lua`, which the engine accepts through
+        # its adapter and passes. A green row measuring the route it was
+        # written to stop measuring is worse than no row.
+        #
+        # Whole-tree rather than per-file: which machines differ depends on
+        # which documents carry expressions, and that is the registry's
+        # business, not this check's. What must be true is that SOMETHING did.
+        local machines="$tree/backends/kotlin/tests/src/main/kotlin/com/sce/generated"
+        [ -d "$machines" ] \
+            || sce_gate_fail "the $language generation wrote no machines under $machines"
+        if diff -rq "$COMMITTED_MACHINES" "$machines" >/dev/null 2>&1; then
+            sce_gate_fail "\`generate-w3c --script-engine $language\` produced machines identical to the committed $COMMITTED_LANGUAGE ones, so the selection did not reach the templates. Running this pair would hand the $language engine $COMMITTED_LANGUAGE and report it as $language coverage."
+        fi
+    fi
+    KOTLIN_TREE_FOR_LANGUAGE="$tree"
+}
+
+for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
+    engine="${pair%%:*}"
+    language="${pair##*:}"
+    overlay=()
+    if [ "$language" = "$COMMITTED_LANGUAGE" ]; then
+        sce_gate_step "running the Kotlin W3C suite on $engine over the committed $language machines"
+    else
+        sce_gate_step "generating $language machines and running the Kotlin W3C suite on $engine over them"
+        kotlin_tree_for_language "$language"
+        overlay=(-Psce.generated.overlay="$KOTLIN_TREE_FOR_LANGUAGE/backends/kotlin/tests")
+    fi
+
     status=0
     ./gradlew --console=plain :sce-kotlin-tests:test "-Psce.script.engine=$engine" \
-        >"$LOG/kotlin-$engine.log" 2>&1 || status=$?
-    cat "$LOG/kotlin-$engine.log"
+        "${overlay[@]}" \
+        >"$LOG/kotlin-$engine-$language.log" 2>&1 || status=$?
+    cat "$LOG/kotlin-$engine-$language.log"
 
     if (( status != 0 )); then
-        grep -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/kotlin-$engine.log" | head -n 20 >&2
-        sce_gate_fail "Kotlin conformance suite failed on $engine"
+        grep -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/kotlin-$engine-$language.log" | head -n 20 >&2
+        sce_gate_fail "Kotlin conformance suite failed on $engine over $language machines"
     fi
 
     # Gradle reports BUILD SUCCESSFUL for a `test` task it decided was
@@ -186,7 +335,7 @@ for engine in "${KOTLIN_ENGINES[@]}"; do
     # produced rather than from the build's exit status. The floor is 200
     # against a current 226.
     [ -d "$REPORTS" ] \
-        || sce_gate_fail "no JUnit results under $REPORTS — the $engine suite reported success without producing a result file"
+        || sce_gate_fail "no JUnit results under $REPORTS — the $engine/$language run reported success without producing a result file"
 
     read -r cases failures errors < <(
         python3 - "$REPORTS" <<'PY'
@@ -200,14 +349,14 @@ PY
     )
 
     if (( failures != 0 || errors != 0 )); then
-        sce_gate_fail "Kotlin conformance on $engine: $failures failure(s), $errors error(s) across $cases case(s)"
+        sce_gate_fail "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"
     fi
 
     if (( cases < 200 )); then
-        sce_gate_fail "only $cases Kotlin case(s) ran on $engine (expected at least 200) — the suite covered less than its name claims"
+        sce_gate_fail "only $cases Kotlin case(s) ran on $engine over $language machines (expected at least 200) — the suite covered less than its name claims"
     fi
 
-    sce_gate_step "$cases Kotlin case(s) passed on $engine"
+    sce_gate_step "$cases Kotlin case(s) passed on $engine over $language machines"
 done
 
 # The pin is the reason this gate can exist locally at all, so it is checked
@@ -219,7 +368,7 @@ if [[ "$(kotlin_tree_hashes)" != "$TREE_BEFORE" ]]; then
     sce_gate_fail "the suite rewrote the Kotlin tree it was handed — SOURCE_DATE_EPOCH is not reaching the generator"
 fi
 
-sce_gate_step "committed tree unchanged after ${#KOTLIN_ENGINES[@]} engine(s)"
+sce_gate_step "committed tree unchanged after ${#KOTLIN_ENGINE_PAIRS[@]} engine/language pair(s)"
 
 # The same generator, asked for a project of the caller's own.
 #

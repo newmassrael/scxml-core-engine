@@ -8,18 +8,48 @@
 # `mutation_targets`.
 #
 # What these guard is the sentence a CI lane says about itself. The Kotlin arm
-# runs the 226 generated machines twice, once per JVM script engine, and the
-# second run is worth its minutes only while `-Psce.script.engine=quickjs` and
-# "QuickJS evaluated the expressions" are the same statement.
+# runs the generated machines once per engine/language pair, and a repeat is
+# worth its minutes only while `-Psce.script.engine=quickjs` and "QuickJS
+# evaluated the expressions" are the same statement.
 #
 # They were not, and the failure was silent in both directions. The selection
 # ended in `else -> RhinoScriptEngine()`, so a misspelt engine was a green run
-# of the default: measured, `-Psce.script.engine=nonexistent-engine` passed all
-# 226 cases. Nothing in the suite could notice, because no generated case can
-# see which engine it reached Pass on.
+# of the default: measured, `-Psce.script.engine=nonexistent-engine` reached
+# Pass on every one of them. Nothing in the suite could notice, because no
+# generated case can see which engine it reached Pass on.
+#
+# (That sentence used to end "passed all 226 cases", and the header-counting
+# check reads a number beside the word "cases" as a claim about THIS FILE's
+# case count. It was neither wrong nor about this file — it counted the W3C
+# suite — so the number is gone rather than corrected, which is the same repair
+# the gate's own comment took when its totals kept rotting.)
+#
+# ⚠ The gate became `engine:language` PAIRS on 2026-08-30: this backend emits
+# machines for two script-engine languages, the committed tree holds one, and
+# an engine reading the other needs its own tree generated. Two of the anchors
+# below moved with that change, and they had to be re-aimed rather than
+# deleted — an anchor that stops matching makes its case INCONCLUSIVE, which
+# reads as "nothing to report" in exactly the place a report was wanted.
 
-mutation_tests -p sce-build --features cli --test gate_registry_contract
-mutation_runtime_targets scripts/gates/w3c-kotlin.sh
+# The selector names both binaries, because the population claim under attack
+# here is answered in more than one of them and a selector naming a single
+# binary would judge only part of it. The gate's array is held to the
+# LANGUAGES this backend can emit by `gate_registry_contract`, and that check
+# reads `ScriptEngineTarget::ALL` — so shrinking ALL is an escape hatch out of
+# the same gate, and the test that closes it lives in
+# `script_engine_target_input`.
+#
+# ⚠ Target selectors, never a bare filter: a filter reaches every binary the
+# selector matched.
+mutation_tests -p sce-build --features cli \
+    --test gate_registry_contract --test script_engine_target_input
+mutation_runtime_targets scripts/gates/w3c-kotlin.sh backends/kotlin/tests/build.gradle.kts
+
+# `generator.rs` is COMPILED INTO both binaries above, so it is a
+# `mutation_targets` rather than a runtime one: the harness can hash what the
+# edit produced and tell a surviving mutation from one that never reached the
+# code.
+mutation_targets sce-build/src/generator.rs
 
 # ── The gate stops running the second engine ───────────────────────
 #
@@ -30,31 +60,105 @@ mutation_runtime_targets scripts/gates/w3c-kotlin.sh
 
 mutation_case "the Kotlin gate covers only the default engine again" <<'PY'
 edit("scripts/gates/w3c-kotlin.sh",
-     "KOTLIN_ENGINES=(rhino quickjs)",
-     "KOTLIN_ENGINES=(rhino)")
+     "KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript lua:lua)",
+     "KOTLIN_ENGINE_PAIRS=(rhino:ecmascript)")
 PY
 
-# ── The per-engine floor stops being a floor ───────────────────────
+# ── The lowered route loses its row ────────────────────────────────
+#
+# Narrower than the case above, and the one that matters most: dropping
+# `lua:lua` leaves the engine still covered — `lua:ecmascript` runs it — while
+# the BUILD-TIME lowering route goes unmeasured above the expression level.
+# That is the exact state this gate carried as a written-down debt until
+# 2026-08-30, and it reads as coverage because the engine's name is still in
+# the array.
+#
+# Caught by `the_kotlin_gate_runs_every_language_the_generator_can_emit`: the
+# generator still emits a `lua` suite, and no row would run it. Note which
+# half that is — the ENGINE half of the same claim (`lua` accepts both
+# languages, so both are rows) is `GateEnginePairsTest` on the JVM, and this
+# runner cannot reach it. A cargo casefile can only be honest about the half
+# it can judge, which is why the assertion above was written in Rust rather
+# than left to the Kotlin suite alone.
+
+mutation_case "the build-time lowering route loses its row while the engine keeps one" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     "KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript lua:lua)",
+     "KOTLIN_ENGINE_PAIRS=(rhino:ecmascript quickjs:ecmascript lua:ecmascript)")
+PY
+
+# ── The population the gate check sweeps gets smaller ──────────────
+#
+# The escape hatch out of the case above. That check compares the gate's rows
+# against the languages `Language::Kotlin` can emit for, and it enumerates
+# them through `ScriptEngineTarget::ALL`. Shrink ALL and the comparison still
+# runs, still passes, and asks about one language — which is a gate that
+# cannot be wrong rather than a gate that is right.
+#
+# Worth its own case because the repair for the case above and the repair for
+# this one point in opposite directions: one says "add the row", this one says
+# "the population is not the array's to narrow". Both must be red, or the
+# first is only red until someone finds the second.
+
+mutation_case "the engine-language population shrinks to the committed one" <<'PY'
+edit("sce-build/src/generator.rs",
+     "&[ScriptEngineTarget::EcmaScript, ScriptEngineTarget::Lua];",
+     "&[ScriptEngineTarget::EcmaScript];")
+PY
+
+# ── The committed language becomes a constant again ────────────────
+#
+# `COMMITTED_LANGUAGE` decides which rows need their own generated tree, and it
+# is read from the generator's manifest. A literal is correct today and wrong
+# on the one day it has to be right — the day
+# `Language::Kotlin.default_script_engine_target()` flips — at which point
+# every row would be handed the wrong tree and the gate would call it a
+# conformance regression.
+
+mutation_case "the gate writes down the committed language instead of asking" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     'COMMITTED_LANGUAGE="$(',
+     'COMMITTED_LANGUAGE=ecmascript  # $(')
+PY
+
+# ── The suite stops re-reading the gate ────────────────────────────
+#
+# `GateEnginePairsTest` holds the array to the routes this backend has, by
+# reading the gate off disk. Gradle cannot see that read, so without the input
+# declaration the test task stays UP-TO-DATE across every edit to the file the
+# test is about — measured 2026-08-30 as BUILD SUCCESSFUL in 500ms with no test
+# run, on the very edit that deleted a row.
+#
+# A suite cannot observe its own staleness: the run that would report it is the
+# run that does not happen. So this is guarded from the Rust side.
+
+mutation_case "the Kotlin suite stops re-reading the gate it checks" <<'PY'
+edit("backends/kotlin/tests/build.gradle.kts",
+     'inputs.file(File(rootDir, "scripts/gates/w3c-kotlin.sh"))',
+     'inputs.file(File(rootDir, "tests/ecmascript/ecma262_semantics.json"))')
+PY
+
+# ── The per-pair floor stops being a floor ─────────────────────────
 #
 # Gradle reports BUILD SUCCESSFUL for a test task it decided was UP-TO-DATE,
 # so the count read from the JUnit XML is what separates a conformance result
-# from a build that ran nothing. Dropping the floor for one engine leaves that
-# engine's arm able to report green over an empty run.
+# from a build that ran nothing. Dropping the floor for one pair leaves that
+# pair's arm able to report green over an empty run.
 
-mutation_case "an engine may report green over an empty run" <<'PY'
+mutation_case "a pair may report green over an empty run" <<'PY'
 edit("scripts/gates/w3c-kotlin.sh",
      "    if (( cases < 200 )); then",
      "    if (( cases < 0 )); then")
 PY
 
-# ── A failing engine stops failing the gate ────────────────────────
+# ── A failing pair stops failing the gate ──────────────────────────
 #
-# Every engine's verdict has to reach the gate's. A loop that reported each
-# result and returned the last one would pass whenever the final engine passed,
-# which is the engine that was already covered.
+# Every pair's verdict has to reach the gate's. A loop that reported each
+# result and returned the last one would pass whenever the final pair passed,
+# which is a pair that was already covered.
 
-mutation_case "a failing engine is reported and then forgiven" <<'PY'
+mutation_case "a failing pair is reported and then forgiven" <<'PY'
 edit("scripts/gates/w3c-kotlin.sh",
-     'sce_gate_fail "Kotlin conformance on $engine: $failures failure(s), $errors error(s) across $cases case(s)"',
-     'sce_gate_step "Kotlin conformance on $engine: $failures failure(s), $errors error(s) across $cases case(s)"')
+     'sce_gate_fail "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"',
+     'sce_gate_step "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"')
 PY

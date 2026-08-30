@@ -461,24 +461,54 @@ fn a_gate_that_regenerates_a_tree_pins_the_timestamp() {
 /// — Gradle reports BUILD SUCCESSFUL for a test task it decided was UP-TO-DATE
 /// — and so does one that prints an engine's failures and carries on.
 ///
+/// ⚠ The rows became `engine:language` PAIRS on 2026-08-30. This backend emits
+/// machines for two script-engine languages and the committed tree holds one
+/// of them, so an engine reading the other one needs its own tree generated —
+/// which is what `generate-w3c --script-engine` and `-Psce.generated.overlay`
+/// exist for. An engine alone stopped identifying a run at that point: `lua`
+/// over ECMAScript machines and `lua` over lowered Lua machines are two
+/// different code paths through the same engine.
+///
+/// This test keeps the ENGINE half — that the declared engines include the
+/// ones with nowhere else to be covered, that a per-pair floor exists, and
+/// that a pair's failure reaches the gate's verdict.
+///
+/// The population claim splits in two along the seam, and each half is
+/// asserted where its answer lives. The GENERATOR side — every language this
+/// backend can emit an artifact for has a row — is
+/// `the_kotlin_gate_runs_every_language_the_generator_can_emit`, just below.
+/// The ENGINE side — every language each engine will accept has a row — is
+/// `GateEnginePairsTest`, on the JVM, because it is
+/// `ScxmlScriptEngine.acceptsLanguage` that answers it. Neither half implies
+/// the other: an emittable artifact nothing runs and a running engine nothing
+/// emits for are different holes.
+///
 /// Comments are stripped first. The reasons for each of these live in prose
 /// directly above the lines they explain, and a scan that counted those would
 /// pass on a gate that had deleted the code and kept the paragraph.
-#[test]
-fn the_kotlin_gate_runs_every_engine_it_claims() {
+/// The Kotlin gate with its comments removed.
+///
+/// Every check below reads code, never prose: a scan that counted the
+/// paragraphs would pass on a gate that had deleted the loop and kept the
+/// explanation of it.
+fn kotlin_gate_code() -> String {
     let body = std::fs::read_to_string(repo_root().join("scripts/gates/w3c-kotlin.sh"))
         .expect("the Kotlin gate is readable");
-    let code: String = body
-        .lines()
+    body.lines()
         .filter(|line| !line.trim_start().starts_with('#'))
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+}
 
-    let engines = code
-        .lines()
+/// The `engine:language` rows the gate declares.
+///
+/// Parsed once and shared, because two readers of one array are two chances
+/// to read a different array than the loop runs.
+fn kotlin_gate_pairs(code: &str) -> Vec<String> {
+    code.lines()
         .find_map(|line| {
             line.trim()
-                .strip_prefix("KOTLIN_ENGINES=(")?
+                .strip_prefix("KOTLIN_ENGINE_PAIRS=(")?
                 .strip_suffix(')')
                 .map(|inner| {
                     inner
@@ -488,11 +518,46 @@ fn the_kotlin_gate_runs_every_engine_it_claims() {
                 })
         })
         .expect(
-            "the Kotlin gate must declare the engines it runs in one place, as \
-             `KOTLIN_ENGINES=(…)`, so this check and the loop cannot disagree",
-        );
+            "the Kotlin gate must declare the engine/language pairs it runs in \
+             one place, as `KOTLIN_ENGINE_PAIRS=(…)`, so this check and the \
+             loop cannot disagree",
+        )
+}
 
-    for required in ["rhino", "quickjs"] {
+/// The language half of each row, refusing a row that is not a pair.
+fn kotlin_gate_row_half(
+    pairs: &[String],
+    half: for<'a> fn((&'a str, &'a str)) -> &'a str,
+) -> Vec<String> {
+    pairs
+        .iter()
+        .map(|pair| {
+            let split = pair.split_once(':').unwrap_or_else(|| {
+                panic!(
+                    "row `{pair}` is not `engine:language`. The engine alone \
+                     does not say which artifact it was handed, and the two \
+                     routes into the Lua engine differ by exactly that."
+                )
+            });
+            half(split).to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn the_kotlin_gate_runs_every_engine_it_claims() {
+    let code = kotlin_gate_code();
+    let pairs = kotlin_gate_pairs(&code);
+
+    let engines = kotlin_gate_row_half(&pairs, |(engine, _)| engine);
+
+    // `lua` joined this list on 2026-08-30, and its absence had been the
+    // gate's own standing note: the engine ships, `EngineFactory` offers it
+    // beside the other two, and no lane measured it above the expression
+    // level. What had blocked it was mechanical — the committed tree is
+    // emitted for one language — and generating per language is what lifted
+    // it.
+    for required in ["rhino", "quickjs", "lua"] {
         assert!(
             engines.iter().any(|e| e == required),
             "⚠ the Kotlin gate runs {engines:?}, without `{required}`. The W3C \
@@ -523,20 +588,136 @@ fn the_kotlin_gate_runs_every_engine_it_claims() {
         );
     }
 
-    // Per-engine, not once at the end: the reports directory holds whichever
-    // engine ran last, so a floor or a verdict read outside the loop describes
-    // one engine and vouches for all of them.
+    // Per-pair, not once at the end: the reports directory holds whichever run
+    // finished last, so a floor or a verdict read outside the loop describes
+    // one pair and vouches for all of them.
     assert!(
         code.contains("if (( cases < 200 )); then"),
-        "⚠ the per-engine floor on case count is gone. Gradle reports BUILD \
-         SUCCESSFUL for a test task that ran nothing, so without the floor an \
-         engine's arm can report green over an empty run."
+        "⚠ the per-pair floor on case count is gone. Gradle reports BUILD \
+         SUCCESSFUL for a test task that ran nothing, so without the floor a \
+         pair's arm can report green over an empty run."
     );
     assert!(
-        code.contains(r#"sce_gate_fail "Kotlin conformance on $engine"#),
-        "⚠ an engine's failures must fail the gate rather than be printed. A \
-         loop that reports each result and returns the last one passes whenever \
-         the final engine passes — and that is the engine already covered."
+        code.contains(r#"sce_gate_fail "Kotlin conformance on $engine over $language machines"#),
+        "⚠ a pair's failures must fail the gate rather than be printed. A loop \
+         that reports each result and returns the last one passes whenever the \
+         final pair passes — and that is a pair already covered."
+    );
+
+    // The language the committed machines hold is DERIVED, never written down.
+    // A constant here would be correct until the day it matters most — the day
+    // `Language::Kotlin.default_script_engine_target()` flips — and silently
+    // wrong after it, which is the failure this whole pairing exists to
+    // prevent.
+    assert!(
+        code.contains("COMMITTED_LANGUAGE=\"$("),
+        "⚠ the gate no longer derives which language the committed Kotlin \
+         machines are emitted for; a literal there is a second answer beside \
+         the generator's, free to disagree with it exactly when the default \
+         moves."
+    );
+    assert!(
+        !code.contains("COMMITTED_LANGUAGE=ecmascript") && !code.contains("COMMITTED_LANGUAGE=lua"),
+        "⚠ the gate assigns COMMITTED_LANGUAGE a literal. That is the constant \
+         the derivation replaced."
+    );
+}
+
+/// Every artifact this backend can emit is run by some row of the gate.
+///
+/// The generator half of the population claim, and the half that can be
+/// answered in Rust: `Language::Kotlin.supports_script_engine_target` is what
+/// decides whether `generate-w3c --script-engine <lang>` produces a suite at
+/// all, so the set of languages it says yes to is exactly the set of Kotlin
+/// artifacts that exist to be run. A language in that set with no row is an
+/// artifact SCE ships and no lane executes — the shape this gate carried as a
+/// written-down debt for the whole time `lua` was missing from its array.
+///
+/// ⚠ Containment, not equality, and the asymmetry is the point. A row naming
+/// a language the backend cannot emit fails LOUDLY the first time the gate
+/// runs: `generate-w3c` refuses through the same `supports_script_engine_target`
+/// call, so nothing needs asserting here. A language the array OMITS fails
+/// nowhere at all, which is why it is the direction worth a test.
+///
+/// ⚠⚠ This is the assertion that survives the day the backend's default
+/// flips. `default_script_engine_target()` moving to Lua changes which
+/// artifact is committed and which one the gate generates, but not the SET
+/// this reads — both languages stay supported, so both stay required, and the
+/// row that would have been quietly dropped in the swap turns this red.
+#[test]
+fn the_kotlin_gate_runs_every_language_the_generator_can_emit() {
+    use sce_build::generator::{Language, ScriptEngineTarget};
+
+    let code = kotlin_gate_code();
+    let pairs = kotlin_gate_pairs(&code);
+    let declared: BTreeSet<String> = kotlin_gate_row_half(&pairs, |(_, language)| language)
+        .into_iter()
+        .collect();
+
+    // Read off the enum's own population rather than a list restated here: a
+    // third engine language reaches this sweep the moment it reaches the wire
+    // vocabulary, without an edit that someone has to remember to make.
+    let emittable: BTreeSet<String> = ScriptEngineTarget::ALL
+        .iter()
+        .filter(|target| Language::Kotlin.supports_script_engine_target(**target))
+        .map(|target| target.wire_name().to_string())
+        .collect();
+
+    assert!(
+        !emittable.is_empty(),
+        "the Kotlin backend reports no emittable script-engine language at \
+         all, which cannot be true while it generates anything — a backend \
+         always supports its own default. An empty population would make the \
+         containment below hold for an empty gate."
+    );
+
+    for language in &emittable {
+        assert!(
+            declared.contains(language),
+            "⚠ `sce-codegen generate-w3c -l kotlin --script-engine {language}` \
+             produces a conformance suite, and no row of KOTLIN_ENGINE_PAIRS \
+             runs it. The gate declares {declared:?} against an emittable \
+             {emittable:?}. An artifact SCE can emit and no lane executes is \
+             the exact state the `lua` arm of this gate sat in while its \
+             omission was a paragraph of prose above the array."
+        );
+    }
+}
+
+/// The Kotlin suite re-runs when the gate it reads changes.
+///
+/// `GateEnginePairsTest` holds `KOTLIN_ENGINE_PAIRS` to the routes this backend
+/// actually has, and it reads the gate script off disk. Gradle knows nothing
+/// about that read: the gate is not on the compile classpath, so without an
+/// explicit input declaration the test task stays UP-TO-DATE across every edit
+/// to the file the test is about.
+///
+/// Measured 2026-08-30, before the declaration existed: deleting the `lua:lua`
+/// row — the row the change adding it exists to add — left
+/// `./gradlew :sce-kotlin-tests:test --tests GateEnginePairsTest` reporting
+/// BUILD SUCCESSFUL in 500ms with no test run. The same shape the shared
+/// ECMA-262 tables already carry, and for the same reason: a gate nothing
+/// re-reads is a gate that cannot be wrong.
+///
+/// Asserted here rather than in Kotlin because a suite cannot observe its own
+/// staleness — the run that would report it is the run that does not happen.
+#[test]
+fn the_kotlin_suite_reruns_when_the_gate_it_reads_changes() {
+    let build = std::fs::read_to_string(repo_root().join("backends/kotlin/tests/build.gradle.kts"))
+        .expect("the Kotlin test build file is readable");
+    let code: String = build
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        code.contains("scripts/gates/w3c-kotlin.sh"),
+        "⚠ `backends/kotlin/tests/build.gradle.kts` no longer declares \
+         scripts/gates/w3c-kotlin.sh as an input of the test task. \
+         `GateEnginePairsTest` reads that file to check the gate covers every \
+         engine route, and Gradle cannot see the read: editing the gate then \
+         leaves the suite UP-TO-DATE and the check unrun."
     );
 }
 
