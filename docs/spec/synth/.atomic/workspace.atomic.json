@@ -4496,6 +4496,14 @@
         {
           "file": "scripts/regen_send_namelist_over_http_go.sh",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/workflow_trigger_coverage.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mutations/the_regen_lane_starts_on_what_it_reproduces.cases",
+          "kind": "references"
         }
       ]
     },

@@ -12,38 +12,39 @@ name: Regen Reproduces Committed Trees
 # `template-hash` both cover INPUTS — the documents and the templates — so a
 # change to the emit code under `sce-build/src` that alters the output moves
 # neither hash, and the committed trees drift with every gate green.
-# Regenerating and comparing is the only reader of that axis, which is why
-# `sce-build/**` is in the trigger below.
+# Regenerating and comparing is the only reader of that axis.
 
 on:
+  # No `paths:` filter, deliberately.
+  #
+  # This lane regenerates EVERY committed tree and compares. Its input set is
+  # therefore the union of the generator under `sce-build/`, the whole template
+  # tree, every regeneration script, every authored document any of them reads,
+  # and every committed artefact they write — very nearly the repository. A
+  # glob list over that is the shape `workflow_trigger_coverage` was written
+  # about: it enumerates the trees that exist today and by construction cannot
+  # name the one whose arrival it exists to catch.
+  #
+  # Measured 2026-08-30, which is why the filter is gone rather than merely
+  # wider: of the 1303 tracked artefacts carrying a §synth-6.2.6 drift header,
+  # 538 sat OUTSIDE the filter this block used to hold. It named
+  # `backends/rust/tests/src/generated/**` and
+  # `backends/kotlin/tests/src/main/kotlin/com/sce/generated/**` and stopped
+  # there, so every Kotlin `com/sce/integration/**` and `src/test/**` tree,
+  # every Rust `src/integration/**` tree and `tests/test_*.rs`, and the Go
+  # forge round-trip codecs were invisible to it. The consequence is not
+  # hypothetical: the round that made lowered Lua the Kotlin backend's default
+  # artefact left 40 Kotlin integration files stale and this lane red, and the
+  # commit that REGENERATES those 40 would not have started this lane at all —
+  # the red could not have been cleared by the change that fixes it.
+  #
+  # `the_regen_lane_is_started_by_every_artefact_it_reproduces` holds this
+  # open. A filter may come back, but only one that covers every committed
+  # artefact.
   push:
     branches: [ main ]
-    paths:
-      - 'sce-build/**'
-      - 'tools/codegen/templates/**'
-      - 'scripts/regen_all_committed_trees.sh'
-      - 'scripts/regen_event_schema_native*.sh'
-      - 'scripts/regen_native_action.sh'
-      - 'scripts/gates/regen-reproduces.sh'
-      - 'backends/rust/tests/src/generated/**'
-      - 'backends/kotlin/tests/src/main/kotlin/com/sce/generated/**'
-      - 'backends/go/tests/**'
-      - 'tests/w3c/conformance/fixtures.json'
-      - '.github/workflows/regen-reproduces.yml'
   pull_request:
     branches: [ main ]
-    paths:
-      - 'sce-build/**'
-      - 'tools/codegen/templates/**'
-      - 'scripts/regen_all_committed_trees.sh'
-      - 'scripts/regen_event_schema_native*.sh'
-      - 'scripts/regen_native_action.sh'
-      - 'scripts/gates/regen-reproduces.sh'
-      - 'backends/rust/tests/src/generated/**'
-      - 'backends/kotlin/tests/src/main/kotlin/com/sce/generated/**'
-      - 'backends/go/tests/**'
-      - 'tests/w3c/conformance/fixtures.json'
-      - '.github/workflows/regen-reproduces.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
