@@ -30,20 +30,32 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
 {%- endmacro %}
+{# --- The machine-wide id of a transition owned by `state_id` --------------
+
+   ⚠ THE NUMBER IS READ, NEVER COUNTED. `machine_transition_ids` is assigned
+   once by `kotlin::assign_machine_transition_ids` and is the SAME source
+   `transition_actions.kt.jinja2` dispatches on (injected there as
+   `machine_transition_index`). A `loop.index0` here would be a second
+   enumeration of a different population — this template walks a state's OWN
+   transitions, that one walks its EFFECTIVE transitions, self plus every
+   ancestor's — and the two would silently disagree for any state that
+   inherits one.
+
+   `trans.transition_index` is the transition's position in its owner's list,
+   which is exactly how the id table is keyed. #}
+{% macro transition_id(trans, state_id) -%}
+{{ machine_transition_ids[state_id][trans.transition_index] }}
+{%- endmacro %}
 {# --- Macro for rendering transition result (External/InternalToTarget/Internal) --- #}
 {# Handles: true internal with target (InternalToTarget), external with ancestor source, targetless internal #}
 {% macro render_result(trans, target_expr, state_id) -%}
 {% if trans.is_true_internal is defined and trans.is_true_internal -%}
-TransitionResult.InternalToTarget({{ target_expr }}, {{ machine_name }}State.{{ trans.internal_source | to_state_class_name }})
+TransitionResult.InternalToTarget({{ target_expr }}, {{ machine_name }}State.{{ trans.internal_source | to_state_class_name }}, {{ transition_id(trans, state_id) }})
 {%- elif trans.type == 'internal' and not trans.target -%}
-TransitionResult.Internal
+TransitionResult.Internal({{ transition_id(trans, state_id) }})
 {%- else -%}
-TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
+TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }}, {{ transition_id(trans, state_id) }})
 {%- endif -%}
-{%- endmacro %}
-{# --- Macro for null event transition result (with transitionSource for correct LCCA) --- #}
-{% macro render_null_result(target_expr, state_id) -%}
-TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
 {%- endmacro %}
 {% if model.needs_script_engine %}
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
@@ -230,9 +242,9 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
    its content in place, which is what TransitionResult.Internal means here —
    the same result the event-driven arms above already produce for one. #}
 {% if trans.target or trans.history_target is defined %}
-{% set result_expr = "TransitionResult.External(" ~ target_expr ~ ", " ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ")" %}
+{% set result_expr = "TransitionResult.External(" ~ target_expr ~ ", " ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ", " ~ machine_transition_ids[state_id][trans.transition_index] ~ ")" %}
 {% else %}
-{% set result_expr = "TransitionResult.Internal" %}
+{% set result_expr = "TransitionResult.Internal(" ~ machine_transition_ids[state_id][trans.transition_index] ~ ")" %}
 {% endif %}
 {% if trans.cond %}
         {{ render_cond(trans) }} -> {{ result_expr }}
@@ -310,7 +322,7 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
         // W3C SCXML 3.12.1: Multi-descriptor targetless "{{ trans.event }}"
         ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
-{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> TransitionResult.Internal
+{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
 {% else %}
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
 {% set resolved_event = trans.prefix_matching_events[0] %}
@@ -318,10 +330,10 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% set resolved_event = trans.event %}
 {% endif %}
 {% if trans.cond %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> TransitionResult.Internal
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
 {% else %}
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> TransitionResult.Internal
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
 {% endif %}
 {% endif %}
 {% endif %}
@@ -339,10 +351,10 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% endif %}
 {% if trans.target %}
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
+        else -> TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }}, {{ transition_id(trans, state_id) }})
 {% else %}
         // W3C SCXML 3.12.1: Wildcard targetless transition
-        else -> TransitionResult.Internal
+        else -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
 {% endif %}
 {% endif %}
 {% endfor %}

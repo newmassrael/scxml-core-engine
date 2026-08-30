@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -356,7 +356,7 @@ class Test230StateMachine(
     private fun processS0(
         event: Test230Event
     ): TransitionResult<Test230State> = when {
-        event is Test230Event.Timeout -> TransitionResult.External(Test230State.Final, Test230State.S0)
+        event is Test230Event.Timeout -> TransitionResult.External(Test230State.Final, Test230State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -364,16 +364,16 @@ class Test230StateMachine(
     private fun processS01(
         event: Test230Event
     ): TransitionResult<Test230State> = when {
-        event is Test230Event.ChildToParent -> TransitionResult.External(Test230State.S02, Test230State.S01)
+        event is Test230Event.ChildToParent -> TransitionResult.External(Test230State.S02, Test230State.S01, 1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test230State.Fail, Test230State.S01)
+        else -> TransitionResult.External(Test230State.Fail, Test230State.S01, 2)
     }
 
     private fun processS02(
         event: Test230Event
     ): TransitionResult<Test230State> = when {
-        event is Test230Event.Done.Invoke -> TransitionResult.External(Test230State.Final, Test230State.S02)
+        event is Test230Event.Done.Invoke -> TransitionResult.External(Test230State.Final, Test230State.S02, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -465,11 +465,12 @@ class Test230StateMachine(
     // SCE-MAP: test230.scxml:8 :: _machine
     override fun executeTransitionActions(
         source: Test230State,
-        event: Test230Event?
+        event: Test230Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test230State.S01 -> when {
-            event is Test230Event.ChildToParent -> {
+        is Test230State.S01 -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: test230.scxml:44 :: s01 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)

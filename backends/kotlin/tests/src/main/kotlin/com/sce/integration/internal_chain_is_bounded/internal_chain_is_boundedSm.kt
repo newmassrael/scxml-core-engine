@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 5eba0d45073fc837c42ae33f20795f0ee658705613f4c4e42a59b557f47ce142
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -490,7 +490,7 @@ class InternalChainIsBoundedStateMachine(
 
     private fun processNullAlt(
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("pending == 1")) -> TransitionResult.Internal
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("pending == 1")) -> TransitionResult.Internal(1)
         else -> TransitionResult.Ignored
     }
 
@@ -500,37 +500,37 @@ class InternalChainIsBoundedStateMachine(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Tick -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Tick -> TransitionResult.Internal(0)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(2)
         else -> TransitionResult.Ignored
     }
 
     private fun processBounded(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 999")) -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 999")) -> TransitionResult.Internal(3)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Link -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Link -> TransitionResult.Internal(4)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(5)
         else -> TransitionResult.Ignored
     }
 
     private fun processIdle(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.External(InternalChainIsBoundedState.Idle, InternalChainIsBoundedState.Idle)
+        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.External(InternalChainIsBoundedState.Idle, InternalChainIsBoundedState.Idle, 6)
 
-        event is InternalChainIsBoundedEvent.Bounded -> TransitionResult.External(InternalChainIsBoundedState.Bounded, InternalChainIsBoundedState.Idle)
+        event is InternalChainIsBoundedEvent.Bounded -> TransitionResult.External(InternalChainIsBoundedState.Bounded, InternalChainIsBoundedState.Idle, 7)
 
-        event is InternalChainIsBoundedEvent.Spin -> TransitionResult.External(InternalChainIsBoundedState.Spin, InternalChainIsBoundedState.Idle)
+        event is InternalChainIsBoundedEvent.Spin -> TransitionResult.External(InternalChainIsBoundedState.Spin, InternalChainIsBoundedState.Idle, 8)
 
-        event is InternalChainIsBoundedEvent.Resume -> TransitionResult.External(InternalChainIsBoundedState.Resuming, InternalChainIsBoundedState.Idle)
+        event is InternalChainIsBoundedEvent.Resume -> TransitionResult.External(InternalChainIsBoundedState.Resuming, InternalChainIsBoundedState.Idle, 9)
 
-        event is InternalChainIsBoundedEvent.Alternate -> TransitionResult.External(InternalChainIsBoundedState.Alt, InternalChainIsBoundedState.Idle)
+        event is InternalChainIsBoundedEvent.Alternate -> TransitionResult.External(InternalChainIsBoundedState.Alt, InternalChainIsBoundedState.Idle, 10)
 
-        event is InternalChainIsBoundedEvent.Unanswered -> TransitionResult.External(InternalChainIsBoundedState.Ignoring, InternalChainIsBoundedState.Idle)
+        event is InternalChainIsBoundedEvent.Unanswered -> TransitionResult.External(InternalChainIsBoundedState.Ignoring, InternalChainIsBoundedState.Idle, 11)
 
         else -> TransitionResult.Ignored
     }
@@ -538,22 +538,22 @@ class InternalChainIsBoundedStateMachine(
     private fun processIgnoring(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("ignores < 999")) -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("ignores < 999")) -> TransitionResult.Internal(12)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Beatless -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Beatless -> TransitionResult.Internal(13)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(14)
         else -> TransitionResult.Ignored
     }
 
     private fun processResuming(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("beats < 1499")) -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("beats < 1499")) -> TransitionResult.Internal(15)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Beat -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Beat -> TransitionResult.Internal(16)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(17)
         else -> TransitionResult.Ignored
     }
 
@@ -561,9 +561,9 @@ class InternalChainIsBoundedStateMachine(
         event: InternalChainIsBoundedEvent
     ): TransitionResult<InternalChainIsBoundedState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Link -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Link -> TransitionResult.Internal(18)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal
+        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(19)
         else -> TransitionResult.Ignored
     }
 
@@ -642,11 +642,12 @@ class InternalChainIsBoundedStateMachine(
     // SCE-MAP: internal_chain_is_bounded.scxml:90 :: _machine
     override fun executeTransitionActions(
         source: InternalChainIsBoundedState,
-        event: InternalChainIsBoundedEvent?
+        event: InternalChainIsBoundedEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is InternalChainIsBoundedState.Alt -> when {
-            event is InternalChainIsBoundedEvent.Tick -> {
+        is InternalChainIsBoundedState.Alt -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:212 :: alt :: _transition_0
 
 
@@ -655,13 +656,7 @@ class InternalChainIsBoundedStateMachine(
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("pending"), com.sce.runtime.ScriptSource.ecmascript("1"))
             }
-            event is InternalChainIsBoundedEvent.Poke -> {
-                // SCE-MAP: internal_chain_is_bounded.scxml:220 :: alt :: _transition_2
-
-
-            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
-            }
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("pending == 1")) -> {
+            1 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:216 :: alt :: _transition_1
 
 
@@ -669,10 +664,16 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Tick)
             }
+            2 -> {
+                // SCE-MAP: internal_chain_is_bounded.scxml:220 :: alt :: _transition_2
+
+
+            executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
+            }
             else -> {}
         }
-        is InternalChainIsBoundedState.Bounded -> when {
-            event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("laps < 999")) -> {
+        is InternalChainIsBoundedState.Bounded -> when (transitionIndex) {
+            3 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:154 :: bounded :: _transition_0
 
 
@@ -680,13 +681,13 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
-            event is InternalChainIsBoundedEvent.Link -> {
+            4 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:158 :: bounded :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("laps"), com.sce.runtime.ScriptSource.ecmascript("laps + 1"))
             }
-            event is InternalChainIsBoundedEvent.Poke -> {
+            5 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:163 :: bounded :: _transition_2
 
 
@@ -694,42 +695,42 @@ class InternalChainIsBoundedStateMachine(
             }
             else -> {}
         }
-        is InternalChainIsBoundedState.Idle -> when {
-            event is InternalChainIsBoundedEvent.Poke -> {
+        is InternalChainIsBoundedState.Idle -> when (transitionIndex) {
+            6 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:123 :: idle :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("pokes"), com.sce.runtime.ScriptSource.ecmascript("pokes + 1"))
             }
-            event is InternalChainIsBoundedEvent.Bounded -> {
+            7 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:126 :: idle :: _transition_1
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
-            event is InternalChainIsBoundedEvent.Spin -> {
+            8 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:129 :: idle :: _transition_2
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
-            event is InternalChainIsBoundedEvent.Resume -> {
+            9 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:132 :: idle :: _transition_3
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
             }
-            event is InternalChainIsBoundedEvent.Alternate -> {
+            10 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:135 :: idle :: _transition_4
 
             raiseInternal(InternalChainIsBoundedEvent.Tick)
             }
-            event is InternalChainIsBoundedEvent.Unanswered -> {
+            11 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:138 :: idle :: _transition_5
 
             raiseInternal(InternalChainIsBoundedEvent.Beatless)
             }
             else -> {}
         }
-        is InternalChainIsBoundedState.Ignoring -> when {
-            event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("ignores < 999")) -> {
+        is InternalChainIsBoundedState.Ignoring -> when (transitionIndex) {
+            12 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:245 :: ignoring :: _transition_0
 
 
@@ -739,13 +740,13 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Beatless)
             }
-            event is InternalChainIsBoundedEvent.Beatless -> {
+            13 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:250 :: ignoring :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("ignores"), com.sce.runtime.ScriptSource.ecmascript("ignores + 1"))
             }
-            event is InternalChainIsBoundedEvent.Poke -> {
+            14 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:253 :: ignoring :: _transition_2
 
 
@@ -753,8 +754,8 @@ class InternalChainIsBoundedStateMachine(
             }
             else -> {}
         }
-        is InternalChainIsBoundedState.Resuming -> when {
-            event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("beats < 1499")) -> {
+        is InternalChainIsBoundedState.Resuming -> when (transitionIndex) {
+            15 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_0
 
 
@@ -762,13 +763,13 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
             }
-            event is InternalChainIsBoundedEvent.Beat -> {
+            16 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:197 :: resuming :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("beats"), com.sce.runtime.ScriptSource.ecmascript("beats + 1"))
             }
-            event is InternalChainIsBoundedEvent.Poke -> {
+            17 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:200 :: resuming :: _transition_2
 
 
@@ -776,8 +777,8 @@ class InternalChainIsBoundedStateMachine(
             }
             else -> {}
         }
-        is InternalChainIsBoundedState.Spin -> when {
-            event is InternalChainIsBoundedEvent.Link -> {
+        is InternalChainIsBoundedState.Spin -> when (transitionIndex) {
+            18 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:175 :: spin :: _transition_0
 
 
@@ -785,7 +786,7 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
-            event is InternalChainIsBoundedEvent.Poke -> {
+            19 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:179 :: spin :: _transition_1
 
 

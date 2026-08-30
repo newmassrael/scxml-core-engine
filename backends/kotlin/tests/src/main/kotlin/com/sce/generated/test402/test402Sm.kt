@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -367,7 +367,7 @@ class Test402StateMachine(
     private fun processS0(
         event: Test402Event
     ): TransitionResult<Test402State> = when {
-        event is Test402Event.Timeout -> TransitionResult.External(Test402State.Fail, Test402State.S0)
+        event is Test402Event.Timeout -> TransitionResult.External(Test402State.Fail, Test402State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -375,29 +375,29 @@ class Test402StateMachine(
     private fun processS01(
         event: Test402Event
     ): TransitionResult<Test402State> = when {
-        event is Test402Event.Event1 -> TransitionResult.External(Test402State.S02, Test402State.S01)
+        event is Test402Event.Event1 -> TransitionResult.External(Test402State.S02, Test402State.S01, 1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test402State.Fail, Test402State.S01)
+        else -> TransitionResult.External(Test402State.Fail, Test402State.S01, 2)
     }
 
     private fun processS02(
         event: Test402Event
     ): TransitionResult<Test402State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test402Event.Error || event is Test402Event.Error.Execution) -> TransitionResult.External(Test402State.S03, Test402State.S02)
+        (event is Test402Event.Error || event is Test402Event.Error.Execution) -> TransitionResult.External(Test402State.S03, Test402State.S02, 3)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test402State.Fail, Test402State.S02)
+        else -> TransitionResult.External(Test402State.Fail, Test402State.S02, 4)
     }
 
     private fun processS03(
         event: Test402Event
     ): TransitionResult<Test402State> = when {
-        event is Test402Event.Event2 -> TransitionResult.External(Test402State.Pass, Test402State.S03)
+        event is Test402Event.Event2 -> TransitionResult.External(Test402State.Pass, Test402State.S03, 5)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test402State.Fail, Test402State.S03)
+        else -> TransitionResult.External(Test402State.Fail, Test402State.S03, 6)
     }
 
 
@@ -488,11 +488,12 @@ class Test402StateMachine(
     // SCE-MAP: test402.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test402State,
-        event: Test402Event?
+        event: Test402Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test402State.S01 -> when {
-            event is Test402Event.Event1 -> {
+        is Test402State.S01 -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: test402.scxml:24 :: s01 :: _transition_0
 
             raiseInternal(Test402Event.Event2)

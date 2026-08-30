@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -96,19 +96,19 @@ class Test185StateMachine(
     private fun processS0(
         event: Test185Event
     ): TransitionResult<Test185State> = when {
-        event is Test185Event.Event1 -> TransitionResult.External(Test185State.S1, Test185State.S0)
+        event is Test185Event.Event1 -> TransitionResult.External(Test185State.S1, Test185State.S0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test185State.Fail, Test185State.S0)
+        else -> TransitionResult.External(Test185State.Fail, Test185State.S0, 1)
     }
 
     private fun processS1(
         event: Test185Event
     ): TransitionResult<Test185State> = when {
-        event is Test185Event.Event2 -> TransitionResult.External(Test185State.Pass, Test185State.S1)
+        event is Test185Event.Event2 -> TransitionResult.External(Test185State.Pass, Test185State.S1, 2)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test185State.Fail, Test185State.S1)
+        else -> TransitionResult.External(Test185State.Fail, Test185State.S1, 3)
     }
 
 
@@ -178,7 +178,8 @@ class Test185StateMachine(
     // SCE-MAP: test185.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test185State,
-        event: Test185Event?
+        event: Test185Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

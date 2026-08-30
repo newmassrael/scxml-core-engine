@@ -44,6 +44,25 @@ abstract class GenerateLoweredArtifact : DefaultTask() {
     @get:Input
     abstract val codegen: Property<String>
 
+    /**
+     * The generator binary's CONTENT, so rebuilding it regenerates the artifact.
+     *
+     * ⚠ Measured 2026-08-30, and it is the same failure this lane exists to
+     * refuse, one level up. With only [codegen] declared — a String, the PATH —
+     * a `cargo build` that changed what the generator emits left this task
+     * UP-TO-DATE, so the suite compiled machines from the previous generator
+     * and the run said nothing about the change. It surfaced only because the
+     * runtime signature had moved underneath and the stale Kotlin no longer
+     * compiled; a change that merely altered emitted BEHAVIOUR would have
+     * passed, green, over the old artifact.
+     *
+     * `NAME_ONLY` is wrong here and `@InputFile` alone is right: what matters
+     * is the bytes, not where they sit, because the build machine and CI put
+     * the binary at different absolute paths.
+     */
+    @get:InputFile
+    abstract val codegenBinary: RegularFileProperty
+
     /** The SCXML this artifact is generated from. */
     @get:InputFile
     abstract val document: RegularFileProperty
@@ -213,6 +232,10 @@ val generateLoweredMachines = artifacts.map { (stem, language) ->
         enabled = sceCodegenBinary != null
 
         codegen.set(sceCodegenBinary ?: "sce-codegen")
+        // Only settable when the binary was resolved to a path; the task is
+        // `enabled = false` in that case anyway, and Gradle does not check the
+        // inputs of a disabled task.
+        sceCodegenBinary?.let { codegenBinary.set(File(it)) }
         document.set(fixtureDir.map { it.file("$stem.scxml") })
         scriptEngine.set(language)
         outputDir.set(fixtureDir.map { it.dir("generated/$stem") })

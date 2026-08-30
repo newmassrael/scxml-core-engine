@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -128,12 +128,12 @@ class AutoforwardDequeuePointStateMachine(
         event: AutoforwardDequeuePointEvent
     ): TransitionResult<AutoforwardDequeuePointState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is AutoforwardDequeuePointEvent.Ready -> TransitionResult.Internal
+        event is AutoforwardDequeuePointEvent.Ready -> TransitionResult.Internal(0)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is AutoforwardDequeuePointEvent.First -> TransitionResult.Internal
-        event is AutoforwardDequeuePointEvent.SawSecondEarly -> TransitionResult.External(AutoforwardDequeuePointState.Fail, AutoforwardDequeuePointState.Phase)
+        event is AutoforwardDequeuePointEvent.First -> TransitionResult.Internal(1)
+        event is AutoforwardDequeuePointEvent.SawSecondEarly -> TransitionResult.External(AutoforwardDequeuePointState.Fail, AutoforwardDequeuePointState.Phase, 2)
 
-        event is AutoforwardDequeuePointEvent.SawMarkFirst -> TransitionResult.External(AutoforwardDequeuePointState.Pass, AutoforwardDequeuePointState.Phase)
+        event is AutoforwardDequeuePointEvent.SawMarkFirst -> TransitionResult.External(AutoforwardDequeuePointState.Pass, AutoforwardDequeuePointState.Phase, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -204,11 +204,12 @@ class AutoforwardDequeuePointStateMachine(
     // SCE-MAP: autoforward_dequeue_point.scxml:67 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDequeuePointState,
-        event: AutoforwardDequeuePointEvent?
+        event: AutoforwardDequeuePointEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is AutoforwardDequeuePointState.Phase -> when {
-            event is AutoforwardDequeuePointEvent.Ready -> {
+        is AutoforwardDequeuePointState.Phase -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: autoforward_dequeue_point.scxml:97 :: phase :: _transition_0
 
 
@@ -217,7 +218,7 @@ class AutoforwardDequeuePointStateMachine(
 
             send(AutoforwardDequeuePointEvent.Second, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
-            event is AutoforwardDequeuePointEvent.First -> {
+            1 -> {
                 // SCE-MAP: autoforward_dequeue_point.scxml:101 :: phase :: _transition_1
 
 

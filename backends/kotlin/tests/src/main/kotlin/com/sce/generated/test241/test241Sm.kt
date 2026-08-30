@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -395,7 +395,7 @@ class Test241StateMachine(
     private fun processS0(
         event: Test241Event
     ): TransitionResult<Test241State> = when {
-        event is Test241Event.Timeout -> TransitionResult.External(Test241State.Fail, Test241State.S0)
+        event is Test241Event.Timeout -> TransitionResult.External(Test241State.Fail, Test241State.S0, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -403,9 +403,9 @@ class Test241StateMachine(
     private fun processS01(
         event: Test241Event
     ): TransitionResult<Test241State> = when {
-        event is Test241Event.Success -> TransitionResult.External(Test241State.S02, Test241State.S01)
+        event is Test241Event.Success -> TransitionResult.External(Test241State.S02, Test241State.S01, 1)
 
-        event is Test241Event.Failure -> TransitionResult.External(Test241State.S03, Test241State.S01)
+        event is Test241Event.Failure -> TransitionResult.External(Test241State.S03, Test241State.S01, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -413,9 +413,9 @@ class Test241StateMachine(
     private fun processS02(
         event: Test241Event
     ): TransitionResult<Test241State> = when {
-        event is Test241Event.Success -> TransitionResult.External(Test241State.Pass, Test241State.S02)
+        event is Test241Event.Success -> TransitionResult.External(Test241State.Pass, Test241State.S02, 3)
 
-        event is Test241Event.Failure -> TransitionResult.External(Test241State.Fail, Test241State.S02)
+        event is Test241Event.Failure -> TransitionResult.External(Test241State.Fail, Test241State.S02, 4)
 
         else -> TransitionResult.Ignored
     }
@@ -423,9 +423,9 @@ class Test241StateMachine(
     private fun processS03(
         event: Test241Event
     ): TransitionResult<Test241State> = when {
-        event is Test241Event.Failure -> TransitionResult.External(Test241State.Pass, Test241State.S03)
+        event is Test241Event.Failure -> TransitionResult.External(Test241State.Pass, Test241State.S03, 5)
 
-        event is Test241Event.Success -> TransitionResult.External(Test241State.Fail, Test241State.S03)
+        event is Test241Event.Success -> TransitionResult.External(Test241State.Fail, Test241State.S03, 6)
 
         else -> TransitionResult.Ignored
     }
@@ -620,7 +620,8 @@ class Test241StateMachine(
     // SCE-MAP: test241.scxml:8 :: _machine
     override fun executeTransitionActions(
         source: Test241State,
-        event: Test241Event?
+        event: Test241Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

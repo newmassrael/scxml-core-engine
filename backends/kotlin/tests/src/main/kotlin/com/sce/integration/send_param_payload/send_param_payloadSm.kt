@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 15abee63eca48c0d096ade54003293e94f23f9dffeaf437e4cf29a0ed73c4eb2
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -413,9 +413,9 @@ class SendParamPayloadStateMachine(
     private fun processAwaitChild(
         event: SendParamPayloadEvent
     ): TransitionResult<SendParamPayloadState> = when {
-        event is SendParamPayloadEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === '42'")) -> TransitionResult.External(SendParamPayloadState.InternalPhase, SendParamPayloadState.AwaitChild)
+        event is SendParamPayloadEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.value === '42'")) -> TransitionResult.External(SendParamPayloadState.InternalPhase, SendParamPayloadState.AwaitChild, 0)
 
-        event is SendParamPayloadEvent.FromChild -> TransitionResult.External(SendParamPayloadState.FailChildPayload, SendParamPayloadState.AwaitChild)
+        event is SendParamPayloadEvent.FromChild -> TransitionResult.External(SendParamPayloadState.FailChildPayload, SendParamPayloadState.AwaitChild, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -423,9 +423,9 @@ class SendParamPayloadStateMachine(
     private fun processInternalPhase(
         event: SendParamPayloadEvent
     ): TransitionResult<SendParamPayloadState> = when {
-        event is SendParamPayloadEvent.Loopback && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.carried === 'kept'")) -> TransitionResult.External(SendParamPayloadState.TypedPhase, SendParamPayloadState.InternalPhase)
+        event is SendParamPayloadEvent.Loopback && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.carried === 'kept'")) -> TransitionResult.External(SendParamPayloadState.TypedPhase, SendParamPayloadState.InternalPhase, 2)
 
-        event is SendParamPayloadEvent.Loopback -> TransitionResult.External(SendParamPayloadState.FailInternalPayload, SendParamPayloadState.InternalPhase)
+        event is SendParamPayloadEvent.Loopback -> TransitionResult.External(SendParamPayloadState.FailInternalPayload, SendParamPayloadState.InternalPhase, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -434,14 +434,14 @@ class SendParamPayloadStateMachine(
         event: SendParamPayloadEvent
     ): TransitionResult<SendParamPayloadState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is SendParamPayloadEvent.Error.Execution -> TransitionResult.Internal
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawParamError !== 1")) -> TransitionResult.External(SendParamPayloadState.FailNoParamError, SendParamPayloadState.ParamErrorPhase)
+        event is SendParamPayloadEvent.Error.Execution -> TransitionResult.Internal(4)
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawParamError !== 1")) -> TransitionResult.External(SendParamPayloadState.FailNoParamError, SendParamPayloadState.ParamErrorPhase, 5)
 
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.broken === ''")) -> TransitionResult.External(SendParamPayloadState.FailBrokenParamDelivered, SendParamPayloadState.ParamErrorPhase)
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.broken === ''")) -> TransitionResult.External(SendParamPayloadState.FailBrokenParamDelivered, SendParamPayloadState.ParamErrorPhase, 6)
 
-        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.kept === 'here'")) -> TransitionResult.External(SendParamPayloadState.Pass, SendParamPayloadState.ParamErrorPhase)
+        event is SendParamPayloadEvent.WithBadParam && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.kept === 'here'")) -> TransitionResult.External(SendParamPayloadState.Pass, SendParamPayloadState.ParamErrorPhase, 7)
 
-        event is SendParamPayloadEvent.WithBadParam -> TransitionResult.External(SendParamPayloadState.FailSiblingParamLost, SendParamPayloadState.ParamErrorPhase)
+        event is SendParamPayloadEvent.WithBadParam -> TransitionResult.External(SendParamPayloadState.FailSiblingParamLost, SendParamPayloadState.ParamErrorPhase, 8)
 
         else -> TransitionResult.Ignored
     }
@@ -449,13 +449,13 @@ class SendParamPayloadStateMachine(
     private fun processTypedPhase(
         event: SendParamPayloadEvent
     ): TransitionResult<SendParamPayloadState> = when {
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.n !== 7")) -> TransitionResult.External(SendParamPayloadState.FailNumberType, SendParamPayloadState.TypedPhase)
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.n !== 7")) -> TransitionResult.External(SendParamPayloadState.FailNumberType, SendParamPayloadState.TypedPhase, 9)
 
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.s !== 'kept'")) -> TransitionResult.External(SendParamPayloadState.FailStringType, SendParamPayloadState.TypedPhase)
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.s !== 'kept'")) -> TransitionResult.External(SendParamPayloadState.FailStringType, SendParamPayloadState.TypedPhase, 10)
 
-        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.d.length === 2 && _event.data.d[0] === 1 && _event.data.d[1] === 2")) -> TransitionResult.External(SendParamPayloadState.ParamErrorPhase, SendParamPayloadState.TypedPhase)
+        event is SendParamPayloadEvent.Typed && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.d.length === 2 && _event.data.d[0] === 1 && _event.data.d[1] === 2")) -> TransitionResult.External(SendParamPayloadState.ParamErrorPhase, SendParamPayloadState.TypedPhase, 11)
 
-        event is SendParamPayloadEvent.Typed -> TransitionResult.External(SendParamPayloadState.FailDuplicateParams, SendParamPayloadState.TypedPhase)
+        event is SendParamPayloadEvent.Typed -> TransitionResult.External(SendParamPayloadState.FailDuplicateParams, SendParamPayloadState.TypedPhase, 12)
 
         else -> TransitionResult.Ignored
     }
@@ -700,11 +700,12 @@ class SendParamPayloadStateMachine(
     // SCE-MAP: send_param_payload.scxml:82 :: _machine
     override fun executeTransitionActions(
         source: SendParamPayloadState,
-        event: SendParamPayloadEvent?
+        event: SendParamPayloadEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is SendParamPayloadState.ParamErrorPhase -> when {
-            event is SendParamPayloadEvent.Error.Execution -> {
+        is SendParamPayloadState.ParamErrorPhase -> when (transitionIndex) {
+            4 -> {
                 // SCE-MAP: send_param_payload.scxml:199 :: paramErrorPhase :: _transition_0
 
 

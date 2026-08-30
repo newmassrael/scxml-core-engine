@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 10c2c2f29d0d83fa864c49b502ae45d4613f72cb852feff90f1d364bfc5dc8fa
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -342,12 +342,12 @@ class UndecodablePayloadIsReportedStateMachine(
     private fun processWaiting(
         event: UndecodablePayloadIsReportedEvent
     ): TransitionResult<UndecodablePayloadIsReportedState> = when {
-        event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.done")) -> TransitionResult.External(UndecodablePayloadIsReportedState.Accepted, UndecodablePayloadIsReportedState.Waiting)
+        event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.done")) -> TransitionResult.External(UndecodablePayloadIsReportedState.Accepted, UndecodablePayloadIsReportedState.Waiting, 0)
 
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is UndecodablePayloadIsReportedEvent.Answer -> TransitionResult.Internal
+        event is UndecodablePayloadIsReportedEvent.Answer -> TransitionResult.Internal(1)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is UndecodablePayloadIsReportedEvent.Note -> TransitionResult.Internal
+        event is UndecodablePayloadIsReportedEvent.Note -> TransitionResult.Internal(2)
         else -> TransitionResult.Ignored
     }
 
@@ -392,17 +392,18 @@ class UndecodablePayloadIsReportedStateMachine(
     // SCE-MAP: undecodable_payload_is_reported.scxml:56 :: _machine
     override fun executeTransitionActions(
         source: UndecodablePayloadIsReportedState,
-        event: UndecodablePayloadIsReportedEvent?
+        event: UndecodablePayloadIsReportedEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is UndecodablePayloadIsReportedState.Waiting -> when {
-            event is UndecodablePayloadIsReportedEvent.Answer -> {
+        is UndecodablePayloadIsReportedState.Waiting -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:65 :: waiting :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.ecmascript("answers"), com.sce.runtime.ScriptSource.ecmascript("answers + 1"))
             }
-            event is UndecodablePayloadIsReportedEvent.Note -> {
+            2 -> {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:68 :: waiting :: _transition_2
 
 

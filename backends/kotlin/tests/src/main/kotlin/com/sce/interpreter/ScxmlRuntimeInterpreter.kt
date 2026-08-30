@@ -173,7 +173,11 @@ class ScxmlRuntimeInterpreter private constructor(
         for (trans in info.transitions) {
             if (trans.event.isNotEmpty() && matchEvent(trans.event, event.name)) {
                 val target = resolveState(trans.target) ?: continue
-                return TransitionResult.External(target, state)
+                // NO_TRANSITION: this interpreter has no transition content, so
+                // no dispatch arm may match. It is the truthful value here —
+                // its own per-state position would not be the machine-wide id
+                // a generated dispatch switches on.
+                return TransitionResult.External(target, state, TransitionResult.NO_TRANSITION)
             }
         }
         return TransitionResult.Ignored
@@ -185,7 +189,11 @@ class ScxmlRuntimeInterpreter private constructor(
         for (trans in info.transitions) {
             if (trans.event.isEmpty()) {
                 val target = resolveState(trans.target) ?: continue
-                return TransitionResult.External(target, state)
+                // NO_TRANSITION: this interpreter has no transition content, so
+                // no dispatch arm may match. It is the truthful value here —
+                // its own per-state position would not be the machine-wide id
+                // a generated dispatch switches on.
+                return TransitionResult.External(target, state, TransitionResult.NO_TRANSITION)
             }
         }
         return TransitionResult.Ignored
@@ -205,7 +213,12 @@ class ScxmlRuntimeInterpreter private constructor(
         activeStateIds.remove(state.id)
     }
 
-    override fun executeTransitionActions(source: DynState, event: DynEvent?) {}
+    // This interpreter carries no `<transition>` executable content at all, so
+    // there is no arm for an index to select. It still takes the parameter
+    // rather than being exempted from the signature: an override that could
+    // keep the old two-argument shape is exactly the escape hatch that would
+    // let a real machine go on re-deciding which transition ran.
+    override fun executeTransitionActions(source: DynState, event: DynEvent?, transitionIndex: Int) {}
 
     // W3C SCXML 3.12.1: Event prefix matching
     // "error" matches "error", "error.execution", "error.communication" etc.

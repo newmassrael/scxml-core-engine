@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -142,7 +142,7 @@ class Test207StateMachine(
     private fun processS01(
         event: Test207Event
     ): TransitionResult<Test207State> = when {
-        event is Test207Event.ChildToParent -> TransitionResult.External(Test207State.S02, Test207State.S01)
+        event is Test207Event.ChildToParent -> TransitionResult.External(Test207State.S02, Test207State.S01, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -150,11 +150,11 @@ class Test207StateMachine(
     private fun processS02(
         event: Test207Event
     ): TransitionResult<Test207State> = when {
-        event is Test207Event.Pass -> TransitionResult.External(Test207State.Pass, Test207State.S02)
+        event is Test207Event.Pass -> TransitionResult.External(Test207State.Pass, Test207State.S02, 1)
 
-        event is Test207Event.Fail -> TransitionResult.External(Test207State.Fail, Test207State.S02)
+        event is Test207Event.Fail -> TransitionResult.External(Test207State.Fail, Test207State.S02, 2)
 
-        event is Test207Event.Timeout -> TransitionResult.External(Test207State.Fail, Test207State.S02)
+        event is Test207Event.Timeout -> TransitionResult.External(Test207State.Fail, Test207State.S02, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -246,11 +246,12 @@ class Test207StateMachine(
     // SCE-MAP: test207.scxml:8 :: _machine
     override fun executeTransitionActions(
         source: Test207State,
-        event: Test207Event?
+        event: Test207Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test207State.S01 -> when {
-            event is Test207Event.ChildToParent -> {
+        is Test207State.S01 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test207.scxml:44 :: s01 :: _transition_0
 
 

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c97edcb094613d8138825758fc943d853d23ad4854f2fa7dcf6ff6f58539b674
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -417,11 +417,11 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processAbsentPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("guard !== 1")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize, EmptyFinalizeUpdatesTheLocationState.AbsentPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("guard !== 1")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 0)
 
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, EmptyFinalizeUpdatesTheLocationState.AbsentPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 1)
 
-        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailAbsentChildSilent, EmptyFinalizeUpdatesTheLocationState.AbsentPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailAbsentChildSilent, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -429,11 +429,11 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processEmptyPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("tally === 7")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.AbsentPhase, EmptyFinalizeUpdatesTheLocationState.EmptyPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("tally === 7")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.AbsentPhase, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 3)
 
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailNotUpdated, EmptyFinalizeUpdatesTheLocationState.EmptyPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailNotUpdated, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 4)
 
-        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailEmptyChildSilent, EmptyFinalizeUpdatesTheLocationState.EmptyPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailEmptyChildSilent, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -441,11 +441,11 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     private fun processUnmatchedPhase(
         event: EmptyFinalizeUpdatesTheLocationEvent
     ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("keeper !== 3")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("keeper !== 3")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 6)
 
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.Pass, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.Pass, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 7)
 
-        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedChildSilent, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase)
+        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedChildSilent, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 8)
 
         else -> TransitionResult.Ignored
     }
@@ -662,7 +662,8 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     // SCE-MAP: empty_finalize_updates_the_location.scxml:52 :: _machine
     override fun executeTransitionActions(
         source: EmptyFinalizeUpdatesTheLocationState,
-        event: EmptyFinalizeUpdatesTheLocationEvent?
+        event: EmptyFinalizeUpdatesTheLocationEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 09b7454cf9165bde8e92b3225905fad8bae3b40d103c1bd2ce5da264bfe36345
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -403,7 +403,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     private fun processJudging(
         event: ParallelSelfTransitionKeepsItsLeafEvent
     ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> = when {
-        event is ParallelSelfTransitionKeepsItsLeafEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("n == 1 && m == 2")) -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Settled, ParallelSelfTransitionKeepsItsLeafState.Judging)
+        event is ParallelSelfTransitionKeepsItsLeafEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("n == 1 && m == 2")) -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Settled, ParallelSelfTransitionKeepsItsLeafState.Judging, 0)
 
         else -> TransitionResult.Ignored
     }
@@ -411,7 +411,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     private fun processWithin(
         event: ParallelSelfTransitionKeepsItsLeafEvent
     ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> = when {
-        event is ParallelSelfTransitionKeepsItsLeafEvent.E -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Within, ParallelSelfTransitionKeepsItsLeafState.Within)
+        event is ParallelSelfTransitionKeepsItsLeafEvent.E -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Within, ParallelSelfTransitionKeepsItsLeafState.Within, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -419,7 +419,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     private fun processWorking(
         event: ParallelSelfTransitionKeepsItsLeafEvent
     ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> = when {
-        event is ParallelSelfTransitionKeepsItsLeafEvent.E -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Judging, ParallelSelfTransitionKeepsItsLeafState.Working)
+        event is ParallelSelfTransitionKeepsItsLeafEvent.E -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Judging, ParallelSelfTransitionKeepsItsLeafState.Working, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -571,11 +571,12 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
     // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:53 :: _machine
     override fun executeTransitionActions(
         source: ParallelSelfTransitionKeepsItsLeafState,
-        event: ParallelSelfTransitionKeepsItsLeafEvent?
+        event: ParallelSelfTransitionKeepsItsLeafEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is ParallelSelfTransitionKeepsItsLeafState.Within -> when {
-            event is ParallelSelfTransitionKeepsItsLeafEvent.E -> {
+        is ParallelSelfTransitionKeepsItsLeafState.Within -> when (transitionIndex) {
+            1 -> {
                 // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:73 :: within :: _transition_0
 
 
@@ -583,8 +584,8 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
             }
             else -> {}
         }
-        is ParallelSelfTransitionKeepsItsLeafState.Working -> when {
-            event is ParallelSelfTransitionKeepsItsLeafEvent.E -> {
+        is ParallelSelfTransitionKeepsItsLeafState.Working -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:86 :: working :: _transition_0
 
 

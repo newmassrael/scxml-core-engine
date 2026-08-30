@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 387554cf9d8d5415c8347a9554c4bb2db1133a43787a7fb935ba3f3f9103b433
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -357,16 +357,16 @@ class InvokeParamErrorStartsTheChildStateMachine(
         event: InvokeParamErrorStartsTheChildEvent
     ): TransitionResult<InvokeParamErrorStartsTheChildState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InvokeParamErrorStartsTheChildEvent.Error.Execution -> TransitionResult.Internal
-        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawParamError !== 1")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailNoParamError, InvokeParamErrorStartsTheChildState.ParamPhase)
+        event is InvokeParamErrorStartsTheChildEvent.Error.Execution -> TransitionResult.Internal(0)
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawParamError !== 1")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailNoParamError, InvokeParamErrorStartsTheChildState.ParamPhase, 1)
 
-        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.kept !== 'here'")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailGoodParamLost, InvokeParamErrorStartsTheChildState.ParamPhase)
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.kept !== 'here'")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailGoodParamLost, InvokeParamErrorStartsTheChildState.ParamPhase, 2)
 
-        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.brokenPlaceholder === true")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded, InvokeParamErrorStartsTheChildState.ParamPhase)
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.brokenPlaceholder === true")) -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailBrokenParamSeeded, InvokeParamErrorStartsTheChildState.ParamPhase, 3)
 
-        event is InvokeParamErrorStartsTheChildEvent.ChildUp -> TransitionResult.External(InvokeParamErrorStartsTheChildState.Pass, InvokeParamErrorStartsTheChildState.ParamPhase)
+        event is InvokeParamErrorStartsTheChildEvent.ChildUp -> TransitionResult.External(InvokeParamErrorStartsTheChildState.Pass, InvokeParamErrorStartsTheChildState.ParamPhase, 4)
 
-        event is InvokeParamErrorStartsTheChildEvent.Timeout -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailInvokeNotStarted, InvokeParamErrorStartsTheChildState.ParamPhase)
+        event is InvokeParamErrorStartsTheChildEvent.Timeout -> TransitionResult.External(InvokeParamErrorStartsTheChildState.FailInvokeNotStarted, InvokeParamErrorStartsTheChildState.ParamPhase, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -521,11 +521,12 @@ class InvokeParamErrorStartsTheChildStateMachine(
     // SCE-MAP: invoke_param_error_starts_the_child.scxml:52 :: _machine
     override fun executeTransitionActions(
         source: InvokeParamErrorStartsTheChildState,
-        event: InvokeParamErrorStartsTheChildEvent?
+        event: InvokeParamErrorStartsTheChildEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is InvokeParamErrorStartsTheChildState.ParamPhase -> when {
-            event is InvokeParamErrorStartsTheChildEvent.Error.Execution -> {
+        is InvokeParamErrorStartsTheChildState.ParamPhase -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:117 :: paramPhase :: _transition_0
 
 

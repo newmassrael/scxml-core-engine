@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -377,9 +377,9 @@ class SessionIdsAreDistinctStateMachine(
     private fun processOneSeen(
         event: SessionIdsAreDistinctEvent
     ): TransitionResult<SessionIdsAreDistinctState> = when {
-        event is SessionIdsAreDistinctEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.sid != firstSid")) -> TransitionResult.External(SessionIdsAreDistinctState.Pass, SessionIdsAreDistinctState.OneSeen)
+        event is SessionIdsAreDistinctEvent.FromChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data.sid != firstSid")) -> TransitionResult.External(SessionIdsAreDistinctState.Pass, SessionIdsAreDistinctState.OneSeen, 0)
 
-        event is SessionIdsAreDistinctEvent.FromChild -> TransitionResult.External(SessionIdsAreDistinctState.Fail, SessionIdsAreDistinctState.OneSeen)
+        event is SessionIdsAreDistinctEvent.FromChild -> TransitionResult.External(SessionIdsAreDistinctState.Fail, SessionIdsAreDistinctState.OneSeen, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -387,7 +387,7 @@ class SessionIdsAreDistinctStateMachine(
     private fun processWaiting(
         event: SessionIdsAreDistinctEvent
     ): TransitionResult<SessionIdsAreDistinctState> = when {
-        event is SessionIdsAreDistinctEvent.FromChild -> TransitionResult.External(SessionIdsAreDistinctState.OneSeen, SessionIdsAreDistinctState.Waiting)
+        event is SessionIdsAreDistinctEvent.FromChild -> TransitionResult.External(SessionIdsAreDistinctState.OneSeen, SessionIdsAreDistinctState.Waiting, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -488,11 +488,12 @@ class SessionIdsAreDistinctStateMachine(
     // SCE-MAP: session_ids_are_distinct.scxml:38 :: _machine
     override fun executeTransitionActions(
         source: SessionIdsAreDistinctState,
-        event: SessionIdsAreDistinctEvent?
+        event: SessionIdsAreDistinctEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is SessionIdsAreDistinctState.Waiting -> when {
-            event is SessionIdsAreDistinctEvent.FromChild -> {
+        is SessionIdsAreDistinctState.Waiting -> when (transitionIndex) {
+            2 -> {
                 // SCE-MAP: session_ids_are_distinct.scxml:101 :: waiting :: _transition_0
 
 

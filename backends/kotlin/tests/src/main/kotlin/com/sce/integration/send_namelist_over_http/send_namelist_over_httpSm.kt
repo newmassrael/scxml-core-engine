@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4ee53cfb47d1fc9305452f53c97089f2edfbc8978dab68d1b49e898f5eb29582
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -401,9 +401,9 @@ class SendNamelistOverHttpStateMachine(
 
     private fun processNullMapVerdict(
     ): TransitionResult<SendNamelistOverHttpState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("echoed == 2")) -> TransitionResult.External(SendNamelistOverHttpState.DiscardPhase, SendNamelistOverHttpState.MapVerdict)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("echoed == 2")) -> TransitionResult.External(SendNamelistOverHttpState.DiscardPhase, SendNamelistOverHttpState.MapVerdict, 6)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(SendNamelistOverHttpState.FailNamelistNotPosted, SendNamelistOverHttpState.MapVerdict)
+        else -> TransitionResult.External(SendNamelistOverHttpState.FailNamelistNotPosted, SendNamelistOverHttpState.MapVerdict, 7)
     }
 
     // --- Per-State Event Handlers ---
@@ -412,12 +412,12 @@ class SendNamelistOverHttpStateMachine(
         event: SendNamelistOverHttpEvent
     ): TransitionResult<SendNamelistOverHttpState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is SendNamelistOverHttpEvent.Error.Execution -> TransitionResult.Internal
-        event is SendNamelistOverHttpEvent.ShouldNotArrive -> TransitionResult.External(SendNamelistOverHttpState.FailMessageNotDiscarded, SendNamelistOverHttpState.DiscardPhase)
+        event is SendNamelistOverHttpEvent.Error.Execution -> TransitionResult.Internal(0)
+        event is SendNamelistOverHttpEvent.ShouldNotArrive -> TransitionResult.External(SendNamelistOverHttpState.FailMessageNotDiscarded, SendNamelistOverHttpState.DiscardPhase, 1)
 
-        event is SendNamelistOverHttpEvent.TimeoutDiscard && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawNamelistError !== 1")) -> TransitionResult.External(SendNamelistOverHttpState.FailNoNamelistError, SendNamelistOverHttpState.DiscardPhase)
+        event is SendNamelistOverHttpEvent.TimeoutDiscard && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("sawNamelistError !== 1")) -> TransitionResult.External(SendNamelistOverHttpState.FailNoNamelistError, SendNamelistOverHttpState.DiscardPhase, 2)
 
-        event is SendNamelistOverHttpEvent.TimeoutDiscard -> TransitionResult.External(SendNamelistOverHttpState.Pass, SendNamelistOverHttpState.DiscardPhase)
+        event is SendNamelistOverHttpEvent.TimeoutDiscard -> TransitionResult.External(SendNamelistOverHttpState.Pass, SendNamelistOverHttpState.DiscardPhase, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -425,9 +425,9 @@ class SendNamelistOverHttpStateMachine(
     private fun processMapPhase(
         event: SendNamelistOverHttpEvent
     ): TransitionResult<SendNamelistOverHttpState> = when {
-        event is SendNamelistOverHttpEvent.Mapped -> TransitionResult.External(SendNamelistOverHttpState.MapVerdict, SendNamelistOverHttpState.MapPhase)
+        event is SendNamelistOverHttpEvent.Mapped -> TransitionResult.External(SendNamelistOverHttpState.MapVerdict, SendNamelistOverHttpState.MapPhase, 4)
 
-        event is SendNamelistOverHttpEvent.TimeoutMap -> TransitionResult.External(SendNamelistOverHttpState.FailNamelistNeverArrived, SendNamelistOverHttpState.MapPhase)
+        event is SendNamelistOverHttpEvent.TimeoutMap -> TransitionResult.External(SendNamelistOverHttpState.FailNamelistNeverArrived, SendNamelistOverHttpState.MapPhase, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -651,11 +651,12 @@ class SendNamelistOverHttpStateMachine(
     // SCE-MAP: send_namelist_over_http.scxml:51 :: _machine
     override fun executeTransitionActions(
         source: SendNamelistOverHttpState,
-        event: SendNamelistOverHttpEvent?
+        event: SendNamelistOverHttpEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is SendNamelistOverHttpState.DiscardPhase -> when {
-            event is SendNamelistOverHttpEvent.Error.Execution -> {
+        is SendNamelistOverHttpState.DiscardPhase -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: send_namelist_over_http.scxml:106 :: discardPhase :: _transition_0
 
 
@@ -663,8 +664,8 @@ class SendNamelistOverHttpStateMachine(
             }
             else -> {}
         }
-        is SendNamelistOverHttpState.MapPhase -> when {
-            event is SendNamelistOverHttpEvent.Mapped -> {
+        is SendNamelistOverHttpState.MapPhase -> when (transitionIndex) {
+            4 -> {
                 // SCE-MAP: send_namelist_over_http.scxml:82 :: mapPhase :: _transition_0
 
 

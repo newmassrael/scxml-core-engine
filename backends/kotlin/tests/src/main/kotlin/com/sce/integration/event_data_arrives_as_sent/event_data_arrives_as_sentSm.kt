@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8e0f0b7b552dfbb89b9083db177a216e77a3534d3f6112690f84145daf0386d4
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -351,9 +351,9 @@ class EventDataArrivesAsSentStateMachine(
     private fun processDocumented(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> TransitionResult.External(EventDataArrivesAsSentState.Opening, EventDataArrivesAsSentState.Documented)
+        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'")) -> TransitionResult.External(EventDataArrivesAsSentState.Opening, EventDataArrivesAsSentState.Documented, 0)
 
-        event is EventDataArrivesAsSentEvent.Doc -> TransitionResult.External(EventDataArrivesAsSentState.Flattened, EventDataArrivesAsSentState.Documented)
+        event is EventDataArrivesAsSentEvent.Doc -> TransitionResult.External(EventDataArrivesAsSentState.Flattened, EventDataArrivesAsSentState.Documented, 1)
 
         else -> TransitionResult.Ignored
     }
@@ -361,9 +361,9 @@ class EventDataArrivesAsSentStateMachine(
     private fun processHeard(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 'hold the line'")) -> TransitionResult.External(EventDataArrivesAsSentState.Quoted, EventDataArrivesAsSentState.Heard)
+        event is EventDataArrivesAsSentEvent.Note && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === 'hold the line'")) -> TransitionResult.External(EventDataArrivesAsSentState.Quoted, EventDataArrivesAsSentState.Heard, 2)
 
-        event is EventDataArrivesAsSentEvent.Note -> TransitionResult.External(EventDataArrivesAsSentState.Garbled, EventDataArrivesAsSentState.Heard)
+        event is EventDataArrivesAsSentEvent.Note -> TransitionResult.External(EventDataArrivesAsSentState.Garbled, EventDataArrivesAsSentState.Heard, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -371,9 +371,9 @@ class EventDataArrivesAsSentStateMachine(
     private fun processOpening(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '<assign> to detail failed'")) -> TransitionResult.External(EventDataArrivesAsSentState.Settled, EventDataArrivesAsSentState.Opening)
+        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '<assign> to detail failed'")) -> TransitionResult.External(EventDataArrivesAsSentState.Settled, EventDataArrivesAsSentState.Opening, 4)
 
-        event is EventDataArrivesAsSentEvent.Broken -> TransitionResult.External(EventDataArrivesAsSentState.Swallowed, EventDataArrivesAsSentState.Opening)
+        event is EventDataArrivesAsSentEvent.Broken -> TransitionResult.External(EventDataArrivesAsSentState.Swallowed, EventDataArrivesAsSentState.Opening, 5)
 
         else -> TransitionResult.Ignored
     }
@@ -381,9 +381,9 @@ class EventDataArrivesAsSentStateMachine(
     private fun processQuoted(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '2 + 3'")) -> TransitionResult.External(EventDataArrivesAsSentState.Documented, EventDataArrivesAsSentState.Quoted)
+        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data === '2 + 3'")) -> TransitionResult.External(EventDataArrivesAsSentState.Documented, EventDataArrivesAsSentState.Quoted, 6)
 
-        event is EventDataArrivesAsSentEvent.Arith -> TransitionResult.External(EventDataArrivesAsSentState.Evaluated, EventDataArrivesAsSentState.Quoted)
+        event is EventDataArrivesAsSentEvent.Arith -> TransitionResult.External(EventDataArrivesAsSentState.Evaluated, EventDataArrivesAsSentState.Quoted, 7)
 
         else -> TransitionResult.Ignored
     }
@@ -391,9 +391,9 @@ class EventDataArrivesAsSentStateMachine(
     private fun processWaiting(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> TransitionResult.External(EventDataArrivesAsSentState.Heard, EventDataArrivesAsSentState.Waiting)
+        event is EventDataArrivesAsSentEvent.Payload && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("_event.data && _event.data.milestone === 'refined' && _event.data.turns === 2")) -> TransitionResult.External(EventDataArrivesAsSentState.Heard, EventDataArrivesAsSentState.Waiting, 8)
 
-        event is EventDataArrivesAsSentEvent.Payload -> TransitionResult.External(EventDataArrivesAsSentState.Mangled, EventDataArrivesAsSentState.Waiting)
+        event is EventDataArrivesAsSentEvent.Payload -> TransitionResult.External(EventDataArrivesAsSentState.Mangled, EventDataArrivesAsSentState.Waiting, 9)
 
         else -> TransitionResult.Ignored
     }
@@ -530,7 +530,8 @@ class EventDataArrivesAsSentStateMachine(
     // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     override fun executeTransitionActions(
         source: EventDataArrivesAsSentState,
-        event: EventDataArrivesAsSentEvent?
+        event: EventDataArrivesAsSentEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}

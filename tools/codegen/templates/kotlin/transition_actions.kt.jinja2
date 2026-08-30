@@ -14,18 +14,32 @@
     Uses actions/_render.kt.jinja2 for action dispatch (shared with entry_exit_actions).
     Three-way condition pattern: In() predicate | safeEvaluateGuard() | static Kotlin.
 #}
-{# --- Condition rendering macro (same as process_event) --- #}
-{% macro render_cond(trans) -%}
-{% if trans.is_pure_in_predicate -%}
-{{ trans.cond_kt }}
-{%- elif trans.is_kt_condition -%}
-{{ trans.cond_kt }}
-{%- elif model.needs_script_engine and trans.cond and not trans.is_cpp_condition -%}
-safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
-{%- elif trans.cond and not trans.is_cpp_condition -%}
-{{ 'true' if trans.cond_constant else 'false' }}
-{%- endif -%}
-{%- endmacro %}
+{#
+    ⚠⚠ THIS FILE USED TO RE-EVALUATE THE GUARD, and that was the defect.
+
+    Every arm below was once keyed on the transition's `cond` and its event
+    pattern — the same `cond` the SELECTION in `process_event.kt.jinja2` had
+    already evaluated to choose the transition. For a pure guard that is only
+    wasteful. For a guard with a SIDE EFFECT it is wrong, and measured wrong:
+    on 2026-08-30 `cond="++v == 2"` was evaluated by the selection (`++v` -> 2,
+    the guard holds, the transition is taken) and then evaluated AGAIN here
+    (`++v` -> 3, the guard does not hold), so the machine took its transition
+    and ran the OTHER arm's content. `ecma262-lowered-kotlin` found it; no W3C
+    fixture guards on a side effect, and no engine-level test compiles a
+    machine, so nothing else could.
+
+    The arms are now keyed on `transitionIndex` — the selection's own answer,
+    carried on the `TransitionResult` and handed back by the engine. C++, Rust,
+    Go and Python have all dispatched this way from the start; Kotlin was the
+    backend that did not.
+
+    ⚠ The number is READ from `machine_transition_index`, injected by
+    `kotlin::compute_effective_transitions` from the single assignment in
+    `kotlin::assign_machine_transition_ids`. Not counted here: this template
+    walks a state's EFFECTIVE transitions (its own, then every ancestor's) and
+    the selection walks a state's OWN transitions, so two local counters would
+    be two enumerations of two different populations.
+#}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
@@ -36,7 +50,8 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
     {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
     override fun executeTransitionActions(
         source: {{ machine_name }}State,
-        event: {{ machine_name }}Event?
+        event: {{ machine_name }}Event?,
+        transitionIndex: Int
     ) {
         when (source) {
 {% for state_id in model.states | sort %}
@@ -48,38 +63,17 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {% endif %}
 {% endfor %}
 {% if ns.has_transition_actions %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when {
-{# --- Event-based transition actions --- #}
+{# ONE loop where there used to be two. The event-based and eventless arms
+   were separate only because each had to restate its own selection criteria —
+   an event pattern here, `event == null` there, and the `cond` in both. Keyed
+   on the transition the selection actually chose, a transition's content is a
+   transition's content and the distinction disappears. #}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when (transitionIndex) {
 {% for trans in eff_transitions %}
-{% if trans.actions and trans.event %}
-{% if trans.event == '*' %}
-            event != null -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
+{% if trans.actions %}
+            {{ trans.machine_transition_index }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% if trans.source_location %}
                 {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
-{% endif %}
-{% elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
-            ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
-{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
-{% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
-{% endif %}
-{% else %}
-{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
-{% set resolved_event = trans.prefix_matching_events[0] %}
-{% else %}
-{% set resolved_event = trans.event %}
-{% endif %}
-{% if trans.cond %}
-            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
-{% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
-{% endif %}
-{% else %}
-            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
-{% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
-{% endif %}
-{% endif %}
 {% endif %}
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
@@ -90,29 +84,9 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
             }
 {% endif %}
 {% endfor %}
-{# --- Eventless transition actions (event == null) --- #}
-{% for trans in eff_transitions %}
-{% if trans.actions and not trans.event %}
-{% if trans.cond %}
-            event == null && {{ render_cond(trans) }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
-{% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
-{% endif %}
-{% else %}
-            event == null -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
-{% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
-{% endif %}
-{% endif %}
-{% for action in trans.actions %}
-{%- if action.req or action.unresolved %}
-{{ annot.annotation_block(action, "kotlin", "                ") -}}
-{%- endif %}
-{% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-            }
-{% endif %}
-{% endfor %}
+{# `TransitionResult.NO_TRANSITION` lands here, and so does any state whose
+   selected transition carries no content. Both are "nothing to run", which is
+   what an empty arm says. #}
             else -> {}
         }
 {% endif %}

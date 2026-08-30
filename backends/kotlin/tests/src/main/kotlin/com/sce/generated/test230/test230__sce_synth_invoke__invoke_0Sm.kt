@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -302,10 +302,10 @@ class Test230SceSynthInvokeInvoke0StateMachine(
     private fun processSub0(
         event: Test230SceSynthInvokeInvoke0Event
     ): TransitionResult<Test230SceSynthInvokeInvoke0State> = when {
-        event is Test230SceSynthInvokeInvoke0Event.ChildToParent -> TransitionResult.External(Test230SceSynthInvokeInvoke0State.SubFinal, Test230SceSynthInvokeInvoke0State.Sub0)
+        event is Test230SceSynthInvokeInvoke0Event.ChildToParent -> TransitionResult.External(Test230SceSynthInvokeInvoke0State.SubFinal, Test230SceSynthInvokeInvoke0State.Sub0, 0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test230SceSynthInvokeInvoke0State.SubFinal, Test230SceSynthInvokeInvoke0State.Sub0)
+        else -> TransitionResult.External(Test230SceSynthInvokeInvoke0State.SubFinal, Test230SceSynthInvokeInvoke0State.Sub0, 1)
     }
 
 
@@ -356,11 +356,12 @@ class Test230SceSynthInvokeInvoke0StateMachine(
     // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test230SceSynthInvokeInvoke0State,
-        event: Test230SceSynthInvokeInvoke0Event?
+        event: Test230SceSynthInvokeInvoke0Event?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is Test230SceSynthInvokeInvoke0State.Sub0 -> when {
-            event is Test230SceSynthInvokeInvoke0Event.ChildToParent -> {
+        is Test230SceSynthInvokeInvoke0State.Sub0 -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:9 :: sub0 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -124,12 +124,12 @@ class AutoforwardDoneInvokeStateMachine(
         event: AutoforwardDoneInvokeEvent
     ): TransitionResult<AutoforwardDoneInvokeState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is AutoforwardDoneInvokeEvent.Done.Invoke.InvShort -> TransitionResult.Internal
-        event is AutoforwardDoneInvokeEvent.SawPlatform -> TransitionResult.External(AutoforwardDoneInvokeState.Pass, AutoforwardDoneInvokeState.Phase)
+        event is AutoforwardDoneInvokeEvent.Done.Invoke.InvShort -> TransitionResult.Internal(0)
+        event is AutoforwardDoneInvokeEvent.SawPlatform -> TransitionResult.External(AutoforwardDoneInvokeState.Pass, AutoforwardDoneInvokeState.Phase, 1)
 
-        event is AutoforwardDoneInvokeEvent.SawProbeOnly -> TransitionResult.External(AutoforwardDoneInvokeState.Fail, AutoforwardDoneInvokeState.Phase)
+        event is AutoforwardDoneInvokeEvent.SawProbeOnly -> TransitionResult.External(AutoforwardDoneInvokeState.Fail, AutoforwardDoneInvokeState.Phase, 2)
 
-        event is AutoforwardDoneInvokeEvent.Error.Execution -> TransitionResult.External(AutoforwardDoneInvokeState.Fail, AutoforwardDoneInvokeState.Phase)
+        event is AutoforwardDoneInvokeEvent.Error.Execution -> TransitionResult.External(AutoforwardDoneInvokeState.Fail, AutoforwardDoneInvokeState.Phase, 3)
 
         else -> TransitionResult.Ignored
     }
@@ -212,11 +212,12 @@ class AutoforwardDoneInvokeStateMachine(
     // SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDoneInvokeState,
-        event: AutoforwardDoneInvokeEvent?
+        event: AutoforwardDoneInvokeEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is AutoforwardDoneInvokeState.Phase -> when {
-            event is AutoforwardDoneInvokeEvent.Done.Invoke.InvShort -> {
+        is AutoforwardDoneInvokeState.Phase -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: autoforward_done_invoke.scxml:84 :: phase :: _transition_0
 
 

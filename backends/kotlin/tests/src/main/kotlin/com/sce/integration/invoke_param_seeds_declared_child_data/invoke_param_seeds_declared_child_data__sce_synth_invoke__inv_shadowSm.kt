@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -352,10 +352,10 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
     private fun processNullReport(
     ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'parent'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'child'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'parent'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report, 0)
+        safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'child'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report, 1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report)
+        else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report, 2)
     }
 
     // --- Per-State Event Handlers ---
@@ -401,25 +401,26 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
     // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState,
-        event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent?
+        event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent?,
+        transitionIndex: Int
     ) {
         when (source) {
-        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'parent'")) -> {
+        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState.Report -> when (transitionIndex) {
+            0 -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:10 :: report :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("seed.ok", "")
             }
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.ecmascript("seen === 'child'")) -> {
+            1 -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:13 :: report :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("seed.shadowed", "")
             }
-            event == null -> {
+            2 -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:16 :: report :: _transition_2
 
 

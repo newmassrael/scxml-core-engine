@@ -1077,14 +1077,30 @@ abstract class StateMachineEngine<S : State, E : Event>(
     abstract fun onExit(state: S)
 
     /**
-     * Execute transition actions for a (source, event) pair.
+     * Execute the executable content of the transition that was SELECTED.
      *
      * §scxml-3.13: Executable content within `<transition>`.
      * Called between onExit(source) and onEntry(target).
      *
+     * ⚠ [transitionIndex] is not a convenience. Without it a generated
+     * dispatch has to re-decide which transition ran by re-evaluating the same
+     * `cond` the selection already evaluated, and a guard with a SIDE EFFECT
+     * then answers differently the second time — measured 2026-08-30 on
+     * `++v == 2`, where the machine took the transition and then executed the
+     * other arm's content. The index is the selection's own answer, carried
+     * forward instead of recomputed.
+     *
+     * ⚠⚠ No default and no two-argument overload, deliberately. An override
+     * that had not been migrated would keep re-deciding and would keep
+     * passing, which is the exact shape of an escape hatch that disables its
+     * own gate; without one, it fails to compile.
+     *
      * @param event null for eventless transitions
+     * @param transitionIndex [TransitionResult.transitionIndex] of the result
+     *        the selection returned, or [TransitionResult.NO_TRANSITION] when
+     *        the caller has no transition content to dispatch
      */
-    abstract fun executeTransitionActions(source: S, event: E?)
+    abstract fun executeTransitionActions(source: S, event: E?, transitionIndex: Int)
 
     // --- State Hierarchy (§scxml-3.3 / §scxml-3.4) ---
 
@@ -3013,8 +3029,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
             when (result) {
                 is TransitionResult.External -> externals.add(source to result)
                 is TransitionResult.InternalToTarget -> {
-                    // Treat internal-with-target like external for parallel batch processing
-                    externals.add(source to TransitionResult.External(result.target, result.transitionSource))
+                    // Treat internal-with-target like external for parallel batch processing.
+                    // The index travels with it: this is a re-wrapping of one
+                    // selected transition, not a new one, and dropping it here
+                    // would leave the batch path re-deciding what the single
+                    // path no longer does.
+                    externals.add(
+                        source to TransitionResult.External(
+                            result.target,
+                            result.transitionSource,
+                            result.transitionIndex,
+                        )
+                    )
                 }
                 is TransitionResult.Internal -> internals.add(source to result)
                 is TransitionResult.Ignored -> {}
@@ -3031,8 +3057,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
 
             // §scxml-D-microstepProcedure, Step 2: Transition actions in document order
-            for ((source, _) in sorted) {
-                executeTransitionActions(source, null)
+            for ((source, result) in sorted) {
+                executeTransitionActions(source, null, result.transitionIndex)
             }
 
             // §scxml-D-microstepProcedure, Step 3: Enter all targets in document order
@@ -3047,8 +3073,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
 
         // Internal transitions: execute actions only (no state change)
-        for ((source, _) in internals) {
-            executeTransitionActions(source, null)
+        for ((source, result) in internals) {
+            executeTransitionActions(source, null, result.transitionIndex)
         }
     }
 
@@ -3326,21 +3352,26 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // Measured 2026-08-25 on tests/integration/parallel_region_root_external_domain.scxml:
         // `hold` (internal, written on the region root `drive`) left `watch`
         // holding both `alive` and `rebuilding`.
-        val externals = mutableListOf<Triple<S, S, S?>>()
+        // A named record rather than a `Triple` grown to four, because the
+        // fourth field is the one whose loss is silent: `index` is what the
+        // action dispatch switches on, and a positional `it.fourth` read at the
+        // wrong place would run some other transition's content rather than
+        // fail to compile.
+        val externals = mutableListOf<BatchedTransition<S>>()
         val internals = mutableListOf<Pair<S, TransitionResult<S>>>()
         for ((source, result) in transitions) {
             when (result) {
                 is TransitionResult.External ->
-                    externals.add(Triple(source, result.target, externalTransitionDomain(result.transitionSource ?: source, result.target)))
+                    externals.add(BatchedTransition(source, result.target, externalTransitionDomain(result.transitionSource ?: source, result.target), result.transitionIndex))
                 is TransitionResult.InternalToTarget ->
-                    externals.add(Triple(source, result.target, result.transitionSource ?: source))
+                    externals.add(BatchedTransition(source, result.target, result.transitionSource ?: source, result.transitionIndex))
                 is TransitionResult.Internal -> internals.add(source to result)
                 is TransitionResult.Ignored -> {}
             }
         }
 
         if (externals.isNotEmpty()) {
-            val sorted = externals.sortedBy { documentOrderOf(it.first) }
+            val sorted = externals.sortedBy { documentOrderOf(it.source) }
 
             // §scxml-3.11: Capture active states before exit for history recording
             preTransitionActiveStates = activeStateIds.toSet()
@@ -3350,7 +3381,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // then union them. A state is in the exit set if it is a descendant
             // of the transition's domain AND it's currently active.
             val exitSet = mutableSetOf<String>()
-            for ((_, _, domain) in sorted) {
+            for (domain in sorted.map { it.domain }) {
                 // Add all active proper descendants of the domain to the exit
                 // set. A null domain is the `<scxml>` element — the whole active
                 // configuration goes.
@@ -3378,13 +3409,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
 
             // Step 2: Transition actions in document order
-            for ((source, _, _) in sorted) {
-                executeTransitionActions(source, event)
+            for (batched in sorted) {
+                executeTransitionActions(batched.source, event, batched.transitionIndex)
             }
 
             // Step 3: Enter all targets in document order
             // C++ executeMicrostep pattern: buildEntryChain + parallel region re-entry
-            for ((_, target, _) in sorted) {
+            for (target in sorted.map { it.target }) {
                 val ancestorsToEnter = mutableListOf<S>()
                 var parallelAncToReenter: S? = null
                 var anc = parentOf(target)
@@ -3423,13 +3454,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
 
             _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
-                ?: resolveLeafState(sorted.last().second)
+                ?: resolveLeafState(sorted.last().target)
             flushPendingFinalState()
         }
 
         // Internal transitions: execute actions only
-        for ((source, _) in internals) {
-            executeTransitionActions(source, event)
+        for ((source, result) in internals) {
+            executeTransitionActions(source, event, result.transitionIndex)
         }
     }
 
@@ -3487,7 +3518,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // §scxml-3.13: Exit -> Transition Actions -> Entry
                 // When transitionSource is set, use it for LCCA in the parallel path
                 exitHierarchy(source, target, result.transitionSource)
-                executeTransitionActions(source, event)
+                executeTransitionActions(source, event, result.transitionIndex)
 
                 // §scxml-3.13: Enter ancestors on path from LCCA to target
                 // C++ buildEntryChainFromParent: [ancestor1, ancestor2, ..., target]
@@ -3592,7 +3623,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     }
                 }
 
-                executeTransitionActions(source, event)
+                executeTransitionActions(source, event, result.transitionIndex)
                 onEntry(target)
 
                 // §scxml-3.3: Enter initial children (same as External case)
@@ -3611,7 +3642,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
             is TransitionResult.Internal -> {
                 // §scxml-3.13: type="internal" — actions only (targetless)
-                executeTransitionActions(source, event)
+                executeTransitionActions(source, event, result.transitionIndex)
             }
             is TransitionResult.Ignored -> {
                 // §scxml-3.12: No matching transition, discard event
@@ -3716,3 +3747,30 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var sequenceCounter = 0L
     private fun nextTimestamp(): Long = sequenceCounter++
 }
+
+/**
+ * One state-changing transition inside a parallel microstep batch.
+ *
+ * §scxml-D-microstepProcedure runs exit, transition content and entry as three
+ * passes over the SAME batch, so each pass needs what the selection decided
+ * rather than what it can re-derive.
+ *
+ * [domain] travels with the transition because §scxml-D-getTransitionDomain
+ * cannot answer it from source and target alone: for an internal transition
+ * whose target descends from its compound source, the domain IS that source.
+ *
+ * [transitionIndex] travels with it for the same reason one step further on —
+ * the content pass has to run the content of the transition that was SELECTED,
+ * and the only alternative is re-evaluating its `cond`, which is wrong for a
+ * guard with a side effect.
+ *
+ * A named record rather than a four-field tuple: both extra fields are read
+ * positionally nowhere, so getting one wrong is a compile error rather than a
+ * machine that quietly runs another transition's content.
+ */
+private data class BatchedTransition<S>(
+    val source: S,
+    val target: S,
+    val domain: S?,
+    val transitionIndex: Int,
+)

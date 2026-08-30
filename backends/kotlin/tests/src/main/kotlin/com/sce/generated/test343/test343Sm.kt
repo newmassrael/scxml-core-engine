@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d849bd6da318bf2e0e2ded479e492140d12b6fd36b79eec0dafdecf30c12263b
+// template-hash: 057f3064c2c620977191e86f67c1d505edec850a0d81b50b27d4b101952af703
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -351,7 +351,7 @@ class Test343StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test343State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test343State.S02, Test343State.S01)
+        else -> TransitionResult.External(Test343State.S02, Test343State.S01, 3)
     }
 
     // --- Per-State Event Handlers ---
@@ -359,11 +359,11 @@ class Test343StateMachine(
     private fun processS0(
         event: Test343Event
     ): TransitionResult<Test343State> = when {
-        event is Test343Event.Error.Execution -> TransitionResult.External(Test343State.S1, Test343State.S0)
+        event is Test343Event.Error.Execution -> TransitionResult.External(Test343State.S1, Test343State.S0, 0)
 
-        event is Test343Event.Done.State.S0 -> TransitionResult.External(Test343State.Fail, Test343State.S0)
+        event is Test343Event.Done.State.S0 -> TransitionResult.External(Test343State.Fail, Test343State.S0, 1)
 
-        event is Test343Event.Done.State.S0 -> TransitionResult.External(Test343State.Fail, Test343State.S0)
+        event is Test343Event.Done.State.S0 -> TransitionResult.External(Test343State.Fail, Test343State.S0, 2)
 
         else -> TransitionResult.Ignored
     }
@@ -371,10 +371,10 @@ class Test343StateMachine(
     private fun processS1(
         event: Test343Event
     ): TransitionResult<Test343State> = when {
-        event is Test343Event.Done.State.S0 -> TransitionResult.External(Test343State.Pass, Test343State.S1)
+        event is Test343Event.Done.State.S0 -> TransitionResult.External(Test343State.Pass, Test343State.S1, 4)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test343State.Fail, Test343State.S1)
+        else -> TransitionResult.External(Test343State.Fail, Test343State.S1, 5)
     }
 
 
@@ -480,7 +480,8 @@ class Test343StateMachine(
     // SCE-MAP: test343.scxml:4 :: _machine
     override fun executeTransitionActions(
         source: Test343State,
-        event: Test343Event?
+        event: Test343Event?,
+        transitionIndex: Int
     ) {
         when (source) {
         else -> {}
