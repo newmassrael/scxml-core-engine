@@ -93,9 +93,15 @@ edit("tools/codegen/templates/actions/send.jinja2",
      '''    "'{{ action.content | escape_cpp }}'",''')
 PY
 
+# Re-aimed 2026-08-30, for the reason the C++ twin was re-aimed two days
+# earlier and now on the same site shape: Kotlin's read form crossed the
+# language seam in `e99c50a4e6`, so the binding names `to_script_source_data_content`
+# and the value it builds is a `ScriptSource`, not a quoted literal. The
+# mutation still lands the UNREAD spelling — a bare quoted string, wrapped so
+# the reading is thrown away — which is what `unread_form` decides on.
 mutation_case "kotlin quotes the send content again" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
-     """{% set content_data = 'evaluateSendContent("' ~ (action.content | to_author_data_content | escape_kotlin) ~ '")' %}""",
+     """{% set content_data = 'evaluateSendContent(' ~ (action.content | to_script_source_data_content) ~ ')' %}""",
      """{% set content_data = 'evaluateSendContent("\\'' ~ (action.content | escape_kotlin) ~ '\\'")' %}""")
 PY
 
@@ -191,8 +197,12 @@ edit("tools/codegen/templates/actions/assign.jinja2",
      '''    ::SCE::ScriptSource expr = "'{{ action.content | replace('"', '\\\\"') | replace("'", "\\\\'") }}'";''')
 PY
 
+# Re-aimed 2026-08-30 with the send case above and for the same reason: both
+# arguments cross the seam now (`to_script_source_location`,
+# `to_script_source_assign_content`). The restored spelling quotes the value
+# back into a string literal, which is the reading this file exists to refuse.
 mutation_case "kotlin quotes an assign's inline text again" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/assign.kt.jinja2",
-     '''            executeAssign("{{ action.location | escape_kotlin }}", "{{ action.content | to_author_assign_content | escape_kotlin }}")''',
-     '''            executeAssign("{{ action.location | escape_kotlin }}", "'{{ action.content | escape_kotlin }}'")''')
+     '''            executeAssign({{ action.location | to_script_source_location }}, {{ action.content | to_script_source_assign_content }})''',
+     '''            executeAssign({{ action.location | to_script_source_location }}, "'{{ action.content | escape_kotlin }}'")''')
 PY

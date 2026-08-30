@@ -53,9 +53,11 @@ mutation_runtime_targets tests/ecmascript/kotlin_lua_divergences.json docs/SCE_L
 # tally cases below give: an entry that moves must not turn this into an
 # INCONCLUSIVE.
 #
-# ⚠⚠ Retargeted 2026-08-30, when the list reached ZERO entries. The three
-# cases below used to mutate an existing entry, and an empty list left them
-# with no subject at all — `raise SystemExit` reports that honestly, but an
+# ⚠⚠ Retargeted 2026-08-30, when the list reached ZERO entries. The
+# entry-mutating cases — the ones named for what an entry may claim, up to and
+# including "an entry names a path shape no measurement can produce" — used to
+# mutate an existing entry, and an empty list left them with no subject at all
+# — `raise SystemExit` reports that honestly, but an
 # INCONCLUSIVE case buys nothing, and empty is the state this list is expected
 # to stay in. So each now works either way: it mutates an entry if one is
 # there, and otherwise ADDS one that says the wrong thing about a real case of
