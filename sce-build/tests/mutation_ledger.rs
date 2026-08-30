@@ -190,6 +190,61 @@ fn a_recorded_round_names_the_tree_the_status_and_every_case() {
 }
 
 #[test]
+fn a_multi_line_detail_does_not_cost_the_round_its_record() {
+    // An INCONCLUSIVE carries the compiler's own refusal, which is a
+    // paragraph, and one row of this ledger is one LINE. The two met on
+    // 2026-08-30: a six-case round with two refusals wrote rows whose first
+    // line held two separators instead of three, the reader raised `not enough
+    // values to unpack (expected 4, got 3)`, and ALL SIX verdicts were lost —
+    // `recorded:` printed an empty path under a round that had just measured
+    // something. The terminal still had the verdicts; the record, which is the
+    // part a later session reads, had nothing.
+    let home = tempdir().expect("temp home");
+    let refusal = "mutated tree does not compile; the tests never ran\n\
+                   error: unused variable: `assigned`\n   --> a/b.rs:132:9";
+    with_library(
+        home.path(),
+        "rows=\"$(mktemp)\"; \
+         mutation_ledger_begin sce-build/tests/mutations/a_paragraph.cases \"$rows\"; \
+         mutation_ledger_case INCONCLUSIVE 'a case the compiler refused' \
+             $'mutated tree does not compile; the tests never ran\\nerror: unused variable: `assigned`\\n   --> a/b.rs:132:9'; \
+         mutation_ledger_case CAUGHT 'a case that landed' '1/8 red'; \
+         mutation_ledger_commit cargo 1 >/dev/null; \
+         rm -f \"$rows\"",
+    );
+
+    let text = fs::read_to_string(Path::new(&ledger_dir(home.path())).join("a_paragraph.jsonl"))
+        .expect("the round left a record at all — this is the half that was lost");
+    assert_eq!(
+        text.lines().count(),
+        1,
+        "one round is one JSON line, whatever its details contain:\n{text}"
+    );
+    let record: serde_json::Value =
+        serde_json::from_str(text.trim()).expect("the record is one JSON object per line");
+
+    // Both cases, and the tally that goes with them: a reader that dropped the
+    // malformed row alone would still under-report the round.
+    assert_eq!(record["inconclusive"], 1);
+    assert_eq!(record["caught"], 1);
+    let cases = record["cases"].as_array().expect("per-case verdicts");
+    assert_eq!(cases.len(), 2, "a case went unrecorded: {cases:?}");
+    assert!(
+        cases.iter().all(|c| c["verdict"] != "UNREADABLE"),
+        "a row this reader could not parse survived into the record: {cases:?}"
+    );
+
+    // And the paragraph is a paragraph again. Folding it to a single line at
+    // write time would keep the record — and lose the shape that makes a
+    // compiler refusal readable, which is the reason it is quoted at all.
+    assert_eq!(
+        cases[0]["detail"].as_str().expect("the refusal"),
+        refusal,
+        "the refusal reached the record with its lines rearranged"
+    );
+}
+
+#[test]
 fn a_second_round_is_appended_rather_than_replacing_the_first() {
     let home = tempdir().expect("temp home");
     let casefile = "sce-build/tests/mutations/driver_fixture_citation.cases";
