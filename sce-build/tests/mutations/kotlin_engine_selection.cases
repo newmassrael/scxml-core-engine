@@ -183,3 +183,39 @@ edit("scripts/gates/w3c-kotlin.sh",
      'sce_gate_fail "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"',
      'sce_gate_step "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"')
 PY
+
+# ── The distance to `kotlin-retire-rewriter` stops being measured ──
+#
+# `EcmaScriptToLuaTransformer` is 1175 lines and is still the FALLBACK behind
+# every lowering entry point in `LuaScriptEngine`. Retiring it is the seam
+# document's `kotlin-retire-rewriter` row, and until 2026-08-30 nothing counted
+# how far away that was — the claim lived in prose. It is a census now:
+# frontend=50667 against rewriter=100, held under a ceiling that ratchets down.
+#
+# Removing the ceiling leaves the fallback free to grow while the lane stays
+# green, which is how a distance nobody measures becomes a distance nobody
+# closes.
+
+mutation_case "the rewriter may answer more and more without the lane noticing" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     "if (( rewriter_hits > REWRITER_CEILING )); then",
+     "if (( rewriter_hits > 1000000 )); then")
+PY
+
+# ── The census is measured, and the measurement never happened ─────
+#
+# ⚠ THE HALF THAT LOOKS REDUNDANT AND IS NOT. A run whose census never arrived
+# reports ZERO rewriter uses, which is exactly what a finished migration
+# reports — so the ceiling alone is satisfied by a lane that measured nothing.
+# Measured 2026-08-30: the first two attempts wrote the census to `System.err`,
+# Gradle swallowed the test JVM's stderr, and both runs read `0` over a run
+# that took the fallback 100 times.
+#
+# A `Test` task forks, so the property has to be forwarded deliberately. Stop
+# forwarding it and the engine writes nothing.
+
+mutation_case "the census property never reaches the test JVM" <<'PY'
+edit("backends/kotlin/tests/build.gradle.kts",
+     'systemProperty("sce.lua.loweringCensus", censusProp.get())',
+     'systemProperty("sce.lua.loweringCensusDisabled", censusProp.get())')
+PY
