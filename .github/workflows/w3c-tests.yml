@@ -478,10 +478,16 @@ jobs:
     # rather than from Gradle's exit status, and the check that the run left
     # the committed tree unchanged all live there, so this lane and a
     # developer's machine judge the Kotlin surface by the same rules.
-    - name: Run W3C Tests (Rhino + QuickJS engines)
+    # ⚠ Named for the gate's roster rather than for two engines. This step said
+    # "Rhino + QuickJS" from before `KOTLIN_ENGINE_PAIRS` grew `lua:ecmascript`
+    # and `lua:lua`, so a reader looking for where the Lua pairs run would have
+    # concluded they did not. The pairs live in `scripts/gates/w3c-kotlin.sh`
+    # and are held by `the_kotlin_gate_runs_every_engine_it_claims`, so naming
+    # them again here would be a second copy to go stale.
+    - name: Run W3C Tests (every engine/language pair the gate declares)
       run: |
         set -o pipefail
-        echo "=== Kotlin W3C SCXML Conformance Tests (Rhino + QuickJS) ==="
+        echo "=== Kotlin W3C SCXML Conformance Tests (every declared pair) ==="
         scripts/gate w3c-kotlin 2>&1 | tee kotlin_test_output.log
 
     - name: Upload Test Results
