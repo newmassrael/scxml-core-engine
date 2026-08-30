@@ -87,15 +87,24 @@ PY
 # A targetless transition answered as a state change names the state it is
 # already in, so the engine exits and re-enters it: `<onexit>` and `<onentry>`
 # run for a transition the clause says leaves the configuration alone.
+#
+# ⚠ The anchor is deliberately a PARTIAL line, cut off before the transition
+# index. It used to quote both arms of the `if` whole, and `c5cfa53bd9` — which
+# gave `TransitionResult` a machine-wide index so the action dispatch would stop
+# re-running `cond` — moved every one of those characters without touching what
+# this case is about. The case then read INCONCLUSIVE, which is a mutation that
+# proves nothing while reading as evidence. What the case asks is only which
+# CONSTRUCTOR the targetless arm names, so the anchor stops at that word and the
+# argument list after it — index and all — is carried through untouched by the
+# replacement. A later change to those arguments cannot break this case; a
+# change to the answer still does.
 
 mutation_case "a targetless eventless transition is answered as a state change" <<'PY'
 edit("tools/codegen/templates/kotlin/process_event.kt.jinja2",
-     """{% if trans.target or trans.history_target is defined %}
-{% set result_expr = "TransitionResult.External(" ~ target_expr ~ ", " ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ")" %}
-{% else %}
-{% set result_expr = "TransitionResult.Internal" %}
-{% endif %}""",
-     """{% set result_expr = "TransitionResult.External(" ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ", " ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ")" %}""")
+     """{% else %}
+{% set result_expr = "TransitionResult.Internal(" ~ """,
+     """{% else %}
+{% set result_expr = "TransitionResult.External(" ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ", " ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ", " ~ """)
 PY
 
 # ── The `else` that Kotlin rejects ─────────────────────────────────
