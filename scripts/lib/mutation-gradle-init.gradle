@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// What `scripts/mutate`'s Gradle runner needs Gradle itself to answer.
+//
+// A mutation round asks three things of a runner: which artifacts will run,
+// did the mutation change them, and did the same tests run. Gradle answers
+// none of them from the command line — `./gradlew test` prints a verdict and
+// leaves the harness to guess what was on the classpath, whether the task ran
+// at all, and where the results went. Guessing each of those is exactly the
+// shape this repository has already paid for: a lane that reported
+// `test UP-TO-DATE` in 500ms and zero tests looked identical to a green run.
+//
+// So the three answers are taken from the build that is about to happen,
+// through an init script, which is the supported way to reach every project of
+// a build without editing any of them.
+//
+// ## Three system properties, each optional
+//
+//   sce.mutation.artifacts   directory to write one classpath listing per Test
+//                            task, named after the task path. Written from
+//                            `doFirst`, so it describes the classpath the task
+//                            actually ran with rather than one resolved at
+//                            configuration time.
+//   sce.mutation.reports     directory to collect JUnit XML under, again one
+//                            subdirectory per task path. Redirected here
+//                            rather than read from each module's default
+//                            location so that a harness reading the results
+//                            cannot pick up a stale report from a module the
+//                            selection did not touch.
+//   sce.mutation.compileOnly `true` disables every Test task. Its dependencies
+//                            still run, which is what makes this the compile
+//                            step: `testClasses` is built, the tree is proved
+//                            to compile, and nothing is run.
+//
+// ## Why the Test tasks are forced to re-run
+//
+// `outputs.upToDateWhen { false }` and `outputs.cacheIf { false }` are two
+// different escapes and both are needed. Up-to-date checking is what makes a
+// test task skip when its inputs are unchanged — and a mutation in a file the
+// task READS AT RUN TIME (a gate script, a fixture) changes no declared input,
+// so the task would skip and the round would read "0 tests ran" as an
+// inconclusive case rather than as a runner that never asked. The BUILD CACHE
+// is the second escape and is not closed by the first: this repository sets
+// `org.gradle.caching=true`, and a cached run comes back FROM-CACHE with the
+// previous verdict, which is a green a mutation never faced. Measured
+// 2026-08-30 on `scripts/gate w3c-kotlin`: four engine pairs all answered
+// `test FROM-CACHE` on their first invocation.
+//
+// Only the Test tasks are held open. Compilation stays cacheable and
+// incremental, because the mutation round rebuilds between every case and the
+// compile is the bulk of that time.
+
+import org.gradle.api.tasks.testing.Test
+
+def artifactsDir = System.getProperty('sce.mutation.artifacts')
+def reportsDir = System.getProperty('sce.mutation.reports')
+def compileOnly = Boolean.parseBoolean(System.getProperty('sce.mutation.compileOnly', 'false'))
+
+gradle.projectsLoaded {
+    gradle.rootProject.allprojects { proj ->
+        proj.tasks.withType(Test).configureEach { testTask ->
+            if (compileOnly) {
+                testTask.enabled = false
+                return
+            }
+
+            testTask.outputs.upToDateWhen { false }
+            testTask.outputs.cacheIf { false }
+
+            if (reportsDir) {
+                testTask.reports.junitXml.required.set(true)
+                testTask.reports.junitXml.outputLocation.set(
+                    new File(reportsDir, testTask.path.replace(':', '_')))
+                // The HTML report is a second rendering of the same run and
+                // nothing here reads it; a mutation round would write one per
+                // case and throw every one of them away.
+                testTask.reports.html.required.set(false)
+            }
+
+            if (artifactsDir) {
+                // One file per task rather than one appended by all of them:
+                // `org.gradle.parallel=true` is set in this repository, so two
+                // Test tasks can be inside `doFirst` at the same moment and an
+                // appended file would interleave them.
+                def listing = new File(artifactsDir, testTask.path.replace(':', '_') + '.txt')
+                testTask.doFirst { t ->
+                    listing.parentFile.mkdirs()
+                    listing.withWriter { out ->
+                        def seen = new LinkedHashSet<String>()
+                        (t.testClassesDirs.files + t.classpath.files).each { f ->
+                            if (seen.add(f.absolutePath)) {
+                                out.writeLine(f.absolutePath)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

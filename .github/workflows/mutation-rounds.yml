@@ -431,6 +431,35 @@ jobs:
         python3 -m pip install --upgrade pip
         python3 -m pip install lupa pytest
 
+    # And the same for a Gradle round, which is the JVM backend's. The version
+    # is the one every other Kotlin lane in this repository pins
+    # (`ecma262-lowered-kotlin.yml`, `w3c-tests.yml`): a round judging the
+    # backend on a different JDK than the lane that gates it would be
+    # answering about a build nobody ships — the reason the Go step above
+    # states for its own pin.
+    - name: Setup JDK
+      if: matrix.runner == 'gradle'
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    # A Gradle round is one invocation per case and each one starts from the
+    # dependency graph, so an uncached job would download the whole of it
+    # before the baseline could run. Keyed the way the other Kotlin lanes key
+    # it, and restored loosely, because a partial hit is still most of the
+    # download.
+    - name: Cache Gradle
+      if: matrix.runner == 'gradle'
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
     # The same repair `rust-workspace-tests.yml` already carries, and for the
     # same two tests. `gate_registry_contract` is the ORACLE of three casefiles
     # in this corpus, and it drives the staged citation stage as a subprocess;

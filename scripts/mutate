@@ -414,6 +414,26 @@ mutation_go() { mutation_declare_runner go "$@"; }
 # gate script: the file on disk differed while the tests ran.
 mutation_pytest() { mutation_declare_runner pytest "$@"; }
 
+# Gradle selector for the tests under study: the directory holding `gradlew`,
+# then the arguments Gradle itself takes.
+#
+#     mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.w3c.GateEnginePairsTest'
+#
+# The project directory is first for the reason the Go and pytest selectors
+# carry theirs: Gradle resolves a task path against the build it is invoked
+# from, this harness runs from the repository root, and a runner that derived
+# the wrapper's location from the repository layout would be a second answer
+# to a question the selector already contains.
+#
+# A `--tests` filter is not the failure mode the cargo selector warns about.
+# There the warning is that a bare filter argument reaches EVERY binary the
+# selector matched, so which tests ran depends on what else happened to match;
+# Gradle's `--tests` is scoped to the task named beside it, and a task path is
+# an exact name. What the filter buys is the whole reason a JVM round is
+# affordable at all: `:sce-kotlin-tests:test` is 373 conformance cases, and a
+# round that reran them per mutation would answer once a day.
+mutation_gradle() { mutation_declare_runner gradle "$@"; }
+
 # Files a case is allowed to edit, COMPILED INTO the tests. Snapshotted at
 # init and restored after every case, so a case body never has to clean up
 # after itself and a case that dies mid-edit cannot leave the tree broken
@@ -1506,6 +1526,293 @@ mutation_pytest_check_selector() {
     return 0
 }
 
+# ── The Gradle runner ──────────────────────────────────────────────
+#
+# The JVM half of this repository had no mutation runner at all, so every
+# Kotlin gate's red witness was bought BY HAND — edit the file, run the
+# suite, read the failure, put it back. A hand-bought red is evidence about
+# the day it was bought and nothing else: it is not in the corpus, `--check`
+# never asks whether it still applies, and the weekly sweep cannot re-prove
+# it. Measured 2026-08-30, three Kotlin lanes stood on exactly that footing.
+#
+# Gradle is the runner that answers the fewest of this harness's questions on
+# its own, which is why `scripts/lib/mutation-gradle-init.gradle` exists and
+# why this section is thin: the init script makes Gradle report its own
+# classpath, collect its own JUnit XML in one place, and stop skipping the
+# test task. Everything below is the same three operations every other runner
+# implements, over those answers.
+#
+# ## Two invocations per case, not one
+#
+# `./gradlew test` compiles and runs in one step, and this harness needs them
+# apart: a mutation that stops the tree COMPILING is inconclusive, while one
+# that leaves it compiling and turns the suite red is CAUGHT, and a single
+# non-zero exit cannot tell those apart. So the compile step runs with the
+# init script's `compileOnly` mode — every `Test` task disabled, their
+# dependencies still built — and its exit status is the compile verdict. The
+# run step follows over an already-built tree.
+
+# The init script the two invocations share, by absolute path: they run with
+# the project directory as cwd, and Gradle resolves `--init-script` against
+# that cwd rather than against the repository.
+MUTATION_GRADLE_INIT="$SCE_REPO_ROOT/scripts/lib/mutation-gradle-init.gradle"
+
+# Where the init script deposits its two answers. Under `$WORK`, so a round
+# reads what this round's own invocations wrote and never a report left in a
+# module's `build/` by whoever ran the suite last.
+MUTATION_GRADLE_CLASSPATH_DIR="$WORK/gradle-classpath"
+MUTATION_GRADLE_REPORT_DIR="$WORK/gradle-reports"
+
+# The project directory a Gradle selector names, and the arguments after it.
+mutation_gradle_project_dir() { printf '%s\n' "${MUTATION_RUNNER_ARGS[0]:-}"; }
+
+# One Gradle invocation, in one of the init script's two modes.
+#
+# `--no-daemon` is deliberately NOT passed. A round is one invocation per case
+# and the daemon's warm JVM is most of what makes that affordable; what the
+# daemon could otherwise hide — a stale test result — is closed in the init
+# script instead, at the task rather than at the process.
+mutation_gradle_invoke() {
+    local mode="$1" log="$2" dir
+    dir="$(mutation_gradle_project_dir)"
+    local -a props=(
+        "-Dsce.mutation.artifacts=$MUTATION_GRADLE_CLASSPATH_DIR"
+        "-Dsce.mutation.reports=$MUTATION_GRADLE_REPORT_DIR"
+    )
+    if [[ "$mode" == compile ]]; then
+        props+=("-Dsce.mutation.compileOnly=true")
+    fi
+    mkdir -p "$MUTATION_GRADLE_CLASSPATH_DIR" "$MUTATION_GRADLE_REPORT_DIR"
+    ( cd "$dir" && timeout "$MUTATION_ARTIFACT_TIMEOUT" ./gradlew \
+        --init-script "$MUTATION_GRADLE_INIT" \
+        "${props[@]}" "${MUTATION_RUNNER_ARGS[@]:1}" ) >"$log" 2>&1
+}
+
+# Run the selection once and take the classpath the Test tasks reported.
+#
+# A full run rather than a compile, and for the reason the Go runner compiles
+# in its resolve: the classpath is written from `doFirst`, so it exists only
+# once a Test task has actually started. A compile-only invocation would
+# resolve nothing, and the round would then hash an empty artifact set —
+# which reads as "the mutation changed nothing" for every case.
+#
+# Narrowed to entries INSIDE the repository. A test runtime classpath carries
+# the dependency jars Gradle downloaded, and those sit in the user's Gradle
+# cache: hashing them would add thousands of files that no mutation can move,
+# and their absence on a fresh machine would read as a changed artifact.
+mutation_gradle_resolve() {
+    local dir entry
+    dir="$(mutation_gradle_project_dir)"
+    if [[ -z "$dir" || ! -x "$dir/gradlew" ]]; then
+        red "mutation_gradle needs a project directory first: '$dir' holds no executable gradlew"
+        exit 2
+    fi
+    if [[ ${#MUTATION_RUNNER_ARGS[@]} -lt 2 ]]; then
+        red "mutation_gradle needs at least one Gradle argument after the project directory"
+        exit 2
+    fi
+
+    rm -rf "$MUTATION_GRADLE_CLASSPATH_DIR" "$MUTATION_GRADLE_REPORT_DIR"
+    # A failure here is the baseline's verdict to give, with Gradle's own
+    # words, rather than this function's — the same reading the Go runner's
+    # resolve takes of a compile failure.
+    mutation_gradle_invoke run "$MUTATION_BUILD_LOG" || true
+
+    MUTATION_ARTIFACTS=()
+    while IFS= read -r entry; do
+        [[ -n "$entry" ]] && MUTATION_ARTIFACTS+=("$entry")
+    done < <(
+        cat "$MUTATION_GRADLE_CLASSPATH_DIR"/*.txt 2>/dev/null |
+        while IFS= read -r entry; do
+            [[ -n "$entry" ]] || continue
+            case "$entry" in "$SCE_REPO_ROOT"/*) ;; *) continue ;; esac
+            [[ -e "$entry" ]] || continue
+            printf '%s\n' "$entry"
+        done | LC_ALL=C sort -u
+    )
+
+    if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
+        red "the selector started no Test task with a classpath inside this"
+        red "repository: ${MUTATION_RUNNER_ARGS[*]}"
+        red "the build log's tail:"
+        mutation_build_diagnostics >&2
+        exit 2
+    fi
+}
+
+# Compile the tree the selection will run, then hash it.
+#
+# Non-zero is the compile verdict and nothing else: the init script disabled
+# every Test task, so no assertion can contribute to this exit status.
+mutation_gradle_build_and_hash() {
+    : >"$MUTATION_BUILD_LOG"
+    mutation_gradle_invoke compile "$MUTATION_BUILD_LOG" || return 1
+    mutation_hash_artifacts
+}
+
+# Run the selection and count from the JUnit XML the init script collected.
+#
+# Counted from the report rather than from Gradle's console for the reason the
+# ctest and pytest runners give: `BUILD SUCCESSFUL` and `4 tests completed,
+# 1 failed` are different sentences and a parser written against one reads the
+# other as zero tests. The report directory is emptied first, so a task that
+# does not run this time cannot leave last time's verdict to be counted.
+mutation_gradle_run() {
+    local log="$WORK/gradle-run.log" rc=0
+    rm -rf "$MUTATION_GRADLE_REPORT_DIR" "$MUTATION_GRADLE_CLASSPATH_DIR"
+    : > "$MUTATION_FAILING"
+    mutation_gradle_invoke run "$log" || rc=$?
+    if [[ "$rc" == "124" ]]; then
+        printf 'gradle (did not terminate within %ss)\n' "$MUTATION_ARTIFACT_TIMEOUT" \
+            >> "$MUTATION_FAILING"
+        printf '0 0 1\n'
+        return
+    fi
+
+    # Did a Test task actually EXECUTE this time, or did Gradle answer from a
+    # previous one? The two are indistinguishable in the report: a task
+    # restored FROM-CACHE has its JUnit XML restored with it, complete and
+    # green, describing a run that never faced this mutation.
+    #
+    # The classpath listings are what tells them apart, and they do it from
+    # Gradle's own execution model rather than from a parse of its console or
+    # a comparison of clocks. They are written from `doFirst`, which runs only
+    # when the task's ACTIONS run — never on a cache hit, never on UP-TO-DATE.
+    # Emptied above and still empty here means no Test task ran, whatever the
+    # report says.
+    #
+    # Reported as unreadable rather than as zero tests, because "the suite ran
+    # nothing" and "the suite was never asked" are different facts and only
+    # the first is about the mutation. The init script closes both escapes at
+    # the task; this is what notices if it ever stops.
+    if ! compgen -G "$MUTATION_GRADLE_CLASSPATH_DIR/*.txt" >/dev/null; then
+        {
+            printf 'no Test task executed: Gradle exited %s and left no classpath\n' "$rc"
+            printf 'listing, which `doFirst` writes whenever a test task actually\n'
+            printf 'runs. A task answered UP-TO-DATE or FROM-CACHE, so any report\n'
+            printf 'present describes an earlier run — see the two escapes closed in\n'
+            printf 'scripts/lib/mutation-gradle-init.gradle.\n'
+        } > "$MUTATION_UNREADABLE"
+        printf '0 0 0\n'
+        return
+    fi
+
+    mutation_gradle_report
+}
+
+# The JUnit XML the run left, read once for both answers it holds.
+#
+# One reader rather than two, because the count and the names come out of the
+# same elements: a second parser over the same format would be a second thing
+# to keep in step with it, and this format is somebody else's.
+#
+# No report at all prints zero RUN rather than zero FAILED, so the run-count
+# rule catches it instead of it reading as a green sweep. That is exactly how
+# a Gradle round fails when a task is skipped: the build succeeds, prints
+# nothing about tests, and nothing ran.
+mutation_gradle_report() {
+    python3 - "$MUTATION_GRADLE_REPORT_DIR" "$MUTATION_FAILING" <<'PY'
+import os
+import sys
+import xml.etree.ElementTree as ET
+
+report_dir, failing_path = sys.argv[1], sys.argv[2]
+
+run = failed = 0
+names = []
+for base, _dirs, files in os.walk(report_dir):
+    for name in sorted(files):
+        if not name.endswith(".xml"):
+            continue
+        try:
+            root = ET.parse(os.path.join(base, name)).getroot()
+        except ET.ParseError:
+            # A report Gradle was still writing when the run was cut short is
+            # not a run of zero tests; leaving it out of the count is what
+            # lets the run-count rule say so.
+            continue
+        suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
+        for suite in suites:
+            total = int(suite.get("tests", 0))
+            skipped = int(suite.get("skipped", 0))
+            run += total - skipped
+            failed += int(suite.get("failures", 0)) + int(suite.get("errors", 0))
+            for case in suite.iter("testcase"):
+                if case.find("failure") is None and case.find("error") is None:
+                    continue
+                # `classname.name` is how the JVM names a test everywhere else
+                # in this repository, and it is what a reader greps for.
+                names.append(f"{case.get('classname', '?')}.{case.get('name', '?')}")
+
+with open(failing_path, "w", encoding="utf-8") as handle:
+    for name in sorted(set(names)):
+        handle.write(name + "\n")
+
+# The caller handles the timeout, so a report that exists is a run that
+# came back.
+print(f"{run} {failed} 0")
+PY
+}
+
+# The selector still names a project this build declares.
+#
+# The same division the cargo checker draws, in Gradle's terms: the settings
+# file says which projects exist and reading it compiles nothing, so that half
+# is affordable on every push. Whether the task ALSO exists, and whether it
+# builds, is the full round's answer — asking Gradle would mean a
+# configuration phase per casefile, which is minutes, not milliseconds.
+mutation_gradle_check_selector() {
+    local dir settings candidate
+    dir="$(mutation_gradle_project_dir)"
+    if [[ -z "$dir" || ! -x "$dir/gradlew" ]]; then
+        red "mutation_gradle needs a project directory first: '$dir' holds no executable gradlew"
+        return 1
+    fi
+    settings=""
+    for candidate in "$dir/settings.gradle.kts" "$dir/settings.gradle"; do
+        if [[ -f "$candidate" ]]; then
+            settings="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$settings" ]]; then
+        red "$dir holds a gradlew but no settings.gradle[.kts], so the selector's"
+        red "project paths cannot be checked against anything"
+        return 1
+    fi
+    python3 - "$settings" "${MUTATION_RUNNER_ARGS[@]:1}" <<'PY'
+import re
+import sys
+
+settings = open(sys.argv[1], encoding="utf-8").read()
+# Both dialects, because which one a build uses is not this checker's
+# business: `include(":a")` in the Kotlin DSL, `include ':a'` in Groovy.
+declared = set(re.findall(r"""include\s*\(?\s*["'](:[^"']+)["']""", settings))
+
+named = []
+for arg in sys.argv[2:]:
+    if not arg.startswith(":"):
+        continue
+    project = arg.rsplit(":", 1)[0]
+    # `:test` is a task on the root project, which every build has.
+    if project:
+        named.append((arg, project))
+
+if not named:
+    print("selector names no qualified task path — nothing to check")
+    sys.exit(0)
+
+missing = [(task, project) for task, project in named if project not in declared]
+if missing:
+    for task, project in missing:
+        print(f"the Gradle selector names {task}, but {project} is not included "
+              f"by {sys.argv[1]}", file=sys.stderr)
+    sys.exit(1)
+
+print(f"selector names {len(named)} task(s) in projects this build includes")
+PY
+}
+
 # ── Cheap liveness ─────────────────────────────────────────────────
 #
 # What `--check` asks of a casefile beyond applying its cases. Everything
@@ -1591,22 +1898,38 @@ MUTATION_TEMPLATE_EMBEDDING_PACKAGE=sce-build
 # generation step, so a template reaches its binaries there with nothing
 # declared at all.
 mutation_check_template_bridge() {
-    [[ "$MUTATION_RUNNER" == cargo ]] || return 0
+    # Which runners need the bridge is a property of the runner, not a list:
+    # a runner that RUNS THE GENERATION STEP ITSELF reaches a template with
+    # nothing declared. `ctest` does — `cmake --build` regenerates — and the
+    # Go and pytest runners call `mutation_regenerate` from their own resolve.
+    # `cargo` and `gradle` do neither: both compile the COMMITTED generated
+    # tree, so a template mutation reaches their binaries only through a
+    # declared regeneration, or not at all.
+    case "$MUTATION_RUNNER" in
+        cargo | gradle) ;;
+        *) return 0 ;;
+    esac
     (( ${#MUTATION_REGEN_CMDS[@]} == 0 )) || return 0
 
     local unbridged f
     unbridged="$(mutation_all_targets | grep '^tools/codegen/templates/' || true)"
     [[ -n "$unbridged" ]] || return 0
-    [[ "$(mutation_cargo_selector_embeds_templates)" != embeds ]] || return 0
+    # The second route exists for cargo alone: a cargo selector can name a
+    # binary that LINKS the template-embedding package, which puts the
+    # template inside the artifact. Nothing on the JVM classpath embeds the
+    # Rust template registry, so a Gradle round has one route and this is it.
+    if [[ "$MUTATION_RUNNER" == cargo ]]; then
+        [[ "$(mutation_cargo_selector_embeds_templates)" != embeds ]] || return 0
+    fi
 
-    red "a codegen template is declared as a target of a cargo round that"
-    red "cannot reach it — the selector links no binary embedding the"
+    red "a codegen template is declared as a target of a $MUTATION_RUNNER round"
+    red "that cannot reach it — the selector links no binary embedding the"
     red "templates, and no mutation_regen writes the tree it compiles:"
     while IFS= read -r f; do
         [[ -n "$f" ]] || continue
         red "  $f"
     done <<<"$unbridged"
-    red "'cargo test --no-run' would rebuild the committed generated sources"
+    red "the build step would recompile the committed generated sources"
     red "unchanged, so every case here would report INCONCLUSIVE. Declare the"
     red "regeneration — 'mutation_regen scripts/regen_<stem>.sh' — together"
     red "with the files it writes, which are compiled into the tests and so"
@@ -1859,7 +2182,8 @@ mutation_check_needs() {
 
 mutation_init() {
     if [[ -z "$MUTATION_RUNNER" ]]; then
-        red "the casefile declared no mutation_tests or mutation_ctest selector"
+        red "the casefile declared no selector — one of mutation_tests,"
+        red "mutation_ctest, mutation_go, mutation_pytest or mutation_gradle"
         exit 2
     fi
     if [[ ${#MUTATION_TARGET_FILES[@]} -eq 0 && ${#MUTATION_RUNTIME_FILES[@]} -eq 0 ]]; then

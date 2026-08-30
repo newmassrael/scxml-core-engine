@@ -47,8 +47,34 @@
 # ELF only, and detected by its magic rather than by extension: a suite
 # registered through ctest can name a shell script as the thing it runs, and
 # a script has no sections to normalise — it is hashed as it is.
+#
+# A DIRECTORY is one artifact too, and that is not a convenience. On the JVM
+# what a test run executes is a class output directory: `:sce-kotlin-tests`
+# alone holds 4,230 files, and listing them individually would put four
+# thousand entries in an artifact set that the round rebuilds and rehashes
+# between every case — three processes per file, per case. The directory is
+# the unit Gradle itself hands over on the classpath, so it is the unit
+# hashed here, over its contents rather than over its name.
 mutation_artifact_hash() {
     local path="$1" magic
+
+    if [[ -d "$path" ]]; then
+        # Names as well as contents, because a mutation that DELETES a
+        # generated file changes no surviving byte, and a hash of contents
+        # alone would call that artifact unchanged. Sorted under `LC_ALL=C`
+        # so the digest is a function of the tree and not of the locale the
+        # round happened to run in.
+        # An explicit subshell for the `cd`: a pipeline already runs its
+        # stages in one, and relying on that would leave the caller's working
+        # directory hostage to a change in how this is composed.
+        (
+            cd "$path" || exit 1
+            find . -type f -print0 | LC_ALL=C sort -z |
+                xargs -0 -r sha256sum
+        ) | sha256sum | cut -d' ' -f1
+        return 0
+    fi
+
     magic="$(head -c 4 "$path" | od -An -tx1 | tr -d ' \n')"
     if [[ "$magic" == "7f454c46" && -n "${MUTATION_OBJCOPY:-}" ]]; then
         local normalized="${MUTATION_HASH_SCRATCH:-${TMPDIR:-/tmp}}/mutation-normalized.$$"
