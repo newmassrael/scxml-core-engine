@@ -4211,3 +4211,34 @@ through it, exactly as designed, and the two guards name different defects.
 - **`$REPORTS` is not emptied between rows.** Measured 2026-08-31: a probe file
   placed there was gone after the next invocation, so Gradle clears it. That is
   a measurement about Gradle's behaviour, not a guarantee this gate holds.
+
+### Why this lane and not another — the slack, re-derived
+
+The same shape lives in every lane that reads a report, so the question is not
+whether a total-with-a-floor is weak but WHERE the slack was. Do not take the
+numbers below on trust; they come from two commands:
+
+```
+grep -nE '\(\( *[a-z_]+ *< *[0-9]+ *\)\)' scripts/gates/*.sh
+python3 -c "import json;print(len(json.load(open('tests/w3c/conformance/fixtures.json'))['fixtures']))"
+```
+
+Measured 2026-08-31: the registry holds **202** fixtures, and the other lanes'
+floors sit just under it — `w3c-go`, `w3c-python`, `w3c-python-bindings` and
+`w3c-c11` all at 200, `w3c-cpp` at 400 (its own comment says 404, which this
+round did not re-run and so does not restate as measured). `w3c-kotlin` was
+200 against a total this round DID measure four times: **373**. This suite
+alone carries 171 cases beyond the registry — 40 integration classes, the
+ECMAScript tables, the gate's own self-checks — while its floor had stayed at
+the registry's size. A slack of 173 is a different object from a slack the
+size of a rounding error, and that is why this lane was worth a round and the
+others are a note rather than a milestone.
+
+Both of the lowered lanes are already closed against this: `ecma262-lowered-cpp`
+names `LoweredEcma262` in ctest's JUnit and asserts it RAN and passed, and
+`ecma262-lowered-kotlin` refuses a run that printed no census line and forces
+`--rerun`. Neither leans on a total.
+
+⚠ The remaining floors are constants where a derivation exists — the registry
+is right there, and `w3c-cpp`'s own comment already says the cases are
+registered from it. Their slack is small, not zero.
