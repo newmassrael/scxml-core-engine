@@ -37,7 +37,6 @@ void LoweringScope::declare(const std::string &name) {
 #ifdef SCE_HAS_LOWERING_FFI
     sce_scope_declare(scope_, name.c_str());
 #endif
-    ++generation_;
 }
 
 void LoweringScope::declareChunk(const std::string &source) {
@@ -47,7 +46,6 @@ void LoweringScope::declareChunk(const std::string &source) {
 #ifdef SCE_HAS_LOWERING_FFI
     sce_scope_declare_chunk(scope_, source.c_str());
 #endif
-    ++generation_;
 }
 
 #ifdef SCE_HAS_LOWERING_FFI
