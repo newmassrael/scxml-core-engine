@@ -703,11 +703,15 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     // Fast path: if this script was successfully executed before in this session,
     // skip transformer and chunk cache lookup entirely. A cached entry from the
     // other language is a miss: the same text lowers differently.
-    const uint64_t scopeGeneration = it->second->loweringScope.generation();
+    //
+    // The scope this chunk was lowered against is not part of the key. Only a
+    // successful lowering reaches this map, and a success does not change as
+    // the scope grows — `sce-build/tests/scope_obligation.rs`'s
+    // `a_lowering_that_succeeded_is_unchanged_by_a_larger_scope` is what holds
+    // the frontend to that.
     auto &scriptExec = it->second->scriptExecCache;
     auto sit = scriptExec.find(script.text());
-    if (sit != scriptExec.end() && sit->second.language == script.language() &&
-        sit->second.scopeGeneration == scopeGeneration) {
+    if (sit != scriptExec.end() && sit->second.language == script.language()) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, sit->second.chunkRef);
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
         return luaResultToScriptResult(L, status);
@@ -730,7 +734,7 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     }
 
     // Cache for fast path on subsequent calls
-    scriptExec[script.text()] = {it->second->chunkCache.at(luaScript).ref, script.language(), scopeGeneration};
+    scriptExec[script.text()] = {it->second->chunkCache.at(luaScript).ref, script.language()};
 
     int status = lua_pcall(L, 0, LUA_MULTRET, 0);
 
@@ -788,15 +792,19 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     // differently, and reusing the wrong chunk would be an off-by-one nobody
     // gets a diagnostic for.
     //
-    // An entry lowered against an OLDER scope is a miss for the same reason
-    // one step out: the frontend's answer depends on which names it was told
-    // about, so a `<script>` that declared one since must be able to change
-    // what this text lowers to.
-    const uint64_t scopeGeneration = it->second->loweringScope.generation();
+    // The scope the entry was lowered against is NOT part of the key, and the
+    // reason is narrow enough to be worth naming: the scope decides WHETHER
+    // this text lowers, never WHAT it lowers to, so an entry made before a
+    // `<data id>` or a `<script>` declared something is still the right chunk
+    // afterwards — and only a lowering that SUCCEEDED is here, because a
+    // refusal returns above without writing. `sce-build/tests/
+    // scope_obligation.rs`'s
+    // `a_lowering_that_succeeded_is_unchanged_by_a_larger_scope` holds the
+    // frontend to it; if that test fails, put a scope generation back on both
+    // caches' keys.
     auto &execCache = it->second->exprExecCache;
     auto execIt = execCache.find(expression.text());
-    if (execIt != execCache.end() && execIt->second.language == expression.language() &&
-        execIt->second.scopeGeneration == scopeGeneration) {
+    if (execIt != execCache.end() && execIt->second.language == expression.language()) {
         auto &info = execIt->second;
         lua_rawgeti(L, LUA_REGISTRYINDEX, info.chunkRef);
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
@@ -845,7 +853,7 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
         if (status == LUA_OK) {
             // Cache for fast path on subsequent calls
-            execCache[expression.text()] = {cache.at(wrapped).ref, true, expression.language(), scopeGeneration};
+            execCache[expression.text()] = {cache.at(wrapped).ref, true, expression.language()};
             return luaResultToScriptResult(L, status);
         }
         std::string error = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
@@ -877,7 +885,7 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
             int status = lua_pcall(L, 0, LUA_MULTRET, 0);
             if (status == LUA_OK) {
                 // Cache for fast path on subsequent calls
-                execCache[expression.text()] = {cache.at(luaExpr).ref, false, expression.language(), scopeGeneration};
+                execCache[expression.text()] = {cache.at(luaExpr).ref, false, expression.language()};
                 return ScriptResult::createSuccess(ScriptUndefined{});
             }
             lua_pop(L, 1);

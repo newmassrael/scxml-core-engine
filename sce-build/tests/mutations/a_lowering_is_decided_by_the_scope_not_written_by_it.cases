@@ -1,0 +1,129 @@
+# Mutation cases for "the scope decides WHETHER text lowers, never WHAT it
+# lowers to".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/\
+# a_lowering_is_decided_by_the_scope_not_written_by_it.cases`.
+#
+# `LuaEngine`'s two per-session caches are keyed on the AUTHOR'S text and hold
+# only lowerings that SUCCEEDED — a refusal returns before either map is
+# written. They therefore serve a cached entry to a session that has declared
+# more names since, and that is correct exactly while a successful lowering is
+# unchanged by the scope growing. Until 2026-08-29 it was not: the frontend
+# refused what its scope did not name and `EcmaScriptToLuaTransformer` answered
+# it wrongly, so a first evaluation could succeed with the WRONG answer and a
+# later declaration had to be able to displace it. That is what the caches'
+# `scopeGeneration` field was for. With the rewriter retired a refusal is the
+# engine's answer and nothing wrong reaches a cache, so the field guarded
+# nothing a test could observe — three cases in
+# `a_session_scope_is_what_the_frontend_answers_with.cases` SURVIVED twice for
+# that reason, on 2026-08-29 and again on 2026-08-31.
+#
+# So the guard was removed and this premise put in its place, where it can be
+# measured: `scope_obligation.rs`'s
+# `a_lowering_that_succeeded_is_unchanged_by_a_larger_scope` lowers every
+# expression in every tracked document against a ladder of growing scopes and
+# requires the first success to be repeated verbatim by every larger one. It
+# holds for a narrow reason — `DocumentScope` reaches lowering at exactly one
+# place, `ecmascript::resolve`'s `read`, which asks `declares` and either
+# continues or refuses — and the day that stops being true the caches need
+# their guard back.
+#
+# ⚠ A premise is worth only as much as its instrument, and this instrument's
+# failure mode is a VACUOUS pass: a ladder whose rungs are never compared
+# reports a clean green having measured nothing. So both directions are
+# attacked below. Two cases break the premise in the tree and require the test
+# to say so; two break the INSTRUMENT and require its own floors to say so.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test scope_obligation
+mutation_targets sce-build/src/ecmascript/scope.rs
+mutation_targets sce-build/tests/scope_obligation.rs
+mutation_oracles sce-build/tests/scope_obligation.rs
+
+# ── The premise itself, broken in the tree ──────────────────────────
+#
+# A scope that DROPS a name when it is offered one it already holds. This is
+# the shape an author's `<data id="Math">` has, and it is the half of the
+# ladder no stage can express: the stages only ever offer new names, so a
+# defect that needed a repeat offer would walk past all five of them and be
+# caught by the two rungs that re-declare.
+
+mutation_case "re-declaring a name the scope already holds removes it" <<'PY'
+edit("sce-build/src/ecmascript/scope.rs",
+     """    pub fn declare(&mut self, name: &str) {
+        if !name.is_empty() {
+            self.declared.insert(name.to_string());
+        }
+    }""",
+     """    pub fn declare(&mut self, name: &str) {
+        if !name.is_empty() && !self.declared.insert(name.to_string()) {
+            self.declared.remove(name);
+        }
+    }""")
+PY
+
+# A scope that forgets everything it held whenever it grows. The loud
+# direction, and it is here because the quiet one above shares its anchor: a
+# repair that made `declare` monotonic for repeats while losing earlier names
+# would satisfy the case above and be caught by this one.
+
+mutation_case "a scope keeps only the name it was last offered" <<'PY'
+edit("sce-build/src/ecmascript/scope.rs",
+     """    pub fn declare(&mut self, name: &str) {
+        if !name.is_empty() {
+            self.declared.insert(name.to_string());
+        }
+    }""",
+     """    pub fn declare(&mut self, name: &str) {
+        if !name.is_empty() {
+            self.declared.clear();
+            self.declared.insert(name.to_string());
+        }
+    }""")
+PY
+
+# ── The instrument, broken in the test ──────────────────────────────
+#
+# The ladder walked from the LARGEST scope down. Every rung still gets
+# compared, so a count-only check would not move; what changes is that the
+# pinned answer now comes from a scope no later rung contains, and the
+# refusals a small scope legitimately produces become disagreements. A gate
+# that reported green here would be one whose ladder order carried no meaning.
+
+mutation_case "the ladder is walked from the largest scope down" <<'PY'
+edit("sce-build/tests/scope_obligation.rs",
+     "            for rung in &ladder {",
+     "            for rung in ladder.iter().rev() {")
+PY
+
+# The two rungs an AUTHOR'S growth produces, no longer counted as such. The
+# comparisons still happen and the premise still holds, so the only thing that
+# can notice is the floor that requires those rungs to be on the ladder at all
+# — which is the floor's whole reason for existing.
+
+mutation_case "no rung is marked as re-declaring" <<'PY'
+edit("sce-build/tests/scope_obligation.rs",
+     """    out.push(Rung {
+        label: "everything+redeclared",
+        scope: shadowed,
+        redeclares: true,
+    });""",
+     """    out.push(Rung {
+        label: "everything+redeclared",
+        scope: shadowed,
+        redeclares: false,
+    });""")
+edit("sce-build/tests/scope_obligation.rs",
+     """    out.push(Rung {
+        label: "everything+redeclared+probe",
+        scope: probed,
+        redeclares: true,
+    });""",
+     """    out.push(Rung {
+        label: "everything+redeclared+probe",
+        scope: probed,
+        redeclares: false,
+    });""")
+PY

@@ -198,34 +198,43 @@ TEST(ScriptLanguageSeam, ADataItemDeclarationIsWhatLetsTheFrontendAnswer) {
 }
 
 /**
- * @brief A lowering cached against an older scope is not reused.
+ * @brief An expression refused against an older scope is asked again.
  *
- * The per-session expression cache is keyed on the AUTHOR'S text, and the same
- * text lowers differently as the scope grows: `a && b` is refused while `b` is
- * unknown and answered once it is declared. So a cache that ignored the scope
- * would pin whichever answer came first for the life of the session, and the
- * later declaration could never reach it — a correctness bug wearing the shape
- * of a caching win.
+ * The per-session expression cache is keyed on the AUTHOR'S text, and what
+ * keeps that correct is that only a SUCCESS is written to it: `a && b` is
+ * refused while `b` is unknown, the refusal returns before the map is touched,
+ * and the same text asked after `b` is declared reaches the frontend again. A
+ * cache that remembered the refusal would answer the second question with the
+ * first one's answer, and no later declaration could ever reach it.
+ *
+ * ⚠ What this case observes is the REFUSAL not being remembered, not a
+ * lowering being redone. A lowering that succeeded is unchanged by the scope
+ * growing — the scope decides whether text lowers, never what it lowers to —
+ * which is why these caches carry no scope generation and why the premise is
+ * measured where it can be, over the whole corpus, by
+ * `sce-build/tests/scope_obligation.rs`'s
+ * `a_lowering_that_succeeded_is_unchanged_by_a_larger_scope`.
  *
  * The first evaluation is the control as well as the setup. If it already
  * answered 0, the scope was never the selector and the assertion below would
- * pass without a re-lowering having happened.
+ * pass without the frontend having been asked a second time.
  */
-TEST(ScriptLanguageSeam, ALoweringCachedAgainstAnOlderScopeIsNotReused) {
+TEST(ScriptLanguageSeam, AnExpressionRefusedAgainstAnOlderScopeIsAskedAgain) {
     auto &engine = SCE::LuaEngine::instance();
-    const std::string sessionId = "seam_cache_follows_the_scope";
+    const std::string sessionId = "seam_expression_refusal_is_not_remembered";
     ASSERT_TRUE(engine.createSession(sessionId, ""));
 
     ASSERT_TRUE(engine.setVariable(sessionId, "a", ScriptValue{static_cast<int64_t>(0)}).get().isSuccess());
 
-    // `b` is undeclared, so the frontend refuses the whole expression and the
-    // rewriter answers it: Lua's `a and b` counts 0 as truthy and yields `b`,
-    // which is nil.
-    auto before = engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("a && b")).get();
-    const bool alreadyRight = before.isSuccess() && std::holds_alternative<int64_t>(before.getInternalValue()) &&
-                              std::get<int64_t>(before.getInternalValue()) == 0;
-    ASSERT_FALSE(alreadyRight) << "`a && b` was already answered correctly with `b` undeclared, so this test "
-                                  "cannot tell a re-lowering from a cache hit";
+    // `b` is undeclared, so the frontend refuses the whole expression — and the
+    // engine refuses with it rather than handing the text to a pass that cannot
+    // read it. Asserted rather than merely observed: a first evaluation that
+    // SUCCEEDED would leave this test unable to tell a second question from a
+    // cache hit, and which of the two happened is the whole subject.
+    ASSERT_FALSE(engine.evaluateExpression(sessionId, SCE::ScriptSource::ecmascript("a && b")).get().isSuccess())
+        << "`b` is undeclared, so this expression cannot be lowered and the first evaluation is "
+           "the control: if it already succeeded, the assertion below could not tell the frontend "
+           "being asked again from a remembered answer";
 
     ASSERT_TRUE(engine.setVariable(sessionId, "b", ScriptValue{static_cast<int64_t>(2)}).get().isSuccess());
 
@@ -233,8 +242,9 @@ TEST(ScriptLanguageSeam, ALoweringCachedAgainstAnOlderScopeIsNotReused) {
     ASSERT_TRUE(after.isSuccess()) << after.getErrorMessage();
     EXPECT_EQ(asWholeNumber(after.getInternalValue()), 0)
         << "ECMA-262 13.13.1 yields the LEFT operand when it is falsy, so `a && b` is 0. The same "
-           "text answered differently before `b` was declared, so answering it the same way twice "
-           "means the chunk compiled against the older scope was reused.";
+           "text was REFUSED before `b` was declared, so failing here means either the refusal was "
+           "remembered under a key that does not carry the scope it was made against, or the "
+           "declaration never reached the frontend's scope at all.";
 
     engine.destroySession(sessionId);
 }
@@ -260,9 +270,16 @@ TEST(ScriptLanguageSeam, ALoweringCachedAgainstAnOlderScopeIsNotReused) {
  * execution now produces, and what must not be remembered. Both directions
  * still fail loudly: a refusal that is cached leaves the second execution
  * refusing, and a scope that never hears about `b` never lets it succeed at
- * all. A two-way form would need a name the frontend lowers DIFFERENTLY rather
- * than not at all — an author `<data id>` shadowing an installed global is the
- * only such shape, and it is not what this case is about.
+ * all.
+ *
+ * ⚠⚠ A two-way form would need a name the frontend lowers DIFFERENTLY rather
+ * than not at all, and on 2026-08-31 that was looked for and NOT FOUND. An
+ * author `<data id>` shadowing an installed global was the candidate — it is
+ * the only shape a scope that holds one flat set of names can express — and
+ * `sce-build/tests/scope_obligation.rs` now measures 2222 comparisons across
+ * exactly that step with no lowering changed by it. The scope decides WHETHER
+ * text lowers and never WHAT it lowers to, so both engine caches were keyed on
+ * the author's text alone and their scope generation removed.
  */
 TEST(ScriptLanguageSeam, AChunkRefusedAgainstAnOlderScopeIsAskedAgain) {
     auto &engine = SCE::LuaEngine::instance();

@@ -152,11 +152,11 @@ private:
 
         // The names already offered to `loweringScope`.
         //
-        // The scope counts OFFERS, so an offer it already holds still moves
-        // `generation()` and invalidates every lowering cached against it.
         // Offering each name once keeps a re-reading of the global table free
         // for a session whose names have stopped changing, which is every
-        // session after its first few macrosteps.
+        // session after its first few macrosteps. The scope itself does not
+        // care — offering a name it holds is a no-op there — so this is a
+        // saved call across the C surface and nothing more.
         std::unordered_set<std::string> offeredToScope;
 
         // The same names, asked of sce-build's ECMAScript frontend rather than
@@ -197,15 +197,22 @@ private:
             bool returnsValue;  // true: "return expr" form; false: assignment (ScriptUndefined)
             ScriptLanguage language = ScriptLanguage::ECMAScript;
 
-            // The scope this text was lowered against. A hit on a stale one is
-            // a MISS, because the lowering depended on it: `a && b` is refused
-            // by the frontend and rewritten while `a` is unknown, and answered
-            // by the frontend once a `<script>` has declared it. Without this,
-            // whichever evaluation came first would pin its answer for the
-            // life of the session and the later declaration could never reach
-            // it. `ScriptExecInfo` carries the same field for the same
-            // reason — both lowerings now ask the scope.
-            uint64_t scopeGeneration = 0;
+            // The scope this text was lowered against is NOT part of the key,
+            // and that is a premise held by a test rather than an assumption.
+            // Only a lowering that SUCCEEDED is cached — a refusal returns
+            // before this map is written — and the frontend answers a success
+            // the same way however many names are declared afterwards, because
+            // the scope reaches lowering at one place (`ecmascript::resolve`'s
+            // `read`) which either continues or refuses. So a session that
+            // declared something since still gets the right chunk from here.
+            // `sce-build/tests/scope_obligation.rs`'s
+            // `a_lowering_that_succeeded_is_unchanged_by_a_larger_scope` is
+            // what holds the frontend to that; if it fails, this map and
+            // `ScriptExecInfo` need a scope generation on their keys again.
+            // While `EcmaScriptToLuaTransformer` stood they did carry one:
+            // a refusal was answered WRONGLY rather than refused, so a first
+            // evaluation could cache a wrong answer that a later declaration
+            // had to displace.
         };
 
         std::unordered_map<std::string, ExprExecInfo> exprExecCache;
@@ -217,12 +224,11 @@ private:
             int chunkRef;
             ScriptLanguage language = ScriptLanguage::ECMAScript;
 
-            // As `ExprExecInfo::scopeGeneration`. A chunk hoists its own `var`
-            // bindings, so its lowering asks the scope only about the names it
-            // READS — but that is enough to change: `x = a + 1;` is refused
-            // and rewritten while `a` is unknown, and parsed once a `<data
-            // id>` has declared it.
-            uint64_t scopeGeneration = 0;
+            // Keyed without the scope, for the reason `ExprExecInfo` spells
+            // out. A chunk asks the scope about less than an expression does —
+            // it hoists its own `var` bindings, so only the names it READS are
+            // in question — which makes this the easier half of the same
+            // premise, not a separate one.
         };
 
         std::unordered_map<std::string, ScriptExecInfo> scriptExecCache;

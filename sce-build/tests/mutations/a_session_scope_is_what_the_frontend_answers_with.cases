@@ -20,23 +20,37 @@
 # ⚠ The two halves of the scope have DIFFERENT oracles, and asking that
 # question first is what this file exists to record. Every setup in the shared
 # ECMA-262 table arrives through `executeScript`, so that table can only see
-# `declare_chunk`; the `<data id>` half and the cache's scope guard are
-# invisible to it and would have been mutated into permanent SURVIVED. They are
-# answered by `ScriptLanguageSeam`, which reaches `setVariable` directly, and
-# the two tests there were written for these two cases rather than the other
-# way round.
+# `declare_chunk`; the `<data id>` half is invisible to it and would have been
+# mutated into permanent SURVIVED. That half is answered by
+# `ScriptLanguageSeam`, which reaches `setVariable` directly, and the tests
+# there were written for these cases rather than the other way round.
 #
-# ⚠⚠ The third case is the one that is a correctness bug wearing a caching
-# win's clothes. The per-session expression cache is keyed on the AUTHOR'S text
-# and the same text lowers differently as the scope grows, so an entry lowered
-# against an older scope has to be a MISS. Without that, whichever evaluation
-# came first pins its answer for the life of the session.
+# ⚠⚠ THREE CASES WERE RETIRED FROM THIS FILE ON 2026-08-31, and what replaced
+# them matters more than what they said. They mutated the caches' scope
+# generation — the field that made an entry lowered against an older scope a
+# MISS — and they SURVIVED twice, on 2026-08-29 and again when re-measured on
+# 2026-08-31. The re-measurement found why, and it was not a weak fixture: only
+# a lowering that SUCCEEDED is ever cached, a refusal returns before either map
+# is written, and a success does not change as the scope grows. The scope
+# reaches lowering at exactly one place — `ecmascript::resolve`'s `read`, which
+# asks `declares` and either continues or refuses — so it decides WHETHER text
+# lowers and never WHAT it lowers to. The guard had a subject only while
+# `EcmaScriptToLuaTransformer` answered refusals wrongly; retiring the rewriter
+# took the subject away, and nothing any fixture could do would have caught
+# those three.
+#
+# So the guard was removed and the premise it rested on was put where it can be
+# measured: `scope_obligation.rs`'s
+# `a_lowering_that_succeeded_is_unchanged_by_a_larger_scope`, with its own
+# mutation cases in
+# `a_lowering_is_decided_by_the_scope_not_written_by_it.cases`. If that test
+# ever fails, the caches need their generation back and these three cases with
+# it.
 
 mutation_ctest --test-dir build -R '^(ECMAScriptSemantics|ScriptLanguageSeam)$'
 mutation_targets sce/src/scripting/LuaEngine.cpp
-mutation_targets sce/src/scripting/LoweringScope.cpp
 # The suites each case reds, measured rather than assumed: the `<data id>` half
-# and the cache guard red only `ScriptLanguageSeam`, the chunk half only
+# reds only `ScriptLanguageSeam`, the chunk half only
 # `EcmaScriptSemanticsOnLuaEngine`.
 mutation_oracles tests/engine/ScriptLanguageSeamTest.cpp
 mutation_oracles tests/engine/EcmaScriptSemanticsTest.cpp
@@ -75,51 +89,11 @@ edit("sce/src/scripting/LuaEngine.cpp",
         } else {""")
 PY
 
-# ── The cache is keyed on the scope as well as the language ─────────
+# ── Where the third, fourth and fifth cases went ────────────────────
 #
-# Dropping the generation comparison leaves a cache that is still correct for
-# every expression evaluated once, which is why the oracle has to evaluate one
-# TWICE across a declaration. A fixture that asked once would report this
-# mutation as SURVIVED and be right about its own question.
-
-mutation_case "the expression cache ignores the scope it was lowered against" <<'PY'
-edit("sce/src/scripting/LuaEngine.cpp",
-     """    if (execIt != execCache.end() && execIt->second.language == expression.language() &&
-        execIt->second.scopeGeneration == scopeGeneration) {""",
-     "    if (execIt != execCache.end() && execIt->second.language == expression.language()) {")
-PY
-
-# ── Growth has to be observable at all ──────────────────────────────
-#
-# `generation()` is what the cache compares, and a counter that never moves
-# makes every stale entry a hit. This mutates the counter rather than the
-# comparison, so the two are held separately: a repair that removed one and
-# left the other would still be caught here.
-
-mutation_case "the scope never reports that it grew" <<'PY'
-edit("sce/src/scripting/LoweringScope.cpp",
-     """    sce_scope_declare(scope_, name.c_str());
-#endif
-    ++generation_;""",
-     """    sce_scope_declare(scope_, name.c_str());
-#endif""")
-PY
-
-# ── The SCRIPT cache is keyed on the scope as well ──────────────────
-#
-# The sibling of the case above, for the path `loweredScriptOf` owns. It is a
-# separate case rather than a wider one because the two caches are separate
-# maps with separate hit conditions: a repair that fixed one and left the other
-# would be a correctness bug on whichever path was not looked at, and a single
-# case cannot say which of the two it was reporting.
-#
-# `ScriptLanguageSeam` is the oracle here as well — the shared ECMA-262 table
-# executes each setup once per case in a fresh session, so it never asks the
-# same chunk text twice across a declaration and cannot see this at all.
-
-mutation_case "the script cache ignores the scope it was lowered against" <<'PY'
-edit("sce/src/scripting/LuaEngine.cpp",
-     """    if (sit != scriptExec.end() && sit->second.language == script.language() &&
-        sit->second.scopeGeneration == scopeGeneration) {""",
-     "    if (sit != scriptExec.end() && sit->second.language == script.language()) {")
-PY
+# "the expression cache ignores the scope it was lowered against", "the scope
+# never reports that it grew" and "the script cache ignores the scope it was
+# lowered against" stood here until 2026-08-31. The header above says why they
+# are gone and where the premise they were reaching for is measured now. They
+# are named here rather than only deleted so a reader who meets one of them in
+# `scripts/mutation-ledger show` finds the sentence that retired it.

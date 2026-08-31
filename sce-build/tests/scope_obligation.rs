@@ -43,6 +43,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use sce_build::ecmascript::builtins::INSTALLED_GLOBALS;
 use sce_build::ecmascript::{DocumentScope, ScopeStage};
 use sce_build::ecmascript_acceptance::sites;
 use sce_build::model::SCXMLModel;
@@ -453,4 +454,205 @@ fn scope_obligation_census() {
         "a site diverges at write_targets that did not diverge at load_time, \
          which the nesting makes impossible — the ladder's order is wrong"
     );
+}
+
+/// A name no tracked document declares, so declaring it grows a scope
+/// without answering anything that was refused for want of it.
+const PROBE_NAME: &str = "__a_name_no_tracked_document_declares";
+
+/// One scope on the growth ladder.
+///
+/// `redeclares` is carried rather than read back off the label, because
+/// the floor below counts the rungs an AUTHOR'S growth produces and a
+/// count taken from a name is a count a rename silently zeroes.
+struct Rung {
+    label: &'static str,
+    scope: DocumentScope,
+    /// This rung offers the scope a name it may already hold — an
+    /// installed global, or a `<data id>` the stages already declared.
+    redeclares: bool,
+}
+
+/// Scopes for one document, each holding every name the one before it
+/// held.
+///
+/// The stages are the growth a RUN produces. The two after them are the
+/// growth an AUTHOR produces and the stages cannot express: a `<data id>`
+/// whose name the frontend already installed — `Math`, `In`, `_event` —
+/// and a name nothing in the corpus uses. Both matter because
+/// [`DocumentScope`] holds one set of names with no room to say where a
+/// name came from, so re-declaring an installed global is the closest
+/// this frontend has to shadowing, and it is the shape a caller would
+/// have to worry about if lowering ever read the scope for anything but
+/// a refusal.
+fn ladder(model: &SCXMLModel) -> Vec<Rung> {
+    let mut out: Vec<Rung> = STAGES
+        .iter()
+        .map(|stage| Rung {
+            label: stage_name(*stage),
+            scope: DocumentScope::from_model_upto(model, *stage),
+            redeclares: false,
+        })
+        .collect();
+
+    let mut shadowed = DocumentScope::from_model_upto(model, ScopeStage::Everything);
+    for name in INSTALLED_GLOBALS {
+        shadowed.declare(name);
+    }
+    for var in &model.variables {
+        shadowed.declare(&var.id);
+    }
+    out.push(Rung {
+        label: "everything+redeclared",
+        scope: shadowed,
+        redeclares: true,
+    });
+
+    let mut probed = DocumentScope::from_model_upto(model, ScopeStage::Everything);
+    for name in INSTALLED_GLOBALS {
+        probed.declare(name);
+    }
+    for var in &model.variables {
+        probed.declare(&var.id);
+    }
+    probed.declare(PROBE_NAME);
+    out.push(Rung {
+        label: "everything+redeclared+probe",
+        scope: probed,
+        redeclares: true,
+    });
+
+    out
+}
+
+/// A document whose one expression lowers under the EMPTY scope, so the
+/// whole ladder above answers it and every growth step is a comparison
+/// rather than a skip.
+///
+/// `Math.round` names an installed global on purpose: the growth steps
+/// this control exists for are the two that re-declare one, and an
+/// expression naming nothing installed would walk past them unchanged
+/// whatever they did.
+fn closed_control() -> SCXMLModel {
+    control("", "", "", "Math.round(2.5) &gt; 0")
+}
+
+/// A lowering that SUCCEEDED is not changed by the scope growing.
+///
+/// This is the premise `LuaEngine`'s two per-session caches rest on.
+/// They are keyed on the AUTHOR'S text and hold only lowerings that
+/// succeeded — a refusal returns before either map is written — so
+/// serving a cached entry after the session declared something more is
+/// correct exactly while this holds. `sce/src/scripting/LuaEngine.cpp`
+/// cites this test by name where it says so.
+///
+/// It holds today for one reason, and the reason is narrow enough to be
+/// worth watching: [`DocumentScope`] reaches lowering at exactly one
+/// place — `ecmascript::resolve`'s `read`, which asks `declares` and
+/// either continues or refuses — and the set it asks only ever grows. So
+/// the scope decides WHETHER text lowers and never WHAT it lowers to.
+/// The day an emitter reads the scope, or a name can leave it, this test
+/// fails and those caches need their scope guard back. That is what its
+/// failure message says, because the next reader will meet it there and
+/// not here.
+///
+/// ⚠ A vacuous pass is the failure mode to design against: if nothing
+/// lowered at a small scope, every comparison would be skipped and the
+/// test would report a clean pass having measured nothing. Three things
+/// stop that — a control document written to lower under the installed
+/// scope alone, a floor on the comparisons the corpus contributes, and a
+/// floor on how many of them cross a step that re-declares an installed
+/// global.
+#[test]
+fn a_lowering_that_succeeded_is_unchanged_by_a_larger_scope() {
+    let mut compared = 0usize;
+    let mut across_redeclaration = 0usize;
+    let mut disagreements: Vec<String> = Vec::new();
+
+    let control_model = closed_control();
+    let mut documents: Vec<(String, SCXMLModel)> = vec![("<control>".to_string(), control_model)];
+    for path in corpus() {
+        let Some(model) = parse(&path) else { continue };
+        documents.push((
+            path.strip_prefix(repo_root())
+                .unwrap_or(&path)
+                .display()
+                .to_string(),
+            model,
+        ));
+    }
+
+    for (name, model) in &documents {
+        let sites = sites(model);
+        if sites.is_empty() {
+            continue;
+        }
+        let ladder = ladder(model);
+        for site in &sites {
+            // The first scope on the ladder that lowers this site pins
+            // the answer every later one has to repeat.
+            let mut pinned: Option<(&'static str, String)> = None;
+            for rung in &ladder {
+                let Rung {
+                    label,
+                    scope,
+                    redeclares,
+                } = rung;
+                let here = site.lower(scope);
+                let Some((first_label, first)) = &pinned else {
+                    if let Ok(lua) = here {
+                        pinned = Some((label, lua));
+                    }
+                    continue;
+                };
+                compared += 1;
+                if *redeclares {
+                    across_redeclaration += 1;
+                }
+                match here {
+                    Ok(lua) if lua == *first => {}
+                    Ok(lua) => disagreements.push(format!(
+                        "{name}: {} {:?}\n      at {first_label}: {first}\n      at {label}: {lua}",
+                        site.site, site.source
+                    )),
+                    Err(error) => disagreements.push(format!(
+                        "{name}: {} {:?}\n      at {first_label}: {first}\n      at {label}: REFUSED — {error}",
+                        site.site, site.source
+                    )),
+                }
+            }
+        }
+    }
+
+    assert!(
+        disagreements.is_empty(),
+        "{} lowering(s) changed when the scope grew, so a lowering cached \
+         against an earlier scope is no longer the answer. `LuaEngine`'s \
+         `exprExecCache` and `scriptExecCache` are keyed on the author's text \
+         and drop their scope guard on the strength of this test: restore \
+         `scopeGeneration` on both maps, and restore the three cases \
+         `sce-build/tests/mutations/a_session_scope_is_what_the_frontend_\
+         answers_with.cases` retired, before this is made green again.\n  {}",
+        disagreements.len(),
+        disagreements.join("\n  ")
+    );
+
+    // 6362 comparisons when this bound was set, of which 2222 cross a
+    // step that re-declares an installed global. Both bounds are well
+    // under the measurement, because a corpus that shrinks is a
+    // legitimate change and a walk that compares nothing is not.
+    assert!(
+        compared >= 4000,
+        "only {compared} lowering(s) were compared across a growth step, so \
+         this test did not measure the premise it reports on"
+    );
+    assert!(
+        across_redeclaration >= 1400,
+        "only {across_redeclaration} comparison(s) crossed a step that \
+         re-declares an installed global — the growth an AUTHOR produces is \
+         the half a stage ladder cannot express, and without it this test \
+         measures only the half a run produces"
+    );
+
+    println!("ScopeGrowth: compared={compared} across_redeclaration={across_redeclaration}");
 }

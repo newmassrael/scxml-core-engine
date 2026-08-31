@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -44,13 +43,26 @@ namespace SCE {
  * may legitimately differ, and one session's names must never answer for
  * another's.
  *
- * ## Growth is observable on purpose
+ * ## Growth does not rewrite what already lowered
  *
- * [`generation`] moves whenever a name is offered. A caller that CACHES a
- * lowering has cached an answer that depended on the scope, so it must be
- * able to tell that the scope has moved underneath it — otherwise the first
- * evaluation of an expression would pin the rewriter's answer for the life of
- * the session, and a `<script>` that ran afterwards could never change it.
+ * A scope only ever gains names, and it reaches the frontend's lowering at
+ * exactly one place — `ecmascript::resolve`'s `read`, which asks whether a
+ * name is declared and then either continues or refuses. So the scope decides
+ * WHETHER text lowers and never WHAT it lowers to, and an expression that
+ * lowered once lowers to the same Lua after every later declaration. That is
+ * what lets `LuaEngine` key its per-session caches on the author's text alone;
+ * it used to carry a scope generation beside them, and needed to while
+ * `EcmaScriptToLuaTransformer` answered refusals WRONGLY rather than the
+ * engine refusing.
+ *
+ * ⚠ It is a premise, not a definition, so it is measured:
+ * `sce-build/tests/scope_obligation.rs`'s
+ * `a_lowering_that_succeeded_is_unchanged_by_a_larger_scope` lowers every
+ * expression in every tracked document against a ladder of growing scopes —
+ * including two rungs that re-declare a name the scope already holds, which is
+ * the growth an author's `<data id="Math">` produces and no run-time stage can
+ * express. The day an emitter reads the scope, or a name can leave one, that
+ * test fails and those caches need their generation back.
  *
  * ## Refusal is an answer
  *
@@ -103,19 +115,8 @@ public:
     /// variable an earlier `<script>` introduced.
     std::optional<std::string> lowerScript(const std::string &source) const;
 
-    /// How many times a name has been offered to this scope.
-    ///
-    /// A counter rather than a set comparison, and it counts OFFERS rather
-    /// than additions: re-declaring a name it already holds still moves it.
-    /// That over-counts, and over-counting costs one re-lowering while
-    /// under-counting would serve a stale answer.
-    uint64_t generation() const {
-        return generation_;
-    }
-
 private:
     SceLoweringScope *scope_ = nullptr;
-    uint64_t generation_ = 0;
 };
 
 }  // namespace SCE
