@@ -4133,3 +4133,81 @@ stronger mutation — it is stripping line-leading comments before the search.
   a casefile selecting `:sce-kotlin-tests:test` UNFILTERED would be 373
   conformance cases per case. The `--tests` filter is not a convenience there,
   it is the affordability, and nothing yet refuses a casefile that omits it.
+
+## Landed 2026-08-31: the lane's two named cases are measured, not named
+
+Two Kotlin cases have been carried in prose across this whole axis:
+`SendParamPayloadTest` (§scxml-6.2, a repeated `<param>` name losing one of its
+values) and `XmlDataIsADomTreeTest` (§scxml-B-2, a `<data>` element's XML not
+arriving as a document). They failed on the Lua engine on 2026-08-29, and
+`scripts/gates/w3c-kotlin.sh` records both the failure and its closure in its
+own header — *"BOTH CLOSED 2026-08-30, and not by anybody fixing them"*.
+
+Two premises carried forward with them turned out to be stale, and re-measuring
+is what said so rather than reasoning:
+
+- **"the lane runs Rhino and QuickJS only".** `KOTLIN_ENGINE_PAIRS` has held
+  four rows since 2026-08-30, two of them Lua (`lua:ecmascript`, `lua:lua`).
+- **"the two cases fail".** Measured 2026-08-31 with
+  `./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua`: 373 cases, 0
+  failures, 0 skipped, and both classes present in the JUnit report.
+
+### What was actually unmeasured
+
+Not the engine and not the pair — the RUN. The gate's only coverage assertion
+was a total, `cases < 200`, against a suite of 373. A hundred and seventy-three
+cases could stop running inside a green run, these two among them, and the only
+thing naming them was a comment. The header even says so in its own words: *"a
+count in prose is the one thing nothing re-answers"* — and then names the two
+cases in prose, which nothing re-answers either.
+
+### What the gate does now
+
+The class population is DERIVED from `backends/kotlin/tests/src/test/kotlin`
+and compared against every row's JUnit report **in both directions**. There is
+no list and no exemption table. The derivation is a fixpoint, because 206 of
+these classes carry no `@Test` of their own: a type declaring a JUnit execution
+annotation is a carrier, a type extending a carrier is a carrier, and what must
+have run is every carrier that is a concrete class. Comments are stripped
+first, for the reason `reach_of` already taught this repository.
+
+The floor moved with it. `KOTLIN_RUNNABLE_FLOOR` sits under the DERIVATION, not
+under the report: the comparison is an equality and two empty sets are equal,
+so a reader that parsed nothing would pass every row while asserting nothing.
+And `skipped` is read at last — a disabled method leaves its class reporting,
+so the class comparison cannot see it.
+
+### Measured in the turn that landed it
+
+| what | witness |
+|---|---|
+| green | `scripts/gate w3c-kotlin` **rc=0**, 4 pairs × 251 classes / 373 cases, `> Task :sce-kotlin-tests:test` with no suffix 4 times, committed tree unchanged |
+| green | both named classes present in the `lua` report and passing |
+| red ① | one class excluded by a Gradle `filter` → **rc=1**, `SendParamPayloadTest` named |
+| red ② | ① with the `silent` check `false &&`-ed → **rc=0**, 4 rows of 372 |
+| red ③ | derivation blinded to one file → **rc=1**, `XmlDataIsADomTreeTest` as `unknown` |
+| red ④ | fixpoint expansion removed → **rc=1**, 49 derived, under the floor |
+| red ⑤ | one method `@Disabled` → **rc=1**, the skipped case named |
+
+Red ② is the one that matters: with only that predicate disabled the gate ran
+all four pairs at 372 and reported success. The floor of 200 saw nothing, and
+neither did anything else. A class that stops running had no detector in this
+lane before this round.
+
+Red ⑤ is why `skipped` is read separately — the class comparison stayed green
+through it, exactly as designed, and the two guards name different defects.
+
+### What this leaves open
+
+- **No shell runner in the corpus.** `scripts/mutate` drives cargo, ctest, go,
+  pytest and gradle. The logic a gate script EXECUTES is reachable by none of
+  them, so all five reds above were bought by hand and `--check` will not
+  re-prove them. `GateEnginePairsTest` is reachable because it is a JVM test
+  that READS the gate; this predicate cannot be, because it reads a report that
+  only exists once the gate has run.
+- **A `@Test` deleted with its class left behind** drops out of the derivation
+  and out of the report together, and passes. What this measures is a class
+  that stopped RUNNING, not one that stopped ASSERTING.
+- **`$REPORTS` is not emptied between rows.** Measured 2026-08-31: a probe file
+  placed there was gone after the next invocation, so Gradle clears it. That is
+  a measurement about Gradle's behaviour, not a guarantee this gate holds.
