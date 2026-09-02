@@ -112,6 +112,49 @@ from pathlib import Path
 # never to raise this constant without the owner saying so.
 PUSH_BUDGET_S = 300
 
+# ── When each cost_s was measured ─────────────────────────────────
+#
+# The header above says `cost_s` is warm wall-clock, measured rather than
+# estimated, and that "a stale cost is a wrong order, not a wrong comment".
+# It gives no way to ASK whether one is stale. Every date lives in prose
+# beside the number — "77s measured 2026-08-22 (declared 42)", "41s,
+# pace-normalised from the 2026-08-23 push" — and prose is not a thing a
+# gate can read. Measured 2026-09-02: of 35 slugs, prose carries a date
+# near 15 of them, and a scan cannot even tell those apart from the dates
+# that describe an incident rather than a measurement, because a slug's
+# comment block runs into its neighbour's.
+#
+# So the date moves here, where it is data. A slug ABSENT from this map is
+# unmeasured, and that is not a free pass: `every_cost_declares_when_it_was
+# _measured` in the self-test holds the absent count to the ceiling below,
+# and the ceiling may only fall. Both directions fail — more unmeasured
+# slugs than the ceiling is a regression, and FEWER means somebody measured
+# one and left the ceiling behind, which is how a ratchet quietly stops
+# ratcheting.
+#
+# Filling one in means running it: `scripts/gate --measure <slug>` on a warm
+# tree, then putting the number in `cost_s` and today's date here. CI cannot
+# do it — CI is cold by construction, and this repository's own measurement
+# says the two differ by 24x in the worst case (`cpp-suite`: declared 110s,
+# 2647s on a runner) and by 0.25x in the other direction (`ledger-citations`:
+# declared 121s, 30s on a runner). That spread is why the date matters more
+# than another number would: it is the only thing that says whether the
+# figure still describes the gate.
+COST_MEASURED: dict[str, str] = {
+    # `scripts/gate --measure rust-modrs-drift` on 2026-09-02 reported 0 —
+    # the same figure the table already carried. That is the point rather
+    # than an anticlimax: the NUMBER was right and unaskable, and what the
+    # run produced was the date. A cost that has not moved in three weeks
+    # and a cost nobody has timed since look identical until one of them
+    # carries this.
+    "rust-modrs-drift": "2026-09-02",
+}
+
+# Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
+# with slack — an equality, so measuring one gate forces this down in the
+# same commit and the count cannot drift away from the map.
+UNMEASURED_COST_CEILING = 34
+
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
     # Triggered by its own sources, and forced on by its dependents.
@@ -2230,6 +2273,40 @@ def self_test(repo_root: Path) -> int:
     if order_drift({"prereq": 1, "cheap": 2, "unmeasured": 0},
                    table=dict(drift_table, unmeasured={})) is None:
         failures.append("drift: an unmeasured gate's first timing went unreported")
+
+    cases += 1
+    # A date for a slug that no longer exists is worse than no date: it makes
+    # the unmeasured count look smaller than it is, which is the one number
+    # the ceiling below is trying to hold.
+    stale_keys = sorted(set(COST_MEASURED) - set(GATES))
+    if stale_keys:
+        failures.append(
+            f"COST_MEASURED names slugs the registry does not have: {stale_keys}")
+
+    cases += 1
+    # The value has to be a date, not a promise. "soon", "see comment" or an
+    # empty string would satisfy "the key is present" while telling the next
+    # reader nothing, and a field that accepts anything is not a field.
+    for slug, when in sorted(COST_MEASURED.items()):
+        if not (len(when) == 10 and when[4] == "-" and when[7] == "-"
+                and when[:4].isdigit() and when[5:7].isdigit()
+                and when[8:].isdigit()):
+            failures.append(
+                f"COST_MEASURED[{slug!r}] = {when!r} is not a YYYY-MM-DD date")
+
+    cases += 1
+    # The ratchet, and it fails in BOTH directions on purpose. More unmeasured
+    # slugs than declared means a gate arrived without its measurement date.
+    # Fewer means somebody measured one and left the ceiling where it was —
+    # the failure mode that turns a ratchet into a decoration, and the reason
+    # this is an equality rather than `<=`.
+    unmeasured = sorted(set(GATES) - set(COST_MEASURED))
+    if len(unmeasured) != UNMEASURED_COST_CEILING:
+        failures.append(
+            f"UNMEASURED_COST_CEILING says {UNMEASURED_COST_CEILING} but "
+            f"{len(unmeasured)} slug(s) carry no measurement date "
+            f"({'more arrived' if len(unmeasured) > UNMEASURED_COST_CEILING else 'one was measured — lower the ceiling'}): "
+            f"{unmeasured}")
 
     if failures:
         for f in failures:
