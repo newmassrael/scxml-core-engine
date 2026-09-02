@@ -34,7 +34,11 @@
 #![allow(dead_code)]
 
 /// Whether a character can continue a Rust identifier.
-fn continues_ident(c: char) -> bool {
+///
+/// Published because a caller that looks for a NAME in this text has to know
+/// where a name ends: `every_text` inside `every_texts_of` is a different
+/// word, and a scan that answered otherwise would report a call nobody makes.
+pub fn continues_ident(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
@@ -45,9 +49,49 @@ fn continues_ident(c: char) -> bool {
 /// inside a character literal, and inside a block comment being closed. Block
 /// comments nest, as they do in the language.
 pub fn code_only(src: &str) -> String {
+    strip(src).0
+}
+
+/// The same text with every literal blanked as well, delimiters included.
+///
+/// Character for character the same length as `code_only`'s answer, and the
+/// same line numbering: a literal character becomes a space, and a newline
+/// inside one stays a newline. So an offset into either string is an offset
+/// into the other, and a caller that needs the file's STRUCTURE — where a body
+/// opens, which brace closes it — scans this and slices its answer out of
+/// `code_only` at the same offsets.
+///
+/// It exists so that no second scanner has to learn the four ways a quote
+/// lies. A `{` inside a string literal is data; a scanner that counted it
+/// would run a function's body to the end of the file, and every reading taken
+/// from that body would then be about a brace nobody wrote.
+pub fn code_mask(src: &str) -> String {
+    strip(src).1
+}
+
+/// A literal character as the mask spells it.
+///
+/// Newlines survive so the mask's line numbering stays the code's; everything
+/// else becomes a space, which can neither open a body nor continue a name.
+fn blanked(c: char) -> char {
+    if c == '\n' {
+        '\n'
+    } else {
+        ' '
+    }
+}
+
+/// One walk, two answers: the code with its prose gone, and the same text with
+/// its literals gone as well.
+///
+/// Written as a pair rather than as two functions because they are the same
+/// lexer — the second answer is the first one with the literal arms writing
+/// blanks — and two copies of it would be two answers to where a string ends.
+fn strip(src: &str) -> (String, String) {
     let s: Vec<char> = src.chars().collect();
     let n = s.len();
     let mut out = String::with_capacity(src.len());
+    let mut mask = String::with_capacity(src.len());
     let mut i = 0;
 
     while i < n {
@@ -74,6 +118,7 @@ pub fn code_only(src: &str) -> String {
                 } else {
                     if s[i] == '\n' {
                         out.push('\n');
+                        mask.push('\n');
                     }
                     i += 1;
                 }
@@ -87,14 +132,17 @@ pub fn code_only(src: &str) -> String {
             if let Some(hashes) = raw_string_hashes_at(&s, i) {
                 let body = i + if s[i] == 'b' { 2 } else { 1 } + hashes + 1;
                 out.extend(&s[i..body]);
+                mask.extend(s[i..body].iter().copied().map(blanked));
                 i = body;
                 while i < n {
                     if s[i] == '"' && run_of_hashes(&s, i + 1) >= hashes {
                         out.extend(&s[i..=i + hashes]);
+                        mask.extend(s[i..=i + hashes].iter().copied().map(blanked));
                         i += hashes + 1;
                         break;
                     }
                     out.push(s[i]);
+                    mask.push(blanked(s[i]));
                     i += 1;
                 }
                 continue;
@@ -103,15 +151,19 @@ pub fn code_only(src: &str) -> String {
 
         if s[i] == '"' {
             out.push('"');
+            mask.push(' ');
             i += 1;
             while i < n {
                 if s[i] == '\\' && i + 1 < n {
                     out.push(s[i]);
                     out.push(s[i + 1]);
+                    mask.push(blanked(s[i]));
+                    mask.push(blanked(s[i + 1]));
                     i += 2;
                     continue;
                 }
                 out.push(s[i]);
+                mask.push(blanked(s[i]));
                 i += 1;
                 if s[i - 1] == '"' {
                     break;
@@ -126,15 +178,19 @@ pub fn code_only(src: &str) -> String {
         // to the next quote in the file.
         if s[i] == '\'' && char_literal_opens_at(&s, i) {
             out.push('\'');
+            mask.push(' ');
             i += 1;
             while i < n {
                 if s[i] == '\\' && i + 1 < n {
                     out.push(s[i]);
                     out.push(s[i + 1]);
+                    mask.push(blanked(s[i]));
+                    mask.push(blanked(s[i + 1]));
                     i += 2;
                     continue;
                 }
                 out.push(s[i]);
+                mask.push(blanked(s[i]));
                 i += 1;
                 if s[i - 1] == '\'' {
                     break;
@@ -144,9 +200,10 @@ pub fn code_only(src: &str) -> String {
         }
 
         out.push(s[i]);
+        mask.push(s[i]);
         i += 1;
     }
-    out
+    (out, mask)
 }
 
 /// How many `#` a raw string opening at `i` carries, if one opens there.
