@@ -160,7 +160,7 @@ PUSH_BUDGET_S = 300
 # What worked was repeating the measurement until it settled and reading
 # the band, then taking the worse of the last pair. A single reading here
 # says nothing; the first three of nine were still filling caches.
-PACED_BUDGET_SHARE_CEILING = 0.0
+PACED_BUDGET_SHARE_CEILING = 0.287
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -307,6 +307,9 @@ UNMEASURED_COST_CEILING = 26
 # printed to whoever is looking at the drift, so it has to say why the
 # two figures differ.
 PACE_NORMALISED: dict[str, str] = {
+    "codegen-build": "25s is the Cargo.lock rebuild its own script records "
+                     "at 24.6s; the 7.2-8.0s one-crate case and the 0.111s "
+                     "no-op are both timed, that worst case is not",
     "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
 }
 
@@ -324,22 +327,29 @@ GATES: dict[str, dict] = {
         # gate without rescuing its dependents, so a `ci_only` dependency
         # would leave the gates that execute its binary with nothing to run.
         #
-        # 0.111s, and the last figure in this table to stop being a chosen
-        # number. The 41 it carried was the cost of BUILDING sce-codegen; on
-        # a warm tree cargo finds nothing to do and the step is a tenth of a
-        # second. Six runs on 2026-09-02 read 0.099 0.100 0.087 [0.153]
-        # 0.107 0.111 — the bracketed one queued behind the cargo lock and
-        # is discarded, not averaged. 0.111 is the worse of the last valid
-        # pair.
+        # A CONDITIONAL cost, and the reason `cost_s_no_op` exists.
         #
-        # ⚠ The 41s has not vanished; it is out of scope by the header's own
-        # definition twenty lines up — "a cold first build is paid once in
-        # whatever order the gates run", and `cost_s` is warm wall-clock
-        # because "a push happens on a tree the developer has just built".
-        # Declaring the cold figure here would price every push for a
-        # rebuild almost none of them do. What the budget assumes, and this
-        # entry now depends on, is that the developer built before pushing.
-        "cost_s": 0.111,
+        # Reached through `deps` on a tree whose `sce-build/**` has not
+        # moved, cargo finds nothing to do: six runs on 2026-09-02 read
+        # 0.099 0.100 0.087 [0.153] 0.107 0.111, the bracketed one queued
+        # behind the cargo lock and discarded. That is `cost_s_no_op`.
+        #
+        # Selected by its OWN triggers, it rebuilds, and those triggers are
+        # exactly `sce-build/**` and the manifests below. Three runs after
+        # `touch sce-build/src/lib.rs` read 7.254 7.960 7.136 — one crate
+        # recompiling. A `Cargo.lock` move rebuilds the dependency tree
+        # instead, and this gate's own script records that at 24.6s "in a
+        # tree those gates had already warmed". The budget bounds the WORST
+        # case, so `cost_s` is that one.
+        #
+        # ⚠ 25 is pace-normalised — quoted from that script, not timed here.
+        # `cargo clean` would be needed to reproduce it and this machine's
+        # target/ is shared with sibling sessions. That is why this slug is
+        # back in PACE_NORMALISED after a round that wrongly emptied it:
+        # declaring the 0.111 alone left PUSH_BUDGET_S blind to tens of
+        # seconds on precisely the pushes that select this gate.
+        "cost_s": 25,
+        "cost_s_no_op": 0.111,
         "summary": "build target/debug/sce-codegen",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
@@ -1451,10 +1461,25 @@ COST_NOISE_S = 2.0
 COST_NOISE_FRACTION = 0.25
 
 
-def cost_is_stale(declared, measured) -> bool:
-    """Whether a run's timing genuinely disagrees with the declared cost."""
+def cost_is_stale(declared, measured, no_op=None) -> bool:
+    """Whether a run's timing genuinely disagrees with the declared cost.
+
+    `no_op` is the other half of a CONDITIONAL cost. A gate reached through
+    `deps` on a tree whose own sources have not moved may have nothing to
+    do — `codegen-build` finds its binary already built and returns in a
+    tenth of a second — while the same gate, selected by its own triggers,
+    rebuilds. Both figures are true, and which one a run produces is
+    decided by the change set rather than by the table.
+
+    Without this the cheap reading is read as drift on every warm push, and
+    the only way to quiet that was `PACE_NORMALISED`, which says "do not
+    trust the comparison" rather than "here is the other case". Declaring
+    the second number lets the comparison stay honest in both.
+    """
     if declared is None:
         return True  # an unmeasured gate has just been measured
+    if no_op is not None and not cost_is_stale(no_op, measured):
+        return False
     return abs(measured - declared) > max(COST_NOISE_S, declared * COST_NOISE_FRACTION)
 
 
@@ -1487,7 +1512,7 @@ def order_drift(measured: dict, table=None):
     moved, fresh = [], {}
     for s in slugs:
         declared = table[s].get("cost_s")
-        if cost_is_stale(declared, measured[s]):
+        if cost_is_stale(declared, measured[s], table[s].get("cost_s_no_op")):
             moved.append((s, declared, measured[s]))
             fresh[s] = dict(table[s], cost_s=measured[s])
         else:
@@ -1625,7 +1650,8 @@ def budget_breach(measured: dict, table=None):
         # What this gate would have cost on the machine the table was measured
         # on, so the comparison is like for like.
         at_table_pace = measured[slug] / pace
-        if cost_is_stale(declared, at_table_pace):
+        if cost_is_stale(declared, at_table_pace,
+                         table[slug].get("cost_s_no_op")):
             total += at_table_pace
             grown.append((slug, declared, round(at_table_pace)))
         else:
@@ -2664,6 +2690,82 @@ def self_test(repo_root: Path) -> int:
                 and when[8:].isdigit()):
             failures.append(
                 f"COST_MEASURED[{slug!r}] = {when!r} is not a YYYY-MM-DD date")
+
+    cases += 1
+    # `cost_s_no_op` is a claim with two halves, and both are checkable.
+    #
+    # It says: this gate can be reached without its own triggers firing, and
+    # when that happens it costs nearly nothing. A gate nothing pulls in
+    # through `deps` cannot be reached that way, so the field would be
+    # describing a case that never occurs — and a cheaper-than-cost_s claim
+    # that is not cheaper is just a second cost_s.
+    for slug in sorted(GATES):
+        no_op = GATES[slug].get("cost_s_no_op")
+        if no_op is None:
+            continue
+        declared = GATES[slug].get("cost_s")
+        if declared is None or no_op >= declared:
+            failures.append(
+                f"conditional cost: {slug} declares cost_s_no_op={no_op} "
+                f"against cost_s={declared} — the no-op case has to be the "
+                f"cheaper one, or the gate has one cost written twice")
+        pullers = sorted(o for o in GATES
+                         if slug in (GATES[o].get("deps") or []))
+        if not pullers:
+            failures.append(
+                f"conditional cost: {slug} declares a no-op cost but no gate "
+                f"lists it in `deps`, so it is only ever selected by its own "
+                f"triggers — the case that figure describes cannot arise")
+
+    cases += 1
+    # The EFFECT, not the data: drive the two functions that consume the
+    # field and check the answer changes.
+    #
+    # Calling `cost_is_stale` directly here would pass while every CALL SITE
+    # ignored the field — measured 2026-09-02, when exactly that mutation
+    # (dropping the argument in `order_drift`) left this case green. What
+    # the field is for is the report, so the report is what gets driven.
+    conditional = sorted(s for s in GATES if GATES[s].get("cost_s_no_op"))
+    if not conditional:
+        failures.append(
+            "conditional cost: no gate declares cost_s_no_op, so this case "
+            "is measuring nothing — drop it or restore the declaration")
+    baseline = {s: (GATES[s].get("cost_s") or 0)
+                for s in GATES if not GATES[s].get("ci_only")}
+    for slug in conditional:
+        spec = GATES[slug]
+        # `order_drift` cannot answer for a gate other gates depend on — the
+        # order is dependency-first, so its cost never moves its position.
+        # `budget_breach` names the gates it blamed, so drive that, and put
+        # an unrelated gate over the ceiling so there is a verdict to read
+        # rather than a None that would pass by measuring nothing.
+        filler = max((s for s in baseline if s != slug),
+                     key=lambda s: (baseline[s], s))
+
+        no_op_run = dict(baseline)
+        no_op_run[slug] = spec["cost_s_no_op"]
+        no_op_run[filler] = PUSH_BUDGET_S * 3
+        breach = budget_breach(no_op_run)
+        if breach is None:
+            failures.append(
+                f"conditional cost: forcing a breach with {filler} did not "
+                f"produce one, so the {slug} check below reads nothing")
+        elif any(row[0] == slug for row in breach["grown"]):
+            failures.append(
+                f"conditional cost: a run where {slug} did its no-op counts "
+                f"it as a GROWN gate against its {spec['cost_s']}s — "
+                f"cost_s_no_op is not reaching `budget_breach`, so a warm "
+                f"push is priced as though the gate had rebuilt")
+
+        # The other direction, or the branch would excuse everything.
+        slow_run = dict(baseline)
+        slow_run[slug] = PUSH_BUDGET_S * 3
+        breach = budget_breach(slow_run)
+        if breach is None or not any(row[0] == slug for row in breach["grown"]):
+            failures.append(
+                f"conditional cost: {slug} at {PUSH_BUDGET_S * 3}s is not "
+                f"blamed for the breach — the no-op branch is swallowing "
+                f"real growth")
 
     cases += 1
     # A cost below a second is a claim about the RUNNER, so check the runner.
