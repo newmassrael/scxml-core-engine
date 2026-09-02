@@ -17,9 +17,16 @@
 //! Two numbers decide it, and both are re-derivable:
 //!
 //! ```sh
-//! # 1. how often main is pushed  -> median 18.9 min (n=39 gaps,
-//! #    2026-08-28T06:45 .. 2026-08-29T16:52; 27 of 39 gaps under 30 min)
-//! git log --format='%H %cI' -40 main
+//! # 1. how often `main` is actually PUSHED -> median 17.6 min (26 gaps over 27
+//! #    pushes, 2026-08-30T14:44 .. 2026-09-02T08:46, read 2026-09-02T09:24Z).
+//! #    Derive it from the distinct SHAs runs were created for, NOT from
+//! #    `git log`: several commits ride one push, so counting COMMIT gaps
+//! #    invents gaps no push ever made. Measured 2026-09-02 over one window,
+//! #    `git log -40 main` says 21.0 and the pushed SHAs say 17.6 -- the three
+//! #    commits at 2026-08-30T23:43 alone contribute two 0.3-minute "gaps".
+//! gh run list --limit 300 --json createdAt,headSha,headBranch,event
+//! #    keep event=="push" && headBranch=="main", take each SHA's EARLIEST
+//! #    createdAt, then the median of adjacent differences
 //!
 //! # 2. how long each lane takes, and how often it is cancelled, over ITS OWN
 //! #    last 25 runs -- not a global window, see the warning below
@@ -31,17 +38,28 @@
 //!
 //! A lane whose median successful run exceeds the median push gap cannot be
 //! expected to finish between two pushes, so for that lane supersession is not
-//! deferral. Measured 2026-08-29 the two populations separate with room to
-//! spare: four lanes at 22.6, 28.3, 32.4 and 58.7 minutes, and every other lane
-//! in the directory at 13.8 minutes or less. [`LANES`] carries every figure.
+//! deferral. Measured 2026-09-02 the two populations still separate: seven
+//! lanes from 20.5 to 79.1 minutes, and the next one down at 15.9. [`LANES`]
+//! carries every figure.
 //!
-//! The cancellation counts are the CONFIRMING evidence rather than the rule:
-//! the three long lanes with wide or absent `paths:` filters lost 44%, 52% and
-//! 48% of their last 25 runs to cancellation, while no lane under 14 minutes
-//! lost more than 20%. It is not the rule because a narrow filter hides the
-//! defect rather than fixing it -- `ecma262-lowered-cpp.yml` shows 2 of 11,
-//! which looks like a short lane's rate, and both of those were mid-session
-//! pushes 17 and 14 minutes behind a run that needed 22.6.
+//! ⚠ **A cancellation COUNT is not evidence of the defect, and must not be read
+//! as one.** `cancel-in-progress: false` still cancels a PENDING run, so a
+//! repaired lane goes on reporting cancellations forever. Measured 2026-09-02,
+//! `cpp-suite.yml` -- repaired at `74f83197b7` and long since declaring `false`
+//! -- shows 13 cancellations in its last 25 runs, and its five newest cancelled
+//! NO JOB AT ALL: every one was still entirely pending. That is the setting
+//! working, not failing.
+//!
+//! What discriminates is whether the cancellation killed work that had already
+//! STARTED, which is a per-job question the run conclusion cannot answer:
+//!
+//! ```sh
+//! gh run view <id> --json jobs   # a cancelled job with startedAt < completedAt
+//! ```
+//!
+//! Read that way the counts confirm rather than mislead: `tree-hygiene.yml`
+//! before its repair killed 1.1 to 17.0 minutes of started work per
+//! cancellation, and `regen-reproduces.yml` still does.
 //!
 //! ⚠ **Take the numbers from a global run window and they say something else.**
 //! Read first from `gh run list --limit 300`, the same lanes reported 0
@@ -62,8 +80,16 @@
 //! A lane whose answer is about a COMMIT needs the stronger fix, a per-commit
 //! concurrency key, because nothing re-asks its question afterwards.
 //! `mutation-rounds.yml` is that lane and `mutation_round_survives_the_next_push`
-//! holds its key; it is short (2.6 min median) so this file's rule is satisfied
-//! by its `true`, and the two properties are independent.
+//! holds its key.
+//!
+//! ⚠ That key also settles THIS file's question, and the rule reads it. A group
+//! carrying `github.sha` puts every push in a group of its own, so a later push
+//! cannot supersede the run whatever `cancel-in-progress` says. A long lane
+//! therefore passes on `false` OR on a per-commit group -- a disjunction, not
+//! an exemption list, because it is read off the mechanism in the file rather
+//! than from a roster of names. Reading only the flag was a defect: it judged
+//! `mutation-rounds.yml` by a property that lane does not depend on, and the
+//! judgement happened to agree only while its median sat below the gap.
 //!
 //! ## Why the table lists every workflow
 //!
@@ -78,8 +104,29 @@ use std::path::{Path, PathBuf};
 /// The median gap between pushes to `main`, in minutes.
 ///
 /// A lane slower than this cannot finish between two of them. Re-derive with
-/// the `git log` command in this module's docs.
-const MEDIAN_PUSH_GAP_MINUTES: f64 = 18.9;
+/// command 1 in this module's docs -- from PUSHED SHAs, not from `git log`.
+///
+/// ⚠ This one number classifies every row in [`LANES`], so moving it moves the
+/// whole table at once and is never a local edit. It carried 18.9 until
+/// 2026-09-02, taken over 2026-08-28/29 by a `git log` recipe that counted
+/// commit gaps; re-derived from pushes over one window it is 17.6. Re-take it
+/// and the rows TOGETHER, from a single window, or the table ends up comparing
+/// lanes measured in one week against a threshold measured in another.
+///
+/// ⚠⚠ The `--limit` in that recipe is PART of the measurement, not an
+/// incidental of it. Re-derived 2026-09-02T09:35Z from the one command at
+/// three widths: 12.8 over 20 pushes at `--limit 200`, 17.6 over 27 at 300,
+/// and 21.8 over 33 at 400. A wider window reaches back into quieter
+/// stretches and the figure climbs with it, so a re-deriver who reads a
+/// different number should check the width before concluding this constant
+/// has drifted. That conclusion was reached once already, off a recipe that
+/// had changed what it measured without saying so.
+///
+/// ⚠⚠⚠ Which direction that error runs in is the part to keep:
+/// [`must_not_supersede`] fires only ABOVE this number, so a LARGER gap
+/// classifies fewer lanes as long and is the PERMISSIVE reading. Widening the
+/// window loosens the rule, and a re-derivation that widens it has to say so.
+const MEDIAN_PUSH_GAP_MINUTES: f64 = 17.6;
 
 /// One row per workflow in `.github/workflows/`, as MEASURED.
 ///
@@ -95,76 +142,73 @@ const MEDIAN_PUSH_GAP_MINUTES: f64 = 18.9;
 /// flipping the flag in the workflow is not, and that is what this file exists
 /// to catch.
 const LANES: &[(&str, f64, u32, u32)] = &[
-    ("clang-format-check.yml", 0.6, 0, 25),
-    ("clippy-check.yml", 1.4, 2, 21),
-    // 12 of its last 25 cancelled, but that window STRADDLES its own repair
-    // (`74f83197b7`, 2026-08-29T00:53) -- the count is pre-fix history and is
-    // recorded here as such. The median is what this table reads.
-    ("cpp-suite.yml", 58.7, 12, 12),
-    ("deploy-visualizer.yml", 11.1, 2, 23),
+    ("clang-format-check.yml", 0.8, 0, 25),
+    ("clippy-check.yml", 5.9, 0, 23),
+    // 13 of its last 25 cancelled while declaring `false`, and that is the
+    // setting WORKING: its five newest cancellations killed no job at all --
+    // every one was still entirely pending. Its repair (`74f83197b7`,
+    // 2026-08-29T00:53) now sits BEFORE this window instead of inside it, so
+    // unlike the row this replaces the count is post-fix history.
+    ("cpp-suite.yml", 79.1, 13, 11),
+    // The nearest lane below the line and the one to re-measure first: 15.9
+    // against a 17.6 gap, with `embed-vendor-smoke.yml` next at 15.2.
+    ("deploy-visualizer.yml", 15.9, 2, 22),
     ("doc-check.yml", 0.6, 0, 24),
-    ("doc-content-gate.yml", 2.5, 4, 21),
-    ("drift-verify.yml", 3.7, 4, 21),
-    ("ecma262-lowered-cpp.yml", 22.6, 2, 5),
-    // ⚠ NO HOSTED HISTORY OF ITS OWN — the lane landed 2026-08-30 and the `0`
-    // in the last column says so rather than hiding it.
+    ("doc-content-gate.yml", 10.6, 1, 24),
+    ("drift-verify.yml", 7.1, 1, 24),
+    ("ecma262-lowered-cpp.yml", 23.7, 2, 16),
+    // Now measured from ITS OWN hosted runs. This row carried 4.8 borrowed
+    // from the `Kotlin W3C Tests` job of `w3c-tests.yml` -- a strict superset
+    // of its work -- because the lane had landed 2026-08-30 with no history to
+    // take a median over, and the borrowing was recorded here with the
+    // instruction to replace it once it had. It has six successes now, median
+    // 6.3, so the stand-in is retired.
     //
-    // ⚠⚠ So the number is a CONSERVATIVE UPPER BOUND, and the direction
-    // matters: `must_not_supersede` only fires ABOVE the push gap, so an
-    // optimistic median is the permissive reading. A local wall clock is the
-    // wrong stand-in for exactly that reason — this row first carried 1.4 from
-    // `scripts/gate --measure` on the build machine, where the whole gate runs
-    // in 11 seconds from clean, which says nothing about a cold hosted runner.
+    // The borrowed bound held: 6.3 is above the 4.8 it stood in for and still
+    // far below the gap, so the substitution never changed a classification.
+    ("ecma262-lowered-kotlin.yml", 6.3, 0, 6),
+    ("embed-vendor-smoke.yml", 15.2, 4, 15),
+    ("example-codegen.yml", 9.3, 1, 24),
+    ("fmt-check.yml", 7.2, 0, 25),
+    // Moved 8.9 -> 22.2 earlier on 2026-09-02 and re-taken here at 25.5 in the
+    // common window; the population lost one success to the 25-run edge. Its
+    // 5 cancellations killed work rather than a queue slot, which is what
+    // `false` is for: `Rust Forge Conformance` was 44.9 min in when the push at
+    // 15:29Z took it, and `Build sce-codegen` 20.9 min in at 15:50Z. This lane
+    // fans out to five languages, so one supersession discards all five.
     //
-    // What it carries instead is DERIVED FROM HOSTED RUNS, of the nearest lane
-    // that exists: the `Kotlin W3C Tests` job of `w3c-tests.yml`, measured
-    // 2026-08-30 over its last three successes at 3.4, 4.8 and 3.4 minutes.
-    // That job is a strict SUPERSET of this one's work — it builds the same
-    // Kotlin runtime and the same Lua JNI library, plus QuickJS and Rhino,
-    // then runs 4 x 373 cases where this lane runs 98 — so its worst reading
-    // bounds this lane from above. 4.8 is that reading.
-    //
-    //   gh run list --workflow=w3c-tests.yml --limit 3 --json databaseId
-    //   gh run view <id> --json jobs      # startedAt/completedAt of that job
-    //
-    // Replace it with this lane's own median once it has runs to take one
-    // over, and move the row if it grew past the push gap.
-    ("ecma262-lowered-kotlin.yml", 4.8, 0, 0),
-    // The nearest lane below the line, and the one to re-measure first: 13.8
-    // minutes against an 18.9 minute gap, on only 12 successful runs.
-    ("embed-vendor-smoke.yml", 13.8, 4, 12),
-    ("example-codegen.yml", 1.2, 3, 22),
-    ("fmt-check.yml", 0.4, 3, 22),
-    // Re-measured 2026-09-02 and MOVED: 8.9 -> 22.2, over the same 20
-    // successes and the same 5 cancellations. Only the durations changed, so
-    // this row is not a bigger sample disagreeing with a smaller one -- it is
-    // the same population, slower.
-    //
-    // The median is exactly 22.15, the mean of the 10th and 11th of 20: 18.8
-    // and 25.5. It is written 22.2 here because the column is one decimal;
-    // a re-deriver whose rounding gives 22.1 has reproduced it, not moved it.
-    //
-    // The 5 cancellations killed work rather than a queue slot, which is what
-    // `false` is for: `Rust Forge Conformance` was 44.9 min in when the push
-    // at 15:29Z took it, and `Build sce-codegen` 20.9 min in at 15:50Z. This
-    // lane fans out to five languages, so one supersession discards all five.
-    //
-    // ⚠ A calmer day does NOT bring this row back down, and the heavy tail is
-    // the wrong thing to wait out. All six successes over 34 min fall on
-    // 2026-08-30/31 -- but those twelve median 25.8 while 2026-09-02's six
-    // median 22.15, the SAME figure as the full window. `cpp-suite.yml`
-    // records a genuine straddle; this row is not one. The tail moved and the
-    // middle did not, so moving this row needs a faster lane, not a quiet day.
-    ("forge-conformance.yml", 22.2, 5, 20),
-    ("http-endpoint-ssot.yml", 0.2, 0, 25),
+    // ⚠ A calmer day does not bring this row back down: measured at 22.2, the
+    // six runs of the quietest day median 22.15 -- the same figure as the full
+    // window. The heavy tail moved and the middle did not, so moving this row
+    // needs a faster lane, not a quieter day.
+    ("forge-conformance.yml", 25.5, 5, 19),
+    ("http-endpoint-ssot.yml", 7.2, 7, 18),
     ("license-verify.yml", 0.3, 0, 3),
-    ("mutation-rounds.yml", 2.6, 0, 19),
-    ("regen-reproduces.yml", 7.0, 3, 21),
-    ("rust-workspace-tests.yml", 32.4, 11, 12),
+    // ⚠⚠⚠ 2.6 -> 60.4, the largest move in this table, and the row that made
+    // reading `cancel-in-progress` ALONE untenable. This lane is long, declares
+    // `true`, and is nonetheless right: its concurrency group carries
+    // `github.sha`, so a later push lands in a different group and cannot
+    // supersede it at all. `group_is_per_commit` is what reads that.
+    //
+    // Its 0 cancellations are that mechanism showing. The old row justified the
+    // same `true` by calling the lane short, which this measurement refutes --
+    // the conclusion was right and its stated basis was false.
+    ("mutation-rounds.yml", 60.4, 0, 11),
+    // ⚠ Below the line at 14.1, and so required to declare `true`, yet 12 of
+    // its last 25 were cancelled and every one of the five newest killed
+    // STARTED work, 1.1 to 17.2 minutes in.
+    //
+    // The median rule does not catch this and is not being bent to: 11 of the
+    // 26 push gaps in the same window are under 13 minutes, so a 14.1-minute
+    // lane loses to those while still finishing inside the MEDIAN gap.
+    // Comparing medians answers "typically", and this row is the standing
+    // evidence that the typical case is not the whole distribution.
+    ("regen-reproduces.yml", 14.1, 12, 13),
+    ("rust-workspace-tests.yml", 41.4, 0, 16),
     ("sce-forge-codec-clippy.yml", 1.4, 1, 24),
-    ("sce-forge-codec-no-alloc.yml", 1.4, 1, 24),
+    ("sce-forge-codec-no-alloc.yml", 1.1, 1, 24),
     ("sce-rust-runtime-no-std.yml", 1.6, 0, 25),
-    ("spec-citations.yml", 0.9, 1, 22),
+    ("spec-citations.yml", 8.8, 1, 23),
     ("spec-snapshot-drift.yml", 0.3, 0, 24),
     // Re-measured 2026-09-02 and MOVED: 9.9 -> 20.1, cancellations 0 -> 12.
     // The row it replaces was true when it was taken -- bucket that same
@@ -176,9 +220,9 @@ const LANES: &[(&str, f64, u32, u32)] = &[
     // is the right clock for the question: a run waiting for a runner is
     // exactly the run the next push takes away.
     //
-    // The confirming count here is not a ratio, it is unanimous. All 12 of
-    // those cancellations killed a job that had ALREADY STARTED, 68s to 1264s
-    // of work in -- so `false`, which saves the run in flight, is the setting
+    // The confirming count here is not a ratio, it is unanimous. All of those
+    // cancellations killed a job that had ALREADY STARTED, 68s to 1264s of
+    // work in -- so `false`, which saves the run in flight, is the setting
     // every one of them needed. Ten are consecutive: every push from
     // `b59ed99b10` (04:28Z) through `9a16e970cf` (05:56Z), among them
     // `06ab3dcf44`, the commit repairing a red THIS job had raised at
@@ -194,8 +238,11 @@ const LANES: &[(&str, f64, u32, u32)] = &[
     // The reason the drift ran for four days: this lane is where
     // `ci_supersession_policy` runs, so a stale row here silences the only
     // check that would move it.
-    ("tree-hygiene.yml", 20.1, 12, 8),
-    ("w3c-tests.yml", 28.3, 13, 11),
+    // Re-taken in the common window at 20.5 with 11 cancellations over 9
+    // successes: the repair pushed at 08:46Z added a success and slid the
+    // oldest cancellation out of the 25-run window. Still long, still `false`.
+    ("tree-hygiene.yml", 20.5, 11, 9),
+    ("w3c-tests.yml", 72.4, 13, 10),
 ];
 
 fn repo_root() -> PathBuf {
@@ -264,6 +311,49 @@ fn top_level_cancel_in_progress(workflow: &str) -> Option<bool> {
     None
 }
 
+/// The `group:` expression of the TOP-LEVEL `concurrency:` block.
+///
+/// Read as text, and only from a block starting at column zero, for the same
+/// reasons [`top_level_cancel_in_progress`] is. Returns `None` when the block
+/// declares no `group:`.
+fn top_level_concurrency_group(workflow: &str) -> Option<String> {
+    let mut lines = workflow.lines();
+    while let Some(line) = lines.next() {
+        if line.trim_end() != "concurrency:" {
+            continue;
+        }
+        for body in lines.by_ref() {
+            let trimmed = body.trim_start();
+            if trimmed.starts_with('#') || trimmed.is_empty() {
+                continue;
+            }
+            // Left the block without meeting the key.
+            if !body.starts_with(' ') {
+                return None;
+            }
+            if let Some(value) = trimmed.strip_prefix("group:") {
+                return Some(value.trim().to_owned());
+            }
+        }
+        return None;
+    }
+    None
+}
+
+/// Whether a lane's concurrency group changes with every commit.
+///
+/// A group keyed on `github.sha` puts each push in a group of its OWN, so a
+/// later push cannot supersede this run whatever `cancel-in-progress` says --
+/// the two runs are never in the same group to begin with.
+///
+/// This is not an exemption from the property this file asserts, it is the
+/// STRONGER way of satisfying it, and the distinction matters: an exemption
+/// list would let a lane escape by being named, while this reads the mechanism
+/// off the file and is wrong only if the mechanism is absent.
+fn group_is_per_commit(workflow: &str) -> bool {
+    top_level_concurrency_group(workflow).is_some_and(|g| g.contains("github.sha"))
+}
+
 fn read_workflow(name: &str) -> String {
     let path = workflow_dir().join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
@@ -308,10 +398,44 @@ fn every_workflow_is_classified() {
     );
 }
 
+/// A row cannot report more outcomes than its window holds.
+///
+/// The window the docs prescribe is each lane's OWN last 25 runs, so
+/// `cancelled + successes` above 25 is arithmetically impossible for that
+/// query however plausible the duration looks. Nothing offline can tell a
+/// stale row from a fresh one, but this does catch the shape a hand-edited or
+/// half-updated row takes: one column re-taken and the other left behind.
+#[test]
+fn no_row_counts_more_runs_than_the_window_holds() {
+    const WINDOW: u32 = 25;
+    let mut checked = 0;
+
+    for &(file, _, cancelled, successes) in LANES {
+        assert!(
+            cancelled + successes <= WINDOW,
+            "{file} reports {cancelled} cancellation(s) and {successes} \
+             success(es) -- {} outcomes out of a {WINDOW}-run window. The two \
+             columns came from different readings.",
+            cancelled + successes
+        );
+        checked += 1;
+    }
+
+    assert!(
+        checked >= 20,
+        "only {checked} row(s) examined -- `LANES` has lost its rows, and this \
+         case passes trivially on an empty table"
+    );
+}
+
 #[test]
 fn a_lane_slower_than_the_push_gap_is_not_superseded() {
     let mut long = 0;
     let mut short = 0;
+    // How each long lane satisfies the rule, counted apart so that the
+    // per-commit arm cannot quietly become the only one that ever fires.
+    let mut long_by_false = 0;
+    let mut long_by_key = 0;
 
     for &(file, median, cancelled, successes) in LANES {
         let workflow = read_workflow(file);
@@ -329,15 +453,24 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
 
         if must_not_supersede(median) {
             long += 1;
+            let per_commit = group_is_per_commit(&workflow);
+            if per_commit {
+                long_by_key += 1;
+            } else if !declared {
+                long_by_false += 1;
+            }
             assert!(
-                !declared,
+                !declared || per_commit,
                 "{file} runs {median} min on a branch pushed every \
                  {MEDIAN_PUSH_GAP_MINUTES} min, so a push that arrives while it \
                  is running kills a verdict that will not be re-taken before the \
                  next one arrives -- and it still declares \
-                 `cancel-in-progress: true`. Measured: {cancelled} cancellation(s) \
-                 in its recent history, median over {successes} successes. Set \
-                 `cancel-in-progress: false`, or re-measure and move the row."
+                 `cancel-in-progress: true` under a group that is shared across \
+                 commits. Measured: {cancelled} cancellation(s) in its recent \
+                 history, median over {successes} successes. Set \
+                 `cancel-in-progress: false`, or key the group on `github.sha` \
+                 so a later push lands in a different group, or re-measure and \
+                 move the row."
             );
         } else {
             short += 1;
@@ -364,5 +497,242 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
         short >= 1,
         "every lane in `LANES` is slower than the push gap, so the short-lane \
          assertion was never evaluated"
+    );
+
+    // The per-commit arm is a way of PASSING the long-lane assertion, so a
+    // reader that answered `true` for every file would satisfy it everywhere
+    // and this case would assert nothing about `cancel-in-progress` at all.
+    // Requiring one long lane to pass on the flag keeps that arm evaluated.
+    assert!(
+        long_by_false >= 1,
+        "every long lane in `LANES` passes by having a per-commit concurrency \
+         key ({long_by_key} of them), so the `cancel-in-progress: false` \
+         requirement was never evaluated. Either the group reader has started \
+         answering yes for everything, or the last lane relying on the flag \
+         has gone -- both make this case vacuous."
+    );
+}
+
+// ## The prose copies of these two numbers
+//
+// Both figures above are also written in English, in the workflow that each
+// row is about and in two files that argue from them. Those copies are what a
+// person reads when they open a lane and ask why it declares what it declares,
+// and until 2026-09-02 nothing held them to the table: moving the constant
+// from 18.9 to 17.6 left SEVEN copies behind, in five workflows, a design doc
+// and `tools/git-hooks/gate_registry.py`, every one of them still naming a gap
+// no measurement supported.
+//
+// A rationale nobody re-measures is worse than none, because it promises a
+// derivation it no longer has. The three cases below give the copies an owner.
+
+/// The phrase every prose copy of a measured minute figure is written in.
+///
+/// A claim is a NUMBER immediately in front of this phrase, so a mention of
+/// the phrase without one -- this scanner's own source included -- is not a
+/// claim and needs no exemption to be skipped.
+const CLAIM_PHRASE: &str = "min median";
+
+/// What separates a claim about the PUSH GAP from a claim about one lane.
+const GAP_SUFFIX: &str = "gap between pushes";
+
+/// How far a stated figure may sit from the measured one, in minutes.
+///
+/// The columns carry one decimal, so this admits a rounding difference and
+/// nothing else.
+const CLAIM_TOLERANCE: f64 = 0.05;
+
+/// One prose statement of a measured minute figure.
+struct Claim {
+    minutes: f64,
+    about_the_gap: bool,
+}
+
+/// Flatten a file to a single line so a claim wrapped across two lines still
+/// reads as one sentence.
+///
+/// Leading comment markers go, and so do the three characters prose uses to
+/// quote or emphasise: `*` for markdown bold, a backtick for a code span, and
+/// `"` for a sentence split across adjacent string literals. Without that last
+/// one the copy in `tools/git-hooks/gate_registry.py` -- whose sentence is
+/// built from two literals on consecutive source lines -- reads as a lane
+/// claim rather than the gap claim it is.
+fn flatten(text: &str) -> String {
+    let mut raw = String::new();
+    for line in text.lines() {
+        let mut trimmed = line.trim();
+        for marker in ["///", "//", "#"] {
+            if let Some(rest) = trimmed.strip_prefix(marker) {
+                trimmed = rest.trim_start();
+                break;
+            }
+        }
+        raw.push_str(&trimmed.replace(['*', '`', '"'], " "));
+        raw.push(' ');
+    }
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Every stated minute figure in `text`, classified.
+fn claims(text: &str) -> Vec<Claim> {
+    let flat = flatten(text);
+    let mut found = Vec::new();
+    let mut from = 0;
+
+    while let Some(at) = flat[from..].find(CLAIM_PHRASE) {
+        let start = from + at;
+        let token = flat[..start].trim_end().rsplit(' ').next().unwrap_or("");
+        if let Ok(minutes) = token.parse::<f64>() {
+            let after = flat[start + CLAIM_PHRASE.len()..].trim_start();
+            found.push(Claim {
+                minutes,
+                about_the_gap: after.starts_with(GAP_SUFFIX),
+            });
+        }
+        from = start + CLAIM_PHRASE.len();
+    }
+
+    found
+}
+
+/// Every file git tracks, as an absolute path.
+fn tracked_files() -> Vec<PathBuf> {
+    let root = repo_root();
+    let out = std::process::Command::new("git")
+        .args(["-C", &root.display().to_string(), "ls-files", "-z"])
+        .output()
+        .expect("git ls-files runs");
+    assert!(out.status.success(), "git ls-files failed: {out:?}");
+    out.stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| root.join(String::from_utf8_lossy(s).into_owned()))
+        .collect()
+}
+
+/// The rows this file classifies as unable to finish between two pushes.
+fn long_lanes() -> Vec<(&'static str, f64)> {
+    LANES
+        .iter()
+        .filter(|(_, median, _, _)| must_not_supersede(*median))
+        .map(|(file, median, _, _)| (*file, *median))
+        .collect()
+}
+
+/// No file states a push gap other than [`MEDIAN_PUSH_GAP_MINUTES`].
+///
+/// The scan is `git ls-files` rather than a list of the files that carry a
+/// copy today, because the copy this exists to catch is the NEXT one, written
+/// into a file that does not exist yet. A list of today's answers cannot name
+/// it by construction.
+///
+/// ⚠ What this does NOT catch: a copy phrased some other way. The gate owns
+/// the canonical sentence, so "a median gap of 17.6 min" evades it. That is
+/// the limit of reading English as text, and it is stated here rather than
+/// left for a reader to discover -- the answer to a copy in a new phrasing is
+/// to rewrite it into this one, not to widen the scanner until it guesses.
+#[test]
+fn no_tracked_file_states_a_push_gap_other_than_the_constant() {
+    let root = repo_root();
+    let mut wrong = Vec::new();
+    let mut seen = 0;
+
+    for path in tracked_files() {
+        // Not UTF-8 means no prose to read, which is not a failure.
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for claim in claims(&text).iter().filter(|c| c.about_the_gap) {
+            seen += 1;
+            if (claim.minutes - MEDIAN_PUSH_GAP_MINUTES).abs() > CLAIM_TOLERANCE {
+                let shown = path.strip_prefix(&root).unwrap_or(&path);
+                wrong.push(format!(
+                    "  {}: states {} min",
+                    shown.display(),
+                    claim.minutes
+                ));
+            }
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "file(s) state a push gap that `MEDIAN_PUSH_GAP_MINUTES` \
+         ({MEDIAN_PUSH_GAP_MINUTES}) does not:\n{}\n\
+         The constant is the one authority. Moving it moves every copy in the \
+         same commit -- a rationale left behind still reads as derived.",
+        wrong.join("\n")
+    );
+
+    // Each long lane carries one copy, so the floor is read off the table
+    // rather than written down. Zero here means the scanner stopped finding
+    // claims, and a scanner that finds none agrees with everything.
+    let floor = long_lanes().len();
+    assert!(
+        seen >= floor,
+        "only {seen} push-gap claim(s) found where the {floor} long lane(s) in \
+         `LANES` each carry one -- the scanner has stopped reading the phrase \
+         it owns, and would pass a tree where every copy is stale."
+    );
+}
+
+/// Every long lane states, in its own workflow, the two numbers that decide it.
+///
+/// Presence is required rather than merely checked, and that is the point: a
+/// rule that only validates copies it happens to find is escaped by deleting
+/// the sentence, which is the cheapest way to make a comment stop disagreeing
+/// with a measurement.
+///
+/// A workflow may state its OWN median and no other lane's. A figure copied
+/// from a neighbouring lane has nothing that would ever re-derive it.
+#[test]
+fn every_long_lane_states_its_measured_numbers_in_its_own_workflow() {
+    let mut faults = Vec::new();
+    let lanes = long_lanes();
+
+    for (file, median) in &lanes {
+        let found = claims(&read_workflow(file));
+        let (gap, lane): (Vec<_>, Vec<_>) = found.iter().partition(|c| c.about_the_gap);
+
+        if gap.is_empty() {
+            faults.push(format!(
+                "  {file}: states no push gap. Add \"against a \
+                 {MEDIAN_PUSH_GAP_MINUTES} {CLAIM_PHRASE} {GAP_SUFFIX} to `main`\"."
+            ));
+        }
+        if !lane
+            .iter()
+            .any(|c| (c.minutes - median).abs() <= CLAIM_TOLERANCE)
+        {
+            faults.push(format!(
+                "  {file}: `LANES` measures it at {median} min and its own \
+                 comments state {:?}.",
+                lane.iter().map(|c| c.minutes).collect::<Vec<_>>()
+            ));
+        }
+        for other in lane
+            .iter()
+            .filter(|c| (c.minutes - median).abs() > CLAIM_TOLERANCE)
+        {
+            faults.push(format!(
+                "  {file}: states {} min, which is not its own {median} min \
+                 row -- a lane speaks for itself or points at the table.",
+                other.minutes
+            ));
+        }
+    }
+
+    assert!(
+        faults.is_empty(),
+        "long lane(s) whose comments disagree with `LANES`:\n{}",
+        faults.join("\n")
+    );
+
+    // `a_lane_slower_than_the_push_gap_is_not_superseded` already refuses an
+    // empty long population; this floor keeps THIS case from passing on one.
+    assert!(
+        !lanes.is_empty(),
+        "no lane in `LANES` is slower than the push gap, so this case examined \
+         nothing"
     );
 }

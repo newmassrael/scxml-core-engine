@@ -402,8 +402,11 @@ GATES: dict[str, dict] = {
                    "2026-09-02: ten consecutive pushes cancelled, the "
                    "repair of the lane's own red among them. The repair is "
                    "cancel-in-progress: false there, derived by "
-                   "`ci_supersession_policy` from a re-measured 20.1 min "
-                   "against a 18.9 min push gap — not spacing the pushes.",
+                   "`ci_supersession_policy`, which measures this lane "
+                   "against a "
+                   "17.6 min median gap between pushes to main — not by "
+                   "spacing the pushes. That test now holds every prose "
+                   "copy of the gap to its constant, this one included.",
         "cost_s": 193,
         "summary": "tree-wide marker + trigger + parity gates",
     },
