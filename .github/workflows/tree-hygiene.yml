@@ -43,9 +43,33 @@ on:
   pull_request:
     branches: [ main ]
 
+# Measured 2026-09-02 over this lane's own last 25 runs: 20.1 min median from
+# run creation to verdict, against a 18.9 min median gap between pushes to
+# `main`, so it can no longer finish between two of them. It was 9.9 when this
+# block still read `true`, and the ten minutes it gained are QUEUE and not
+# work -- the job's own compute is still ~11 min -- but a run waiting for a
+# runner is exactly the run the next push takes away.
+#
+# 12 of those 25 ended `cancelled`, and every one had ALREADY STARTED, 68s to
+# 1264s in. Ten are consecutive, `b59ed99b10` through `9a16e970cf`, and one of
+# the ten is the commit that repaired a red THIS job raised at `55620099a7`:
+# the lane stopped answering at the moment its answer mattered most.
+#
+# `false` rather than a per-commit key, for the reason `w3c-tests.yml` gives:
+# a newly queued run still cancels a PENDING one, so `false` saves the run IN
+# FLIGHT and the LATEST commit and defers the ones between. That is the right
+# trade for a lane whose answer is about a BRANCH -- this one re-asks
+# `git ls-files` against whatever the tree now holds, so nothing is lost by
+# answering for the newest commit. `mutation-rounds.yml` keys on `github.sha`
+# because its answer is about a COMMIT and nothing re-selects it.
+#
+# Held by `sce-build/tests/ci_supersession_policy.rs` -- which runs IN THIS
+# JOB. Its row is what decides this literal, and that circle is why the drift
+# lasted four days: while the lane is superseded, the check that would move
+# the row is the thing being superseded.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   hygiene:
