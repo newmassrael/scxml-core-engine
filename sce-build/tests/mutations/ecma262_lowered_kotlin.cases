@@ -48,11 +48,25 @@ PY
 # one nobody classified. That is the check a NEW lane is most likely to walk
 # past, because adding a file is not adding a row — and an unclassified lane
 # neither supersedes nor queues by anyone's decision.
+#
+# ⚠⚠⚠ THE ANCHOR NAMES THE LANE AND NOTHING ELSE, AND THAT IS THE WHOLE POINT.
+# It used to quote the row — `("ecma262-lowered-kotlin.yml", 4.8, 0, 0),` — and
+# died the moment the row was re-measured: 2026-09-02 gave `LANES` a fifth
+# column and replaced the borrowed 4.8 with a measured 6.3, so the case matched
+# nothing and the tree-hygiene lane went red on `mutation-cases`. Every figure
+# in that row exists to be re-measured; the lane's NAME is what the case is
+# about. Anchoring on the name is what makes it survive the next measurement.
+# ⛔ Do not "repair" this by re-quoting the current row — that is the same
+# defect with today's numbers in it.
+#
+# Renaming the row's key unclassifies the file on disk exactly as deleting the
+# row did, and it keeps the table compiling — a mutation the compiler refuses
+# proves nothing.
 
 mutation_case "the new lane is added without being classified" <<'PY'
 edit("sce-build/tests/ci_supersession_policy.rs",
-     '    ("ecma262-lowered-kotlin.yml", 4.8, 0, 0),',
-     '')
+     '"ecma262-lowered-kotlin.yml"',
+     '"ecma262-lowered-kotlin-unclassified.yml"')
 PY
 
 # ── The gate stops proving the two artifacts are different ─────────
