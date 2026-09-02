@@ -54,9 +54,9 @@ mutation_targets sce-build/tests/workflow_trigger_coverage.rs
 
 mutation_case "the detector reads the file's prose as well as its code" <<'PY'
 edit("sce-build/tests/workflow_trigger_coverage.rs",
-     """    let tracked_file_enumeration = concat!("ls-", "files");
+     """fn inputs_outgrow_a_filter(src: &str, helpers: &BTreeSet<String>) -> bool {
     let code = code_only(src);""",
-     """    let tracked_file_enumeration = concat!("ls-", "files");
+     """fn inputs_outgrow_a_filter(src: &str, helpers: &BTreeSet<String>) -> bool {
     let code = src.to_string();""")
 PY
 
@@ -108,6 +108,7 @@ edit("sce-build/tests/common/rust_source.rs",
      """                } else {
                     if s[i] == '\\n' {
                         out.push('\\n');
+                        mask.push('\\n');
                     }
                     i += 1;
                 }""",
@@ -126,13 +127,17 @@ edit("sce-build/tests/common/rust_source.rs",
      """                if s[i] == '\\\\' && i + 1 < n {
                     out.push(s[i]);
                     out.push(s[i + 1]);
+                    mask.push(blanked(s[i]));
+                    mask.push(blanked(s[i + 1]));
                     i += 2;
                     continue;
                 }
                 out.push(s[i]);
+                mask.push(blanked(s[i]));
                 i += 1;
                 if s[i - 1] == '"' {""",
      """                out.push(s[i]);
+                mask.push(blanked(s[i]));
                 i += 1;
                 if s[i - 1] == '"' {""")
 PY

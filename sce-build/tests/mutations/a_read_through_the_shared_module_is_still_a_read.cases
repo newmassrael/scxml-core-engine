@@ -1,0 +1,170 @@
+# Mutation cases for "a read reached through the shared module is still that
+# test's input".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_read_through_the_shared_module_is_still_a_read.cases`.
+#
+# `workflow_trigger_coverage` decides which test targets read inputs no
+# `paths:` filter can enumerate, and until this round it decided by reading
+# each target's OWN source for a signature. `sce-build/tests/common` is
+# compiled into every one of those binaries and holds `workflow_texts`, which
+# opens the workflow directory; a suite that took that helper up and dropped
+# its own `read_dir` would keep the input set and lose the signature.
+#
+# Measured 2026-09-03: three suites pull `common::workflow` in, and all three
+# spell a read of their own as well — so the hop changes no verdict on today's
+# tree. That is why every case below drives a written-out module rather than
+# the one on disk. A fixture taken from today's files measures today's files,
+# and the arrival this gate is for is a suite that stops spelling the read.
+#
+# ⚠ The quiet direction is the sharper one. Missing the hop does not merely
+# fail to register an arrival: the registry's other assertion then calls the
+# entry `stale` and tells the next reader to DELETE a registration that is
+# holding a tree-wide gate in the unfiltered workflow. A red that instructs
+# the wrong repair is worse than no red, which is why the fixture asserts the
+# derived helper set exactly rather than asserting that it is non-empty.
+
+mutation_tests -p sce-build --features cli --test workflow_trigger_coverage
+mutation_targets sce-build/tests/workflow_trigger_coverage.rs
+mutation_targets sce-build/tests/common/rust_source.rs
+
+# ── The defect itself, restored exactly ────────────────────────────
+#
+# The detector reads call sites and nothing else. This is the tree as it stood
+# before this round, so a repair that derived the helpers and then forgot to
+# ask them is caught here.
+#
+# The set is bound and dropped rather than removed from the signature: taking
+# the parameter away leaves it unused, `-D warnings` refuses the tree, and the
+# case reports INCONCLUSIVE instead of a red. That is how this one first came
+# back — discriminator ① of the same family as the import deletions.
+
+mutation_case "the detector reads the test's own source and nothing else" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     "    tree_wide_reads(&code) > 0 || helpers.iter().any(|h| names_ident(&code, h))",
+     "    let _ = helpers;\n    tree_wide_reads(&code) > 0")
+PY
+
+# ── A wrapper is the next shape of a module written to be the one reader ──
+#
+# `workflow_texts` is already the second reading of the same directory. The
+# third will be a helper that calls it, and a seed with no closure over calls
+# stops one hop short — the suite naming the wrapper reads the whole directory
+# and answers no.
+#
+# The closure is emptied at its predicate rather than at the loop, for the
+# reason above: deleting the `extend` makes the accumulator's mutability
+# unnecessary and the tree stops compiling before any test runs.
+
+mutation_case "a helper that only calls a reader stops counting as one" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     """            .filter(|(name, body)| {
+                !marked.contains(name) && marked.iter().any(|h| names_ident(body, h))
+            })""",
+     """            .filter(|(name, body)| {
+                let _ = (name, body);
+                false
+            })""")
+PY
+
+# ── A name is a word, not a run of characters ──────────────────────
+#
+# Matching anywhere in the text registers a target on a call nobody makes, and
+# the entry it adds obliges the unfiltered workflow — the one that runs on
+# every push — to carry a gate whose inputs an ordinary glob covers.
+
+mutation_case "a helper's name is matched anywhere in the text" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     """    (0..=t.len() - w.len()).any(|i| {
+        t[i..i + w.len()] == w[..]
+            && (i == 0 || !continues_ident(t[i - 1]))
+            && (i + w.len() == t.len() || !continues_ident(t[i + w.len()]))
+    })""",
+     """    text.contains(ident)""")
+PY
+
+# ── The structure is the mask's answer, not the code's ─────────────
+#
+# A `{` inside a string literal is data. Counted as a brace it runs one body to
+# the end of the file, and every helper past that point then reads nothing as
+# far as this gate can tell — the quiet direction again, arriving through a
+# parser rather than through a comment.
+
+mutation_case "the structure is read off the code instead of the mask" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     ".flat_map(|(_, text)| fn_bodies(&code_only(text), &code_mask(text)))",
+     ".flat_map(|(_, text)| fn_bodies(&code_only(text), &code_only(text)))")
+PY
+
+# The same decision from the other side: the mask earns its name only while it
+# stays character-for-character the code's length, and an arm that writes one
+# side without the other silently shifts every offset taken from it.
+
+mutation_case "the mask stops keeping step with the code it masks" <<'PY'
+edit("sce-build/tests/common/rust_source.rs",
+     """        if s[i] == '"' {
+            out.push('"');
+            mask.push(' ');
+            i += 1;
+            while i < n {
+                if s[i] == '\\\\' && i + 1 < n {
+                    out.push(s[i]);
+                    out.push(s[i + 1]);
+                    mask.push(blanked(s[i]));
+                    mask.push(blanked(s[i + 1]));""",
+     """        if s[i] == '"' {
+            out.push('"');
+            mask.push(' ');
+            i += 1;
+            while i < n {
+                if s[i] == '\\\\' && i + 1 < n {
+                    out.push(s[i]);
+                    out.push(s[i + 1]);
+                    mask.push(blanked(s[i]));""")
+PY
+
+# ── A nested function is not a name a caller can reach ─────────────
+#
+# Capturing it as well puts a private word into the set a test is matched
+# against, and attributes one read to two names — which is what turns the
+# equality below into something a double count can satisfy.
+
+mutation_case "a nested function is registered beside the one holding it" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     """        out.push((name, c[open + 1..close].iter().collect()));
+        i = close + 1;""",
+     """        out.push((name, c[open + 1..close].iter().collect()));
+        i = open + 1;""")
+PY
+
+# ── The module is what its own declaration says it is ──────────────
+#
+# Reading fewer files than the compiler builds is a blinded detector wearing
+# the shape of a working one: every helper in an unread file reads nothing,
+# every suite calling it answers no, and no assertion about the WORKFLOWS
+# moves. Only the cross-check against the directory refuses it.
+
+mutation_case "the module is read as its root file alone" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     "    for name in &declared {",
+     "    for name in declared.iter().take(0) {")
+PY
+
+# ── And the signature the whole thing is seeded from ───────────────
+#
+# A seed that matches nothing marks no helper, and a helper set that is empty
+# agrees with every call site. Both tables carry it, which is what makes this
+# the floor under the detector rather than one more row.
+
+mutation_case "the seed stops recognising the workflow directory" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     'code.matches(tracked_file_enumeration).count() + code.matches(".github/workflows").count()',
+     'code.matches(tracked_file_enumeration).count() + code.matches(".github/no-such-dir").count()')
+PY
+
+# One mutation deliberately NOT written: blanking a raw string's delimiters in
+# the mask cannot be observed today. No file under `sce-build/tests/common`
+# opens a raw string at all, so the arm is dead against the real module, and
+# the fixture reaches the same decision through the plain-string arm above. A
+# case that cannot fail is not evidence — it would report CAUGHT off the row
+# that was already failing.
