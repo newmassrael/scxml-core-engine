@@ -56,9 +56,37 @@ on:
       - 'backends/python/**'
   workflow_dispatch:
 
+# Re-measured 2026-09-02 over this lane's own last 25 runs: 20 successes with a
+# median of exactly 22.15 min from run creation to verdict -- the mean of the
+# 10th and 11th, 18.8 and 25.5 -- which `LANES` rounds to 22.2. The row there
+# read 8.9 over the SAME 20 successes and the SAME 5 cancellations, so the
+# population did not change, its durations did.
+#
+# `true` discarded work rather than a queue slot, and this lane fans out to
+# five languages so one supersession throws away all of them at once: `Rust
+# Forge Conformance` was 44.9 min in when the push at 2026-08-30T15:29Z took
+# it, and `Build sce-codegen` 20.9 min in at 15:50Z.
+#
+# `false` rather than a per-commit key, for the reason `w3c-tests.yml` gives:
+# a newly queued run still cancels a PENDING one, so `false` saves the run IN
+# FLIGHT and the LATEST commit and defers the ones between. That is the right
+# trade for a lane whose answer is about a BRANCH -- this one re-asks a fixed
+# numerical corpus against whatever the tree now holds.
+#
+# The verdict does not rest on which push-gap figure is right. 22.15 exceeds
+# all three defensible readings: the 18.9 `MEDIAN_PUSH_GAP_MINUTES` carries,
+# the 21.0 that constant's own `git log -40 main` recipe yields today, and the
+# 12.5 taken from the distinct SHAs actually pushed to `main`. A lane this far
+# above every one of them is long under all of them.
+#
+# ⚠ A calmer day does NOT bring this row back under the line. All six
+# successes over 34 min do fall on 2026-08-30/31, so the heavy tail is real
+# and dated -- but those twelve runs median 25.8 while 2026-09-02's six median
+# 22.15, the same figure as the full window. The tail moved; the middle did
+# not. Moving this row needs a faster lane, not a quieter day.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # Every language's harness pipes its test run into `tee` to keep a log for
 # the summary step. The runner's default shell is `bash -e {0}` — `-e` but
