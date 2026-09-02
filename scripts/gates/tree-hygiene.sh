@@ -122,6 +122,7 @@ cargo test -p sce-build --features cli,ffi \
     --test scope_obligation \
     --test lowering_decision_ledger \
     --test cli_expression_refusal \
+    --test cli_feature_gating \
     --test cli_guard_emission \
     --test mutation_rounds_selection \
     --test mutation_corpus_fits_its_lane \

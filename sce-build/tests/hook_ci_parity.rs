@@ -116,9 +116,11 @@ fn disables_debug_assertions(manifest: &str, section: &str) -> bool {
 /// Both lanes must invoke the workspace suite with the same feature set.
 ///
 /// Profile parity was gated from the start; feature parity was not, and
-/// that is the gap this closes. `sce-build` declares 15 test targets with
-/// `required-features = ["cli"]`, and cargo excludes an unmet-features
-/// target **silently** — it is never built and never reported as skipped.
+/// that is the gap this closes. `sce-build` declares test targets with
+/// `required-features = ["cli"]` — how many is derived by
+/// `cli_feature_gating`, which also asks whether the commands reaching
+/// them enable the feature at all — and cargo excludes an unmet-features
+/// target **silently**: it is never built and never reported as skipped.
 /// A lane without the flag therefore runs a strictly smaller suite while
 /// its step name still says `--workspace`, which is indistinguishable from
 /// the outside from a lane that runs everything and passes.

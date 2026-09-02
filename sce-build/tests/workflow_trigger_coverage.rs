@@ -119,6 +119,15 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // changes what it reads. It is also the only CI-side copy of
     // `scripts/gates/example-codegen.sh`, which has no workflow.
     "cli_expression_refusal",
+    // Reads every command-carrying file under `scripts/` and
+    // `.github/workflows/` to ask whether the commands that reach a
+    // `cli`-gated test target turn the feature on. The lane that gets
+    // that wrong next is a script or a workflow that does not exist
+    // today — an unmet feature drops a target without building it and
+    // without reporting a skip — so a `paths:` filter written over the
+    // callers as they stand enumerates the answers it already knows and
+    // by construction cannot name the arrival it exists to catch.
+    "cli_feature_gating",
     // Parses every committed *.scxml and asserts that each guard a
     // backend emits without a data model carries a value decided at
     // build time, so a document added anywhere changes what it reads —
