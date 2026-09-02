@@ -67,8 +67,14 @@ from pathlib import Path
 # discovering later. The numbers come from a full run, so a gate that
 # benefits from an earlier gate having warmed the cargo cache reads cheaper
 # here than it would in isolation — which is the number that matters for
-# ordering a full run, and the wrong one for judging a single gate. And the
-# clock is whole seconds, so everything under a second reads 0.
+# ordering a full run, and the wrong one for judging a single gate.
+#
+# The clock used to be whole seconds, which put a floor under this table: a
+# gate finishing in a fifth of a second read 0, so its declaration could
+# never be checked against anything and stayed a chosen number. `scripts/gate`
+# keeps a millisecond clock since 2026-09-02 and `cost_s` carries fractions
+# where a gate earns them; `a sub-second cost keeps the clock that read it`
+# in the self-test refuses to let that instrument go away again.
 #
 # Re-measure after any gate's work changes materially; a stale cost is a
 # wrong order, not a wrong comment. The value that motivated all of this
@@ -128,10 +134,22 @@ PUSH_BUDGET_S = 300
 # entries carrying 149s of the 177s a push can select, so the sentence
 # became this number.
 #
-# The road works, and 2026-09-02 walked it once: `nostd-mcu` was re-timed
-# alone on a warm tree, its declared 16s turned out to be genuinely stale
-# against a settled 6-9s, and the entry left. 149s became 133s of a smaller
-# total, so this ceiling came down with it.
+# The road works, and 2026-09-02 walked it to the end. Five entries left in
+# one day — `nostd-mcu` 16->9, `forge-go` 36->15, `w3c-go` 52->10,
+# `http-endpoint-ssot` 4->0.185, `codegen-build` 41->0.111 — and the share
+# went 0.842, 0.782, 0.651, 0.421, 0.397, 0.0. Every declared cost a push
+# can select is now a figure somebody read off a clock.
+#
+# ⚠ Zero does not retire this constant, it arms it. The check is an
+# EQUALITY, so the first pace-normalised cost to reach the local set fails
+# here — which is the state this was written to reach, not a reason to
+# delete it.
+#
+# ⚠⚠ What zero does NOT cover, stated rather than hidden: `w3c-kotlin` is
+# still in the map, and it is `ci_only`, so no push selects it and this
+# fraction cannot see it. That is the right scope for a PUSH budget, and it
+# does mean the map itself is not empty — the last entry is watched by
+# nothing here.
 #
 # ⚠ Two things that attempt got wrong, worth keeping because both are easy
 # to repeat. It first read a COLD figure (a push measured 32s that hour) as
@@ -142,7 +160,7 @@ PUSH_BUDGET_S = 300
 # What worked was repeating the measurement until it settled and reading
 # the band, then taking the worse of the last pair. A single reading here
 # says nothing; the first three of nine were still filling caches.
-PACED_BUDGET_SHARE_CEILING = 0.397
+PACED_BUDGET_SHARE_CEILING = 0.0
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -200,6 +218,16 @@ COST_MEASURED: dict[str, str] = {
     # The residue, stated rather than hidden: the registry still cannot say
     # WHICH numbers are pace-normalised — that lives in prose, and a future
     # drift report will keep pointing at `http-endpoint-ssot` every time.
+    # `codegen-build` left `PACE_NORMALISED` on 2026-09-02 and took the last
+    # local entry with it: no gate a push can select now declares a
+    # pace-normalised cost, so `PACED_BUDGET_SHARE_CEILING` is 0.0.
+    #
+    # It was the entry three rounds called un-retirable, and the reason was
+    # a misreading each time — first that a stopwatch could not replace a
+    # paced figure, then that the warm 0 was the gate's nature rather than
+    # the clock's floor. Both were answered by reading this file's own
+    # header: warm is the basis, cold is paid once and out of scope.
+    "codegen-build": "2026-09-02",
     "embed-manifest-failfast": "2026-09-02",
     # `forge-go` left `PACE_NORMALISED` on 2026-09-02, the second entry to go.
     # Seven readings: five `--measure` runs at 27 17 16 15 10 and two real
@@ -252,7 +280,7 @@ COST_MEASURED: dict[str, str] = {
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
 # with slack — an equality, so measuring one gate forces this down in the
 # same commit and the count cannot drift away from the map.
-UNMEASURED_COST_CEILING = 27
+UNMEASURED_COST_CEILING = 26
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -279,7 +307,6 @@ UNMEASURED_COST_CEILING = 27
 # printed to whoever is looking at the drift, so it has to say why the
 # two figures differ.
 PACE_NORMALISED: dict[str, str] = {
-    "codegen-build": "41s, paced from the 2026-08-23 push rather than timed alone",
     "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
 }
 
@@ -296,8 +323,23 @@ GATES: dict[str, dict] = {
         # Stays local however expensive it gets: `drop_ci_only` removes a
         # gate without rescuing its dependents, so a `ci_only` dependency
         # would leave the gates that execute its binary with nothing to run.
-        # 41s, pace-normalised from the 2026-08-23 push.
-        "cost_s": 41,
+        #
+        # 0.111s, and the last figure in this table to stop being a chosen
+        # number. The 41 it carried was the cost of BUILDING sce-codegen; on
+        # a warm tree cargo finds nothing to do and the step is a tenth of a
+        # second. Six runs on 2026-09-02 read 0.099 0.100 0.087 [0.153]
+        # 0.107 0.111 — the bracketed one queued behind the cargo lock and
+        # is discarded, not averaged. 0.111 is the worse of the last valid
+        # pair.
+        #
+        # ⚠ The 41s has not vanished; it is out of scope by the header's own
+        # definition twenty lines up — "a cold first build is paid once in
+        # whatever order the gates run", and `cost_s` is warm wall-clock
+        # because "a push happens on a tree the developer has just built".
+        # Declaring the cold figure here would price every push for a
+        # rebuild almost none of them do. What the budget assumes, and this
+        # entry now depends on, is that the developer built before pushing.
+        "cost_s": 0.111,
         "summary": "build target/debug/sce-codegen",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
