@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// §scxml-3.2 — what `sce.Engine.EnterAt` accepts, and what it refuses, on the
+// §scxml-3.11 — what `sce.Engine.EnterAt` accepts, and what it refuses, on the
 // Go engine.
 //
 // The door exists so a host can bring a machine back where it was, in a new
@@ -178,7 +178,7 @@ func TestAnEmptyConfigurationIsRefused(t *testing.T) {
 	}
 }
 
-// §scxml-3.3: a compound state holds exactly one active child. `working` and
+// §scxml-3.11: a compound state holds exactly one active child. `working` and
 // `judging` are both children of `running`, and a run stands in one of them.
 func TestTwoSiblingsOfOneRegionAreRefused(t *testing.T) {
 	_, engine := newParallel()
@@ -190,7 +190,7 @@ func TestTwoSiblingsOfOneRegionAreRefused(t *testing.T) {
 	}
 }
 
-// §scxml-3.4: a `<parallel>` holds EVERY region. Dropping one is the shape a
+// §scxml-3.11: a `<parallel>` holds EVERY region. Dropping one is the shape a
 // host produces when it journals only the region it cares about.
 func TestAParallelWithARegionMissingIsRefused(t *testing.T) {
 	_, engine := newParallel()
@@ -235,7 +235,7 @@ func TestARepeatedStateIsRefused(t *testing.T) {
 	}
 }
 
-// §scxml-3.2: a configuration closes on exactly one root. `settled` is a
+// §scxml-3.11: a configuration closes on exactly one root. `settled` is a
 // top-level `<final>`, so a set holding both it and `run` describes two
 // machines.
 func TestTwoRootsAreRefused(t *testing.T) {
@@ -255,7 +255,7 @@ func TestACurrentStateOutsideTheConfigurationIsRefused(t *testing.T) {
 	}
 }
 
-// §scxml-3.3 makes the current state the ATOMIC state the engine descended to.
+// §scxml-3.11 makes the current state the ATOMIC state the engine descended to.
 // A compound one is the shape a host produces when it journals the ancestor
 // rather than the leaf.
 func TestANonAtomicCurrentStateIsRefused(t *testing.T) {

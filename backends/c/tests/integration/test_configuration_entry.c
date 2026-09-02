@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// W3C SCXML 3.2 — what `_init_at` accepts, and what it refuses, on the C11
+// W3C SCXML 3.11 — what `_init_at` accepts, and what it refuses, on the C11
 // engine.
 //
 // The door exists so a host can bring a machine back where it was, in a new
@@ -140,7 +140,7 @@ static void an_empty_configuration_is_refused(void) {
                    P_(CONFIG_EMPTY));
 }
 
-/* W3C SCXML 3.3: a compound state holds exactly one active child. `working`
+/* W3C SCXML 3.11: a compound state holds exactly one active child. `working`
    and `judging` are both children of `running`, and a run stands in one. */
 static void two_siblings_of_one_region_are_refused(void) {
     p_state_t configuration[AT_WORK_COUNT + 1u];
@@ -154,7 +154,7 @@ static void two_siblings_of_one_region_are_refused(void) {
                    P_(CONFIG_COMPOUND_CHILD_COUNT));
 }
 
-/* W3C SCXML 3.4: a `<parallel>` holds EVERY region. Dropping one is the shape
+/* W3C SCXML 3.11: a `<parallel>` holds EVERY region. Dropping one is the shape
    a host produces when it journals only the region it cares about. */
 static void a_parallel_with_a_region_missing_is_refused(void) {
     static const p_state_t configuration[] = {
@@ -197,7 +197,7 @@ static void a_repeated_state_is_refused(void) {
                    P_(CONFIG_DUPLICATE));
 }
 
-/* W3C SCXML 3.2: a configuration closes on exactly one root. `settled` is a
+/* W3C SCXML 3.11: a configuration closes on exactly one root. `settled` is a
    top-level `<final>`, so a set holding both it and `run` describes two
    machines. */
 static void two_roots_are_refused(void) {
@@ -417,6 +417,6 @@ int main(void) {
         fprintf(stderr, "FAIL: %d configuration-entry claim(s) did not hold\n", failures);
         return 1;
     }
-    printf("PASS: configuration entry (W3C SCXML 3.2)\n");
+    printf("PASS: configuration entry (W3C SCXML 3.11)\n");
     return 0;
 }

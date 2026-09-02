@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// §scxml-3.2 — what `StaticExecutionEngine::enterAt` accepts, and what it
+// §scxml-3.11 — what `StaticExecutionEngine::enterAt` accepts, and what it
 // refuses.
 //
 // The door exists so a host can bring a machine back where it was, in a new
@@ -125,7 +125,7 @@ TEST_F(ConfigurationEntryAotTest, AnEmptyConfigurationIsRefused) {
     EXPECT_EQ(sm.enterAt({}, LoopState::Working), ConfigurationRejection::Empty) << "a machine is never in nothing";
 }
 
-// §scxml-3.3: a compound state holds exactly one active child. `priming` and
+// §scxml-3.11: a compound state holds exactly one active child. `priming` and
 // `working` are both children of `running`, and a run stands in one of them.
 TEST_F(ConfigurationEntryAotTest, TwoSiblingsOfOneRegionAreRefused) {
     Loop sm;
@@ -137,7 +137,7 @@ TEST_F(ConfigurationEntryAotTest, TwoSiblingsOfOneRegionAreRefused) {
            "reading for";
 }
 
-// §scxml-3.4: a `<parallel>` holds EVERY region. Dropping one is the shape a
+// §scxml-3.11: a `<parallel>` holds EVERY region. Dropping one is the shape a
 // host produces when it journals only the region it cares about.
 TEST_F(ConfigurationEntryAotTest, AParallelWithARegionMissingIsRefused) {
     Loop sm;
@@ -169,7 +169,7 @@ TEST_F(ConfigurationEntryAotTest, ARepeatedStateIsRefused) {
     EXPECT_EQ(sm.enterAt(configuration, LoopState::Working), ConfigurationRejection::Duplicate);
 }
 
-// §scxml-3.2: a configuration closes on exactly one root. `converged` is a
+// §scxml-3.11: a configuration closes on exactly one root. `converged` is a
 // top-level `<final>`, so a set holding both it and `run` describes two
 // machines.
 TEST_F(ConfigurationEntryAotTest, TwoRootsAreRefused) {
@@ -187,7 +187,7 @@ TEST_F(ConfigurationEntryAotTest, ACurrentStateOutsideTheConfigurationIsRefused)
            "definition";
 }
 
-// §scxml-3.3 makes the current state the ATOMIC state the engine descended to.
+// §scxml-3.11 makes the current state the ATOMIC state the engine descended to.
 // A compound one is the shape a host produces when it journals the ancestor
 // rather than the leaf.
 TEST_F(ConfigurationEntryAotTest, ANonAtomicCurrentStateIsRefused) {

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-"""W3C SCXML 3.2 / 3.3 / 3.4 — is a set of states a CONFIGURATION of the
+"""W3C SCXML 3.11 — is a set of states a CONFIGURATION of the
 document, and is ``current`` its current state?
 
 ``Engine.active_configuration`` publishes the configuration a machine is in and
@@ -47,15 +47,15 @@ class ConfigurationRejection(Enum):
     ANCESTOR_MISSING = (
         "a state is present whose parent is not, so the set is not ancestor-closed"
     )
-    ROOT_COUNT = "a configuration closes on exactly one root (W3C SCXML 3.2)"
+    ROOT_COUNT = "a configuration closes on exactly one root (W3C SCXML 3.11)"
     COMPOUND_CHILD_COUNT = (
-        "a compound state holds exactly one active child (W3C SCXML 3.3)"
+        "a compound state holds exactly one active child (W3C SCXML 3.11)"
     )
     PARALLEL_REGION_MISSING = (
-        "a <parallel> holds every region and one is missing (W3C SCXML 3.4)"
+        "a <parallel> holds every region and one is missing (W3C SCXML 3.11)"
     )
     PARALLEL_CHILD_COUNT = (
-        "a <parallel> holds every region and nothing else (W3C SCXML 3.4)"
+        "a <parallel> holds every region and nothing else (W3C SCXML 3.11)"
     )
     ATOMIC_HAS_CHILDREN = "an atomic state has a child in the set"
     CURRENT_NOT_ACTIVE = "the current state is not in the configuration"
@@ -89,9 +89,9 @@ def validate_configuration(
 
     - the set is not empty and names nothing twice;
     - it is ancestor-closed, and closes on exactly one root;
-    - W3C SCXML 3.3: a compound member holds exactly ONE active child — this is
+    - W3C SCXML 3.11: a compound member holds exactly ONE active child — this is
       what refuses two siblings of one region;
-    - W3C SCXML 3.4: a ``<parallel>`` member holds ALL of its regions, because
+    - W3C SCXML 3.11: a ``<parallel>`` member holds ALL of its regions, because
       they are simultaneously active when the parent element is active;
     - an atomic member holds no children;
     - the claimed current state is an atomic member of the set.

@@ -127,7 +127,7 @@ enum {{ csym_prefix }}{{ model.name }}_state_e {
 };
 typedef enum {{ csym_prefix }}{{ model.name }}_state_e {{ csym_prefix }}{{ model.name }}_state_t;
 
-/* ── W3C SCXML 3.2: why a restored configuration was refused ───────── */
+/* ── W3C SCXML 3.11: why a restored configuration was refused ──────── */
 {# The C twin of `SCE::Core::ConfigurationRejection` (cpp),
    `ConfigurationRejection` (rust / go / kotlin / python). An enumerated
    reason rather than a bool: a host handing back a journal it wrote itself
@@ -144,13 +144,13 @@ enum {{ csym_prefix }}{{ model.name }}_configuration_rejection_e {
     {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_DUPLICATE,
     /* A state is present whose parent is not — the set is not ancestor-closed. */
     {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ANCESTOR_MISSING,
-    /* W3C SCXML 3.2: a configuration closes on exactly one root. */
+    /* W3C SCXML 3.11: a configuration closes on exactly one root. */
     {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ROOT_COUNT,
-    /* W3C SCXML 3.3: a compound state holds exactly one active child. */
+    /* W3C SCXML 3.11: a compound state holds exactly one active child. */
     {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_COMPOUND_CHILD_COUNT,
-    /* W3C SCXML 3.4: a <parallel> holds EVERY region, and one is missing. */
+    /* W3C SCXML 3.11: a <parallel> holds EVERY region, and one is missing. */
     {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_REGION_MISSING,
-    /* W3C SCXML 3.4: a <parallel> holds every region and nothing else. */
+    /* W3C SCXML 3.11: a <parallel> holds every region and nothing else. */
     {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_CHILD_COUNT,
     /* An atomic state has a child in the set, so it is not atomic here. */
     {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ATOMIC_HAS_CHILDREN,
@@ -1198,11 +1198,11 @@ const char *{{ csym_prefix }}{{ model.name }}_state_name({{ csym_prefix }}{{ mod
    journal a reported failure instead of a machine quietly somewhere else. */
 bool {{ csym_prefix }}{{ model.name }}_state_from_name(const char *name, {{ csym_prefix }}{{ model.name }}_state_t *out);
 
-/* W3C SCXML 3.2: a human-readable reason, for the message a refusal carries. */
+/* W3C SCXML 3.11: a human-readable reason, for the message a refusal carries. */
 const char *{{ csym_prefix }}{{ model.name }}_configuration_rejection_text(
     {{ csym_prefix }}{{ model.name }}_configuration_rejection_t r);
 
-/* W3C SCXML 3.2 / 3.3 / 3.4: is this set of states a CONFIGURATION of the
+/* W3C SCXML 3.11: is this set of states a CONFIGURATION of the
    document?
 
    Pure — reads the static hierarchy and nothing else, touches no machine, and

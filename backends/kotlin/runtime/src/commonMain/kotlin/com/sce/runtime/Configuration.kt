@@ -4,7 +4,7 @@
 package com.sce.runtime
 
 /**
- * §scxml-3.2 / §scxml-3.3 / §scxml-3.4: is a set of states a CONFIGURATION of
+ * §scxml-3.11: is a set of states a CONFIGURATION of
  * the document, and is `current` its current state?
  *
  * [StateMachineEngine.activeConfiguration] publishes the configuration a
@@ -43,17 +43,17 @@ enum class ConfigurationRejection(val reason: String) {
     /** A state is present whose parent is not — the set is not ancestor-closed. */
     ANCESTOR_MISSING("a state is present whose parent is not, so the set is not ancestor-closed"),
 
-    /** §scxml-3.2: a configuration closes on exactly one root. */
-    ROOT_COUNT("a configuration closes on exactly one root (W3C SCXML 3.2)"),
+    /** §scxml-3.11: a configuration closes on exactly one root. */
+    ROOT_COUNT("a configuration closes on exactly one root (W3C SCXML 3.11)"),
 
-    /** §scxml-3.3: a compound state holds exactly one active child. */
-    COMPOUND_CHILD_COUNT("a compound state holds exactly one active child (W3C SCXML 3.3)"),
+    /** §scxml-3.11: a compound state holds exactly one active child. */
+    COMPOUND_CHILD_COUNT("a compound state holds exactly one active child (W3C SCXML 3.11)"),
 
-    /** §scxml-3.4: a `<parallel>` holds EVERY region, and one is missing. */
-    PARALLEL_REGION_MISSING("a <parallel> holds every region and one is missing (W3C SCXML 3.4)"),
+    /** §scxml-3.11: a `<parallel>` holds EVERY region, and one is missing. */
+    PARALLEL_REGION_MISSING("a <parallel> holds every region and one is missing (W3C SCXML 3.11)"),
 
-    /** §scxml-3.4: a `<parallel>` holds every region and nothing else. */
-    PARALLEL_CHILD_COUNT("a <parallel> holds every region and nothing else (W3C SCXML 3.4)"),
+    /** §scxml-3.11: a `<parallel>` holds every region and nothing else. */
+    PARALLEL_CHILD_COUNT("a <parallel> holds every region and nothing else (W3C SCXML 3.11)"),
 
     /** An atomic state has a child in the set, so it is not atomic here. */
     ATOMIC_HAS_CHILDREN("an atomic state has a child in the set"),
@@ -62,7 +62,7 @@ enum class ConfigurationRejection(val reason: String) {
     CURRENT_NOT_ACTIVE("the current state is not in the configuration"),
 
     /**
-     * The current state is compound or parallel. §scxml-3.3 makes the current
+     * The current state is compound or parallel. §scxml-3.11 makes the current
      * state the atomic one the engine descended to.
      */
     CURRENT_NOT_ATOMIC("the current state must be the atomic state the engine descended to"),
@@ -136,7 +136,7 @@ fun <S> validateConfiguration(
             continue
         }
 
-        // §scxml-3.3: exactly one. Compound is spelled as "not atomic and not
+        // §scxml-3.11: exactly one. Compound is spelled as "not atomic and not
         // parallel" because that is the pair the generator emits:
         // `isAtomicState` answers false for both shapes, and the parallel arm
         // above has already taken its own.
