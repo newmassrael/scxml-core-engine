@@ -400,15 +400,15 @@ fn a_report_this_reader_cannot_parse_is_refused_as_unreadable() {
 fn a_report_whose_name_does_not_describe_its_cases_is_refused() {
     let arm = arm(4);
     let claimed = &arm.classes[0];
-    let xml = format!(
+    fs::write(
+        arm.reports.join(format!("TEST-{claimed}.xml")),
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <testsuite name=\"a display name\" tests=\"1\" failures=\"0\" errors=\"0\" \
          skipped=\"0\">\n  \
          <testcase classname=\"com.sce.integration.SomeOtherTest\" name=\"passes\"/>\n\
-         </testsuite>\n"
-    );
-    fs::write(arm.reports.join(format!("TEST-{claimed}.xml")), xml)
-        .expect("the report is writable");
+         </testsuite>\n",
+    )
+    .expect("the report is writable");
 
     let out = verdict(&arm);
     assert_eq!(
