@@ -1,0 +1,58 @@
+# Mutation cases for "a cost_s that is not a stopwatch reading says so".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_paced_cost_says_so_where_a_reader_looks.cases`.
+#
+# Six of the registry's `cost_s` values are paced figures rather than raw
+# timings, and until 2026-09-02 the only place that was written was a
+# comment. The consequence was measured that day: `--order-drift` reported
+# `http-endpoint-ssot declared 4s ran 0s` and advised "update cost_s", while
+# three lines above the number a comment already explained why the two
+# disagree. Following the report would have undone a decision somebody had
+# made deliberately, and it would have said the same thing about all six.
+#
+# PACE_NORMALISED moved that fact where the code can read it. These cases
+# hold the three places it has to reach, because a map only one of them
+# consults rots in the other two:
+#
+#   1. the prose and the data name the same gates,
+#   2. the drift report changes its ADVICE for those gates,
+#   3. `--mapping` publishes the answer, since that is the surface a
+#      consumer is told to ask instead of scraping this file's source.
+#
+# Each case is a single edit, and each was observed red before landing here
+# — the sweep that produced them ran twelve mutations, of which these three
+# are the ones that map to a distinct consumer. The other nine are covered
+# by these three plus the self-test's own cases: they weaken a message or a
+# scanner detail rather than cutting a reader off.
+#
+# ⚠ The map emptying is NOT a defect and must not become a case. Every entry
+# leaves when its gate is honestly re-measured on a quiet machine, so an
+# empty PACE_NORMALISED is what finishing this work looks like. The
+# self-test drives the report from a fixture for exactly that reason, and a
+# case built on the live map would punish the last honest measurement for
+# landing.
+
+mutation_tests -p sce-build --test gate_registry_contract
+mutation_targets sce-build/tests/gate_registry_contract.rs
+# Read at run time: `the_gate_registry_passes_its_own_cases` executes the
+# registry as a subprocess, so an edit to it is invisible to a rebuild check.
+mutation_runtime_targets tools/git-hooks/gate_registry.py
+
+mutation_case "a gate's paced comment no longer has an entry mirroring it" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     '"w3c-go": "52s,',
+     '"w3c-gone": "52s,')
+PY
+
+mutation_case "the drift report gives paced costs the ordinary advice" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     'if any(s in paced for s, _, _ in drift["moved"]):',
+     'if False:')
+PY
+
+mutation_case "--mapping stops publishing whether a cost is paced" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     'slug: dict(spec, pace_normalised=PACE_NORMALISED.get(slug))',
+     'slug: spec')
+PY
