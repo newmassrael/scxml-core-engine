@@ -448,5 +448,147 @@ name = "script_engine_language_parity"
 path = "tests/script_engine_language_parity.rs"
 required-features = ["cli"]
 
+# The remaining binary-driven targets, grouped because they are declared
+# for one reason rather than twenty-five: each spawns `sce-codegen`
+# through `CARGO_BIN_EXE_sce-codegen`, and cargo only builds that binary —
+# only puts an executable at the path it hands the test — when `cli` is
+# on. Without the declaration cargo builds the target anyway and it dies
+# at run time on `NotFound`, or passes on a `target/debug/sce-codegen`
+# left by an earlier build, which is the outcome that kept this unseen.
+#
+# Measured 2026-09-02: 25 of the 53 binary-driven targets were in that
+# state, and a run in a clean target directory failed 14 of
+# `rust_derive_ssot`'s 16 cases on `spawn sce-codegen: NotFound` while the
+# same command in the working tree passed on a stale binary.
+#
+# What each target checks is in its own module documentation; repeating it
+# here would be a copy that nothing reads. The correspondence between
+# these declarations and the sources is not maintained by hand either —
+# `cli_feature_gating` derives it and fails in both directions.
+[[test]]
+name = "addr2sce_pc"
+path = "tests/addr2sce_pc.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "c11_session_identity"
+path = "tests/c11_session_identity.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_check_cross_doc"
+path = "tests/cli_check_cross_doc.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_check_generate_parity"
+path = "tests/cli_check_generate_parity.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_documented_catalog_paths"
+path = "tests/cli_documented_catalog_paths.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_expression_refusal"
+path = "tests/cli_expression_refusal.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_generate_w3c_output_dir"
+path = "tests/cli_generate_w3c_output_dir.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_guard_emission"
+path = "tests/cli_guard_emission.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_language_surface"
+path = "tests/cli_language_surface.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_lint_parity"
+path = "tests/cli_lint_parity.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_manifest_event_scheduler"
+path = "tests/cli_manifest_event_scheduler.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "codegen_invocation_determinism"
+path = "tests/codegen_invocation_determinism.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "conformance_suite_standalone"
+path = "tests/conformance_suite_standalone.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "datamodel_attribute_reaches_a_decision"
+path = "tests/datamodel_attribute_reaches_a_decision.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "diagnostic_fix_is_applicable"
+path = "tests/diagnostic_fix_is_applicable.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "event_schema_cross_state_guard"
+path = "tests/event_schema_cross_state_guard.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "exit_status_contract"
+path = "tests/exit_status_contract.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "forge_preprocessor_expansion"
+path = "tests/forge_preprocessor_expansion.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "host_processor_declaration"
+path = "tests/host_processor_declaration.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "inline_content_has_one_reading"
+path = "tests/inline_content_has_one_reading.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "native_action_backend_parity"
+path = "tests/native_action_backend_parity.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "path_naming_parity"
+path = "tests/path_naming_parity.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "rust_derive_ssot"
+path = "tests/rust_derive_ssot.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "sourcemap_ownership_walker"
+path = "tests/sourcemap_ownership_walker.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "sourcemap_symbol_markers"
+path = "tests/sourcemap_symbol_markers.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

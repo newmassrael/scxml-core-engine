@@ -14,11 +14,13 @@
 # sweep shared no artifacts with the tree and rebuilt the workspace every
 # push. `hook_ci_parity` (in `tree-hygiene`) fails if either side drifts back.
 #
-# `--features cli` is load-bearing, not decoration. sce-build declares 15
-# test targets with `required-features = ["cli"]`; cargo excludes an
+# `--features cli` is load-bearing, not decoration. sce-build declares test
+# targets with `required-features = ["cli"]`; cargo excludes an
 # unmet-features target SILENTLY — never built, never reported as skipped —
 # so without the flag this gate ran a strictly smaller suite than its name
-# claims.
+# claims. How many such targets there are is derived by
+# `cli_feature_gating` rather than restated here, and that gate is also
+# what fails if a command reaching one of them drops the flag.
 #
 # The W3C HTTP fixture server is started here rather than by the runner.
 # Rust integration tests for W3C SCXML C.2 BasicHTTPEventProcessor
