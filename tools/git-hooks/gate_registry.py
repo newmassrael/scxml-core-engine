@@ -481,6 +481,12 @@ GATES: dict[str, dict] = {
                    "bypassed. Runs in CI, where the cost is not the "
                    "developer's wait, at the price of a red arriving one "
                    "round later.",
+        # The harness itself. The gate invokes `scripts/mutate` twice — once
+        # to ask a casefile what it declares, once to run the round — so an
+        # edit to it changes every verdict this lane produces. It was not
+        # declared, and `--ci-owed` therefore did not name this lane for a
+        # commit that changed nothing else (`script-read-coverage`).
+        "extra": ["scripts/mutate"],
         "cost_s": 877,
         "summary": "changed mutation targets still turn their suites red",
     },
@@ -1055,8 +1061,17 @@ GATES: dict[str, dict] = {
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "the Kotlin backend, the Kotlin templates and the "
                    "generator.",
+        # The last three are what the SCRIPT opens: the refusal list it
+        # holds a ceiling over, the fixture registry it walks, and the one
+        # document it probes the seam with. Declared because `--ci-owed`
+        # reads this list to say which lanes judge a change, and a commit
+        # editing only a divergence list was being told this lane was not
+        # one of them (`script-read-coverage`).
         "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
-                  "sce-build/src/**"],
+                  "sce-build/src/**",
+                  "tests/ecmascript/kotlin_frontend_refusals.json",
+                  "tests/w3c/conformance/fixtures.json",
+                  "resources/150/test150.scxml"],
         "deps": ["codegen-build"],
         # 69s was measured on a push whose Kotlin tree was already current.
         # 152s, pace-normalised, is what it cost on 2026-08-24 when a
@@ -1387,6 +1402,66 @@ def tracked_matching(repo_root: Path, glob: str) -> list[str]:
         capture_output=True, text=True, check=False,
     )
     return [line for line in proc.stdout.splitlines() if line]
+
+
+def script_read_paths(body: str, tracked: set) -> tuple[set, set]:
+    """The tracked paths a gate script NAMES AS A VALUE, by how it names them.
+
+    Returned as two sets — quoted values and bare words — because they are
+    two arms of one scan and either can be blinded on its own. A caller
+    that unions them without measuring both would keep reporting a healthy
+    count off whichever arm still works.
+
+    A path a script hands to a command or binds to a variable is an input:
+    editing it changes what the gate answers. A path spelled inside a
+    SENTENCE is the script explaining itself, and the two look identical to
+    a scan that only looks for the characters.
+
+    Both readings are live here. Measured 2026-09-03 across the 35 gate
+    scripts: `w3c-kotlin` names `docs/SCE_LUA_TRANSLATION_SEAM.md` only in
+    the failure message that tells a reader where to argue an entry, and
+    `mutation-rounds` names `scripts/prepare_ctest_tree.sh` only in the
+    sentence "Prepare one with ..." — while the same file invokes
+    `scripts/mutate` twice for real. Declaring the first two as inputs
+    would put a document nothing opens into a lane's triggers; missing the
+    third leaves an edit to the harness judged by no lane at all.
+
+    The discriminator is the quoted region: a value is quoted alone
+    (`X="path"`) or not quoted at all, while prose is a quoted region that
+    merely CONTAINS the path among other words. That is the same reading
+    `common::rust_source::code_only` makes for Rust — a signature in a
+    comment is a file explaining an input, not reading one — arriving here
+    through failure messages instead of comments.
+    """
+    quoted: set = set()
+    bare: set = set()
+    outside: list[str] = []
+    i, n = 0, len(body)
+    while i < n:
+        if body[i] == '"':
+            j = i + 1
+            while j < n and body[j] != '"':
+                j += 2 if body[j] == "\\" else 1
+            region = body[i + 1:j]
+            if region in tracked:
+                quoted.add(region)
+            i = j + 1
+            continue
+        outside.append(body[i])
+        i += 1
+    for word in re.findall(r"[A-Za-z0-9_./-]+", "".join(outside)):
+        if word in tracked:
+            bare.add(word)
+    return quoted, bare
+
+
+def script_code(path: Path) -> str:
+    """A gate script with its whole-line comments removed."""
+    return "\n".join(
+        line
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    )
 
 
 def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
@@ -2281,6 +2356,72 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             "include-str-coverage: no `include_str!` target was found under "
             "the declared roots — the case read nothing")
+
+    # The same question one layer down, for the gates that ARE a shell
+    # script. `include-str-coverage` above asks it of a Rust suite's
+    # compiled-in inputs; a gate script's inputs are the tracked files it
+    # opens, and nothing asked whether those are declared.
+    #
+    # What it costs when they are not is not hypothetical. `w3c-kotlin`
+    # reads `tests/ecmascript/kotlin_frontend_refusals.json` and declares
+    # neither it nor the fixture registry it walks, so a commit editing only
+    # a divergence list was told — by `--ci-owed`, the report a round reads
+    # to know which lanes will judge it — that w3c-tests.yml was not one of
+    # them. The lane still ran, because that workflow declares no filter, so
+    # the answer was wrong in the one direction nothing notices: a reader
+    # looking at the wrong lane for a verdict that did exist.
+    #
+    # ⚠ The registry's own memory of this defect said the push hook was
+    # failing to SELECT the gate. Measured 2026-09-03, that was false —
+    # `w3c-kotlin` is `ci_only`, so no push selects it whatever it declares.
+    # The report is what the missing declaration breaks.
+    #
+    # Three of the four gates this finds are `ci_only`, so declaring their
+    # inputs costs a push nothing and buys the report its answer.
+    cases += 1
+    tracked_all = set(
+        subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files"],
+            capture_output=True, text=True, check=False,
+        ).stdout.split()
+    )
+    scripts_seen = 0
+    quoted_seen = 0
+    bare_seen = 0
+    triggers_by_slug = gate_triggers(repo_root)
+    for slug in sorted(GATES):
+        script = gate_script(repo_root, slug)
+        if not script.is_file():
+            continue
+        scripts_seen += 1
+        pats = [glob_to_regex(g) for g in triggers_by_slug.get(slug, [])]
+        quoted, bare = script_read_paths(script_code(script), tracked_all)
+        quoted_seen += len(quoted)
+        bare_seen += len(bare)
+        for path in sorted(quoted | bare):
+            if any(p.match(path) for p in pats):
+                continue
+            failures.append(
+                f"script-read-coverage: {slug} reads '{path}' and declares no "
+                f"trigger matching it, so a commit touching only that file is "
+                f"not told this gate judges it. Add the path to the gate's "
+                f"`local`/`extra`, or stop naming it as a value.")
+    # A floor per arm, not one over the union. Blinding either half leaves
+    # the other filling the count, and a scan that stopped looking then
+    # wears the shape of a scan that found nothing to report — which is the
+    # same failure `cli_feature_gating`'s sweeping arm was caught by.
+    if scripts_seen < 1:
+        failures.append(
+            "script-read-coverage: no gate script was found — the case read "
+            "nothing")
+    if quoted_seen < 1:
+        failures.append(
+            "script-read-coverage: no gate script named a tracked file as a "
+            "quoted value — that arm of the reader is blind")
+    if bare_seen < 1:
+        failures.append(
+            "script-read-coverage: no gate script named a tracked file as a "
+            "bare word — that arm of the reader is blind")
 
     # Rule 2, held rather than described. A gate with no CI counterpart
     # states why in a field, not in a comment a reader has to find and a
