@@ -43,14 +43,14 @@ on:
   pull_request:
     branches: [ main ]
 
-# Measured 2026-09-02 over this lane's own last 25 runs: 20.1 min median from
-# run creation to verdict, against a 18.9 min median gap between pushes to
+# Measured 2026-09-02 over this lane's own last 25 runs: 20.5 min median from
+# run creation to verdict, against a 17.6 min median gap between pushes to
 # `main`, so it can no longer finish between two of them. It was 9.9 when this
 # block still read `true`, and the ten minutes it gained are QUEUE and not
 # work -- the job's own compute is still ~11 min -- but a run waiting for a
 # runner is exactly the run the next push takes away.
 #
-# 12 of those 25 ended `cancelled`, and every one had ALREADY STARTED, 68s to
+# 11 of those 25 ended `cancelled`, and every one had ALREADY STARTED, 68s to
 # 1264s in. Ten are consecutive, `b59ed99b10` through `9a16e970cf`, and one of
 # the ten is the commit that repaired a red THIS job raised at `55620099a7`:
 # the lane stopped answering at the moment its answer mattered most.
