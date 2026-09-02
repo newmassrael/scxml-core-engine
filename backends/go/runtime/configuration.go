@@ -50,14 +50,14 @@ const (
 	// Exactly one is a configuration; more than one is two disjoint trees.
 	ConfigurationRootCount
 	// ConfigurationCompoundChildCount means a compound state holds a number of
-	// active children that is not one (§scxml-3.3).
+	// active children that is not one (§scxml-3.11).
 	ConfigurationCompoundChildCount
 	// ConfigurationParallelRegionMissing means a <parallel> region is absent, so
 	// the set is not one in which every region is simultaneously active
-	// (§scxml-3.4).
+	// (§scxml-3.11).
 	ConfigurationParallelRegionMissing
 	// ConfigurationParallelChildCount means a <parallel> holds a number of
-	// children that is not its region count (§scxml-3.4).
+	// children that is not its region count (§scxml-3.11).
 	ConfigurationParallelChildCount
 	// ConfigurationAtomicHasChildren means an atomic state has a child in the
 	// set, so it is not atomic here.
@@ -66,7 +66,7 @@ const (
 	// the configuration at all.
 	ConfigurationCurrentNotActive
 	// ConfigurationCurrentNotAtomic means the claimed current state is compound
-	// or parallel. §scxml-3.3 makes the current state the atomic one the engine
+	// or parallel. §scxml-3.11 makes the current state the atomic one the engine
 	// descended to.
 	ConfigurationCurrentNotAtomic
 )
@@ -83,13 +83,13 @@ func (r ConfigurationRejection) String() string {
 	case ConfigurationAncestorMissing:
 		return "a state is present whose parent is not, so the set is not ancestor-closed"
 	case ConfigurationRootCount:
-		return "a configuration closes on exactly one root (W3C SCXML 3.2)"
+		return "a configuration closes on exactly one root (W3C SCXML 3.11)"
 	case ConfigurationCompoundChildCount:
-		return "a compound state holds exactly one active child (W3C SCXML 3.3)"
+		return "a compound state holds exactly one active child (W3C SCXML 3.11)"
 	case ConfigurationParallelRegionMissing:
-		return "a <parallel> holds every region and one is missing (W3C SCXML 3.4)"
+		return "a <parallel> holds every region and one is missing (W3C SCXML 3.11)"
 	case ConfigurationParallelChildCount:
-		return "a <parallel> holds every region and nothing else (W3C SCXML 3.4)"
+		return "a <parallel> holds every region and nothing else (W3C SCXML 3.11)"
 	case ConfigurationAtomicHasChildren:
 		return "an atomic state has a child in the set"
 	case ConfigurationCurrentNotActive:
@@ -173,7 +173,7 @@ func ValidateConfiguration[S comparable, E comparable](
 			continue
 		}
 
-		// §scxml-3.3: exactly one.
+		// §scxml-3.11: exactly one.
 		if policy.IsCompoundState(state) {
 			if children != 1 {
 				return ConfigurationCompoundChildCount

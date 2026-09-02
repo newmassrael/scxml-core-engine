@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! §scxml-3.3 / §scxml-3.4: is a state chain a configuration THIS document can hold?
+//! §scxml-3.11: is a state chain a configuration THIS document can hold?
 //!
 //! [`Engine::get_active_states`](crate::Engine::get_active_states) publishes the
 //! configuration a machine is in, and [`Engine::enter_at`](crate::Engine::enter_at)
@@ -30,9 +30,9 @@
 //!
 //! - the chain is not empty and names nothing twice;
 //! - it is ancestor-closed, and closes on exactly one root;
-//! - §scxml-3.3: a compound member holds exactly ONE active child — this is
+//! - §scxml-3.11: a compound member holds exactly ONE active child — this is
 //!   what refuses two siblings of one region;
-//! - §scxml-3.4: a `<parallel>` member holds ALL of its regions, because they
+//! - §scxml-3.11: a `<parallel>` member holds ALL of its regions, because they
 //!   are "simultaneously active when the parent element is active" — this is
 //!   what refuses a chain with a region missing;
 //! - an atomic member holds no children;
@@ -76,7 +76,7 @@ pub enum ConfigurationRejection<S> {
         /// How many chain members have no parent.
         found: usize,
     },
-    /// §scxml-3.3: a compound state holds the wrong number of active children.
+    /// §scxml-3.11: a compound state holds the wrong number of active children.
     /// Exactly one is a configuration; more than one is the "two siblings of one
     /// region" shape.
     CompoundChildCount {
@@ -85,7 +85,7 @@ pub enum ConfigurationRejection<S> {
         /// How many of its children the chain holds.
         found: usize,
     },
-    /// §scxml-3.4: a `<parallel>` state's region is absent, so the chain is not
+    /// §scxml-3.11: a `<parallel>` state's region is absent, so the chain is not
     /// a configuration in which every region is simultaneously active.
     ParallelRegionMissing {
         /// The parallel state.
@@ -93,7 +93,7 @@ pub enum ConfigurationRejection<S> {
         /// The region it declares and the chain does not hold.
         region: S,
     },
-    /// §scxml-3.4: a `<parallel>` state holds a number of children that is not
+    /// §scxml-3.11: a `<parallel>` state holds a number of children that is not
     /// its region count. A parallel state is entered with all of its regions and
     /// nothing else.
     ParallelChildCount {
@@ -192,7 +192,7 @@ pub fn validate<P: StatePolicy>(
                 });
             }
         } else if P::is_compound_state(state) {
-            // §scxml-3.3: exactly one.
+            // §scxml-3.11: exactly one.
             if children != 1 {
                 return Err(ConfigurationRejection::CompoundChildCount {
                     parent: state,

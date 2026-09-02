@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
-"""W3C SCXML 3.2 — what ``Engine.enter_at`` accepts, and what it refuses, on
+"""W3C SCXML 3.11 — what ``Engine.enter_at`` accepts, and what it refuses, on
 the Python engine.
 
 The door exists so a host can bring a machine back where it was, in a new
@@ -180,7 +180,7 @@ def test_an_empty_configuration_is_refused() -> None:
     ), "a machine is never in nothing"
 
 
-# W3C SCXML 3.3: a compound state holds exactly one active child. `working` and
+# W3C SCXML 3.11: a compound state holds exactly one active child. `working` and
 # `judging` are both children of `running`, and a run stands in one of them.
 def test_two_siblings_of_one_region_are_refused() -> None:
     engine, _ = _new_parallel()
@@ -192,7 +192,7 @@ def test_two_siblings_of_one_region_are_refused() -> None:
     ), "`running` was given two active children, which is a configuration the document has no reading for"
 
 
-# W3C SCXML 3.4: a `<parallel>` holds EVERY region. Dropping one is the shape a
+# W3C SCXML 3.11: a `<parallel>` holds EVERY region. Dropping one is the shape a
 # host produces when it journals only the region it cares about.
 def test_a_parallel_with_a_region_missing_is_refused() -> None:
     engine, _ = _new_parallel()
@@ -233,7 +233,7 @@ def test_a_repeated_state_is_refused() -> None:
     )
 
 
-# W3C SCXML 3.2: a configuration closes on exactly one root. `settled` is a
+# W3C SCXML 3.11: a configuration closes on exactly one root. `settled` is a
 # top-level `<final>`, so a set holding both it and `run` describes two machines.
 def test_two_roots_are_refused() -> None:
     engine, _ = _new_parallel()
@@ -253,7 +253,7 @@ def test_a_current_state_outside_the_configuration_is_refused() -> None:
     ), "the current state is the one the machine is standing in, so it is in the set by definition"
 
 
-# W3C SCXML 3.3 makes the current state the ATOMIC state the engine descended
+# W3C SCXML 3.11 makes the current state the ATOMIC state the engine descended
 # to. A compound one is the shape a host produces when it journals the ancestor
 # rather than the leaf.
 def test_a_non_atomic_current_state_is_refused() -> None:

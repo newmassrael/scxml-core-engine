@@ -2136,13 +2136,13 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_configuration_rejection_
     case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ANCESTOR_MISSING:
         return "a state is present whose parent is not, so the set is not ancestor-closed";
     case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ROOT_COUNT:
-        return "a configuration closes on exactly one root (W3C SCXML 3.2)";
+        return "a configuration closes on exactly one root (W3C SCXML 3.11)";
     case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_COMPOUND_CHILD_COUNT:
-        return "a compound state holds exactly one active child (W3C SCXML 3.3)";
+        return "a compound state holds exactly one active child (W3C SCXML 3.11)";
     case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_REGION_MISSING:
-        return "a <parallel> holds every region and one is missing (W3C SCXML 3.4)";
+        return "a <parallel> holds every region and one is missing (W3C SCXML 3.11)";
     case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_PARALLEL_CHILD_COUNT:
-        return "a <parallel> holds every region and nothing else (W3C SCXML 3.4)";
+        return "a <parallel> holds every region and nothing else (W3C SCXML 3.11)";
     case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_ATOMIC_HAS_CHILDREN:
         return "an atomic state has a child in the set";
     case {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_UNKNOWN_STATE:
@@ -2291,7 +2291,7 @@ SCE_SM_FN static SCE_C_UNUSED bool is_descendant_of({{ csym_prefix }}{{ model.na
     }
 }
 
-/* W3C SCXML 3.2 / 3.3 / 3.4 — is this set of states a CONFIGURATION of the
+/* W3C SCXML 3.11 — is this set of states a CONFIGURATION of the
    document? The rules in one place, reading the same static hierarchy the
    entry walk above reads. See the header for what each refusal names and for
    why this asks nothing about a current state.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// §scxml-3.2: is this set of states a CONFIGURATION of the document, and is
+// §scxml-3.11: is this set of states a CONFIGURATION of the document, and is
 // `current` its current state?
 //
 // A host that persisted where a machine was and is bringing it back in a new
@@ -55,19 +55,19 @@ enum class ConfigurationRejection {
     Duplicate,
     /// A state is present whose parent is not — the set is not ancestor-closed.
     AncestorMissing,
-    /// §scxml-3.2: a configuration closes on exactly one root.
+    /// §scxml-3.11: a configuration closes on exactly one root.
     RootCount,
-    /// §scxml-3.3: a compound state holds exactly one active child.
+    /// §scxml-3.11: a compound state holds exactly one active child.
     CompoundChildCount,
-    /// §scxml-3.4: a `<parallel>` holds EVERY region, and one is missing.
+    /// §scxml-3.11: a `<parallel>` holds EVERY region, and one is missing.
     ParallelRegionMissing,
-    /// §scxml-3.4: a `<parallel>` holds every region and nothing else.
+    /// §scxml-3.11: a `<parallel>` holds every region and nothing else.
     ParallelChildCount,
     /// An atomic state has a child in the set, so it is not atomic here.
     AtomicHasChildren,
     /// The current state is not in the configuration it is supposed to be in.
     CurrentNotActive,
-    /// The current state is compound or parallel. §scxml-3.3 makes the current
+    /// The current state is compound or parallel. §scxml-3.11 makes the current
     /// state the atomic one the engine descended to.
     CurrentNotAtomic,
 };
@@ -84,13 +84,13 @@ enum class ConfigurationRejection {
     case ConfigurationRejection::AncestorMissing:
         return "a state is present whose parent is not, so the set is not ancestor-closed";
     case ConfigurationRejection::RootCount:
-        return "a configuration closes on exactly one root (W3C SCXML 3.2)";
+        return "a configuration closes on exactly one root (W3C SCXML 3.11)";
     case ConfigurationRejection::CompoundChildCount:
-        return "a compound state holds exactly one active child (W3C SCXML 3.3)";
+        return "a compound state holds exactly one active child (W3C SCXML 3.11)";
     case ConfigurationRejection::ParallelRegionMissing:
-        return "a <parallel> holds every region and one is missing (W3C SCXML 3.4)";
+        return "a <parallel> holds every region and one is missing (W3C SCXML 3.11)";
     case ConfigurationRejection::ParallelChildCount:
-        return "a <parallel> holds every region and nothing else (W3C SCXML 3.4)";
+        return "a <parallel> holds every region and nothing else (W3C SCXML 3.11)";
     case ConfigurationRejection::AtomicHasChildren:
         return "an atomic state has a child in the set";
     case ConfigurationRejection::CurrentNotActive:

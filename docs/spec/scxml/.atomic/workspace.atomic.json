@@ -645,6 +645,55 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_take_transitions",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "validateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "ConfigurationRejection",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ValidateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ConfigurationCompoundChildCount",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ConfigurationCurrentNotAtomic",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "ConfigurationRejection",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "validateConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/configuration.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ConfigurationParallelRegionMissing",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "ConfigurationParallelChildCount",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2258,24 +2307,9 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/core/ConfigurationHelper.h",
-          "symbol": "validateConfiguration",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/ConfigurationHelper.h",
-          "symbol": "ConfigurationRejection",
-          "kind": "references"
-        },
-        {
           "file": "backends/go/runtime/engine.go",
           "symbol": "EnterAt",
           "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
-          "symbol": "ConfigurationRejection",
-          "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -2661,47 +2695,8 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/configuration.rs",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/mod.rs",
           "kind": "references"
-        },
-        {
-          "file": "sce/include/core/ConfigurationHelper.h",
-          "symbol": "validateConfiguration",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/ConfigurationHelper.h",
-          "symbol": "ConfigurationRejection",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/configuration.go",
-          "symbol": "ValidateConfiguration",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/configuration.go",
-          "symbol": "ConfigurationCompoundChildCount",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/configuration.go",
-          "symbol": "ConfigurationCurrentNotAtomic",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
-          "symbol": "ConfigurationRejection",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
-          "symbol": "validateConfiguration",
-          "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -3050,18 +3045,8 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/core/ConfigurationHelper.h",
-          "symbol": "validateConfiguration",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "enterAt",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/core/ConfigurationHelper.h",
-          "symbol": "ConfigurationRejection",
           "kind": "references"
         },
         {
@@ -3070,23 +3055,8 @@
           "kind": "implements"
         },
         {
-          "file": "backends/go/runtime/configuration.go",
-          "symbol": "ConfigurationParallelChildCount",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/configuration.go",
-          "symbol": "ConfigurationParallelRegionMissing",
-          "kind": "references"
-        },
-        {
           "file": "backends/go/runtime/engine.go",
           "symbol": "EnterAt",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
-          "symbol": "ConfigurationRejection",
           "kind": "references"
         },
         {
@@ -16194,6 +16164,102 @@
       "target_kind": "section",
       "target_id": "scxml-B-2",
       "reason": "the rewriter was deleted; operator lowering is the frontend's, already bound here as sce-build/src/ecmascript/parser.rs and lua.rs"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "the rule this line states is §scxml-3.11 Legal State Configurations; the citation moved there and this binding no longer has one behind it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "the rule this enum variant states is §scxml-3.11 Legal State Configurations; §scxml-3.4 defines the <parallel> element and its citation here moved"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "the rule this enum variant states is §scxml-3.11 Legal State Configurations; §scxml-3.4 defines the <parallel> element and its citation here moved"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "the rule this enum variant states is §scxml-3.11 Legal State Configurations; §scxml-3.4 defines the <parallel> element and its citation here moved"
     }
   ],
   "frames": {},
