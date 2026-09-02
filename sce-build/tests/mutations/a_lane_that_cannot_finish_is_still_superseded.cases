@@ -1,0 +1,51 @@
+# Mutation cases for "a lane slower than the push gap is not superseded".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_lane_that_cannot_finish_is_still_superseded.cases`.
+#
+# `ci_supersession_policy` decides one literal per workflow — whether a new
+# run may cancel the one already in flight — by DERIVING it from a measured
+# median in `LANES`. Nothing watched that derivation, and on 2026-09-02 the
+# cost came due: `tree-hygiene.yml` had grown from 9.9 to 20.1 minutes against
+# a 18.9 minute push gap, its row still read 9.9, and so the rule went on
+# approving `cancel-in-progress: true`. Twelve of its last twenty-five runs
+# were cancelled and every one of them killed a job that had ALREADY STARTED,
+# 68s to 1264s in. Ten were consecutive, and among the ten was the commit
+# repairing a red this same lane had raised.
+#
+# What made it last four days is a circle: `ci_supersession_policy` RUNS IN
+# `tree-hygiene.yml`. While the lane is being superseded, the check that would
+# say "move this row" is the thing being superseded. A guard a defect can
+# silence needs a reader outside that loop, which is what these cases are.
+#
+# The second case is the one that keeps the first honest. The first proves the
+# rule fires when a long lane declares `true`; it proves nothing if the reader
+# cannot tell `true` from `false`, because then every lane reads alike and the
+# assertion is about a constant rather than about the file. Case two removes
+# the distinction and requires the suite to notice.
+#
+# ⚠ Case one anchors on a live literal, which the paced-cost casefile next
+# door was bitten by. The difference is the failure mode, not the shape: that
+# map is DESIGNED to empty, so its anchor's death was routine, while this
+# literal only moves if somebody re-measures the lane back under the gap — a
+# deliberate act that must edit `LANES` in the same commit. And a dead anchor
+# here is loud, not silent: `scripts/mutate` calls it INCONCLUSIVE and
+# `scripts/gate mutation-cases` turns that into a red.
+
+mutation_tests -p sce-build --test ci_supersession_policy
+mutation_targets sce-build/tests/ci_supersession_policy.rs
+# Read at run time rather than compiled in: the literal under judgement lives
+# in the workflow file, which the test opens by path.
+mutation_runtime_targets .github/workflows/tree-hygiene.yml
+
+mutation_case "the lane that outgrew the push gap may cancel its own run again" <<'PY'
+edit(".github/workflows/tree-hygiene.yml",
+     "  cancel-in-progress: false",
+     "  cancel-in-progress: true")
+PY
+
+mutation_case "the reader cannot tell a declared true from a declared false" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '"true" => Some(true),',
+     '"true" => Some(false),')
+PY
