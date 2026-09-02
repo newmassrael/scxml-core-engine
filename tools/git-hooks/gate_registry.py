@@ -142,7 +142,7 @@ PUSH_BUDGET_S = 300
 # What worked was repeating the measurement until it settled and reading
 # the band, then taking the worse of the last pair. A single reading here
 # says nothing; the first three of nine were still filling caches.
-PACED_BUDGET_SHARE_CEILING = 0.651
+PACED_BUDGET_SHARE_CEILING = 0.421
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -239,12 +239,20 @@ COST_MEASURED: dict[str, str] = {
     # a warm figure. Recorded because the argument was persuasive and wrong.
     "nostd-mcu": "2026-09-02",
     "rustdoc-links": "2026-09-02",
+    # `w3c-go` left `PACE_NORMALISED` on 2026-09-02, the third and cleanest.
+    # Six runs read 9 10 9 10 10 10 with no cache-filling ramp and no lock
+    # contention, against a declared 52 — stale by five times. The lock check
+    # (`ps` for a cargo holder before starting, and a grep for "Blocking
+    # waiting for file lock" in each run's log afterwards) is what turned a
+    # measurement that had to be abandoned twice into one that settled on the
+    # first try.
+    "w3c-go": "2026-09-02",
 }
 
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
 # with slack — an equality, so measuring one gate forces this down in the
 # same commit and the count cannot drift away from the map.
-UNMEASURED_COST_CEILING = 28
+UNMEASURED_COST_CEILING = 27
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -273,7 +281,6 @@ UNMEASURED_COST_CEILING = 28
 PACE_NORMALISED: dict[str, str] = {
     "codegen-build": "41s, paced from the 2026-08-23 push rather than timed alone",
     "http-endpoint-ssot": "the scan is 124ms; 4s covers the process around it",
-    "w3c-go": "52s, paced from the 2026-08-23 push",
     "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
 }
 
@@ -967,8 +974,12 @@ GATES: dict[str, dict] = {
         "extra": ["backends/go/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        # 52s, pace-normalised from the 2026-08-23 push.
-        "cost_s": 52,
+        # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
+        # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them
+        # queued behind the cargo package-cache lock, which is what makes
+        # this the cleanest of the three retirements. 10 is the worse of the
+        # last pair. Two pushes that day read 15s and 8s, straddling it.
+        "cost_s": 10,
         "summary": "W3C conformance, Go AOT",
     },
     "w3c-kotlin": {
