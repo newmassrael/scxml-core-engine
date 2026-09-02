@@ -73,12 +73,41 @@ edit("sce-build/tests/ci_supersession_policy.rs",
      'g.contains("github.")')
 PY
 
-# The window is 25 runs, so the two count columns cannot sum past it. This is
-# the shape a half-updated row takes: one column re-taken, the other left.
-mutation_case "a row's two columns are taken from different readings" <<'PY'
+# The window is 25 runs, so the three outcome columns cannot sum past it. This
+# is the shape a half-updated row takes: one column re-taken, the rest left.
+mutation_case "a row's columns are taken from different readings" <<'PY'
 edit("sce-build/tests/ci_supersession_policy.rs",
-     '("cpp-suite.yml", 79.1, 13, 11),',
-     '("cpp-suite.yml", 79.1, 13, 20),')
+     '("cpp-suite.yml", 79.1, 12, 11, 2),',
+     '("cpp-suite.yml", 79.1, 12, 20, 2),')
+PY
+
+# ...and the same check must actually SUM the fifth column. While the row was
+# two columns wide this passed on `mutation-rounds.yml` reporting 11 outcomes
+# out of 25, because the fourteen unstarted runs were in no column at all.
+# `clang-format-check.yml` is chosen so the raised count stays BELOW its
+# successes: that keeps the backlog invariant below out of it, so the red can
+# only come from the window arithmetic.
+mutation_case "the unfinished column is left out of the window sum" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '("clang-format-check.yml", 0.8, 0, 25, 0),',
+     '("clang-format-check.yml", 0.8, 0, 25, 5),')
+PY
+
+# A backlog larger than the lane's successes is reachable only under a
+# per-commit group -- a shared group has the next push clear whatever is still
+# pending. So a row claiming one on a shared group contradicts its own
+# workflow. There is no violating lane today, which is exactly why the case
+# has to construct one; `ecma262-lowered-kotlin.yml` has six successes, so
+# seven unfinished trips the invariant while the window sum stays at 13.
+#
+# ⚠ No companion case blinds the reader from the other side, and the reason is
+# stated rather than hidden: with no lane violating the invariant, widening or
+# disabling the comparison changes no verdict and produces no red. A case that
+# cannot fail is not evidence, so none is written.
+mutation_case "a shared-group lane claims a backlog only a sha key can make" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '("ecma262-lowered-kotlin.yml", 6.3, 0, 6, 0),',
+     '("ecma262-lowered-kotlin.yml", 6.3, 0, 6, 7),')
 PY
 
 # The last three are about the ENGLISH copies of the same two numbers. Both
@@ -89,8 +118,8 @@ PY
 #
 # ⚠ Neither of the first two may change a classification, or the red would
 # come from the older assertion and prove nothing about the new ones. 17.7
-# sits in the same gap between `deploy-visualizer` at 15.9 and `tree-hygiene`
-# at 20.5, and 72.5 leaves `w3c-tests` long exactly as 72.4 does.
+# still sits below `deploy-visualizer` at 17.9 and above `embed-vendor-smoke`
+# at 15.2, and 70.1 leaves `w3c-tests` long exactly as 70.0 does.
 
 mutation_case "the constant moves and the prose copies keep the old number" <<'PY'
 edit("sce-build/tests/ci_supersession_policy.rs",
@@ -100,8 +129,8 @@ PY
 
 mutation_case "one row moves and its own workflow goes on stating the old one" <<'PY'
 edit("sce-build/tests/ci_supersession_policy.rs",
-     '("w3c-tests.yml", 72.4, 13, 10),',
-     '("w3c-tests.yml", 72.5, 13, 10),')
+     '("w3c-tests.yml", 70.0, 14, 9, 2),',
+     '("w3c-tests.yml", 70.1, 14, 9, 2),')
 PY
 
 # A scanner that finds nothing agrees with everything, which is why both cases
