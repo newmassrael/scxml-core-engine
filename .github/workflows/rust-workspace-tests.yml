@@ -23,17 +23,20 @@ name: Rust Workspace Tests
 # described a smaller run than it performed. What the flag fixes is a
 # silent omission: cargo excludes a target whose `required-features` are
 # unmet without building it and without reporting a skip, so sce-build's
-# 15 cli-gated targets were absent from a job calling itself
-# "--workspace".
+# cli-gated targets were absent from a job calling itself "--workspace".
+# How many of them there are is not written here — `cli_feature_gating`
+# derives it, and a count in prose stops being true the next time a
+# target is added.
 #
 # One prerequisite the hook gets from its own build stage: `sce-codegen`
-# must exist. Four targets shell out to it through
-# `CARGO_BIN_EXE_sce-codegen` without declaring the feature themselves —
-# codegen_invocation_determinism, event_schema_cross_state_guard,
-# rust_derive_ssot and sourcemap_ownership_walker — so a bare
-# `cargo test --workspace` runs them and they die on `NotFound`. The
-# first revision of this file did exactly that, and passed locally only
-# because a stale `target/debug/sce-codegen` happened to be on disk.
+# must exist. Targets that shell out to it through
+# `CARGO_BIN_EXE_sce-codegen` used to leave that dependency undeclared,
+# so a bare `cargo test --workspace` built them with no binary to reach
+# and they died on `NotFound`. The first revision of this file did
+# exactly that, and passed locally only because a stale
+# `target/debug/sce-codegen` happened to be on disk. Every such target
+# declares the feature now, and `cli_feature_gating` fails in both
+# directions if a source and the manifest drift apart again.
 #
 # b9_drift_detection and error_format_json now run in both lanes.
 # drift-verify.yml still runs them with `--test-threads=1` because its

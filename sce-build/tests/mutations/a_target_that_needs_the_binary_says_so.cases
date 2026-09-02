@@ -1,0 +1,133 @@
+# Mutation cases for "a test that spawns sce-codegen declares the feature
+# that builds it".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_target_that_needs_the_binary_says_so.cases`.
+#
+# `sce-codegen` is `required-features = ["cli"]`. Cargo hands a test target
+# `CARGO_BIN_EXE_sce-codegen` whether or not that feature is on — the value is
+# where the binary WOULD go — so a target that spawns it without declaring the
+# feature compiles either way and then dies on `NotFound`. Unless an earlier
+# build left one at that path, in which case it passes, and the suite reports
+# a green it did not earn.
+#
+# Measured 2026-09-02: 25 of the 53 binary-driven targets carried no
+# declaration. In a clean target directory `cargo test -p sce-build --test
+# rust_derive_ssot` failed 14 of its 16 cases on `spawn sce-codegen:
+# NotFound`; the same command in the working tree passed, because
+# `target/debug/sce-codegen` was on disk from an unrelated build. Two lanes
+# had written the defect down in prose — `rust-workspace-tests.yml` named four
+# offenders and `workspace-tests.sh` counted fifteen gated targets — and both
+# figures were stale, which is what a count in prose does.
+#
+# The fix costs something, and the second half of the gate is that cost: cargo
+# drops an unmet-features target WITHOUT building it and WITHOUT reporting a
+# skip, so a declaration turns a loud run-time death into a silent absence.
+# Hence the third question — does every command that reaches such a target
+# turn the feature on — and the floor under its sweeping arm.
+
+mutation_tests -p sce-build --test cli_feature_gating
+mutation_targets sce-build/tests/cli_feature_gating.rs
+# Read at run time: the manifest is the declaration under judgement, and the
+# gate script is one of the commands that must enable the feature.
+mutation_runtime_targets sce-build/Cargo.toml scripts/gates/drift-suites.sh
+
+# The defect itself, put back one target at a time. `rust_derive_ssot` is the
+# one whose clean-target run was measured above.
+mutation_case "a target that spawns the binary loses its declaration" <<'PY'
+edit("sce-build/Cargo.toml",
+     'name = "rust_derive_ssot"\npath = "tests/rust_derive_ssot.rs"\nrequired-features = ["cli"]',
+     'name = "rust_derive_ssot"\npath = "tests/rust_derive_ssot.rs"')
+PY
+
+# The other direction. A declaration cargo cannot justify is not harmless: the
+# target stops running the moment a lane spells its features differently, and
+# nothing says so. `integration_stem_registration` reaches no binary and is
+# named by `tree-hygiene.sh`, which passes `--features cli,ffi` — so this case
+# can only redden the manifest question, not the lane one.
+mutation_case "a target that needs no binary is declared as if it did" <<'PY'
+edit("sce-build/Cargo.toml",
+     '[[test]]\nname = "addr2sce_pc"',
+     '[[test]]\nname = "integration_stem_registration"\n'
+     'path = "tests/integration_stem_registration.rs"\n'
+     'required-features = ["cli"]\n\n[[test]]\nname = "addr2sce_pc"')
+PY
+
+# The cost of the fix, made real. `b9_drift_detection` is gated, and this lane
+# names it; without the flag cargo drops the target and the gate reports
+# success for a suite it never built.
+mutation_case "a lane running a gated target by name drops the flag" <<'PY'
+edit("scripts/gates/drift-suites.sh",
+     "cargo test -p sce-build --features cli --test b9_drift_detection",
+     "cargo test -p sce-build --test b9_drift_detection")
+PY
+
+# A scanner that finds nothing agrees with everything, and both manifest
+# questions would pass on a blinded reader — the undeclared set and the
+# spurious set are both empty when the population is empty. The floor is what
+# refuses that.
+mutation_case "the reader stops recognising the macro that reaches the binary" <<'PY'
+edit("sce-build/tests/cli_feature_gating.rs",
+     'format!("env!(\\"{BIN_ENV}\\")")',
+     'format!("env!(\\"{BIN_ENV}-no-such-var\\")")')
+PY
+
+# Prose that explains a mechanism must not be counted as the mechanism. This
+# file's own header spells the macro call out in a comment, so a reader that
+# stops stripping comments finds it there and reports the gate itself as an
+# undeclared binary-driven target — the reading `common::rust_source` exists
+# to prevent, arriving here through the one file guaranteed to talk about it.
+#
+# The stripper is called by its full path in the gate for this case's sake:
+# with a `use` line the deletion also retires the import, `-D warnings` refuses
+# the tree, and the case reports INCONCLUSIVE instead of a red. That is how
+# this one first came back.
+mutation_case "the reader counts the prose that explains the macro" <<'PY'
+edit("sce-build/tests/cli_feature_gating.rs",
+     "without_spaces(&common::rust_source::code_only(text)).contains(&call)",
+     "without_spaces(text).contains(&call)")
+PY
+
+# The same reading on the shell/YAML side, from the other direction: comments
+# QUOTE commands. `rust-workspace-tests.yml`'s header recounts the bare
+# `cargo test --workspace` that used to run these targets with no binary — a
+# sentence about a command nobody runs — and a scan that reads it finds a lane
+# sweeping the package without the flag.
+#
+# The anchor is the strip, not the sentence, so the case stays aimed if the
+# header is rewritten. If a rewrite ever removes every quoted command this
+# case goes SURVIVED rather than silent, which is the outcome to act on.
+mutation_case "the scan reads the comments that quote a command" <<'PY'
+edit("sce-build/tests/cli_feature_gating.rs",
+     "if trimmed.starts_with('#') {",
+     'if trimmed.starts_with("# no such prefix") {')
+PY
+
+# The lane question has two arms and they fail differently. Blinding the
+# sweeping arm leaves the naming arm finding everything `tree-hygiene.sh`
+# lists, so the count of examined commands stays positive and no offender is
+# reported: a scan that stopped looking, wearing the shape of a pass. Only the
+# arm's own floor refuses it.
+mutation_case "the sweeping arm stops recognising a workspace run" <<'PY'
+edit("sce-build/tests/cli_feature_gating.rs",
+     '    cmd.contains("--workspace")\n'
+     '        || cmd.contains("-p sce-build")\n'
+     '        || cmd.contains("--package sce-build")',
+     '    cmd.contains("--workspace-no-such-flag")\n'
+     '        || cmd.contains("-p sce-build-no-such-package")\n'
+     '        || cmd.contains("--package sce-build-no-such-package")')
+PY
+
+# Two mutations deliberately NOT written, for two different reasons:
+#
+#   * Removing `without_spaces` cannot be observed. Every one of the 53 call
+#     sites fits on a line, so the normalised text and the raw text answer
+#     alike and the mutation is a no-op. It is there for the rustfmt line
+#     break that has not happened yet, and a case that cannot fail is not
+#     evidence.
+#   * Widening `sweeps_the_package`'s `--test` guard DOES redden, and that is
+#     why it is not here: the red is a false report rather than a defect
+#     found. `measure-scope-obligation.sh` names one ungated target, so cargo
+#     builds that target alone and there is no gated target in the run to be
+#     dropped from it. A case whose red says something untrue would teach the
+#     next reader to widen the guard back.
