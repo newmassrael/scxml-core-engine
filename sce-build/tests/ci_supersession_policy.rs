@@ -135,7 +135,27 @@ const LANES: &[(&str, f64, u32, u32)] = &[
     ("embed-vendor-smoke.yml", 13.8, 4, 12),
     ("example-codegen.yml", 1.2, 3, 22),
     ("fmt-check.yml", 0.4, 3, 22),
-    ("forge-conformance.yml", 8.9, 5, 20),
+    // Re-measured 2026-09-02 and MOVED: 8.9 -> 22.2, over the same 20
+    // successes and the same 5 cancellations. Only the durations changed, so
+    // this row is not a bigger sample disagreeing with a smaller one -- it is
+    // the same population, slower.
+    //
+    // The median is exactly 22.15, the mean of the 10th and 11th of 20: 18.8
+    // and 25.5. It is written 22.2 here because the column is one decimal;
+    // a re-deriver whose rounding gives 22.1 has reproduced it, not moved it.
+    //
+    // The 5 cancellations killed work rather than a queue slot, which is what
+    // `false` is for: `Rust Forge Conformance` was 44.9 min in when the push
+    // at 15:29Z took it, and `Build sce-codegen` 20.9 min in at 15:50Z. This
+    // lane fans out to five languages, so one supersession discards all five.
+    //
+    // ⚠ A calmer day does NOT bring this row back down, and the heavy tail is
+    // the wrong thing to wait out. All six successes over 34 min fall on
+    // 2026-08-30/31 -- but those twelve median 25.8 while 2026-09-02's six
+    // median 22.15, the SAME figure as the full window. `cpp-suite.yml`
+    // records a genuine straddle; this row is not one. The tail moved and the
+    // middle did not, so moving this row needs a faster lane, not a quiet day.
+    ("forge-conformance.yml", 22.2, 5, 20),
     ("http-endpoint-ssot.yml", 0.2, 0, 25),
     ("license-verify.yml", 0.3, 0, 3),
     ("mutation-rounds.yml", 2.6, 0, 19),
