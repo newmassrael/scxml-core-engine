@@ -33,7 +33,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::rust_source::code_only;
+use common::rust_source::{code_mask, code_only, continues_ident};
 
 /// Test targets whose input set outgrows any path filter.
 ///
@@ -325,13 +325,218 @@ fn runs_target_by_name(text: &str, target: &str) -> bool {
     false
 }
 
-/// Test sources whose inputs reach past any glob list.
+/// Text that reaches past any glob list, counted.
 ///
-/// Two signatures, both of which have to be spelled at the call site to
-/// do the thing they signal: shelling out to git's tracked-file
+/// Two signatures, both of which have to be spelled where the reading
+/// happens to do the thing they signal: shelling out to git's tracked-file
 /// enumeration, and reading the workflow directory. The former is
 /// assembled at compile time so this file does not match itself on a
 /// signature it never uses.
+fn tree_wide_reads(code: &str) -> usize {
+    let tracked_file_enumeration = concat!("ls-", "files");
+    code.matches(tracked_file_enumeration).count() + code.matches(".github/workflows").count()
+}
+
+/// Whether `text` NAMES `ident` — as a word, not as a run of characters.
+///
+/// `every_texts_of` contains `every_text`, and answering yes to that would
+/// report a call nobody makes.
+fn names_ident(text: &str, ident: &str) -> bool {
+    let t: Vec<char> = text.chars().collect();
+    let w: Vec<char> = ident.chars().collect();
+    if w.is_empty() || w.len() > t.len() {
+        return false;
+    }
+    (0..=t.len() - w.len()).any(|i| {
+        t[i..i + w.len()] == w[..]
+            && (i == 0 || !continues_ident(t[i - 1]))
+            && (i + w.len() == t.len() || !continues_ident(t[i + w.len()]))
+    })
+}
+
+/// Every function in one module source, paired with the text of its body.
+///
+/// The structure is read off the MASK and the body sliced out of the code
+/// at the same offsets, because a `{` inside a string literal is data: a
+/// scan that counted it would run one body to the end of the file. An
+/// unbalanced body is a hard error rather than a shorter answer — a parse
+/// that silently gives up reports every helper past that point as reading
+/// nothing, which is the quiet direction this whole gate exists to refuse.
+///
+/// Outermost only. A nested `fn` is not a name a test can call, and
+/// attributing its read to both itself and the body it sits in would count
+/// one read twice — which is exactly what the equality below measures.
+fn fn_bodies(code: &str, mask: &str) -> Vec<(String, String)> {
+    let c: Vec<char> = code.chars().collect();
+    let m: Vec<char> = mask.chars().collect();
+    assert_eq!(
+        c.len(),
+        m.len(),
+        "the mask is {} char(s) long against the code's {} — they are not the \
+         same walk any more, so an offset into one is not an offset into the other",
+        m.len(),
+        c.len()
+    );
+
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut i = 0usize;
+    while i < m.len() {
+        let Some(after_kw) = keyword_at(&m, i, "fn") else {
+            i += 1;
+            continue;
+        };
+        let mut j = after_kw;
+        while j < m.len() && m[j].is_whitespace() {
+            j += 1;
+        }
+        let start = j;
+        while j < m.len() && continues_ident(m[j]) {
+            j += 1;
+        }
+        if j == start {
+            i += 1;
+            continue;
+        }
+        let name: String = m[start..j].iter().collect();
+
+        // A declaration without a body ends at the `;` before any brace.
+        let Some(open) = m[j..]
+            .iter()
+            .position(|c| *c == '{' || *c == ';')
+            .map(|k| j + k)
+            .filter(|k| m[*k] == '{')
+        else {
+            i = j;
+            continue;
+        };
+
+        let mut depth = 0usize;
+        let mut k = open;
+        let close = loop {
+            match m[k] {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break k;
+                    }
+                }
+                _ => {}
+            }
+            k += 1;
+            assert!(
+                k < m.len(),
+                "the body of `fn {name}` never closes: the mask still carries a \
+                 brace that belongs to a literal, so the structure being read \
+                 is not the file's"
+            );
+        };
+
+        out.push((name, c[open + 1..close].iter().collect()));
+        i = close + 1;
+    }
+    out
+}
+
+/// Whether the word `kw` starts at `i`, and where it ends if so.
+fn keyword_at(s: &[char], i: usize, kw: &str) -> Option<usize> {
+    let w: Vec<char> = kw.chars().collect();
+    let end = i + w.len();
+    (end <= s.len()
+        && s[i..end] == w[..]
+        && (i == 0 || !continues_ident(s[i - 1]))
+        && (end == s.len() || !continues_ident(s[end])))
+    .then_some(end)
+}
+
+/// The sources of the module every one of these test binaries compiles in.
+///
+/// The population is DERIVED from `mod.rs`'s own declarations and then
+/// checked against the directory, because those are two independent
+/// statements of the same set: a reader that lost one of them answers with
+/// a module smaller than the one the compiler builds, and every helper it
+/// failed to open reads nothing as far as this gate can tell.
+fn shared_module_sources() -> Vec<(String, String)> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/common");
+    let root_path = dir.join("mod.rs");
+    let root = fs::read_to_string(&root_path)
+        .unwrap_or_else(|e| panic!("read {}: {}", root_path.display(), e));
+
+    let declared: Vec<String> = code_only(&root)
+        .lines()
+        .filter_map(|line| {
+            let t = line.trim();
+            t.strip_prefix("pub mod ")
+                .or_else(|| t.strip_prefix("mod "))
+        })
+        .filter_map(|rest| rest.split(';').next())
+        .map(|name| name.trim().to_string())
+        .collect();
+
+    let mut out = vec![("mod".to_string(), root)];
+    for name in &declared {
+        let path = dir.join(format!("{name}.rs"));
+        let text =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+        out.push((name.clone(), text));
+    }
+
+    let read: BTreeSet<&str> = out.iter().map(|(name, _)| name.as_str()).collect();
+    let on_disk: BTreeSet<String> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("rs"))
+        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .collect();
+    let missed: Vec<&String> = on_disk
+        .iter()
+        .filter(|s| !read.contains(s.as_str()))
+        .collect();
+    assert!(
+        missed.is_empty(),
+        "the declaration in {} and the directory disagree: {:?} sit(s) in the \
+         module and were not read, so anything they read is invisible here",
+        root_path.display(),
+        missed
+    );
+    out
+}
+
+/// The helpers in that module whose own reading outgrows a filter.
+///
+/// Seeded by the signature and then closed over calls: a helper that calls
+/// one is one, because the caller's caller gets the same input set and a
+/// thin wrapper is the obvious next shape of a module written to be the
+/// single reader.
+fn tree_wide_helpers(sources: &[(String, String)]) -> BTreeSet<String> {
+    let bodies: Vec<(String, String)> = sources
+        .iter()
+        .flat_map(|(_, text)| fn_bodies(&code_only(text), &code_mask(text)))
+        .collect();
+
+    let mut marked: BTreeSet<String> = bodies
+        .iter()
+        .filter(|(_, body)| tree_wide_reads(body) > 0)
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    loop {
+        let grown: BTreeSet<String> = bodies
+            .iter()
+            .filter(|(name, body)| {
+                !marked.contains(name) && marked.iter().any(|h| names_ident(body, h))
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        if grown.is_empty() {
+            break marked;
+        }
+        marked.extend(grown);
+    }
+}
+
+/// Test sources whose inputs reach past any glob list.
 ///
 /// The prose is stripped first. A signature spelled in a comment is a
 /// file EXPLAINING the input, not reading it, and registering such a
@@ -340,10 +545,17 @@ fn runs_target_by_name(text: &str, target: &str) -> bool {
 /// `gate_selectors_do_not_leak.rs` names a workflow in its opening
 /// comment, to say which caller exports the variables it holds shut, and
 /// opens nothing under that directory — see `common::rust_source`.
-fn inputs_outgrow_a_filter(src: &str) -> bool {
-    let tracked_file_enumeration = concat!("ls-", "files");
+///
+/// A call into `common` counts as the read it performs. The shared module
+/// exists so that suites asking the same question stop writing the same
+/// reader, and `workflow_texts` is that reader for the workflow directory:
+/// a suite that took it up would drop its own `read_dir` and disappear
+/// from a detector that reads call sites only. That direction is the quiet
+/// one — the registry would then call a needed entry `stale` and invite
+/// somebody to delete it — so the helpers are derived rather than listed.
+fn inputs_outgrow_a_filter(src: &str, helpers: &BTreeSet<String>) -> bool {
     let code = code_only(src);
-    code.contains(tracked_file_enumeration) || code.contains(".github/workflows")
+    tree_wide_reads(&code) > 0 || helpers.iter().any(|h| names_ident(&code, h))
 }
 
 fn integration_test_sources() -> Vec<(String, String)> {
@@ -489,9 +701,10 @@ fn the_pre_push_hook_runs_every_unfilterable_gate() {
 
 #[test]
 fn the_registry_lists_every_gate_whose_inputs_outgrow_a_filter() {
+    let helpers = tree_wide_helpers(&shared_module_sources());
     let detected: BTreeSet<String> = integration_test_sources()
         .into_iter()
-        .filter(|(_, src)| inputs_outgrow_a_filter(src))
+        .filter(|(_, src)| inputs_outgrow_a_filter(src, &helpers))
         .map(|(stem, _)| stem)
         .collect();
     let registered: BTreeSet<String> = UNFILTERABLE_GATES.iter().map(|s| s.to_string()).collect();
@@ -613,12 +826,148 @@ fn the_detector_reads_the_code_and_not_the_prose() {
          measuring one direction as soon as either side empties"
     );
 
+    // No helpers: every row here is about what the file itself spells, and
+    // handing the detector a set would let a row pass on the other arm.
+    let none = BTreeSet::new();
     for (src, expected, what) in cases {
         assert_eq!(
-            inputs_outgrow_a_filter(src),
+            inputs_outgrow_a_filter(src, &none),
             *expected,
             "{what}: the detector answered {} for:\n{src}",
             !expected
+        );
+    }
+}
+
+/// The shared module, written out, so the hop through it can be measured.
+///
+/// Every part of the answer is a deliberate row. `texts` reads the
+/// directory; `every_text` only calls `texts`, which is the wrapper shape
+/// the closure exists for; `one_script` opens ONE named file, which a
+/// `paths:` filter enumerates perfectly well and which must therefore not
+/// be picked up. `outer` holds a nested `fn` that reads, so a walk that
+/// captured both would report `inner` — a name no test can call — and
+/// would count that one read twice.
+///
+/// The literal in `texts` carries an unbalanced `{` and the word `fn`.
+/// Neither is code, and a walk that read the source instead of the mask
+/// runs `texts` to the end of the fixture and says so.
+fn shared_module_fixture() -> Vec<(String, String)> {
+    // Assembled here for the reason `tree_wide_reads` assembles it: spelled
+    // out, this file would carry a signature it does not use.
+    let enumeration = concat!("ls-", "files");
+    let source = format!(
+        "pub fn texts(root: &Path) -> Vec<String> {{\n\
+         \x20   let hint = \"{{ fn not_a_function() \";\n\
+         \x20   read_dir(root.join(\".github/workflows\")).map(|_| hint.into()).collect()\n\
+         }}\n\
+         pub fn every_text() -> Vec<String> {{\n\
+         \x20   texts(&repo_root())\n\
+         }}\n\
+         pub fn one_script() -> String {{\n\
+         \x20   read_to_string(repo_root().join(\"scripts/gates/mutation-rounds.sh\"))\n\
+         }}\n\
+         pub fn outer() -> usize {{\n\
+         \x20   fn inner() -> usize {{\n\
+         \x20       Command::new(\"git\").arg(\"{enumeration}\").status();\n\
+         \x20       0\n\
+         \x20   }}\n\
+         \x20   inner()\n\
+         }}\n"
+    );
+    vec![("workflow".to_string(), source)]
+}
+
+/// A read reached through the shared module is still that test's input.
+///
+/// Registered but not repaid on 2026-09-02, when the declaration round
+/// noticed that the detector reads a test's own source and nothing else.
+/// The three suites that pull `common::workflow` in each spell a read of
+/// their own as well, so the hop changes no verdict on today's tree —
+/// which is precisely why it is measured here against a written-out module
+/// rather than against the one on disk. A gate whose subject does not
+/// exist yet is a gate that measures nothing, and the arrival it is for is
+/// a suite that drops its own `read_dir` in favour of the shared reader.
+#[test]
+fn a_read_reached_through_the_shared_module_is_still_a_read() {
+    let helpers = tree_wide_helpers(&shared_module_fixture());
+    let expected: BTreeSet<String> = ["every_text", "outer", "texts"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(
+        helpers, expected,
+        "the helpers whose reading outgrows a filter were derived as {helpers:?}"
+    );
+
+    let cases: &[(&str, bool, &str)] = &[
+        (
+            "mod common;\nuse common::workflow::texts;\nfn t() { texts(&p); }\n",
+            true,
+            "a suite that reads the directory only through the shared reader",
+        ),
+        (
+            "fn t() { for w in every_text() { check(w); } }\n",
+            true,
+            "a suite that calls the wrapper rather than the reader",
+        ),
+        (
+            "fn t() { assert!(one_script().contains(\"SCE_\")); }\n",
+            false,
+            "a helper that opens one named file is not a tree-wide read",
+        ),
+        (
+            "// it used to call every_text and walk them all\nfn t() {}\n",
+            false,
+            "a helper named in prose is a file explaining the read",
+        ),
+        (
+            "fn t() { every_texts_of(&lane); }\n",
+            false,
+            "a longer identifier that merely contains a helper's name",
+        ),
+    ];
+
+    let yes = cases.iter().filter(|(_, expected, _)| *expected).count();
+    let no = cases.len() - yes;
+    assert!(
+        yes >= 2 && no >= 3,
+        "the table has {yes} positive and {no} negative row(s); it stops \
+         measuring one direction as soon as either side empties"
+    );
+
+    for (src, expected, what) in cases {
+        assert_eq!(
+            inputs_outgrow_a_filter(src, &helpers),
+            *expected,
+            "{what}: the detector answered {} for:\n{src}",
+            !expected
+        );
+    }
+}
+
+/// Every tree-wide read in the shared module belongs to a helper by name.
+///
+/// The closure above can only mark what the walk attributed to a name. A
+/// read sitting in a `const`, in a macro body, or past a brace the walk
+/// mis-counted is unattributed — not exempt — so this counts occurrences
+/// on both sides and refuses any difference. Equality rather than a floor:
+/// a count that came out too HIGH means one read was attributed twice, and
+/// the name it was attributed to may be one no caller can reach.
+#[test]
+fn every_tree_wide_read_in_the_shared_module_sits_inside_a_helper() {
+    for (name, text) in shared_module_sources() {
+        let code = code_only(&text);
+        let whole = tree_wide_reads(&code);
+        let attributed: usize = fn_bodies(&code, &code_mask(&text))
+            .iter()
+            .map(|(_, body)| tree_wide_reads(body))
+            .sum();
+        assert_eq!(
+            whole, attributed,
+            "common/{name}.rs spells {whole} read(s) past a filter and the walk \
+             attributed {attributed} of them to a named helper; a read no name \
+             carries cannot be followed to the suite that performs it"
         );
     }
 }
