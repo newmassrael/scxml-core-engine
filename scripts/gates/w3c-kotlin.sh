@@ -106,9 +106,11 @@ TREE_BEFORE="$(kotlin_tree_hashes)"
 # this gate carried was a total over a floor of 200 on a suite of 373, so 173
 # cases — these two among them — could have stopped running inside a green
 # run. The class population is now DERIVED from the suite's sources and
-# compared against every row's JUnit report in both directions; the block that
-# builds `KOTLIN_RUNNABLE`, below, carries the reasoning. These two names are
-# covered by that set now, not by this paragraph.
+# compared against every row's JUnit report in both directions, by
+# `scripts/gates/kotlin_coverage.py`, which carries the reasoning for both
+# halves. These two names are covered by that set now, not by this paragraph —
+# and `sce-build/tests/kotlin_coverage_verdict.rs` asks the derivation for them
+# by name, so the coverage is a case rather than this sentence.
 #
 # ── What the rows are, and why they are PAIRS ─────────────────────
 #
@@ -573,100 +575,33 @@ kotlin_tree_for_language() {
 # exemption table: a class this reader cannot account for is a difference, and
 # a difference is red.
 #
-# The derivation is a FIXPOINT rather than a grep for `@Test`, because most of
-# these classes do not carry one. A generated case is
-# `class Test144 : W3CTestBase<…>()` and inherits every test it runs, so: a
-# type declaring a JUnit execution annotation is a carrier, and a type
-# extending a carrier is a carrier. What must have run is every carrier that
-# is a concrete class — 251 of them on 2026-08-31, against 265 top-level
-# declarations, the other 14 being sealed interfaces, private helpers, data
-# classes and the two abstract bases. None of those 14 is named here; they
-# fall out of the fixpoint because nothing runs them.
+# The derivation is a FIXPOINT rather than a grep for `@Test`, and both it and
+# the per-row comparison are `scripts/gates/kotlin_coverage.py`, which carries
+# the reasoning for each.
 #
-# ⚠ The two directions fail on DIFFERENT defects, which is why neither is
-# dropped. A derived class missing from the report is a case that stopped
-# running — a filter, an `@Disabled`, a registration deleted. A reported class
-# missing from the derivation is this reader going blind: a JUnit annotation
-# it does not know, a supertype clause it could not parse. Checking only the
-# first direction would let a blind reader report a shrinking suite as whole.
-#
-# ⚠⚠ Comments are stripped before anything is read. This repository has
-# already watched a scanner read its own prose — `reach_of` matched a gate
-# script's COMMENT and demanded a tool that lane never installed — and a
-# `@Test` or a `class` named in a KDoc is exactly that defect here.
+# ⚠⚠ THEY LEFT THIS FILE on 2026-09-02, and the move is the point rather than
+# tidiness. What they decide — an empty arm is not a green row — could until
+# then only be measured BY HAND, because their input is a JUnit report
+# directory that does not exist until this gate has run Gradle, so no runner in
+# the corpus could reach them here. As a program they take a directory an
+# ordinary test can build, and `sce-build/tests/kotlin_coverage_verdict.rs`
+# builds one: the empty arm is a case now, not a sentence.
 #
 # ⚠⚠⚠ Derived ONCE for every row, which is checked rather than assumed: the
 # overlay replaces `src/main/kotlin/com/sce` only, so the JUnit classes under
 # `src/test` are the committed ones on every row, and the tree-hash comparison
 # at the bottom of this gate fails if any row rewrote `src`.
+KOTLIN_COVERAGE="$SCE_REPO_ROOT/scripts/gates/kotlin_coverage.py"
 KOTLIN_RUNNABLE="$LOG/runnable-classes.txt"
 
-# ⚠ A floor under the DERIVATION, not under the report. The comparison is an
-# equality and two empty sets are equal: a reader that parsed nothing would
-# pass every row while asserting nothing at all — the quiet zero this
-# repository keeps re-learning. The report cannot be empty without failing the
-# equality, so the floor belongs on this side of it.
-KOTLIN_RUNNABLE_FLOOR=200
-
-python3 - "$KOTLIN_TEST_SOURCES" <<'PY' | LC_ALL=C sort -u >"$KOTLIN_RUNNABLE"
-import pathlib
-import re
-import sys
-
-root = pathlib.Path(sys.argv[1])
-
-BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-LINE_COMMENT = re.compile(r"//[^\n]*")
-EXECUTION_ANNOTATION = re.compile(
-    r"@(Test|TestFactory|ParameterizedTest|RepeatedTest|TestTemplate)\b"
-)
-DECLARATION = re.compile(
-    r"^((?:\w+[ \t]+)*)(class|object|interface)[ \t]+(\w+)([^\n{]*)", re.M
-)
-
-declarations = {}
-for path in sorted(root.rglob("*.kt")):
-    text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
-    package = re.search(r"^package\s+([\w.]+)", text, re.M)
-    package = package.group(1) if package else ""
-    found = list(DECLARATION.finditer(text))
-    for index, match in enumerate(found):
-        modifiers, kind, name, clause = match.groups()
-        end = found[index + 1].start() if index + 1 < len(found) else len(text)
-        supertypes = set(
-            re.findall(r"\b([A-Z]\w*)\s*(?:<[^>]*>)?\s*\(", clause)
-        ) | set(re.findall(r":\s*([A-Z]\w*)", clause))
-        declarations[name] = {
-            "qualified": f"{package}.{name}",
-            "kind": kind,
-            "modifiers": modifiers.split(),
-            "supertypes": supertypes,
-            "declares_case": bool(
-                EXECUTION_ANNOTATION.search(text[match.end() : end])
-            ),
-        }
-
-carriers = {n for n, d in declarations.items() if d["declares_case"]}
-while True:
-    grown = {
-        n
-        for n, d in declarations.items()
-        if n not in carriers and d["supertypes"] & carriers
-    }
-    if not grown:
-        break
-    carriers |= grown
-
-for name in carriers:
-    declaration = declarations[name]
-    if declaration["kind"] == "class" and "abstract" not in declaration["modifiers"]:
-        print(declaration["qualified"])
-PY
+# The floor under the DERIVATION — not under any report — lives with the
+# derivation, in `kotlin_coverage.py`. It refuses rather than printing a short
+# list, so a reader that parsed nothing cannot hand the rows below an empty set
+# for them all to match.
+python3 "$KOTLIN_COVERAGE" derive "$KOTLIN_TEST_SOURCES" >"$KOTLIN_RUNNABLE" \
+    || sce_gate_fail "the set of test classes that must run could not be derived from $KOTLIN_TEST_SOURCES — the refusal is above. Every row below compares its report against that set, so without it there is nothing to compare against"
 
 runnable_count="$(grep -c . "$KOTLIN_RUNNABLE" || true)"
-if (( runnable_count < KOTLIN_RUNNABLE_FLOOR )); then
-    sce_gate_fail "only $runnable_count runnable test class(es) were derived from $KOTLIN_TEST_SOURCES, under the floor of $KOTLIN_RUNNABLE_FLOOR. Every row below compares its report against this set, and a set this small means the derivation failed rather than that the suite shrank — a derivation that failed reports every row as complete"
-fi
 sce_gate_step "$runnable_count runnable test class(es) derived from $KOTLIN_TEST_SOURCES; every row below must report exactly them"
 
 for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
@@ -697,70 +632,28 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     # UP-TO-DATE, and for one that compiled and ran nothing. Neither is a
     # conformance result, so the verdict is read from the JUnit XML the run
     # produced rather than from the build's exit status.
-    [ -d "$REPORTS" ] \
-        || sce_gate_fail "no JUnit results under $REPORTS — the $engine/$language run reported success without producing a result file"
-
-    read -r cases failures errors skipped < <(
-        python3 - "$REPORTS" <<'PY'
-import glob, sys, xml.etree.ElementTree as ET
-t = f = e = s = 0
-for p in glob.glob(sys.argv[1] + "/*.xml"):
-    r = ET.parse(p).getroot()
-    t += int(r.get("tests", 0)); f += int(r.get("failures", 0))
-    e += int(r.get("errors", 0)); s += int(r.get("skipped", 0))
-print(t, f, e, s)
-PY
-    )
-
-    if (( failures != 0 || errors != 0 )); then
-        sce_gate_fail "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"
-    fi
-
-    # ⚠ A skipped case is not a passing one, and until 2026-08-31 nothing here
-    # read that attribute. The class comparison below cannot see it either —
-    # an `@Disabled` on a method leaves the class reporting — so this is the
-    # method-level half of the same question, and it is asked by NAME because
-    # a count would say how many stopped being measured without saying which.
-    if (( skipped != 0 )); then
-        printf '%s\n' "cases skipped on $engine over $language machines:" >&2
-        python3 - "$REPORTS" >&2 <<'PY'
-import glob, sys, xml.etree.ElementTree as ET
-for p in sorted(glob.glob(sys.argv[1] + "/*.xml")):
-    for c in ET.parse(p).getroot().iter("testcase"):
-        if c.find("skipped") is not None:
-            print(f"  {c.get('classname')}.{c.get('name')}")
-PY
-        sce_gate_fail "$skipped Kotlin case(s) were SKIPPED on $engine over $language machines. A skipped case is measured by nothing — a conformance claim this row did not make, reported from inside a green run"
-    fi
-
-    # The classes this row actually reported, against the ones its own sources
-    # say must run. Both directions; the derivation above says why each names a
-    # different defect.
     #
-    # ⚠ `$REPORTS` is shared by all four rows and is NOT emptied here, which
+    # ⚠ MEASURED on 2026-09-02, not reasoned. This row was made to run nothing
+    # — an `--init-script` narrowing the test filter to a class that does not
+    # exist — and Gradle printed `BUILD SUCCESSFUL in 15s` over an executed
+    # `:sce-kotlin-tests:test`, leaving `$REPORTS` present and holding no
+    # `TEST-*.xml` at all. What refused that arm is the comparison against the
+    # derived class set, which named all 251 — in that state every total is 0,
+    # and a total of 0 says that nothing ran without saying which claims went
+    # unmade.
+    #
+    # ⚠⚠ `$REPORTS` is shared by all four rows and is NOT emptied here, which
     # would make a class that stopped running in row 2 invisible behind row 1's
     # leftover file. That it does not is measured rather than assumed: a probe
     # file placed in that directory on 2026-08-31 was gone after the next
     # invocation, so Gradle's Test task clears its own result directory before
     # it writes. Were that to change, the leftovers of a row that ran MORE
-    # classes would surface here as `unknown` on the row that ran fewer.
-    reported="$LOG/reported-$engine-$language.txt"
-    find "$REPORTS" -maxdepth 1 -name 'TEST-*.xml' -printf '%f\n' \
-        | sed 's/^TEST-//; s/\.xml$//' | LC_ALL=C sort -u >"$reported"
-
-    silent="$(comm -23 "$KOTLIN_RUNNABLE" "$reported")"
-    if [ -n "$silent" ]; then
-        printf '%s\n' "test classes this row never reported:" >&2
-        printf '%s\n' "$silent" | head -n 20 >&2
-        sce_gate_fail "$(printf '%s\n' "$silent" | grep -c .) test class(es) derived from $KOTLIN_TEST_SOURCES produced no JUnit report on $engine over $language machines. Each is a conformance claim this lane makes and did not run, and a total held over a floor cannot see one — which is how \`SendParamPayloadTest\` and \`XmlDataIsADomTreeTest\` came to be named in a comment rather than measured"
-    fi
-
-    unknown="$(comm -13 "$KOTLIN_RUNNABLE" "$reported")"
-    if [ -n "$unknown" ]; then
-        printf '%s\n' "reported classes the derivation does not account for:" >&2
-        printf '%s\n' "$unknown" | head -n 20 >&2
-        sce_gate_fail "$(printf '%s\n' "$unknown" | grep -c .) class(es) reported on $engine over $language machines are outside the set derived from $KOTLIN_TEST_SOURCES. That set is this gate's only account of what must run, so a class it cannot see is a blind spot in the reader rather than a bonus: teach the fixpoint the annotation or supertype it missed. Unclassified is RED"
-    fi
+    # classes would surface as an unaccounted class on the row that ran fewer.
+    cases="$(python3 "$KOTLIN_COVERAGE" verdict \
+        --reports "$REPORTS" \
+        --runnable "$KOTLIN_RUNNABLE" \
+        --label "$engine over $language machines")" \
+        || sce_gate_fail "Kotlin conformance on $engine over $language machines: the row's coverage verdict refused — its diagnosis is above"
 
     sce_gate_step "$cases Kotlin case(s) passed on $engine over $language machines, across exactly the $runnable_count class(es) its sources declare"
 done

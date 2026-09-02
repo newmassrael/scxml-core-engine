@@ -4242,3 +4242,105 @@ names `LoweredEcma262` in ctest's JUnit and asserts it RAN and passed, and
 ⚠ The remaining floors are constants where a derivation exists — the registry
 is right there, and `w3c-cpp`'s own comment already says the cases are
 registered from it. Their slack is small, not zero.
+
+## Landed 2026-09-02: the empty arm was built, and it is a case now
+
+The round above left the contract test in `sce-build/tests/gate_registry_contract.rs`
+still demanding the floor it had just retired — `code.contains("if (( cases <
+200 )); then")` — so `Tree Hygiene` was red on `main` from `fd892c8c35`
+onward. The obvious repair is to delete the assertion. What was done instead
+was to BUILD the thing the assertion was written about and see what happens.
+
+### The measurement
+
+One row of the gate was made to run nothing while Gradle still succeeded: an
+`--init-script` narrowing the `Test` task's filter to a class that does not
+exist, with `failOnNoMatchingTests` off. Then `scripts/gate w3c-kotlin`:
+
+```
+> Task :sce-kotlin-tests:test
+
+BUILD SUCCESSFUL in 15s
+ERROR gate[w3c-kotlin]: 251 test class(es) derived from
+backends/kotlin/tests/src/test/kotlin produced no JUnit report on rhino over
+ecmascript machines
+```
+
+`backends/kotlin/tests/build/test-results/test` was left present, holding
+`binary/` and **zero** `TEST-*.xml`. So:
+
+- **The premise is true.** Gradle reports `BUILD SUCCESSFUL` over a `test` task
+  that executed and ran nothing. It is not only the UP-TO-DATE case.
+- **The conclusion drawn from it was not.** The retired floor's message said
+  *"without the floor a pair's arm can report green over an empty run"*, and
+  that does not follow: `(( cases < 200 ))` refuses `cases=0` as loudly as it
+  refuses anything. What a floor of 200 over a suite of 373 cannot see is the
+  OTHER direction — 173 cases stopping quietly — which is the hole the derived
+  class set closes. The contract test was demanding the weaker of the two
+  guards, and it was the demand that was wrong, not the gate.
+
+### What changed
+
+Both halves — the fixpoint derivation and the per-row comparison — left
+`scripts/gates/w3c-kotlin.sh` for `scripts/gates/kotlin_coverage.py`
+(`derive` / `verdict`), and `KOTLIN_RUNNABLE_FLOOR` went with the derivation as
+`RUNNABLE_FLOOR`. Refusals exit `3`, never `1`, so a reader that died on the
+way to a decision is not read as one that decided.
+
+That move is the point rather than tidiness, and it is the first repayment
+against the open bullet above. The verdict's input is a directory of JUnit
+reports — which is why no runner in the corpus could reach it while it lived
+in the gate, and why all five of the previous round's reds were bought by
+hand. A directory of JUnit reports is also just a directory of files:
+`sce-build/tests/kotlin_coverage_verdict.rs` builds the empty arm, the
+complete one, the one that dropped a class, the one that reported an
+unaccounted class, the skipped case and the unreadable report, and requires
+exit `3` for each. The gate keeps the DELEGATION, and
+`the_kotlin_gate_runs_every_engine_it_claims` now reads the row loop
+structurally: the verdict must be asked INSIDE it, because `$REPORTS` is one
+directory rewritten by every row.
+
+### The gate caught the move, on its first run
+
+The extraction changed one thing it had no business changing: the class a
+report is filed under was read from `<testsuite name=...>` instead of from the
+file name, on the reasoning that an attribute is the datum and a file name is
+its encoding. That reasoning is wrong here, and `scripts/gate w3c-kotlin`
+said so on the first run — **rc=1**, 242 of 251 classes reported as never
+having run, over a suite that had just run in full:
+
+```
+TEST-com.sce.w3c.Test453.xml
+<testsuite name="Test 453 -- W3C SCXML B.2" ...>
+  <testcase name="testW3CConformance()" classname="com.sce.w3c.Test453" .../>
+```
+
+`name` is the DISPLAY name. The nine classes that matched were the nine
+without a `@DisplayName`. The identity now comes from each
+`<testcase classname=...>`, and the file name is CHECKED against it rather
+than assumed — measured across all 251 reports: every case's `classname`
+equals the class its file is named for, and no report holds zero cases. Every
+fixture in `kotlin_coverage_verdict.rs` carries a `<testsuite name>` that
+differs from its class, so a verdict that goes back to reading it fails all of
+them rather than none.
+
+### Measured in the turn that landed it
+
+| what | witness |
+|---|---|
+| the premise | empty arm built, `BUILD SUCCESSFUL in 15s`, 0 `TEST-*.xml`, gate **rc=1** naming all 251 classes |
+| the derivation is unchanged | `kotlin_coverage.py derive` over the committed sources prints **251**, both named classes among them |
+| the verdict on a real run | `kotlin_coverage.py verdict` over the suite's own reports — **rc=0**, 373 cases across exactly those 251 classes |
+| green | `cargo test -p sce-build --features cli --test gate_registry_contract --test kotlin_coverage_verdict` — 33 + 15 pass |
+| green | `scripts/gate tree-hygiene`, `scripts/gate w3c-kotlin` |
+| red | the corpus cases below |
+
+### What this leaves open
+
+- **The debt is repaid for one predicate, not retired.** Everything else a
+  gate script EXECUTES is still unreachable by `scripts/mutate`, and the shape
+  that fixed this one — extract the decision into a program whose inputs a
+  test can build — is a prescription, not a runner.
+- **A `@Test` deleted with its class left behind** still drops out of both
+  sides together. Unchanged by this round: what is measured is a class that
+  stopped RUNNING, not one that stopped ASSERTING.
