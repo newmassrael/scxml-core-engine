@@ -148,12 +148,36 @@ COST_MEASURED: dict[str, str] = {
     # and a cost nobody has timed since look identical until one of them
     # carries this.
     "rust-modrs-drift": "2026-09-02",
+    # The four cheapest unmeasured gates, timed together on 2026-09-02.
+    # Every `cost_s` here survived the re-measurement unchanged, and the two
+    # that looked like drift are why this field is a DATE and not a second
+    # number:
+    #
+    #   * `http-endpoint-ssot` ran 0s against a declared 4s and the drift
+    #     report named it. Its own comment already explains that 4 — "4s,
+    #     pace-normalised on 2026-08-24. It read 0 because the scan itself
+    #     is 124ms; what the 0 left out is the process the runner has to
+    #     start around it". Following the report would have undone a
+    #     deliberate decision, so the number stays and the date moves.
+    #   * `rustdoc-links` ran 3s against 4s. The report stayed quiet — that
+    #     is inside its noise floor — and a one-second wobble is not a
+    #     reason to rewrite a figure somebody chose.
+    #
+    # So a measurement can confirm a cost without changing it, and until
+    # this map existed there was no way to record that it had happened.
+    # The residue, stated rather than hidden: the registry still cannot say
+    # WHICH numbers are pace-normalised — that lives in prose, and a future
+    # drift report will keep pointing at `http-endpoint-ssot` every time.
+    "embed-manifest-failfast": "2026-09-02",
+    "http-endpoint-ssot": "2026-09-02",
+    "license-ssot": "2026-09-02",
+    "rustdoc-links": "2026-09-02",
 }
 
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
 # with slack — an equality, so measuring one gate forces this down in the
 # same commit and the count cannot drift away from the map.
-UNMEASURED_COST_CEILING = 34
+UNMEASURED_COST_CEILING = 30
 
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
