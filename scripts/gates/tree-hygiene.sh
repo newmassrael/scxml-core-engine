@@ -105,6 +105,7 @@ cargo test -p sce-build --features cli,ffi \
     --test build_jobs_has_one_owner \
     --test codegen_binary_resolution \
     --test cmake_option_guard_scope \
+    --test configuration_rules_cite_their_clause \
     --test gate_registry_contract \
     --test committed_sourcemap_drift \
     --test diagnostic_corpus_schema \
