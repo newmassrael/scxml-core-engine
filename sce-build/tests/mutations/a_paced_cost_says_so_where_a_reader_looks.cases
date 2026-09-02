@@ -32,6 +32,20 @@
 # self-test drives the report from a fixture for exactly that reason, and a
 # case built on the live map would punish the last honest measurement for
 # landing.
+#
+# ⚠⚠ That warning was written here and then broken here, by the case directly
+# below it. It used to rename a live entry, `"w3c-go": "52s,`; on 2026-09-02
+# `3f66301c79` retired w3c-go on a warm timing — an honest re-measurement,
+# precisely the event the paragraph above says must not break a case. The
+# anchor then matched nothing, which `scripts/mutate` calls INCONCLUSIVE and
+# `scripts/gate mutation-cases` turns into a red.
+#
+# The re-aim is not a swap to another live key, which would rot on the next
+# honest measurement: the case now INJECTS a slug that is neither a gate nor
+# a comment. That fires the same equality from the other side, names no gate
+# that could be retired, and survives the map emptying completely — with
+# PACE_NORMALISED empty it still has something to check, which is the
+# property the old case lacked.
 
 mutation_tests -p sce-build --test gate_registry_contract
 mutation_targets sce-build/tests/gate_registry_contract.rs
@@ -39,10 +53,11 @@ mutation_targets sce-build/tests/gate_registry_contract.rs
 # registry as a subprocess, so an edit to it is invisible to a rebuild check.
 mutation_runtime_targets tools/git-hooks/gate_registry.py
 
-mutation_case "a gate's paced comment no longer has an entry mirroring it" <<'PY'
+mutation_case "PACE_NORMALISED and the comments stop naming the same slugs" <<'PY'
 edit("tools/git-hooks/gate_registry.py",
-     '"w3c-go": "52s,',
-     '"w3c-gone": "52s,')
+     'PACE_NORMALISED: dict[str, str] = {\n',
+     'PACE_NORMALISED: dict[str, str] = {\n'
+     '    "no-such-gate": "an entry no gate and no comment in this file carries",\n')
 PY
 
 mutation_case "the drift report gives paced costs the ordinary advice" <<'PY'
