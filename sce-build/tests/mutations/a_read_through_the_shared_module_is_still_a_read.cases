@@ -146,8 +146,13 @@ PY
 
 mutation_case "the module is read as its root file alone" <<'PY'
 edit("sce-build/tests/workflow_trigger_coverage.rs",
-     "    for name in &declared {",
-     "    for name in declared.iter().take(0) {")
+     '''        for name in declared_submodules(&path, &masked) {
+            queue.push(resolve_submodule(&here, &name));
+        }''',
+     '''        for name in declared_submodules(&path, &masked) {
+            let _ = &here;
+            let _ = name;
+        }''')
 PY
 
 # ── And the signature the whole thing is seeded from ───────────────
