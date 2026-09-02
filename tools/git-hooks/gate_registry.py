@@ -112,6 +112,34 @@ from pathlib import Path
 # never to raise this constant without the owner saying so.
 PUSH_BUDGET_S = 300
 
+# ── How much of that ceiling is declared in figures no run can check ──
+#
+# `PACE_NORMALISED` below records the costs that are a share of a full push
+# rather than a stopwatch read of the gate alone. That distinction has a
+# consequence the map itself does not state: such a figure cannot be
+# checked. `budget_breach` compares a declaration against a measurement,
+# and those two are the same kind of number only for a gate that was timed
+# alone — so every paced entry is a slice of the ceiling that no run,
+# however carefully it measures, can say is still true.
+#
+# `drift_report_lines` already writes down that this is temporary: "an
+# empty map is this work's SUCCESS condition, because each entry leaves
+# when its gate is honestly re-measured on a quiet machine". Nothing
+# measured that sentence, and the map grew to six entries carrying 149s of
+# the 177s a push can select — 84% of the checkable ceiling, unchecked.
+#
+# So the sentence becomes a number. This is a RATCHET, in the direction
+# the prose already named: LOWER it the day a gate is re-timed on a quiet
+# machine and its entry leaves the map. Raising it is how the hole grows,
+# and it grew this far precisely because nothing said no.
+#
+# ⚠ Re-measure carefully. This machine is shared with sibling loops and a
+# cold build cache doubles a reading (`ecma262-lowered-kotlin` read 25s
+# cold and 1s warm within one hour on 2026-09-02), so a `--measure` run
+# taken at a bad moment writes that contamination into `cost_s` and the
+# entry never honestly leaves.
+PACED_BUDGET_SHARE_CEILING = 0.842
+
 # ── When each cost_s was measured ─────────────────────────────────
 #
 # The header above says `cost_s` is warm wall-clock, measured rather than
@@ -1861,6 +1889,40 @@ def self_test(repo_root: Path) -> int:
             + ". Move the top one to `ci_only` — that is the rule the current "
               "set was derived by — rather than raising PUSH_BUDGET_S, which "
               "is the owner's number.")
+
+    # How much of that ceiling is declared in figures no run can check.
+    #
+    # A `PACE_NORMALISED` cost is a share of a full push, and `budget_breach`
+    # can only compare a declaration against a measurement of the same kind —
+    # so those seconds sit inside the ceiling with nothing able to say they
+    # are still true. `drift_report_lines` already calls an empty map this
+    # work's success condition; this is that sentence as a number, so the
+    # share moves in the direction the prose named instead of drifting.
+    cases += 1
+    # This fails in BOTH directions, for the reason UNMEASURED_COST_CEILING
+    # below spells out: a ratchet that only catches growth is one nobody ever
+    # lowers, and the hole it guards then sits at whatever size it reached.
+    # Growth means another cost became uncheckable; a drop means somebody
+    # re-timed a gate honestly and left the ceiling behind.
+    paced_local = sum((GATES[s].get("cost_s") or 0)
+                      for s in local if s in PACE_NORMALISED)
+    share = paced_local / worst if worst else 0.0
+    if abs(share - PACED_BUDGET_SHARE_CEILING) > 0.005:
+        carrying = sorted((((GATES[s].get("cost_s") or 0), s) for s in local
+                           if s in PACE_NORMALISED), reverse=True)
+        grew = share > PACED_BUDGET_SHARE_CEILING
+        failures.append(
+            f"paced-share: {paced_local}s of the {worst}s a push can select "
+            f"is declared in pace-normalised figures — {share:.1%} against a "
+            f"{PACED_BUDGET_SHARE_CEILING:.1%} ratchet. Those costs are "
+            f"shares of a full push, so no run can check them; carrying it: "
+            + ", ".join(f"{s} ({c}s)" for c, s in carrying[:3])
+            + (". Another cost became uncheckable — re-time it on a quiet "
+               "machine instead of admitting it to the map."
+               if grew else
+               ". A gate was re-timed and the ceiling was left behind — "
+               "LOWER PACED_BUDGET_SHARE_CEILING to what it now is, which is "
+               "the whole point of writing it down."))
 
     # The budget's other half: a run that PROVES the ceiling is breached must
     # say so, and a slow machine must not be mistaken for one.
