@@ -133,6 +133,33 @@ edit("sce-build/tests/ci_supersession_policy.rs",
      '("w3c-tests.yml", 70.1, 14, 9, 2),')
 PY
 
+# The recipe has to be able to produce the columns. The round that added
+# `unfinished` wrote the number down while the command above still asked for
+# `conclusion` alone -- and a run that never started reports the same null
+# conclusion as one that was skipped, so the stated derivation could not have
+# reached the column. One case from each side: the field dropped from the
+# recipe, and the reader that stops finding the recipe at all.
+#
+# ⚠ The first of the two SURVIVED on its first run, and that is what it is for.
+# The reader was counting the shell block's COMMENTS, so deleting `status` from
+# the `--json` list left the sentence explaining `status` standing three lines
+# above and the field still "present". The reader now strips `#` lines, and
+# this case is what holds that strip in place -- a separate case removing the
+# strip alone would survive, because with the real command intact every field
+# is found either way. One case, doing both jobs, deliberately.
+
+mutation_case "the recipe stops asking for a field its column needs" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     "--json conclusion,status,createdAt,updatedAt",
+     "--json conclusion,createdAt,updatedAt")
+PY
+
+mutation_case "the recipe reader finds no shell block and so misses nothing" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     'if doc.trim() == "```sh" {',
+     'if doc.trim() == "```no-such-fence" {')
+PY
+
 # A scanner that finds nothing agrees with everything, which is why both cases
 # above would pass on a blinded reader. The floor is what refuses that, and
 # this is the case that keeps the floor honest.

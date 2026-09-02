@@ -66,8 +66,9 @@ on:
 # finish between two of them and `cancel-in-progress: true` made it report only
 # when the person stopped pushing.
 #
-# ⚠ Its cancellation RATIO does not show this — 2 against 16 successes in its
-# last 25 runs, which
+# ⚠ Its cancellation RATIO does not show this — 2 against 16 successes over the
+# 23 runs this lane has (a 25-run window is asked for; younger lanes report all
+# they have), which
 # reads like a short lane's rate. The narrow `paths:` filter above is why: it
 # narrows WHICH pushes reach this lane, and does nothing about two that do.
 # Both cancellations were exactly that, mid-session pushes 17 and 14 minutes

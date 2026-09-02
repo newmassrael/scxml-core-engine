@@ -14,7 +14,10 @@
 //!
 //! ## The threshold is measured, not chosen
 //!
-//! Two numbers decide it, and both are re-derivable:
+//! Every number below is re-derivable, and the case named
+//! `the_recipe_names_every_field_its_columns_need` holds these commands to the
+//! columns they have to fill — a recipe that cannot produce a column is how a
+//! table stops being a measurement.
 //!
 //! ```sh
 //! # 1. how often `main` is actually PUSHED -> median 17.6 min (26 gaps over 27
@@ -28,12 +31,25 @@
 //! #    keep event=="push" && headBranch=="main", take each SHA's EARLIEST
 //! #    createdAt, then the median of adjacent differences
 //!
-//! # 2. how long each lane takes, and how often it is cancelled, over ITS OWN
-//! #    last 25 runs -- not a global window, see the warning below
+//! # 2. every column of [`LANES`] except the file name, over ITS OWN last 25
+//! #    runs -- not a global window, see the warning below.
+//! #      cancelled  = conclusion == "cancelled"
+//! #      successes  = conclusion == "success"
+//! #      median     = successes only, over updatedAt - createdAt
+//! #      unfinished = conclusion is null AND status is queued|pending|in_progress
+//! #    The last one is why the field list carries `status`: a run that never
+//! #    started and one that was skipped both report a null conclusion.
 //! for f in .github/workflows/*.yml; do
 //!     gh run list --workflow="$(basename "$f")" --limit 25 \
-//!         --json conclusion,createdAt,updatedAt
+//!         --json conclusion,status,createdAt,updatedAt
 //! done
+//!
+//! # 3. how long each lane goes WITHOUT ANSWERING -- the longest run of
+//! #    consecutive pushes for which no run of that lane reached `success` or
+//! #    `failure`. Sort the same listing by `createdAt` and take the longest
+//! #    streak of runs that are neither. This is the column that separates a
+//! #    lane losing verdicts from one deferring them; the cancellation count
+//! #    does not, see the warning below.
 //! ```
 //!
 //! A lane whose median successful run exceeds the median push gap cannot be
@@ -725,6 +741,100 @@ fn tracked_files() -> Vec<PathBuf> {
         .filter(|s| !s.is_empty())
         .map(|s| root.join(String::from_utf8_lossy(s).into_owned()))
         .collect()
+}
+
+/// Every `--json` field the recipe must ask for, and the column it fills.
+///
+/// A column is only measured if the command written above can produce it. That
+/// stopped being true the moment `unfinished` was added: the recipe asked for
+/// `conclusion` alone, and a run that never started reports the same null
+/// conclusion as one that was skipped. The number went into the table and its
+/// stated derivation could not have reached it — which is the exact defect
+/// this file exists to refuse, committed by the round that added the column.
+const RECIPE_FIELDS: &[(&str, &str)] = &[
+    ("conclusion", "the `cancelled` and `successes` columns"),
+    (
+        "status",
+        "the `unfinished` column, which a null conclusion cannot fill",
+    ),
+    ("createdAt", "the median's start, and the push-gap window"),
+    ("updatedAt", "the median's end"),
+    ("headSha", "the distinct pushes the gap is measured between"),
+    ("headBranch", "restricting the gap to `main`"),
+    ("event", "restricting the gap to pushes"),
+];
+
+/// The COMMANDS in the shell block of this module's own documentation.
+///
+/// Read from the file rather than from `include_str!` of a fragment, because
+/// the thing under test is what a person opening this file actually reads.
+///
+/// ⚠ Shell comments are stripped, and the first version of this reader did not
+/// strip them. Its mutation case survived because of it: removing `status`
+/// from the `--json` list left the sentence *"`status` is in the field list
+/// because ..."* standing three lines above, and the reader accepted the prose
+/// as the field. A scanner that counts an explanation as the thing explained
+/// certifies exactly the tree it was built to refuse.
+fn recipe_block() -> String {
+    let path = repo_root().join("sce-build/tests/ci_supersession_policy.rs");
+    let src =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+
+    let mut inside = false;
+    let mut block = String::new();
+    for line in src.lines() {
+        let Some(doc) = line.strip_prefix("//!") else {
+            continue;
+        };
+        let doc = doc.strip_prefix(' ').unwrap_or(doc);
+        if doc.trim() == "```sh" {
+            inside = true;
+            continue;
+        }
+        if inside && doc.trim() == "```" {
+            break;
+        }
+        if inside {
+            // Commands only. See this function's docs for what naming a field
+            // in a comment was allowed to prove.
+            if doc.trim_start().starts_with('#') {
+                continue;
+            }
+            block.push_str(doc);
+            block.push('\n');
+        }
+    }
+    block
+}
+
+/// The recipe asks for every field the table's columns are derived from.
+#[test]
+fn the_recipe_names_every_field_its_columns_need() {
+    let block = recipe_block();
+
+    assert!(
+        block.contains("--json"),
+        "the module's shell block carries no `--json` invocation, so either \
+         the recipe has gone or this reader stopped finding it -- and a reader \
+         that finds nothing agrees that nothing is missing"
+    );
+
+    let mut missing = Vec::new();
+    for &(field, fills) in RECIPE_FIELDS {
+        if !block.contains(field) {
+            missing.push(format!("  {field}: fills {fills}"));
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "the recipe in this module's docs does not ask for field(s) the table \
+         is built from:\n{}\n\
+         A column whose stated derivation cannot produce it is not a \
+         measurement. Add the field to the `gh run list --json` list above, or \
+         drop the column it fills.",
+        missing.join("\n")
+    );
 }
 
 /// The rows this file classifies as unable to finish between two pushes.
