@@ -524,6 +524,35 @@ fn kotlin_gate_pairs(code: &str) -> Vec<String> {
         )
 }
 
+/// The body of the loop that runs one engine/language row.
+///
+/// Structural rather than textual, because "the gate mentions the verdict
+/// somewhere" and "the gate asks for it once per row" are different claims and
+/// only the second one is worth anything: `$REPORTS` is a single directory
+/// rewritten by every row, so a check hoisted out of this loop reads whichever
+/// run finished last and reports it as all four.
+fn kotlin_gate_row_loop(code: &str) -> String {
+    let lines: Vec<&str> = code.lines().collect();
+    let gradle = lines
+        .iter()
+        .position(|line| line.contains("./gradlew --console=plain :sce-kotlin-tests:test"))
+        .expect(
+            "the Kotlin gate must run the suite through `./gradlew --console=plain \
+             :sce-kotlin-tests:test`, which is the invocation every row is built around",
+        );
+    let start = lines[..gradle]
+        .iter()
+        .rposition(|line| line.starts_with("for pair in"))
+        .expect("the gradle invocation sits inside a loop over the engine/language rows");
+    let end = start
+        + 1
+        + lines[start + 1..]
+            .iter()
+            .position(|line| *line == "done")
+            .expect("the row loop is closed");
+    lines[start..=end].join("\n")
+}
+
 /// The language half of each row, refusing a row that is not a pair.
 fn kotlin_gate_row_half(
     pairs: &[String],
@@ -589,13 +618,66 @@ fn the_kotlin_gate_runs_every_engine_it_claims() {
     }
 
     // Per-pair, not once at the end: the reports directory holds whichever run
-    // finished last, so a floor or a verdict read outside the loop describes
-    // one pair and vouches for all of them.
+    // finished last, so a verdict read outside the loop describes one pair and
+    // vouches for all of them.
+    //
+    // ⚠ THIS USED TO DEMAND A CASE-COUNT FLOOR (`if (( cases < 200 ))`), on
+    // the premise that "Gradle reports BUILD SUCCESSFUL for a test task that
+    // ran nothing, so without the floor a pair's arm can report green over an
+    // empty run". The premise is TRUE and was measured rather than argued on
+    // 2026-09-02 — one row's filter narrowed to a class that does not exist,
+    // `BUILD SUCCESSFUL in 15s` over an executed `:sce-kotlin-tests:test`,
+    // the report directory left present holding no `TEST-*.xml`. What the
+    // measurement also showed is that the CONCLUSION does not follow —
+    // `(( cases < 200 ))` refuses `cases=0` as loudly as anything else, and
+    // the gate refused that arm without it, naming all 251 classes that never
+    // reported.
+    //
+    // ⚠⚠ So the floor was retired rather than loosened, and what replaced it
+    // is strictly stronger in the direction the floor was weak: a floor of 200
+    // over a suite of 373 passes while 173 cases stop running, and the
+    // comparison against the derived class set refuses the FIRST class that
+    // stops reporting. Demanding the floor back would be demanding the weaker
+    // of the two.
+    //
+    // ⚠⚠⚠ And the replacement is not held by this assertion reading a line of
+    // bash. `scripts/gates/kotlin_coverage.py` is that verdict as a program,
+    // and `sce-build/tests/kotlin_coverage_verdict.rs` hands it an empty arm
+    // and requires the refusal — the first time this gate's run-time logic has
+    // been reachable by anything but a hand-bought red
+    // (`no_shell_runner_reaches_a_gates_own_logic`). What is left for this file
+    // is the DELEGATION: that the row loop still asks, once per row.
+    let coverage = repo_root().join("scripts/gates/kotlin_coverage.py");
     assert!(
-        code.contains("if (( cases < 200 )); then"),
-        "⚠ the per-pair floor on case count is gone. Gradle reports BUILD \
-         SUCCESSFUL for a test task that ran nothing, so without the floor a \
-         pair's arm can report green over an empty run."
+        coverage.is_file(),
+        "no coverage program at {} — the gate reads every row's verdict from \
+         it, and the cases that measure that verdict have nothing to run",
+        coverage.display()
+    );
+    assert!(
+        repo_root()
+            .join("sce-build/tests/kotlin_coverage_verdict.rs")
+            .is_file(),
+        "⚠ the cases that measure the coverage verdict are gone. The gate \
+         delegates its per-row refusal to `scripts/gates/kotlin_coverage.py` \
+         precisely so that refusal can be exercised without running Gradle; \
+         without them the delegation asserted below points at a program \
+         nothing measures."
+    );
+    assert!(
+        code.contains("\"$KOTLIN_COVERAGE\" derive"),
+        "⚠ the gate no longer derives the set of test classes that must run. \
+         Every row's verdict is a comparison against that set, and without it \
+         there is nothing for a row to be complete with respect to."
+    );
+    let rows = kotlin_gate_row_loop(&code);
+    assert!(
+        rows.contains("\"$KOTLIN_COVERAGE\" verdict"),
+        "⚠ the per-row coverage verdict is not asked inside the loop over \
+         KOTLIN_ENGINE_PAIRS. The reports directory holds whichever run \
+         finished last, so a verdict asked once at the end describes one pair \
+         and vouches for all of them — and a row that ran nothing would be \
+         covered by whichever row ran everything."
     );
     assert!(
         code.contains(r#"sce_gate_fail "Kotlin conformance on $engine over $language machines"#),
