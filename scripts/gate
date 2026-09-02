@@ -198,13 +198,38 @@ fi
 
 printf '\ngate: running %d gate(s): %s\n' "${#ORDER[@]}" "${ORDER[*]}" >&2
 
+# Milliseconds since the epoch, from bash's own clock.
+#
+# `SECONDS` is whole seconds, and that floor was not a rounding detail — it
+# was why one entry in `PACE_NORMALISED` could not be retired by measuring
+# it. `http-endpoint-ssot` declared 4s to cover the process the runner starts
+# around a 124ms scan, and every `--measure` run answered 0, so the
+# declaration and the measurement were never comparable. A gate whose cost
+# cannot be READ is one whose cost stays a chosen number for ever. With this
+# clock it reads 0.185s, and the entry is gone.
+#
+# `EPOCHREALTIME` is bash 5's microsecond clock and needs no subprocess, so
+# this costs nothing in a loop that is itself the measurement. Its separator
+# follows the locale — a comma in de_DE, a dot here — so the split accepts
+# both rather than trusting whichever the machine happens to use.
+gate_now_ms() {
+    local t=${EPOCHREALTIME} whole frac
+    whole=${t%%[.,]*}
+    frac=${t#*[.,]}
+    frac="${frac}000"
+    printf '%s%s\n' "$whole" "${frac:0:3}"
+}
+
+# Milliseconds as seconds, the unit `cost_s` is written in.
+gate_ms_as_s() { printf '%d.%03d\n' $(( $1 / 1000 )) $(( $1 % 1000 )); }
+
 declare -A ELAPSED=()
 for slug in "${ORDER[@]}"; do
     [[ -n "$slug" ]] || continue
     script="$REPO_ROOT/scripts/gates/${slug}.sh"
     [[ -x "$script" ]] || { printf '\nERROR gate: %s is not executable\n' "$script" >&2; exit 1; }
     printf '\n==> gate[%s]\n' "$slug" >&2
-    start=$SECONDS
+    start_ms=$(gate_now_ms)
     bash "$script" || {
         rc=$?
         # Exit 3 is `sce_gate_cannot_run`: the gate's own tooling is missing,
@@ -244,7 +269,7 @@ for slug in "${ORDER[@]}"; do
         fi
         exit "$rc"
     }
-    ELAPSED["$slug"]=$(( SECONDS - start ))
+    ELAPSED["$slug"]=$(gate_ms_as_s $(( $(gate_now_ms) - start_ms )))
 done
 
 if (( MEASURE )); then

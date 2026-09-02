@@ -142,7 +142,7 @@ PUSH_BUDGET_S = 300
 # What worked was repeating the measurement until it settled and reading
 # the band, then taking the worse of the last pair. A single reading here
 # says nothing; the first three of nine were still filling caches.
-PACED_BUDGET_SHARE_CEILING = 0.421
+PACED_BUDGET_SHARE_CEILING = 0.397
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -280,7 +280,6 @@ UNMEASURED_COST_CEILING = 27
 # two figures differ.
 PACE_NORMALISED: dict[str, str] = {
     "codegen-build": "41s, paced from the 2026-08-23 push rather than timed alone",
-    "http-endpoint-ssot": "the scan is 124ms; 4s covers the process around it",
     "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
 }
 
@@ -743,10 +742,17 @@ GATES: dict[str, dict] = {
     "http-endpoint-ssot": {
         "workflows": ["http-endpoint-ssot.yml"],
         "runner_workflow": True,
-        # 4s, pace-normalised on 2026-08-24. It read 0 because the scan itself
-        # is 124ms; what the 0 left out is the process the runner has to start
-        # around it, which every gate pays and only the cheap ones notice.
-        "cost_s": 4,
+        # 0.185s, and the first figure here this gate has ever been able to
+        # confirm. The 4 it carried was chosen on 2026-08-24 to cover the
+        # process the runner starts around a 124ms scan, because `--measure`
+        # answered 0 every time — `scripts/gate` timed with whole-second
+        # `SECONDS`, so a gate that finishes in a fifth of a second had no
+        # readable cost at all. The runner now keeps a millisecond clock, and
+        # six runs on 2026-09-02 read 0.165 0.145 0.154 0.162 0.169 0.185,
+        # none of them queued behind the cargo lock. 0.185 is the worse of
+        # the last pair. The process the 4 was covering turns out to be
+        # ~40ms, not the seconds it was insured against.
+        "cost_s": 0.185,
         "summary": "BasicHTTP fixture endpoint has one owner",
     },
     # The generated codecs are committed goldens, not workspace members:
@@ -2616,6 +2622,36 @@ def self_test(repo_root: Path) -> int:
                 and when[8:].isdigit()):
             failures.append(
                 f"COST_MEASURED[{slug!r}] = {when!r} is not a YYYY-MM-DD date")
+
+    cases += 1
+    # A cost below a second is a claim about the RUNNER, so check the runner.
+    #
+    # `scripts/gate` timed with whole-second `SECONDS` until 2026-09-02, and
+    # the consequence was not a rounding error: `http-endpoint-ssot` read 0
+    # on every `--measure` run, its declared 4s could never be confirmed
+    # against anything, and it sat in `PACE_NORMALISED` for that reason
+    # alone. Its cost is now 0.185 — a number the old clock could not
+    # produce. If the clock goes back, that figure silently becomes
+    # unconfirmable again and the entry drifts back into the map.
+    #
+    # This is the effect, not the edit: it asks whether a sub-second cost
+    # still has an instrument that can read it.
+    sub_second = sorted(s for s in GATES
+                        if 0 < (GATES[s].get("cost_s") or 0) < 1)
+    if sub_second:
+        runner_path = repo_root / "scripts" / "gate"
+        runner = runner_path.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"^\s*start=\$SECONDS\b", runner, re.M):
+            failures.append(
+                f"sub-second cost: {sub_second} declare a cost under one "
+                f"second, but {runner_path} times gates with whole-second "
+                f"`SECONDS` — those figures cannot be re-measured, which is "
+                f"how such a gate ends up in PACE_NORMALISED with a chosen "
+                f"number instead of a read one")
+        if "EPOCHREALTIME" not in runner:
+            failures.append(
+                f"sub-second cost: {sub_second} need a sub-second clock and "
+                f"{runner_path} no longer has one")
 
     cases += 1
     # The ratchet, and it fails in BOTH directions on purpose. More unmeasured
