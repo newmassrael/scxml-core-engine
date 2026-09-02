@@ -142,7 +142,7 @@ PUSH_BUDGET_S = 300
 # What worked was repeating the measurement until it settled and reading
 # the band, then taking the worse of the last pair. A single reading here
 # says nothing; the first three of nine were still filling caches.
-PACED_BUDGET_SHARE_CEILING = 0.782
+PACED_BUDGET_SHARE_CEILING = 0.651
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -201,6 +201,23 @@ COST_MEASURED: dict[str, str] = {
     # WHICH numbers are pace-normalised — that lives in prose, and a future
     # drift report will keep pointing at `http-endpoint-ssot` every time.
     "embed-manifest-failfast": "2026-09-02",
+    # `forge-go` left `PACE_NORMALISED` on 2026-09-02, the second entry to go.
+    # Seven readings: five `--measure` runs at 27 17 16 15 10 and two real
+    # pushes at 10 and 12. Drop the first — caches were still filling — and
+    # the band is 10-17s against a declared 36, which `cost_is_stale` calls
+    # stale by a wide margin.
+    #
+    # ⚠ The three runs meant to confirm the band never happened, and the
+    # reason is worth more than they were: `~/.cargo/.package-cache` is a
+    # GLOBAL lock, and a sibling session's `cargo build --release
+    # --workspace` in another repository held it for the whole attempt. This
+    # gate looks like a Go gate but `conformance/generate.sh` rebuilds
+    # `sce-codegen` when cargo is on PATH, so it queues behind that lock like
+    # the other 14 of the 36 gate scripts that invoke cargo. A run that spent
+    # its time blocked measures the lock, not the gate — such a reading is
+    # discarded, not averaged in. The discriminator is `ps` for the holder,
+    # never load average.
+    "forge-go": "2026-09-02",
     "http-endpoint-ssot": "2026-09-02",
     "license-ssot": "2026-09-02",
     # `nostd-mcu` was re-timed on 2026-09-02 and LEFT `PACE_NORMALISED`: the
@@ -227,7 +244,7 @@ COST_MEASURED: dict[str, str] = {
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
 # with slack — an equality, so measuring one gate forces this down in the
 # same commit and the count cannot drift away from the map.
-UNMEASURED_COST_CEILING = 29
+UNMEASURED_COST_CEILING = 28
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -255,7 +272,6 @@ UNMEASURED_COST_CEILING = 29
 # two figures differ.
 PACE_NORMALISED: dict[str, str] = {
     "codegen-build": "41s, paced from the 2026-08-23 push rather than timed alone",
-    "forge-go": "36s on 2026-08-24, paced down from a declared 52s",
     "http-endpoint-ssot": "the scan is 124ms; 4s covers the process around it",
     "w3c-go": "52s, paced from the 2026-08-23 push",
     "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
@@ -557,10 +573,14 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
-        # 36s, pace-normalised on 2026-08-24, down from a declared 52s. Left
-        # local: it is now the cheapest of the forge arms and the only one that
-        # still runs before a push.
-        "cost_s": 36,
+        # 15s, timed on a warm tree on 2026-09-02 and no longer a normalised
+        # figure. Seven observations that day — five `--measure` runs reading
+        # 27 17 16 15 10 and two real pushes reading 10 and 12 — put the
+        # settled band at 10-17s once the first run's cache-filling is
+        # dropped. 15 is the worse of the last measured pair, the rule the
+        # budget header sets. Still the cheapest forge arm and the only one
+        # that runs before a push.
+        "cost_s": 15,
         "summary": "Go forge conformance regenerate + test",
     },
     "forge-rust": {
