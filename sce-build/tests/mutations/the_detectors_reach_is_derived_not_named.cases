@@ -1,0 +1,160 @@
+# Mutation cases for "the detector's reach is derived, and the door it cannot
+# walk is measured shut rather than assumed shut".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_detectors_reach_is_derived_not_named.cases`.
+#
+# The round before this one taught `workflow_trigger_coverage` to follow a read
+# through `sce-build/tests/common`, and registered two holes it had MEASURED
+# nothing about: the walk started at a path spelled into the source, and a test
+# can also read past a filter by calling a library it links. Both were left
+# open on purpose — a prescription written over an unmeasured population is the
+# thing this gate exists to refuse.
+#
+# Measured 2026-09-03, before either was touched:
+#   * file-backed modules declared by `sce-build/tests/*.rs`: `common` and
+#     nothing else, across 17 declaring sources; `#[path]` attributes: 0.
+#   * the two signatures across the libraries these targets link — this
+#     crate's 96 sources plus the 34 in the two crates its manifest binds by
+#     path: 0 occurrences, raw text, comments included.
+#
+# So the two halves get different treatments, and the difference is the point:
+#
+#   * The module walk has a REAL population, so its answer is derived — roots
+#     from what the test sources declare, children from what each module file
+#     declares, and each directory cross-checked against its own contents.
+#     Every part of that can be shown red, and the cases below do it.
+#   * The library door has an EMPTY one. Attribution over an empty population
+#     measures nothing and no mutation can redden it, so it is a tripwire
+#     instead: put a signature in any of the 130 files and the sweep says so.
+#     ⚠ The repair when it fires is to bring that crate into the walk — not to
+#     delete the read, and not to add the file to an exemption list.
+#
+# ⚠ The sweep reads RAW text on purpose. Stripping prose removes characters
+# and never adds them, so a signature the code spells is a signature the file
+# spells: the scan can over-report and cannot under-report. That is the safe
+# direction for a tripwire, and it is why the last case below works by adding
+# a comment.
+
+mutation_tests -p sce-build --features cli --test workflow_trigger_coverage
+mutation_targets sce-build/tests/workflow_trigger_coverage.rs
+# Read at run time: the manifest is the declaration the library sweep derives
+# its population from, and lib.rs is one of the files it examines.
+mutation_runtime_targets sce-build/Cargo.toml sce-build/src/lib.rs
+
+# ── The roots are what the tests declare ───────────────────────────
+#
+# The defect this half repairs is a path spelled into the source. It cannot be
+# restored directly — `tests/common` is still today's only answer, so naming it
+# gives the same set — which is exactly why the cases attack the READING
+# instead. A reader that stops recognising a declaration returns no roots at
+# all, and the floor refuses that rather than reporting an empty module.
+
+mutation_case "a module declaration stops being recognised" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     '''            let rest = t
+                .strip_prefix("pub mod ")
+                .or_else(|| t.strip_prefix("pub(crate) mod "))
+                .or_else(|| t.strip_prefix("mod "))?;''',
+     '''            let rest = t
+                .strip_prefix("pub module ")
+                .or_else(|| t.strip_prefix("pub(crate) module "))
+                .or_else(|| t.strip_prefix("module "))?;''')
+PY
+
+# ── A module file's children live where the language says ──────────
+#
+# A `mod.rs` owns its own directory; any other module file owns one named
+# after it. Losing the first arm sends the walk to `tests/common/mod/`, and a
+# declaration that resolves to nothing is a hard error rather than a smaller
+# module — the whole point of the resolver being written out.
+
+mutation_case "a mod.rs is treated as an ordinary module file" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     '''    if is_crate_root || path.file_name().and_then(|n| n.to_str()) == Some("mod.rs") {''',
+     '''    if is_crate_root {''')
+PY
+
+# The other spelling, from the other side. `common` is a directory today, so
+# a resolver that knows only `NAME.rs` finds nothing.
+
+mutation_case "only the flat spelling of a module file is looked for" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     '''    let nested = dir.join(name).join("mod.rs");''',
+     '''    let nested = dir.join(name).join("no-such-file.rs");''')
+PY
+
+# ── The walk goes past the roots ───────────────────────────────────
+#
+# ⚠ NOT a case here. Stopping at the root — reading `common/mod.rs` and none
+# of the four files it declares — is the subject
+# `a_read_through_the_shared_module_is_still_a_read.cases` already owns, under
+# "the module is read as its root file alone". That case was written against
+# the older shape of this function and was re-anchored to the walk in the same
+# round as this file, rather than copied here: two casefiles reddening on one
+# mutation would report a subject as doubly covered while nothing new is being
+# measured.
+#
+# What DOES belong here is the cross-check, because it is that case's only
+# witness — no assertion about workflows moves when the walk stops short.
+
+mutation_case "a file in the module directory is not missed" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     '''            .filter(|p| !seen.contains(*p))
+            .map(|p| p.display().to_string())''',
+     '''            .filter(|p| seen.contains(*p))
+            .map(|p| p.display().to_string())''')
+PY
+
+# ── The library door: the population comes from the manifest ───────
+#
+# A crate the scan recognises and then does not collect is a library this
+# suite links and never examines. The equality against what the scan COUNTED
+# is what says so — a floor written as a number would have to be edited every
+# time the manifest grows, and would then be the thing that is stale.
+#
+# The collection is put behind a branch that cannot be taken rather than
+# deleted: removing the only `push` leaves the accumulator's mutability
+# unnecessary, `-D warnings` refuses the tree, and the case reports
+# INCONCLUSIVE instead of a red. That is how this one first came back.
+
+mutation_case "a bound path dependency is counted and not collected" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     '''        roots.push(crate_dir.join("src"));''',
+     '''        if !crate_dir.is_dir() {
+            roots.push(crate_dir.join("src"));
+        }''')
+PY
+
+mutation_case "the manifest scan stops recognising a dependency table" <<'PY'
+edit("sce-build/tests/workflow_trigger_coverage.rs",
+     '''        if name.trim().is_empty() || !rest.trim_start().starts_with('{') {''',
+     '''        if name.trim().is_empty() || !rest.trim_start().starts_with('[') {''')
+PY
+
+# ── And the door itself, opened ────────────────────────────────────
+#
+# This is the case the tripwire exists for, and the only one that proves it is
+# a tripwire rather than a comment. A library gains a mention of the workflow
+# directory; a test calling into that crate would inherit the input set, and
+# the module walk above does not reach there.
+
+mutation_case "a library this suite links starts naming the workflow tree" <<'PY'
+edit("sce-build/src/lib.rs",
+     "// sce-build — SCXML code generator for sce-rust-runtime.",
+     "// sce-build — SCXML code generator for sce-rust-runtime.\n"
+     "// Lane list read from .github/workflows at build time.")
+PY
+
+# Two mutations deliberately NOT written, for two different reasons:
+#
+#   * Removing the `#[path]` refusal cannot be observed. No Rust source this
+#     walk opens carries one, measured today, so the guard is unreachable from
+#     the real tree and a case for it would report CAUGHT off some other row.
+#     It stays because an attribute that moves a module somewhere the resolver
+#     does not look is unclassified rather than absent — and rule (6) says an
+#     unclassified thing is red, not a pass.
+#   * Naming `tests/common` back into the source is a no-op. It is still the
+#     only module the tests declare, so the named answer and the derived one
+#     agree today. A case that cannot fail is not evidence, and the derivation
+#     is held instead by the four reading cases above.

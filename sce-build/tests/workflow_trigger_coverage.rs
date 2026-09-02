@@ -449,57 +449,175 @@ fn keyword_at(s: &[char], i: usize, kw: &str) -> Option<usize> {
     .then_some(end)
 }
 
-/// The sources of the module every one of these test binaries compiles in.
-///
-/// The population is DERIVED from `mod.rs`'s own declarations and then
-/// checked against the directory, because those are two independent
-/// statements of the same set: a reader that lost one of them answers with
-/// a module smaller than the one the compiler builds, and every helper it
-/// failed to open reads nothing as far as this gate can tell.
-fn shared_module_sources() -> Vec<(String, String)> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/common");
-    let root_path = dir.join("mod.rs");
-    let root = fs::read_to_string(&root_path)
-        .unwrap_or_else(|e| panic!("read {}: {}", root_path.display(), e));
+/// The directory `tests/`, where every integration target's crate root sits.
+fn tests_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")
+}
 
-    let declared: Vec<String> = code_only(&root)
+/// The `mod NAME;` declarations one Rust file makes for a SEPARATE file.
+///
+/// Read off the mask, so a declaration cannot be spelled by a string
+/// literal, and cut at the `;`: `mod tests {` is a module whose code is
+/// already this file's own and is not a second file to open.
+///
+/// `#[path]` is refused rather than ignored. It moves a module somewhere
+/// this resolver does not look, and a resolver that skipped it would
+/// return a module tree smaller than the one the compiler builds while
+/// reporting nothing — the exact shape this gate exists to refuse.
+fn declared_submodules(path: &Path, masked: &str) -> Vec<String> {
+    assert!(
+        !masked.contains("#[path"),
+        "{} carries a `#[path]` attribute; this walk resolves modules by the \
+         default rule only, so the file it names would never be read",
+        path.display()
+    );
+    masked
         .lines()
         .filter_map(|line| {
             let t = line.trim();
-            t.strip_prefix("pub mod ")
-                .or_else(|| t.strip_prefix("mod "))
+            let rest = t
+                .strip_prefix("pub mod ")
+                .or_else(|| t.strip_prefix("pub(crate) mod "))
+                .or_else(|| t.strip_prefix("mod "))?;
+            let name = rest.strip_suffix(';')?.trim();
+            (!name.is_empty() && name.chars().all(continues_ident)).then(|| name.to_string())
         })
-        .filter_map(|rest| rest.split(';').next())
-        .map(|name| name.trim().to_string())
-        .collect();
+        .collect()
+}
 
-    let mut out = vec![("mod".to_string(), root)];
-    for name in &declared {
-        let path = dir.join(format!("{name}.rs"));
+/// Where the children of one module file live.
+///
+/// A crate root and a `mod.rs` own their own directory; any other module
+/// file owns a directory named after it. That is the language's rule, and
+/// spelling it here is what lets the walk follow a module tree it has not
+/// been told the shape of.
+fn child_dir(path: &Path, is_crate_root: bool) -> PathBuf {
+    let parent = path
+        .parent()
+        .unwrap_or_else(|| panic!("{} has no parent directory", path.display()))
+        .to_path_buf();
+    if is_crate_root || path.file_name().and_then(|n| n.to_str()) == Some("mod.rs") {
+        parent
+    } else {
+        let stem = path
+            .file_stem()
+            .unwrap_or_else(|| panic!("{} has no stem", path.display()));
+        parent.join(stem)
+    }
+}
+
+/// The one file a `mod NAME;` in `dir` resolves to.
+///
+/// Both spellings are looked for and exactly one must exist. Zero is a
+/// declaration the compiler could not satisfy either; two is a tree whose
+/// meaning depends on which the reader picked, and picking is what a gate
+/// must not do.
+fn resolve_submodule(dir: &Path, name: &str) -> PathBuf {
+    let flat = dir.join(format!("{name}.rs"));
+    let nested = dir.join(name).join("mod.rs");
+    match (flat.exists(), nested.exists()) {
+        (true, false) => flat,
+        (false, true) => nested,
+        (true, true) => panic!(
+            "`mod {name};` under {} resolves to both {} and {}",
+            dir.display(),
+            flat.display(),
+            nested.display()
+        ),
+        (false, false) => panic!(
+            "`mod {name};` under {} resolves to neither {} nor {}",
+            dir.display(),
+            flat.display(),
+            nested.display()
+        ),
+    }
+}
+
+/// Every source file the integration targets compile in besides their own.
+///
+/// The roots are DERIVED from what the test sources declare, not named:
+/// `common` is today's answer and not the question, and a second support
+/// module would otherwise be a door this detector does not know about.
+/// From each root the walk follows the module tree, and every directory it
+/// enters is cross-checked against its own contents — the declaration and
+/// the directory are two independent statements of the same set, so a
+/// reader that lost one answers with a module smaller than the one the
+/// compiler builds and every helper it failed to open reads nothing.
+fn shared_module_sources() -> Vec<(String, String)> {
+    let dir = tests_dir();
+    let mut roots: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut declaring = 0usize;
+    for (stem, src) in integration_test_sources() {
+        let path = dir.join(format!("{stem}.rs"));
+        let names = declared_submodules(&path, &code_mask(&src));
+        if !names.is_empty() {
+            declaring += 1;
+        }
+        for name in names {
+            roots.insert(resolve_submodule(&dir, &name));
+        }
+    }
+    assert!(
+        declaring > 0 && !roots.is_empty(),
+        "{declaring} test source(s) declared a separate module and {} root(s) \
+         resolved; the declarations are not being read, so every helper they \
+         reach is invisible to this gate",
+        roots.len()
+    );
+
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut queue: Vec<PathBuf> = roots.into_iter().collect();
+    let mut module_dirs: BTreeSet<PathBuf> = BTreeSet::new();
+    while let Some(path) = queue.pop() {
+        if !seen.insert(path.clone()) {
+            continue;
+        }
         let text =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-        out.push((name.clone(), text));
+        let masked = code_mask(&text);
+        let here = child_dir(&path, false);
+        for name in declared_submodules(&path, &masked) {
+            queue.push(resolve_submodule(&here, &name));
+        }
+        // The crate roots' own directory holds the test targets, not a
+        // module's files, so it is never one of these.
+        if let Some(parent) = path.parent() {
+            if parent != dir {
+                module_dirs.insert(parent.to_path_buf());
+            }
+        }
+        out.push((
+            path.strip_prefix(&dir)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned(),
+            text,
+        ));
     }
 
-    let read: BTreeSet<&str> = out.iter().map(|(name, _)| name.as_str()).collect();
-    let on_disk: BTreeSet<String> = fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("rs"))
-        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .collect();
-    let missed: Vec<&String> = on_disk
-        .iter()
-        .filter(|s| !read.contains(s.as_str()))
-        .collect();
-    assert!(
-        missed.is_empty(),
-        "the declaration in {} and the directory disagree: {:?} sit(s) in the \
-         module and were not read, so anything they read is invisible here",
-        root_path.display(),
-        missed
-    );
+    for module_dir in &module_dirs {
+        let on_disk: BTreeSet<PathBuf> = fs::read_dir(module_dir)
+            .unwrap_or_else(|e| panic!("read {}: {}", module_dir.display(), e))
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("rs"))
+            .collect();
+        let missed: Vec<String> = on_disk
+            .iter()
+            .filter(|p| !seen.contains(*p))
+            .map(|p| p.display().to_string())
+            .collect();
+        assert!(
+            missed.is_empty(),
+            "the declarations and the directory {} disagree: {:?} sit(s) in \
+             the module and were not read, so anything they read is invisible \
+             here",
+            module_dir.display(),
+            missed
+        );
+    }
+    out.sort();
     out
 }
 
@@ -965,11 +1083,153 @@ fn every_tree_wide_read_in_the_shared_module_sits_inside_a_helper() {
             .sum();
         assert_eq!(
             whole, attributed,
-            "common/{name}.rs spells {whole} read(s) past a filter and the walk \
+            "{name} spells {whole} read(s) past a filter and the walk \
              attributed {attributed} of them to a named helper; a read no name \
              carries cannot be followed to the suite that performs it"
         );
     }
+}
+
+/// The `src/` of every crate an integration target here can call into.
+///
+/// This crate's own library, plus each in-repository crate its manifest
+/// depends on by path — derived from the manifest rather than listed,
+/// because a third such dependency is exactly the arrival a list written
+/// today cannot name. A dependency entry is a line binding a NAME to a
+/// table carrying `path`; the bare `path =` lines belong to `[[bin]]` and
+/// `[[test]]` targets and name a file, not a crate.
+fn linked_crate_roots() -> Vec<PathBuf> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest_path = manifest_dir.join("Cargo.toml");
+    let manifest = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|e| panic!("read {}: {}", manifest_path.display(), e));
+
+    let mut roots = vec![manifest_dir.join("src")];
+    let mut bound = 0usize;
+    for line in manifest.lines() {
+        let t = line.trim();
+        if t.starts_with('#') {
+            continue;
+        }
+        let Some((name, rest)) = t.split_once('=') else {
+            continue;
+        };
+        if name.trim().is_empty() || !rest.trim_start().starts_with('{') {
+            continue;
+        }
+        let Some(after) = rest.split_once("path").and_then(|(_, r)| r.split_once('"')) else {
+            continue;
+        };
+        let Some((raw, _)) = after.1.split_once('"') else {
+            continue;
+        };
+        bound += 1;
+        let crate_dir = manifest_dir.join(raw);
+        assert!(
+            crate_dir.join("Cargo.toml").is_file(),
+            "`{}` binds path {raw:?}, which holds no Cargo.toml — the manifest \
+             is not being read the way cargo reads it",
+            name.trim()
+        );
+        roots.push(crate_dir.join("src"));
+    }
+    assert!(
+        bound > 0,
+        "no path dependency was found in {}; the manifest scan is broken, not \
+         the manifest — a crate this target links would then go unexamined",
+        manifest_path.display()
+    );
+    // One root per bound dependency, plus this crate's own. Written as an
+    // equality against what the scan COUNTED rather than as a number,
+    // because a number would have to be edited every time the manifest
+    // grows and would then be the thing that is stale.
+    assert_eq!(
+        roots.len(),
+        bound + 1,
+        "the manifest bound {bound} path dependenc(ies) and {} root(s) came \
+         back; a crate the scan recognised and did not collect is a library \
+         this suite links and never examines",
+        roots.len()
+    );
+    roots
+}
+
+/// Every `.rs` file under a directory.
+fn rust_sources_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(here) = stack.pop() {
+        for entry in fs::read_dir(&here)
+            .unwrap_or_else(|e| panic!("read {}: {}", here.display(), e))
+            .flatten()
+        {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|x| x.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The third door, and it is measured shut rather than assumed shut.
+///
+/// A test target's inputs are whatever its code reaches: its own source
+/// (matched directly), the module tree it declares (attributed above), and
+/// the libraries it links. Measured 2026-09-03 over 130 files — this
+/// crate's 96 and the 34 in the two crates its manifest binds by path —
+/// the signature appears in NONE of them, so no library call is a read
+/// past a filter today.
+///
+/// It is asserted rather than attributed on purpose, and the reason is
+/// what makes it a gate instead of scaffolding: attribution over an empty
+/// population measures nothing and no mutation can redden it, while THIS
+/// can be reddened by putting a read into any one of the 130 files. When
+/// it fires, the repair is to bring that crate into the walk above — not
+/// to delete the read, and not to add the file to an exemption list.
+///
+/// The asymmetry with the module walk is deliberate and worth stating:
+/// there the population is real (17 test sources declare a module, and the
+/// module holds a reader), so the answer is derived and every part of the
+/// derivation can be shown red. Here it is empty, so a derivation would be
+/// a machine nothing drives.
+///
+/// The scan reads raw text. That can only over-report, never under-report:
+/// stripping prose removes characters and never adds them, so a signature
+/// the code spells is a signature the file spells. An over-report here
+/// costs a sentence in a comment; an under-report costs the gate.
+#[test]
+fn no_library_this_suite_links_reads_past_a_filter_unattributed() {
+    let mut offenders: Vec<String> = Vec::new();
+    for root in linked_crate_roots() {
+        let sources = rust_sources_under(&root);
+        // Every arm carries its own floor: a root that yields nothing has
+        // stopped contributing to the sweep, and the sweep as a whole would
+        // still look busy on the strength of the others.
+        assert!(
+            !sources.is_empty(),
+            "no Rust source under {}; that crate is linked and unexamined",
+            root.display()
+        );
+        for path in sources {
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+            if tree_wide_reads(&text) > 0 {
+                offenders.push(path.display().to_string());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "library source(s) now read past any `paths:` filter: {offenders:?}\n\
+         A test calling into one inherits that input set, and the detector \
+         above only follows the module tree the test declares. Extend \
+         `shared_module_sources` to walk that crate so the read is attributed \
+         to a name, then this list is empty again for the right reason."
+    );
 }
 
 /// Prose comes out, line numbering stays.
