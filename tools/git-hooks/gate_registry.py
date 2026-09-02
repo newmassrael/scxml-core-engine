@@ -179,6 +179,39 @@ COST_MEASURED: dict[str, str] = {
 # same commit and the count cannot drift away from the map.
 UNMEASURED_COST_CEILING = 30
 
+# ── Costs that are deliberately NOT the raw stopwatch reading ─────
+#
+# Some `cost_s` values were normalised by hand: a figure taken on a loaded
+# machine scaled to a quiet one, or a sub-second scan raised to cover the
+# process the runner has to start around it. They are chosen numbers, and
+# a re-measurement is SUPPOSED to disagree with them.
+#
+# `order_drift` did not know that, and the consequence was measured on
+# 2026-09-02: timing the four cheapest gates produced
+# `http-endpoint-ssot declared 4s ran 0s` and the advice "update cost_s".
+# Following it would have undone a decision whose reasoning was sitting
+# three lines above the number, in a comment — *"It read 0 because the
+# scan itself is 124ms; what the 0 left out is the process the runner has
+# to start around it"*. Six slugs carry that kind of note and the report
+# would mislead about every one of them.
+#
+# So the fact moves here, where the report can read it. The report still
+# NAMES the slug — suppressing it would hide a genuine regression behind
+# a flag, and rule 6 of this repository's round rules is exactly that —
+# it just stops telling the reader to lower the number.
+#
+# ⚠ The value is the reason, not a restatement of the number. It is
+# printed to whoever is looking at the drift, so it has to say why the
+# two figures differ.
+PACE_NORMALISED: dict[str, str] = {
+    "codegen-build": "41s, paced from the 2026-08-23 push rather than timed alone",
+    "forge-go": "36s on 2026-08-24, paced down from a declared 52s",
+    "http-endpoint-ssot": "the scan is 124ms; 4s covers the process around it",
+    "nostd-mcu": "16s, paced from the 2026-08-23 push",
+    "w3c-go": "52s, paced from the 2026-08-23 push",
+    "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
+}
+
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
     # Triggered by its own sources, and forced on by its dependents.
@@ -1336,6 +1369,48 @@ def order_drift(measured: dict, table=None):
     return {"declared": declared_order, "measured": measured_order, "moved": moved}
 
 
+def drift_report_lines(drift, paced=None) -> list[str]:
+    """What a reader is told when the declared costs mis-order a run.
+
+    A function rather than prints inlined in `main` so the self-test can
+    read it. The advice this returns is the whole point of PACE_NORMALISED
+    — an inlined version was written first and nothing could check that the
+    advice ever changed, which is the same "no witness for the effect"
+    shape the registry keeps being bitten by.
+
+    `paced` is injectable for the same reason `order_drift` takes a table:
+    the self-test drives this from a FIXTURE, not from the live map. A case
+    that reached into PACE_NORMALISED for a slug to demonstrate on would go
+    vacuous the day the map empties — and an empty map is this work's
+    SUCCESS condition, because each entry leaves when its gate is honestly
+    re-measured on a quiet machine. A witness that dies when the work
+    finishes is not a witness.
+    """
+    paced = PACE_NORMALISED if paced is None else paced
+    lines = ["\ngate: the declared costs no longer order this run correctly."]
+    for slug, declared, actual in drift["moved"]:
+        was = "unmeasured" if declared is None else f"{declared}s"
+        lines.append(f"    {slug:<26} declared {was:>12}  ran {actual:g}s")
+        if slug in paced:
+            lines.append(f"    {'':<26} ^ pace-normalised on purpose: "
+                         f"{paced[slug]}")
+    lines.append(f"  ran in:   {' '.join(drift['declared'])}")
+    lines.append(f"  would be: {' '.join(drift['measured'])}")
+    if any(s in paced for s, _, _ in drift["moved"]):
+        # Named, not hidden: the slug still appears above, because a
+        # normalised cost can go stale like any other. What changes is the
+        # instruction — "update cost_s" is wrong for these, and a reader
+        # who follows it undoes somebody's measurement.
+        lines.append("  A pace-normalised cost is EXPECTED to read lower "
+                     "than it declares.")
+        lines.append("  Do not lower it to the raw figure; re-measure the "
+                     "others.\n")
+    else:
+        lines.append("  Re-measure with `scripts/gate --measure --all` and "
+                     "update cost_s.\n")
+    return lines
+
+
 def budget_breach(measured: dict, table=None):
     """Whether this run PROVES the push budget is breached.
 
@@ -1563,6 +1638,44 @@ def drop_ci_only(selected) -> set[str]:
     are understood — which is the one case it would matter least.
     """
     return {slug for slug in selected if not GATES[slug].get("ci_only")}
+
+
+def mapping_table() -> dict[str, dict]:
+    """The table `--mapping` publishes: GATES plus what only prose knew.
+
+    `cost_s` alone does not say whether it is a stopwatch reading. Six of
+    them are not — they are paced figures — and until this key existed the
+    only place that was written was a comment, so a consumer comparing its
+    own timings against the table had to scrape this file's source or get
+    six gates wrong. Asking the registry is the whole point of `--mapping`;
+    this makes the question askable.
+
+    The key is emitted for EVERY gate, `None` where the cost is a raw
+    reading. An absent key would mean both "this cost is raw" and "the
+    registry is too old to say", and a consumer cannot tell those apart —
+    the same absence-as-answer shape that made the drift report advise
+    lowering numbers somebody had deliberately chosen. Its value is the
+    REASON rather than a flag, because `true` alone sends the reader back
+    to the prose this key exists to replace.
+    """
+    return {
+        slug: dict(spec, pace_normalised=PACE_NORMALISED.get(slug))
+        for slug, spec in GATES.items()
+    }
+
+
+def registry_source() -> list[str]:
+    """This file's own lines, for the self-test cases that read its prose.
+
+    Two of them do: the `# Not delegated:` note a delegating gate has to
+    carry, and the pace-normalised comments PACE_NORMALISED mirrors. Both
+    compare prose against a literal defined in this same file, so both
+    have to read THIS file. `--repo-root` defaults to `.`, so resolving
+    the path that way would let a run started from another directory
+    check one checkout's comments against another checkout's tables and
+    call the disagreement a defect.
+    """
+    return pathlib.Path(__file__).read_text(encoding="utf-8").splitlines()
 
 
 def self_test(repo_root: Path) -> int:
@@ -2165,7 +2278,7 @@ def self_test(repo_root: Path) -> int:
     # note from being optional; the same shape the `local`-only gates'
     # reasons take.
     cases += 1
-    registry_src = pathlib.Path(__file__).read_text(encoding="utf-8").splitlines()
+    registry_src = registry_source()
     for slug, spec in sorted(GATES.items()):
         if not spec.get("workflows") or spec.get("runner_workflow"):
             continue
@@ -2332,6 +2445,175 @@ def self_test(repo_root: Path) -> int:
             f"({'more arrived' if len(unmeasured) > UNMEASURED_COST_CEILING else 'one was measured — lower the ceiling'}): "
             f"{unmeasured}")
 
+    cases += 1
+    unknown_paced = sorted(set(PACE_NORMALISED) - set(GATES))
+    if unknown_paced:
+        failures.append(
+            f"PACE_NORMALISED names slugs the registry does not have: {unknown_paced}")
+
+    cases += 1
+    # The value is printed to whoever is reading a drift report, so an
+    # empty one turns the note into a shrug.
+    for slug, why in sorted(PACE_NORMALISED.items()):
+        if len(why.strip()) < 10:
+            failures.append(
+                f"PACE_NORMALISED[{slug!r}] = {why!r} does not say why the "
+                f"declared cost differs from a raw timing")
+
+    cases += 1
+    # The half that keeps this from rotting: the PROSE and the DATA have to
+    # name the same slugs. Six comments in this file say a cost was
+    # pace-normalised, and until 2026-09-02 that was the only place it was
+    # written — so the drift report told readers to "update cost_s" on
+    # every one of them. A new normalisation that lands as a comment and
+    # not as an entry here puts us straight back there, and nothing would
+    # notice. Rule 10 of this repository's round rules, applied to the
+    # registry's own file.
+    prose_says, current = set(), None
+    for line in registry_source():
+        # Leaving the GATES literal ends the current slug's block. Without
+        # this the scanner attributes every later mention to whichever slug
+        # happened to be last — and it caught itself doing exactly that on
+        # 2026-09-02: the four mentions in this function and in the drift
+        # printer landed on `w3c-python-bindings`, and the case failed with
+        # a slug that has no such comment. Fourth time this repository has
+        # been bitten by a scanner reading its own text.
+        if line and not line[0].isspace():
+            current = None
+        match = re.match(r'    "([a-z0-9-]+)": \{', line)
+        if match:
+            current = match.group(1)
+        if current and "pace-normalis" in line:
+            prose_says.add(current)
+    if prose_says != set(PACE_NORMALISED):
+        only_prose = sorted(prose_says - set(PACE_NORMALISED))
+        only_data = sorted(set(PACE_NORMALISED) - prose_says)
+        failures.append(
+            f"PACE_NORMALISED disagrees with the comments in this file: "
+            f"prose-only={only_prose} data-only={only_data} — a normalised "
+            f"cost the report cannot read is the defect this map exists for")
+
+    cases += 1
+    # The EFFECT, not just the data. A map nothing reads is a comment with
+    # brackets, so this drives the report itself and checks all three of
+    # the things that make it useful: the slug is still named (hiding it
+    # would bury a real regression), the reason is printed, and the "update
+    # cost_s" advice — correct everywhere else, wrong here — is gone.
+    # Driven from a FIXTURE, not from the live map. Reaching into
+    # PACE_NORMALISED for a slug to demonstrate on would tie this witness
+    # to the defect's own survival: the map empties as its six gates are
+    # honestly re-measured, and on the day the last one leaves, a case
+    # built that way starts passing by having nothing to check. It would
+    # also have died on a bogus entry with a KeyError, which prints no
+    # failure list at all and so would swallow every other diagnostic in
+    # the run — including the one naming the bogus entry.
+    fixture = {"paced-gate": "a reason long enough to be a reason"}
+    lines = drift_report_lines(
+        {
+            "declared": ["paced-gate", "other-gate"],
+            "measured": ["other-gate", "paced-gate"],
+            "moved": [("paced-gate", 4, 0)],
+        },
+        paced=fixture,
+    )
+    report = "\n".join(lines)
+    # The slug's OWN row, not merely the string somewhere in the report:
+    # the run-order lines at the foot spell every slug out, so a "is it
+    # mentioned" check stays true even with the row suppressed, and the row
+    # is the part a reader needs in order to see a normalised cost go stale.
+    if not any("paced-gate" in line for line in lines if " declared " in line):
+        failures.append(
+            "drift report no longer gives a pace-normalised slug a row of "
+            "its own — such a cost goes stale like any other, and dropping "
+            "the row hides that behind the note")
+    if "pace-normalised on purpose" not in report:
+        failures.append(
+            "drift report does not say why the declared cost differs")
+    if fixture["paced-gate"] not in report:
+        failures.append(
+            "drift report prints the note without the reason behind it")
+    if "update cost_s" in report:
+        failures.append(
+            "drift report still tells the reader to update a pace-normalised "
+            "cost — following that undoes the normalisation")
+
+    cases += 1
+    # The other reader of the map is the published table, and it is the one
+    # that matters to anybody outside this file: `--mapping` exists so a
+    # consumer asks the registry instead of scraping it, and a consumer
+    # asking "is this cost_s a stopwatch reading?" got no answer at all
+    # until 2026-09-02. Three things have to hold, and each has been a real
+    # defect elsewhere in this file: the key reaches every gate (so its
+    # absence means an old registry, not "raw"), it carries the reason
+    # rather than a flag, and it names the same six the map does.
+    published = mapping_table()
+    if set(published) != set(GATES):
+        failures.append(
+            f"--mapping no longer publishes every gate: "
+            f"missing={sorted(set(GATES) - set(published))}")
+    silent = sorted(s for s in published if "pace_normalised" not in published[s])
+    if silent:
+        failures.append(
+            f"--mapping omits pace_normalised for {silent} — a consumer "
+            f"cannot tell 'this cost is raw' from 'the registry is too old "
+            f"to say', which is the absence-as-answer this key replaced")
+    said = {s: v for s, v in published.items() if v.get("pace_normalised")}
+    if set(said) != set(PACE_NORMALISED):
+        failures.append(
+            f"--mapping and PACE_NORMALISED name different gates: "
+            f"published={sorted(said)} map={sorted(PACE_NORMALISED)}")
+    for slug, spec in sorted(said.items()):
+        why = spec["pace_normalised"]
+        if not isinstance(why, str) or len(why.strip()) < 10:
+            failures.append(
+                f"--mapping publishes pace_normalised={why!r} for {slug} — a "
+                f"flag sends the reader back to the prose this key exists to "
+                f"replace")
+
+    cases += 1
+    # And the ordinary path still gives the ordinary advice, or the case
+    # above would pass by having deleted the instruction for everyone.
+    ordinary = "\n".join(drift_report_lines(
+        {
+            "declared": ["plain-gate", "other-gate"],
+            "measured": ["other-gate", "plain-gate"],
+            "moved": [("plain-gate", 4, 999)],
+        },
+        paced=fixture,
+    ))
+    if "update cost_s" not in ordinary:
+        failures.append(
+            "a slug that is NOT pace-normalised lost the re-measure advice")
+
+    cases += 1
+    # The binding the fixtures cannot see. Every case above drives an
+    # injected map, so the live one could be disconnected from the report
+    # entirely and they would all still pass. Both arms below are
+    # assertions rather than a skip: the second is what a correct registry
+    # looks like once the last paced cost has been honestly re-measured,
+    # which is the state this work is trying to reach.
+    live = next(iter(PACE_NORMALISED), None)
+    if live is not None:
+        default_report = "\n".join(drift_report_lines({
+            "declared": [live, "other-gate"],
+            "measured": ["other-gate", live],
+            "moved": [(live, GATES.get(live, {}).get("cost_s"), 0)],
+        }))
+        if PACE_NORMALISED[live] not in default_report:
+            failures.append(
+                f"drift_report_lines no longer reads PACE_NORMALISED by "
+                f"default — {live!r} loses its reason in the real report")
+    else:
+        default_report = "\n".join(drift_report_lines({
+            "declared": ["plain-gate", "other-gate"],
+            "measured": ["other-gate", "plain-gate"],
+            "moved": [("plain-gate", 4, 999)],
+        }))
+        if "update cost_s" not in default_report:
+            failures.append(
+                "PACE_NORMALISED is empty, so every gate should take the "
+                "ordinary re-measure branch, and one does not")
+
     if failures:
         for f in failures:
             print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
@@ -2379,7 +2661,8 @@ def main() -> int:
         # A reader that scrapes this file's source picks up the self-test's
         # synthetic tables along with the real one — measured, three fixture
         # gates and four more. Emitting the table is the answer.
-        json.dump(GATES, sys.stdout, indent=1, sort_keys=True, default=str)
+        json.dump(mapping_table(), sys.stdout, indent=1, sort_keys=True,
+                  default=str)
         sys.stdout.write("\n")
         return 0
 
@@ -2411,15 +2694,8 @@ def main() -> int:
         drift = order_drift(measured)
         if drift is None:
             return 1 if breach is not None else 0
-        print("\ngate: the declared costs no longer order this run correctly.",
-              file=sys.stderr)
-        for slug, declared, actual in drift["moved"]:
-            was = "unmeasured" if declared is None else f"{declared}s"
-            print(f"    {slug:<26} declared {was:>12}  ran {actual:g}s", file=sys.stderr)
-        print(f"  ran in:   {' '.join(drift['declared'])}", file=sys.stderr)
-        print(f"  would be: {' '.join(drift['measured'])}", file=sys.stderr)
-        print("  Re-measure with `scripts/gate --measure --all` and update "
-              "cost_s.\n", file=sys.stderr)
+        for line in drift_report_lines(drift):
+            print(line, file=sys.stderr)
         return 1 if breach is not None else 0
 
     if args.list:
