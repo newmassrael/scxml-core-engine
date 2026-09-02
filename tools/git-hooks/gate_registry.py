@@ -122,22 +122,30 @@ PUSH_BUDGET_S = 300
 # alone — so every paced entry is a slice of the ceiling that no run,
 # however carefully it measures, can say is still true.
 #
-# `drift_report_lines` already writes down that this is temporary: "an
-# empty map is this work's SUCCESS condition, because each entry leaves
-# when its gate is honestly re-measured on a quiet machine". Nothing
-# measured that sentence, and the map grew to six entries carrying 149s of
-# the 177s a push can select — 84% of the checkable ceiling, unchecked.
+# `drift_report_lines` calls an empty map this work's success condition,
+# "because each entry leaves when its gate is honestly re-measured on a
+# quiet machine". Nothing measured that sentence and the map grew to six
+# entries carrying 149s of the 177s a push can select, so the sentence
+# became this number.
 #
-# So the sentence becomes a number. This is a RATCHET, in the direction
-# the prose already named: LOWER it the day a gate is re-timed on a quiet
-# machine and its entry leaves the map. Raising it is how the hole grows,
-# and it grew this far precisely because nothing said no.
+# ⚠ But the sentence is wrong about the ROAD, and 2026-09-02 measured that
+# too. `nostd-mcu` was re-timed alone, six runs, and settled at 6-7s — while
+# a push that same hour read it at 32s cold. Writing the honest stopwatch
+# figure into `cost_s` would have under-priced a cold push fourfold, so the
+# re-measurement CONFIRMED the paced value instead of retiring it (see its
+# COST_MEASURED note). Every remaining entry is cache-shaped the same way:
+# `codegen-build` reads 0s warm against a declared 41s.
 #
-# ⚠ Re-measure carefully. This machine is shared with sibling loops and a
-# cold build cache doubles a reading (`ecma262-lowered-kotlin` read 25s
-# cold and 1s warm within one hour on 2026-09-02), so a `--measure` run
-# taken at a bad moment writes that contamination into `cost_s` and the
-# entry never honestly leaves.
+# So: re-timing alone does not empty this map, and a session that tries it
+# will spend a round proving that again. What would is a gate whose cost
+# stops depending on cache state, or one that leaves the local set. Until
+# then this ratchet's job is to stop the hole GROWING, and to make anything
+# that does shrink it visible — it fails in both directions for that reason.
+#
+# ⚠⚠ "On a quiet machine" is not a condition this box can meet: five AI
+# loops live here and the load moved 9 -> 95 inside the six runs above.
+# Repeat the measurement instead and read where it settles; a single
+# reading here says nothing.
 PACED_BUDGET_SHARE_CEILING = 0.842
 
 # ── When each cost_s was measured ─────────────────────────────────
@@ -199,13 +207,30 @@ COST_MEASURED: dict[str, str] = {
     "embed-manifest-failfast": "2026-09-02",
     "http-endpoint-ssot": "2026-09-02",
     "license-ssot": "2026-09-02",
+    # `nostd-mcu` was re-timed on 2026-09-02 to find out whether a
+    # pace-normalised cost can be replaced by an honest stopwatch read. It
+    # cannot, and the numbers are why. Six consecutive runs after a warmup:
+    #
+    #     22  22  13  7  7  6
+    #
+    # The readings fall as the caches fill and settle at 6-7s. But the two
+    # pushes this same session measured the same gate at 32s cold and 6s
+    # warm, and a push is what `cost_s` has to predict. Writing 7 here would
+    # under-price a cold push by more than four times; the declared 16 sits
+    # between the two states, which is what "paced from a full push" means.
+    #
+    # So this is the `http-endpoint-ssot` outcome again, and for a sharper
+    # reason: the number stays and the date moves. What the run bought is
+    # the knowledge that re-timing alone is not the road out of
+    # PACE_NORMALISED for any gate whose cost is cache-shaped.
+    "nostd-mcu": "2026-09-02",
     "rustdoc-links": "2026-09-02",
 }
 
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
 # with slack — an equality, so measuring one gate forces this down in the
 # same commit and the count cannot drift away from the map.
-UNMEASURED_COST_CEILING = 30
+UNMEASURED_COST_CEILING = 29
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -235,7 +260,8 @@ PACE_NORMALISED: dict[str, str] = {
     "codegen-build": "41s, paced from the 2026-08-23 push rather than timed alone",
     "forge-go": "36s on 2026-08-24, paced down from a declared 52s",
     "http-endpoint-ssot": "the scan is 124ms; 4s covers the process around it",
-    "nostd-mcu": "16s, paced from the 2026-08-23 push",
+    "nostd-mcu": "16s, paced from the 2026-08-23 push; timed alone on "
+                 "2026-09-02 at 6-7s warm, while a push read 32s cold",
     "w3c-go": "52s, paced from the 2026-08-23 push",
     "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
 }
@@ -1917,12 +1943,14 @@ def self_test(repo_root: Path) -> int:
             f"{PACED_BUDGET_SHARE_CEILING:.1%} ratchet. Those costs are "
             f"shares of a full push, so no run can check them; carrying it: "
             + ", ".join(f"{s} ({c}s)" for c, s in carrying[:3])
-            + (". Another cost became uncheckable — re-time it on a quiet "
-               "machine instead of admitting it to the map."
+            + (". Another cost became uncheckable — a paced entry is a last "
+               "resort, not a place to put a figure that was awkward to take."
                if grew else
-               ". A gate was re-timed and the ceiling was left behind — "
-               "LOWER PACED_BUDGET_SHARE_CEILING to what it now is, which is "
-               "the whole point of writing it down."))
+               ". The share dropped and the ceiling was left behind — LOWER "
+               "PACED_BUDGET_SHARE_CEILING to what it now is. ⚠ If you got "
+               "here by re-timing a gate alone, read that gate's "
+               "COST_MEASURED note first: 2026-09-02 showed a stopwatch read "
+               "CONFIRMING a paced cost rather than replacing it."))
 
     # The budget's other half: a run that PROVES the ceiling is breached must
     # say so, and a slow machine must not be mistaken for one.
