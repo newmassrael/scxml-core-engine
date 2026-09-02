@@ -143,17 +143,24 @@ name: C++ Test Suite
 #   Rust Workspace Tests              8/15    30.2 min   <- still starved
 #   Mutation Rounds                   0/21    32.7 min   <- sha-keyed group
 #
+# ⚠⚠ THAT TABLE IS A GLOBAL-WINDOW READING AND IS KEPT ONLY AS THE RECORD OF
+# WHAT WAS BELIEVED ON 2026-08-29. `gh run list --limit 300` spans all lanes at
+# once, so it is dominated by whichever ran most recently and under-samples the
+# rest; `ci_supersession_policy` names that instrument and refuses it. Re-taken
+# 2026-09-02 over each lane's OWN last 25 runs, three of the four figures move
+# by more than half: 79.1, 70.0, 41.6 and 49.8 min. Read the live numbers from
+# `LANES` in `sce-build/tests/ci_supersession_policy.rs`, never from here.
+#
 # The docs-only push above cancelled the W3C run on `174b25a24c` while proving
 # this lane's filter. Mutation Rounds is the shape of the answer for both: its
-# concurrency group is keyed on the sha, so a later push supersedes nothing.
-# Re-derive with `gh run list --limit 300 --json
-# workflowName,conclusion,createdAt,updatedAt` and group by lane.
+# concurrency group is keyed on the sha, so a later push supersedes nothing --
+# at the price its own row now records, a backlog of unstarted runs.
 #
 # Measured 2026-09-02 over this lane's own last 25 runs: a 79.1 min median
 # success against a 17.6 min median gap between pushes to `main`, the slowest
 # lane in the directory, so `false` is what saves the run in flight.
 #
-# ⚠ Its 13 cancellations in that window are NOT the evidence for the setting.
+# ⚠ Its 12 cancellations in that window are NOT the evidence for the setting.
 # `false` still cancels a run that is entirely PENDING, so a lane goes on
 # reporting cancellations long after it is repaired: this one's five newest
 # killed no job at all. The discriminator is per-job, `gh run view <id> --json

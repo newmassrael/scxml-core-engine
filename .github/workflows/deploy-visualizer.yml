@@ -19,9 +19,27 @@ on:
       - '.github/workflows/deploy-visualizer.yml'
   workflow_dispatch:
 
+# This lane crossed the line, and it crossed it while carrying the note that
+# said to watch for exactly that.
+#
+# Measured 2026-09-02 over this lane's own last 25 runs: a 17.9 min median
+# success against a 17.6 min median gap between pushes to `main`. It read 15.9
+# a few hours earlier, and `ci_supersession_policy` named it "the one to
+# re-measure first"; re-measured on that instruction it was past the
+# threshold, so the rule now requires `false` here.
+#
+# ⚠ Nothing about this lane's OUTCOME had deteriorated: 22 successes in that
+# window, and a longest run of consecutive pushes leaving it unanswered of
+# ONE. The `paths:` filter above is why — most pushes never reach it, so the
+# gap it actually faces is wider than the branch-wide one it is compared
+# against. That comparison is kept deliberately, because its direction is
+# safe: the pushes reaching a filtered lane are a SUBSET, and gaps between a
+# subset are never smaller, so the branch-wide figure can only ask for `false`
+# where it was not needed. Queueing a deploy nothing needed queued is the
+# cheap side of that error, and a lost deploy verdict is the dear one.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:

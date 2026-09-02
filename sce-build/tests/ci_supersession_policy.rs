@@ -38,28 +38,53 @@
 //!
 //! A lane whose median successful run exceeds the median push gap cannot be
 //! expected to finish between two pushes, so for that lane supersession is not
-//! deferral. Measured 2026-09-02 the two populations still separate: seven
-//! lanes from 20.5 to 79.1 minutes, and the next one down at 15.9. [`LANES`]
-//! carries every figure.
+//! deferral. Measured 2026-09-02 the two populations still separate, but less
+//! comfortably than they did that morning: eight lanes from 17.9 to 79.1
+//! minutes, and the next one down at 15.2. [`LANES`] carries every figure.
+//!
+//! ⚠ The eighth arrived by the table's own instruction. `deploy-visualizer.yml`
+//! carried a comment naming itself "the one to re-measure first" at 15.9; it
+//! was re-measured a few hours later and read 17.9, which is past the line.
+//! A row that says what would move it is the only kind that gets moved.
 //!
 //! ⚠ **A cancellation COUNT is not evidence of the defect, and must not be read
 //! as one.** `cancel-in-progress: false` still cancels a PENDING run, so a
 //! repaired lane goes on reporting cancellations forever. Measured 2026-09-02,
 //! `cpp-suite.yml` -- repaired at `74f83197b7` and long since declaring `false`
-//! -- shows 13 cancellations in its last 25 runs, and its five newest cancelled
-//! NO JOB AT ALL: every one was still entirely pending. That is the setting
-//! working, not failing.
+//! -- shows 12 cancellations in its last 25 runs, and its eight newest
+//! cancelled NO JOB AT ALL: every one was still entirely pending. That is the
+//! setting working, not failing.
 //!
-//! What discriminates is whether the cancellation killed work that had already
-//! STARTED, which is a per-job question the run conclusion cannot answer:
+//! What that reading separates is `true` from `false`, per job rather than per
+//! run:
 //!
 //! ```sh
 //! gh run view <id> --json jobs   # a cancelled job with startedAt < completedAt
 //! ```
 //!
-//! Read that way the counts confirm rather than mislead: `tree-hygiene.yml`
-//! before its repair killed 1.1 to 17.0 minutes of started work per
-//! cancellation, and `regen-reproduces.yml` still does.
+//! ⚠⚠ **And that is ALL it separates -- an earlier version of this paragraph
+//! offered it as the discriminator for whether a lane is losing answers, which
+//! it is not.** Probed across the whole directory on 2026-09-02, every
+//! cancellation of every lane declaring `true` killed started work, down to
+//! `sce-forge-codec-clippy.yml` at 1.4 minutes; every cancellation of a lane
+//! declaring `false` killed none. Of course: killing the run in flight is what
+//! `true` MEANS. A reading that is a restatement of the setting cannot be
+//! evidence about the setting.
+//!
+//! What does discriminate is how long the lane goes without answering --
+//! consecutive pushes for which no run reached `success` or `failure`.
+//! Measured over each lane's own last 25 runs: `deploy-visualizer` 1,
+//! `rust-workspace-tests` 1, `forge-conformance` 2, `regen-reproduces` 5 over
+//! 42 min, `cpp-suite` 5, `tree-hygiene` 10, `w3c-tests` 12 over 317 min,
+//! `mutation-rounds` 14 over 342 min.
+//!
+//! ⚠⚠⚠ Read that column and the doctrine below stops being sufficient. The
+//! four worst lanes are all already repaired, three by `false` and one by a
+//! per-commit key. `false` protects the run IN FLIGHT, and under a saturated
+//! runner pool no run reaches flight to be protected -- `w3c-tests`'s eight
+//! newest cancellations were all still pending. The lever this file asserts is
+//! set correctly on every one of them and no longer controls the outcome. What
+//! remains is runners, which no assertion here can buy.
 //!
 //! ⚠ **Take the numbers from a global run window and they say something else.**
 //! Read first from `gh run list --limit 300`, the same lanes reported 0
@@ -131,32 +156,62 @@ const MEDIAN_PUSH_GAP_MINUTES: f64 = 17.6;
 /// One row per workflow in `.github/workflows/`, as MEASURED.
 ///
 /// `(file, median successful run in minutes, runs cancelled, successful runs
-/// the median was taken over)`. The window asked for is each lane's own last
-/// 25 runs; a lane younger than that reports all it has —
-/// `ecma262-lowered-cpp.yml` had 11, which is why the counts are read
+/// the median was taken over, runs that never finished)`. The window asked for
+/// is each lane's own last 25 runs; a lane younger than that reports all it
+/// has — `ecma262-lowered-kotlin.yml` has 6, which is why the counts are read
 /// alongside the sample size and not as a ratio out of 25.
+///
+/// ⚠⚠⚠ The fifth column arrived 2026-09-02, and what it replaced was a hole
+/// rather than a number. The table recorded cancellations and successes, so a
+/// run that did NEITHER — still queued, never started — was in no column at
+/// all. `mutation-rounds.yml` is where that mattered: its `0` cancellations
+/// read as a healthy lane while FOURTEEN of its last twenty-five runs sat
+/// unstarted, the oldest for 5.7 hours. A per-commit group cannot record a
+/// supersession by construction, so its cancellation column could never have
+/// been anything but zero, and a column that cannot move is not evidence.
+///
+/// The remaining slack — `25 - (cancelled + successes + unfinished)` — is
+/// verdicts of other kinds, a failure or a timeout. Those are ANSWERS, which
+/// is why they are the one bucket this table can leave implicit: every run is
+/// cancelled, unfinished, or answered.
 ///
 /// The supersession policy is DERIVED from the median rather than written down
 /// beside it, so a row cannot record one thing and demand another. Editing a
 /// number is therefore the only way to move a lane, which is a visible act;
 /// flipping the flag in the workflow is not, and that is what this file exists
 /// to catch.
-const LANES: &[(&str, f64, u32, u32)] = &[
-    ("clang-format-check.yml", 0.8, 0, 25),
-    ("clippy-check.yml", 5.9, 0, 23),
-    // 13 of its last 25 cancelled while declaring `false`, and that is the
-    // setting WORKING: its five newest cancellations killed no job at all --
-    // every one was still entirely pending. Its repair (`74f83197b7`,
-    // 2026-08-29T00:53) now sits BEFORE this window instead of inside it, so
-    // unlike the row this replaces the count is post-fix history.
-    ("cpp-suite.yml", 79.1, 13, 11),
-    // The nearest lane below the line and the one to re-measure first: 15.9
-    // against a 17.6 gap, with `embed-vendor-smoke.yml` next at 15.2.
-    ("deploy-visualizer.yml", 15.9, 2, 22),
-    ("doc-check.yml", 0.6, 0, 24),
-    ("doc-content-gate.yml", 10.6, 1, 24),
-    ("drift-verify.yml", 7.1, 1, 24),
-    ("ecma262-lowered-cpp.yml", 23.7, 2, 16),
+const LANES: &[(&str, f64, u32, u32, u32)] = &[
+    ("clang-format-check.yml", 0.8, 0, 25, 0),
+    ("clippy-check.yml", 7.7, 0, 22, 1),
+    // 12 of its last 25 cancelled while declaring `false`, and that is the
+    // setting WORKING: probed 2026-09-02, its eight newest cancellations
+    // killed no job at all -- every one was still entirely pending. Its repair
+    // (`74f83197b7`, 2026-08-29T00:53) sits BEFORE this window, so the count is
+    // post-fix history.
+    ("cpp-suite.yml", 79.1, 12, 11, 2),
+    // ⚠⚠⚠ CROSSED THE LINE, 15.9 -> 17.9 against a 17.6 gap. The row it
+    // replaces named itself "the one to re-measure first"; re-measured on
+    // instruction 2026-09-02T10:2xZ, it had moved past the threshold, and the
+    // rule now requires the `false` this lane carries.
+    //
+    // ⚠ Its OUTCOME did not deteriorate with it: 22 successes in the window
+    // and a longest run of consecutive pushes without an answer of ONE. It is
+    // healthier than every repaired lane in this table, and the reason is its
+    // `paths:` filter -- most pushes never reach it, so the gap it actually
+    // faces is wider than the one this table compares it against.
+    //
+    // That mismatch is deliberate and its DIRECTION is the argument: the
+    // pushes reaching a filtered lane are a SUBSET of all pushes, and the gaps
+    // between a subset are never smaller. So [`MEDIAN_PUSH_GAP_MINUTES`] is a
+    // conservative stand-in for every filtered lane -- it can demand `false`
+    // where it was not needed, never withhold it where it was. Queueing a
+    // deploy nothing needed queued is the price of that direction, and it is
+    // the cheap side.
+    ("deploy-visualizer.yml", 17.9, 2, 22, 1),
+    ("doc-check.yml", 0.6, 0, 24, 0),
+    ("doc-content-gate.yml", 11.4, 1, 24, 0),
+    ("drift-verify.yml", 7.2, 1, 23, 1),
+    ("ecma262-lowered-cpp.yml", 23.7, 2, 16, 1),
     // Now measured from ITS OWN hosted runs. This row carried 4.8 borrowed
     // from the `Kotlin W3C Tests` job of `w3c-tests.yml` -- a strict superset
     // of its work -- because the lane had landed 2026-08-30 with no history to
@@ -166,50 +221,57 @@ const LANES: &[(&str, f64, u32, u32)] = &[
     //
     // The borrowed bound held: 6.3 is above the 4.8 it stood in for and still
     // far below the gap, so the substitution never changed a classification.
-    ("ecma262-lowered-kotlin.yml", 6.3, 0, 6),
-    ("embed-vendor-smoke.yml", 15.2, 4, 15),
-    ("example-codegen.yml", 9.3, 1, 24),
-    ("fmt-check.yml", 7.2, 0, 25),
-    // Moved 8.9 -> 22.2 earlier on 2026-09-02 and re-taken here at 25.5 in the
-    // common window; the population lost one success to the 25-run edge. Its
-    // 5 cancellations killed work rather than a queue slot, which is what
-    // `false` is for: `Rust Forge Conformance` was 44.9 min in when the push at
-    // 15:29Z took it, and `Build sce-codegen` 20.9 min in at 15:50Z. This lane
-    // fans out to five languages, so one supersession discards all five.
+    ("ecma262-lowered-kotlin.yml", 6.3, 0, 6, 0),
+    ("embed-vendor-smoke.yml", 15.2, 4, 15, 0),
+    ("example-codegen.yml", 8.5, 1, 23, 1),
+    ("fmt-check.yml", 8.2, 0, 24, 1),
+    // Moved 8.9 -> 22.2 -> 25.5 over one day. Its cancellations killed work
+    // rather than a queue slot, which is what `false` is for: `Rust Forge
+    // Conformance` was 44.9 min in when the push at 15:29Z took it, and `Build
+    // sce-codegen` 20.9 min in at 15:50Z. This lane fans out to five
+    // languages, so one supersession discards all five.
     //
     // ⚠ A calmer day does not bring this row back down: measured at 22.2, the
     // six runs of the quietest day median 22.15 -- the same figure as the full
     // window. The heavy tail moved and the middle did not, so moving this row
     // needs a faster lane, not a quieter day.
-    ("forge-conformance.yml", 25.5, 5, 19),
-    ("http-endpoint-ssot.yml", 7.2, 7, 18),
-    ("license-verify.yml", 0.3, 0, 3),
-    // ⚠⚠⚠ 2.6 -> 60.4, the largest move in this table, and the row that made
-    // reading `cancel-in-progress` ALONE untenable. This lane is long, declares
-    // `true`, and is nonetheless right: its concurrency group carries
+    ("forge-conformance.yml", 25.5, 4, 19, 2),
+    ("http-endpoint-ssot.yml", 6.0, 7, 17, 1),
+    ("license-verify.yml", 0.3, 0, 3, 0),
+    // ⚠⚠⚠ This row is why the fifth column exists. It is long, declares
+    // `true`, and is nonetheless right -- its concurrency group carries
     // `github.sha`, so a later push lands in a different group and cannot
-    // supersede it at all. `group_is_per_commit` is what reads that.
+    // supersede it at all, which `group_is_per_commit` reads.
     //
-    // Its 0 cancellations are that mechanism showing. The old row justified the
-    // same `true` by calling the lane short, which this measurement refutes --
-    // the conclusion was right and its stated basis was false.
-    ("mutation-rounds.yml", 60.4, 0, 11),
-    // ⚠ Below the line at 14.1, and so required to declare `true`, yet 12 of
-    // its last 25 were cancelled and every one of the five newest killed
-    // STARTED work, 1.1 to 17.2 minutes in.
+    // ⚠⚠⚠ But its `0` cancellations were being read as health, and they are
+    // not a measurement of health at all: a per-commit group CANNOT record a
+    // supersession, so that column can never be anything but zero here. What
+    // the zero was hiding is the fifth column -- 14 of its last 25 runs had
+    // still not started, the oldest queued 5.7 hours. Nothing cancels them and
+    // nothing runs them. The lever was traded, not the loss.
+    ("mutation-rounds.yml", 49.8, 0, 10, 14),
+    // ⚠ REFUTED, and the row it replaces said the opposite. That row called
+    // this lane "the standing evidence that the typical case is not the whole
+    // distribution" and implied a repair was owed. Measured 2026-09-02 over
+    // its own last 25 runs, the longest run of consecutive pushes leaving it
+    // without an answer is FIVE, spanning 42 minutes -- mid-pack, and better
+    // than `cpp-suite` (5 / 38 min), `tree-hygiene` (10 / 87 min), `w3c-tests`
+    // (12 / 317 min) and `mutation-rounds` (14 / 342 min), every one of which
+    // is already repaired. Its deferral works: it answers, later.
     //
-    // The median rule does not catch this and is not being bent to: 11 of the
-    // 26 push gaps in the same window are under 13 minutes, so a 14.1-minute
-    // lane loses to those while still finishing inside the MEDIAN gap.
-    // Comparing medians answers "typically", and this row is the standing
-    // evidence that the typical case is not the whole distribution.
-    ("regen-reproduces.yml", 14.1, 12, 13),
-    ("rust-workspace-tests.yml", 41.4, 0, 16),
-    ("sce-forge-codec-clippy.yml", 1.4, 1, 24),
-    ("sce-forge-codec-no-alloc.yml", 1.1, 1, 24),
-    ("sce-rust-runtime-no-std.yml", 1.6, 0, 25),
-    ("spec-citations.yml", 8.8, 1, 23),
-    ("spec-snapshot-drift.yml", 0.3, 0, 24),
+    // What made the old claim look strong was the count -- 12 cancellations,
+    // all killing started work. That is not evidence: probed across the whole
+    // directory, EVERY cancellation of a lane declaring `true` killed started
+    // work, because that is what `true` means. The discriminator separates
+    // `true` from `false`; it does not separate a lane that loses answers from
+    // one that defers them. Consecutive silence does, and is what to measure.
+    ("regen-reproduces.yml", 13.9, 12, 12, 1),
+    ("rust-workspace-tests.yml", 41.6, 0, 17, 1),
+    ("sce-forge-codec-clippy.yml", 1.4, 1, 24, 0),
+    ("sce-forge-codec-no-alloc.yml", 1.1, 1, 24, 0),
+    ("sce-rust-runtime-no-std.yml", 1.6, 0, 25, 0),
+    ("spec-citations.yml", 9.0, 1, 23, 1),
+    ("spec-snapshot-drift.yml", 0.3, 0, 24, 0),
     // Re-measured 2026-09-02 and MOVED: 9.9 -> 20.1, cancellations 0 -> 12.
     // The row it replaces was true when it was taken -- bucket that same
     // query by day and 2026-08-28 and 2026-08-29 still median 9.9 and 10.2.
@@ -241,8 +303,15 @@ const LANES: &[(&str, f64, u32, u32)] = &[
     // Re-taken in the common window at 20.5 with 11 cancellations over 9
     // successes: the repair pushed at 08:46Z added a success and slid the
     // oldest cancellation out of the 25-run window. Still long, still `false`.
-    ("tree-hygiene.yml", 20.5, 11, 9),
-    ("w3c-tests.yml", 72.4, 13, 10),
+    ("tree-hygiene.yml", 20.5, 11, 9, 1),
+    // ⚠ `false` and still the second-worst answer rate in the table: 9
+    // successes, and a longest consecutive silence of 12 pushes over 317
+    // minutes. Its eight newest cancellations killed NO started work -- every
+    // one was cancelled while still entirely pending. That is not the setting
+    // failing to protect a run in flight; it is no run ever reaching flight.
+    // `false` protects the run that started, and under a saturated runner pool
+    // there is none to protect.
+    ("w3c-tests.yml", 70.0, 14, 9, 2),
 ];
 
 fn repo_root() -> PathBuf {
@@ -400,23 +469,27 @@ fn every_workflow_is_classified() {
 
 /// A row cannot report more outcomes than its window holds.
 ///
-/// The window the docs prescribe is each lane's OWN last 25 runs, so
-/// `cancelled + successes` above 25 is arithmetically impossible for that
+/// The window the docs prescribe is each lane's OWN last 25 runs, so the three
+/// outcome columns summing above 25 is arithmetically impossible for that
 /// query however plausible the duration looks. Nothing offline can tell a
 /// stale row from a fresh one, but this does catch the shape a hand-edited or
-/// half-updated row takes: one column re-taken and the other left behind.
+/// half-updated row takes: one column re-taken and the others left behind.
+///
+/// ⚠ The sum includes `unfinished`, and has to. While the row was two columns
+/// wide the check passed on `mutation-rounds.yml` reporting 11 of 25 outcomes,
+/// because the fourteen it did not report were in no column to be counted.
 #[test]
 fn no_row_counts_more_runs_than_the_window_holds() {
     const WINDOW: u32 = 25;
     let mut checked = 0;
 
-    for &(file, _, cancelled, successes) in LANES {
+    for &(file, _, cancelled, successes, unfinished) in LANES {
         assert!(
-            cancelled + successes <= WINDOW,
-            "{file} reports {cancelled} cancellation(s) and {successes} \
-             success(es) -- {} outcomes out of a {WINDOW}-run window. The two \
-             columns came from different readings.",
-            cancelled + successes
+            cancelled + successes + unfinished <= WINDOW,
+            "{file} reports {cancelled} cancellation(s), {successes} \
+             success(es) and {unfinished} unfinished -- {} outcomes out of a \
+             {WINDOW}-run window. The columns came from different readings.",
+            cancelled + successes + unfinished
         );
         checked += 1;
     }
@@ -428,6 +501,20 @@ fn no_row_counts_more_runs_than_the_window_holds() {
     );
 }
 
+/// The rule, plus the invariant tying a backlog to the mechanism that makes one.
+///
+/// A lane slower than the push gap must not be superseded. Separately, a row
+/// reporting more unfinished runs than successes must sit on a per-commit
+/// group, because that is the only arrangement under which unstarted runs
+/// accumulate instead of being cleared by the next push.
+///
+/// ⚠ That invariant carries no minimum-population floor, deliberately, and the
+/// asymmetry is the point. Every other floor in this file refuses a population
+/// that has emptied, because an empty one means the check stopped looking. Here
+/// an empty one means the QUEUE DRAINED — the good outcome — so a floor would
+/// red the tree for improving. What keeps it honest instead is its mutation
+/// case, which constructs a violating row rather than waiting for the hosted
+/// queue to misbehave.
 #[test]
 fn a_lane_slower_than_the_push_gap_is_not_superseded() {
     let mut long = 0;
@@ -437,7 +524,7 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
     let mut long_by_false = 0;
     let mut long_by_key = 0;
 
-    for &(file, median, cancelled, successes) in LANES {
+    for &(file, median, cancelled, successes, unfinished) in LANES {
         let workflow = read_workflow(file);
         let declared = top_level_cancel_in_progress(&workflow);
 
@@ -450,6 +537,36 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
                  it a `concurrency:` block."
             );
         };
+
+        // The second arm: a row whose median was taken over fewer runs than
+        // never finished is describing the minority that found a runner, not
+        // the lane.
+        //
+        // ⚠ It deliberately does NOT feed the long/short classification, and
+        // the reason is that doing so would be provably redundant rather than
+        // merely unnecessary. The assertion below forces any such row onto a
+        // per-commit group, and a per-commit group already satisfies the long
+        // arm -- so the classification could not reach a different verdict.
+        // An arm that cannot change an outcome is one no mutation can turn
+        // red, and this file does not keep those.
+        let median_is_unrepresentative = unfinished > successes;
+
+        // A backlog that size is only reachable one way, and the two readings
+        // have to agree about which way. Under a group shared across commits
+        // the next push cancels whatever is still pending, so the unfinished
+        // column stays at one or two -- measured 2026-09-02, every lane with a
+        // shared group sat at 0..2. Only a per-commit group lets runs pile up,
+        // because nothing ever clears them. A row claiming a backlog on a
+        // shared group therefore contradicts its own workflow, and one of the
+        // two was read wrong.
+        assert!(
+            !median_is_unrepresentative || group_is_per_commit(&workflow),
+            "{file} reports {unfinished} run(s) that never finished against \
+             {successes} success(es), a backlog only a per-commit concurrency \
+             group can accumulate -- but its group is shared across commits, \
+             where a later push clears what is still pending. The row and the \
+             workflow disagree; re-read whichever was taken longer ago."
+        );
 
         if must_not_supersede(median) {
             long += 1;
@@ -466,11 +583,11 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
                  is running kills a verdict that will not be re-taken before the \
                  next one arrives -- and it still declares \
                  `cancel-in-progress: true` under a group that is shared across \
-                 commits. Measured: {cancelled} cancellation(s) in its recent \
-                 history, median over {successes} successes. Set \
-                 `cancel-in-progress: false`, or key the group on `github.sha` \
-                 so a later push lands in a different group, or re-measure and \
-                 move the row."
+                 commits. Measured: {cancelled} cancellation(s) and {unfinished} \
+                 run(s) that never finished, median over {successes} successes. \
+                 Set `cancel-in-progress: false`, or key the group on \
+                 `github.sha` so a later push lands in a different group, or \
+                 re-measure and move the row."
             );
         } else {
             short += 1;
@@ -614,8 +731,8 @@ fn tracked_files() -> Vec<PathBuf> {
 fn long_lanes() -> Vec<(&'static str, f64)> {
     LANES
         .iter()
-        .filter(|(_, median, _, _)| must_not_supersede(*median))
-        .map(|(file, median, _, _)| (*file, *median))
+        .filter(|(_, median, _, _, _)| must_not_supersede(*median))
+        .map(|(file, median, _, _, _)| (*file, *median))
         .collect()
 }
 

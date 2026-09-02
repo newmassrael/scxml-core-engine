@@ -121,13 +121,19 @@ on:
 # asking for a round over one casefile CANCELLED the push run for the same ref
 # (32034288611), because both landed in `<workflow>-refs/heads/main`.
 #
-# Measured 2026-09-02 over this lane's own last 25 runs: a 60.4 min median
+# Measured 2026-09-02 over this lane's own last 25 runs: a 49.8 min median
 # success against a 17.6 min median gap between pushes to `main`, so it cannot
 # finish between two of them -- and it still declares `cancel-in-progress:
 # true`, correctly. The group below carries `github.sha`, so each push lands in
 # a group of its OWN and a later one cannot supersede this run at all. That is
 # the STRONGER guarantee, not an exemption from it, and
 # `ci_supersession_policy` reads it off this file rather than off a roster.
+#
+# ⚠⚠⚠ What that guarantee COSTS, measured in the same window: 14 of those 25
+# runs had still not started, the oldest queued 5.7 hours. Nothing cancels
+# them and nothing runs them. Its 0 cancellations are not a healthy lane, they
+# are the one number a per-commit group can never report — so `LANES` carries
+# an `unfinished` column now, and this is the row it was added for.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || (github.event_name == 'workflow_dispatch' && github.run_id || github.event_name) }}
   cancel-in-progress: true
