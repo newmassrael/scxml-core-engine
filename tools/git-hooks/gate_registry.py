@@ -396,8 +396,12 @@ GATES: dict[str, dict] = {
         "ci_only": "193s measured, on every push, because a tree-wide gate "
                    "has no path filter to narrow it. Nothing else in the "
                    "budget comes close. tree-hygiene.yml is unfiltered too, "
-                   "so CI runs it on exactly the pushes this would have — "
-                   "the delegation is total rather than partial.",
+                   "so CI is OFFERED exactly the pushes this would have "
+                   "run — but offered is not judged: measured 2026-09-02, "
+                   "eleven pushes in a day left the `tree-wide gates` job "
+                   "0 verdicts and 10 supersessions, so a session that "
+                   "pushes faster than the lane finishes delegates to "
+                   "nothing. Space the pushes, or run it by hand.",
         "cost_s": 193,
         "summary": "tree-wide marker + trigger + parity gates",
     },
