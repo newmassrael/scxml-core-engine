@@ -397,11 +397,13 @@ GATES: dict[str, dict] = {
                    "has no path filter to narrow it. Nothing else in the "
                    "budget comes close. tree-hygiene.yml is unfiltered too, "
                    "so CI is OFFERED exactly the pushes this would have "
-                   "run — but offered is not judged: measured 2026-09-02, "
-                   "eleven pushes in a day left the `tree-wide gates` job "
-                   "0 verdicts and 10 supersessions, so a session that "
-                   "pushes faster than the lane finishes delegates to "
-                   "nothing. Space the pushes, or run it by hand.",
+                   "run — and whether it JUDGES them is a property of that "
+                   "workflow, not of this delegation. It failed to on "
+                   "2026-09-02: ten consecutive pushes cancelled, the "
+                   "repair of the lane's own red among them. The repair is "
+                   "cancel-in-progress: false there, derived by "
+                   "`ci_supersession_policy` from a re-measured 20.1 min "
+                   "against a 18.9 min push gap — not spacing the pushes.",
         "cost_s": 193,
         "summary": "tree-wide marker + trigger + parity gates",
     },
