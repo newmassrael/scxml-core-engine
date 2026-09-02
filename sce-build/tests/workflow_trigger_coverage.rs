@@ -64,6 +64,14 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // tools/git-hooks/gate_registry.py).
     "ci_supersession_policy",
     "cmake_option_guard_scope",
+    // Asks `git ls-files` for every tracked file and reads each one that
+    // decodes, looking for a configuration RULE stated on a line that
+    // cites a clause which does not state it. A SEVENTH backend writing
+    // the same sentence is the case it exists for, and that file does not
+    // exist today — so a `paths:` filter over the six carrying the rules
+    // now enumerates the answers it already knows and by construction
+    // cannot name the arrival it was built to catch.
+    "configuration_rules_cite_their_clause",
     "codegen_binary_resolution",
     "committed_sourcemap_drift",
     // Sweeps every committed *.scxml for a typed `<data>` that arrived
