@@ -22,13 +22,14 @@ on:
 
 # This lane is not superseded by the push that follows it.
 #
-# Measured 2026-08-29 over this lane's own last 25 runs: a 28.3 min median
-# success against a 18.9 min median gap between pushes to `main`, so it cannot
+# Measured 2026-09-02 over this lane's own last 25 runs: a 72.4 min median
+# success against a 17.6 min median gap between pushes to `main`, so it cannot
 # finish between two of them — and it declares no `paths:` filter, so every
-# push reaches it. 13 of those 25 runs ended `cancelled`, the worst ratio in
-# the tree. `cpp-suite.yml` recorded THIS lane's ratio in prose on the same day
-# it repaired its own and left this one alone; prose is the reason it survived
-# that day.
+# push reaches it. 13 of those 25 runs ended `cancelled`, over 10 successes.
+# `cpp-suite.yml` recorded THIS lane's ratio in prose on the same day it
+# repaired its own and left this one alone; prose is the reason it survived
+# that day, and `ci_supersession_policy` is why prose is no longer what holds
+# these two numbers.
 #
 # `false` rather than a per-commit key, deliberately: a newly queued run still
 # cancels a PENDING one, so `false` saves the run IN FLIGHT and the LATEST

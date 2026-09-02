@@ -115,9 +115,10 @@ on:
 
 # This lane is not superseded by the push that follows it.
 #
-# Measured 2026-08-29 over this lane's own last 25 runs: a 32.4 min median
-# success against a 18.9 min median gap between pushes to `main`, so it cannot
-# finish between two of them; 11 of those 25 runs ended `cancelled`. It carries
+# Measured 2026-09-02 over this lane's own last 25 runs: a 41.4 min median
+# success against a 17.6 min median gap between pushes to `main`, so it cannot
+# finish between two of them; 0 of those 25 runs ended `cancelled`, which is
+# what `false` looks like once it has been in place a while. It carries
 # the densest correctness net in the tree
 # — every contract test under `sce-build/tests/` runs here — and the
 # `workspace-tests` gate is `ci_only`, so a cancellation is the only reader of

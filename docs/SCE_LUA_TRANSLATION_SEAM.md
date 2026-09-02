@@ -1428,9 +1428,11 @@ and the emit script defaults to `clang++-19` for that reason.
 
 `ecma262-lowered-cpp.yml` ran `cancel-in-progress: true`, so a push arriving
 while it was working killed it. That is the right setting for a lane that
-answers in a minute and the wrong one for this one: measured 2026-08-29 it
-needs a **22.6 min median** against a **18.9 min median gap between pushes to
-`main`** (n=39 gaps), so it cannot finish between two of them. It was cancelled
+answers in a minute and the wrong one for this one: it needs longer than the
+**17.6 min median gap between pushes to `main`**, so it cannot finish between
+two of them. Its own median lives in the `LANES` row that
+`sce-build/tests/ci_supersession_policy.rs` carries, which is also what holds
+this paragraph's figure to the measurement. It was cancelled
 on `9192789c88` and `1a1f1169f8`, both times by a mid-session push 17 and 14
 minutes behind the run it took down.
 

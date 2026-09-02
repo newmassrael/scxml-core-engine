@@ -61,12 +61,13 @@ on:
 # This lane is not superseded by the push that follows it.
 #
 # Its verdict is about the one list this axis exists to empty, and it needs
-# twenty-odd minutes to reach it. Measured 2026-08-29: a 22.6 min median
-# success against a 18.9 min median gap between pushes to `main`, so it cannot
+# twenty-odd minutes to reach it. Measured 2026-09-02: a 23.7 min median
+# success against a 17.6 min median gap between pushes to `main`, so it cannot
 # finish between two of them and `cancel-in-progress: true` made it report only
 # when the person stopped pushing.
 #
-# ⚠ Its cancellation RATIO does not show this — 2 of its last 11 runs, which
+# ⚠ Its cancellation RATIO does not show this — 2 against 16 successes in its
+# last 25 runs, which
 # reads like a short lane's rate. The narrow `paths:` filter above is why: it
 # narrows WHICH pushes reach this lane, and does nothing about two that do.
 # Both cancellations were exactly that, mid-session pushes 17 and 14 minutes

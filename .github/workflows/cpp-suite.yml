@@ -148,6 +148,16 @@ name: C++ Test Suite
 # concurrency group is keyed on the sha, so a later push supersedes nothing.
 # Re-derive with `gh run list --limit 300 --json
 # workflowName,conclusion,createdAt,updatedAt` and group by lane.
+#
+# Measured 2026-09-02 over this lane's own last 25 runs: a 79.1 min median
+# success against a 17.6 min median gap between pushes to `main`, the slowest
+# lane in the directory, so `false` is what saves the run in flight.
+#
+# ⚠ Its 13 cancellations in that window are NOT the evidence for the setting.
+# `false` still cancels a run that is entirely PENDING, so a lane goes on
+# reporting cancellations long after it is repaired: this one's five newest
+# killed no job at all. The discriminator is per-job, `gh run view <id> --json
+# jobs`, and it is `startedAt` before `completedAt` that means work was lost.
 
 on:
   push:
