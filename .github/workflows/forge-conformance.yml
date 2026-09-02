@@ -58,7 +58,7 @@ on:
 
 # Re-measured 2026-09-02 over this lane's own last 25 runs: a 25.5 min median
 # success against a 17.6 min median gap between pushes to `main`, over 19
-# successes and 5 cancellations. It read 8.9 that morning and 22.2 an hour
+# successes and 4 cancellations. It read 8.9 that morning and 22.2 an hour
 # later over the SAME population, so what moved was the durations, not the
 # sample.
 #

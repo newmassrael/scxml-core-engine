@@ -22,10 +22,17 @@ on:
 
 # This lane is not superseded by the push that follows it.
 #
-# Measured 2026-09-02 over this lane's own last 25 runs: a 72.4 min median
+# Measured 2026-09-02 over this lane's own last 25 runs: a 70.0 min median
 # success against a 17.6 min median gap between pushes to `main`, so it cannot
 # finish between two of them — and it declares no `paths:` filter, so every
-# push reaches it. 13 of those 25 runs ended `cancelled`, over 10 successes.
+# push reaches it. 14 of those 25 runs ended `cancelled`, over 9 successes.
+#
+# ⚠⚠ `false` is set here and this is still the second-worst answer rate in the
+# directory: a longest consecutive silence of 12 pushes over 317 minutes, and
+# its eight newest cancellations killed no started work at all — every one was
+# cancelled while still entirely PENDING. `false` protects the run in flight,
+# and under a saturated runner pool no run reaches flight to be protected.
+# The setting is right and it is not sufficient; the shortfall is runners.
 # `cpp-suite.yml` recorded THIS lane's ratio in prose on the same day it
 # repaired its own and left this one alone; prose is the reason it survived
 # that day, and `ci_supersession_policy` is why prose is no longer what holds
