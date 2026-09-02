@@ -1453,6 +1453,36 @@ def budget_breach(measured: dict, table=None):
     pace = ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
     if pace <= 0:
         return None
+    # A pace below 1 is not divided out — it is clamped away.
+    #
+    # This threshold fires in ONE direction: it refuses when the total is too
+    # high and is silent otherwise. So the two halves of the pace estimate are
+    # not symmetric. A pace ABOVE 1 (a slow machine) divides measurements DOWN,
+    # which is the forgiving side and the reason the estimate exists. A pace
+    # BELOW 1 divides them UP — it manufactures cost, on the only side that can
+    # refuse a push, out of a run that was FASTER than the table.
+    #
+    # And the median is pulled below 1 structurally, not by accident.
+    # `PACE_NORMALISED` holds five of the eight local gates whose `cost_s`
+    # clears the noise floor, and every one of those figures is a share of a
+    # full push rather than a stopwatch read of the gate alone — this file
+    # says so where it prints them ("A pace-normalised cost is EXPECTED to
+    # read lower than it declares"). Their ratios therefore sit near 0.3
+    # whatever the machine is doing, and they are the majority of the sample.
+    #
+    # Measured 2026-09-02: `55620099a7` was refused at "317s over the 300s
+    # ceiling" with all nine gates passing and ~101s actually spent. The
+    # median came to 0.33, and dividing by it read `nostd-mcu` at 32s as 96s
+    # and `rustdoc-links` — which had matched its declaration to the second —
+    # as 12s. The same commit was pushed again minutes later and passed; the
+    # only thing that had changed was a warm build cache. A gate that answers
+    # red and then green for one tree is not measuring the tree.
+    #
+    # Clamping keeps the half that was doing work and drops the half that was
+    # inventing it: a slow machine is still forgiven, and a genuinely grown
+    # gate is still caught, because at pace 1 the comparison is simply the
+    # measurement against the declaration.
+    pace = max(pace, 1.0)
 
     total = 0.0
     grown = []
@@ -1856,6 +1886,45 @@ def self_test(repo_root: Path) -> int:
                 f"was read as a breach — the pace division is not working, and "
                 f"a push refused for being on a busy laptop is a push somebody "
                 f"bypasses")
+
+    # The other half of that property, and the one it was missing: a run read
+    # FASTER than the table must not be read as a breach either.
+    #
+    # The slow cases above are uniform, and a uniform run is the easy half —
+    # every ratio agrees, so any median describes it. What actually reaches
+    # this check is a SPREAD: `PACE_NORMALISED` figures read low because they
+    # are shares of a full push, while a gate carrying a cold build reads
+    # high, and the median lands among the low ones. Dividing by a median
+    # below 1 then multiplies the high readings instead of excusing them.
+    #
+    # These are the timings `scripts/gate` actually handed this function
+    # while pushing `55620099a7` on 2026-09-02. Nine gates passed, ~101s was
+    # spent, and the answer was "317s over the 300s ceiling". Pushing the
+    # identical commit again minutes later passed, the only difference being
+    # a warm cache — so this row is a tree that was called red and green.
+    #
+    # It is written as measurements rather than as a factor because that is
+    # what made it wrong: no single factor reproduces it.
+    cases += 1
+    a_fast_spread = {
+        "embed-manifest-failfast": 0, "rust-modrs-drift": 0,
+        "http-endpoint-ssot": 0, "rustdoc-links": 4, "codegen-build": 13,
+        "ecma262-lowered-kotlin": 25, "nostd-mcu": 32, "forge-go": 12,
+        "w3c-go": 15,
+    }
+    known = {s: v for s, v in a_fast_spread.items() if s in local_costs}
+    if len(known) < 5:
+        failures.append(
+            "budget-breach: the recorded fast run names "
+            f"{len(known)} gate(s) this table still has — re-record it from a "
+            "push rather than deleting it, or this case stops measuring")
+    elif budget_breach(dict(known)) is not None:
+        breach = budget_breach(dict(known))
+        failures.append(
+            "budget-breach: a run FASTER than the table was read as a breach "
+            f"({breach['total']}s, pace {breach['pace']}x) — a pace below 1 "
+            "inflates every reading on the one side that can refuse a push, "
+            "and this exact run was refused and then passed on a retry")
     grown = dict(local_costs)
     # Whichever gate is dearest today, rather than a name: the set moves every
     # time the table is re-priced, and a hard-coded slug that has since become
