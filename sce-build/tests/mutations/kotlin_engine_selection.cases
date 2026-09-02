@@ -41,9 +41,19 @@
 #
 # ⚠ Target selectors, never a bare filter: a filter reaches every binary the
 # selector matched.
+#
+# ⚠⚠ `kotlin_coverage_verdict` joined the selector on 2026-09-02, and it is
+# the first oracle in this file that reaches what the gate DOES rather than
+# what it says. The per-row coverage refusal moved out of the gate script into
+# `scripts/gates/kotlin_coverage.py` for exactly that reason: its input is a
+# directory of JUnit reports, which a test can build and a gate script could
+# only produce by running Gradle. Before the move, every red on that logic had
+# to be bought by hand and nothing re-proved it.
 mutation_tests -p sce-build --features cli \
-    --test gate_registry_contract --test script_engine_target_input
-mutation_runtime_targets scripts/gates/w3c-kotlin.sh backends/kotlin/tests/build.gradle.kts
+    --test gate_registry_contract --test script_engine_target_input \
+    --test kotlin_coverage_verdict
+mutation_runtime_targets scripts/gates/w3c-kotlin.sh backends/kotlin/tests/build.gradle.kts \
+    scripts/gates/kotlin_coverage.py
 
 # `generator.rs` is COMPILED INTO both binaries above, so it is a
 # `mutation_targets` rather than a runtime one: the harness can hash what the
@@ -159,17 +169,64 @@ edit("backends/kotlin/tests/build.gradle.kts",
      'inputs.file(File(rootDir, "tests/ecmascript/ecma262_semantics.json"))')
 PY
 
-# ── The per-pair floor stops being a floor ─────────────────────────
+# ── A row that reported nothing stops being noticed ────────────────
 #
-# Gradle reports BUILD SUCCESSFUL for a test task it decided was UP-TO-DATE,
-# so the count read from the JUnit XML is what separates a conformance result
-# from a build that ran nothing. Dropping the floor for one pair leaves that
-# pair's arm able to report green over an empty run.
+# Gradle reports BUILD SUCCESSFUL for a test task that ran nothing. That is
+# measured, not reasoned: on 2026-09-02 one row's filter was narrowed to a
+# class that does not exist and Gradle printed `BUILD SUCCESSFUL in 15s` over
+# an executed `:sce-kotlin-tests:test`, leaving the report directory present
+# and holding no `TEST-*.xml`.
+#
+# ⚠ RE-AIMED, not deleted. This case read the per-pair case-count floor
+# (`if (( cases < 200 ))`) until `fd892c8c35` replaced that floor with a
+# comparison against the class set the suite's sources declare — an anchor
+# that stops matching makes its case INCONCLUSIVE, which reads as "nothing to
+# report" in exactly the place a report was wanted. The subject moved twice:
+# first from the floor to the comparison, then out of the gate script entirely
+# into `kotlin_coverage.py`, where a test can reach it.
+#
+# ⚠⚠ `set()` rather than deleting the block: the refusal message stays in the
+# file, which is what a reader would check, and only the comparison stops
+# happening. That is the shape this repository has already been bitten by —
+# the paragraph surviving the code it explained.
 
-mutation_case "a pair may report green over an empty run" <<'PY'
-edit("scripts/gates/w3c-kotlin.sh",
-     "    if (( cases < 200 )); then",
-     "    if (( cases < 0 )); then")
+mutation_case "a row that reported nothing is no longer noticed" <<'PY'
+edit("scripts/gates/kotlin_coverage.py",
+     "    silent = runnable - reported",
+     "    silent = set()")
+PY
+
+# ── The vacuity guard under the comparison ─────────────────────────
+#
+# The comparison is an equality and two empty sets are equal, so the row that
+# would expose a derivation that parsed nothing is the row that ran nothing —
+# precisely the row it exists to refuse. Accepting an empty class set instead
+# of refusing it puts that circle back.
+
+mutation_case "an empty class set is compared instead of refused" <<'PY'
+edit("scripts/gates/kotlin_coverage.py",
+     "    if not runnable:",
+     "    if False and not runnable:")
+PY
+
+# ── The class a report is filed under is taken from its display name ──
+#
+# Not hypothetical: this is the defect the extraction shipped and
+# `scripts/gate w3c-kotlin` caught on its first run. `<testsuite name=...>` is
+# the DISPLAY name -- `TEST-com.sce.w3c.Test453.xml` carries
+# `name="Test 453 -- W3C SCXML B.2"` -- so a reader taking it saw 242 of 251
+# classes as never having run over a suite that ran in full, and the nine it
+# matched were the nine without a `@DisplayName`.
+#
+# The identity is `<testcase classname=...>` and the file name is CHECKED
+# against it. Every fixture in `kotlin_coverage_verdict.rs` carries a
+# `<testsuite name>` that differs from its class for this case's sake: the
+# swap has to fail them, not pass them.
+
+mutation_case "a report's class is read from its display name" <<'PY'
+edit("scripts/gates/kotlin_coverage.py",
+     '        named = path.name[len("TEST-") : -len(".xml")]',
+     '        named = suite.get("name")')
 PY
 
 # ── A failing pair stops failing the gate ──────────────────────────
@@ -177,11 +234,16 @@ PY
 # Every pair's verdict has to reach the gate's. A loop that reported each
 # result and returned the last one would pass whenever the final pair passed,
 # which is a pair that was already covered.
+#
+# ⚠ RE-AIMED on 2026-09-02 with the line it names: the row's refusal is now
+# one call, made when `kotlin_coverage.py` refuses, rather than four spelled
+# out in the loop. The claim under attack did not move — a refusal that is
+# reported and then forgiven is a row that vouches for itself.
 
 mutation_case "a failing pair is reported and then forgiven" <<'PY'
 edit("scripts/gates/w3c-kotlin.sh",
-     'sce_gate_fail "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"',
-     'sce_gate_step "Kotlin conformance on $engine over $language machines: $failures failure(s), $errors error(s) across $cases case(s)"')
+     '|| sce_gate_fail "Kotlin conformance on $engine over $language machines: the row\'s coverage verdict refused',
+     '|| sce_gate_step "Kotlin conformance on $engine over $language machines: the row\'s coverage verdict refused')
 PY
 
 # ── A refusal stops being classified ──────────────────────────────
