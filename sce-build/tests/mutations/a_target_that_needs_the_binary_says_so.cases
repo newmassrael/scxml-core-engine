@@ -29,8 +29,9 @@
 mutation_tests -p sce-build --test cli_feature_gating
 mutation_targets sce-build/tests/cli_feature_gating.rs
 # Read at run time: the manifest is the declaration under judgement, and the
-# gate script is one of the commands that must enable the feature.
+# two gate scripts are commands that must enable the feature.
 mutation_runtime_targets sce-build/Cargo.toml scripts/gates/drift-suites.sh
+mutation_runtime_targets scripts/gates/clippy.sh
 
 # The defect itself, put back one target at a time. `rust_derive_ssot` is the
 # one whose clean-target run was measured above.
@@ -110,12 +111,49 @@ PY
 # arm's own floor refuses it.
 mutation_case "the sweeping arm stops recognising a workspace run" <<'PY'
 edit("sce-build/tests/cli_feature_gating.rs",
-     '    cmd.contains("--workspace")\n'
+     '    let reaches_package = cmd.contains("--workspace")\n'
      '        || cmd.contains("-p sce-build")\n'
-     '        || cmd.contains("--package sce-build")',
-     '    cmd.contains("--workspace-no-such-flag")\n'
+     '        || cmd.contains("--package sce-build");',
+     '    let reaches_package = cmd.contains("--workspace-no-such-flag")\n'
      '        || cmd.contains("-p sce-build-no-such-package")\n'
-     '        || cmd.contains("--package sce-build-no-such-package")')
+     '        || cmd.contains("--package sce-build-no-such-package");')
+PY
+
+# The regression the declaration itself caused, and the three places a
+# reader can lose it. `cargo clippy --workspace --all-targets` asks for
+# every target the FEATURE SET allows, so declaring the features took 25
+# integration targets out of lint coverage with no message at all —
+# measured on the commit that declared them: 135 of this package's targets
+# linted, none of the 53 gated ones, back to 188 with the flag.
+#
+# ⚠ This case SURVIVED on its first run and that is what it is worth. The
+# gate script hands `sce_gate_fail` a label repeating the command, joined
+# to it by a continuation backslash, so removing the flag from the command
+# left it standing in the label and `features_of` still found it. The
+# reader now splits at `||`, `&&`, `;` and `|`, and THIS case is what holds
+# that split in place — a case removing the split alone would survive,
+# because with the real flag present both halves answer the same. One case
+# doing both jobs, as with the comment strip above.
+mutation_case "the lint lane drops the flag the declaration made it need" <<'PY'
+edit("scripts/gates/clippy.sh",
+     "cargo clippy --workspace --all-targets --features cli -- -D warnings",
+     "cargo clippy --workspace --all-targets -- -D warnings")
+PY
+
+# ...and the two ways the reader stops seeing that lane at all. Neither is
+# caught by the offender list — with the flag in place there is no offender
+# to lose — so both land on the lint floor, which is why that floor exists
+# separately from the sweeping one.
+mutation_case "the scan reads only the subcommand it was born reading" <<'PY'
+edit("sce-build/tests/cli_feature_gating.rs",
+     'const TARGET_SUBCOMMANDS: &[&str] = &["cargo test", "cargo clippy", "cargo check", "cargo build"];',
+     'const TARGET_SUBCOMMANDS: &[&str] = &["cargo test"];')
+PY
+
+mutation_case "asking for all targets stops counting as reaching them" <<'PY'
+edit("sce-build/tests/cli_feature_gating.rs",
+     '    cmd.contains("cargo test") || asks_for_tests',
+     '    cmd.contains("cargo test")')
 PY
 
 # Two mutations deliberately NOT written, for two different reasons:

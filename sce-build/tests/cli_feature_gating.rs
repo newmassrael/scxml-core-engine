@@ -34,6 +34,14 @@
 //     hook and CI agree with each other; nothing asked whether what they
 //     agree on is enough to run the targets that exist.
 //
+// The second question is not about `cargo test` alone, and reading it
+// that way cost a regression on the commit that first declared these
+// features: `clippy` runs `--workspace --all-targets`, which asks for
+// every target the FEATURE SET allows, so the declaration took 25
+// integration targets out of lint coverage without a word. Measured
+// 2026-09-02 on that commit — clippy saw 135 of this package's
+// integration targets and none of the 53 gated ones.
+//
 // It reads every command-carrying file under `scripts/` and
 // `.github/workflows/`, which puts it among the gates whose inputs no
 // `paths:` filter can enumerate: the next lane to name one of these
@@ -236,8 +244,20 @@ fn command_files() -> Vec<(String, String)> {
     out
 }
 
-/// The `cargo test` invocations a file carries, one string per logical
-/// command.
+/// Cargo subcommands that compile a target and so can drop a gated one.
+///
+/// `test` is not the only way to lose these targets, and reading it as
+/// the only way cost this repository a regression on the very commit that
+/// declared the features: `clippy-check.yml` runs `--workspace
+/// --all-targets` with no feature flag, so the declaration took 25
+/// integration targets out of lint coverage silently. `check` and `build`
+/// are here for the same reason rather than because a lane uses them
+/// today — the arm that only ever matches one spelling is the one that
+/// stops matching.
+const TARGET_SUBCOMMANDS: &[&str] = &["cargo test", "cargo clippy", "cargo check", "cargo build"];
+
+/// The target-compiling cargo invocations a file carries, one string per
+/// logical command.
 ///
 /// Whole-line comments are dropped before anything else. A workflow
 /// header explaining that "a bare `cargo test --workspace` runs them" is
@@ -271,7 +291,52 @@ fn cargo_test_commands(text: &str) -> Vec<String> {
     }
     joined
         .into_iter()
-        .filter(|cmd| cmd.contains("cargo test"))
+        .flat_map(|cmd| shell_segments(&cmd))
+        .filter(|cmd| TARGET_SUBCOMMANDS.iter().any(|sub| cmd.contains(sub)))
+        .collect()
+}
+
+/// One joined line split at the shell operators that end a command.
+///
+/// Without this the failure message a gate script hands `sce_gate_fail`
+/// answers for the command it describes: `scripts/gates/clippy.sh` reads
+///
+/// ```sh
+/// cargo clippy --workspace --all-targets --features cli -- -D warnings \
+///     || sce_gate_fail "cargo clippy --workspace --all-targets --features cli"
+/// ```
+///
+/// and the continuation backslash makes those one string, so deleting the
+/// flag from the command left the flag standing in the label three words
+/// later and the mutation SURVIVED. Measured 2026-09-02; it is the same
+/// reading the comment strip prevents, arriving through a label instead of
+/// a comment, and the third time this repository has paid for it.
+///
+/// A label is still scanned — it is a separate segment now, and a label
+/// naming a feature its command does not pass is its own defect, which is
+/// why `hook_ci_parity` reads labels too.
+fn shell_segments(cmd: &str) -> Vec<String> {
+    let mut out = vec![String::new()];
+    let bytes: Vec<char> = cmd.chars().collect();
+    let mut i = 0;
+    while i < bytes.len() {
+        let two: String = bytes[i..(i + 2).min(bytes.len())].iter().collect();
+        if two == "||" || two == "&&" {
+            out.push(String::new());
+            i += 2;
+            continue;
+        }
+        if bytes[i] == ';' || bytes[i] == '|' {
+            out.push(String::new());
+            i += 1;
+            continue;
+        }
+        out.last_mut().expect("out is never empty").push(bytes[i]);
+        i += 1;
+    }
+    out.into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
         .collect()
 }
 
@@ -330,10 +395,25 @@ fn named_targets(cmd: &str) -> BTreeSet<String> {
 ///
 /// A command restricted to non-test targets is out for the same reason:
 /// `--lib` compiles no integration test at all.
+///
+/// The subcommands differ in what they build by default, and reading them
+/// alike would be wrong in both directions. `cargo test` builds every test
+/// target unless told otherwise; `clippy`, `check` and `build` build the
+/// library and binaries and reach an integration test only through
+/// `--all-targets` or `--tests`. So `cargo build --bin sce-codegen -p
+/// sce-build` is not in the population, and `cargo clippy --workspace
+/// --all-targets` is.
 fn sweeps_the_package(cmd: &str) -> bool {
     if !named_targets(cmd).is_empty() {
         return false;
     }
+    let reaches_package = cmd.contains("--workspace")
+        || cmd.contains("-p sce-build")
+        || cmd.contains("--package sce-build");
+    if !reaches_package {
+        return false;
+    }
+    let asks_for_tests = cmd.contains("--all-targets") || cmd.contains("--tests");
     let restricted = [
         "--lib",
         "--bins",
@@ -344,12 +424,10 @@ fn sweeps_the_package(cmd: &str) -> bool {
     ]
     .iter()
     .any(|flag| cmd.contains(flag));
-    if restricted && !cmd.contains("--tests") {
+    if restricted && !asks_for_tests {
         return false;
     }
-    cmd.contains("--workspace")
-        || cmd.contains("-p sce-build")
-        || cmd.contains("--package sce-build")
+    cmd.contains("cargo test") || asks_for_tests
 }
 
 #[test]
@@ -417,6 +495,7 @@ fn every_command_that_reaches_a_gated_target_enables_the_feature() {
     let mut offenders: Vec<String> = Vec::new();
     let mut examined = 0usize;
     let mut sweeping = 0usize;
+    let mut linting = 0usize;
     for (file, text) in command_files() {
         for cmd in cargo_test_commands(&text) {
             let named: BTreeSet<String> = named_targets(&cmd)
@@ -431,6 +510,9 @@ fn every_command_that_reaches_a_gated_target_enables_the_feature() {
             }
             if sweeps {
                 sweeping += 1;
+                if cmd.contains("cargo clippy") {
+                    linting += 1;
+                }
             }
             if features_of(&cmd).contains(FEATURE) {
                 continue;
@@ -470,6 +552,23 @@ fn every_command_that_reaches_a_gated_target_enables_the_feature() {
         "no command sweeps sce-build's test targets, so the arm that judges \
          `--workspace` runs examined nothing. Every offender this test could \
          report would have come from the naming arm alone"
+    );
+    // And `cargo test` alone would keep that floor satisfied while clippy
+    // went unread, which is exactly the regression this arm was widened
+    // for: `cargo test --workspace` is a sweep, so narrowing
+    // `TARGET_SUBCOMMANDS` back to it changes no verdict and produces no
+    // red. The lint lane earns a floor of its own — it is not a lane that
+    // may quietly come and go either, since a tree whose sources are never
+    // linted is a change to report.
+    //
+    // `check` and `build` get no floor: no lane compiles this package's
+    // integration tests through them today, so a floor there would be red
+    // from the moment it was written.
+    assert!(
+        linting > 0,
+        "no `cargo clippy` command sweeps this package's targets, so the \
+         subcommand that lost 25 targets to a feature declaration is no \
+         longer being read at all"
     );
     assert!(
         offenders.is_empty(),
