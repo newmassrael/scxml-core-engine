@@ -1,7 +1,7 @@
 name: Rust clippy check
 
-# CI gate enforcing `cargo clippy --workspace --all-targets -- -D warnings`
-# on every push and PR. Mirrors the fmt-check.yml pattern: a fast
+# CI gate enforcing `cargo clippy --workspace --all-targets --features cli
+# -- -D warnings` on every push and PR. Mirrors the fmt-check.yml pattern: a fast
 # pre-merge guard so the tree stays clippy-clean, complementing the
 # workspace's `[workspace.lints.rust] warnings = "deny"` policy which
 # only gates rustc warnings (clippy style/complexity/suspicious
@@ -46,7 +46,7 @@ concurrency:
 
 jobs:
   clippy-check:
-    name: cargo clippy --workspace --all-targets
+    name: cargo clippy --workspace --all-targets --features cli
     runs-on: ubuntu-latest
 
     steps:
@@ -63,5 +63,5 @@ jobs:
 
     # Delegates to the gate runner rather than restating the command,
     # so the lint set has one spelling for both callers.
-    - name: cargo clippy --workspace --all-targets
+    - name: cargo clippy --workspace --all-targets --features cli
       run: scripts/gate clippy
