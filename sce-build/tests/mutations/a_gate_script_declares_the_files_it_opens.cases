@@ -1,0 +1,157 @@
+# Mutation cases for "a gate script's tracked inputs are declared where the
+# registry can read them".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_gate_script_declares_the_files_it_opens.cases`.
+#
+# `include-str-coverage` already asks this of a Rust suite: what a test
+# compiles in decides what it asserts, so those inputs must reach a lane. The
+# gates that ARE a shell script had no such question, and nothing read the
+# files they open.
+#
+# ⚠ THE LEDGER'S ACCOUNT OF THIS DEFECT WAS WRONG, and re-measuring it is what
+# found the real one. Memory recorded it as "`w3c-kotlin`'s push-hook `extra`
+# lacks `tests/ecmascript/**`, so a commit that edits only a list does not
+# select the Kotlin gate at push time". Measured 2026-09-03: `w3c-kotlin` is
+# `ci_only` — one of 24 of the 35 — so NO push selects it whatever it
+# declares, and adding the glob would have changed nothing there. What the
+# missing declaration actually breaks is `--ci-owed`, the report a round reads
+# to know which lanes will judge it: it did not name `w3c-tests.yml`, while
+# that unfiltered lane ran and judged the change anyway. Wrong in the one
+# direction nothing notices — a reader looking at the wrong lane for a verdict
+# that did exist.
+#
+# Measured before the repair, across the 35 gate scripts: 4 gates named 7
+# tracked files they do not declare —
+#   ledger-citations  tools/mnemosyne-adoption/migrate_citations.py  (invoked 5x)
+#   mutation-rounds   scripts/mutate                                 (invoked 2x)
+#   nostd-mcu         backends/rust/probes/nostd-footprint/{Cargo.toml,footprint.budget}
+#   w3c-kotlin        tests/ecmascript/kotlin_frontend_refusals.json,
+#                     tests/w3c/conformance/fixtures.json,
+#                     resources/150/test150.scxml
+# Two of those gates inherit their workflow's filter, so their repair is the
+# workflow's `paths:` — and `spec-citations.yml` did not start for an edit to
+# the citation checker the lane runs, which is the sharpest of the seven.
+#
+# ⚠ A path in a SENTENCE is not an input. `w3c-kotlin` names
+# `docs/SCE_LUA_TRANSLATION_SEAM.md` only in the failure message that says
+# where to argue an entry, and `mutation-rounds` names
+# `scripts/prepare_ctest_tree.sh` only in "Prepare one with ...". Declaring
+# those would put documents nothing opens into a lane's triggers. The
+# discriminator is the quoted region — a value is quoted alone or not quoted
+# at all, prose is a quoted region that merely CONTAINS the path — and it is
+# the same reading `common::rust_source::code_only` makes for Rust, arriving
+# through failure messages instead of comments.
+
+mutation_tests -p sce-build --features cli --test gate_registry_contract
+# The registry is a Python file the suite SPAWNS, not one it compiles in, so
+# the test binary is byte-identical either way. Declared as a runtime target
+# for that reason — as `mutation_targets` every case here reported
+# INCONCLUSIVE with "the mutation never reached the code under test", which
+# is the harness's binary-hash check doing exactly its job on a file the
+# binary never contained.
+mutation_runtime_targets tools/git-hooks/gate_registry.py
+
+# ── The defect itself, one declaration at a time ───────────────────
+#
+# The gate is worth exactly what it says when a declaration goes missing, so
+# this is the case that proves it guards the repair rather than merely having
+# been green once.
+
+mutation_case "a gate stops declaring the list its script opens" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     '                  "tests/ecmascript/kotlin_frontend_refusals.json",\n',
+     "")
+PY
+
+# The same, for a gate that inherits its workflow's filter instead of
+# carrying its own list. The repair there was the workflow, and this is what
+# holds it: the registry reads `paths:` rather than restating it, so removing
+# the harness from `mutation-rounds` is the version of that this file can aim
+# at without editing YAML it does not declare.
+
+mutation_case "the harness a lane runs is no longer one of its inputs" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     '        "extra": ["scripts/mutate"],\n',
+     "")
+PY
+
+# ── Prose is not an input ──────────────────────────────────────────
+#
+# Counting a path because a sentence mentions it turns two documents into
+# triggers. The reader would then demand `docs/SCE_LUA_TRANSLATION_SEAM.md`
+# and `scripts/prepare_ctest_tree.sh` be declared by gates that never open
+# them — a red instructing the wrong repair, which is worse than no red.
+
+mutation_case "a path spelled inside a sentence is read as a value" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     """            region = body[i + 1:j]
+            if region in tracked:
+                quoted.add(region)""",
+     """            region = body[i + 1:j]
+            for region in region.split():
+                if region in tracked:
+                    quoted.add(region)""")
+PY
+
+# And the mirror: a comment QUOTES commands, and a reader that stops
+# stripping them finds every path the header discusses. `w3c-kotlin`'s
+# comments name four divergence lists it does not open.
+
+mutation_case "the comments that explain a gate are read as its code" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     '        if not line.lstrip().startswith("#")',
+     '        if not line.lstrip().startswith("# no such prefix")')
+PY
+
+# ── One floor per arm ──────────────────────────────────────────────
+#
+# Blinding either half of the reader leaves the other filling the count, and
+# a scan that stopped looking then wears the shape of one that found nothing
+# to report. Neither of these produces an offender — with every path now
+# declared there is no offender to lose — so both land on their own arm's
+# floor, which is why the floors are not one assertion over the union.
+
+mutation_case "the quoted-value arm stops recognising a value" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     """            if region in tracked:
+                quoted.add(region)""",
+     """            if region in tracked and False:
+                quoted.add(region)""")
+PY
+
+mutation_case "the bare-word arm stops recognising a word" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     """    for word in re.findall(r"[A-Za-z0-9_./-]+", "".join(outside)):
+        if word in tracked:
+            bare.add(word)""",
+     """    for word in re.findall(r"[A-Za-z0-9_./-]+", "".join(outside)):
+        if word in tracked and False:
+            bare.add(word)""")
+PY
+
+# ── And the sweep's own population ─────────────────────────────────
+#
+# A case that reads no script agrees with every registry. This is the floor
+# under the two above, and it fails differently: not a blinded arm but a
+# blinded walk.
+
+mutation_case "the sweep stops finding the gate scripts" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     """        script = gate_script(repo_root, slug)
+        if not script.is_file():
+            continue
+        scripts_seen += 1""",
+     """        script = gate_script(repo_root, slug)
+        if not script.is_file() or True:
+            continue
+        scripts_seen += 1""")
+PY
+
+# One mutation deliberately NOT written: making the trigger match accept
+# every path. It empties the offender list and no floor refuses it, because
+# every floor here counts what the READER found and none counts what the
+# MATCHER rejected. Writing it would report SURVIVED and teach nothing the
+# comment does not; what would actually hold that arm is a positive control —
+# a gate known to be missing a declaration — and this registry has none to
+# spare now that all seven are declared.
