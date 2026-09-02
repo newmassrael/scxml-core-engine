@@ -128,25 +128,21 @@ PUSH_BUDGET_S = 300
 # entries carrying 149s of the 177s a push can select, so the sentence
 # became this number.
 #
-# ⚠ But the sentence is wrong about the ROAD, and 2026-09-02 measured that
-# too. `nostd-mcu` was re-timed alone, six runs, and settled at 6-7s — while
-# a push that same hour read it at 32s cold. Writing the honest stopwatch
-# figure into `cost_s` would have under-priced a cold push fourfold, so the
-# re-measurement CONFIRMED the paced value instead of retiring it (see its
-# COST_MEASURED note). Every remaining entry is cache-shaped the same way:
-# `codegen-build` reads 0s warm against a declared 41s.
+# The road works, and 2026-09-02 walked it once: `nostd-mcu` was re-timed
+# alone on a warm tree, its declared 16s turned out to be genuinely stale
+# against a settled 6-9s, and the entry left. 149s became 133s of a smaller
+# total, so this ceiling came down with it.
 #
-# So: re-timing alone does not empty this map, and a session that tries it
-# will spend a round proving that again. What would is a gate whose cost
-# stops depending on cache state, or one that leaves the local set. Until
-# then this ratchet's job is to stop the hole GROWING, and to make anything
-# that does shrink it visible — it fails in both directions for that reason.
-#
-# ⚠⚠ "On a quiet machine" is not a condition this box can meet: five AI
-# loops live here and the load moved 9 -> 95 inside the six runs above.
-# Repeat the measurement instead and read where it settles; a single
-# reading here says nothing.
-PACED_BUDGET_SHARE_CEILING = 0.842
+# ⚠ Two things that attempt got wrong, worth keeping because both are easy
+# to repeat. It first read a COLD figure (a push measured 32s that hour) as
+# evidence against the warm one and kept the stale 16 — but the header says
+# warm is the basis, and a cold reading says nothing about a warm figure.
+# And "on a quiet machine" is not a condition this box can meet: five AI
+# loops live here and the load moved 9 -> 95 while those runs were taken.
+# What worked was repeating the measurement until it settled and reading
+# the band, then taking the worse of the last pair. A single reading here
+# says nothing; the first three of nine were still filling caches.
+PACED_BUDGET_SHARE_CEILING = 0.782
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -207,22 +203,23 @@ COST_MEASURED: dict[str, str] = {
     "embed-manifest-failfast": "2026-09-02",
     "http-endpoint-ssot": "2026-09-02",
     "license-ssot": "2026-09-02",
-    # `nostd-mcu` was re-timed on 2026-09-02 to find out whether a
-    # pace-normalised cost can be replaced by an honest stopwatch read. It
-    # cannot, and the numbers are why. Six consecutive runs after a warmup:
+    # `nostd-mcu` was re-timed on 2026-09-02 and LEFT `PACE_NORMALISED`: the
+    # first entry to do so. Nine consecutive runs read
     #
-    #     22  22  13  7  7  6
+    #     22  22  13  7  7  6  9  9  7
     #
-    # The readings fall as the caches fill and settle at 6-7s. But the two
-    # pushes this same session measured the same gate at 32s cold and 6s
-    # warm, and a push is what `cost_s` has to predict. Writing 7 here would
-    # under-price a cold push by more than four times; the declared 16 sits
-    # between the two states, which is what "paced from a full push" means.
+    # — the first three still filling caches, then a settled 6-9s band. The
+    # declared 16 was genuinely stale (`cost_is_stale(16, 9)` is true), so
+    # `cost_s` is now 9, the worse of the last pair.
     #
-    # So this is the `http-endpoint-ssot` outcome again, and for a sharper
-    # reason: the number stays and the date moves. What the run bought is
-    # the knowledge that re-timing alone is not the road out of
-    # PACE_NORMALISED for any gate whose cost is cache-shaped.
+    # ⚠ The first attempt at this round kept the 16 and argued that `cost_s`
+    # has to predict a COLD push, because the same gate read 32s cold in a
+    # push that hour. That reasoning contradicts the header twelve lines
+    # above — "Warm is the right basis: a push happens on a tree the
+    # developer has just built, and a cold first build is paid once" — and
+    # the paragraph right here, which says filling an entry in means
+    # "putting the number in `cost_s`". A cold reading is not evidence about
+    # a warm figure. Recorded because the argument was persuasive and wrong.
     "nostd-mcu": "2026-09-02",
     "rustdoc-links": "2026-09-02",
 }
@@ -260,8 +257,6 @@ PACE_NORMALISED: dict[str, str] = {
     "codegen-build": "41s, paced from the 2026-08-23 push rather than timed alone",
     "forge-go": "36s on 2026-08-24, paced down from a declared 52s",
     "http-endpoint-ssot": "the scan is 124ms; 4s covers the process around it",
-    "nostd-mcu": "16s, paced from the 2026-08-23 push; timed alone on "
-                 "2026-09-02 at 6-7s warm, while a push read 32s cold",
     "w3c-go": "52s, paced from the 2026-08-23 push",
     "w3c-kotlin": "152s, what it cost on 2026-08-24 under a full run",
 }
@@ -425,10 +420,13 @@ GATES: dict[str, dict] = {
         "workflows": ["sce-rust-runtime-no-std.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        # 16s, pace-normalised from the 2026-08-23 push — cheaper than the 29s
-        # it declared, so this one was making the table pessimistic rather than
-        # optimistic. Both directions are drift; both are worth correcting.
-        "cost_s": 16,
+        # 9s, timed alone on a warm tree on 2026-09-02 and no longer a
+        # normalised figure. Nine consecutive runs read 22 22 13 7 7 6 9 9 7:
+        # the first three were still filling caches, and the settled band is
+        # 6-9s. 9 is the worse of the last pair, which is the rule the budget
+        # header sets ("the WORSE of two `--measure` runs") so that the
+        # ceiling holds on unlucky pushes rather than lucky ones.
+        "cost_s": 9,
         "summary": "no_std MCU build + clippy + probes",
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
@@ -1947,10 +1945,8 @@ def self_test(repo_root: Path) -> int:
                "resort, not a place to put a figure that was awkward to take."
                if grew else
                ". The share dropped and the ceiling was left behind — LOWER "
-               "PACED_BUDGET_SHARE_CEILING to what it now is. ⚠ If you got "
-               "here by re-timing a gate alone, read that gate's "
-               "COST_MEASURED note first: 2026-09-02 showed a stopwatch read "
-               "CONFIRMING a paced cost rather than replacing it."))
+               "PACED_BUDGET_SHARE_CEILING to what it now is, which is what "
+               "makes the shrinking visible instead of silent."))
 
     # The budget's other half: a run that PROVES the ceiling is breached must
     # say so, and a slow machine must not be mistaken for one.
