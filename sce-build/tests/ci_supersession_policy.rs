@@ -146,7 +146,35 @@ const LANES: &[(&str, f64, u32, u32)] = &[
     ("sce-rust-runtime-no-std.yml", 1.6, 0, 25),
     ("spec-citations.yml", 0.9, 1, 22),
     ("spec-snapshot-drift.yml", 0.3, 0, 24),
-    ("tree-hygiene.yml", 9.9, 0, 18),
+    // Re-measured 2026-09-02 and MOVED: 9.9 -> 20.1, cancellations 0 -> 12.
+    // The row it replaces was true when it was taken -- bucket that same
+    // query by day and 2026-08-28 and 2026-08-29 still median 9.9 and 10.2.
+    //
+    // What grew is not the work. The `tree-wide gates` job's own successful
+    // compute is 8.5..12.4 min, median 11.1, unchanged. The extra ten minutes
+    // are QUEUE, and this row measures `createdAt -> updatedAt` because that
+    // is the right clock for the question: a run waiting for a runner is
+    // exactly the run the next push takes away.
+    //
+    // The confirming count here is not a ratio, it is unanimous. All 12 of
+    // those cancellations killed a job that had ALREADY STARTED, 68s to 1264s
+    // of work in -- so `false`, which saves the run in flight, is the setting
+    // every one of them needed. Ten are consecutive: every push from
+    // `b59ed99b10` (04:28Z) through `9a16e970cf` (05:56Z), among them
+    // `06ab3dcf44`, the commit repairing a red THIS job had raised at
+    // `55620099a7`. The lane stopped answering at the moment its answer
+    // mattered, and stayed stopped.
+    //
+    // Split the job verdicts out rather than reading the run conclusion --
+    // check runs from other workflows land on this run and are not this lane:
+    //
+    //   gh run list --workflow=tree-hygiene.yml --limit 25 --json databaseId
+    //   gh run view <id> --json jobs   # select .name == "tree-wide gates"
+    //
+    // The reason the drift ran for four days: this lane is where
+    // `ci_supersession_policy` runs, so a stale row here silences the only
+    // check that would move it.
+    ("tree-hygiene.yml", 20.1, 12, 8),
     ("w3c-tests.yml", 28.3, 13, 11),
 ];
 
