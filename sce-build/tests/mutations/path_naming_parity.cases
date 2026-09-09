@@ -20,11 +20,18 @@
 
 mutation_tests -p sce-build --features cli --test path_naming_parity
 # The gate drives the CLI as a subprocess and reads the emitted tree off
-# disk, so `sce_codegen.rs` is not linked into the test binary — the
-# evidence a mutation reached what ran is the file differing on disk while
-# the tests ran. Only the gate's own source compiles into it.
-mutation_targets sce-build/tests/path_naming_parity.rs
-mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+# disk, so `sce_codegen.rs` is not linked into the test binary — it is
+# compiled into the CLI, which the cargo runner hashes beside the test
+# executables, so the reach check sees it. Only the gate's own source
+# compiles into the test binary itself.
+#
+# ⚠ `sce_codegen.rs` used to be a run-time target here. That was the weaker
+# answer: a compiled artifact is not read fresh on every run, so "the file on
+# disk differed" does not establish that the binary which ran was rebuilt
+# from it — and because `mutation_compiled_targets` skips run-time files, the
+# reach check was not consulted at all for the cases below.
+mutation_targets sce-build/tests/path_naming_parity.rs \
+                 sce-build/src/bin/sce_codegen.rs
 
 mutation_case "generate infers its source-set root lexically again" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",

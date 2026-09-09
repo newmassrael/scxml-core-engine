@@ -14,13 +14,22 @@
 
 mutation_tests -p sce-build --features cli --test scxml_exhaustiveness --lib \
     --test cli_lint_parity
-mutation_targets sce-build/src/scxml_exhaustiveness.rs sce-build/src/parser.rs
 # The CLI is where the declaration check stopped being a lint, and the suite
-# that judges that SPAWNS `sce-codegen` — so mutating this file changes the
-# binary and leaves every test binary byte-identical. Listed as a compiled
-# target it would report INCONCLUSIVE while in fact reaching the code under
-# test, which is the lesson `host_processor_declaration.cases` paid for.
-mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+# that judges that SPAWNS `sce-codegen` — so mutating `sce_codegen.rs`
+# changes that binary and leaves every test binary byte-identical. The cargo
+# runner hashes the binaries it built beside the test executables, so the
+# reach check sees the change.
+#
+# ⚠ It was a run-time target here until 2026-09-09, inheriting the remedy
+# `host_processor_declaration.cases` had reached — and that remedy was the
+# wrong half of a true measurement. The INCONCLUSIVE it avoided came from the
+# harness reading a binary the mutation could not reach; the repair was to
+# hash the binary the tests spawn, not to answer the question from the file
+# on disk, which does not establish that the binary which ran was rebuilt
+# from it and which switched the reach check off entirely.
+mutation_targets sce-build/src/scxml_exhaustiveness.rs \
+    sce-build/src/parser.rs \
+    sce-build/src/bin/sce_codegen.rs
 mutation_oracles sce-build/tests/cli_lint_parity.rs
 
 # ── The grain of the exemption ─────────────────────────────────────

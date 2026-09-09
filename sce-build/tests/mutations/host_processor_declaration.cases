@@ -31,19 +31,26 @@
 
 mutation_tests -p sce-build --features cli --lib --test host_processor_declaration \
     --test cli_check_generate_parity
-mutation_targets sce-build/src/host_processor_analyzer.rs sce-build/src/generator.rs
-# Both entries here are read by the tests at RUN time rather than linked into
-# them, which is how the harness detects that a mutation arrived.
+# `sce_codegen.rs` is compiled — into the CLI this suite SPAWNS, not into any
+# test binary — and the cargo runner hashes that binary beside the test
+# executables, so the reach check sees it.
 #
-# The template is the obvious case: codegen opens it while generating.
-# `sce_codegen.rs` is the less obvious one, and it cost this casefile a round
-# to learn — the CLI suite SPAWNS the binary as a subprocess, so mutating it
-# changes `sce-codegen` and leaves every *test* binary byte-identical. Listed
-# as a compiled target it reported INCONCLUSIVE ("the mutation never reached
-# the code under test") while in fact reaching it perfectly well.
-mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 \
-    tools/codegen/templates/rust/invoke_methods.rs.jinja2 \
+# ⚠ It was a run-time target here until 2026-09-09, and the comment that put
+# it there recorded a real measurement with the wrong remedy: "listed as a
+# compiled target it reported INCONCLUSIVE while in fact reaching the code
+# under test". That INCONCLUSIVE was the harness reading a binary the
+# mutation could not reach, and the repair was to hash the binary the tests
+# spawn. Declaring the source at run time answered it from the file on disk
+# instead — which does not establish that the binary which ran was rebuilt
+# from it, and which switched the reach check off entirely, because
+# `mutation_compiled_targets` skips run-time files.
+mutation_targets sce-build/src/host_processor_analyzer.rs \
+    sce-build/src/generator.rs \
     sce-build/src/bin/sce_codegen.rs
+# The templates are the genuine run-time entries: codegen opens them while
+# generating, so they are read fresh on every run and no binary carries them.
+mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 \
+    tools/codegen/templates/rust/invoke_methods.rs.jinja2
 # The analyzer's own `tests` module and the CLI-level declaration suite. Named
 # explicitly because a `--lib` selector cannot resolve an oracle from a target
 # name, and because the analyzer file is also a mutation target — nothing else

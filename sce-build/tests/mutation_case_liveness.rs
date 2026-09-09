@@ -355,6 +355,105 @@ fn a_selector_naming_a_suite_that_does_not_exist_is_refused() {
     assert_rejected(&f, "names no test target");
 }
 
+// ── A run-time target that is not read at run time ──
+
+/// A casefile declaring one extra file, under whichever declaration and at
+/// whichever relative path the test is about.
+///
+/// The extra file is written into the fixture's own directory rather than
+/// named in the working tree, because the refusal under test is about the
+/// PATH SHAPE — a `src/bin/*.rs` file is a cargo binary's source wherever it
+/// lives — and a fixture reaching into the tree would make these tests depend
+/// on a file none of them is about.
+fn fixture_with_extra(declaration: &str, relative: &str) -> Fixture {
+    let dir = tempdir().expect("temp dir");
+    let target = dir.path().join("subject.txt");
+    fs::write(&target, "fn keep(x: u8) -> u8 {\n    x + 1\n}\n").expect("write the subject");
+    let oracle = dir.path().join("oracle.txt");
+    fs::write(&oracle, "the assertions that would catch it\n").expect("write the oracle");
+
+    let extra = dir.path().join(relative);
+    fs::create_dir_all(extra.parent().expect("a file has a parent"))
+        .expect("create the extra file's directory");
+    fs::write(&extra, "fn main() {}\n").expect("write the extra file");
+
+    let path = target.display().to_string();
+    let casefile = dir.path().join("fixture.cases");
+    fs::write(
+        &casefile,
+        format!(
+            "{LIVE_SELECTOR}\n\
+             mutation_targets {path}\n\
+             {declaration} {}\n\
+             mutation_oracles {}\n\n\
+             mutation_case \"studies the subject\" <<'PY'\n\
+             edit({path:?}, \"x + 1\", \"x + 2\")\n\
+             PY\n",
+            extra.display(),
+            oracle.display()
+        ),
+    )
+    .expect("write the casefile");
+
+    Fixture {
+        _dir: dir,
+        casefile,
+        target,
+    }
+}
+
+/// A compiled source declared as a run-time target is refused.
+///
+/// `mutation_runtime_targets` is for files the tests READ WHILE THEY RUN — a
+/// gate script, a JSON fixture, a Python module. A `src/bin` source is not
+/// one of those: it is compiled into a binary, and the cargo runner hashes
+/// the binaries it built beside the test executables, so the reach check has
+/// real evidence about it.
+///
+/// The declaration is not a labelling preference, which is why it is worth a
+/// refusal. `mutation_compiled_targets` skips run-time files, so the reach
+/// guard's first conjunct is false for every case that mutates one: the case
+/// is never asked whether the mutation reached what ran, and one that reached
+/// nothing comes back SURVIVED rather than INCONCLUSIVE — sending a reader to
+/// strengthen a test when the defect is reach.
+///
+/// Measured 2026-09-09: six casefiles declared
+/// `sce-build/src/bin/sce_codegen.rs` this way, every one on a cargo selector
+/// that builds that very binary. Two of them carried a comment explaining
+/// that a compiled listing had reported INCONCLUSIVE — a true measurement
+/// with the wrong remedy, since that INCONCLUSIVE was the harness reading a
+/// binary the mutation could not reach.
+#[test]
+fn a_compiled_bin_source_declared_as_a_runtime_target_is_refused() {
+    let f = fixture_with_extra("mutation_runtime_targets", "src/bin/a_cli.rs");
+    assert_rejected(&f, "but it is compiled");
+}
+
+/// The same file, declared the way it should be, is accepted.
+///
+/// Without this the test above would pass equally against a harness that
+/// refused every casefile, and a refusal that fires on everything is not a
+/// predicate.
+#[test]
+fn the_same_bin_source_declared_as_a_compiled_target_is_accepted() {
+    let f = fixture_with_extra("mutation_targets", "src/bin/a_cli.rs");
+    let (ok, output) = check(&f.casefile);
+    assert!(ok, "the check mode refused a sound casefile:\n{output}");
+}
+
+/// And a genuine run-time target still is.
+///
+/// The predicate is about compiled sources, not about the declaration: a gate
+/// script IS read fresh on every run, and widening the refusal to every
+/// run-time target would condemn most of this corpus. This is the case that
+/// says so, so the widening cannot happen quietly.
+#[test]
+fn a_script_declared_as_a_runtime_target_is_accepted() {
+    let f = fixture_with_extra("mutation_runtime_targets", "scripts/a_gate.sh");
+    let (ok, output) = check(&f.casefile);
+    assert!(ok, "the check mode refused a sound casefile:\n{output}");
+}
+
 // ── A template target, and the step between it and the binaries ──
 
 /// A codegen template that is in the tree, named the way a casefile names it.
