@@ -19,14 +19,23 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test conformance_suite_standalone
-# `w3c_suite.rs` is linked into the test binary — the test reads
-# `W3C_REGISTRY_RELATIVE_PATH` from the library and the library carries the
-# suite identity — so a mutation there must change that binary.
-# `sce_codegen.rs` is not: this test drives the CLI as a subprocess, so its
-# product is executed rather than linked, and the evidence that a mutation
-# reached what ran is the file differing on disk while the tests ran.
+# Both files are compiled into `sce-codegen`, and neither is linked into the
+# test binary. This test drives the CLI as a subprocess for every assertion it
+# makes; its one reference to the library is
+# `w3c_registry::W3C_REGISTRY_RELATIVE_PATH`, which is a different module and
+# carries no suite identity. So the artifact a mutation here must move is the
+# CLI, which the harness hashes beside the test binary.
+#
+# The earlier declaration said the opposite of both halves — that `w3c_suite.rs`
+# was linked in "because the test reads `W3C_REGISTRY_RELATIVE_PATH` from the
+# library", and that `sce_codegen.rs` was a file read at run time. Measured
+# 2026-09-09: mutating `RUST_DEFAULT_PACKAGE` leaves the test binary's `.text`
+# and `.rodata` byte-identical, moving only 140 bytes of LLVM name-suffix in
+# `.strtab` — so four of these cases reported INCONCLUSIVE in CI while the
+# same four reported CAUGHT locally off that suffix, on a toolchain one patch
+# release apart.
 mutation_targets sce-build/src/w3c_suite.rs
-mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/bin/sce_codegen.rs
 
 mutation_case "the generated Rust test names this repository's crate again" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",

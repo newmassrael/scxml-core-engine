@@ -88,6 +88,15 @@
 # would call every such case INCONCLUSIVE. The evidence there is that the
 # file on disk differed from the baseline while the tests ran.
 #
+# A file compiled into a BINARY THE TESTS SPAWN rather than link — the source
+# of a CLI a test drives as a subprocess — is a `mutation_targets` file too,
+# and needs no declaration beyond that: the cargo runner resolves the
+# binaries its own build produced and hashes them beside the test executables
+# (`MUTATION_COMPANIONS`). Calling such a file a runtime target was the
+# nearest available answer before that existed, and it is the weaker one — a
+# compiled artifact is not read fresh on every run, so "the file on disk
+# differed" does not establish that the binary which ran was rebuilt from it.
+#
 # A file compiled into the tests THROUGH A GENERATION STEP — a codegen
 # template, whose output is a committed tree — is a `mutation_targets` file
 # like any other, and the step between it and the binaries is declared with
@@ -227,6 +236,29 @@ MUTATION_ORACLE_FILES=()
 MUTATION_REGEN_CMDS=()
 MUTATION_NEEDS=()
 MUTATION_ARTIFACTS=()
+# Executables a test EXECUTES rather than is: the package's own binaries,
+# built by the same invocation that builds the test binaries and reached from
+# a test through `CARGO_BIN_EXE_<name>`. Hashed beside the artifacts above,
+# and never run.
+#
+# "Did the mutation reach the code that ran" is answered by hashing what ran,
+# and for a test that drives a CLI as a subprocess the thing that ran is this
+# binary. Reading only the test binary asks the question of an artifact the
+# mutation cannot reach, and the answer is then whatever the linker happened
+# to do with a name.
+#
+# Measured 2026-09-09 on `conformance_suite_standalone`, whose only reference
+# to the library is `w3c_registry::W3C_REGISTRY_RELATIVE_PATH` and which
+# spawns `sce-codegen` for every assertion it makes. Mutating
+# `w3c_suite::RUST_DEFAULT_PACKAGE` left the test binary's `.text` and
+# `.rodata` byte-identical and moved 140 bytes of `.strtab`, every one of
+# them inside LLVM's `.llvm.<n>` module-unique suffix
+# (`anon.24a6…211.llvm.9185001895933017432` → `…llvm.8543356342280431922`).
+# So the check read a nonce on one toolchain and read nothing on another: the
+# same case came back CAUGHT locally on rustc 1.98.0 and INCONCLUSIVE in CI
+# on rustc 1.98.1, and the CI reading was the honest one. The CLI's own hash
+# moves for that mutation, because the CLI is what compiles the constant in.
+MUTATION_COMPANIONS=()
 # Which tests turned red on the last run, one name per line.
 #
 # A verdict used to be a count and nothing else, so `CAUGHT (1/287 red)`
@@ -777,7 +809,10 @@ mutation_restore_quiet() {
 #
 #   mutation_resolve_artifacts   populate MUTATION_ARTIFACTS with the files a
 #                                run executes, resolved ONCE so no later
-#                                argument can narrow the set
+#                                argument can narrow the set — and
+#                                MUTATION_COMPANIONS with the executables a
+#                                test spawns rather than is, where the runner
+#                                can name them
 #   mutation_build_and_hash      rebuild, then print "<sha> <path>" per
 #                                artifact — evidence about what will run,
 #                                which mtime and fingerprint logs only proxy
@@ -880,6 +915,36 @@ for line in sys.stdin:
         red "the selector matched no test executables: ${MUTATION_RUNNER_ARGS[*]}"
         exit 2
     fi
+    # The same manifest, read for the other kind of executable it names: the
+    # binaries this build produced that are not test harnesses. A test reaches
+    # one of them through `CARGO_BIN_EXE_<name>` and runs it as a subprocess,
+    # so it is part of what ran and belongs in the hash — see
+    # `MUTATION_COMPANIONS` for the measurement that made this necessary.
+    #
+    # Taken from the manifest rather than from a casefile declaration on
+    # purpose: cargo already knows which binaries this selector built, and a
+    # hand-written list would be a second answer to that question — the shape
+    # this file's header records as how `mutation_runtime_targets` came to be
+    # invisible to a parser that restated the vocabulary.
+    #
+    # Absent is normal. A selector whose package has no binary resolves none,
+    # and the hash list is then exactly what it was before.
+    mapfile -t MUTATION_COMPANIONS < <(printf '%s\n' "$json" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line.startswith("{"):
+        continue
+    try:
+        rec = json.loads(line)
+    except ValueError:
+        continue
+    if rec.get("reason") != "compiler-artifact" or not rec.get("executable"):
+        continue
+    if rec.get("profile", {}).get("test"):
+        continue
+    print(rec["executable"])
+')
 }
 
 # Rebuild, then report "<sha> <path>" per executable. The hash is the whole
@@ -891,11 +956,18 @@ mutation_cargo_build_and_hash() {
     mutation_hash_artifacts
 }
 
-# "<sha> <path>" per resolved artifact, in resolution order. Shared by the
-# runners because the evidence is the same evidence.
+# "<sha> <path>" per resolved artifact, then per companion, in resolution
+# order. Shared by the runners because the evidence is the same evidence.
+#
+# The union rather than either half: the question this feeds is whether the
+# mutation was compiled into ANYTHING the run touched, and a mutation that
+# reaches only the binary a test spawns is as reached as one that reaches the
+# test binary. A runner that names no companions prints exactly what it did
+# before.
 mutation_hash_artifacts() {
     local artifact
-    for artifact in "${MUTATION_ARTIFACTS[@]}"; do
+    for artifact in "${MUTATION_ARTIFACTS[@]}" \
+                    ${MUTATION_COMPANIONS[@]+"${MUTATION_COMPANIONS[@]}"}; do
         printf '%s %s\n' "$(mutation_artifact_hash "$artifact")" "$artifact"
     done
 }
@@ -2341,6 +2413,13 @@ mutation_init() {
 
     mutation_resolve_artifacts
     dim "resolved ${#MUTATION_ARTIFACTS[@]} test artifact(s) via $MUTATION_RUNNER"
+    # Said out loud rather than folded into the count above, because the two
+    # are different evidence: the artifacts are run AND hashed, a companion is
+    # only hashed. A reader diagnosing an INCONCLUSIVE needs to know which set
+    # the reach check was answered from.
+    if [[ ${#MUTATION_COMPANIONS[@]} -gt 0 ]]; then
+        dim "and ${#MUTATION_COMPANIONS[@]} companion executable(s) the tests may spawn, hashed not run"
+    fi
 
     BASELINE_FILE_HASHES="$(mutation_all_target_hashes)"
     BASELINE_COMPILED_HASHES="$(mutation_compiled_target_hashes)"
