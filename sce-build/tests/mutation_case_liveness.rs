@@ -366,6 +366,10 @@ fn a_selector_naming_a_suite_that_does_not_exist_is_refused() {
 /// lives — and a fixture reaching into the tree would make these tests depend
 /// on a file none of them is about.
 fn fixture_with_extra(declaration: &str, relative: &str) -> Fixture {
+    fixture_with_extra_under(LIVE_SELECTOR, declaration, relative)
+}
+
+fn fixture_with_extra_under(selector: &str, declaration: &str, relative: &str) -> Fixture {
     let dir = tempdir().expect("temp dir");
     let target = dir.path().join("subject.txt");
     fs::write(&target, "fn keep(x: u8) -> u8 {\n    x + 1\n}\n").expect("write the subject");
@@ -382,7 +386,7 @@ fn fixture_with_extra(declaration: &str, relative: &str) -> Fixture {
     fs::write(
         &casefile,
         format!(
-            "{LIVE_SELECTOR}\n\
+            "{selector}\n\
              mutation_targets {path}\n\
              {declaration} {}\n\
              mutation_oracles {}\n\n\
@@ -434,9 +438,21 @@ fn a_compiled_bin_source_declared_as_a_runtime_target_is_refused() {
 /// Without this the test above would pass equally against a harness that
 /// refused every casefile, and a refusal that fires on everything is not a
 /// predicate.
+///
+/// ⚠ The selector names an integration test rather than using the `--lib`
+/// default the other fixtures take. That is not incidental: cargo builds a
+/// package's binaries for an integration test and not for `--lib`, so under
+/// the default selector this casefile is refused by
+/// `a_bin_source_under_a_lib_only_selector_is_refused` below — a DIFFERENT
+/// refusal than the one under test here. Spelling the selector is what keeps
+/// this test about the declaration.
 #[test]
 fn the_same_bin_source_declared_as_a_compiled_target_is_accepted() {
-    let f = fixture_with_extra("mutation_targets", "src/bin/a_cli.rs");
+    let f = fixture_with_extra_under(
+        "mutation_tests -p sce-build --features cli --test exit_status_contract",
+        "mutation_targets",
+        "src/bin/a_cli.rs",
+    );
     let (ok, output) = check(&f.casefile);
     assert!(ok, "the check mode refused a sound casefile:\n{output}");
 }
@@ -450,6 +466,43 @@ fn the_same_bin_source_declared_as_a_compiled_target_is_accepted() {
 #[test]
 fn a_script_declared_as_a_runtime_target_is_accepted() {
     let f = fixture_with_extra("mutation_runtime_targets", "scripts/a_gate.sh");
+    let (ok, output) = check(&f.casefile);
+    assert!(ok, "the check mode refused a sound casefile:\n{output}");
+}
+
+/// A bin source under a selector that cannot build it is refused.
+///
+/// The refusal above forces a `src/bin` source into `mutation_targets`, which
+/// switches the reach check on for it. That is only safe if the round's build
+/// produces the binary the check reads, and cargo only builds a package's
+/// binaries for an INTEGRATION test — `--lib` alone builds none. Under a
+/// `--lib`-only selector the mutation would resolve no companion, leave every
+/// artifact unchanged, and report INCONCLUSIVE for every case: correct in the
+/// letter, useless as a verdict, and expensive to discover.
+///
+/// So this is a guard for a hole its own neighbour opens. Measured
+/// 2026-09-09, all six casefiles declaring `sce-build/src/bin/sce_codegen.rs`
+/// carry a `--test` target, so it refuses nothing in the corpus today — but
+/// the input that would be wrong is constructible, which is what separates a
+/// guard from a belief, and this test constructs it.
+#[test]
+fn a_bin_source_under_a_lib_only_selector_is_refused() {
+    let f = fixture_with_extra("mutation_targets", "src/bin/a_cli.rs");
+    assert_rejected(&f, "names no");
+}
+
+/// The same declaration under a selector that does build the bin is accepted.
+///
+/// `LIVE_SELECTOR` is `--lib`-only, which is what makes the test above fire;
+/// naming an integration test is the difference, and it is the difference the
+/// refusal is about rather than anything else in the casefile.
+#[test]
+fn a_bin_source_under_a_test_selector_is_accepted() {
+    let f = fixture_with_extra_under(
+        "mutation_tests -p sce-build --features cli --test exit_status_contract",
+        "mutation_targets",
+        "src/bin/a_cli.rs",
+    );
     let (ok, output) = check(&f.casefile);
     assert!(ok, "the check mode refused a sound casefile:\n{output}");
 }
