@@ -1984,6 +1984,51 @@ mutation_check_targets_exist() {
     (( missing == 0 ))
 }
 
+# A run-time target is a file the tests READ WHILE THEY RUN. A Rust `src/bin`
+# source is not one: it is compiled into a binary, and for a cargo casefile
+# that binary is one this runner now hashes (`MUTATION_COMPANIONS`), so the
+# reach check has real evidence about it and the file belongs in
+# `mutation_targets`.
+#
+# This is not a tidiness question — the declaration switches the reach check
+# OFF for every case that mutates the file. `mutation_compiled_targets`
+# excludes run-time files, so the guard's first conjunct
+# (`compiled_hashes != BASELINE_COMPILED_HASHES`) is false, the case is never
+# asked whether the mutation reached what ran, and one that reached nothing
+# comes back SURVIVED rather than INCONCLUSIVE — sending a reader to
+# strengthen a test when the defect is reach.
+#
+# Measured 2026-09-09: six casefiles declared `sce-build/src/bin/sce_codegen.rs`
+# this way, all six on a cargo selector that builds that very binary. It is
+# the same defect `conformance_suite_standalone` was repaired for the same day
+# from the other side — there the reach check READ a binary the mutation could
+# not touch, here it is not consulted at all — and both have one cause: an
+# answer about reach drawn from something other than the artifact that ran.
+#
+# Cargo only, deliberately. A ctest, go, pytest or gradle casefile reaches its
+# artifacts through a regeneration step rather than through this build, so no
+# companion is resolved for it and the run-time declaration is still the
+# honest answer there.
+mutation_check_runtime_targets_are_read_not_compiled() {
+    [[ "$MUTATION_RUNNER" == "cargo" ]] || return 0
+    local bad=0 f
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        [[ "$f" == */src/bin/*.rs || "$f" == src/bin/*.rs ]] || continue
+        red "declared by mutation_runtime_targets, but it is compiled: $f"
+        bad=$((bad + 1))
+    done < <(printf '%s\n' ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"})
+    if (( bad > 0 )); then
+        red "A 'src/bin' source is compiled into a binary this cargo build produces,"
+        red "and the runner hashes those beside the test executables, so the reach"
+        red "check can see it. Declaring it at run time turns that check off: the"
+        red "case is never asked whether the mutation reached what ran, and one"
+        red "that reached nothing reads as SURVIVED instead of INCONCLUSIVE."
+        red "Move it to 'mutation_targets'."
+    fi
+    (( bad == 0 ))
+}
+
 # The oracle side was named, and the names resolve.
 #
 # Required rather than optional, for the same reason the target side is: a
@@ -2392,6 +2437,7 @@ mutation_init() {
     # Before the snapshot, which reads every declared file and would other-
     # wise die on the missing one with `cp`'s message instead of this one.
     mutation_check_targets_exist || exit 2
+    mutation_check_runtime_targets_are_read_not_compiled || exit 2
     mutation_check_oracles || exit 2
     mutation_check_template_bridge || exit 2
     mutation_snapshot

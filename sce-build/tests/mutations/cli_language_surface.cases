@@ -19,13 +19,18 @@
 mutation_tests -p sce-build --features cli --test cli_language_surface
 # `cli_language.rs` is linked into the test binary (the test reads
 # `LanguageRoute::ALL` to check route coverage) and is also compiled into the
-# CLI, which renders help from it. `sce_codegen.rs` is not linked: the test
-# drives the CLI as a subprocess, so its dispatcher is executed rather than
-# linked, and the evidence a mutation reached what ran is the file differing
-# on disk while the tests ran.
+# CLI, which renders help from it. `sce_codegen.rs` is compiled only into the
+# CLI, which this test drives as a subprocess — and the cargo runner hashes
+# that binary beside the test executables, so the reach check sees it.
+#
+# ⚠ `sce_codegen.rs` used to be a run-time target here. That was the weaker
+# answer: a compiled artifact is not read fresh on every run, so "the file on
+# disk differed" does not establish that the binary which ran was rebuilt
+# from it — and because `mutation_compiled_targets` skips run-time files, the
+# reach check was not consulted at all for the dispatcher cases below.
 mutation_targets sce-build/src/cli_language.rs \
-                 sce-build/tests/cli_language_surface.rs
-mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+                 sce-build/tests/cli_language_surface.rs \
+                 sce-build/src/bin/sce_codegen.rs
 
 mutation_case "the batch suite documents the backend it has no emitter for" <<'PY'
 edit("sce-build/src/cli_language.rs",

@@ -24,19 +24,24 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test exit_status_contract
-# Only the test file itself is compiled into what runs. Everything the gate
-# judges is reached at run time: it drives the CLI as a subprocess and reads
-# the contract off disk, so neither `sce_codegen.rs` nor `cli_error.rs` nor
-# the markdown is linked into the test binary — the evidence a mutation
-# reached what ran is the file differing on disk while the tests ran.
+# The gate drives the CLI as a subprocess and reads the contract off disk, so
+# nothing it judges is linked into the test binary. `sce_codegen.rs` is
+# nevertheless COMPILED — into that CLI — and the cargo runner hashes the
+# binaries it built beside the test executables, so the reach check sees it.
+# The markdown is the genuine run-time entry: it is read off disk as the gate
+# runs.
 #
-# `cli_error.rs` was classified as a compiled target first, and the harness
-# refused the case: this gate names nothing from the `sce_build` library, so
-# the rlib is not linked and every binary stayed byte-identical. A gate that
-# executes its subject rather than calling it has no compiled subject.
-mutation_targets sce-build/tests/exit_status_contract.rs
-mutation_runtime_targets sce-build/src/bin/sce_codegen.rs \
-                         sce-build/src/cli_error.rs \
+# ⚠ Residue, named rather than guessed (2026-09-09). The three library
+# sources below are compiled too, and by the same argument belong here — but
+# whether a mutation to one of them MOVES the CLI's bytes depends on whether
+# the linker retained that code, and this gate names nothing from the
+# `sce_build` library, which is why they were classified this way in the
+# first place. Moving them without measuring that would trade a check that is
+# off for a round that reports INCONCLUSIVE. The measurement is per file:
+# mutate it, rebuild, and compare `sce-codegen`'s hash.
+mutation_targets sce-build/tests/exit_status_contract.rs \
+                 sce-build/src/bin/sce_codegen.rs
+mutation_runtime_targets sce-build/src/cli_error.rs \
                          sce-build/src/forge/diagnostic.rs \
                          sce-build/src/mesh/error.rs \
                          SCE_ERROR_CONTRACT.md

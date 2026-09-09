@@ -18,13 +18,22 @@
 mutation_tests -p sce-build --features cli --test cli_documented_catalog_paths
 # `w3c_registry.rs` is linked into the test binary — the test reads the
 # canonical path constant from it — so a mutation there has to change that
-# binary. `sce_codegen.rs` is not: the test drives the CLI as a subprocess,
-# so its product is executed rather than linked, and the evidence that a
-# mutation reached what ran is the file differing on disk while the tests
-# ran.
+# binary. `sce_codegen.rs` is compiled too, into the CLI this test drives as
+# a subprocess, and the cargo runner hashes that binary beside the test
+# executables, so the reach check sees it.
+#
+# ⚠ Both are `mutation_targets`, and the second one used to be a run-time
+# target. That was the weaker answer: a compiled artifact is not read fresh
+# on every run, so "the file on disk differed" does not establish that the
+# binary which ran was rebuilt from it — and because
+# `mutation_compiled_targets` skips run-time files, the reach check was not
+# consulted at all for the cases below. The claim it rested on was true of
+# the FILE and false of the SITE: this test does read
+# `W3C_REGISTRY_RELATIVE_PATH` from the library, but the cases here mutate a
+# format string and a version check that only the CLI carries.
 mutation_targets sce-build/src/w3c_registry.rs \
-                 sce-build/tests/cli_documented_catalog_paths.rs
-mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+                 sce-build/tests/cli_documented_catalog_paths.rs \
+                 sce-build/src/bin/sce_codegen.rs
 
 # Both anchored through the last line of `w3c_registry_flag_help`'s format
 # string. The constant alone closes two `format!` calls in this file — the
