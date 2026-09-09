@@ -2029,6 +2029,52 @@ mutation_check_runtime_targets_are_read_not_compiled() {
     (( bad == 0 ))
 }
 
+# And the selector this build uses can actually PRODUCE that binary.
+#
+# The check above forces a `src/bin` source to be `mutation_targets`, which
+# switches the reach check on for it. That is only safe if the round's own
+# build produces the binary whose hash the check reads, and for cargo that is
+# not automatic: `cargo test --lib` builds the library's test and no bins,
+# while an INTEGRATION test target makes cargo build the package's bins —
+# which is what `CARGO_BIN_EXE_<name>` exists to hand a test, and what lets
+# `mutation_resolve_artifacts` find a companion at all.
+#
+# So a cargo casefile that mutates a bin source under a `--lib`-only selector
+# would be pushed by the refusal above into a declaration whose reach check
+# can never be satisfied: no companion resolves, every binary is unchanged,
+# and every case reports INCONCLUSIVE — correct in the letter and useless as a
+# verdict. Refusing here says which of the two is wrong (the selector, or the
+# aim of the case) at `--check` time, on every push, instead of spending a
+# round to find out.
+#
+# Measured 2026-09-09: all six casefiles that declare
+# `sce-build/src/bin/sce_codegen.rs` carry a `--test` target, so this refuses
+# nothing today. It exists because the refusal above is what makes the mistake
+# reachable — a guard for a hole its own neighbour opens.
+mutation_check_bin_targets_are_reachable() {
+    [[ "$MUTATION_RUNNER" == "cargo" ]] || return 0
+    local f has_bin=0
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        [[ "$f" == */src/bin/*.rs || "$f" == src/bin/*.rs ]] && has_bin=1
+    done < <(mutation_compiled_targets)
+    (( has_bin )) || return 0
+
+    local a
+    for a in ${MUTATION_RUNNER_ARGS[@]+"${MUTATION_RUNNER_ARGS[@]}"}; do
+        [[ "$a" == "--test" ]] && return 0
+    done
+
+    red "this casefile mutates a 'src/bin' source, but its selector names no"
+    red "--test target: ${MUTATION_RUNNER_ARGS[*]}"
+    red "cargo builds a package's binaries for an INTEGRATION test, not for"
+    red "'--lib'. Without one, no companion executable is resolved, the reach"
+    red "check sees every artifact unchanged, and every case here reports"
+    red "INCONCLUSIVE. Name the integration test that drives the CLI, or aim"
+    red "the case at a file this selector actually compiles."
+    return 1
+}
+
 # The oracle side was named, and the names resolve.
 #
 # Required rather than optional, for the same reason the target side is: a
@@ -2438,6 +2484,7 @@ mutation_init() {
     # wise die on the missing one with `cp`'s message instead of this one.
     mutation_check_targets_exist || exit 2
     mutation_check_runtime_targets_are_read_not_compiled || exit 2
+    mutation_check_bin_targets_are_reachable || exit 2
     mutation_check_oracles || exit 2
     mutation_check_template_bridge || exit 2
     mutation_snapshot
