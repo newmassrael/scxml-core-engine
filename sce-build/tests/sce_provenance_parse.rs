@@ -40,7 +40,9 @@ fn parse(name: &str) -> Result<SCXMLModel, Located<ForgeError>> {
 /// `(doc_id, rev, section, page)` in declaration order — the shape the
 /// assertions read, so a failure prints the whole anchor rather than
 /// the one field that differed.
-fn anchors(list: &[SpecProvenance]) -> Vec<(&str, Option<&str>, Option<&str>, Option<u32>)> {
+type Anchor<'a> = (&'a str, Option<&'a str>, Option<&'a str>, Option<u32>);
+
+fn anchors(list: &[SpecProvenance]) -> Vec<Anchor<'_>> {
     list.iter()
         .map(|p| {
             (

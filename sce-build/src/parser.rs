@@ -2489,8 +2489,13 @@ impl SCXMLParser {
                 },
             )
         };
-        transition.req = collect_sce_req(elem, &transition_label, source_name)?;
-        transition.provenance = collect_sce_provenance(elem, &transition_label, source_name)?;
+        // Passed by value to both collectors: the closure captures only
+        // `elem`, a shared reference, so it is `Copy` and the first call
+        // does not consume it. Borrowing here would satisfy the same
+        // bounds and `clippy::needless_borrows_for_generic_args` is what
+        // rejects it.
+        transition.req = collect_sce_req(elem, transition_label, source_name)?;
+        transition.provenance = collect_sce_provenance(elem, transition_label, source_name)?;
         transition.unresolved = collect_sce_unresolved(elem, source_name);
 
         transition.actions = self.parse_executable_content(elem, model, source_name)?;
