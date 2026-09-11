@@ -1211,9 +1211,23 @@ same compact spelling the attribute uses, next to the `sce:req`
 line — so a reader of the emitted code can go to the paragraph
 without going back to the SCXML. And a rejection raised about an
 anchored node carries them on the diagnostic wire's
-`spec_provenance` (`SCE_ERROR_CONTRACT.md` §2.1), so a CI gate
-that refuses a build hands the reader the document to consult
-rather than only the line to look at.
+`spec_provenance`, so a CI gate that refuses a build hands the
+reader the document to consult rather than only the line to look
+at.
+
+**An anchor governs what it encloses.** A diagnostic carries the
+anchors of the innermost anchored node that *encloses* its
+location, not only of the exact node complained about — so
+annotating `<state id="s0">` answers for a `<transition>` inside
+it, and an author does not have to repeat the attribute on every
+descendant to keep the link. The consequence worth writing down
+is what an *empty* `spec_provenance` means, and it means exactly
+one thing: no node enclosing that location carried an anchor. It
+never means the complaint came from a stage that does not carry
+them. `SCE_ERROR_CONTRACT.md` §2.1.2 is the normative statement,
+and the roster of which codes satisfy it today — compile-time
+exhaustive, with a written reason for every code that does not
+yet — is `forge::diagnostic::tests::anchor_carriage`.
 
 **`sce:unresolved`** — explicit "revisit later" markers.
 

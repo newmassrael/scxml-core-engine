@@ -81,7 +81,7 @@ compatibility.
 | `expected` | array of strings | Non-repair expectation metadata (parser expectations like `"identifier"`, cardinality constraints like `"1"`). **Never** carries a candidate list for substitution — that role belongs to `fix`. The two fields are disjoint by contract (see [§3.2](#32-no-overlap-between-fix-and-expected)). |
 | `actual` | string | The observed value that triggered rejection. |
 | `fix` | object | Structured repair proposal. The sole channel for repair signals. See [§3 Fixes](#3-fixes). |
-| `spec_provenance` | array of objects | NL→IR Mapping Roadmap Items 6+7 — spec-document anchors that justify the rejected node (`doc_id` + optional `rev`/`section`/`page`), in document order. SCE never infers this: the anchors are the `sce:provenance` the author wrote on that node, carried verbatim. Absent when the node declared none, and equally when the raising code did not have the node in hand — a consumer cannot tell those apart and must not read absence as "this node has no spec origin". |
+| `spec_provenance` | array of objects | NL→IR Mapping Roadmap Items 6+7+8 — spec-document anchors that justify the rejected node (`doc_id` + optional `rev`/`section`/`page`), in document order. SCE never infers this: the anchors are the `sce:provenance` the author wrote, carried verbatim. Which node's anchors, and what an absent field means, are fixed by [§2.1.2](#212-which-anchor-a-diagnostic-carries). |
 | `question_kind` | string (enum) | NL→IR Mapping Roadmap Item 6 — coarse routing label so IDE / triage tooling can dispatch on the *kind* of question the diagnostic raises (`implicit_default` / `ambiguous_mapping` / `cross_doc_conflict` / `unit_unspecified` / `unknown_vocabulary` / `structural`). Extensible — consumers must treat unknown values as `structural`. Absent on purely structural rejections that map cleanly onto `code` alone. |
 
 ### 2.1.1 Key fragments and the id namespace
@@ -116,6 +116,41 @@ writes itself.
 this: it runs both producers over one fixture document and compares the
 records. A leaf that hashes something the other producer cannot
 reproduce reds it.
+
+### 2.1.2 Which anchor a diagnostic carries
+
+> A diagnostic carries the `spec_provenance` of the **innermost
+> anchored node enclosing its source location**, whenever one exists.
+> An empty `spec_provenance` means exactly one thing: **no enclosing
+> node carried an anchor.**
+
+*Enclosing*, not *exact node*, and that is the substantive half. The
+case it is chosen for: the author anchors `<state id="s0">` at §3.4.2
+and the complaint is about a `<transition>` inside it. Exact-match
+answers nothing; the honest answer is *this transition lives inside a
+state anchored at §3.4.2*, which is the paragraph a reviewer opens.
+Anchors therefore read down the containment chain: annotating a region
+annotates everything the region governs.
+
+The second half is the one a consumer can build on: **an absent field
+has one meaning, not two.** It never means "this stage does not carry
+anchors" or "the raising code did not have the node in hand". A
+consumer may read absence as *nothing enclosing this location is
+anchored to a specification*, and act on it, without knowing which
+stage produced the record or how SCE is structured internally.
+
+⚠ **The contract is stated in full; the producer side reaches it
+incrementally.** As of Item 8 Atomic 1 two codes satisfy it and the
+remaining 356 are registered as not yet satisfying it, each with the
+reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
+compile-time exhaustive over `DiagnosticCode` — a code that neither
+carries nor registers fails the build — and the accompanying test
+demonstrates every carrying claim by executing it rather than
+asserting it, and reds a registration that has gone stale. The roster
+lives in a test rather than in prose here for one reason: prose about
+coverage goes stale silently, and this is a repository where a field
+declared in May stayed empty for four months while every gate was
+green.
 
 ### 2.2 Location object
 

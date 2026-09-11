@@ -14696,6 +14696,646 @@ mod tests {
         );
     }
 
+    // ── NL→IR Mapping Roadmap Item 8 — the enclosing-anchor contract,
+    //    and the guard that holds it over every code. ──────────────
+    //
+    // The contract (SCE_ERROR_CONTRACT.md §2.1.2): a diagnostic carries
+    // the `spec_provenance` of the innermost anchored node enclosing
+    // its source location, whenever one exists; an empty
+    // `spec_provenance` means exactly one thing — no enclosing node
+    // carried an anchor.
+    //
+    // This guard lands BEFORE the resolver that will satisfy the
+    // contract for most codes, and that order is the point rather than
+    // an accident. Item 6 declared `spec_provenance` on the wire in
+    // May; it stayed empty for four months and every gate was green,
+    // because nothing anywhere asked whether it was filled. A guard
+    // written after the mechanism is green on the day it lands and
+    // says nothing about the year after. Written first it is mostly
+    // red, and the red list is the work list.
+
+    /// What the contract delivers for one code **today**.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum AnchorCarriage {
+        /// A rejection with this code, raised on a node an anchored
+        /// node encloses, reaches the wire with a non-empty
+        /// `spec_provenance`. Every site that raises it threads the
+        /// anchor — partial coverage is not this classification,
+        /// because a consumer branches on the code and cannot see
+        /// which site produced the record.
+        Carries,
+        /// It does not, and [`NoAnchor::why`] says why.
+        Registered(NoAnchor),
+    }
+
+    /// Why a registered code cannot carry an anchor.
+    ///
+    /// Grouped rather than one string per code. 356 of 358 codes are
+    /// registered today and 354 of those are registered for one
+    /// reason; writing that reason 354 times would make the roster
+    /// look informative while saying one thing, and would bury the two
+    /// entries that are registered for a different and permanent
+    /// reason.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum NoAnchor {
+        /// No site raising this code threads an anchor, and no
+        /// resolver exists yet to look one up from the record's
+        /// location.
+        AwaitingResolver,
+        /// The anchor itself is what the code is complaining about.
+        TheAnchorIsTheSubject,
+    }
+
+    impl NoAnchor {
+        /// A reason a reader can weigh, not a label. Asserted to be
+        /// substantive below, the way `hook_ci_parity::CI_ONLY` asserts
+        /// its own.
+        fn why(self) -> &'static str {
+            match self {
+                NoAnchor::AwaitingResolver => {
+                    "no site that raises this code threads an anchor, and \
+                     nothing yet looks one up from the record's location. \
+                     `with_spec_provenance` is called from five sites — four \
+                     in `parser.rs`, one in `unresolved_check.rs` — which is \
+                     where the model does not exist yet and a lookup is \
+                     therefore impossible; every other stage holds the parsed \
+                     model and can resolve, but does not. This is the work \
+                     list, not a verdict: a code leaves this group when the \
+                     resolver reaches it, and whichever codes remain after \
+                     that are the ones whose records carry no location at \
+                     all, which is a different question and gets a different \
+                     answer."
+                }
+                NoAnchor::TheAnchorIsTheSubject => {
+                    "the record is a complaint ABOUT `sce:provenance`, raised \
+                     from inside the collector that reads it, so at the moment \
+                     it is raised the node's anchors are precisely what could \
+                     not be read. Attaching a half-read anchor list would make \
+                     the record assert the thing it is refusing. This one is \
+                     permanent: no resolver changes it, because the defect is \
+                     upstream of anything a resolver could look up."
+                }
+            }
+        }
+    }
+
+    /// Compile-time exhaustive over `DiagnosticCode`.
+    ///
+    /// Deliberately no `_` arm: a code added next year must be
+    /// classified here or the build fails. That is the whole mechanism
+    /// — the failure this guards against is not a wrong answer, it is
+    /// no answer given silently, which is how a declared-but-empty
+    /// field survived four months of green gates.
+    fn anchor_carriage(code: DiagnosticCode) -> AnchorCarriage {
+        use AnchorCarriage::*;
+        use DiagnosticCode::*;
+        match code {
+            // ── Carries ──────────────────────────────────────────
+            // Each has exactly one raise site, and that site threads
+            // the node's anchors. Measured 2026-09-11 by counting
+            // `ValidationError::<variant> {` outside `diagnostic.rs`:
+            // one each. `validation/invalid-attribute` is threaded at
+            // three of its sites and is NOT here, because it has 133.
+            ValidationDuplicateRequirementId | ValidationUnresolvedPlaceholder => Carries,
+
+            // ── Registered — the anchor is the subject ───────────
+            ValidationProvenanceMalformed | ValidationProvenanceDuplicate => {
+                Registered(NoAnchor::TheAnchorIsTheSubject)
+            }
+
+            // ── Registered — awaiting the resolver ───────────────
+            // The work list. It is long on purpose and it is written
+            // down on purpose: a reader learns which complaints cannot
+            // be routed back to a specification, instead of finding
+            // out from an empty field.
+            XmlParse
+            | XmlSchemaValidation
+            | XmlFileNotFound
+            | XmlWrongRootElement
+            | XmlXIncludeMissingHref
+            | XmlXIncludeNotFound
+            | XmlXIncludeReadError
+            | XmlXIncludeCycle
+            | XmlXIncludeTooDeep
+            | XmlXIncludeMalformed
+            | XmlXIncludeUnsupported
+            | XmlTemplateNotFound
+            | XmlTemplateReadError
+            | XmlTemplateMalformed
+            | XmlTemplateMissingAttribute
+            | XmlTemplateMissingParam
+            | XmlTemplateUnknownParam
+            | XmlTemplateCycle
+            | XmlTemplateTooDeep
+            | XmlPreprocessorNotRun
+            | ValidationMissingElement
+            | ValidationMissingAttribute
+            | ValidationInvalidAttribute
+            | ValidationUnsupportedKind
+            | ValidationDuplicateId
+            | ValidationDuplicateContextObject
+            | ValidationReservedContextId
+            | ValidationEmptyCollection
+            | ValidationCountMismatch
+            | ValidationIncompatibleAttributes
+            | ValidationMissingContext
+            | ValidationInvalidReference
+            | ValidationInvalidDirection
+            | ValidationNumericParse
+            | ValidationEmptyValue
+            | ValidationSingletonViolation
+            | ValidationRequireEither
+            | ValidationWrongPipeline
+            | ValidationDynamicFeatures
+            | ValidationNativeActionPlacement
+            | ValidationNativeActionArgument
+            | ValidationNativeActionSignatureConflict
+            | ValidationMeshRpcReservedParam
+            | ValidationMeshRpcMissingTarget
+            | ValidationMeshRpcDuplicateTarget
+            | ValidationRemovedAttribute
+            | ValidationBytesMaxSizeViolation
+            | ValidationCrossKindFieldNotFound
+            | ValidationCrossKindTypeMismatch
+            | ValidationCrossKindCircularDependency
+            | AlgorithmLocalShadowsParam
+            | AlgorithmLvalueUnsupported
+            | AlgorithmReturnMissing
+            | AlgorithmForeachSourceNotIterable
+            | AlgorithmCallTargetUnknown
+            | AlgorithmCallTargetMethodUnknown
+            | AlgorithmBcMutationForbidden
+            | AlgorithmForeachSourceBcWithBytesItemType
+            | AlgorithmCallArgCountMismatch
+            | AlgorithmAppendTargetNotBuffer
+            | AlgorithmAppendTypeMismatch
+            | ScxmlTopLevelScriptUnloaded
+            | ScxmlUnsupportedDatamodel
+            | ScxmlNullDatamodelForbidsConstruct
+            | ScxmlUnreachableState
+            | ScxmlDeadTransition
+            | ScxmlNonExhaustiveEventHandling
+            | ScxmlContradictoryUnhandledDeclaration
+            | ScxmlStaleUnhandledDeclaration
+            | ScxmlAlwaysFalseGuard
+            | ScxmlShadowedTransition
+            | ScxmlOnSampleInvalidParent
+            | ScxmlOnSampleLinkDuplicateInState
+            | ScxmlOnSampleEventNameConflict
+            | ScxmlOnSampleLinkNotDeclared
+            | ScxmlOnSampleLinkWrongKind
+            | ScxmlUnknownSessionRoleKind
+            | ScxmlDuplicateSessionRoleDeclaration
+            | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
+            | ScxmlAcceptSideRoleWithoutListenerLink
+            | LinkRoleListenerWithNonSessionArmingTrustClass
+            | ScxmlAcceptSideStatesWithoutRoleDeclaration
+            | ReassemblyPerPeerQuotaBuildInvariantViolated
+            | ExpressionEmpty
+            | ExpressionLex
+            | ExpressionUnsupportedConstruct
+            | ExpressionUnsupportedBuiltin
+            | ExpressionUnknownIdentifier
+            | ExpressionPropertyNotCallable
+            | ExpressionNamespaceNotCallable
+            | ExpressionNamespaceNotAValue
+            | ExpressionLiteralNotCallable
+            | ExpressionStrictEquality
+            | ExpressionParseMismatch
+            | ExpressionUnexpectedToken
+            | ExpressionInvalidLvalue
+            | ExpressionTypeCoercion
+            | ExpressionGoTernaryUnsupported
+            | ImportFileNotFound
+            | ImportKindMismatch
+            | ImportNotForge
+            | ImportReadError
+            | ManifestCircularDependency
+            | ManifestIo
+            | GenerateInvalidConfig
+            | GenerateTemplateLoad
+            | GenerateTemplateRender
+            | GenerateUnsupportedFeature
+            | CodegenMcuClassKindOnNonMcuLanguage
+            | CodegenGenericKindBackendEmitMissing
+            | CodegenNoStdScriptNotSupported
+            | CodegenNoStdHttpNotSupported
+            | CodegenNoStdFsLoadNotSupported
+            | CodegenNoStdInvokeNotSupported
+            | AlgorithmConstNotFoldable
+            | AlgorithmConstFoldBudgetExceeded
+            | AlgorithmConstYieldTypeMismatch
+            | CodecVariantArmUnreachable
+            | CodecVariantDuplicateDefaultArm
+            | CodecVariantArmMidMismatch
+            | CodecVariantArmInnerMidUndeclared
+            | CodecVariantArmBodyCallerTagUnsupported
+            | CodecVariantNoDefaultArm
+            | CodecVariantDefaultOverlayArmNotDeclared
+            | CodecVariantDispatchFlagNotResolved
+            | CodecVariantDispatchBitWidthMismatch
+            | CodecVariantDispatchArmsNotDistinguishableWithoutDefault
+            | CodecVariantDispatchFlagHasStaticValue
+            | CodecVariantDispatchCarrierAfterEmbed
+            | CodecPresentIfRefsLaterField
+            | CodecRepeatCountRefsLaterField
+            | AlgorithmTestVectorUnsupportedKind
+            | CodecTlvChainDepthUnspecified
+            | CodecTlvChainTruncateUnderEntryFlag
+            | CodecDmaAlignmentUnsatisfiable
+            | CodecPeekByteFlagLayoutMismatch
+            | LinkFramerMissing
+            | LinkLinkClassUnknown
+            | LinkBackpressureUndeclared
+            | LinkClassUnsupportedOnTarget
+            | LinkPoolSlotSmallerThanFramerMax
+            | LinkPoolRefNotDeclared
+            | LinkFramerRefNotDeclared
+            | MemPoolSectionConflict
+            | MemPoolTooLarge
+            | MemInterPoolPaddingNotEmitted
+            | MemCacheLineAlignment
+            | MemDcacheLineSizeNotPowerOfTwo
+            | MemAlignmentNotPowerOfTwo
+            | MemSlotSizeNotAlignmentMultiple
+            | MemCachePolicyUnsupportedOnNoDcacheCore
+            | PoolCacheMaintenanceMisplaced
+            | PoolSpeculativePrefetchFlagMissing
+            | PoolCachePreArmInvalidateMissingOnSpeculativeCore
+            | PoolSampleTypestateAttributesDisabled
+            | PoolSampleTakeWithoutStagePool
+            | PoolSampleCallbackSignatureNonBorrow
+            | WorkerSharedMutableState
+            | WorkerLinkRxRefUnknown
+            | WorkerInboxOrderingUnspecified
+            | WorkerInboxOrderingRelaxedAcrossCores
+            | WorkerSchedulerUnsupported
+            | WorkerOutboxRefUnknown
+            | WorkerOutboxTargetWrongKind
+            | WorkerOutboxTargetSuffixInvalid
+            | CollectionOrderingSortedRequiresIndexBy
+            | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
+            | CollectionElementTypeNotAKind
+            | CollectionIndexByFieldMissing
+            | CollectionMultiWriterWithoutAtomics
+            | CollectionCapacityUnresolved
+            | MemReassemblyPoolVariantMissingMaxFragments
+            | MemReassemblyPoolVariantMissingTimeout
+            | MemReassemblySlotSizeBelowDeclaredMtu
+            | ReassemblyMaxFragmentsInsufficientForMtu
+            | ReassemblyExpectedFragmentationRateHigh
+            | ReassemblyUntrustedLinkBinding
+            | ReassemblyTrustClassMissingOnFragmentingLink
+            | ReassemblyStageCopyWcetExceedsSlotBudget
+            | ReassemblyPeerIdNotZidOnEstablishedSession
+            | LinkListenerLinkNotPairedWithEstablishedSibling
+            | MeshDeployReassemblyBindingOnUnpairedListener
+            | LinkConcurrentCountExceedsSchedulerSlots
+            | LinkPerLinkBudgetExceedsTickPeriod
+            | LinkInboundEventQueueUnsized
+            | TimerPeriodBelowTickRate
+            | TimerSlotOverflow
+            | ExternSymbolNotInWhitelist
+            | ExternAbiMismatch
+            | ExternSignatureMismatch
+            | ExternOrderingUnspecified
+            | ExternTargetPluginSymbolConflict
+            | IoFilesystem
+            | CliUnknownLanguage
+            | CliUnsupportedLanguage
+            | CliReadInput
+            | CliWriteOutput
+            | CliCreateOutputDir
+            | CliScxmlGenerate
+            | CliMissingMetadataField
+            | CliNotADirectory
+            | CliInvalidFormatOption
+            | CliJsonSerialization
+            | CliProjectRootNotFound
+            | CliFormatStyleNotFound
+            | CliNoScxmlTag
+            | CliInvalidSuitePackage
+            | CliGeneratorSourceDrift
+            | CliGeneratorSourceUnverifiable
+            | CliUsage
+            | CliQueryNoMatch
+            | MeshDeployRead
+            | MeshDeployParse
+            | MeshDeployUnsupportedVersion
+            | MeshDeployDuplicateMachine
+            | MeshDeployInvalidOrderingTimings
+            | MeshDeployInvalidDedupWindow
+            | MeshDeployInvalidCustomTcpSocket
+            | MeshDeployInvalidDdsQos
+            | MeshDeployInvalidLiveliness
+            | MeshDeployInvalidServerResponseDeadline
+            | MeshDeployInvalidOutboundBuffer
+            | MeshDeployInvalidRetryPolicy
+            | MeshDeployInvalidAuthPolicy
+            | MeshDeployDiscoveryNotSupported
+            | MeshDeployPoolNotSupportedByTransport
+            | MeshDeployPoolMissingMemberList
+            | MeshDeployPoolEmptyMemberList
+            | MeshDeployPoolBindingFieldNotSupported
+            | MeshDeployPoolDispatchWithoutMember
+            | MeshDeployPoolInvalidPlaceholder
+            | MeshDeployServerPoolNotSupported
+            | MeshDeployCrossTargetReplyNotSupported
+            | MeshDeployInvalidReplyFrom
+            | MeshDeployUnknownBindingField
+            | MeshDeployStagePoolNotDeclared
+            | MeshDeployStagePoolWrongKind
+            | MeshDeployStagePoolTransportMismatch
+            | MeshDeployScxmlInvokeTargetConflict
+            | MeshDeployPartitionDuplicateName
+            | MeshDeployPartitionMultiDevice
+            | MeshDeployPartitionUnitDuplicate
+            | MeshDeployPartitionMachineNotListed
+            | MeshDeployPartitionEmpty
+            | MeshDeployPartitionNameNotIdentifier
+            | MeshDeployPartitionSynthInfixCollision
+            | MeshDeployPartitionUncoveredUnit
+            | MeshDeployPartitionPartialCoverageRequiresDefault
+            | MeshDeployPartitionPoolMachine
+            | MeshDeployPartitionTransportBindingUnsupported
+            | MeshDeployScxmlInvokeCrossDeviceTransport
+            | MeshDeploySomeipScxmlInvokeServiceIdOverflow
+            | MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange
+            | MeshDeploySomeipScxmlInvokeServiceIdPinCollision
+            | MeshDeploySomeipLivenessServiceIdOverflow
+            | MeshDeploySomeipLivenessServiceIdPinOutOfRange
+            | MeshDeploySomeipLivenessServiceIdPinCollision
+            | MeshDeploySomeipMachineLivenessServiceIdOverflow
+            | MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange
+            | MeshDeploySomeipMachineLivenessServiceIdPinCollision
+            | MeshDeployPartitionBarrierTimeoutInvalid
+            | MeshPartitionParallelRootUndesignated
+            | MeshPartitionParallelRootAmbiguous
+            | MeshPartitionParallelRootNotInMachines
+            | MeshPartitionParallelRootNonHost
+            | MeshPartitionBarrierTimeoutWithoutRoot
+            | MeshPartitionWire21CustomTcpUnimplemented
+            | MeshDistributabilityR1SharedWrite
+            | MeshDistributabilityR2CrossRegionTransition
+            | MeshDeployPlatformClassOsMismatch
+            | MeshDeploySchedulerCooperativeMissingStackBudget
+            | MeshDeploySchedulerCooperativeMissingSlotBudget
+            | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
+            | MeshDeploySchedulerIncompatibleWithWorkerCount
+            | MeshDeployLinkDriverUnknown
+            | MeshDeployLinkMtuMissingOnFragmentingLink
+            | MeshDeployLinkMtuBelowDriverFloor
+            | MeshDeployLinkExpectedP99ExceedsMtu
+            | MeshDeployLinkBurstPpsMissingOnIsrDispatch
+            | MeshDeployLinkNotDeclaredInDeploy
+            | MeshDeployLinkNotDeclaredInForge
+            | MeshDeployLinkBurstAbsorptionInsufficient
+            | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
+            | MeshDeployLinkDriverClassMismatch
+            | PoolStageCopyPolicyError
+            | PoolStageCopyAcceptRejectedUnderForbid
+            | MeshDeployStageCopyPolicyUnknown
+            | MeshDeploySessionArmingQuotaMissing
+            | MeshDeployAcceptRateConfigMissing
+            | MeshDeploySessionArmingFieldsOnNonArmingLink
+            | MeshDeployStatelessAcceptRequiredOnUntrustedSource
+            | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
+            | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
+            | MeshDeployStatelessAcceptExternNotWhitelisted
+            | MeshExternalRead
+            | MeshExternalParse
+            | MeshExternalUnresolvedNames
+            | MeshExternalAmbiguousEventGroup
+            | MeshExternalEmptyEventGroup
+            | MeshExternalNamedReferenceWithoutConfig
+            | MeshExternalReservedSomeipIdKeys
+            | MeshExternalSomeipFieldOnNonSomeipTransport
+            | MeshExternalConflictingEventSchema
+            | MeshExternalConflictingEventFieldKinds
+            | MeshExternalEmptyEventEntry
+            | MeshTopologyUnresolvedTargets
+            | MeshTopologyMachineNotFound
+            | MeshTopologyReceiverNotDeclared
+            | MeshTopologyAbsoluteSourcePath
+            | MeshTopologyReceiverSourceRead
+            | MeshTopologyReceiverSourceParse
+            | MeshTopologyUncoveredEvents
+            | MeshTopologyPatternCapabilityViolation
+            | MeshTopologyMissingBindingField
+            | MeshTopologyInvalidBindingField
+            | MeshTopologyEventBindingUnused
+            | MeshTopologyOrderingCannotBeGuaranteed
+            | MeshTopologyPoolParamNameMissing
+            | MeshTopologySubscriptionSourceUnbound
+            | MeshTopologyMachineLifetimeSubscriptionUnsupported
+            | MeshCodegenUnsupportedLanguage
+            | MeshCodegenUnsupportedTransport
+            | MeshCodegenTemplateRead
+            | MeshCodegenTemplateRender
+            | MeshCodegenEventNameCollision
+            | MeshCodegenPoolWithRpcClientUnsupported
+            | MeshIo
+            | ForgeSourceHashMismatch
+            | ForgeSourceHashInputUncovered
+            | ForgeSourceHashWalkUnbounded
+            | TraceabilityScxmlLineRangeMissing
+            | TraceabilityStateIdCollision
+            | TraceabilitySymbolNameExceedsCIdentifierLimit
+            | TraceabilitySourcemapSourceHashMismatch
+            | TraceabilitySceMapAttributeStripped
+            | TraceabilityMetaGeneratedSourceLineMarkerMissing
+            | McuDriverHeaderNotFound
+            | McuSectionAttributeOnNonMcuTarget
+            | McuSectionAttributeNameInvalid
+            | CodecFlagBindInputNotDeclared
+            | CodecFlagBindSourceNotResolved
+            | CodecFlagBindWidthMismatch
+            | CodecFlagInputUnbound
+            | CodecFlagBindDuplicateInput
+            | CodecFlagBindCarrierAfterEmbed
+            | ValidationEnumNoVariants
+            | ValidationEnumVariantDuplicateName
+            | ValidationEnumVariantDuplicateValue
+            | ValidationEnumVariantValueOverflowsUnderlying
+            | ValidationEnumUnsupportedUnderlyingType
+            | ValidationEventSchemaOnBuiltinEvent
+            | ValidationEventPayloadFieldUnknown
+            | ValidationBytesComparisonNotEquality
+            | MeshEventSchemaMismatch => Registered(NoAnchor::AwaitingResolver),
+        }
+    }
+
+    /// Every code either carries the enclosing anchor or is registered
+    /// with the reason it cannot. Nothing is unclassified.
+    ///
+    /// The exhaustive match in [`anchor_carriage`] is what makes this
+    /// true at compile time; this test is what makes the classification
+    /// mean something at run time. Three directions, the shape
+    /// `hook_ci_parity`'s `CI_ONLY` established:
+    ///
+    ///   1. every code is classified — by construction, no `_` arm;
+    ///   2. a code that claims to carry must be DEMONSTRATED carrying,
+    ///      by a record the pipeline actually produced;
+    ///   3. a registration must not be stale — a code observed
+    ///      carrying while registered as not-carrying is red.
+    #[test]
+    fn every_code_carries_the_enclosing_anchor_or_is_registered() {
+        // (1) Classification is total. The match cannot be reached
+        //     with an unclassified code, but a roster that reached
+        //     nothing would satisfy (2) and (3) vacuously, so count it.
+        let mut carries: Vec<&'static str> = Vec::new();
+        let mut registered: Vec<(&'static str, NoAnchor)> = Vec::new();
+        for &code in ALL_DIAGNOSTIC_CODES {
+            match anchor_carriage(code) {
+                AnchorCarriage::Carries => carries.push(code.as_str()),
+                AnchorCarriage::Registered(why) => registered.push((code.as_str(), why)),
+            }
+        }
+        assert_eq!(
+            carries.len() + registered.len(),
+            ALL_DIAGNOSTIC_CODES.len(),
+            "the roster reached {} of {} codes",
+            carries.len() + registered.len(),
+            ALL_DIAGNOSTIC_CODES.len(),
+        );
+        assert!(
+            !carries.is_empty(),
+            "no code carries the enclosing anchor. The contract would be \
+             vacuous and every later atomic would have nothing to shrink.",
+        );
+
+        // (2) A claim to carry is demonstrated, not asserted. Each
+        //     code below is raised through the REAL pipeline on a
+        //     document whose node is anchored, and the resulting
+        //     record must arrive with a non-empty `spec_provenance`.
+        //     A golden would not do: goldens are hand-built, so one
+        //     could carry anchors a producer never attaches.
+        let demonstrated = codes_demonstrated_carrying();
+        for code in &carries {
+            assert!(
+                demonstrated.contains(code),
+                "`{code}` is classified as carrying the enclosing anchor, \
+                 but no scenario in `carrying_scenarios` demonstrates it. \
+                 A classification nothing executes is the same promise \
+                 `spec_provenance` made in Item 6 and kept empty for four \
+                 months: add the scenario, or register the code.",
+            );
+        }
+
+        // (3) A registration must not describe a code that already
+        //     carries. Observed from the same executed scenarios, so
+        //     moving a producer without moving the roster entry is red
+        //     rather than silent.
+        for (code, _) in &registered {
+            assert!(
+                !demonstrated.contains(code),
+                "`{code}` is registered as not carrying an enclosing \
+                 anchor, but a scenario demonstrates it carrying one. The \
+                 registration is stale — move it to `Carries`. An \
+                 exemption that describes nothing reads as coverage of a \
+                 decision already reversed.",
+            );
+        }
+
+        // Every registration carries a reason a reader can weigh.
+        // `hook_ci_parity::CI_ONLY` uses 60 characters as the floor for
+        // "not a label"; these explain a contract rather than a skipped
+        // command, so they are held to more.
+        for (code, why) in &registered {
+            assert!(
+                why.why().len() > 200,
+                "the registration for `{code}` needs a reason a reader can \
+                 act on, not a label; got {} chars",
+                why.why().len(),
+            );
+        }
+    }
+
+    /// Documents that raise one code each on an anchored node, run
+    /// through the production parser.
+    ///
+    /// The population is deliberately the codes that CLAIM to carry —
+    /// this is the evidence behind that claim, not a sample of the
+    /// whole enum. It grows as the roster shrinks, and the growth is
+    /// what each later atomic delivers.
+    fn carrying_scenarios() -> Vec<(&'static str, &'static str)> {
+        vec![
+            // `validation/duplicate-requirement-id` — raised inside
+            // `collect_sce_req`, which runs after the anchors are read
+            // precisely so this record can name them.
+            (
+                "validation/duplicate-requirement-id",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0">
+                     <state id="s0" sce:req="REQ_A REQ_A"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112"/>
+                   </scxml>"#,
+            ),
+            // `validation/unresolved-placeholder` — raised by
+            // `check_strict_unresolved`, which walks the finished model
+            // and therefore has the node in hand.
+            (
+                "validation/unresolved-placeholder",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0">
+                     <state id="s0" sce:unresolved="tbd_threshold"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112"/>
+                   </scxml>"#,
+            ),
+        ]
+    }
+
+    /// Codes a scenario actually produced with a non-empty
+    /// `spec_provenance`, this run.
+    fn codes_demonstrated_carrying() -> std::collections::BTreeSet<&'static str> {
+        let mut out = std::collections::BTreeSet::new();
+        for (code, scxml) in carrying_scenarios() {
+            let diagnostics = run_scenario(scxml);
+            assert!(
+                !diagnostics.is_empty(),
+                "the scenario for `{code}` produced no diagnostic at all — \
+                 it stopped exercising the code it is named for, which \
+                 would let the claim below pass by testing nothing",
+            );
+            let matching: Vec<&Diagnostic> = diagnostics
+                .iter()
+                .filter(|d| d.code.as_str() == code)
+                .collect();
+            assert!(
+                !matching.is_empty(),
+                "the scenario for `{code}` raised {:?} instead — re-aim the \
+                 document at the code it is named for",
+                diagnostics
+                    .iter()
+                    .map(|d| d.code.as_str())
+                    .collect::<Vec<_>>(),
+            );
+            if matching.iter().all(|d| !d.spec_provenance.is_empty()) {
+                out.insert(code);
+            }
+        }
+        out
+    }
+
+    /// Parse `scxml` and, if it parses, run the strict-unresolved gate
+    /// over the model. Returns whatever diagnostics came out.
+    ///
+    /// Both halves are needed because the two regimes the contract
+    /// spans are exactly these: a rejection raised WHILE the model is
+    /// being built, and one raised by a validator that walks the
+    /// finished model.
+    fn run_scenario(scxml: &str) -> Vec<Diagnostic> {
+        match crate::parser::SCXMLParser::new().parse_string(scxml, "anchor_contract") {
+            Err(e) => e.to_diagnostics(),
+            Ok(model) => match crate::unresolved_check::check_strict_unresolved(&model) {
+                Err(e) => e.to_diagnostics(),
+                Ok(()) => Vec::new(),
+            },
+        }
+    }
+
     /// Drift guard between [`ALL_DIAGNOSTIC_CODES`] and the
     /// positive-form acceptance spec at `docs/SCE_ACCEPTED_SUBSET.md`.
     ///
