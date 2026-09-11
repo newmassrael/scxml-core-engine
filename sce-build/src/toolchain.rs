@@ -175,6 +175,12 @@ pub const HARNESS_TOOLS: &[(&str, ToolSource)] = &[
     // passed in the lane, and that run emitted exactly one
     // `SCE_REQUIRE_TOOLS` skip, for `arm-none-eabi-gcc`.
     ("kotlinc", ToolSource::RunnerImage),
+    // `java` is what RUNS what `kotlinc` compiles, which is the half the
+    // harness only needed once a Kotlin check stopped at compiling. It comes
+    // from the same place kotlinc does and cannot be missing where kotlinc is
+    // present — kotlinc is itself a JVM program — so no lane installs it
+    // separately.
+    ("java", ToolSource::RunnerImage),
 ];
 
 pub const VERSIONED_BIN_DIRS: &[(&str, &str, &str)] = &[
