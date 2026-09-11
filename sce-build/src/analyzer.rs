@@ -994,6 +994,23 @@ pub fn can_generate_static(
     model: &SCXMLModel,
     diag_label: &str,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    // NL→IR Mapping Roadmap Item 8 — every rejection this gate
+    // produces leaves through here, so this is where it is given the
+    // anchors enclosing its location (SCE_ERROR_CONTRACT.md §2.1.2).
+    //
+    // One call rather than one per raise site, and this function is
+    // the right one to put it on for a reason its own doc comment
+    // already states: it is "the only gate both pipelines share", and
+    // it holds the parsed model, which is what the lookup needs.
+    // `scxml_references::validate` is reached only from here, so its
+    // rejections are covered by the same call without a second.
+    can_generate_static_impl(model, diag_label).map_err(|err| model.with_enclosing_anchor(err))
+}
+
+fn can_generate_static_impl(
+    model: &SCXMLModel,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
     use crate::forge::error::{ForgeError, Located, ValidationError};
     use crate::scxml_semantic::{InitialStateScope, ScxmlSemanticError};
 

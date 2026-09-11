@@ -139,9 +139,47 @@ consumer may read absence as *nothing enclosing this location is
 anchored to a specification*, and act on it, without knowing which
 stage produced the record or how SCE is structured internally.
 
+What computes the answer is `anchor_index::AnchorIndex`, built while
+the document is parsed and carried on the model. It is keyed by
+position rather than by IR node because this clause is: an anchored
+region is a span of the author's document, and which spans SCE
+happens to lower to IR nodes is the internal detail the paragraph
+above promises a consumer never has to know. One consequence reaches
+the wire and is worth stating — an anchor on an element SCE has no IR
+node for, `<datamodel>` say, still encloses everything inside it.
+
+Extents are the elements' real ones, taken while the XML tree is in
+hand. The IR records where a node starts and nothing records where it
+ends, so extents reconstructed from it would read a parent's closing
+tags as belonging to its last child — the one node that has certainly
+ended by then.
+
+⚠ Positions are the parse's own: rows in the *expanded* document. A
+stage that has already remapped to authored coordinates is in a
+different space and must ask before remapping, not after. Every
+document without `<xi:include>` or `<sce:use>` makes the two spaces
+identical, which is why this is stated rather than left to be noticed
+— the mistake is invisible in every test that does not expand.
+
+The lookup is wired where a stage's rejections *leave* it, not at each
+site that raises one. `analyzer::can_generate_static` — the gate both
+pipelines share, and the only route to
+`scxml_references::validate` — resolves every rejection it returns.
+One call covers every code raised inside it, including ones added
+later, which is the property a list of call sites cannot have.
+
+⚠ A code counts as carrying when the **contract** holds at every site
+that raises it, which is not the same as a mechanism being present at
+every site. A site also satisfies it by raising on a document kind
+that has no anchors at all: a Forge document (codec, mesh binding,
+event schema) has nowhere to write `sce:provenance`, so its empty
+field is already the true answer. Several wire codes are deliberately
+shared across both pipelines — `validation/invalid-reference` is one —
+and the distinction is what makes them reachable at all.
+
 ⚠ **The contract is stated in full; the producer side reaches it
-incrementally.** As of Item 8 Atomic 1 two codes satisfy it and the
-remaining 356 are registered as not yet satisfying it, each with the
+incrementally.** As of Item 8 Atomic 2 three codes satisfy it and the
+remaining 355 are registered as not yet satisfying it, each with the
 reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
 compile-time exhaustive over `DiagnosticCode` — a code that neither
 carries nor registers fails the build — and the accompanying test

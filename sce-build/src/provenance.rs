@@ -1,9 +1,23 @@
 //! Spec-provenance, requirement-traceability, and unresolved-placeholder
-//! types. Shared by the SCXML statechart model
-//! ([`crate::model`]), the Forge IR ([`crate::forge::model`]), and
-//! the diagnostic record ([`crate::forge::diagnostic`]) so the same
-//! shape carries through every consumer of `<sce:req>` /
-//! `<sce:provenance>` / `<sce:unresolved>` annotations.
+//! types. Shared by the SCXML statechart model ([`crate::model`]), the
+//! located error ([`crate::forge::error::Located`]), and the
+//! diagnostic record ([`crate::forge::diagnostic`]) so the same shape
+//! carries through every consumer of `<sce:req>` / `<sce:provenance>`
+//! / `<sce:unresolved>` annotations.
+//!
+//! ⚠ The Forge IR ([`crate::forge::model`]) is **not** among them, and
+//! the absence is load-bearing rather than an omission: these
+//! annotations are read off statechart documents, so a Forge document
+//! — a codec, a mesh binding, an event schema — has nowhere to write
+//! one. This module's header used to name `forge::model` as a sharer;
+//! measured 2026-09-11, that file mentions none of the three types.
+//!
+//! What it decides is the reach of `SCE_ERROR_CONTRACT.md` §2.1.2. A
+//! diagnostic raised about a Forge document cannot carry an enclosing
+//! anchor however good the lookup gets, because the document has no
+//! anchor to enclose it — which is a different situation from a
+//! statechart-document code that simply has no resolver wired to it
+//! yet, and the two must not be registered under one reason.
 //!
 //! Not to be confused with [`crate::forge::provenance`] — that
 //! module is the codegen-internal `source_location`-populate guard

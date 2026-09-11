@@ -328,7 +328,7 @@ fn source_location_of(
 /// every parse function keeps one value flowing and puts the choice at
 /// the two places that actually differ.
 #[inline]
-fn artifact_label(source_name: &str) -> String {
+pub(crate) fn artifact_label(source_name: &str) -> String {
     Path::new(source_name)
         .file_name()
         .and_then(|s| s.to_str())
@@ -767,7 +767,13 @@ fn inherit_provenance(
 /// `element_label_fn` is `Fn` rather than `FnOnce` because one node
 /// can reach either rejection path; it is still invoked only on an
 /// error path, so the happy path pays for no formatting.
-fn collect_sce_provenance(
+///
+/// Crate-visible because [`crate::anchor_index::AnchorIndex::build`]
+/// reads the same annotation off elements the IR has no node for, and
+/// a second reader would be a second answer to "what is an anchor":
+/// the two forms, their order, and the two rejections are decided
+/// here, once.
+pub(crate) fn collect_sce_provenance(
     node: &roxmltree::Node,
     element_label_fn: impl Fn() -> String,
     source_name: &str,
@@ -1725,6 +1731,21 @@ impl SCXMLParser {
         // template-visible flat view. Build it once, here, after all
         // per-state mutations are finalised.
         model.refresh_invokes_view();
+
+        // NL→IR Mapping Roadmap Item 8 — record where this document's
+        // `sce:provenance` anchors are, as regions, while the XML tree
+        // is still in hand. Every later stage that raises a diagnostic
+        // needs the innermost anchor enclosing the location it is
+        // complaining about (SCE_ERROR_CONTRACT.md §2.1.2), and this
+        // is the last point at which real element extents exist: the
+        // IR records where a node starts and nothing records where it
+        // ends.
+        //
+        // After the model is otherwise complete, so a parse that
+        // rejects builds no index — which is correct rather than a
+        // gap. The anchors on a document that failed to parse are the
+        // ones the parse could not finish reading.
+        model.anchor_index = crate::anchor_index::AnchorIndex::build(root, diag_label);
 
         Ok(model)
     }
