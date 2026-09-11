@@ -14,9 +14,11 @@
 
 package com.sce.generated.algorithm_cobs_encode
 
+import com.sce.forge.runtime.SceByteBuf
+
 fun algorithmCobsEncode(data: ByteArray): ByteArray {
     var n: UShort = (data).size.toUShort()
-    val out = ArrayList<Byte>(32)
+    val out = SceByteBuf(32)
     var p: UShort = 0.toUShort()
     var done: Boolean = false
     while (done == false) {

@@ -87,4 +87,43 @@ class SmokeTests {
         assertEquals(AlertTag.HIGH, q[0])
         assertEquals(AlertTag.LOW, q[1])
     }
+
+    @Test
+    fun byteBufAppendsForwardOnly() {
+        val b = SceByteBuf(4)
+        b.add(0x11)
+        b.addAll(byteArrayOf(0x22, 0x33))
+        assertEquals(3, b.size)
+        assertTrue(byteArrayOf(0x11, 0x22, 0x33).contentEquals(b.toByteArray()))
+    }
+
+    @Test
+    fun byteBufGrowsPastItsInitialCapacity() {
+        // SCE_FORGE.md 4.12: Kotlin is a growable backend — exceeding the
+        // declared capacity must widen the buffer, never truncate or throw.
+        val b = SceByteBuf(2)
+        for (i in 0 until 9) b.add(i.toByte())
+        assertEquals(9, b.size)
+        assertTrue(ByteArray(9) { it.toByte() }.contentEquals(b.toByteArray()))
+    }
+
+    @Test
+    fun byteBufSeededEmptyStillGrows() {
+        // A capacity-0 buffer is the case doubling alone cannot leave.
+        val b = SceByteBuf(0)
+        assertEquals(0, b.toByteArray().size)
+        b.addAll(byteArrayOf(0x01, 0x02))
+        b.add(0x03)
+        assertTrue(byteArrayOf(0x01, 0x02, 0x03).contentEquals(b.toByteArray()))
+    }
+
+    @Test
+    fun byteBufCopyIsIndependent() {
+        val b = SceByteBuf(2)
+        b.add(0x01)
+        val snapshot = b.toByteArray()
+        b.add(0x02)
+        assertEquals(1, snapshot.size)
+        assertEquals(2, b.size)
+    }
 }
