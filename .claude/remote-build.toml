@@ -63,7 +63,16 @@ exclude = ["/target", "/build", "/embed"]
 # API" — so a header added under `sce/include/` leaves it stale until one of
 # these re-emits it. Sent to a build machine, they re-emit the far side's copy
 # and the drift stays here.
-writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", "scripts/package_embed.sh"]
+#
+# `UPDATE_GOLDEN` is the one entry that is an ENVIRONMENT VARIABLE rather than a
+# script, and it is here because the substring match reaches it: the command it
+# rides on is `cargo test`, which the built-in vocabulary correctly treats as a
+# reader. The variable is what turns that same run into a writer —
+# `forge_conformance` overwrites `tests/forge/expected/` when it is set. Sent to
+# a build machine it rewrote the far side's goldens and exited 0, which is the
+# silent green this key exists to prevent, measured 2026-09-11 while repairing
+# the byte-buffer-build pre-size.
+writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", "scripts/package_embed.sh", "UPDATE_GOLDEN"]
 
 # `node` is not optional: every BasicHTTP fixture in the Rust workspace
 # posts to localhost:8080, and without the echo server they route to their
