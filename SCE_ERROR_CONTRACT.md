@@ -258,27 +258,54 @@ proves its own walk by first finding the provenance the statechart
 branch does carry.
 
 ⚠ **The contract is stated in full; the producer side reaches it
-incrementally.** As of Item 8 Atomic 7 twenty-two codes satisfy it and
-the remaining 336 are registered as not yet satisfying it, each with
-the reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
-compile-time exhaustive over `DiagnosticCode` — a code that neither
-carries nor registers fails the build — and the accompanying test
-demonstrates every carrying claim by executing it rather than
-asserting it, and reds a registration that has gone stale. The roster
-lives in a test rather than in prose here for one reason: prose about
-coverage goes stale silently, and this is a repository where a field
-declared in May stayed empty for four months while every gate was
-green.
+incrementally.** The roster that tracks that is
+`forge::diagnostic::tests::anchor_carriage`, and as of Item 8 Atomic 8
+it is keyed on **(code, pipeline)** rather than on the code alone.
+That key is the substantive part. The contract's answer for a code
+*depends* on which pipeline raised it, so one answer per code had to be
+wrong for one of them — and it was wrong in the direction that
+misleads, filing every code the non-statechart kinds raise as "not
+demonstrated", which reads as work outstanding when the case above had
+already settled it.
 
-⚠ The 344 are not 344 pieces of remaining work, and the roster says so
-rather than letting the count imply it. A large majority are raised
-only from `forge/` and `mesh/`, where the paragraph above already
-settles the question — the document kind has nowhere to write
-`sce:provenance`, so the empty field is the final answer and not a
-pending one. A smaller set is statechart-only, and a set in the tens
-is raised by **both** pipelines, which is the interesting one: a code
-both pipelines raise cannot claim the Forge exemption, because the
-contract asks that it hold at *every* site.
+Each axis is answered by the thing that actually decides it:
+
+- **Forge kinds** — one answer, every code, backed by the
+  anchorless-kind proof. Not a shortcut past per-code work; there is
+  no per-code work on that axis, because such a document holds no
+  provenance for any record to carry.
+- **Statechart** — per code, and earned by executing a document.
+  Twenty-two codes carry today; the rest are registered with the
+  reason.
+
+⚠⚠ Keying by axis is also what lets the roster stop guessing
+**membership** — which pipeline raises a given code. It never answers
+that, and it no longer needs to: a code the statechart pipeline never
+raises is vacuously fine on that axis and proven fine on the other. Three
+source censuses tried to answer it on 2026-09-11 and disagreed with each
+other, because the module that constructs an error variant is not the
+pipeline that raises it.
+
+That roster is compile-time exhaustive over `DiagnosticCode` — a code
+that neither carries nor registers fails the build — and the
+accompanying test demonstrates every carrying claim by executing it
+rather than asserting it, and reds a registration that has gone stale.
+The roster lives in a test rather than in prose here for one reason:
+prose about coverage goes stale silently, and this is a repository
+where a field declared in May stayed empty for four months while every
+gate was green.
+
+⚠ A registration is **a statement about evidence, not about work**,
+and the axis key is what makes that reading available. It says only
+that no scenario has yet raised the code on an anchored *statechart*
+document. It does not claim the statechart pipeline raises the code at
+all — for one that only the Forge kinds raise there is nothing to do
+and never was, and the other axis already says so. The interesting
+residue is the codes **both** pipelines raise —
+`validation/invalid-reference` is one — because those cannot rest on
+the anchorless-kind case alone: the contract asks that it hold at
+*every* site, so their statechart sites have to resolve on their own
+merits.
 
 ⚠⚠ **Those groups are described without counts on purpose, and this
 is the finding rather than an omission.** The split has now been
