@@ -1,23 +1,26 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 {#
-   NL→IR Roadmap Items 1+5 — `sce:req` traceability and
-   `sce:unresolved` placeholder annotation comments.
+   NL→IR Roadmap Items 1+5+7 — `sce:req` traceability,
+   `sce:provenance` spec anchors, and `sce:unresolved` placeholder
+   annotation comments.
 
    The parser collects `<… sce:req="ID1 ID2" …>` whitespace tokens
    and any `<sce:unresolved id="…" reason="…" candidates="…"/>` (or
    attribute-form equivalents) on `<state>`, `<transition>`,
    `<onentry>`, `<onexit>`, `<send>`, `<script>`, `<invoke>`.
    `<onentry>`/`<onexit>` block-level `sce:req` is inherited to each
-   child action by `parser::inherit_req`, so emission at the action
-   level captures the block annotation without a separate hook.
+   child action by `parser::inherit_req`, and `sce:provenance` the
+   same way by `parser::inherit_provenance`, so emission at the
+   action level captures the block annotation without a separate
+   hook.
 
    This macro family emits the annotation as a backend-appropriate
    trailing comment so the generated source preserves the
-   traceability link without any behaviour change. When both `req`
-   and `unresolved` are empty (Vec::is_empty serde skip), the macros
-   emit nothing — byte-identical output for inputs without
-   annotations is preserved.
+   traceability link without any behaviour change. When `req`,
+   `provenance` and `unresolved` are all empty (Vec::is_empty serde
+   skip), the macros emit nothing — byte-identical output for inputs
+   without annotations is preserved.
 
    Per-backend comment syntax:
      - cpp / rust / go / kotlin : `// sce:req: …` / `// sce:unresolved: …`
@@ -29,6 +32,24 @@
    vector is push-order from the parse walker). The macros do not
    re-sort — call-site authors get deterministic output anchored on
    the SCXML source order.
+
+   Spec-anchor shape — the SAME compact URI the `sce:provenance`
+   attribute is written in, one line per anchor:
+     `sce:provenance: doc_id[@rev][#section[:page]]`
+
+   One line per anchor rather than one joined line (the shape
+   `sce:req` uses) because a `doc_id` is not whitespace-delimited:
+   the element form accepts `doc-id="OEM SPEC 01"`, and a
+   space-joined list of those could not be split back apart.
+
+   The rendering is total over what the model can hold, which is
+   wider than what the attribute form can spell: the element form
+   can set `page` with no `section`, so the section part is emitted
+   whenever EITHER is present and an empty section reads back as
+   absent — `OEM-TIMING-REQ#:7` parses to exactly (doc_id, page=7).
+   `SpecProvenance::parse_compact` accepts every string this emits,
+   and `sce_annotation_emission.rs` re-parses each emitted line to
+   hold that true rather than asserting it here.
 
    Unresolved-marker shape (kept compact, opaque to SCE):
      `sce:unresolved: id=<ID>[ reason=<R>][ candidates=<A,B,C>]`
@@ -68,16 +89,25 @@
    content when populated. Good for emit-loop sites where the
    annotation logically *introduces* the code that follows.
 
-   Both macros emit nothing when `node.req` is empty and
-   `node.unresolved` is empty, and the generator runs minijinja
+   Both macros emit nothing when `node.req`, `node.provenance` and
+   `node.unresolved` are all empty, and the generator runs minijinja
    with `trim_blocks=True` + `lstrip_blocks=True` so every newline
    inside the macro body is explicit (`{{ "\n" }}` or the
    inside-tag form `{% endif -%}…\n{% if …%}`) — implicit
    whitespace is unreliable under those flags.
 #}
 
+{#- One anchor in the compact URI the attribute form is written in.
+    Factored out so the grammar has ONE spelling in this file: the two
+    emission patterns below differ only in where their newline goes,
+    and a second copy of `doc_id[@rev][#section[:page]]` is exactly
+    the kind of thing that drifts on one side. -#}
+{%- macro provenance_compact(p) -%}
+{{ p.doc_id }}{% if p.rev %}@{{ p.rev }}{% endif %}{% if p.section or p.page %}#{{ p.section | default("") }}{% if p.page %}:{{ p.page }}{% endif %}{% endif %}
+{%- endmacro -%}
+
 {%- macro annotation_comment(node, backend, indent="") -%}
-{%- if node and (node.req or node.unresolved) -%}
+{%- if node and (node.req or node.provenance or node.unresolved) -%}
 {%- if backend == "c" -%}
 {%- set open = "/* " -%}
 {%- set close = " */" -%}
@@ -91,6 +121,9 @@
 {%- if node.req -%}
 {{ "\n" }}{{ indent }}{{ open }}sce:req: {{ node.req | join(" ") }}{{ close }}
 {%- endif -%}
+{%- for p in node.provenance -%}
+{{ "\n" }}{{ indent }}{{ open }}sce:provenance: {{ provenance_compact(p) }}{{ close }}
+{%- endfor -%}
 {%- for marker in node.unresolved -%}
 {{ "\n" }}{{ indent }}{{ open }}sce:unresolved: id={{ marker.id }}{% if marker.reason %} reason={{ marker.reason }}{% endif %}{% if marker.candidates %} candidates={{ marker.candidates | join(",") }}{% endif %}{{ close }}
 {%- endfor -%}
@@ -98,7 +131,7 @@
 {%- endmacro -%}
 
 {%- macro annotation_block(node, backend, indent="") -%}
-{%- if node and (node.req or node.unresolved) -%}
+{%- if node and (node.req or node.provenance or node.unresolved) -%}
 {%- if backend == "c" -%}
 {%- set open = "/* " -%}
 {%- set close = " */" -%}
@@ -112,6 +145,9 @@
 {%- if node.req -%}
 {{ indent }}{{ open }}sce:req: {{ node.req | join(" ") }}{{ close }}{{ "\n" }}
 {%- endif -%}
+{%- for p in node.provenance -%}
+{{ indent }}{{ open }}sce:provenance: {{ provenance_compact(p) }}{{ close }}{{ "\n" }}
+{%- endfor -%}
 {%- for marker in node.unresolved -%}
 {{ indent }}{{ open }}sce:unresolved: id={{ marker.id }}{% if marker.reason %} reason={{ marker.reason }}{% endif %}{% if marker.candidates %} candidates={{ marker.candidates | join(",") }}{% endif %}{{ close }}{{ "\n" }}
 {%- endfor -%}
