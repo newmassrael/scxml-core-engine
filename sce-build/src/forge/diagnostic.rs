@@ -14755,12 +14755,18 @@ mod tests {
 
     /// Why a registered code cannot carry an anchor.
     ///
-    /// Grouped rather than one string per code. 356 of 358 codes are
-    /// registered today and 354 of those are registered for one
-    /// reason; writing that reason 354 times would make the roster
+    /// Grouped rather than one string per code. 348 of 358 codes are
+    /// registered today and 346 of those are registered for one
+    /// reason; writing that reason 346 times would make the roster
     /// look informative while saying one thing, and would bury the two
     /// entries that are registered for a different and permanent
     /// reason.
+    ///
+    /// ⚠ That single reason is now known to be wrong for a large part
+    /// of its own membership, and the next atomic is what splits it —
+    /// see [`NoAnchor::AwaitingResolver`], which states the
+    /// measurement rather than leaving the bucket to imply something
+    /// false about itself.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum NoAnchor {
         /// The code has not been demonstrated carrying yet. Since
@@ -14779,22 +14785,54 @@ mod tests {
             match self {
                 NoAnchor::AwaitingResolver => {
                     "this code has not been demonstrated carrying the \
-                     enclosing anchor. As of Atomic 2 that is remaining work \
-                     rather than a missing mechanism: the resolver exists \
-                     and runs where `analyzer::can_generate_static` returns, \
-                     so a code sits here for one of three reasons, and which \
-                     one is not recorded per code because finding out is the \
-                     work itself. Either no scenario raises it yet — the \
-                     roster only learns a code carries by executing it; or \
-                     its raises reach the wire from outside a stage that \
-                     resolves, such as mid-parse where the model does not \
-                     exist and the four `parser.rs` sites thread by hand; or \
-                     the record carries no location for a lookup to start \
-                     from, which several document-scoped rejections in that \
-                     same gate genuinely do not. The third group is a \
-                     different question and gets its own answer in Atomic 3, \
-                     which either gives each one a location or records why \
-                     it has none."
+                     enclosing anchor. Two resolver boundaries exist as of \
+                     Atomic 3 — `analyzer::can_generate_static` and \
+                     `lint_statechart` — so a code sits here for one of \
+                     three reasons. Either no scenario raises it yet: the \
+                     roster only learns a code carries by executing it, \
+                     never by asserting it. Or its raises reach the wire \
+                     from outside any stage that resolves — mid-parse, \
+                     where the model does not exist and the four \
+                     `parser.rs` sites thread by hand, and where a parse \
+                     that rejects has built no index to look in. Or the \
+                     record carries no location for a positional lookup to \
+                     start from, which the document-scoped rejections in \
+                     `can_generate_static` genuinely do not. \
+                     \
+                     ⚠ Measured 2026-09-11, and the reason this grouping is \
+                     now known to be too coarse: of the 358 codes, 211 are \
+                     raised ONLY from `forge/` and `mesh/`. For every one \
+                     of those the contract is ALREADY satisfied and the \
+                     empty field is the final answer, not a pending one — \
+                     §2.1.2's second admissible case, a document kind with \
+                     nowhere to write `sce:provenance`. Calling that \
+                     remaining work is the one thing a work list must not \
+                     do about its own members. The 30 codes raised by BOTH \
+                     pipelines are why the split has to be derived rather \
+                     than taken from the slash-path prefix — \
+                     `validation/invalid-reference` is in that set. \
+                     Splitting this reason into its classes, each with one \
+                     structural proof rather than 211 hand-placed labels, \
+                     is the next atomic. \
+                     \
+                     ⚠⚠ The same census found four codes with NO PRODUCER \
+                     at all — `traceability/state-id-collision`, \
+                     `traceability/symbol-name-exceeds-c-identifier-limit`, \
+                     `traceability/sce-map-attribute-stripped` and \
+                     `mesh/deploy-stage-pool-wrong-kind`. They are \
+                     constructed only in a test, or only named in a \
+                     comment, in either producer; yet the first three are \
+                     published as permitted values in \
+                     `schemas/sce-diagnostic.v1.schema.json` and carry a \
+                     fix shape and an RFC citation in this contract's own \
+                     table. No scenario can ever demonstrate them, so \
+                     their registration here is true by accident. What \
+                     that exposes is a missing guard rather than four bad \
+                     entries: this crate checks code -> acceptance doc and \
+                     doc -> code, and now code -> anchor carriage, but \
+                     NOTHING checks code -> producer. That absence is the \
+                     Item 6 shape one axis over — a surface declared, \
+                     never fed, green for as long as nobody asked."
                 }
                 NoAnchor::TheAnchorIsTheSubject => {
                     "the record is a complaint ABOUT `sce:provenance`, raised \
@@ -14840,6 +14878,34 @@ mod tests {
             // raising on a Forge document, which carries no anchors to
             // enclose anything — the second admissible case above.
             ValidationInvalidReference => Carries,
+
+            // The three design-time lints, resolved at the second
+            // boundary — `lint_statechart` — added by Item 8 Atomic 3.
+            //
+            // The wiring was half of it. All seven raised with a file
+            // and no row, so the boundary call would have returned
+            // every one of them unchanged while reading as wired: a
+            // positional lookup has nothing to answer from when the
+            // record names no position. Each site now locates on the
+            // node it already held — the orphan `<transition>`, the
+            // unreached `<state>`, the compound whose children
+            // disagree, the `<state>` carrying the `sce:unhandled`
+            // claim, the guarded and the shadowed `<transition>` —
+            // through the one `SCXMLModel::locate` that
+            // `scxml_references` was already using.
+            //
+            // `validate_unhandled_declarations` is a second door onto
+            // two of these for the CLI's always-on stage, and resolves
+            // as well; enrichment leaves an anchored record alone, so
+            // the door a rejection leaves by does not change what it
+            // carries.
+            ScxmlDeadTransition
+            | ScxmlUnreachableState
+            | ScxmlNonExhaustiveEventHandling
+            | ScxmlContradictoryUnhandledDeclaration
+            | ScxmlStaleUnhandledDeclaration
+            | ScxmlAlwaysFalseGuard
+            | ScxmlShadowedTransition => Carries,
 
             // ── Registered — the anchor is the subject ───────────
             ValidationProvenanceMalformed | ValidationProvenanceDuplicate => {
@@ -14914,13 +14980,6 @@ mod tests {
             | ScxmlTopLevelScriptUnloaded
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
-            | ScxmlUnreachableState
-            | ScxmlDeadTransition
-            | ScxmlNonExhaustiveEventHandling
-            | ScxmlContradictoryUnhandledDeclaration
-            | ScxmlStaleUnhandledDeclaration
-            | ScxmlAlwaysFalseGuard
-            | ScxmlShadowedTransition
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
             | ScxmlOnSampleEventNameConflict
@@ -15351,6 +15410,154 @@ mod tests {
                      </state>
                    </scxml>"#,
             ),
+            // ── The three design-time lints (Item 8 Atomic 3) ──
+            //
+            // Every one of the seven is anchored the same way and for
+            // the reason the `validation/invalid-reference` scenario
+            // above states: the anchor sits on an enclosing `<state>`
+            // that is NOT the subject of the complaint and NOT its
+            // parent's only path to it, so an exact-match resolver
+            // would answer nothing and the test would still pass. The
+            // enclosing rule is the substantive half of §2.1.2 and
+            // this is the only place it is measured.
+            //
+            // They also have to reach the lint stage, which means
+            // passing `can_generate_static` first — so each document
+            // is a valid statechart that a W3C Interpreter would run.
+            // That is the point of the lints: they reject legal SCXML.
+
+            // `scxml/dead-transition` — an orphan that carries an
+            // edge. The record is located on the `<transition>`, so
+            // the lookup climbs out of an unanchored `<state>` to
+            // reach `live`.
+            (
+                "scxml/dead-transition",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" initial="a"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <state id="a"/>
+                       <state id="orphan">
+                         <transition event="go" target="a"/>
+                       </state>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/unreachable-state` — the same orphan with no
+            // edge, which is what decides between the two codes.
+            (
+                "scxml/unreachable-state",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" initial="a"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <state id="a"/>
+                       <state id="orphan"/>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/non-exhaustive-event-handling` — `a` handles
+            // `tick`, its sibling `b` does not, and `go` gives the two
+            // the common ground the report requires. The subject is
+            // the compound `dispatch`, one level below the anchor.
+            (
+                "scxml/non-exhaustive-event-handling",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" initial="dispatch"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <state id="dispatch" initial="a">
+                         <state id="a">
+                           <transition event="go" target="b"/>
+                           <transition event="tick" target="a"/>
+                         </state>
+                         <state id="b">
+                           <transition event="go" target="a"/>
+                         </state>
+                       </state>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/contradictory-unhandled-declaration` — `a`
+            // declares `tick` unhandled and handles it.
+            (
+                "scxml/contradictory-unhandled-declaration",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" initial="dispatch"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <state id="dispatch" initial="a">
+                         <state id="a" sce:unhandled="tick">
+                           <transition event="go" target="b"/>
+                           <transition event="tick" target="a"/>
+                         </state>
+                         <state id="b">
+                           <transition event="go" target="a"/>
+                         </state>
+                       </state>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/stale-unhandled-declaration` — the same document
+            // with a declaration that names an event `a` is not a
+            // non-handler for, so it is untrue rather than
+            // self-contradictory.
+            (
+                "scxml/stale-unhandled-declaration",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" initial="dispatch"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <state id="dispatch" initial="a">
+                         <state id="a" sce:unhandled="reset">
+                           <transition event="go" target="b"/>
+                           <transition event="tick" target="a"/>
+                         </state>
+                         <state id="b">
+                           <transition event="go" target="a"/>
+                         </state>
+                       </state>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/always-false-guard` — one child, so the
+            // exhaustiveness walk has nothing to say and the guard
+            // pass is reached.
+            (
+                "scxml/always-false-guard",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" initial="a"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <state id="a">
+                         <transition event="go" cond="false" target="a"/>
+                       </state>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/shadowed-transition` — the second `go` is dead
+            // because the first is unconditional, and the second is
+            // what the record points at.
+            (
+                "scxml/shadowed-transition",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" initial="a"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <state id="a">
+                         <transition event="go" target="a"/>
+                         <transition event="go" target="a"/>
+                       </state>
+                     </state>
+                   </scxml>"#,
+            ),
         ]
     }
 
@@ -15386,13 +15593,15 @@ mod tests {
         out
     }
 
-    /// Parse `scxml` and, if it parses, run the strict-unresolved gate
-    /// over the model. Returns whatever diagnostics came out.
+    /// Parse `scxml` and run the post-parse stages over the model in
+    /// pipeline order. Returns whatever diagnostics came out.
     ///
-    /// Both halves are needed because the two regimes the contract
-    /// spans are exactly these: a rejection raised WHILE the model is
-    /// being built, and one raised by a validator that walks the
-    /// finished model.
+    /// Every stage is here because it is a REGIME the contract spans,
+    /// not because it happened to be convenient: a rejection raised
+    /// while the model is being built, one raised by a validator that
+    /// walks the finished model, one raised by the gate both pipelines
+    /// share, and one raised by a lint that runs only on documents
+    /// that gate accepted.
     fn run_scenario(scxml: &str) -> Vec<Diagnostic> {
         let label = "anchor_contract";
         let model = match crate::parser::SCXMLParser::new().parse_string(scxml, label) {
@@ -15408,6 +15617,16 @@ mod tests {
         // pipelines share, and `scxml_references::validate` is reached
         // only through it, so one call covers both.
         if let Err(e) = crate::analyzer::can_generate_static(&model, label) {
+            return e.to_diagnostics();
+        }
+        // The design-time lints, added with Item 8 Atomic 3. A fourth
+        // regime rather than more of the third: these run on documents
+        // the gate above ACCEPTS — they reject legal SCXML, asserting
+        // design intent — so a scenario reaches them only by being a
+        // statechart a W3C Interpreter would run. Last, because that is
+        // where they are in the pipeline, and the three scenarios above
+        // must keep raising the codes they are named for.
+        if let Err(e) = crate::lint_statechart(&model, label) {
             return e.to_diagnostics();
         }
         Vec::new()

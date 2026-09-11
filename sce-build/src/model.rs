@@ -1154,6 +1154,59 @@ pub struct State {
 }
 
 impl SCXMLModel {
+    /// Anchor a rejection on a node position this model recorded.
+    ///
+    /// The counterpart of [`Self::with_enclosing_anchor`] one step
+    /// earlier: this decides *where* the record says it is, that one
+    /// decides which specification governs there. Both live here
+    /// because both need the model — this one for its
+    /// [`AuthoredPositions`], that one for its anchor index — and
+    /// splitting them across modules is what let the second be wired
+    /// at a gate whose rejections had never been given a position for
+    /// it to read.
+    ///
+    /// The recorded position indexes into the *expanded* document, so
+    /// it is resolved through the model's own mapping first. Two
+    /// things can come back:
+    ///
+    /// * Nothing to resolve (no preprocessor ran) — the row is already
+    ///   an authored row of `diag_label`, and only the file half is
+    ///   taken from there. The recorded [`SourceLocation`] cannot
+    ///   supply it: it carries the artifact spelling (a basename, so
+    ///   an SCE-MAP marker does not bake one checkout into the
+    ///   generated tree) and a diagnostic must name the document the
+    ///   way the caller named it (§2.2).
+    /// * An authored origin — which after `<sce:use>` / `<xi:include>`
+    ///   expansion is often a *different file* than the one parsed.
+    ///   The record then names that file, because that is where the
+    ///   consumer edits.
+    ///
+    /// `at` is `None` for a rejection whose subject is the document
+    /// rather than a node; the record then carries a file and no row,
+    /// which is what §2.2 allows and what §2.1.2 answers with an empty
+    /// anchor list.
+    pub fn locate<E>(
+        &self,
+        err: E,
+        at: Option<&crate::forge::error::SourceLocation>,
+        diag_label: &str,
+    ) -> crate::forge::error::Located<E> {
+        use crate::forge::error::Located;
+        let (line, col) = match at {
+            Some(loc) => (loc.line, loc.col),
+            None => (None, None),
+        };
+        let positions = self.authored_positions.as_ref();
+        let located = match positions.and_then(|p| p.resolve(line, col)) {
+            Some((file, row, col)) => Located::new(err, file, Some(row), Some(col)),
+            None => Located::new(err, diag_label, line, col),
+        };
+        match positions.and_then(|p| p.call_site_on(line)) {
+            Some((file, row, col)) => located.expanded_from(file, row, col),
+            None => located,
+        }
+    }
+
     /// Give a rejection the `spec_provenance` of the innermost
     /// anchored node enclosing its location, per
     /// `SCE_ERROR_CONTRACT.md` §2.1.2.
@@ -1163,11 +1216,18 @@ impl SCXMLModel {
     /// [`crate::anchor_index::AnchorIndex::enrich`] for why a boundary
     /// rather than each raise site.
     ///
+    /// ⚠ It can only answer about a location the record carries, so a
+    /// gate wiring this must first give its rejections one — see
+    /// [`Self::locate`]. `lint_statechart` raised all seven of its
+    /// codes with a file and no row until Item 8 Atomic 3, and this
+    /// call at that boundary would have returned every one of them
+    /// unchanged while looking wired.
+    ///
     /// # The precondition this method exists to hold
     ///
     /// The index is in *expanded* coordinates, and a rejection on its
-    /// way out is often not: `scxml_references::located` resolves
-    /// through [`AuthoredPositions`] first, so after `<xi:include>` or
+    /// way out is often not: [`Self::locate`] resolves through
+    /// [`AuthoredPositions`] first, so after `<xi:include>` or
     /// `<sce:use>` expansion the record names an authored file and an
     /// authored row. Those rows are a different numbering from the
     /// index's, and the outer document keeps its own basename across

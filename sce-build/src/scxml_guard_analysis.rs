@@ -51,15 +51,17 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
         // First-pass: always-false guards.
         for trans in &state.transitions {
             if let Some(cond) = classify_always_false(&trans.cond) {
-                return Err(Located::new(
+                // The guard lives on this `<transition>`, so that is
+                // the coordinate the record carries and the one
+                // §2.1.2 resolves the enclosing anchor from.
+                return Err(model.locate(
                     ScxmlSemanticError::AlwaysFalseGuard {
                         state: state.id.clone(),
                         cond,
                     }
                     .into(),
+                    trans.source_location.as_ref(),
                     source,
-                    None,
-                    None,
                 ));
             }
         }
@@ -73,7 +75,11 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
             }
             for (j, later) in state.transitions.iter().enumerate().skip(i + 1) {
                 if event_descriptors_match(&earlier.event, &later.event) {
-                    return Err(Located::new(
+                    // The shadowed transition, not the shadowing one:
+                    // the dead element is what the author deletes or
+                    // guards, and the record's position is what a
+                    // consumer jumps to.
+                    return Err(model.locate(
                         ScxmlSemanticError::ShadowedTransition {
                             state: state.id.clone(),
                             event: later.event.clone(),
@@ -81,9 +87,8 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
                             shadowed_index: j,
                         }
                         .into(),
+                        later.source_location.as_ref(),
                         source,
-                        None,
-                        None,
                     ));
                 }
             }

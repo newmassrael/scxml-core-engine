@@ -324,15 +324,16 @@ fn check_declarations(
             // staleness instead would send the author looking at the
             // wrong half of the document.
             if state_handles_event(state, event) {
-                return Err(Located::new(
+                // The declaring `<state>` is the subject — the
+                // `sce:unhandled` attribute the author wrote is on it.
+                return Err(model.locate(
                     ScxmlSemanticError::ContradictoryUnhandledDeclaration {
                         state: state.id.clone(),
                         event: event.clone(),
                     }
                     .into(),
+                    state.source_location.as_ref(),
                     source,
-                    None,
-                    None,
                 ));
             }
 
@@ -341,7 +342,10 @@ fn check_declarations(
                     .is_some_and(|non_handlers| non_handlers.contains(&state.id))
             });
             if !covers {
-                return Err(Located::new(
+                // Same subject as the contradiction above, and for the
+                // same reason: the stale claim is the attribute on
+                // this `<state>`.
+                return Err(model.locate(
                     ScxmlSemanticError::StaleUnhandledDeclaration {
                         state: state.id.clone(),
                         parent: state.parent.clone().unwrap_or_else(|| "(none)".to_string()),
@@ -356,9 +360,8 @@ fn check_declarations(
                             .unwrap_or_default(),
                     }
                     .into(),
+                    state.source_location.as_ref(),
                     source,
-                    None,
-                    None,
                 ));
             }
         }
@@ -416,7 +419,11 @@ fn report_uncovered_gaps(
         handling.sort_by_key(|c| c.document_order);
         let handlers: Vec<String> = handling.iter().map(|c| c.id.clone()).collect();
 
-        return Err(Located::new(
+        // The compound `<state>` whose children disagree — the gap is a
+        // property of the dispatch table, not of any one child, and the
+        // author repairs it by deciding what the compound does with the
+        // event.
+        return Err(model.locate(
             ScxmlSemanticError::NonExhaustiveEventHandling {
                 parent: parent.id.clone(),
                 event,
@@ -425,9 +432,8 @@ fn report_uncovered_gaps(
                 also,
             }
             .into(),
+            parent.source_location.as_ref(),
             source,
-            None,
-            None,
         ));
     }
 

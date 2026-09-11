@@ -165,8 +165,22 @@ The lookup is wired where a stage's rejections *leave* it, not at each
 site that raises one. `analyzer::can_generate_static` — the gate both
 pipelines share, and the only route to
 `scxml_references::validate` — resolves every rejection it returns.
-One call covers every code raised inside it, including ones added
-later, which is the property a list of call sites cannot have.
+`lint_statechart` is the second such boundary, covering the three
+design-time lints; `validate_unhandled_declarations` resolves as well,
+because it is a second door onto two of those rejections rather than a
+step inside the first. One call covers every code raised inside a
+boundary, including ones added later, which is the property a list of
+call sites cannot have.
+
+⚠ A boundary can only answer about a location the record carries, and
+that is half the wiring rather than a detail of it. All seven lint
+codes raised with a file and no row until Item 8 Atomic 3; the
+resolver call at their boundary would have returned every one of them
+unchanged while reading as wired, because a positional lookup has
+nothing to answer from when the record names no position. So a stage
+owes its rejections a coordinate before it owes them an anchor —
+`SCXMLModel::locate` is the one place that decides which coordinate
+space that is, and `with_enclosing_anchor` reads what it wrote.
 
 ⚠ A code counts as carrying when the **contract** holds at every site
 that raises it, which is not the same as a mechanism being present at
@@ -178,8 +192,8 @@ shared across both pipelines — `validation/invalid-reference` is one —
 and the distinction is what makes them reachable at all.
 
 ⚠ **The contract is stated in full; the producer side reaches it
-incrementally.** As of Item 8 Atomic 2 three codes satisfy it and the
-remaining 355 are registered as not yet satisfying it, each with the
+incrementally.** As of Item 8 Atomic 3 ten codes satisfy it and the
+remaining 348 are registered as not yet satisfying it, each with the
 reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
 compile-time exhaustive over `DiagnosticCode` — a code that neither
 carries nor registers fails the build — and the accompanying test
@@ -189,6 +203,29 @@ lives in a test rather than in prose here for one reason: prose about
 coverage goes stale silently, and this is a repository where a field
 declared in May stayed empty for four months while every gate was
 green.
+
+⚠ The 348 are not 348 pieces of remaining work, and the roster says so
+rather than letting the count imply it. Measured 2026-09-11 over all
+358 codes, by resolving each to the error variant that produces it and
+then to the modules that construct that variant: **211 are raised only
+from `forge/` and `mesh/`**, where the paragraph above already settles
+the question — the document kind has nowhere to write
+`sce:provenance`, so the empty field is the final answer and not a
+pending one. 92 are statechart-only, **30 are raised by both
+pipelines**, and 25 the census does not resolve (18 `cli/` codes, 3
+forge source-hash codes, and 4 for which it finds no construction site
+at all — themselves worth a look, since a code nothing raises is a
+roster entry describing nothing).
+
+Those 211 are registered today under a reason that calls them
+remaining work, which is the one thing a work list must not do about
+its own members. Splitting that reason into its real classes — each
+proved structurally, never by 211 hand-placed labels — is what the
+next atomic owes. The 30 both-pipeline codes are why the split must be
+*derived*: they are reachable from a statechart document, so they
+cannot claim the Forge exemption, and the slash-path prefix does not
+distinguish them (`validation/invalid-reference` and
+`validation/invalid-attribute` are both in that set).
 
 ### 2.2 Location object
 
