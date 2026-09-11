@@ -93,26 +93,31 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
         // lands on the orphan edge.
         for trans in &state.transitions {
             if let Some(target) = first_nonempty_target(&trans.target) {
-                return Err(Located::new(
+                // The orphan edge itself, not its owning state: the
+                // repair is on this `<transition>`, and §2.1.2 reads
+                // the anchor down the containment chain from wherever
+                // the record says it is — so a transition inside an
+                // anchored state still answers with that state, while
+                // a transition carrying its own anchor answers with
+                // the nearer one.
+                return Err(model.locate(
                     ScxmlSemanticError::DeadTransition {
                         state: state.id.clone(),
                         target,
                     }
                     .into(),
+                    trans.source_location.as_ref(),
                     source,
-                    None,
-                    None,
                 ));
             }
         }
-        return Err(Located::new(
+        return Err(model.locate(
             ScxmlSemanticError::UnreachableState {
                 state_id: state.id.clone(),
             }
             .into(),
+            state.source_location.as_ref(),
             source,
-            None,
-            None,
         ));
     }
 

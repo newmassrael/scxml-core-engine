@@ -425,6 +425,16 @@ pub type CompileError = forge::error::Located<forge::error::ForgeError>;
 /// analysis, because a missing sibling handler explains a guard that
 /// looks dead.
 pub fn lint_statechart(model: &model::SCXMLModel, source: &str) -> Result<(), CompileError> {
+    // NL→IR Mapping Roadmap Item 8 — the second resolver boundary,
+    // after `analyzer::can_generate_static`. Every lint rejection
+    // leaves through here, so one call gives all seven of their codes
+    // the anchors enclosing the node each names, and gives the eighth
+    // added next year the same without anyone remembering to
+    // (SCE_ERROR_CONTRACT.md §2.1.2).
+    lint_statechart_impl(model, source).map_err(|err| model.with_enclosing_anchor(err))
+}
+
+fn lint_statechart_impl(model: &model::SCXMLModel, source: &str) -> Result<(), CompileError> {
     scxml_reachability::validate(model, source)?;
     scxml_exhaustiveness::validate(model, source)?;
     scxml_guard_analysis::validate(model, source)?;
@@ -460,7 +470,15 @@ pub fn validate_unhandled_declarations(
     model: &model::SCXMLModel,
     source: &str,
 ) -> Result<(), CompileError> {
+    // Resolved here as well as in `lint_statechart`, because this is a
+    // second door onto the same rejections rather than a step inside
+    // that one — the CLI's always-on stage reaches
+    // `check_declarations` without passing the lint boundary. Two
+    // calls, not two mechanisms: enrichment leaves an already-anchored
+    // record alone, so the door a rejection happens to leave by cannot
+    // change what it carries.
     scxml_exhaustiveness::validate_declarations(model, source)
+        .map_err(|err| model.with_enclosing_anchor(err))
 }
 
 /// Promote the `analyzer::can_generate_static` precondition into a

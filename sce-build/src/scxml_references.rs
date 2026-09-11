@@ -216,40 +216,18 @@ fn reject_target(
 
 /// Anchor an error on a node position the model recorded.
 ///
-/// The recorded position indexes into the *expanded* document, so it
-/// is resolved through the model's own mapping first. Two things can
-/// come back:
-///
-/// * Nothing to resolve (no preprocessor ran) — the row is already an
-///   authored row of `diag_label`, and only the file half is taken
-///   from there. The recorded [`SourceLocation`] cannot supply it: it
-///   carries the artifact spelling (a basename, so an SCE-MAP marker
-///   does not bake one checkout into the generated tree) and a
-///   diagnostic must name the document the way the caller named it
-///   (§2.2).
-/// * An authored origin — which after `<sce:use>` / `<xi:include>`
-///   expansion is often a *different file* than the one parsed. The
-///   record then names that file, because that is where the consumer
-///   edits.
+/// A thin argument-order adapter over [`SCXMLModel::locate`], which is
+/// where the rule itself lives — the same positioning is now owed by
+/// every stage that holds the model and rejects (Item 8 Atomic 3 wired
+/// the three design-time lints), and two copies of it would be two
+/// answers to which coordinate space a record names.
 fn located(
     err: ForgeError,
     at: Option<&SourceLocation>,
     diag_label: &str,
     model: &SCXMLModel,
 ) -> Located<ForgeError> {
-    let (line, col) = match at {
-        Some(loc) => (loc.line, loc.col),
-        None => (None, None),
-    };
-    let positions = model.authored_positions.as_ref();
-    let located = match positions.and_then(|p| p.resolve(line, col)) {
-        Some((file, row, col)) => Located::new(err, file, Some(row), Some(col)),
-        None => Located::new(err, diag_label, line, col),
-    };
-    match positions.and_then(|p| p.call_site_on(line)) {
-        Some((file, row, col)) => located.expanded_from(file, row, col),
-        None => located,
-    }
+    model.locate(err, at, diag_label)
 }
 
 #[cfg(test)]
