@@ -63,18 +63,20 @@ sce-codegen generate /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/ -l cpp
    delayed `<send>` to fire, or `http` for one that sends over
    BasicHTTPEventProcessor. Omitting it means `simple`.
 
-2. **CMake registration** — `tests/CMakeLists.txt` still spells the call
-   that schedules the C++ AOT target:
-   ```cmake
-   sce_generate_static_w3c_test(XXX ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML X.Y: description
-   ```
-   Use `TYPE SCHEDULED` / `TYPE HTTP` to match the registry's `harness`.
-   `W3C_AOT_TESTS` accumulates from these calls — do not edit it by hand.
-   Remove from `W3C_INTERPRETER_ONLY_TESTS` if present.
+2. **CMake registration — there is none to write.** `tests/CMakeLists.txt`
+   derives it: it asks `sce-codegen list-fixtures` for every id, reads each
+   one's `harness`, and calls `sce_generate_static_w3c_test()` inside a
+   `foreach` over that list, with no filter. A fixture in the registry and
+   absent from the build is therefore not a state this tree can reach, which
+   is why the parity that used to be checked is now a property of the loop.
 
-The two must agree:
-`sce-build/tests/w3c_registry_cmake_parity.rs` fails on a test present in
-one and not the other, and on a harness that disagrees across them.
+   ⚠ This step used to say to hand-write one call per test and to remove the
+   id from `W3C_INTERPRETER_ONLY_TESTS`. Measured 2026-09-11 and all three
+   claims are false in the tree: `tests/CMakeLists.txt` carries **zero**
+   hand-written `sce_generate_static_w3c_test(<id>` calls, the guard this
+   section named — `sce-build/tests/w3c_registry_cmake_parity.rs` — **does
+   not exist**, and `W3C_INTERPRETER_ONLY_TESTS` is **empty**.
+   **Registering a fixture is step 1 alone.**
 
 ### Step 3: Create AOT Test Header
 
@@ -123,14 +125,29 @@ inline static AotTestRegistrar<TestXXX> registrar_TestXXX;
 - `type="pure_static"` or `"static_hybrid"` in test output (NOT `"interpreter_fallback"`)
 - Both Interpreter and AOT tests pass
 
-### Tests That Cannot Be Statically Generated
+### When code generation refuses a document
 
-If code generation fails, the test runs on **Interpreter only** — do NOT add to AOT tests.
+A refusal is still a thing the generator can emit — `manifest.rs` carries
+`STATUS_REJECTED` and a `rejected` field, and Step 1 above shows the shape it
+takes in the manifest line. What has changed is **what you do about it**.
 
-Common exclusion reasons:
-- `<invoke srcexpr="pathVar"/>` — dynamic file I/O
-- No initial state — requires runtime default resolution
-- `_event.origintype` — runtime metadata
+⚠ **There is no exclusion list to add to.** `W3C_INTERPRETER_ONLY_TESTS` is
+empty and registration is derived from the registry (Step 2), so a fixture
+cannot be registered for the Interpreter alone by editing a list. If
+`sce-codegen generate` refuses a document you were about to register, that
+refusal is the thing to fix or to record — not to route around.
+
+⚠⚠ **Do not trust a remembered list of reasons, including the one this section
+used to carry.** It named three — `<invoke srcexpr>`, a document with no
+initial state, and `_event.origintype`. Measured 2026-09-11: a document with
+**no initial state generates cleanly** (`rc=0`, artifacts written, no
+`rejected` key), so at least one of the three had stopped being true and
+nothing said so. Ask the generator instead:
+
+```bash
+sce-codegen generate <file>.scxml -o /tmp/probe -l cpp
+# a "rejected" key in the manifest line is the answer; its absence is too
+```
 
 ## Code Review Checklist
 
