@@ -234,11 +234,28 @@ the shape `script_engine_causes` already established beside
 ⚠ A code counts as carrying when the **contract** holds at every site
 that raises it, which is not the same as a mechanism being present at
 every site. A site also satisfies it by raising on a document kind
-that has no anchors at all: a Forge document (codec, mesh binding,
-event schema) has nowhere to write `sce:provenance`, so its empty
-field is already the true answer. Several wire codes are deliberately
-shared across both pipelines — `validation/invalid-reference` is one —
-and the distinction is what makes them reachable at all.
+that has no anchors at all: a **non-statechart Forge kind** (codec,
+mesh binding, event schema, and the rest) has nowhere to write
+`sce:provenance`, so its empty field is already the true answer.
+Several wire codes are deliberately shared across both pipelines —
+`validation/invalid-reference` is one — and the distinction is what
+makes them reachable at all.
+
+⚠⚠ **"Forge document" was the wrong name for that set, and this
+sentence used to use it.** `ForgeDocument` is a `oneOf` over eighteen
+kinds and `ForgeKind::Statechart` is one of them, so a statechart *is*
+a Forge document in the parser's and the AST envelope's sense — and it
+carries provenance on `State`, `Transition` and `Action`. Read the old
+wording literally and the admissible case swallowed the statechart
+pipeline, which is the one place the anchor must actually be resolved.
+Measured 2026-09-11, when a guard written against the old wording
+failed against the checked-in schema and the failure was the wording.
+The set the case means is the seventeen non-statechart kinds, and
+`forge::diagnostic::tests::a_forge_document_has_no_anchor_for_a_diagnostic_to_carry`
+holds it: it walks each kind's own `$ref` closure, selects kinds by
+their `kind` discriminant rather than by a list kept in the test, and
+proves its own walk by first finding the provenance the statechart
+branch does carry.
 
 ⚠ **The contract is stated in full; the producer side reaches it
 incrementally.** As of Item 8 Atomic 7 twenty-two codes satisfy it and
