@@ -1,0 +1,456 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  THE LOOP KIND FOR `scxml-core-engine` — the decisions `ai_loop.scxml` must
+  not make on that repository's behalf, written by that repository.
+
+  ══════════════════════════════════════════════════════════════════════════
+
+  ⚠⚠⚠ WHY THIS FILE EXISTS, AND IT IS NOT "because debt did not fit".
+
+  Four runs of `scxml-core-engine` work were driven under `unclaimed` on
+  2026-09-11 (runs 315, 317, 320, 324). Every one of them ended
+  `exhausted (duration)` with the work unfinished, and the product said the
+  same sentence each time: *THE SAME WORK, with more room.* The hour was not a
+  judgement about the work; it was the daemon's constant arriving because
+  `unclaimed_loop.scxml` authors nothing and `plugins.rs`'s `duration()` falls
+  to its `None` arm.
+
+  That is the file working exactly as designed. `unclaimed` is the honest
+  answer for a tree that has written no decisions, and its own header says what
+  a tree that wants decisions does instead: *writes their OWN document beside
+  this one and names that kind*. This is that document.
+
+  ⚠⚠⚠⚠⚠ AND THE OWNER'S INSTRUCTION THAT REACHES IT was already recorded, in
+  `plugins.rs` beside the three-armed `duration()` — *every sprag loop
+  unbounded* — with the note that folding `Never` into the absent case is what
+  made that instruction "sayable only by a caller overriding the bound every
+  round, which is register item 853's forbidden shape". A `max_seconds` named
+  on each launch is that forbidden shape. A document is the shape that was
+  built for it.
+
+  ══════════════════════════════════════════════════════════════════════════
+
+  ⛔⛔⛔⛔⛔ WHAT DECLINING THE THREE GUARDRAILS COSTS, STATED BEFORE THE CLAUSE
+  THAT DECLINES THEM.
+
+  `DEFAULT_MAX_SECONDS`'s own doc says what the hour catches that nothing else
+  can: *a run whose steps have stopped making progress but have not stopped,
+  which counts no iterations and spends nothing while it holds a pane.* It is a
+  liveness check wearing a clock's clothes, not a work budget.
+
+  So declining it removes the only liveness check this build has by default —
+  because `ai_loop.scxml` ships `stall_after_steps` as `'never'`, which is off.
+  The pair is not optional and is not a matter of taste: `kind.rs` asserts it,
+  and `debt_loop.scxml` says why in its own words — *it must not become
+  `never` … this is now the ONLY ceiling of the five this kind admits that
+  measures progress at all.*
+
+  ⇒ Every number below that says `never` is paid for by `stall_after_steps`
+  being a number, and by `progress_marks` naming things that actually move.
+  Reading one without the other reads this document wrong.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="ecmascript"
+       initial="decided"
+       name="sce_loop">
+
+  <datamodel>
+
+    <!--
+      ⚠⚠⚠ WHICH DIALOGS A RUN OF THIS KIND MAY ANSWER *YES* TO: NONE.
+
+      Same reasoning as `unclaimed_loop.scxml`, and it does not weaken because
+      this kind has an author. A clause here is a standing yes for every future
+      run in this tree, authorising questions nobody has read. The tree's own
+      `CLAUDE.md` draws the same line for pushes and for destructive acts; a
+      kind document is not the place to widen it. A caller who needs one names
+      it on their own run.
+
+      ⚠ The runs this kind was written for already work without one: 315, 317,
+      320 and 324 were launched with no `may_answer` and none of them ended
+      `blocked`.
+    -->
+    <data id="may_answer" expr="[]"/>
+
+    <!--
+      ⚠⚠⚠ WHAT A RUN OF THIS KIND IS REDIRECTED TO MID-FLIGHT: NOTHING.
+
+      A screen rule refuses a dialog and types an instruction in its place. Its
+      first key is a refusal, so it can grant nothing — but it still decides on
+      a future author's behalf, in this author's language. Left empty for the
+      same reason `may_answer` is.
+    -->
+    <data id="screen_rules" expr="[]"/>
+
+    <!--
+      ⚠⚠⚠ WHICH BLOCKED TURNS GET A SECOND AGENT'S OPINION: NONE.
+
+      A paid model call per blocked turn, standing, for every run in this tree.
+      A run that wants one asks for it.
+    -->
+    <data id="judged_rules" expr="[]"/>
+
+    <!--
+      ⛔⛔⛔⛔⛔ HOW MANY TURNS A RUN OF THIS KIND MAY TAKE: NO CEILING.
+
+      `'never'` is the document's idiom for *do not bound this*, and it is the
+      same word `guardrails` below uses — deliberately, because inventing a
+      second spelling would make two identical meanings look different.
+
+      WHY, and it is a measurement rather than a preference: a round in this
+      tree is dominated by BUILDS, not by thinking. Measured 2026-09-11 on this
+      machine, in this repository: the Kotlin forge-runtime jar is ~11 s warm,
+      `scripts/gate forge-cpp` 12 s, `forge-go` 33 s, a full
+      the whole `sce-build` suite under the cli feature **1052 s**, and a push runs the
+      path-selected gate set for minutes. A turn ceiling denominated in turns
+      therefore buys nothing a stall bound does not buy better: a run doing one
+      long build is indistinguishable, by turn count, from a run doing nothing.
+
+      ⚠ What ends a run of this kind is `stall_after_steps` — nothing moved —
+      not an arithmetic limit on how much work it was allowed to do.
+    -->
+    <data id="max_turns" expr="'never'"/>
+
+    <!--
+      ⛔⛔⛔ HOW OFTEN THIS RUN REPLACES ITS OWN SESSION: EVERY 8 TURNS.
+
+      A reflection writes what was learned, closes the agent's session and opens
+      a fresh one that reads it. That is what lets one run outlive one context —
+      and it is not free: the new session re-pays the fixed prefix, and in THIS
+      tree the prefix is large. `CLAUDE.md` plus the project's own instructions
+      are loaded every session, and the documents a round must consult are big
+      (`SCE_MESH.md` is 4,170 lines, `SCE_FORGE.md` 1,852,
+      `docs/SCE_ACCEPTED_SUBSET.md` carries the whole diagnostic appendix).
+
+      ⚠⚠ 8 RATHER THAN `debt_loop.scxml`'s 5, and the difference is derived, not
+      preferred. Measured across the four runs this kind was written for: 7, 7,
+      21 and 4+ iterations inside one hour — so a round here costs between three
+      and nine minutes of wall clock. At 5 the slow end reflects roughly every
+      45 minutes, which is fine; but runs 315 and 317 banked TWO atomics in
+      seven iterations, so a reflection at 5 would have cut a round in half and
+      paid a cold start to resume work the same session already had in hand.
+      8 sits above the observed atomic size and still below the context ceiling.
+
+      ⚠ RE-DERIVE THIS rather than trusting it. The population is four runs, and
+      four runs is not a population — `debt_loop.scxml` says exactly that about
+      its own refuted first attempt. The command:
+        sprag runs -t <session>   # iterations per run, and what each banked
+    -->
+    <data id="reflect_every" expr="8"/>
+
+    <!--
+      HOW MANY TIMES IN A ROW A CHECK MAY REFUSE THE AGENT'S CLAIM before the
+      run stops buying another turn and reflects instead: 2.
+
+      Following `debt_loop.scxml` here, and saying so rather than implying a
+      derivation this tree has not got: no run of this kind has yet been
+      refused by a `milestone_check` at all, so there is nothing local to
+      measure. 2 is the value a shared daemon has evidence for.
+
+      ⚠ The template's 3 was not chosen for this tree either; 2 is preferred to
+      it because a refusal here costs a turn that may contain a 17-minute test
+      run, so buying a third is expensive in a way it is not elsewhere.
+    -->
+    <data id="reflect_after_refusals" expr="2"/>
+
+    <!--
+      HOW MANY TIMES A RUN MAY RE-AIM ITSELF: ONCE.
+
+      Same as `debt_loop.scxml`, for a reason this tree shares: a run that
+      re-aims twice has stopped doing the work it was given and started
+      choosing work, and the choosing belongs to whoever wrote the brief.
+
+      ⚠ Measured relevance: all four runs of this kind re-aimed zero times —
+      each was given one atomic and worked it. This clause has not yet bitten,
+      which is the state to keep it in.
+    -->
+    <data id="reaim_max" expr="1"/>
+
+    <!--
+      HOW MANY TIMES ONE QUESTION MAY BE PUT AGAIN: 2. Following the shared
+      value; no local measurement exists, and stating that is the point.
+    -->
+    <data id="reask_max" expr="2"/>
+
+    <!--
+      🎯🎯🎯 WHO SAYS A MILESTONE WAS REACHED — the generic checker.
+
+      `claude -p` with JSON output, which is what `debt_loop.scxml` uses and
+      what the owner asked for on 2026-09-02, quoted in that file: *전부
+      공통되게 해야해, 지금 프로젝트말고 다른 프로젝트에서도 자동으로 적용되게
+      범용적으로 들어가야해*.
+
+      ⚠⚠⚠ THIS CORRECTS A CLAIM THE SKILL STILL MAKES. The debt-repayment-loop
+      skill says a kind names a checker that *reads ONE tree's own record*, and
+      that a run of another tree judged by it is "being told *no* by a document
+      that has never heard of it". That was true when the checker was a
+      repository script. It is not true of `claude -p`, which is handed the
+      run's own brief and the tree it stands in. The half that remains
+      tree-specific is the PROSE below (`working_rules`, `reference`) — which is
+      the actual reason this document exists.
+    -->
+    <data id="milestone_check" expr="'claude -p --output-format json'"/>
+
+    <!--
+      WHO SAYS A PROPOSED NEXT MILESTONE IS ONE TO TAKE: the same generic
+      checker, for the same reason.
+    -->
+    <data id="successor_check" expr="'claude -p --output-format json'"/>
+
+    <!--
+      WHAT A SERVICE OUTAGE LOOKS LIKE ON THE SCREEN, and how long to wait it
+      out. Following the shared values: these describe the AGENT's provider, not
+      this tree, so a per-tree number here would be a number about somebody
+      else's service.
+    -->
+    <data id="service_needles"
+          expr="[
+            'service is temporarily unavailable',
+            'upstream connect error',
+            'Overloaded'
+          ]"/>
+    <data id="service_retry_ms" expr="600000"/>
+    <data id="service_retry_text"
+          expr="'The provider was unavailable. Continue the milestone from where it stopped.'"/>
+
+    <!--
+      ⛔⛔ HOW MUCH THIS SESSION MAY HAVE READ before the next milestone is taken
+      in a fresh one: 800,000 tokens.
+
+      A CAPACITY bound, not a cost knob — splitting one task across sessions is
+      MORE expensive, because a cache write costs about twenty times a cache
+      read and a fresh session re-pays the fixed prefix. So the number belongs
+      near the end of the window, not in the middle of it.
+
+      ⚠ Same as `debt_loop.scxml`, and here the sharing is justified rather than
+      copied: the constraint is the MODEL's context window, which is a property
+      of the agent and not of the repository. What differs per tree is how fast
+      the window fills, and that is `reflect_every`'s business above.
+    -->
+    <data id="context_ceiling" expr="800000"/>
+
+    <!--
+      WHAT A RUN OF THIS KIND DOES AS IT CLOSES.
+
+      ⚠ Naming the tree's own contract rather than a generic tidy-up: a round
+      here is not finished when the code is written. `CLAUDE.md` and the memory
+      index both say the judge is CI, and that the push's verdict is read from a
+      file rather than from a wrapper — a background job's completion
+      notification reported "exit code 0" twice on 2026-08-16 while
+      `origin/main` had not moved.
+    -->
+    <data id="closing_rules"
+          expr="'Before reporting done: (1) the working tree is clean or every \
+remaining change is named and explained; (2) any push was judged from its own \
+rc file and confirmed with `git ls-remote origin main`, never from a wrapper \
+exit code; (3) what was NOT finished is stated plainly, with the measurement \
+that says so.'"/>
+
+    <!--
+      WHAT TO DO WITH A QUESTION NOTHING AUTHORISED: stop and say so. No
+      standing answer exists (`may_answer` is empty), so the honest end is a
+      blocked run a person can read, not a guess.
+    -->
+    <data id="unanswered_rule"
+          expr="'Do not guess at a dialog nothing authorised. Stop, and let the \
+run report what was asked and which options were offered.'"/>
+
+    <!--
+      WHAT TO DO WITH A PANE THAT CANNOT BE READ, and with an agent that is
+      unwell. Shared values: both describe the terminal and the provider, not
+      this tree.
+    -->
+    <data id="unreadable_rule"
+          expr="'If the pane cannot be read, stop rather than typing into a \
+screen whose state is unknown.'"/>
+    <data id="unwell_rule"
+          expr="'If the agent reports it cannot continue, stop and say so \
+rather than re-prompting.'"/>
+
+    <!--
+      ⛔⛔⛔⛔⛔ THE STANDING RULES A RUN OF THIS KIND IS GIVEN.
+
+      ⚠⚠⚠ These are PROSE, and prose is not enforced: no `cond` reads this, no
+      gate holds a run to it. `debt_loop.scxml` says the same about its own, and
+      that is why the things that MUST hold are gates in the tree rather than
+      sentences here. What belongs here is what a fresh session could not
+      reconstruct from the tree in one turn.
+    -->
+    <data id="working_rules"
+          expr="'1. Builds and tests go through ~/.claude/remote-build/bin/bx. It \
+decides where to run and keeps the full log; a bare cargo/ctest invocation on \
+this host competes with other sessions for a machine that is usually in swap.\n\
+2. The judge is CI, not a local batch. Verify locally only the target you \
+directly changed; commit, push, and read the previous run per-job at the start \
+of the next round. Do not block a round waiting for a hosted run.\n\
+3. Judge a push from its OWN rc file and confirm with `git ls-remote origin \
+main`. A background job notification reports the compound command status and \
+has said &quot;exit code 0&quot; while origin had not moved.\n\
+4. Before committing, run tools/git-hooks/gate_registry.py with the \
+changed-from and ci-owed flags. Without a changed argument it prints usage \
+and exits 0, which reads as a pass.\n\
+5. Commits follow COMMIT_FORMAT.md: &lt;type&gt;: &lt;subject&gt; at 72 chars, 1-3 \
+contiguous bullets each at 72 chars, no emoji, no Co-Authored-By.\n\
+6. ONE WRITER PER TREE. A supervisor may be reading this tree. Never `git add \
+-A`; stage by path, and read `git diff --cached` before committing. Leave work \
+you did not write uncommitted.\n\
+7. A measurement beats a document, including this one and including CLAUDE.md. \
+Where the two disagree, re-derive from the tree and say that the document is \
+stale.\n\
+8. An absent signal is not a passing one. A skipped check, an empty grep and a \
+golden that was regenerated all look like success; prefer a check that fails \
+when the thing it guards is missing.'"/>
+
+    <!--
+      WHERE A RUN OF THIS KIND STARTS READING.
+
+      ⚠ Entry points, not a reading list: each of these is a door onto more, and
+      naming more here would make the prompt longer without making the first
+      turn better.
+    -->
+    <data id="reference"
+          expr="'/home/coin/scxml-core-engine/CLAUDE.md — the project contract, \
+and the file to distrust first when the tree disagrees.\n\
+/home/coin/scxml-core-engine/ARCHITECTURE.md — read before touching either \
+engine.\n\
+/home/coin/scxml-core-engine/COMMIT_FORMAT.md — read before the first commit.\n\
+/home/coin/scxml-core-engine/SCE_ERROR_CONTRACT.md and \
+docs/SCE_ACCEPTED_SUBSET.md — read together before touching diagnostics.\n\
+/home/coin/scxml-core-engine/claudedocs/ — the working RFCs; gitignored, so \
+treat them as notes rather than as contract.\n\
+/home/coin/.claude/projects/-home-coin-scxml-core-engine/memory/MEMORY.md — \
+the index of what previous rounds measured. Its ▶ NEXT section is the entry \
+point; the files it links carry the evidence.'"/>
+
+    <!--
+      WHEN THE PANE IS READY TO BE TYPED INTO: when the agent has settled.
+    -->
+    <data id="ready_when" expr="{ match: 'settles', marker: 'claude' }"/>
+
+    <!--
+      🎯🎯🎯🎯🎯 THE THREE BOUNDS THIS KIND DECLINES — and the clause two below
+      is what pays for it. Read them together or not at all.
+
+      The owner's instruction, recorded in `plugins.rs`: *every sprag loop
+      unbounded*. The measurement that brings it here: four runs of this tree's
+      work, every one ended by the daemon's hour with the work unfinished and
+      the product itself saying THE SAME WORK, with more room.
+
+      ⚠⚠ AND THE HOUR WAS NEVER ABOUT THE WORK. `DEFAULT_MAX_SECONDS` catches
+      "a run whose steps have stopped making progress but have not stopped".
+      Declining it is only legitimate because `stall_after_steps` below measures
+      exactly that, directly, instead of inferring it from a clock.
+    -->
+    <data id="guardrails"
+          expr="{
+            max_bytes:      'never',
+            max_iterations: 'never',
+            max_seconds:    'never'
+          }"/>
+
+    <!--
+      HOW LONG A PERSON MAY HOLD A RUN OF THIS KIND: SIX HOURS.
+
+      A held run types nothing and spends nothing, so it cannot be bounded by
+      any of the three above; without this it parks forever. Six hours is an
+      afternoon of reading a pane, which is the shape of holding this is for —
+      not a night. Same as `debt_loop.scxml`, and the reasoning is about people
+      rather than about either repository.
+    -->
+    <data id="hold_within_ms" expr="21600000"/>
+
+    <!--
+      ⛔⛔⛔⛔⛔ THE ONLY CEILING THIS KIND KEEPS, AND THEREFORE THE ONLY THING
+      THAT MEASURES PROGRESS AT ALL. 150 STEPS.
+
+      ⚠⚠⚠ IT MUST NOT BECOME `never`. `kind.rs` asserts the pair — a kind that
+      declines its three guardrails must keep this a number — and the assertion
+      is the reason the decline above is allowed to exist. The tempting move the
+      day it fires on something inconvenient is to spell `never` here; that
+      would leave this tree's runs with no progress measure of any kind.
+
+      ⚠⚠ WHAT IT IS NOT: not a clock and not a spend. A run that builds for an
+      afternoon and commits is never touched by it. What it ends is a run that
+      is still typing while nothing below has moved.
+
+      ⚠⚠⚠⚠⚠ AND THE NUMBER IS PROVISIONAL, WHICH IS SAID HERE RATHER THAN
+      DISCOVERED LATER. `debt_loop.scxml` derived its 1300 from 2,050 commits
+      and every run log the daemon holds, and it records that its own first
+      attempt — derived from FOUR runs — was refuted by the full population. The
+      population available to this kind today is also four runs (315, 317, 320,
+      324), so the same objection applies to this number and it is not being
+      hidden.
+
+      What those four support: the per-run step counts are 9, 10 and 24 by the
+      driver logs, against 7, 7 and 21 iterations — so a step here is close to
+      one agent turn, and 150 is roughly six to twenty hours of turns in which
+      nothing was committed and nothing was pushed. That is far above any
+      legitimate stretch observed (every one of the four banked a commit inside
+      its hour) and far below "never".
+
+      ⚠ RE-DERIVE IT once this kind has run enough to have a population:
+        for f in /run/user/1000/loop/run*.log; do printf '%s %s\n' \
+          "$(wc -l < "$f")" "$f"; done | sort -rn | head
+      and take the longest stretch that ended in a commit, not the longest run.
+    -->
+    <data id="stall_after_steps" expr="150"/>
+
+    <!--
+      ⛔⛔⛔⛔⛔ WHAT A ROUND OF THIS KIND MOVES WHEN IT IS GETTING SOMEWHERE —
+      the other half of the bound above, and the half that keeps its predicate
+      from being one thing.
+
+      ⚠⚠⚠ A LIST AND NOT ONE SIGNAL, for the reason `ai_loop.scxml` records: the
+      obvious predicate is *the agent has not said it reached a milestone*, and
+      it is wrong in the direction that matters — a run doing one large piece of
+      work properly reaches no checkpoint for a long time, so a one-signal bound
+      catches the runs doing the best work first.
+
+      ⚠⚠ WHY THESE TWO, for this tree specifically. `.git/logs/HEAD` moves on
+      every commit, which is what a round here banks. The second is what
+      `CLAUDE.md` makes this repository's real unit of done: a round is not
+      finished at the commit but at the PUSH, because the judge is CI. Measured
+      2026-09-11: runs 315, 317 and 320 each moved both, and each moved the
+      second within the same hour it moved the first.
+
+      ⚠ Neither is a file this repository maintains by hand, which is
+      deliberate — a progress mark somebody has to remember to update is a
+      progress mark that stops being one.
+    -->
+    <data id="progress_marks"
+          expr="[
+            '.git/logs/HEAD',
+            '.git/refs/remotes/origin/main'
+          ]"/>
+
+    <!--
+      WHICH TREE A RUN OF THIS KIND MAY BE OPENED IN: one that is a git
+      checkout. The predicate, not a path — the same document compiles into
+      every checkout, so a literal path here would be a decision about one
+      machine.
+    -->
+    <data id="works_in" expr="'.git'"/>
+
+    <!--
+      WHOSE SCREEN IT MAY APPEAR ON: the window named for the tree.
+    -->
+    <data id="stands_in" expr="'tree'"/>
+
+    <!--
+      WHICH DIMENSION A RUN OF THIS KIND MUST KEEP WHOLE: rows.
+
+      ⚠ Height is the dimension this tree's rounds actually need. A reflection's
+      follow-up read fails on a short pane, and the supervisor skill records
+      that a `kill-pane` on a sibling has left panes at 36 rows where 73 was
+      asked for. Width costs a wrapped log; height costs a lost reflection.
+    -->
+    <data id="keeps" expr="'rows'"/>
+  </datamodel>
+
+  <!--
+    Nothing happens here. The datamodel above IS this document, and the driver
+    reads it without ever stepping the machine.
+  -->
+  <final id="decided"/>
+</scxml>

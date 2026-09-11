@@ -139,9 +139,18 @@ claudedocs
 # Claude Code local settings — repo-wide hooks are tracked so every
 # clone inherits the same commit audit; personal state (allowlist,
 # memory, session cache) stays local.
+#
+# `sce_loop.scxml` is tracked for the same reason the hooks are: it is this
+# repository's own decisions, not one machine's state. It is the loop-kind
+# document a supervised AI run names with `loop_kind_document`, and every
+# clause in it — the declined guardrails, the stall bound that pays for them,
+# what counts as progress here — is an answer this tree owes rather than one
+# the driver's template should make on its behalf. Listed rather than
+# force-added so `git add .claude/` keeps working and the intent is readable.
 .claude/*
 !.claude/hooks/
 !.claude/hooks/**
+!.claude/sce_loop.scxml
 
 __pycache__/
 archive/
