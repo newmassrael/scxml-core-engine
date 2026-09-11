@@ -820,11 +820,51 @@ mod tests {
     .expect("COBS encode must compile against sce-portable-bytes and match the reference vectors");
 }
 
+/// Per-backend RUN gates for the COBS byte-buffer-build fixture: each emit is
+/// built and executed against the shared `COBS_VECTORS` table.
+///
+/// These are what decide the non-Rust encoders are CORRECT. The compile gates
+/// below decide only that they build, and the goldens only that they have not
+/// changed — a golden records whatever the generator last emitted, so a
+/// lowering defect that survives `UPDATE_GOLDEN` is recorded as the expected
+/// answer rather than caught. C++ additionally had no compile coverage at all
+/// (its `bytes` params lower to `std::span`, C++20, while the shared codec
+/// compile gate is `-std=c++17`); `run_cobs_vectors_cpp` builds at C++20 and
+/// closes that hole as a side effect of running.
+#[test]
+fn forge_cpp_algorithm_cobs_encode_runtime() {
+    run_cobs_vectors_cpp(&resource_dir(), "algorithm_cobs_encode_cpp_runtime")
+        .expect("COBS encode C++ output must compile and match the reference vectors");
+}
+
+#[test]
+fn forge_c11_algorithm_cobs_encode_runtime() {
+    run_cobs_vectors_c11(&resource_dir(), "algorithm_cobs_encode_c11_runtime")
+        .expect("COBS encode C11 output must compile and match the reference vectors");
+}
+
+#[test]
+fn forge_go_algorithm_cobs_encode_runtime() {
+    run_cobs_vectors_go(&resource_dir(), "algorithm_cobs_encode_go_runtime")
+        .expect("COBS encode Go output must compile and match the reference vectors");
+}
+
+#[test]
+fn forge_python_algorithm_cobs_encode_runtime() {
+    run_cobs_vectors_python(&resource_dir(), "algorithm_cobs_encode_python_runtime")
+        .expect("COBS encode Python output must compile and match the reference vectors");
+}
+
+#[test]
+fn forge_kotlin_algorithm_cobs_encode_runtime() {
+    run_cobs_vectors_kotlin(&resource_dir(), "algorithm_cobs_encode_kotlin_runtime")
+        .expect("COBS encode Kotlin output must compile and match the reference vectors");
+}
+
 // Per-backend compile gates for the COBS byte-buffer-build fixture. The
 // generated source must actually compile, not merely byte-match a golden
-// (`feedback_byte_goldens_not_compile`). C++ is golden-only here for the same
-// reason every algorithm fixture is — its `bytes` params lower to
-// `std::span` (C++20), while the shared codec compile gate is `-std=c++17`.
+// (`feedback_byte_goldens_not_compile`). C++ has no entry here — the run gate
+// above is its compile coverage, at the C++20 its `std::span` params need.
 
 #[test]
 fn forge_c11_algorithm_cobs_encode_compiles() {
@@ -12230,15 +12270,52 @@ fn compile_codec_set_python(
     Ok(())
 }
 
+/// What to tell a developer whose tree has no Kotlin forge-runtime jar.
+///
+/// The Gradle project path is `:sce-forge-runtime-kotlin` and the build runs
+/// from the WORKSPACE ROOT — `settings.gradle.kts` maps that name onto
+/// `backends/kotlin/forge-runtime`, which has no wrapper of its own. This
+/// string used to name `:sce-forge-runtime` from inside that directory, which
+/// is a command that cannot run anywhere in this tree.
+const KOTLIN_JAR_HINT: &str = "sce-forge-runtime-kotlin-jvm-*.jar \
+     (run `./gradlew :sce-forge-runtime-kotlin:jvmJar` from the workspace root)";
+
+/// Locate the in-tree Kotlin forge-runtime jar, if it has been built.
+///
+/// `Ok(None)` means the jar is absent — the caller degrades to
+/// skip-with-warn, so a tree without a Gradle distribution does not block
+/// `cargo test`. Shared by the Kotlin compile gate and the Kotlin COBS run
+/// gate, which need the same jar on the same classpath.
+fn kotlin_forge_runtime_jar() -> Result<Option<std::path::PathBuf>, String> {
+    let jar_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("backends/kotlin/forge-runtime")
+        .join("build")
+        .join("libs");
+    let found = std::fs::read_dir(&jar_dir).ok().and_then(|entries| {
+        entries.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| {
+            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                n.starts_with("sce-forge-runtime-kotlin-jvm") && n.ends_with(".jar")
+            })
+        })
+    });
+    match found {
+        None => Ok(None),
+        Some(p) => p
+            .canonicalize()
+            .map(Some)
+            .map_err(|e| format!("canonicalize kotlin jar: {e}")),
+    }
+}
+
 /// RFC codegen-per-backend-compile-harness — Kotlin compile gate.
 ///
 /// Invokes `kotlinc -Werror` with the in-tree sce-forge-runtime Kotlin
 /// jar (`backends/kotlin/forge-runtime/build/libs/sce-forge-runtime-kotlin-jvm-*.jar`)
-/// on the classpath, against every emitted `.kt`. On a fresh worktree
-/// where the jar hasn't been built yet, attempts a one-shot `./gradlew
-/// :sce-forge-runtime:jvmJar` from the workspace root. Failure still
-/// degrades to skip-with-warn so a missing Gradle distribution doesn't
-/// block `cargo test`.
+/// on the classpath, against every emitted `.kt`. A tree where the jar has
+/// not been built degrades to skip-with-warn, naming the Gradle task in
+/// `KOTLIN_JAR_HINT`, so a missing Gradle distribution doesn't block
+/// `cargo test`.
 fn compile_codec_set_kotlin(
     dir: &std::path::Path,
     scxml_filenames: &[&str],
@@ -12258,31 +12335,10 @@ fn compile_codec_set_kotlin(
     let all_files =
         generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Kotlin)?;
 
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let runtime_jar_dir = std::path::Path::new(manifest_dir)
-        .join("..")
-        .join("backends/kotlin/forge-runtime")
-        .join("build")
-        .join("libs");
-    let runtime_jar = std::fs::read_dir(&runtime_jar_dir)
-        .ok()
-        .and_then(|entries| {
-            entries.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| {
-                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                    n.starts_with("sce-forge-runtime-kotlin-jvm") && n.ends_with(".jar")
-                })
-            })
-        });
-    let Some(jar_path) = runtime_jar else {
+    let Some(jar_path) = kotlin_forge_runtime_jar()? else {
         let _ = std::fs::remove_dir_all(&proj_dir);
-        return require_all_or_warn(
-            test_id,
-            "sce-forge-runtime-kotlin-jvm-*.jar (run `./gradlew :sce-forge-runtime:jvmJar` from backends/kotlin/forge-runtime)",
-        );
+        return require_all_or_warn(test_id, KOTLIN_JAR_HINT);
     };
-    let jar_path = jar_path
-        .canonicalize()
-        .map_err(|e| format!("canonicalize kotlin jar: {e}"))?;
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut kt_files: Vec<std::path::PathBuf> = Vec::new();
@@ -12338,6 +12394,482 @@ fn compile_codec_set_kotlin(
             proj_dir.display()
         ));
     }
+    let _ = std::fs::remove_dir_all(&proj_dir);
+    Ok(())
+}
+
+// ── SCE byte-buffer-build (SCE_FORGE.md §4.12): cross-backend RUN gate ──
+//
+// A byte golden proves the emit did not CHANGE; the compile gates above prove
+// it BUILDS. Neither asks whether it computes the right bytes. Until this
+// landed, `forge_rust_algorithm_cobs_encode_runtime` was the only place any
+// COBS emit was ever executed, so a lowering defect confined to one of the
+// other five backends would have shipped behind a green suite — the emit
+// would still compile, and its golden would simply record the wrong output as
+// the expected one.
+//
+// The reference vectors are declared ONCE and rendered into every backend's
+// driver. Five hand-written copies of the same table would be five places for
+// a vector to drift, and a drifted copy is indistinguishable from a correct
+// one when each backend is the only thing reading its own.
+
+/// Canonical COBS vectors (`SCE_FORGE.md` §4.12): input, expected encoding.
+const COBS_VECTORS: &[(&[u8], &[u8])] = &[
+    (&[], &[0x01]),
+    (&[0x00], &[0x01, 0x01]),
+    (&[0x11, 0x22, 0x00, 0x33], &[0x03, 0x11, 0x22, 0x02, 0x33]),
+    (&[0x11, 0x00, 0x00], &[0x02, 0x11, 0x01, 0x01]),
+    (&[0x11, 0x22, 0x33], &[0x04, 0x11, 0x22, 0x33]),
+];
+
+/// One vector's bytes as a comma-separated `0x..` list — the spelling every
+/// target language accepts inside its own array/list literal.
+fn cobs_byte_list(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("0x{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Render the vector table with a per-language case template.
+///
+/// `case` receives (index, input literal, expected literal) and returns one
+/// line of the driver's table.
+fn cobs_cases(case: impl Fn(usize, &str, &str) -> String) -> String {
+    COBS_VECTORS
+        .iter()
+        .enumerate()
+        .map(|(i, (input, want))| case(i, &cobs_byte_list(input), &cobs_byte_list(want)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Write every emitted file carrying `ext` flat into `proj_dir`, de-duplicated
+/// by basename. Shared by the four backends whose emit needs no directory
+/// structure (Go is the exception — one package per directory).
+fn write_flat_emit(
+    proj_dir: &std::path::Path,
+    all_files: &[(String, String)],
+    ext: &str,
+) -> Result<Vec<String>, String> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut written: Vec<String> = Vec::new();
+    for (filename, content) in all_files {
+        let path = std::path::Path::new(filename);
+        if path.extension().and_then(|e| e.to_str()) != Some(ext) {
+            continue;
+        }
+        let basename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("invalid filename: {filename}"))?;
+        if !seen.insert(basename.to_string()) {
+            continue;
+        }
+        std::fs::write(proj_dir.join(basename), content)
+            .map_err(|e| format!("write {basename}: {e}"))?;
+        written.push(basename.to_string());
+    }
+    if written.is_empty() {
+        return Err(format!(
+            "no .{ext} files generated — emit-file extension drift?"
+        ));
+    }
+    Ok(written)
+}
+
+/// Run one built driver and turn a non-zero exit into the test's failure text.
+/// The driver prints the offending vector itself, so its stdout is the report.
+fn run_cobs_driver(
+    mut cmd: std::process::Command,
+    proj_dir: &std::path::Path,
+    test_id: &str,
+    what: &str,
+) -> Result<(), String> {
+    let out = cmd
+        .current_dir(proj_dir)
+        .output()
+        .map_err(|e| format!("{what} invocation: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "{what} FAILED for {test_id}\nproj_dir: {}\nSTDOUT:\n{}\nSTDERR:\n{}",
+            proj_dir.display(),
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        ));
+    }
+    Ok(())
+}
+
+/// Create the per-run temp project directory, keyed so parallel tests and
+/// concurrent `cargo test` processes never collide.
+fn cobs_proj_dir(tag: &str, test_id: &str) -> Result<std::path::PathBuf, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_{tag}_run_{test_id}_{pid}_{counter}"));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {e}"))?;
+    Ok(dir)
+}
+
+/// Resolve a backend runtime directory under `backends/`.
+fn backend_runtime_dir(rel: &str) -> Result<std::path::PathBuf, String> {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(rel)
+        .canonicalize()
+        .map_err(|e| format!("canonicalize {rel}: {e}"))
+}
+
+/// C++ COBS run gate. `-std=c++20` rather than the shared compile gate's
+/// `-std=c++17`: an algorithm's `bytes` parameter lowers to `std::span`, which
+/// is why C++ had no compile gate here at all before this.
+fn run_cobs_vectors_cpp(dir: &std::path::Path, test_id: &str) -> Result<(), String> {
+    if !toolchain_present("g++") {
+        return require_all_or_warn(test_id, "g++");
+    }
+    let proj_dir = cobs_proj_dir("cpp", test_id)?;
+    let all_files = generate_files_for_codec_set(
+        dir,
+        &["algorithm_cobs_encode.scxml"],
+        sce_build::generator::Language::Cpp,
+    )?;
+    write_flat_emit(&proj_dir, &all_files, "h").map_err(|e| format!("{test_id}: {e}"))?;
+
+    let cases = cobs_cases(|_, input, want| format!("        {{ {{{input}}}, {{{want}}} }},"));
+    let driver = format!(
+        "// Driver for {test_id}: the emitted COBS encoder against the §4.12\n\
+         // reference vectors. Exits non-zero on the first mismatch.\n\
+         #include \"algorithm_cobs_encode.h\"\n\
+         #include <cstdint>\n\
+         #include <cstdio>\n\
+         #include <vector>\n\
+         \n\
+         int main() {{\n\
+         \x20   struct Case {{ std::vector<std::uint8_t> in; std::vector<std::uint8_t> want; }};\n\
+         \x20   const std::vector<Case> cases = {{\n\
+         {cases}\n\
+         \x20   }};\n\
+         \x20   for (std::size_t i = 0; i < cases.size(); ++i) {{\n\
+         \x20       const auto got = SCE::Generated::AlgorithmCobsEncode::algorithm_cobs_encode(cases[i].in);\n\
+         \x20       if (got != cases[i].want) {{\n\
+         \x20           std::printf(\"vector %zu: COBS output mismatch\\n\", i);\n\
+         \x20           return 1;\n\
+         \x20       }}\n\
+         \x20   }}\n\
+         \x20   return 0;\n\
+         }}\n"
+    );
+    std::fs::write(proj_dir.join("driver.cpp"), driver)
+        .map_err(|e| format!("write driver.cpp: {e}"))?;
+
+    let runtime_include = backend_runtime_dir("backends/cpp/forge-runtime")?.join("include");
+    let exe = proj_dir.join("driver");
+    let mut build = std::process::Command::new("g++");
+    build
+        .arg("-std=c++20")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg(format!("-I{}", runtime_include.display()))
+        .arg(format!("-I{}", proj_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .arg("driver.cpp");
+    run_cobs_driver(build, &proj_dir, test_id, "g++-build")?;
+    run_cobs_driver(
+        std::process::Command::new(&exe),
+        &proj_dir,
+        test_id,
+        "cpp-run",
+    )?;
+
+    let _ = std::fs::remove_dir_all(&proj_dir);
+    Ok(())
+}
+
+/// C11 COBS run gate. Also the only place the overflow path is observed: the
+/// last case feeds more than the 32-byte `returns-max-size` and asserts the
+/// result struct comes back with `ok == false`, which is the C11 half of
+/// §4.12's "overflow is fallible, never silent truncation".
+fn run_cobs_vectors_c11(dir: &std::path::Path, test_id: &str) -> Result<(), String> {
+    if !toolchain_present("gcc") {
+        return require_all_or_warn(test_id, "gcc");
+    }
+    let proj_dir = cobs_proj_dir("c11", test_id)?;
+    let all_files = generate_files_for_codec_set(
+        dir,
+        &["algorithm_cobs_encode.scxml"],
+        sce_build::generator::Language::C11,
+    )?;
+    write_flat_emit(&proj_dir, &all_files, "h").map_err(|e| format!("{test_id}: {e}"))?;
+
+    // C forbids an empty initializer list, so every literal carries a trailing
+    // sentinel byte that `sizeof - 1` removes again — which also makes the
+    // zero-length input vector a valid declaration instead of `{ , 0 }`.
+    let pad_literal = |bytes: &str| {
+        if bytes.is_empty() {
+            "0".to_string()
+        } else {
+            format!("{bytes}, 0")
+        }
+    };
+    let cases = cobs_cases(|i, input, want| {
+        let (input, want) = (pad_literal(input), pad_literal(want));
+        format!(
+            "    {{ static const uint8_t in{i}[] = {{ {input} }};\n\
+             \x20     static const uint8_t want{i}[] = {{ {want} }};\n\
+             \x20     if (!check({i}, in{i}, sizeof(in{i}) - 1u, want{i}, sizeof(want{i}) - 1u)) return 1; }}"
+        )
+    });
+    let driver = format!(
+        "/* Driver for {test_id}: the emitted COBS encoder against the §4.12\n\
+         \x20* reference vectors, plus the overflow contract. Exits non-zero on\n\
+         \x20* the first mismatch. The trailing 0 in each literal keeps a\n\
+         \x20* zero-length vector a valid array declaration; `sizeof - 1`\n\
+         \x20* removes it again. */\n\
+         #include \"algorithm_cobs_encode.h\"\n\
+         #include <stdio.h>\n\
+         #include <string.h>\n\
+         \n\
+         static bool check(int idx, const uint8_t *in, size_t in_len,\n\
+         \x20                 const uint8_t *want, size_t want_len) {{\n\
+         \x20   sce_forge_bytes_view_t view = {{ .data = in, .len = in_len }};\n\
+         \x20   algorithm_cobs_encode_result_t got = algorithm_cobs_encode(view);\n\
+         \x20   if (!got.ok) {{ printf(\"vector %d: ok flag false\\n\", idx); return false; }}\n\
+         \x20   if (got.len != want_len || memcmp(got.bytes, want, want_len) != 0) {{\n\
+         \x20       printf(\"vector %d: COBS output mismatch\\n\", idx);\n\
+         \x20       return false;\n\
+         \x20   }}\n\
+         \x20   return true;\n\
+         }}\n\
+         \n\
+         int main(void) {{\n\
+         {cases}\n\
+         \x20   /* §4.12: past `returns-max-size` the result reports failure\n\
+         \x20    * rather than truncating silently. 40 non-zero bytes encode to\n\
+         \x20    * 41, which the 32-byte buffer cannot hold. */\n\
+         \x20   {{ static uint8_t big[40];\n\
+         \x20     for (size_t i = 0; i < sizeof(big); ++i) big[i] = (uint8_t)(i + 1);\n\
+         \x20     sce_forge_bytes_view_t view = {{ .data = big, .len = sizeof(big) }};\n\
+         \x20     algorithm_cobs_encode_result_t got = algorithm_cobs_encode(view);\n\
+         \x20     if (got.ok) {{ printf(\"overflow: ok flag stayed true\\n\"); return 1; }}\n\
+         \x20     if (got.len > 32u) {{ printf(\"overflow: wrote past the cap\\n\"); return 1; }} }}\n\
+         \x20   return 0;\n\
+         }}\n"
+    );
+    std::fs::write(proj_dir.join("driver.c"), driver)
+        .map_err(|e| format!("write driver.c: {e}"))?;
+
+    let runtime_include = backend_runtime_dir("backends/c/forge-runtime")?.join("include");
+    let exe = proj_dir.join("driver");
+    let mut build = std::process::Command::new("gcc");
+    build
+        .arg("-std=c11")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg(format!("-I{}", runtime_include.display()))
+        .arg(format!("-I{}", proj_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .arg("driver.c");
+    run_cobs_driver(build, &proj_dir, test_id, "gcc-build")?;
+    run_cobs_driver(
+        std::process::Command::new(&exe),
+        &proj_dir,
+        test_id,
+        "c11-run",
+    )?;
+
+    let _ = std::fs::remove_dir_all(&proj_dir);
+    Ok(())
+}
+
+/// Go COBS run gate. The emit is one package per directory (matching
+/// `compile_codec_set_go`), with the driver as `package main` at the module
+/// root importing it under the golden module prefix.
+fn run_cobs_vectors_go(dir: &std::path::Path, test_id: &str) -> Result<(), String> {
+    if !toolchain_present("go") {
+        return require_all_or_warn(test_id, "go");
+    }
+    let proj_dir = cobs_proj_dir("go", test_id)?;
+    let all_files = generate_files_for_codec_set(
+        dir,
+        &["algorithm_cobs_encode.scxml"],
+        sce_build::generator::Language::Go,
+    )?;
+    let pkg_dir = proj_dir.join("algorithm_cobs_encode");
+    std::fs::create_dir_all(&pkg_dir).map_err(|e| format!("mkdir pkg: {e}"))?;
+    write_flat_emit(&pkg_dir, &all_files, "go").map_err(|e| format!("{test_id}: {e}"))?;
+
+    let runtime_path = backend_runtime_dir("backends/go/forge-runtime")?;
+    let go_mod = format!(
+        "module {GOLDEN_GO_MODULE_PREFIX}\n\
+         \n\
+         go 1.22\n\
+         \n\
+         require github.com/newmassrael/sce-forge-runtime v0.0.0\n\
+         \n\
+         replace github.com/newmassrael/sce-forge-runtime => {}\n",
+        runtime_path.display(),
+    );
+    std::fs::write(proj_dir.join("go.mod"), go_mod).map_err(|e| format!("write go.mod: {e}"))?;
+
+    let cases =
+        cobs_cases(|_, input, want| format!("\t\t{{[]byte{{{input}}}, []byte{{{want}}}}},"));
+    let driver = format!(
+        "// Driver for {test_id}: the emitted COBS encoder against the §4.12\n\
+         // reference vectors. Exits non-zero on the first mismatch.\n\
+         package main\n\
+         \n\
+         import (\n\
+         \t\"bytes\"\n\
+         \t\"fmt\"\n\
+         \t\"os\"\n\
+         \n\
+         \tcobs \"{GOLDEN_GO_MODULE_PREFIX}/algorithm_cobs_encode\"\n\
+         )\n\
+         \n\
+         func main() {{\n\
+         \tcases := []struct{{ in, want []byte }}{{\n\
+         {cases}\n\
+         \t}}\n\
+         \tfor i, c := range cases {{\n\
+         \t\tif got := cobs.AlgorithmCobsEncode(c.in); !bytes.Equal(got, c.want) {{\n\
+         \t\t\tfmt.Printf(\"vector %d: COBS output mismatch (got %x want %x)\\n\", i, got, c.want)\n\
+         \t\t\tos.Exit(1)\n\
+         \t\t}}\n\
+         \t}}\n\
+         }}\n"
+    );
+    std::fs::write(proj_dir.join("main.go"), driver).map_err(|e| format!("write main.go: {e}"))?;
+
+    let mut run = std::process::Command::new("go");
+    run.arg("run").arg(".");
+    run_cobs_driver(run, &proj_dir, test_id, "go-run")?;
+
+    let _ = std::fs::remove_dir_all(&proj_dir);
+    Ok(())
+}
+
+/// Python COBS run gate.
+fn run_cobs_vectors_python(dir: &std::path::Path, test_id: &str) -> Result<(), String> {
+    if !toolchain_present("python3") {
+        return require_all_or_warn(test_id, "python3");
+    }
+    let proj_dir = cobs_proj_dir("py", test_id)?;
+    let all_files = generate_files_for_codec_set(
+        dir,
+        &["algorithm_cobs_encode.scxml"],
+        sce_build::generator::Language::Python,
+    )?;
+    write_flat_emit(&proj_dir, &all_files, "py").map_err(|e| format!("{test_id}: {e}"))?;
+
+    let cases = cobs_cases(|_, input, want| format!("    (bytes([{input}]), bytes([{want}])),"));
+    let driver = format!(
+        "# Driver for {test_id}: the emitted COBS encoder against the §4.12\n\
+         # reference vectors. Exits non-zero on the first mismatch.\n\
+         import sys\n\
+         \n\
+         from algorithm_cobs_encode import algorithm_cobs_encode\n\
+         \n\
+         CASES = [\n\
+         {cases}\n\
+         ]\n\
+         \n\
+         for i, (data, want) in enumerate(CASES):\n\
+         \x20   got = algorithm_cobs_encode(data)\n\
+         \x20   if got != want:\n\
+         \x20       print(f\"vector {{i}}: COBS output mismatch (got {{got.hex()}} want {{want.hex()}})\")\n\
+         \x20       sys.exit(1)\n"
+    );
+    std::fs::write(proj_dir.join("driver.py"), driver)
+        .map_err(|e| format!("write driver.py: {e}"))?;
+
+    let runtime_path = backend_runtime_dir("backends/python/forge-runtime")?;
+    let mut run = std::process::Command::new("python3");
+    run.arg("-W")
+        .arg("error")
+        .arg("driver.py")
+        .env("PYTHONPATH", &runtime_path);
+    run_cobs_driver(run, &proj_dir, test_id, "python-run")?;
+
+    let _ = std::fs::remove_dir_all(&proj_dir);
+    Ok(())
+}
+
+/// Kotlin COBS run gate. Needs the in-tree forge-runtime jar on the classpath
+/// both to compile (the emit imports `SceByteBuf`) and to run.
+fn run_cobs_vectors_kotlin(dir: &std::path::Path, test_id: &str) -> Result<(), String> {
+    if !toolchain_present("kotlinc") {
+        return require_all_or_warn(test_id, "kotlinc");
+    }
+    if !toolchain_present("java") {
+        return require_all_or_warn(test_id, "java");
+    }
+    let Some(jar_path) = kotlin_forge_runtime_jar()? else {
+        return require_all_or_warn(test_id, KOTLIN_JAR_HINT);
+    };
+    let proj_dir = cobs_proj_dir("kt", test_id)?;
+    let all_files = generate_files_for_codec_set(
+        dir,
+        &["algorithm_cobs_encode.scxml"],
+        sce_build::generator::Language::Kotlin,
+    )?;
+    write_flat_emit(&proj_dir, &all_files, "kt").map_err(|e| format!("{test_id}: {e}"))?;
+
+    let cases = cobs_cases(|_, input, want| {
+        format!("        Pair(byteArrayOf({input}), byteArrayOf({want})),")
+    });
+    let driver = format!(
+        "// Driver for {test_id}: the emitted COBS encoder against the §4.12\n\
+         // reference vectors. Exits non-zero on the first mismatch.\n\
+         import com.sce.generated.algorithm_cobs_encode.algorithmCobsEncode\n\
+         \n\
+         fun main() {{\n\
+         \x20   val cases = listOf(\n\
+         {cases}\n\
+         \x20   )\n\
+         \x20   for ((i, case) in cases.withIndex()) {{\n\
+         \x20       val got = algorithmCobsEncode(case.first)\n\
+         \x20       if (!got.contentEquals(case.second)) {{\n\
+         \x20           println(\"vector $i: COBS output mismatch\")\n\
+         \x20           kotlin.system.exitProcess(1)\n\
+         \x20       }}\n\
+         \x20   }}\n\
+         }}\n"
+    );
+    std::fs::write(proj_dir.join("Driver.kt"), driver)
+        .map_err(|e| format!("write Driver.kt: {e}"))?;
+
+    // `-include-runtime` bundles the Kotlin stdlib into the jar. Compiling to
+    // a class directory instead leaves `kotlin.Pair` unresolvable at run time,
+    // and the alternative — locating `kotlin-stdlib.jar` ourselves — means
+    // guessing at an install layout that differs between SDKMAN, the distro
+    // package and the runner image. The forge runtime jar is a separate
+    // classpath entry because `-include-runtime` bundles only the stdlib.
+    let app_jar = proj_dir.join("driver.jar");
+    let mut build = std::process::Command::new("kotlinc");
+    build
+        .arg("-Werror")
+        .arg("-cp")
+        .arg(&jar_path)
+        .arg("-include-runtime")
+        .arg("-d")
+        .arg(&app_jar)
+        .arg("AlgorithmCobsEncode.kt")
+        .arg("Driver.kt");
+    run_cobs_driver(build, &proj_dir, test_id, "kotlinc-build")?;
+
+    let classpath = format!("{}:{}", app_jar.display(), jar_path.display());
+    let mut run = std::process::Command::new("java");
+    run.arg("-cp").arg(&classpath).arg("DriverKt");
+    run_cobs_driver(run, &proj_dir, test_id, "kotlin-run")?;
+
     let _ = std::fs::remove_dir_all(&proj_dir);
     Ok(())
 }
