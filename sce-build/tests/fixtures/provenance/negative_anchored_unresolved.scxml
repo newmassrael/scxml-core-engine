@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+  NL→IR Mapping Roadmap Item 7 — the diagnostic wire's
+  `spec_provenance` producer, end to end.
+
+  `s0` carries an unresolved placeholder AND two spec anchors, so a
+  strict-unresolved build refuses it and the refusal can say which
+  documents govern the node it is refusing. That pairing is the whole
+  point: an unresolved placeholder is a question, and the anchors are
+  where its answer lives.
+
+  Under a default build this document is clean — the marker is carried
+  silently and `check` emits nothing. It is the strict flag that turns
+  it into a rejection, so this fixture costs the corpus sweep nothing
+  and only speaks when asked.
+
+  (The strict flag is spelled without its leading dashes above: an XML
+  comment may not contain a double hyphen.)
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="provenance_anchored" initial="s0">
+  <state id="s0" sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112"
+         sce:unresolved="tbd_threshold"
+         sce:unresolved-reason="waiting on calibration data">
+    <sce:provenance doc-id="ISO-14229-1" section="11.2.1"/>
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
