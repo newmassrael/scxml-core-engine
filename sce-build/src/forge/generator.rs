@@ -20525,6 +20525,17 @@ fn lower_algorithm_stmt(
             // declares its native growable byte container (Rust no-alloc
             // `SceBytes<N>`, C/C++/Kotlin/Go/Python stdlib growable, C11 the
             // by-value result struct). Scalars keep the existing init path.
+            //
+            // `capacity` is the author's declared upper bound, so every backend
+            // that can consume it does: the bounded ones (Rust, C11) as the
+            // container's fixed size, the growable ones (C++, Go, Kotlin) as the
+            // initial allocation. Dropping it on the growable backends left the
+            // buffer reallocating its way up from empty on every call while the
+            // exact final size was known at build time; the codec kind already
+            // pre-sizes for this reason (`codec.h.jinja2` reserves
+            // `MAX_ENCODED_BYTES`). Pre-sizing is an allocation hint only — a
+            // growable backend still grows past `capacity` rather than failing,
+            // which is the §4.12 backend table's documented behaviour.
             if matches!(sce_type, SceType::Bytes) {
                 let local = l.local_id(name);
                 let cap = capacity.ok_or_else(|| {
@@ -20545,7 +20556,10 @@ fn lower_algorithm_stmt(
                         format!("{pad}let {rust_mut}{local}: SceBytes<{cap}> = SceBytes::new();\n")
                     }
                     Language::Cpp => {
-                        format!("{pad}std::vector<std::uint8_t> {local};\n")
+                        format!(
+                            "{pad}std::vector<std::uint8_t> {local};\n\
+                             {pad}{local}.reserve({cap});\n"
+                        )
                     }
                     Language::C11 => {
                         let result_ty = c11_result_type.ok_or_else(|| {
@@ -20557,10 +20571,12 @@ fn lower_algorithm_stmt(
                         })?;
                         format!("{pad}{result_ty} {local} = {{ .len = 0u, .ok = true }};\n")
                     }
-                    Language::Go => format!("{pad}{local} := []byte{{}}\n"),
+                    Language::Go => format!("{pad}{local} := make([]byte, 0, {cap})\n"),
+                    // `bytearray` exposes no pre-size API; the capacity reaches
+                    // the Python backend through the return's `returns-max-size`.
                     Language::Python => format!("{pad}{local} = bytearray()\n"),
                     Language::Kotlin => {
-                        format!("{pad}val {local} = mutableListOf<Byte>()\n")
+                        format!("{pad}val {local} = ArrayList<Byte>({cap})\n")
                     }
                 };
                 out.push_str(&line);

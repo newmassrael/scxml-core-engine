@@ -12,7 +12,7 @@ package algorithm_cobs_encode
 
 func AlgorithmCobsEncode(data []byte) []byte {
     var n uint16 = uint16(len(data))
-    out := []byte{}
+    out := make([]byte, 0, 32)
     var p uint16 = 0
     var done bool = false
     for done == false {
