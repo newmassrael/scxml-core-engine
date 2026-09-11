@@ -16,7 +16,7 @@ package com.sce.generated.algorithm_cobs_encode
 
 fun algorithmCobsEncode(data: ByteArray): ByteArray {
     var n: UShort = (data).size.toUShort()
-    val out = mutableListOf<Byte>()
+    val out = ArrayList<Byte>(32)
     var p: UShort = 0.toUShort()
     var done: Boolean = false
     while (done == false) {

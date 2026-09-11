@@ -21,6 +21,7 @@ namespace SCE::Generated::AlgorithmCobsEncode {
 inline std::vector<std::uint8_t> algorithm_cobs_encode(std::span<const std::uint8_t> data) {
     uint16_t n = (data).size();
     std::vector<std::uint8_t> out;
+    out.reserve(32);
     uint16_t p = 0;
     bool done = false;
     while (done == false) {
