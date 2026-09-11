@@ -563,6 +563,19 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/duplicate-requirement-id")]
     ValidationDuplicateRequirementId,
 
+    // ── NL→IR Mapping Roadmap Item 7: sce:provenance spec anchor.
+    //    The anchor is what lets a consumer compare the `(doc_id,
+    //    rev)` pairs an IR claims to depend on against the revisions
+    //    actually in force, so both rejections defend that set: an
+    //    anchor naming no document would shrink it silently, and a
+    //    doc_id repeated on one node would double-count it and leave
+    //    the node with two answers to "which revision governs me".
+    //    ──────────────────────────────────────────────────────────
+    #[serde(rename = "validation/provenance-malformed")]
+    ValidationProvenanceMalformed,
+    #[serde(rename = "validation/provenance-duplicate")]
+    ValidationProvenanceDuplicate,
+
     // ── NL→IR Mapping Roadmap Item 5: sce:unresolved placeholder.
     //    Default builds carry the marker silently (the model + the
     //    `sce-codegen unresolved` NDJSON report expose it for IDE
@@ -2849,6 +2862,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationBytesMaxSizeViolation,
         // NL→IR Mapping Roadmap Item 1: sce:req traceability
         ValidationDuplicateRequirementId,
+        // NL→IR Mapping Roadmap Item 7: sce:provenance spec anchor
+        ValidationProvenanceMalformed,
+        ValidationProvenanceDuplicate,
         // NL→IR Mapping Roadmap Item 5: sce:unresolved placeholder
         ValidationUnresolvedPlaceholder,
         // NL→IR Mapping Roadmap Item 2: cross-kind typed binding
@@ -3918,13 +3934,18 @@ impl DiagnosticCode {
             | ScxmlAcceptSideRoleWithoutListenerLink
             | LinkRoleListenerWithNonSessionArmingTrustClass
             | ScxmlAcceptSideStatesWithoutRoleDeclaration
-            // NL→IR Mapping Roadmap Items 1 + 5 — sce:req and
-            // sce:unresolved are SCE-internal extensions
-            // (`nl_to_ir_mapping_roadmap.md` §"Item 1" / §"Item 5").
-            // No external spec defines the rejection rules, so
-            // spec_anchor stays None.
+            // NL→IR Mapping Roadmap Items 1 + 5 + 7 — sce:req,
+            // sce:unresolved and sce:provenance are SCE-internal
+            // extensions (`nl_to_ir_mapping_roadmap.md` §"Item 1" /
+            // §"Item 5" / §"Item 7"). No external spec defines the
+            // rejection rules, so spec_anchor stays None. Note the
+            // asymmetry this creates and does not contradict: a
+            // provenance anchor names an *external* document, but the
+            // rule that the anchor must name one is SCE's.
             | ValidationDuplicateRequirementId
             | ValidationUnresolvedPlaceholder
+            | ValidationProvenanceMalformed
+            | ValidationProvenanceDuplicate
             // NL→IR Mapping Roadmap Item 2 — cross-kind typed binding
             // diagnostics also originate from
             // `nl_to_ir_mapping_roadmap.md` (Item 2). No external spec
@@ -4048,6 +4069,8 @@ impl DiagnosticCode {
             ValidationRemovedAttribute => "validation/removed-attribute",
             ValidationBytesMaxSizeViolation => "validation/bytes-max-size-violation",
             ValidationDuplicateRequirementId => "validation/duplicate-requirement-id",
+            ValidationProvenanceMalformed => "validation/provenance-malformed",
+            ValidationProvenanceDuplicate => "validation/provenance-duplicate",
             ValidationUnresolvedPlaceholder => "validation/unresolved-placeholder",
             ValidationCrossKindFieldNotFound => "validation/cross-kind-field-not-found",
             ValidationCrossKindTypeMismatch => "validation/cross-kind-type-mismatch",
@@ -5061,6 +5084,30 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // `NeutralOrDeterministic` non-overlap class.
             fix: None,
             key_fragments: vec![element.clone(), id.clone()],
+        },
+        ValidationError::MalformedProvenance { element, value } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationProvenanceMalformed,
+            stage: Stage::Validation,
+            // The grammar is parser expectation, not a substitution
+            // candidate — SCE_ERROR_CONTRACT.md §3.2 puts that on
+            // `expected` with `fix` absent. There is no candidate set
+            // to offer: only the author knows which document this node
+            // came from.
+            expected: Some(vec!["doc_id[@rev][#section[:page]]".to_string()]),
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), value.clone()],
+        },
+        ValidationError::DuplicateProvenanceDocId { element, doc_id } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationProvenanceDuplicate,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(doc_id.clone()),
+            // As with the duplicate `sce:req` token: the repair is
+            // "drop the second anchor", deterministic and with no
+            // closed candidate set.
+            fix: None,
+            key_fragments: vec![element.clone(), doc_id.clone()],
         },
         ValidationError::UnresolvedPlaceholder {
             element,
@@ -8961,6 +9008,24 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:cb11c8b9b1171851","code":"validation/duplicate-requirement-id","stage":"validation","message":"<state id=\"armed\">: duplicate sce:req id 'REQ_001'","actual":"REQ_001"}"#,
+            ),
+            (
+                "forge/provenance-malformed",
+                ValidationError::MalformedProvenance {
+                    element: "<state id=\"armed\">".into(),
+                    value: "@23".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d8c52fb0068b9912","code":"validation/provenance-malformed","stage":"validation","message":"<state id=\"armed\">: sce:provenance '@23' names no source document","expected":["doc_id[@rev][#section[:page]]"],"actual":"@23"}"#,
+            ),
+            (
+                "forge/provenance-duplicate",
+                ValidationError::DuplicateProvenanceDocId {
+                    element: "<state id=\"armed\">".into(),
+                    doc_id: "OEM-DIAG-SPEC".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:cf87320d71763936","code":"validation/provenance-duplicate","stage":"validation","message":"<state id=\"armed\">: duplicate sce:provenance doc id 'OEM-DIAG-SPEC'","actual":"OEM-DIAG-SPEC"}"#,
             ),
             (
                 "forge/unresolved-placeholder",
@@ -13398,6 +13463,13 @@ mod tests {
             // a member reach, and which member is the document's meaning.
             | ExpressionNamespaceNotAValue
             | MeshExternalAmbiguousEventGroup
+            // NL→IR Mapping Roadmap Item 7 — `expected` is the compact
+            // URI production `doc_id[@rev][#section[:page]]`, which
+            // says what the position accepts and proposes nothing: the
+            // only value that would repair the record is the document
+            // this node actually came from, and SCE never reads spec
+            // documents (RFC §4.3), so it cannot offer a candidate.
+            | ValidationProvenanceMalformed
             | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
@@ -13957,6 +14029,10 @@ mod tests {
             // Deterministic repair (drop the second occurrence); no
             // closed candidate set, opaque token by design.
             | ValidationDuplicateRequirementId
+            // NL→IR Mapping Roadmap Item 7 — duplicate sce:provenance
+            // doc id. Same shape as the sce:req duplicate above:
+            // deterministic repair, no candidate set.
+            | ValidationProvenanceDuplicate
             // NL→IR Mapping Roadmap Item 5 — unresolved placeholder
             // under `--strict-unresolved`. Deterministic repair
             // (resolve the marker and replace the value); no closed
@@ -14282,6 +14358,8 @@ mod tests {
                 | ValidationRemovedAttribute
                 | ValidationBytesMaxSizeViolation
                 | ValidationDuplicateRequirementId
+                | ValidationProvenanceMalformed
+                | ValidationProvenanceDuplicate
                 | ValidationUnresolvedPlaceholder
                 | ValidationCrossKindFieldNotFound
                 | ValidationCrossKindTypeMismatch
@@ -14584,9 +14662,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            356,
+            358,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 356 distinct variants to match the DiagnosticCode \
+             expected 358 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

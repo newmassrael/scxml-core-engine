@@ -75,6 +75,8 @@
         "validation/removed-attribute",
         "validation/bytes-max-size-violation",
         "validation/duplicate-requirement-id",
+        "validation/provenance-malformed",
+        "validation/provenance-duplicate",
         "validation/unresolved-placeholder",
         "validation/cross-kind-field-not-found",
         "validation/cross-kind-type-mismatch",

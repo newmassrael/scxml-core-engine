@@ -533,6 +533,8 @@ references against a real document and drift silently.
 | `validation/native-action-placement` | `validation` | no |  |
 | `validation/native-action-signature-conflict` | `validation` | no |  |
 | `validation/numeric-parse` | `validation` | no |  |
+| `validation/provenance-duplicate` | `validation` | no |  |
+| `validation/provenance-malformed` | `validation` | no |  |
 | `validation/removed-attribute` | `validation` | `remove_fields` | SCE Mesh §13 |
 | `validation/require-either` | `validation` | `add_one_of` |  |
 | `validation/reserved-context-id` | `validation` | no |  |

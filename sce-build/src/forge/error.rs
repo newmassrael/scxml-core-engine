@@ -3270,6 +3270,46 @@ pub enum ValidationError {
         id: String,
     },
 
+    /// `sce:provenance` names no source document — the attribute form
+    /// carries a compact URI whose `doc_id` part is empty (`""`,
+    /// `"@23"`, `"#4.4.2"`), or the element form omits `doc-id` /
+    /// leaves it empty.
+    ///
+    /// Rejected rather than dropped because an anchor that resolves to
+    /// no document is indistinguishable downstream from a node that
+    /// was never annotated: the `(doc_id, rev)` set the requirement
+    /// report publishes is what a consumer compares against the
+    /// revisions actually in force, and a silently discarded entry
+    /// shrinks that set without saying so.
+    #[error("{element}: sce:provenance '{value}' names no source document")]
+    MalformedProvenance {
+        /// Author-facing element label, e.g. `<state id="armed">`.
+        element: String,
+        /// The offending text verbatim: the `sce:provenance` attribute
+        /// value on the attribute form, the `doc-id` attribute value
+        /// (empty when the attribute is absent) on the element form.
+        value: String,
+    },
+
+    /// The same `doc_id` is anchored twice on one node, via any
+    /// combination of the attribute and element forms.
+    ///
+    /// Same shape as [`ValidationError::DuplicateRequirementId`] and
+    /// for the same reason: the per-node anchor list is a `Vec`, so two
+    /// entries naming one document make the node's own answer to
+    /// "which revision of this document governs it" ambiguous, and a
+    /// consumer counting `(doc_id, rev)` pairs double-counts the
+    /// document. The author either drops the duplicate or splits the
+    /// annotation across the nodes it actually describes.
+    #[error("{element}: duplicate sce:provenance doc id '{doc_id}'")]
+    DuplicateProvenanceDocId {
+        /// Author-facing element label, e.g. `<state id="armed">`.
+        element: String,
+        /// The repeated document id verbatim — opaque, no shape
+        /// constraint enforced (SCE never reads the document).
+        doc_id: String,
+    },
+
     /// `sce:unresolved` placeholder found while `--strict-unresolved`
     /// is in effect. The marker is a
     /// deliberate "revisit later" signal; strict mode lifts it from
