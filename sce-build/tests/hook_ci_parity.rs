@@ -472,6 +472,22 @@ const CI_ONLY: &[(&str, &str)] = &[
          tree being pushed. Startup cost is the secondary objection; the \
          side effect is the disqualifying one.",
     ),
+    (
+        "gradlew :sce-forge-runtime-kotlin:jvmJar",
+        "provisions the runner rather than verifying the tree: it builds the \
+         jar every Kotlin forge gate puts on `kotlinc -cp`, and a runner \
+         starts without one. Unlike the `jvmTest` task above it leaves the \
+         tree clean (measured — its output is the gitignored `build/libs`), \
+         so the objection is not a side effect but that a jar is an input, \
+         and a cold Gradle distribution download is unbounded network work a \
+         push-time hook must not do. A workstation that has built the Kotlin \
+         lane once already carries it. The residue, stated rather than \
+         hidden: on a tree that does NOT, the Kotlin gates skip-with-warn at \
+         push time, because the hook does not set `SCE_REQUIRE_TOOLS` — the \
+         documented local-developer policy, with CI as the judge. CI is \
+         where the jar is built and where the skip is a failure; that gap is \
+         exactly what let seven Kotlin gates never run in this lane.",
+    ),
     // `gradlew :sce-kotlin-tests:test` used to sit here for the same
     // reason as the forge-runtime task above. The reason was mechanical,
     // not structural: the task invoked the generator without

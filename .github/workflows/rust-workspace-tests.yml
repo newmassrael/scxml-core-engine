@@ -230,6 +230,32 @@ jobs:
     - name: Install the rev-pinned mnemosyne-cli
       run: scripts/install_mnemosyne_cli.sh
 
+    # Every Kotlin forge gate puts this jar on `kotlinc -cp` and degrades to
+    # skip-with-warn when it is absent, and this job built it nowhere: SEVEN
+    # Kotlin compile gates had never run here. That is the condition
+    # `SCE_REQUIRE_TOOLS` below exists to make impossible, and it did not,
+    # because the variable did not reach `require_all_or_warn` until
+    # 2026-09-11 — the jar was missing and the suite said nothing, which is
+    # the same shape as the `mnemosyne-cli` and `clang` steps above. It is
+    # supplied here for the same reason those are: a prerequisite this lane
+    # provides rather than hopes the image carries.
+    #
+    # `./gradlew` fetches its own distribution, so the runner needs a JDK and
+    # nothing more.
+    - name: Cache Gradle
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-workspace-tests-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-workspace-tests-
+          ${{ runner.os }}-gradle-
+
+    - name: Build the Kotlin forge-runtime jar
+      run: ./gradlew :sce-forge-runtime-kotlin:jvmJar --console=plain
+
     # Delegates to the gate runner rather than restating the command, so
     # the suite has one spelling for both callers. The gate also starts the
     # W3C BasicHTTP fixture server on :8080 that test_201 and the 5xx series
