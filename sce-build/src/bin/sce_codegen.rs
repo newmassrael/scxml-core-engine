@@ -1743,8 +1743,9 @@ enum Commands {
     },
     /// Emit `sce:req` requirement-coverage NDJSON for a single SCXML
     /// file. One JSON record per IR
-    /// node carrying a non-empty `sce:req` attribute; empty output
-    /// when the document has no `sce:req` annotations.
+    /// node carrying a non-empty `sce:req` or `sce:provenance`
+    /// annotation, the latter on `spec_provenance` and omitted when
+    /// absent; empty output when the document has neither.
     Requirements {
         /// SCXML file path
         scxml: String,
@@ -7174,7 +7175,7 @@ fn cmd_manifest(dir: &str) {
 
 // ── Subcommand: requirements ──────────────────────────────────
 //
-// Emit per-IR-node `sce:req`
+// Emit per-IR-node `sce:req` + `sce:provenance`
 // NDJSON. Routes through the same parser SCE uses for codegen so
 // the report sees exactly the same node walk the build does —
 // drift between "what compiles" and "what the report claims is
