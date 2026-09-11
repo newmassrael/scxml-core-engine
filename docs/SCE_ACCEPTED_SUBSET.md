@@ -1158,7 +1158,9 @@ parse time with `validation/duplicate-requirement-id`. Block
 annotations on `<onentry>` / `<onexit>` inherit onto every
 action inside the block, appended after any per-action ids.
 `sce-codegen requirements <file>` emits one NDJSON record per
-annotated node for downstream req-coverage tooling.
+annotated node for downstream req-coverage tooling — annotated
+by `sce:req` or by `sce:provenance`, since the two are
+orthogonal and either alone is worth reporting.
 
 **`sce:provenance`** — spec-document anchors.
 
@@ -1196,6 +1198,12 @@ annotated. The same `doc_id` twice on one node, in any
 combination of the two forms, fails with
 `validation/provenance-duplicate` — the node would otherwise
 carry two answers to which revision governs it.
+
+`sce-codegen requirements <file>` carries the anchors on each
+record's `spec_provenance`, verbatim and in document order, and
+omits the field on a node that has none. SCE reports what the IR
+claims to depend on; comparing that set against the revisions
+actually in force belongs to whoever owns the document set.
 
 **`sce:unresolved`** — explicit "revisit later" markers.
 
