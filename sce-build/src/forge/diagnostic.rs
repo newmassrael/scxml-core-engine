@@ -8116,7 +8116,13 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             // identifies the one a run can produce.
             key_fragments: Vec::new(),
         },
-        GenerateError::UnsupportedFeature(detail) => DiagnosticPayload {
+        // `at` is deliberately absent from the payload: it is a
+        // POSITION, and a position reaches the wire through
+        // `Located`'s `location` field, never through a key fragment.
+        // Hashing it into `id` would make the same refusal on the same
+        // document hash differently after an unrelated edit moved the
+        // element a row.
+        GenerateError::UnsupportedFeature { detail, .. } => DiagnosticPayload {
             code: DiagnosticCode::GenerateUnsupportedFeature,
             stage: Stage::Generate,
             expected: None,
@@ -10382,8 +10388,8 @@ mod tests {
             ),
             (
                 "forge/generate-unsupported-feature",
-                GenerateError::UnsupportedFeature(
-                    "<invoke type=\"sce:mesh-rpc\"> in 'brake' has no Rust codegen path".into(),
+                GenerateError::unsupported(
+                    "<invoke type=\"sce:mesh-rpc\"> in 'brake' has no Rust codegen path",
                 )
                 .into(),
                 r#"{"v":1,"id":"fnv1a:6d877591cf4360d3","code":"generate/unsupported-feature","stage":"generate","message":"feature unsupported in this language: <invoke type=\"sce:mesh-rpc\"> in 'brake' has no Rust codegen path"}"#,
@@ -14764,9 +14770,9 @@ mod tests {
 
     /// Why a registered code cannot carry an anchor.
     ///
-    /// Grouped rather than one string per code. 337 of 358 codes are
-    /// registered today and 335 of those are registered for one
-    /// reason; writing that reason 335 times would make the roster
+    /// Grouped rather than one string per code. 336 of 358 codes are
+    /// registered today and 334 of those are registered for one
+    /// reason; writing that reason 334 times would make the roster
     /// look informative while saying one thing, and would bury the two
     /// entries that are registered for a different and permanent
     /// reason.
@@ -14794,10 +14800,11 @@ mod tests {
             match self {
                 NoAnchor::AwaitingResolver => {
                     "this code has not been demonstrated carrying the \
-                     enclosing anchor. Four resolution points exist as of \
-                     Atomic 5 — the boundaries \
-                     `analyzer::can_generate_static`, `lint_statechart` \
-                     and `validate_no_std_compatibility`, plus \
+                     enclosing anchor. Five resolution points exist as of \
+                     Atomic 7 — the boundaries \
+                     `analyzer::can_generate_static`, `lint_statechart`, \
+                     `validate_no_std_compatibility` and \
+                     `locate_codegen_error`, plus \
                      `ecmascript_acceptance::refusals`, which resolves \
                      inside the producer because its records never become \
                      a `Located` for a boundary to act on \
@@ -15004,6 +15011,19 @@ mod tests {
             | ExpressionNamespaceNotAValue
             | ExpressionUnexpectedToken => Carries,
 
+            // Generation — Item 8 Atomic 7, the last stage that holds
+            // the model and the fourth resolution point.
+            //
+            // The refusals that inspect the MODEL run before any
+            // template is loaded, so they know the element they are
+            // about; `GenerateError::unsupported_at` is how they say
+            // so, and `locate_codegen_error` is the one place all six
+            // backends return through. The rest of `GenerateError` —
+            // template load and render — is raised by minijinja after
+            // the DOM is gone and keeps the empty field, which is why
+            // the position is an `Option` rather than a promise.
+            GenerateUnsupportedFeature => Carries,
+
             // ── Registered — the anchor is the subject ───────────
             ValidationProvenanceMalformed | ValidationProvenanceDuplicate => {
                 Registered(NoAnchor::TheAnchorIsTheSubject)
@@ -15106,7 +15126,6 @@ mod tests {
             | GenerateInvalidConfig
             | GenerateTemplateLoad
             | GenerateTemplateRender
-            | GenerateUnsupportedFeature
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | AlgorithmConstNotFoldable
@@ -15780,6 +15799,30 @@ mod tests {
             expression_scenario("expression/namespace-not-callable", r#"Math()"#),
             expression_scenario("expression/namespace-not-a-value", r#"Math"#),
             expression_scenario("expression/unexpected-token", r#"1 +"#),
+            // Generation — Item 8 Atomic 7. A `cpp:` guard is a legal
+            // document that the Rust backend cannot lower, so it is
+            // refused where the target is chosen rather than where the
+            // document is read. The anchor is on the enclosing
+            // `<state>`; the refusal is about the `<transition>`.
+            (
+                "generate/unsupported-feature",
+                // `<sce:context>` is required, not decoration: a `cpp:`
+                // guard names an object the document must declare, and
+                // without it the run stops at
+                // `validation/missing-context` long before any backend
+                // is chosen — measured, after the first version of this
+                // fixture did exactly that.
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0">
+                     <sce:context id="hw" type="Hardware"/>
+                     <state id="s0"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <transition event="go" cond="cpp:hw.ready()"
+                                   target="s0"/>
+                     </state>
+                   </scxml>"#,
+            ),
         ]
     }
 
@@ -15917,6 +15960,25 @@ mod tests {
         // reproduction of one CLI invocation, and the four stages above
         // return before it on any document that rejects earlier.
         if let Err(e) = crate::validate_no_std_compatibility(&model, std::path::Path::new(label)) {
+            return e.to_diagnostics();
+        }
+        // Generation — Item 8 Atomic 7, and the last stage that holds
+        // the model. Driven through `compile_from_string_typed` rather
+        // than by calling `generator::generate_*` directly, because the
+        // resolver boundary for this stage is `locate_codegen_error`,
+        // which lives on the library entry point and not inside the
+        // backend. Calling the backend would return a bare
+        // `GenerateError` and demonstrate nothing about the anchor.
+        //
+        // Real templates, not an empty slice: with the real ones a
+        // document that no backend refuses actually generates and
+        // returns `Ok`, so this stage stays silent for every scenario
+        // that is not about it. An empty slice would have made every
+        // clean document fail template loading instead, which is a
+        // fixture failing in a way that looks like a finding.
+        let templates =
+            crate::template_registry::embedded_templates_for(crate::generator::Language::Rust);
+        if let Err(e) = crate::compile_from_string_typed(scxml, label, &templates) {
             return e.to_diagnostics();
         }
         Vec::new()

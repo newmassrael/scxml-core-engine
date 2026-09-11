@@ -5582,7 +5582,7 @@ fn resolve_variant_arm_body_type(
     let imp = imports.iter().find(|i| i.alias == body_alias).ok_or_else(|| {
         let available: Vec<&str> =
             imports.iter().map(|i| i.alias.as_str()).collect();
-        ForgeError::from(crate::forge::error::GenerateError::UnsupportedFeature(
+        ForgeError::from(crate::forge::error::GenerateError::unsupported(
             format!(
                 "codec '{codec_name}': <sce:variant> arm references unknown import alias '{body_alias}' \
                  (available aliases: [{}]) — add `<sce:import src=\"{body_alias}.scxml\" kind=\"codec\" as=\"{body_alias}\"/>`",
@@ -5592,7 +5592,7 @@ fn resolve_variant_arm_body_type(
     })?;
     if imp.kind != "codec" {
         return Err(ForgeError::from(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+            crate::forge::error::GenerateError::unsupported(format!(
                 "codec '{codec_name}': <sce:variant> arm '{body_alias}' resolves to import kind '{}', \
                  but variant arms require kind=\"codec\" (RFC §5.B variant primitive)",
                 imp.kind
@@ -6422,18 +6422,16 @@ fn resolve_repeat_body_type(
         .find(|i| i.alias == body_alias)
         .ok_or_else(|| {
             let available: Vec<&str> = imports.iter().map(|i| i.alias.as_str()).collect();
-            ForgeError::from(crate::forge::error::GenerateError::UnsupportedFeature(
-                format!(
-                    "codec '{codec_name}': <sce:repeat> body references unknown import alias \
+            ForgeError::from(crate::forge::error::GenerateError::unsupported(format!(
+                "codec '{codec_name}': <sce:repeat> body references unknown import alias \
                  '{body_alias}' (available aliases: [{}]) — add `<sce:import \
                  src=\"{body_alias}.scxml\" kind=\"codec\" as=\"{body_alias}\"/>`",
-                    available.join(", ")
-                ),
-            ))
+                available.join(", ")
+            )))
         })?;
     if imp.kind != "codec" {
         return Err(ForgeError::from(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+            crate::forge::error::GenerateError::unsupported(format!(
                 "codec '{codec_name}': <sce:repeat> body '{body_alias}' resolves to import kind \
                  '{}', but repeat bodies require kind=\"codec\" (RFC §5.B B2)",
                 imp.kind
@@ -21942,7 +21940,7 @@ fn render_externs_sidecar(
     }
 
     let emits = build_extern_emit_list(extern_decls)
-        .map_err(|e| ForgeError::from(GenerateError::UnsupportedFeature(e.to_string())))?;
+        .map_err(|e| ForgeError::from(GenerateError::unsupported(e.to_string())))?;
 
     let parent_snake = filters::to_snake_case(parent_module.to_string());
     let (template_name, filename, guard) = match lang {
@@ -22001,7 +21999,7 @@ fn render_algorithm_test_vector_sidecar(
     // here so the emitter can lower the hex bytes unambiguously.
     if m.signature.params.len() != 1 || !matches!(m.signature.params[0].sce_type, SceType::Bytes) {
         return Err(ForgeError::from(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+            crate::forge::error::GenerateError::unsupported(format!(
                 "algorithm '{name}': <sce:test-vector> v1 only supports algorithms with a single \
                  `bytes` parameter; the canonical RFC §5.B example is `(data: bytes) -> scalar`. \
                  Multi-arg / non-bytes signatures defer to B5 alongside the Zenoh msg-set authoring.",
@@ -22011,12 +22009,10 @@ fn render_algorithm_test_vector_sidecar(
     }
 
     let return_type = m.signature.return_type.as_ref().ok_or_else(|| {
-        ForgeError::from(crate::forge::error::GenerateError::UnsupportedFeature(
-            format!(
-                "algorithm '{name}': <sce:test-vector> requires a non-void return type",
-                name = m.name,
-            ),
-        ))
+        ForgeError::from(crate::forge::error::GenerateError::unsupported(format!(
+            "algorithm '{name}': <sce:test-vector> requires a non-void return type",
+            name = m.name,
+        )))
     })?;
     let l = LangCtx::new(lang);
     let return_type_native = l.type_name(return_type).to_string();
@@ -22114,7 +22110,7 @@ fn render_algorithm_test_vector_sidecar(
                     SceType::Uint64 => "u64",
                     other => {
                         return Err(ForgeError::from(
-                            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                            crate::forge::error::GenerateError::unsupported(format!(
                                 "algorithm '{name}': <sce:test-vector> value is unsigned but \
                                  return type '{other:?}' is not — internal parser invariant violated",
                                 name = m.name,
@@ -22179,7 +22175,7 @@ fn render_algorithm_test_vector_sidecar(
                     SceType::Int64 => "i64",
                     other => {
                         return Err(ForgeError::from(
-                            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                            crate::forge::error::GenerateError::unsupported(format!(
                                 "algorithm '{name}': <sce:test-vector> value is signed but \
                                  return type '{other:?}' is not — internal parser invariant violated",
                                 name = m.name,
@@ -22377,7 +22373,7 @@ fn render_codec_test_vector_sidecar(
     // parent-flags closures land alongside their first sidecar
     // consumer following the trunk-then-closures cadence.
     if m.variant.is_some() {
-        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
+        return Err(ForgeError::from(GenerateError::unsupported(
             format!(
                 "codec '{name}': <sce:test-vector> on a variant codec is not supported — the \
              decoded shape needs a <sce:decoded-variant kind tag><body/></...> grammar \
@@ -22387,44 +22383,36 @@ fn render_codec_test_vector_sidecar(
         )));
     }
     if m.has_tlv_chain_fields() {
-        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
-            format!(
-                "codec '{name}': <sce:test-vector> on a TLV-chain codec is not supported — the \
+        return Err(ForgeError::from(GenerateError::unsupported(format!(
+            "codec '{name}': <sce:test-vector> on a TLV-chain codec is not supported — the \
              decoded shape needs a <sce:decoded-chain field><sce:decoded-entry/></...> grammar \
              that no consumer has asked for yet",
-                name = m.name,
-            ),
-        )));
+            name = m.name,
+        ))));
     }
     if !m.flag_inputs.is_empty() {
-        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
-            format!(
-                "codec '{name}': <sce:test-vector> on flag-input-bearing codec is not \
+        return Err(ForgeError::from(GenerateError::unsupported(format!(
+            "codec '{name}': <sce:test-vector> on flag-input-bearing codec is not \
              supported — the round-trip oracle requires the codec be invoked as a \
              variant-arm body; standalone test invocation has no flag-input source)",
-                name = m.name,
-            ),
-        )));
+            name = m.name,
+        ))));
     }
     if m.has_repeat_fields() {
-        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
-            format!(
-                "codec '{name}': <sce:test-vector> on a repeat-bearing codec is not supported \
+        return Err(ForgeError::from(GenerateError::unsupported(format!(
+            "codec '{name}': <sce:test-vector> on a repeat-bearing codec is not supported \
              closure (decoded shape requires nested <sce:decoded-repeat field><sce:decoded-entry/> \
              grammar)",
-                name = m.name,
-            ),
-        )));
+            name = m.name,
+        ))));
     }
     if m.has_present_if_fields() {
-        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
-            format!(
-                "codec '{name}': <sce:test-vector> on a present-if codec is not supported — the \
+        return Err(ForgeError::from(GenerateError::unsupported(format!(
+            "codec '{name}': <sce:test-vector> on a present-if codec is not supported — the \
              decoded shape needs an absent-vs-present marker; test vectors apply to \
              always-present field codecs",
-                name = m.name,
-            ),
-        )));
+            name = m.name,
+        ))));
     }
 
     let snake = filters::to_snake_case(m.name.clone());
@@ -22463,7 +22451,7 @@ fn render_codec_test_vector_sidecar(
         let mut field_rows: Vec<serde_json::Value> = Vec::with_capacity(decoded_fields.len());
         for df in decoded_fields {
             let codec_field = m.fields.iter().find(|f| f.id == df.name).ok_or_else(|| {
-                ForgeError::from(GenerateError::UnsupportedFeature(format!(
+                ForgeError::from(GenerateError::unsupported(format!(
                     "codec '{name}': <sce:test-vector> at L{line}: field '{f}' missing from \
                      codec model — parser invariant violated",
                     name = m.name,
@@ -22663,12 +22651,10 @@ fn lower_decoded_field_value(
             // rather than an owned `String`.
             Ok((format!("\"{escaped}\""), format!("\"{escaped}\"")))
         }
-        (val, ty) => Err(ForgeError::from(GenerateError::UnsupportedFeature(
-            format!(
-                "codec '{codec_name}': <sce:test-vector> field value {val:?} does not match codec \
+        (val, ty) => Err(ForgeError::from(GenerateError::unsupported(format!(
+            "codec '{codec_name}': <sce:test-vector> field value {val:?} does not match codec \
              field SceType {ty:?} — parser invariant violated"
-            ),
-        ))),
+        )))),
     }
 }
 
@@ -22710,7 +22696,7 @@ fn lower_algorithm_consts(
             (AlgorithmConstType::Array { elem, len }, Some(fold), None) => {
                 let values = const_fold::evaluate_fold(fold, budget, site)?;
                 if values.len() as u32 != *len {
-                    return Err(GenerateError::UnsupportedFeature(format!(
+                    return Err(GenerateError::unsupported(format!(
                         "algorithm '{algorithm_name}': <sce:const name=\"{}\">: \
                          fold produced {actual} elements but array<{elem:?}, {len}> \
                          declares {len}",
@@ -22733,7 +22719,7 @@ fn lower_algorithm_consts(
             // array shape and never carry init. Anything else here
             // would be an upstream model-shape bug.
             _ => {
-                return Err(GenerateError::UnsupportedFeature(format!(
+                return Err(GenerateError::unsupported(format!(
                     "algorithm '{algorithm_name}': <sce:const name=\"{}\">: \
                      internal error — model carries inconsistent scalar/fold pairing",
                     c.name

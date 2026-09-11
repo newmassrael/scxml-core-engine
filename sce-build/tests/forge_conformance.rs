@@ -5991,7 +5991,7 @@ fn forge_test_vector_non_bytes_signature_rejects() {
             ForgeError::Generate(ref boxed)
                 if matches!(
                     **boxed,
-                    GenerateError::UnsupportedFeature(ref msg)
+                    GenerateError::UnsupportedFeature { detail: ref msg, .. }
                         if msg.contains("non_bytes_tv") && msg.contains("bytes")
                 )
         ),

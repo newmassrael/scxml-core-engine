@@ -181,6 +181,20 @@ allocator. So its rejections reach it only on documents every earlier
 stage accepted, and a scenario that exercises it must survive the
 whole pipeline rather than be caught partway.
 
+`locate_codegen_error` is the last of them, and it covers the stage
+that renders. Every backend's `generate_*` returns through that one
+helper, so one call anchors all six and anchors a seventh added later.
+What it can anchor is bounded by what the raise knew: the refusals
+that inspect the MODEL run before any template is loaded and name the
+element they are about (`GenerateError::unsupported_at`), while a
+minijinja failure is raised after the DOM is gone and has no element
+to name. That is why the position on that variant is an `Option` and
+not a promise — and why it is ONE variant rather than two. Splitting
+it would need a line between "the document is wrong" and "SCE does
+not cover it", and that line does not survive its own first case: a
+mesh-rpc `<invoke>` compiled for Rust is a legal document, a gap in
+SCE's coverage, and a thing written at a row, all three at once.
+
 ⚠ **A boundary is not always available, and where it is not the
 producer resolves.** `ecmascript_acceptance::refusals` is the fourth
 resolution point and the first that is not a boundary: its records are
@@ -227,8 +241,8 @@ shared across both pipelines — `validation/invalid-reference` is one —
 and the distinction is what makes them reachable at all.
 
 ⚠ **The contract is stated in full; the producer side reaches it
-incrementally.** As of Item 8 Atomic 6 twenty-one codes satisfy it and
-the remaining 337 are registered as not yet satisfying it, each with
+incrementally.** As of Item 8 Atomic 7 twenty-two codes satisfy it and
+the remaining 336 are registered as not yet satisfying it, each with
 the reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
 compile-time exhaustive over `DiagnosticCode` — a code that neither
 carries nor registers fails the build — and the accompanying test
