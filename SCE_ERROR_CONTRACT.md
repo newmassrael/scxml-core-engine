@@ -227,8 +227,8 @@ shared across both pipelines — `validation/invalid-reference` is one —
 and the distinction is what makes them reachable at all.
 
 ⚠ **The contract is stated in full; the producer side reaches it
-incrementally.** As of Item 8 Atomic 5 sixteen codes satisfy it and
-the remaining 342 are registered as not yet satisfying it, each with
+incrementally.** As of Item 8 Atomic 6 twenty-one codes satisfy it and
+the remaining 337 are registered as not yet satisfying it, each with
 the reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
 compile-time exhaustive over `DiagnosticCode` — a code that neither
 carries nor registers fails the build — and the accompanying test
