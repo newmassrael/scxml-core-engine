@@ -103,6 +103,15 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 # same misattribution `mnemosyne-cli` is listed for above. Listing them keeps
 # such a host out of the candidate set instead.
 #
+# `kotlinc` joined on 2026-09-11, and it is the one that did NOT fail loudly:
+# the forge Kotlin gates degrade to skip-with-warn, so a host without it
+# reported green over seven checks that never ran. It is listed now because
+# both registered machines carry it — it was installed on them rather than
+# worked around, which is the order these two moves belong in. Declaring a
+# tool nobody has would have cost this repository its 32-core host for every
+# job, Kotlin or not; installing first makes the declaration free, and the
+# declaration is what keeps the NEXT host from re-entering that silence.
+#
 # `gradle` is deliberately NOT here: the Kotlin lanes run `./gradlew`, which
 # fetches its own distribution, so the machine needs a JDK and nothing more.
 #
@@ -111,7 +120,7 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 # lines — so a wrapped list parses as EMPTY and every host becomes eligible
 # for everything. Measured 2026-08-24, thirty seconds after wrapping it:
 # `--explain-declaration` printed `decl needs` with nothing after it.
-needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli", "go", "java", "python3", "wasm-pack"]
+needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli", "go", "java", "python3", "wasm-pack", "kotlinc"]
 
 # The C++ tree is the constraint: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.
@@ -132,7 +141,16 @@ min_free_gb = 60
 # `cmake/SCEFindCodegen.cmake` fails the configure outright when it is
 # absent, so the obvious order (configure, then build everything) does not
 # reach a single compile on a cold tree.
-build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run"
+#
+# The Kotlin forge-runtime jar is built last and for the same class of reason
+# as `kotlinc` in `needs`: every forge Kotlin gate puts it on `kotlinc -cp`
+# and skips-with-warn without it, so a provisioned host that lacks it reports
+# green over checks that never ran. It is gitignored, so `send` never carries
+# it — a remote tree has one only if something built it there. Measured
+# 2026-09-11: the build machine had a jar at all only because an earlier run
+# in that session happened to route a `jvmJar` to it, which is a property of
+# that history and not of the host.
+build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run && ./gradlew :sce-forge-runtime-kotlin:jvmJar --console=plain"
 
 # The echo server is started here rather than assumed: a bare workspace run
 # reports failures that look like backend defects and are not.
