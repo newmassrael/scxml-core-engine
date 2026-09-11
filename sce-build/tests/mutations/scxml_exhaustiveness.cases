@@ -100,20 +100,26 @@ PY
 # the same way: the harness found the first, and the second was next
 # door on the very next loop.
 
+# The anchors name the call and its label argument, not the label's
+# text. They were re-aimed on 2026-09-11 after Item 7 hoisted the
+# `format!` into a `*_label` binding and added a `.map_err` arm: the
+# old anchors quoted the argument list verbatim, matched nothing, and
+# both cases would have read as SURVIVED. `final_label` /
+# `parallel_label` is what says which of the three call sites is meant,
+# so the anchor stops at the identifier and takes the continuation line
+# only because deleting half a statement would not compile.
+
 mutation_case "a <final> child's declaration is never read" <<'PY_CASE'
 edit("sce-build/src/parser.rs",
-     """            state.unhandled =
-                parse_sce_unhandled(&child, || format!("<final id=\\"{final_id}\\">"), source_name)?;""",
+     """            state.unhandled = parse_sce_unhandled(&child, final_label, source_name)
+                .map_err(|e| e.with_spec_provenance(state.provenance.clone()))?;""",
      "")
 PY_CASE
 
 mutation_case "a <parallel> child's declaration is never read" <<'PY_CASE'
 edit("sce-build/src/parser.rs",
-     """            state.unhandled = parse_sce_unhandled(
-                &child,
-                || format!("<parallel id=\\"{parallel_id}\\">"),
-                source_name,
-            )?;""",
+     """            state.unhandled = parse_sce_unhandled(&child, parallel_label, source_name)
+                .map_err(|e| e.with_spec_provenance(state.provenance.clone()))?;""",
      "")
 PY_CASE
 
