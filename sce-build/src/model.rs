@@ -1274,14 +1274,53 @@ impl SCXMLModel {
         &self,
         err: crate::forge::error::Located<E>,
     ) -> crate::forge::error::Located<E> {
-        let spaces_coincide = match self.authored_positions.as_ref() {
-            None => true,
-            Some(positions) => positions.map.is_identity(),
-        };
-        if !spaces_coincide {
+        if !self.anchor_space_is_answerable() {
             return err;
         }
         self.anchor_index.enrich(err)
+    }
+
+    /// The anchors enclosing `at`, for a rejection that is **not** a
+    /// [`crate::forge::error::Located`].
+    ///
+    /// [`Self::with_enclosing_anchor`] is the shape for the crate's
+    /// usual error channel; this is the same question asked by a
+    /// producer whose record is its own type. The ECMAScript frontend's
+    /// `RefusedExpression` is the case that needed it: it carries a
+    /// location and reaches the wire through its own `SingleDiagnostic`
+    /// impl, never through `Located`, so the boundary call had no
+    /// shape to take.
+    ///
+    /// ⚠ Both go through [`Self::anchor_space_is_answerable`] rather
+    /// than each testing the precondition, because a second copy of
+    /// that test is a second thing that can be forgotten — and a
+    /// forgotten one is invisible on every document without a
+    /// preprocessor directive, which is nearly all of them.
+    pub fn enclosing_anchors(
+        &self,
+        at: &crate::forge::error::SourceLocation,
+    ) -> &[crate::provenance::SpecProvenance] {
+        if !self.anchor_space_is_answerable() {
+            return &[];
+        }
+        self.anchor_index.enclosing(at)
+    }
+
+    /// Whether this model's recorded positions and its anchor index are
+    /// in the same coordinate space.
+    ///
+    /// The index is built in *expanded* coordinates. A document that a
+    /// preprocessor rewrote has authored coordinates too, and the two
+    /// are different numberings of files that may not even be the same
+    /// file — so a lookup across them would not fail, it would answer
+    /// confidently about the wrong paragraph. Refusing is the correct
+    /// answer, and the empty result still means exactly what
+    /// `SCE_ERROR_CONTRACT.md` §2.1.2 says it means.
+    fn anchor_space_is_answerable(&self) -> bool {
+        match self.authored_positions.as_ref() {
+            None => true,
+            Some(positions) => positions.map.is_identity(),
+        }
     }
 }
 

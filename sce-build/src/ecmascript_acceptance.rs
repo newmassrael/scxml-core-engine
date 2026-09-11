@@ -108,6 +108,15 @@ pub struct RefusedExpression {
     pub error: ExprError,
     /// The owning element's own coordinate, when the parser recorded one.
     pub location: Option<SourceLocation>,
+    /// `SCE_ERROR_CONTRACT.md` §2.1.2 — the anchors of the innermost
+    /// anchored node enclosing [`Self::location`].
+    ///
+    /// Resolved in [`refusals`], the one place these records are built
+    /// and the only one holding the model the index lives on. Stored
+    /// rather than looked up at wire time because `SingleDiagnostic`
+    /// assembles a record from the record alone — it never sees a
+    /// document, which is precisely why a producer has to fill this.
+    pub spec_provenance: Vec<crate::provenance::SpecProvenance>,
 }
 
 /// The one-line message, in the shape the raise inside the generated
@@ -221,6 +230,19 @@ pub fn refusals(model: &SCXMLModel) -> Vec<RefusedExpression> {
                 site: site.site,
                 source: site.source,
                 error,
+                // NL→IR Mapping Roadmap Item 8: this walk is a stage
+                // that holds the model, so it owes its rejections the
+                // anchor enclosing them (`SCE_ERROR_CONTRACT.md`
+                // §2.1.2). Resolved here rather than at a boundary
+                // because these records never become a `Located` —
+                // they reach the wire through their own
+                // `SingleDiagnostic` impl, so there is no later point
+                // that still knows which document they came from.
+                spec_provenance: site
+                    .location
+                    .as_ref()
+                    .map(|at| model.enclosing_anchors(at).to_vec())
+                    .unwrap_or_default(),
                 location: site.location,
             })
         })

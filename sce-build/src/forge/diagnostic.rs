@@ -4732,6 +4732,15 @@ impl SingleDiagnostic for crate::ecmascript_acceptance::RefusedExpression {
             col: at.col,
         })
     }
+
+    /// Item 8 — resolved by `ecmascript_acceptance::refusals`, which is
+    /// the stage that held the model. Overridden for the same reason
+    /// `Located<E>` overrides it: the default is empty because SCE
+    /// never infers an anchor, and a type that actually carries one
+    /// must say so or the wire cannot tell the two apart.
+    fn diagnostic_spec_provenance(&self) -> Vec<crate::provenance::SpecProvenance> {
+        self.spec_provenance.clone()
+    }
 }
 
 impl ToDiagnostics for Located<ForgeError> {
@@ -14755,9 +14764,9 @@ mod tests {
 
     /// Why a registered code cannot carry an anchor.
     ///
-    /// Grouped rather than one string per code. 344 of 358 codes are
-    /// registered today and 342 of those are registered for one
-    /// reason; writing that reason 342 times would make the roster
+    /// Grouped rather than one string per code. 342 of 358 codes are
+    /// registered today and 340 of those are registered for one
+    /// reason; writing that reason 340 times would make the roster
     /// look informative while saying one thing, and would bury the two
     /// entries that are registered for a different and permanent
     /// reason.
@@ -14785,9 +14794,13 @@ mod tests {
             match self {
                 NoAnchor::AwaitingResolver => {
                     "this code has not been demonstrated carrying the \
-                     enclosing anchor. Three resolver boundaries exist as of \
-                     Atomic 4 — `analyzer::can_generate_static`, \
-                     `lint_statechart` and `validate_no_std_compatibility` \
+                     enclosing anchor. Four resolution points exist as of \
+                     Atomic 5 — the boundaries \
+                     `analyzer::can_generate_static`, `lint_statechart` \
+                     and `validate_no_std_compatibility`, plus \
+                     `ecmascript_acceptance::refusals`, which resolves \
+                     inside the producer because its records never become \
+                     a `Located` for a boundary to act on \
                      — so a code sits here for one of \
                      three reasons. Either no scenario raises it yet: the \
                      roster only learns a code carries by executing it, \
@@ -14957,6 +14970,34 @@ mod tests {
             | CodegenNoStdScriptNotSupported
             | CodegenNoStdHttpNotSupported => Carries,
 
+            // The ECMAScript acceptance walk — Item 8 Atomic 5, and
+            // the first codes here that BOTH pipelines raise.
+            //
+            // The statechart half resolves inside
+            // `ecmascript_acceptance::refusals`, not at a boundary:
+            // these records never become a `Located`, so there is no
+            // later point that still knows the document. The Forge
+            // half is satisfied the other admissible way — `forge/
+            // expr.rs` raises the same `ExprError` variants on Forge
+            // documents, which have nowhere to write `sce:provenance`.
+            //
+            // The reason no THIRD site has to be checked is worth
+            // stating, because it is the kind of thing that looks like
+            // an omission: statechart codegen never raises these. A
+            // refused expression is lowered to Lua that raises when
+            // evaluated — `filters::lua_that_raises` for a guard,
+            // `filters::lua_target_that_raises` for a location, each
+            // citing the spec clause that makes it a run-time
+            // `error.execution` rather than a document that cannot be
+            // generated. So `refusals` is the whole statechart side.
+            //
+            // Only the two variants with an executed scenario are
+            // here. The rest of the `expression/*` family resolves
+            // through the same walk and will classify the same way,
+            // but the roster learns a code carries by running it —
+            // never by reasoning that its neighbour does.
+            ExpressionUnknownIdentifier | ExpressionUnsupportedConstruct => Carries,
+
             // ── Registered — the anchor is the subject ───────────
             ValidationProvenanceMalformed | ValidationProvenanceDuplicate => {
                 Registered(NoAnchor::TheAnchorIsTheSubject)
@@ -15044,9 +15085,7 @@ mod tests {
             | ReassemblyPerPeerQuotaBuildInvariantViolated
             | ExpressionEmpty
             | ExpressionLex
-            | ExpressionUnsupportedConstruct
             | ExpressionUnsupportedBuiltin
-            | ExpressionUnknownIdentifier
             | ExpressionPropertyNotCallable
             | ExpressionNamespaceNotCallable
             | ExpressionNamespaceNotAValue
@@ -15686,6 +15725,50 @@ mod tests {
                      </state>
                    </scxml>"#,
             ),
+            // The ECMAScript acceptance walk — Item 8 Atomic 5. These
+            // are `both`-pipeline codes: `forge/expr.rs` raises the
+            // same `ExprError` variants on Forge documents, where the
+            // empty field is already the true answer because such a
+            // document has nowhere to write `sce:provenance`. What was
+            // missing was the statechart half, and `refusals` is its
+            // only producer — the generator does NOT raise these, it
+            // lowers a refused expression to Lua that raises at run
+            // time (`filters::lua_that_raises`), so there is no second
+            // statechart site to satisfy.
+            (
+                "expression/unknown-identifier",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript">
+                     <state id="s0"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <datamodel><data id="x" expr="0"/></datamodel>
+                       <onentry>
+                         <assign location="x" expr="ghost + 1"/>
+                       </onentry>
+                     </state>
+                   </scxml>"#,
+            ),
+            (
+                // A reserved word used as a value — the shape W3C test
+                // 344 writes as `cond="return"`. Chosen over a loose
+                // `==`, which measured as ACCEPTED here: that is
+                // refused only on a guard the event schema has typed,
+                // so a scenario built on it demonstrated nothing and
+                // fell through to a later stage.
+                "expression/unsupported-construct",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript">
+                     <state id="s0"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <datamodel><data id="x" expr="0"/></datamodel>
+                       <onentry>
+                         <assign location="x" expr="return"/>
+                       </onentry>
+                     </state>
+                   </scxml>"#,
+            ),
         ]
     }
 
@@ -15757,7 +15840,26 @@ mod tests {
         if let Err(e) = crate::lint_statechart(&model, label) {
             return e.to_diagnostics();
         }
-        // The no_std gate, added with Item 8 Atomic 4. A fifth regime
+        // The ECMAScript acceptance walk, added with Item 8 Atomic 5.
+        // A fifth regime, and the only one whose records never become a
+        // `Located`: they reach the wire through `RefusedExpression`'s
+        // own `SingleDiagnostic` impl, so nothing downstream still
+        // knows which document they came from and the anchor has to be
+        // resolved inside the walk itself.
+        //
+        // ⚠ Ordered BEFORE the no_std gate although the CLI runs that
+        // one first. The no_std gate is target-conditional — only
+        // `-l rust --no-std` reaches it — and it refuses every
+        // script-bearing document, which is most documents that have
+        // an expression to refuse. Running it first here would
+        // pre-empt this regime with a stage an ordinary build does not
+        // run, and the roster would then be unable to demonstrate a
+        // code that production raises perfectly well.
+        let refused = crate::ecmascript_acceptance::refusals(&model);
+        if !refused.is_empty() {
+            return refused.iter().flat_map(|r| r.to_diagnostics()).collect();
+        }
+        // The no_std gate, added with Item 8 Atomic 4. A sixth regime
         // rather than more of the fourth: it rejects on a TARGET
         // PROPERTY rather than on the document — the same SCXML is
         // accepted for every other backend and refused only for
