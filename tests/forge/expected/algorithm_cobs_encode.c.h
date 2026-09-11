@@ -33,10 +33,10 @@ static inline algorithm_cobs_encode_result_t algorithm_cobs_encode(sce_forge_byt
         }
         uint16_t run = q - p;
         uint8_t code = run + 1;
-        if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(code); } else { out.ok = false; }
+        if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(code); } else { out.ok = false; return out; }
         uint16_t k = p;
         while (k < q) {
-            if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(data.data[k]); } else { out.ok = false; }
+            if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(data.data[k]); } else { out.ok = false; return out; }
             k = k + 1;
         }
         if (q >= n) {
@@ -46,7 +46,7 @@ static inline algorithm_cobs_encode_result_t algorithm_cobs_encode(sce_forge_byt
                 p = q + 1;
                 if (p >= n) {
                     uint8_t last = 1;
-                    if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(last); } else { out.ok = false; }
+                    if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(last); } else { out.ok = false; return out; }
                     done = true;
                 }
             } else {

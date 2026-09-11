@@ -1171,13 +1171,19 @@ Some transforms are runtime, data-dependent `bytes -> bytes` functions whose out
 | Backend | Output buffer | Append overflow | Return shape |
 |---------|---------------|-----------------|--------------|
 | Rust | `SceBytes<N>` (no-alloc `heapless::Vec<u8, N>`; `alloc` = `Vec<u8>`, `N` advisory) | `?` on `push` / `extend_from_slice` → `CapacityExceeded` | `Result<SceBytes<N>, CapacityExceeded>` |
-| C11 | by-value `<symbol>_result_t { uint8_t bytes[N]; size_t len; bool ok; }` (no malloc) | bounds-check sets `ok = false` past `N` | the result struct (caller reads `ok`) |
-| C++ | `std::vector<std::uint8_t>` | grows | `std::vector<std::uint8_t>` |
-| Go | `[]byte` | grows | `[]byte` |
+| C11 | by-value `<symbol>_result_t { uint8_t bytes[N]; size_t len; bool ok; }` (no malloc) | bounds-check sets `ok = false` past `N` and returns the struct | the result struct (caller reads `ok`) |
+| C++ | `std::vector<std::uint8_t>`, `reserve(N)` | grows | `std::vector<std::uint8_t>` |
+| Go | `make([]byte, 0, N)` | grows | `[]byte` |
 | Python | `bytearray` | grows | `bytes` |
-| Kotlin | `MutableList<Byte>` | grows | `ByteArray` |
+| Kotlin | `SceByteBuf(N)` (`ByteArray`-backed, `sce_forge_runtime`) | grows | `ByteArray` |
 
-Rust imports `SceBytes` / `CapacityExceeded` from the shared `backends/rust/portable-bytes` crate — the same owned-bytes type the codec kind uses — so a `bytes`-returning algorithm is no longer self-contained (it carries that one dependency, by design: SSOT over self-containment).
+**`capacity` reaches every backend**, as the container's fixed size on the bounded ones and as the initial allocation on the growable ones. The author declared a byte count; spending it is what keeps a buffer whose contents stay within the declared bound to a single allocation, and the codec kind pre-sizes for the same reason. Pre-sizing is an allocation hint only — a growable backend still grows past `capacity` rather than failing, exactly as the table says.
+
+The C11 append **returns at** the overflow rather than flagging and running on. The buffer is v1's single one and is the declared return, so the struct handed back is the one the tail of the body would have produced anyway; what the early return removes is the scan that continues after a bound that can no longer pass. Rust reaches the same place through `?`.
+
+Rust imports `SceBytes` / `CapacityExceeded` from the shared `backends/rust/portable-bytes` crate — the same owned-bytes type the codec kind uses — and Kotlin imports `SceByteBuf` from `sce_forge_runtime`, so a `bytes`-returning algorithm is no longer self-contained on those two backends (it carries that one dependency, by design: SSOT over self-containment). Kotlin needs it for a reason worth naming: the stdlib's growable byte container is `MutableList<Byte>`, which holds each byte as a boxed reference in an `Object[]` and is walked again at `toByteArray()`. A `ByteArray`-backed buffer is what a declared byte count actually asks for.
+
+**Every backend's emit is executed** against the COBS reference vectors below, not merely compiled and byte-compared (`forge_{cpp,c11,go,python,kotlin,rust}_algorithm_cobs_encode_runtime`). A golden records whatever the generator last emitted, so a lowering defect that survives a golden refresh is recorded as the expected answer rather than caught; the run gates are what decide correctness. The C11 gate additionally drives an input past `returns-max-size` and asserts `ok == false`, which is the one place the fallible-overflow contract above is observed rather than asserted.
 
 #### Example — COBS encode
 
@@ -1423,6 +1429,8 @@ This matrix records, for each kind, which of the two runtime libraries (defined 
 | interpolation | Yes (`sce/forge/interpolation.h`) | No | `linear<N>`, `bilinear<R,C>` function templates |
 | timer | Yes (`sce/forge/timer.h`) | No | `ITimer` interface (HAL pattern, see §4.10) |
 | observer | Yes (`sce/forge/observer.h`) | No | `ThresholdState`, `EventQueue<D>`, `Event<D>` |
+| algorithm (scalar return) | No | No | Pure inline function body — locals and bounded loops only |
+| algorithm (`bytes` return) | Kotlin only (`SceByteBuf`) | No | Byte-buffer-build (§4.12). C++/Go/Python/C11 use a stdlib or emitted container; Rust takes `SceBytes` from the separate leaf crate `sce-portable-bytes`, not from `sce_forge_runtime` |
 | procedure (L1) | No | No | Linear/diamond flow — pure function, no runtime types |
 | procedure (L2) | Yes (`sce/forge/ProcedureStateMachine.h`, `ProcedureServiceTypes.h`) | No | Event-driven procedure extends `ProcedureStateMachine` / implements `ProcedurePolicy` trait |
 | statechart | No | Yes (existing: `EventQueue`, `ActionHandler`, ...) | Existing W3C statechart runtime |

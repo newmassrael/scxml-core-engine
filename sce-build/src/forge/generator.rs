@@ -20523,8 +20523,9 @@ fn lower_algorithm_stmt(
             // growable output buffer seeded empty and filled forward-only via
             // `<sce:append>` — it carries `capacity`, not `init`. Each backend
             // declares its native growable byte container (Rust no-alloc
-            // `SceBytes<N>`, C/C++/Kotlin/Go/Python stdlib growable, C11 the
-            // by-value result struct). Scalars keep the existing init path.
+            // `SceBytes<N>`, Kotlin the primitive-backed `SceByteBuf`, C++/Go/
+            // Python stdlib growable, C11 the by-value result struct). Scalars
+            // keep the existing init path.
             //
             // `capacity` is the author's declared upper bound, so every backend
             // that can consume it does: the bounded ones (Rust, C11) as the
@@ -20576,7 +20577,7 @@ fn lower_algorithm_stmt(
                     // the Python backend through the return's `returns-max-size`.
                     Language::Python => format!("{pad}{local} = bytearray()\n"),
                     Language::Kotlin => {
-                        format!("{pad}val {local} = ArrayList<Byte>({cap})\n")
+                        format!("{pad}val {local} = SceByteBuf({cap})\n")
                     }
                 };
                 out.push_str(&line);
@@ -20646,8 +20647,18 @@ fn lower_algorithm_stmt(
             // `bytes` value extends the buffer, any integer value pushes one
             // byte. Overflow is fallible on the bounded backends (Rust `?` on
             // `SceBytes::push` / `extend_from_slice`; C11 flips the result
-            // struct's `ok` to false past the fixed `bytes[N]`), while the
-            // heap backends (Cpp/Go/Python/Kotlin) grow on demand.
+            // struct's `ok` to false past the fixed `bytes[N]` and returns it),
+            // while the heap backends (Cpp/Go/Python/Kotlin) grow on demand.
+            //
+            // C11 returns AT the overflow rather than flagging and running on.
+            // The buffer is v1's single one and is the declared return, so the
+            // struct it hands back is the one the tail of the body would have
+            // produced anyway — `len` is pinned at the cap and no later append
+            // can write. What the early return removes is the work after the
+            // failure: without it an overflowing input keeps scanning to the
+            // end, re-testing a bound that can no longer pass. Rust already
+            // leaves at the first failure through `?`; this is that shape on
+            // the backend that has no `?`.
             let target_key = target.trim();
             // The target must be a declared `<sce:var type="bytes">` buffer.
             // Codegen-time check (mirrors the foreach-source-not-iterable
@@ -20703,7 +20714,7 @@ fn lower_algorithm_stmt(
                     }
                     Language::Go => format!("{pad}{local} = append({local}, {e}...)\n"),
                     Language::Python => format!("{pad}{local}.extend({e})\n"),
-                    Language::Kotlin => format!("{pad}{local}.addAll({e}.toList())\n"),
+                    Language::Kotlin => format!("{pad}{local}.addAll({e})\n"),
                     Language::C11 => {
                         let n = cap_n;
                         // Hoist the source view so a compound RHS evaluates once.
@@ -20712,7 +20723,7 @@ fn lower_algorithm_stmt(
                              {pad}    sce_forge_bytes_view_t __src = {e};\n\
                              {pad}    for (size_t __k = 0; __k < __src.len; ++__k) {{\n\
                              {pad}        if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = __src.data[__k]; }}\n\
-                             {pad}        else {{ {local}.ok = false; }}\n\
+                             {pad}        else {{ {local}.ok = false; return {local}; }}\n\
                              {pad}    }}\n\
                              {pad}}}\n"
                         )
@@ -20740,7 +20751,7 @@ fn lower_algorithm_stmt(
                     Language::C11 => {
                         let n = cap_n;
                         format!(
-                            "{pad}if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = (uint8_t)({e}); }} else {{ {local}.ok = false; }}\n"
+                            "{pad}if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = (uint8_t)({e}); }} else {{ {local}.ok = false; return {local}; }}\n"
                         )
                     }
                 }
@@ -21742,13 +21753,23 @@ fn render_algorithm(
 
     // SCE byte-buffer-build (§4.12): a `bytes`-returning algorithm is no
     // longer self-contained — Rust imports the shared owned-bytes type from
-    // the leaf SSOT crate `sce-portable-bytes`; C11 emits the by-value
-    // result-struct typedef ahead of the function. Both land in the
+    // the leaf SSOT crate `sce-portable-bytes`, Kotlin the primitive-backed
+    // `SceByteBuf` from `sce_forge_runtime`; C11 emits the by-value
+    // result-struct typedef ahead of the function. All three land in the
     // pre-function prelude slot so the templates stay untouched. Non-bytes
     // algorithms keep an empty preamble (byte-identical output).
+    //
+    // Kotlin carries the same dependency trade Rust already carries here
+    // (SSOT over self-containment): the stdlib's growable byte container is
+    // `MutableList<Byte>`, which boxes every byte into an `Object[]` slot and
+    // then walks the list again at `toByteArray()`. The declared `capacity`
+    // is a byte count, and a `ByteArray`-backed buffer is what spends it.
     let buffer_build_preamble = match (&m.signature.return_type, lang) {
         (Some(SceType::Bytes), Language::Rust) => {
             "use sce_portable_bytes::{SceBytes, CapacityExceeded};\n\n".to_string()
+        }
+        (Some(SceType::Bytes), Language::Kotlin) => {
+            "import com.sce.forge.runtime.SceByteBuf\n\n".to_string()
         }
         (Some(SceType::Bytes), Language::C11) => {
             let n = bytes_return_cap.expect("checked when building return_type");
