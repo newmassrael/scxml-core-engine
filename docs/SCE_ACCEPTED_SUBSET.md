@@ -1168,15 +1168,34 @@ Two equivalent forms:
 <state id="armed" sce:provenance="OEM-SPEC-01@23#4.4.2"/>
 
 <state id="armed">
-  <sce:provenance doc="OEM-SPEC-01" rev="23" section="4.4.2"/>
-  <sce:provenance doc="ISO-14229-1" section="11.2.1"/>
+  <sce:provenance doc-id="OEM-SPEC-01" rev="23" section="4.4.2"/>
+  <sce:provenance doc-id="ISO-14229-1" section="11.2.1"/>
 </state>
 ```
 
 The compact URI form is `doc_id[@rev][#section[:page]]`. The
-element form allows multi-document anchoring on a single node.
-Pass-through to the diagnostic `spec_provenance` field — SCE
-never infers it.
+element form decomposes the same grammar — `doc-id` is its only
+required attribute — and allows multi-document anchoring on a
+single node. Both forms attach to every element `sce:req` does
+(`<state>`, `<final>`, `<parallel>`, `<transition>`, `<onentry>`,
+`<onexit>`, executable content, `<invoke>`), compose additively
+in document order, and inherit from `<onentry>` / `<onexit>` onto
+every action in the block exactly as `sce:req` does — matched on
+`doc_id`, so an action's own anchor for a document is not
+overwritten by the block's. Pass-through to the diagnostic
+`spec_provenance` field — SCE never infers it.
+
+Two rejections, both defending the `(doc_id, rev)` set a
+consumer compares against the revisions actually in force. An
+anchor that names no document — an empty value, a compact URI
+with an empty `doc_id` (`@23`), or an element without a usable
+`doc-id` — fails at parse time with
+`validation/provenance-malformed`; accepting it would be
+indistinguishable downstream from a node that was never
+annotated. The same `doc_id` twice on one node, in any
+combination of the two forms, fails with
+`validation/provenance-duplicate` — the node would otherwise
+carry two answers to which revision governs it.
 
 **`sce:unresolved`** — explicit "revisit later" markers.
 
@@ -1923,7 +1942,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (356 codes)
+## Appendix — `DiagnosticCode` index (358 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1991,6 +2010,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/removed-attribute` | Validation |
 | `validation/bytes-max-size-violation` | Validation |
 | `validation/duplicate-requirement-id` | Validation |
+| `validation/provenance-malformed` | Validation |
+| `validation/provenance-duplicate` | Validation |
 | `validation/unresolved-placeholder` | Validation |
 | `validation/cross-kind-field-not-found` | Validation |
 | `validation/cross-kind-type-mismatch` | Validation |

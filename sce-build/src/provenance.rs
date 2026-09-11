@@ -26,9 +26,16 @@ use crate::forge::error::SourceLocation;
 /// - compact URI: `sce:provenance="OEM-SPEC-01@23#4.4.2"`
 ///   (`doc_id @ rev # section`; trailing `:page` optional after the
 ///   section to carry a page number, e.g. `OEM-SPEC-01#4.4.2:118`)
-/// - child element: `<sce:provenance doc="..." rev="..." section="..." page="..."/>`
+/// - child element: `<sce:provenance doc-id="..." rev="..." section="..." page="..."/>`
 ///   (one or more allowed; element form lets one node anchor at
 ///   multiple documents)
+///
+/// `doc-id` is the element form's only required attribute — it is the
+/// decomposed spelling of the compact form's `doc_id`, and an anchor
+/// without it names no document. Both forms reject that the same way
+/// (`validation/provenance-malformed`), and a `doc_id` repeated on one
+/// node across either form rejects as
+/// `validation/provenance-duplicate`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SpecProvenance {

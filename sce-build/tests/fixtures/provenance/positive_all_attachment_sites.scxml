@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<!--
+  NL→IR Mapping Roadmap Item 7 — `sce:provenance` positive fixture.
+
+  Carries an anchor on every element the parser attaches provenance
+  to, so a site that stops reading the annotation fails here rather
+  than going quiet: `<state>`, `<parallel>`, `<final>`,
+  `<transition>`, `<onentry>`, `<onexit>`, executable content, and
+  `<invoke>`.
+
+  Three claims beyond mere presence, each carried by a node that can
+  only be explained by it:
+
+    * `s0` carries the attribute form AND two element-form children,
+      pinning that the two are additive and that the attribute's
+      anchor comes first.
+    * `s0`'s `<onentry>` anchors at `OEM-BLOCK-SPEC` while its `<log>`
+      anchors at `OEM-DIAG-SPEC`, so the leaf ends up with both — the
+      block-level anchor inherits downward, as `sce:req` does.
+    * `s0`'s `<onexit>` anchors at `OEM-DIAG-SPEC@C` while the `<log>`
+      inside it anchors at `OEM-DIAG-SPEC@D`. The inherit is matched on
+      `doc_id`, so the leaf keeps rev D and the block does not get to
+      contradict the more specific statement.
+
+  `sce:req` rides alongside on `s0` to prove the two families are
+  orthogonal and neither consumes the other's attribute.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="provenance_sites" initial="s0">
+  <state id="s0" sce:req="REQ_STATE_S0"
+         sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+    <sce:provenance doc-id="OEM-TIMING-REQ" rev="B" section="7.1" page="44"/>
+    <sce:provenance doc-id="ISO-14229-1" section="11.2.1"/>
+    <onentry sce:provenance="OEM-BLOCK-SPEC@A#1.1">
+      <log sce:provenance="OEM-DIAG-SPEC@D#3.4.3" expr="'entered s0'"/>
+    </onentry>
+    <onexit sce:provenance="OEM-DIAG-SPEC@C#3.4.9">
+      <log sce:provenance="OEM-DIAG-SPEC@D#3.4.9" expr="'exited s0'"/>
+    </onexit>
+    <transition event="go" target="fan" sce:provenance="OEM-DIAG-SPEC@D#3.4.4">
+      <sce:provenance doc-id="OEM-TIMING-REQ" rev="B" section="7.2"/>
+    </transition>
+    <invoke type="scxml" sce:provenance="OEM-INVOKE-SPEC@A#2.1:7">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml"
+               version="1.0" name="provenance_child" initial="idle">
+          <state id="idle"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+  <parallel id="fan" sce:provenance="OEM-DIAG-SPEC@D#5.1">
+    <state id="fan_left">
+      <transition event="fire" target="done"/>
+    </state>
+    <state id="fan_right"/>
+  </parallel>
+  <final id="done" sce:provenance="OEM-DIAG-SPEC@D#9.9"/>
+</scxml>

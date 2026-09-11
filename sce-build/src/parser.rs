@@ -708,6 +708,168 @@ fn collect_sce_req(
     Ok(out)
 }
 
+/// Propagate block-level `sce:provenance` anchors (from `<onentry>`
+/// or `<onexit>`) onto every action in that block, skipping documents
+/// the action already anchors at. Order is preserved: the action's own
+/// anchors stay first, inherited block-level ones appended.
+///
+/// Matched on `doc_id` alone rather than on the whole anchor, for the
+/// same reason [`collect_sce_provenance`] rejects a repeated `doc_id`:
+/// two entries naming one document leave the node with two answers to
+/// which revision governs it. An action anchored at `OEM-SPEC@D`
+/// inside a block anchored at `OEM-SPEC@C` therefore keeps its own —
+/// the inner annotation is the more specific statement, and the block
+/// does not get to contradict it.
+fn inherit_provenance(
+    block_provenance: &[crate::provenance::SpecProvenance],
+    block: &mut [crate::model::Action],
+) {
+    if block_provenance.is_empty() {
+        return;
+    }
+    for action in block.iter_mut() {
+        for anchor in block_provenance {
+            if !action.provenance.iter().any(|a| a.doc_id == anchor.doc_id) {
+                action.provenance.push(anchor.clone());
+            }
+        }
+    }
+}
+
+/// Read the `sce:provenance` spec-document anchors attached to `node`
+/// — both the attribute form
+/// (`sce:provenance="doc_id[@rev][#section[:page]]"`, the compact URI
+/// [`crate::provenance::SpecProvenance::parse_compact`] parses) and
+/// the child-element form
+/// (`<sce:provenance doc-id rev section page/>`, which is how one node
+/// anchors at several documents). Returns `Ok(vec![])` when neither is
+/// present, so a document without the annotation is byte-identical to
+/// the pre-Item-7 state.
+///
+/// Both forms are additive and order-preserving — the attribute's
+/// anchor first, then the elements in document order — and that is the
+/// order [`crate::model::State::provenance`] and its three siblings
+/// publish, so a consumer reading the vector reads the document.
+///
+/// Two rejections, both defending the `(doc_id, rev)` set the
+/// requirement report publishes:
+///
+///   * A value naming no document (`""`, `"@23"`, or an element with
+///     no usable `doc-id`) is
+///     [`crate::forge::error::ValidationError::MalformedProvenance`].
+///     Dropping it instead would be indistinguishable downstream from
+///     a node that was never annotated.
+///   * The same `doc_id` twice on one node is
+///     [`crate::forge::error::ValidationError::DuplicateProvenanceDocId`]
+///     — the `sce:req` duplicate rejection one axis over, for the same
+///     reason.
+///
+/// `element_label_fn` is `Fn` rather than `FnOnce` because one node
+/// can reach either rejection path; it is still invoked only on an
+/// error path, so the happy path pays for no formatting.
+fn collect_sce_provenance(
+    node: &roxmltree::Node,
+    element_label_fn: impl Fn() -> String,
+    source_name: &str,
+) -> Result<
+    Vec<crate::provenance::SpecProvenance>,
+    crate::forge::error::Located<crate::forge::error::ForgeError>,
+> {
+    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::model::SCE_NAMESPACE;
+    use crate::provenance::SpecProvenance;
+    use std::collections::HashSet;
+
+    let locate = |err: ValidationError, at: &roxmltree::Node| {
+        let pos = at.document().text_pos_at(at.range().start);
+        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+    };
+
+    // Anchors paired with the position of the element that declared
+    // them. The duplicate check runs over the assembled list rather
+    // than at each push so the rejection names the *second*
+    // occurrence, which is the one the author deletes.
+    let mut anchors: Vec<(SpecProvenance, roxmltree::TextPos)> = Vec::new();
+
+    if let Some(raw) = node.attribute((SCE_NAMESPACE, "provenance")) {
+        let parsed = SpecProvenance::parse_compact(raw).ok_or_else(|| {
+            locate(
+                ValidationError::MalformedProvenance {
+                    element: element_label_fn(),
+                    value: raw.to_string(),
+                },
+                node,
+            )
+        })?;
+        anchors.push((parsed, node.document().text_pos_at(node.range().start)));
+    }
+
+    for child in node.children().filter(|c| c.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
+            || child.tag_name().name() != "provenance"
+        {
+            continue;
+        }
+        // The element form decomposes the same grammar the compact URI
+        // spells, so it fails the same way: `doc-id` is the one part
+        // with no default. An absent attribute and an empty one are one
+        // defect — the anchor names no document — and carry one code,
+        // so a consumer branching on `code` never has to know which
+        // spelling the author reached for.
+        let raw_doc_id = child.attribute("doc-id").unwrap_or("");
+        let doc_id = raw_doc_id.trim();
+        if doc_id.is_empty() {
+            return Err(locate(
+                ValidationError::MalformedProvenance {
+                    element: element_label_fn(),
+                    value: raw_doc_id.to_string(),
+                },
+                &child,
+            ));
+        }
+        // `page` is the one typed part, and a non-numeric value is
+        // dropped rather than rejected — the compact form does the
+        // same (`#4.4.2:draft` reads as the section `4.4.2:draft` with
+        // no page). The two spellings of one grammar must agree about
+        // what they accept, and the page slot is a convenience for
+        // human readers rather than a load-bearing field.
+        let page = child
+            .attribute("page")
+            .and_then(|p| p.trim().parse::<u32>().ok());
+        let non_empty = |s: &str| {
+            let t = s.trim();
+            (!t.is_empty()).then(|| t.to_string())
+        };
+        anchors.push((
+            SpecProvenance {
+                doc_id: doc_id.to_string(),
+                rev: child.attribute("rev").and_then(non_empty),
+                section: child.attribute("section").and_then(non_empty),
+                page,
+            },
+            child.document().text_pos_at(child.range().start),
+        ));
+    }
+
+    let mut seen: HashSet<&str> = HashSet::new();
+    for (anchor, pos) in &anchors {
+        if !seen.insert(anchor.doc_id.as_str()) {
+            return Err(Located::new(
+                ValidationError::DuplicateProvenanceDocId {
+                    element: element_label_fn(),
+                    doc_id: anchor.doc_id.clone(),
+                }
+                .into(),
+                source_name,
+                Some(pos.row),
+                Some(pos.col),
+            ));
+        }
+    }
+
+    Ok(anchors.into_iter().map(|(anchor, _)| anchor).collect())
+}
+
 /// Read the optional `sce:unhandled` attribute — the events this
 /// state deliberately does not handle.
 ///
@@ -1930,6 +2092,11 @@ impl SCXMLParser {
             };
             state.req =
                 collect_sce_req(&child, || format!("<state id=\"{state_id}\">"), source_name)?;
+            state.provenance = collect_sce_provenance(
+                &child,
+                || format!("<state id=\"{state_id}\">"),
+                source_name,
+            )?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
             state.unhandled =
                 parse_sce_unhandled(&child, || format!("<state id=\"{state_id}\">"), source_name)?;
@@ -1953,13 +2120,9 @@ impl SCXMLParser {
 
             // Parse onentry blocks
             for entry_elem in scxml_children(&child, "onentry") {
-                let req = collect_sce_req(
-                    &entry_elem,
-                    || format!("<onentry> in <state id=\"{state_id}\">"),
-                    source_name,
-                )?;
-                let mut block = self.parse_executable_content(&entry_elem, model, source_name)?;
-                inherit_req(&req, &mut block);
+                let block = self.parse_annotated_block(&entry_elem, model, source_name, || {
+                    format!("<onentry> in <state id=\"{state_id}\">")
+                })?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
@@ -1967,13 +2130,9 @@ impl SCXMLParser {
 
             // Parse onexit blocks
             for exit_elem in scxml_children(&child, "onexit") {
-                let req = collect_sce_req(
-                    &exit_elem,
-                    || format!("<onexit> in <state id=\"{state_id}\">"),
-                    source_name,
-                )?;
-                let mut block = self.parse_executable_content(&exit_elem, model, source_name)?;
-                inherit_req(&req, &mut block);
+                let block = self.parse_annotated_block(&exit_elem, model, source_name, || {
+                    format!("<onexit> in <state id=\"{state_id}\">")
+                })?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -2064,6 +2223,11 @@ impl SCXMLParser {
             };
             state.req =
                 collect_sce_req(&child, || format!("<final id=\"{final_id}\">"), source_name)?;
+            state.provenance = collect_sce_provenance(
+                &child,
+                || format!("<final id=\"{final_id}\">"),
+                source_name,
+            )?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
             // A `<final>` is excluded from the exhaustiveness comparison
             // (it has no transition surface), so it can never be a
@@ -2075,25 +2239,17 @@ impl SCXMLParser {
                 parse_sce_unhandled(&child, || format!("<final id=\"{final_id}\">"), source_name)?;
 
             for entry_elem in scxml_children(&child, "onentry") {
-                let req = collect_sce_req(
-                    &entry_elem,
-                    || format!("<onentry> in <final id=\"{final_id}\">"),
-                    source_name,
-                )?;
-                let mut block = self.parse_executable_content(&entry_elem, model, source_name)?;
-                inherit_req(&req, &mut block);
+                let block = self.parse_annotated_block(&entry_elem, model, source_name, || {
+                    format!("<onentry> in <final id=\"{final_id}\">")
+                })?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
             }
             for exit_elem in scxml_children(&child, "onexit") {
-                let req = collect_sce_req(
-                    &exit_elem,
-                    || format!("<onexit> in <final id=\"{final_id}\">"),
-                    source_name,
-                )?;
-                let mut block = self.parse_executable_content(&exit_elem, model, source_name)?;
-                inherit_req(&req, &mut block);
+                let block = self.parse_annotated_block(&exit_elem, model, source_name, || {
+                    format!("<onexit> in <final id=\"{final_id}\">")
+                })?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -2127,6 +2283,11 @@ impl SCXMLParser {
                 || format!("<parallel id=\"{parallel_id}\">"),
                 source_name,
             )?;
+            state.provenance = collect_sce_provenance(
+                &child,
+                || format!("<parallel id=\"{parallel_id}\">"),
+                source_name,
+            )?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
             // A `<parallel>` carrying transitions is a sibling in the
             // exhaustiveness comparison exactly like a `<state>`, so it
@@ -2154,25 +2315,17 @@ impl SCXMLParser {
             }
 
             for entry_elem in scxml_children(&child, "onentry") {
-                let req = collect_sce_req(
-                    &entry_elem,
-                    || format!("<onentry> in <parallel id=\"{parallel_id}\">"),
-                    source_name,
-                )?;
-                let mut block = self.parse_executable_content(&entry_elem, model, source_name)?;
-                inherit_req(&req, &mut block);
+                let block = self.parse_annotated_block(&entry_elem, model, source_name, || {
+                    format!("<onentry> in <parallel id=\"{parallel_id}\">")
+                })?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
             }
             for exit_elem in scxml_children(&child, "onexit") {
-                let req = collect_sce_req(
-                    &exit_elem,
-                    || format!("<onexit> in <parallel id=\"{parallel_id}\">"),
-                    source_name,
-                )?;
-                let mut block = self.parse_executable_content(&exit_elem, model, source_name)?;
-                inherit_req(&req, &mut block);
+                let block = self.parse_annotated_block(&exit_elem, model, source_name, || {
+                    format!("<onexit> in <parallel id=\"{parallel_id}\">")
+                })?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -2319,27 +2472,25 @@ impl SCXMLParser {
             source_location: source_location_of(elem, source_name),
             ..Default::default()
         };
-        transition.req = collect_sce_req(
-            elem,
-            || {
-                let event_attr = elem.attribute("event").unwrap_or("");
-                let target_attr = elem.attribute("target").unwrap_or("");
-                format!(
-                    "<transition{}{}>",
-                    if event_attr.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" event=\"{event_attr}\"")
-                    },
-                    if target_attr.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" target=\"{target_attr}\"")
-                    },
-                )
-            },
-            source_name,
-        )?;
+        let transition_label = || {
+            let event_attr = elem.attribute("event").unwrap_or("");
+            let target_attr = elem.attribute("target").unwrap_or("");
+            format!(
+                "<transition{}{}>",
+                if event_attr.is_empty() {
+                    String::new()
+                } else {
+                    format!(" event=\"{event_attr}\"")
+                },
+                if target_attr.is_empty() {
+                    String::new()
+                } else {
+                    format!(" target=\"{target_attr}\"")
+                },
+            )
+        };
+        transition.req = collect_sce_req(elem, &transition_label, source_name)?;
+        transition.provenance = collect_sce_provenance(elem, &transition_label, source_name)?;
         transition.unresolved = collect_sce_unresolved(elem, source_name);
 
         transition.actions = self.parse_executable_content(elem, model, source_name)?;
@@ -2359,6 +2510,34 @@ impl SCXMLParser {
         }
 
         Ok(transition)
+    }
+
+    /// Parse one `<onentry>` / `<onexit>` block, including the
+    /// block-level annotations that have no model node of their own.
+    ///
+    /// `<onentry>` and `<onexit>` are not represented in the IR — a
+    /// state carries `on_entry_blocks` / `on_exit_blocks` as bare
+    /// action vectors — so an annotation written on the block element
+    /// has nowhere to live except the actions inside it. Every
+    /// annotation family that attaches to a block therefore inherits
+    /// downward, and this is the single place that says so: the six
+    /// call sites (`<state>` / `<final>` / `<parallel>` × entry /
+    /// exit) differ only in the author-facing label they build for a
+    /// rejection, and adding a seventh family touches this function
+    /// rather than all six.
+    fn parse_annotated_block(
+        &mut self,
+        block_elem: &roxmltree::Node,
+        model: &mut SCXMLModel,
+        source_name: &str,
+        element_label_fn: impl Fn() -> String,
+    ) -> Result<Vec<Action>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        let req = collect_sce_req(block_elem, &element_label_fn, source_name)?;
+        let provenance = collect_sce_provenance(block_elem, &element_label_fn, source_name)?;
+        let mut block = self.parse_executable_content(block_elem, model, source_name)?;
+        inherit_req(&req, &mut block);
+        inherit_provenance(&provenance, &mut block);
+        Ok(block)
     }
 
     fn parse_executable_content(
@@ -2716,6 +2895,7 @@ impl SCXMLParser {
             ..Default::default()
         };
         action.req = collect_sce_req(child, || format!("<{tag}>"), source_name)?;
+        action.provenance = collect_sce_provenance(child, || format!("<{tag}>"), source_name)?;
         action.unresolved = collect_sce_unresolved(child, source_name);
         match tag.as_str() {
             "raise" => {
@@ -3056,6 +3236,11 @@ impl SCXMLParser {
             self.hybrid_invoke_counter += 1;
             let invoke_req =
                 collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
+            let invoke_provenance = collect_sce_provenance(
+                elem,
+                || format!("<invoke id=\"{invoke_id}\">"),
+                source_name,
+            )?;
             let invoke_unresolved = collect_sce_unresolved(elem, source_name);
             return Ok(Some(Invoke::Hybrid(HybridInvokeInfo {
                 common: InvokeSessionCommon {
@@ -3067,7 +3252,7 @@ impl SCXMLParser {
                         params: hybrid_params,
                         idlocation,
                         req: invoke_req,
-                        provenance: Vec::new(),
+                        provenance: invoke_provenance,
                         unresolved: invoke_unresolved,
                     },
                     child_name: format!("{}_hybrid{idx}", model.name),
@@ -3180,6 +3365,11 @@ impl SCXMLParser {
 
             let invoke_req =
                 collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
+            let invoke_provenance = collect_sce_provenance(
+                elem,
+                || format!("<invoke id=\"{invoke_id}\">"),
+                source_name,
+            )?;
             let invoke_unresolved = collect_sce_unresolved(elem, source_name);
             let mut scxml_info = ScxmlInvokeInfo {
                 common: InvokeSessionCommon {
@@ -3191,7 +3381,7 @@ impl SCXMLParser {
                         params: static_params,
                         idlocation,
                         req: invoke_req,
-                        provenance: Vec::new(),
+                        provenance: invoke_provenance,
                         unresolved: invoke_unresolved,
                     },
                     child_name: resolved_child_name,
@@ -3238,6 +3428,11 @@ impl SCXMLParser {
         if !scxml_type && elem.attribute("typeexpr").is_none() {
             let invoke_req =
                 collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
+            let invoke_provenance = collect_sce_provenance(
+                elem,
+                || format!("<invoke id=\"{invoke_id}\">"),
+                source_name,
+            )?;
             let invoke_unresolved = collect_sce_unresolved(elem, source_name);
             return Ok(Some(Invoke::Unsupported(UnsupportedInvokeInfo {
                 base: InvokeBase {
@@ -3251,7 +3446,7 @@ impl SCXMLParser {
                     params: static_params,
                     idlocation,
                     req: invoke_req,
-                    provenance: Vec::new(),
+                    provenance: invoke_provenance,
                     unresolved: invoke_unresolved,
                 },
                 invoke_type,
@@ -3431,6 +3626,8 @@ impl SCXMLParser {
 
         let invoke_req =
             collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
+        let invoke_provenance =
+            collect_sce_provenance(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
         let invoke_unresolved = collect_sce_unresolved(elem, source_name);
         Ok(MeshRpcInvokeInfo {
             base: InvokeBase {
@@ -3441,7 +3638,7 @@ impl SCXMLParser {
                 params: payload_params,
                 idlocation,
                 req: invoke_req,
-                provenance: Vec::new(),
+                provenance: invoke_provenance,
                 unresolved: invoke_unresolved,
             },
             target,

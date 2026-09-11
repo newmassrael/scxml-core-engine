@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!--
+  NL→IR Mapping Roadmap Item 7 — `sce:provenance` negative fixture,
+  `validation/provenance-duplicate`.
+
+  `OEM-DIAG-SPEC` is anchored twice on `s0`, once through each form,
+  at two different revisions. The node therefore carries two answers
+  to which revision of that document governs it, and a consumer
+  counting the `(doc_id, rev)` pairs the IR depends on counts the
+  document twice.
+
+  Deliberately spelled across the two forms rather than repeated in
+  one: the rejection is per node, not per form, and a fixture that
+  repeated the attribute could not prove that.
+
+  One violation per fixture, so the rejection the run reports is the
+  rejection the file is named for.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="provenance_duplicate" initial="s0">
+  <state id="s0" sce:provenance="OEM-DIAG-SPEC@C#3.4.2">
+    <sce:provenance doc-id="OEM-DIAG-SPEC" rev="D" section="3.4.2"/>
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

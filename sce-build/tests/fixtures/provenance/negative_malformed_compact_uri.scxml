@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!--
+  NL→IR Mapping Roadmap Item 7 — `sce:provenance` negative fixture,
+  `validation/provenance-malformed`.
+
+  `@23` is a revision with no document in front of it, which is what
+  `SpecProvenance::parse_compact` rejects: the anchor names no source
+  document. Accepting it would drop the annotation, and a dropped
+  annotation is indistinguishable downstream from a node that was
+  never annotated — which is the whole defect this rejection exists to
+  prevent.
+
+  One violation per fixture, so the rejection the run reports is the
+  rejection the file is named for.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="provenance_malformed" initial="s0">
+  <state id="s0" sce:provenance="@23">
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
