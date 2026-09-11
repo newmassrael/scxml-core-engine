@@ -181,6 +181,19 @@ allocator. So its rejections reach it only on documents every earlier
 stage accepted, and a scenario that exercises it must survive the
 whole pipeline rather than be caught partway.
 
+⚠ **A boundary is not always available, and where it is not the
+producer resolves.** `ecmascript_acceptance::refusals` is the fourth
+resolution point and the first that is not a boundary: its records are
+`RefusedExpression`, which never becomes a `Located` and reaches the
+wire through its own `SingleDiagnostic` impl. There is therefore no
+later point that still knows which document the record came from —
+`SingleDiagnostic` assembles a diagnostic out of the record alone. So
+the walk resolves as it builds each record, through
+`SCXMLModel::enclosing_anchors`, which is `with_enclosing_anchor`'s
+counterpart for a rejection that is not a `Located`. Both go through
+one private predicate, so the coordinate-space precondition above is
+tested in one place rather than copied into a second.
+
 ⚠ A boundary can only answer about a location the record carries, and
 that is half the wiring rather than a detail of it. All seven lint
 codes raised with a file and no row until Item 8 Atomic 3; the
@@ -214,8 +227,8 @@ shared across both pipelines — `validation/invalid-reference` is one —
 and the distinction is what makes them reachable at all.
 
 ⚠ **The contract is stated in full; the producer side reaches it
-incrementally.** As of Item 8 Atomic 4 fourteen codes satisfy it and
-the remaining 344 are registered as not yet satisfying it, each with
+incrementally.** As of Item 8 Atomic 5 sixteen codes satisfy it and
+the remaining 342 are registered as not yet satisfying it, each with
 the reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
 compile-time exhaustive over `DiagnosticCode` — a code that neither
 carries nor registers fails the build — and the accompanying test
