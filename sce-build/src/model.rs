@@ -539,6 +539,24 @@ pub enum Invoke {
     Unsupported(UnsupportedInvokeInfo),
 }
 
+impl Invoke {
+    /// The [`InvokeBase`] every variant carries, whichever it is.
+    ///
+    /// The variants differ in what an `<invoke>` *does*; they do not
+    /// differ in it being an element someone wrote at a position. A
+    /// caller that wants only the shared half should not have to
+    /// re-state the four-way match to get it — and one that does is a
+    /// place a fifth variant can be forgotten.
+    pub fn base(&self) -> &InvokeBase {
+        match self {
+            Invoke::Scxml(info) => &info.common.base,
+            Invoke::Hybrid(info) => &info.common.base,
+            Invoke::MeshRpc(info) => &info.base,
+            Invoke::Unsupported(info) => &info.base,
+        }
+    }
+}
+
 /// §scxml-6.4.1: an `<invoke>` whose `type` names no processor this
 /// platform implements.
 ///
@@ -1635,6 +1653,32 @@ pub struct SCXMLModel {
     pub needs_parent_template: bool,
     pub has_child_communication: bool,
     pub needs_http_send: bool,
+    /// Where the first §scxml-C-2 BasicHTTP `<send>` was written — the
+    /// *where* beside [`Self::needs_http_send`]'s *whether*.
+    ///
+    /// Same shape and same reason as [`Self::script_engine_causes`]
+    /// beside `needs_script_engine`: written in the same statement as
+    /// the flag, from the traversal that already has the `<send>` in
+    /// hand, so a later stage never has to re-derive which action set
+    /// it. Re-deriving would duplicate the send-type predicate that
+    /// [`crate::analyzer`] and [`crate::parser`] already own, and a
+    /// duplicated predicate is one that can disagree.
+    ///
+    /// Load-bearing for `SCE_ERROR_CONTRACT.md` §2.1.2: the no_std gate
+    /// rejects on this send, and a rejection can only be given the
+    /// anchor enclosing it if it knows where it is. `None` when the
+    /// document has no such send, or when the send carried no recorded
+    /// position.
+    ///
+    /// Not serialised, for the same reason [`Self::script_engine_causes`]
+    /// is not: this is how one gate finds a node it already decided to
+    /// reject, not something a consumer of the exported AST reads. The
+    /// `<send>` it points at is already in the export on its own terms.
+    /// Widening a published wire surface — `apis/forge-ast.v1.schema.json`
+    /// — to carry an internal lookup would make every future consumer's
+    /// contract depend on where SCE happens to keep a cursor.
+    #[serde(skip)]
+    pub http_send_location: Option<SourceLocation>,
     pub needs_script_engine: bool,
     /// Every construct that forced [`Self::needs_script_engine`] to `true`
     /// — the analyzer's full finding, not just its boolean projection.

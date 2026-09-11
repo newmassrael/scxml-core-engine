@@ -14755,9 +14755,9 @@ mod tests {
 
     /// Why a registered code cannot carry an anchor.
     ///
-    /// Grouped rather than one string per code. 348 of 358 codes are
-    /// registered today and 346 of those are registered for one
-    /// reason; writing that reason 346 times would make the roster
+    /// Grouped rather than one string per code. 344 of 358 codes are
+    /// registered today and 342 of those are registered for one
+    /// reason; writing that reason 342 times would make the roster
     /// look informative while saying one thing, and would bury the two
     /// entries that are registered for a different and permanent
     /// reason.
@@ -14785,9 +14785,10 @@ mod tests {
             match self {
                 NoAnchor::AwaitingResolver => {
                     "this code has not been demonstrated carrying the \
-                     enclosing anchor. Two resolver boundaries exist as of \
-                     Atomic 3 — `analyzer::can_generate_static` and \
-                     `lint_statechart` — so a code sits here for one of \
+                     enclosing anchor. Three resolver boundaries exist as of \
+                     Atomic 4 — `analyzer::can_generate_static`, \
+                     `lint_statechart` and `validate_no_std_compatibility` \
+                     — so a code sits here for one of \
                      three reasons. Either no scenario raises it yet: the \
                      roster only learns a code carries by executing it, \
                      never by asserting it. Or its raises reach the wire \
@@ -14799,21 +14800,36 @@ mod tests {
                      start from, which the document-scoped rejections in \
                      `can_generate_static` genuinely do not. \
                      \
-                     ⚠ Measured 2026-09-11, and the reason this grouping is \
-                     now known to be too coarse: of the 358 codes, 211 are \
-                     raised ONLY from `forge/` and `mesh/`. For every one \
-                     of those the contract is ALREADY satisfied and the \
-                     empty field is the final answer, not a pending one — \
-                     §2.1.2's second admissible case, a document kind with \
-                     nowhere to write `sce:provenance`. Calling that \
-                     remaining work is the one thing a work list must not \
-                     do about its own members. The 30 codes raised by BOTH \
-                     pipelines are why the split has to be derived rather \
-                     than taken from the slash-path prefix — \
-                     `validation/invalid-reference` is in that set. \
-                     Splitting this reason into its classes, each with one \
-                     structural proof rather than 211 hand-placed labels, \
-                     is the next atomic. \
+                     ⚠ This grouping is known to be too coarse: a large \
+                     majority of its members are raised ONLY from `forge/` \
+                     and `mesh/`, and for every one of those the contract \
+                     is ALREADY satisfied and the empty field is the final \
+                     answer, not a pending one — §2.1.2's second \
+                     admissible case, a document kind with nowhere to \
+                     write `sce:provenance`. Calling that remaining work \
+                     is the one thing a work list must not do about its \
+                     own members. The codes raised by BOTH pipelines are \
+                     why the split cannot be taken from the slash-path \
+                     prefix — `validation/invalid-reference` is in that \
+                     set. \
+                     \
+                     ⚠⚠ It is stated without counts deliberately. The \
+                     split was derived three times on 2026-09-11 and no \
+                     two derivations agreed (211/92/30, then 200/94/30, \
+                     with the unresolved remainder moving from 25 to 34), \
+                     because each classified a code by the MODULE \
+                     constructing its error variant and module is not \
+                     pipeline: one read `generator.rs` as Forge, another \
+                     read `lib.rs` as statechart though it hosts both \
+                     pipelines' entry points. So no entry here may be \
+                     placed from a source-text census. The sound form is \
+                     the one this roster already uses for carrying \
+                     claims — earned by executing a document through the \
+                     real pipeline — plus one structural assertion for \
+                     the Forge class: `forge::parser` builds no \
+                     `AnchorIndex` and `forge::model` holds no provenance \
+                     field, so there the resolver's answer and the empty \
+                     field coincide by construction. \
                      \
                      ⚠⚠ The same census found four codes with NO PRODUCER \
                      at all — `traceability/state-id-collision`, \
@@ -14906,6 +14922,40 @@ mod tests {
             | ScxmlStaleUnhandledDeclaration
             | ScxmlAlwaysFalseGuard
             | ScxmlShadowedTransition => Carries,
+
+            // The four no_std axes, resolved at the third boundary —
+            // `validate_no_std_compatibility` — added by Item 8
+            // Atomic 4.
+            //
+            // Same two halves as the lints, and the first half is
+            // again the substantive one: all four raised with a file
+            // and no row, so the boundary call alone would have
+            // returned every one of them unchanged while reading as
+            // wired. Each axis now locates on the element its own
+            // message already names — the `<data src>`, the
+            // `<invoke>`, the `<script>`, the BasicHTTP `<send>`.
+            //
+            // Three of the four read that position off a structure the
+            // model already held. The fourth could not: `<send>`
+            // detection kept only the boolean `needs_http_send`, so
+            // the site was known and then discarded. The repair is
+            // where the flag is set rather than where the rejection is
+            // raised — `SCXMLModel::http_send_location`, written in
+            // the same statement, the shape `script_engine_causes`
+            // already established beside `needs_script_engine`.
+            // Re-deriving the send-type predicate at the gate would
+            // have duplicated a rule two other modules own, and a
+            // duplicated rule is one that can disagree.
+            //
+            // These reject on a TARGET PROPERTY, not on the document:
+            // the same SCXML compiles for every other backend and is
+            // refused only for `-l rust --no-std`. That is why their
+            // scenarios are the first that must survive every earlier
+            // stage rather than be caught by one.
+            CodegenNoStdFsLoadNotSupported
+            | CodegenNoStdInvokeNotSupported
+            | CodegenNoStdScriptNotSupported
+            | CodegenNoStdHttpNotSupported => Carries,
 
             // ── Registered — the anchor is the subject ───────────
             ValidationProvenanceMalformed | ValidationProvenanceDuplicate => {
@@ -15019,10 +15069,6 @@ mod tests {
             | GenerateUnsupportedFeature
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
-            | CodegenNoStdScriptNotSupported
-            | CodegenNoStdHttpNotSupported
-            | CodegenNoStdFsLoadNotSupported
-            | CodegenNoStdInvokeNotSupported
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
@@ -15558,6 +15604,88 @@ mod tests {
                      </state>
                    </scxml>"#,
             ),
+            // The four no_std axes — Item 8 Atomic 4. Each document is
+            // one a W3C Interpreter runs and every earlier stage
+            // accepts; what refuses it is the `--no-std` target, so
+            // these are the first scenarios that reach the fifth
+            // regime in `run_scenario`.
+            //
+            // The axes are checked in a fixed order (fs → invoke →
+            // script → http), so each document carries its own
+            // construct and none of the later ones — otherwise a
+            // scenario would demonstrate an axis it is not named for.
+            //
+            // In all four the anchor is on the enclosing `<state>` and
+            // never on the rejected element. That is the case Item 8
+            // exists for: exact match answers `null` here, and the
+            // record carries an anchor only because the gate resolved
+            // it down the containment chain.
+            (
+                "codegen/no-std-fs-load-not-supported",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0">
+                     <state id="s0"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <datamodel>
+                         <data id="cfg" src="file:cfg.json"/>
+                       </datamodel>
+                     </state>
+                   </scxml>"#,
+            ),
+            (
+                "codegen/no-std-invoke-not-supported",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="parent">
+                     <state id="parent"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <invoke id="child" type="http://www.w3.org/TR/scxml/"
+                               src="child.scxml"/>
+                       <transition event="done.invoke.child" target="done"/>
+                     </state>
+                     <final id="done"/>
+                   </scxml>"#,
+            ),
+            (
+                "codegen/no-std-script-not-supported",
+                // The `<data expr>` lives inside the anchored state
+                // rather than at document scope, and that placement is
+                // load-bearing rather than tidy. This axis locates on
+                // the FIRST script-engine cause the analyzer recorded,
+                // and a `<data expr>` is one — at document scope it is
+                // the first, nothing encloses it, and the record
+                // correctly carries no anchor. The scenario would then
+                // fail while the wiring was right, which is the
+                // fixture testing its own layout instead of the
+                // contract.
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript">
+                     <state id="s0"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <datamodel><data id="x" expr="0"/></datamodel>
+                       <onentry>
+                         <script>x = x + 1;</script>
+                       </onentry>
+                     </state>
+                   </scxml>"#,
+            ),
+            (
+                "codegen/no-std-http-not-supported",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0">
+                     <state id="s0"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <onentry>
+                         <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+                               target="http://localhost:8000/event"
+                               event="ping"/>
+                       </onentry>
+                     </state>
+                   </scxml>"#,
+            ),
         ]
     }
 
@@ -15627,6 +15755,21 @@ mod tests {
         // where they are in the pipeline, and the three scenarios above
         // must keep raising the codes they are named for.
         if let Err(e) = crate::lint_statechart(&model, label) {
+            return e.to_diagnostics();
+        }
+        // The no_std gate, added with Item 8 Atomic 4. A fifth regime
+        // rather than more of the fourth: it rejects on a TARGET
+        // PROPERTY rather than on the document — the same SCXML is
+        // accepted for every other backend and refused only for
+        // `-l rust --no-std`, because the runtime cannot link an
+        // allocator. A scenario reaches it only by being a document
+        // the lints above also accept.
+        //
+        // Called unconditionally here while production calls it under
+        // `--no-std`: this is the stage list the contract spans, not a
+        // reproduction of one CLI invocation, and the four stages above
+        // return before it on any document that rejects earlier.
+        if let Err(e) = crate::validate_no_std_compatibility(&model, std::path::Path::new(label)) {
             return e.to_diagnostics();
         }
         Vec::new()

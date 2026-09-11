@@ -7144,7 +7144,34 @@ impl std::fmt::Display for Pipeline {
 pub fn validate_no_std_compatibility(
     model: &model::SCXMLModel,
     scxml_path: &std::path::Path,
-) -> Result<(), forge::error::ForgeError> {
+) -> Result<(), CompileError> {
+    // NL→IR Mapping Roadmap Item 8 — the third resolver boundary, after
+    // `analyzer::can_generate_static` and `lint_statechart`. Every
+    // rejection below leaves through the single `?`-free return at the
+    // bottom of `no_std_rejection`, so one call anchors all four codes
+    // and anchors a fifth axis added later without anyone remembering
+    // to (`SCE_ERROR_CONTRACT.md` §2.1.2).
+    //
+    // ⚠ Wiring alone would have been theatre. All four axes raised with
+    // a file and no row, and `with_enclosing_anchor` can only answer
+    // about a location the record carries — the identical trap
+    // `lint_statechart` sat in until Item 8's previous atomic. So each
+    // axis below is first given the position of the node it already
+    // names in its message, and only then is the boundary useful.
+    validate_no_std_compatibility_impl(model, scxml_path)
+        .map_or(Ok(()), |err| Err(model.with_enclosing_anchor(err)))
+}
+
+/// The four no_std axes, each located on the node its message names.
+///
+/// Split from the boundary so the resolution above happens in exactly
+/// one place regardless of which axis fired — the `<name>_impl` shape
+/// `can_generate_static` and `lint_statechart` already use for the
+/// same reason.
+fn validate_no_std_compatibility_impl(
+    model: &model::SCXMLModel,
+    scxml_path: &std::path::Path,
+) -> Option<CompileError> {
     use forge::error::GenerateError;
 
     let document = scxml_path
@@ -7152,6 +7179,15 @@ pub fn validate_no_std_compatibility(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown")
         .to_string();
+    // The document the way the caller named it — §2.2. `locate` takes
+    // the file half from here whenever no preprocessor remapping
+    // applies, so it must be the caller's spelling, not the stem.
+    // Owned rather than borrowed from `document`, which each axis below
+    // moves into the record it raises.
+    let diag_label: String = scxml_path
+        .to_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| document.clone());
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2 lines 1989-1994: the
     // no_std variant has zero alloc dependency. Filesystem-coupled
@@ -7164,34 +7200,61 @@ pub fn validate_no_std_compatibility(
     // so checking fs-load *before* script lets the author see the more
     // specific repair ("remove src or inline content") instead of the
     // catch-all script diagnostic.
-    let fs_locations: Vec<String> = std::iter::empty::<(Option<String>, &str)>()
-        .chain(model.variables.iter().filter_map(|v| {
-            if v.src.is_empty() {
-                None
-            } else {
-                Some((None, v.src.as_str()))
-            }
-        }))
-        .chain(model.states.iter().flat_map(|(state_id, state)| {
-            state.datamodel.iter().filter_map(move |v| {
+    // Each entry keeps the `<data>` element's own position beside the
+    // prose, so the record can be anchored on the first offending
+    // element rather than on the document that contains it.
+    let fs_sites: Vec<(Option<&forge::error::SourceLocation>, String)> =
+        std::iter::empty::<(Option<String>, &model::Variable)>()
+            .chain(model.variables.iter().filter_map(|v| {
                 if v.src.is_empty() {
                     None
                 } else {
-                    Some((Some(state_id.clone()), v.src.as_str()))
+                    Some((None, v))
                 }
+            }))
+            .chain(model.states.iter().flat_map(|(state_id, state)| {
+                state.datamodel.iter().filter_map(move |v| {
+                    if v.src.is_empty() {
+                        None
+                    } else {
+                        Some((Some(state_id.clone()), v))
+                    }
+                })
+            }))
+            .map(|(state, v)| {
+                let prose = match state {
+                    Some(s) => format!("<data src=\"{}\"> in state '{}'", v.src, s),
+                    None => format!("<data src=\"{}\"> at document scope", v.src),
+                };
+                (v.source_location.as_ref(), prose)
             })
-        }))
-        .map(|(state, src)| match state {
-            Some(s) => format!("<data src=\"{}\"> in state '{}'", src, s),
-            None => format!("<data src=\"{}\"> at document scope", src),
-        })
-        .collect();
-    if !fs_locations.is_empty() {
-        return Err(GenerateError::CodegenNoStdFsLoadNotSupported {
-            document,
-            locations: fs_locations.join("; "),
-        }
-        .into());
+            .collect();
+    if !fs_sites.is_empty() {
+        // The first site, not the document: §2.1.2 reads the anchor
+        // down the containment chain from wherever the record says it
+        // is, so a `<data>` inside an anchored state answers with that
+        // state. Naming the document instead would answer with the
+        // root's anchor, which is a different and less specific
+        // paragraph — and pointing a reviewer at one that does not
+        // govern the defect is the one outcome worse than answering
+        // nothing.
+        let at = fs_sites.iter().find_map(|(loc, _)| *loc);
+        let locations = fs_sites
+            .iter()
+            .map(|(_, prose)| prose.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Some(
+            model.locate(
+                GenerateError::CodegenNoStdFsLoadNotSupported {
+                    document,
+                    locations,
+                }
+                .into(),
+                at,
+                &diag_label,
+            ),
+        );
     }
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2: invoke processing in
@@ -7212,11 +7275,24 @@ pub fn validate_no_std_compatibility(
         } else {
             format!("{} <invoke> elements", n)
         };
-        return Err(GenerateError::CodegenNoStdInvokeNotSupported {
-            document,
-            locations,
-        }
-        .into());
+        // The first `<invoke>`, through the accessor every variant
+        // answers — the four kinds differ in what an invoke does, not
+        // in it being an element at a position.
+        let at = model
+            .invokes
+            .iter()
+            .find_map(|i| i.base().source_location.as_ref());
+        return Some(
+            model.locate(
+                GenerateError::CodegenNoStdInvokeNotSupported {
+                    document,
+                    locations,
+                }
+                .into(),
+                at,
+                &diag_label,
+            ),
+        );
     }
 
     if model.needs_script_engine || model.has_unresolved_external_script {
@@ -7230,23 +7306,56 @@ pub fn validate_no_std_compatibility(
         } else {
             "ECMAScript executable content (analyzer-detected)".to_string()
         };
-        return Err(GenerateError::CodegenNoStdScriptNotSupported {
-            document,
-            locations,
-        }
-        .into());
+        // The analyzer already recorded where each cause was written —
+        // `script_engine_causes` exists so "a gate can point at a line
+        // of SCXML" — so this branch reads that rather than re-deriving
+        // which construct cost the pure-static lowering. The global
+        // `<script>` list is preferred when the message names it, so
+        // the row and the prose agree about which element they mean.
+        let at = model
+            .global_scripts
+            .iter()
+            .find_map(|a| a.source_location.as_ref())
+            .or_else(|| {
+                model
+                    .script_engine_causes
+                    .iter()
+                    .find_map(|c| c.location.as_ref())
+            });
+        return Some(
+            model.locate(
+                GenerateError::CodegenNoStdScriptNotSupported {
+                    document,
+                    locations,
+                }
+                .into(),
+                at,
+                &diag_label,
+            ),
+        );
     }
 
     if model.needs_http_send {
-        return Err(GenerateError::CodegenNoStdHttpNotSupported {
-            document,
-            locations: "BasicHTTPEventProcessor <send> target/targetexpr (analyzer-detected)"
-                .to_string(),
-        }
-        .into());
+        return Some(
+            model.locate(
+                GenerateError::CodegenNoStdHttpNotSupported {
+                    document,
+                    locations:
+                        "BasicHTTPEventProcessor <send> target/targetexpr (analyzer-detected)"
+                            .to_string(),
+                }
+                .into(),
+                // Recorded in the same statement that set the flag — see
+                // `SCXMLModel::http_send_location`. Re-deriving it here
+                // would duplicate the send-type predicate two other modules
+                // already own.
+                model.http_send_location.as_ref(),
+                &diag_label,
+            ),
+        );
     }
 
-    Ok(())
+    None
 }
 
 pub fn classify_document(content: &str) -> Pipeline {

@@ -2779,6 +2779,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "initialize_in_turn",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_no_std_compatibility_impl",
+          "kind": "implements"
         }
       ]
     },

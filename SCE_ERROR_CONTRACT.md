@@ -168,9 +168,18 @@ pipelines share, and the only route to
 `lint_statechart` is the second such boundary, covering the three
 design-time lints; `validate_unhandled_declarations` resolves as well,
 because it is a second door onto two of those rejections rather than a
-step inside the first. One call covers every code raised inside a
-boundary, including ones added later, which is the property a list of
-call sites cannot have.
+step inside the first. `validate_no_std_compatibility` is the third,
+covering the four `codegen/no-std-*` axes. One call covers every code
+raised inside a boundary, including ones added later, which is the
+property a list of call sites cannot have.
+
+The third boundary is a different *kind* of stage from the first two
+and is listed to say so: it rejects on a **target property**, not on
+the document. The same SCXML compiles for every other backend and is
+refused only for `-l rust --no-std`, because that runtime links no
+allocator. So its rejections reach it only on documents every earlier
+stage accepted, and a scenario that exercises it must survive the
+whole pipeline rather than be caught partway.
 
 ⚠ A boundary can only answer about a location the record carries, and
 that is half the wiring rather than a detail of it. All seven lint
@@ -182,6 +191,19 @@ owes its rejections a coordinate before it owes them an anchor —
 `SCXMLModel::locate` is the one place that decides which coordinate
 space that is, and `with_enclosing_anchor` reads what it wrote.
 
+⚠⚠ That trap recurred verbatim at the third boundary, which is the
+reason it is written here as a rule and not as one atomic's anecdote:
+all four `codegen/no-std-*` axes also raised with a file and no row.
+Three read a position off a structure the model already held; the
+fourth could not, because BasicHTTP `<send>` detection kept only the
+boolean `needs_http_send` and discarded the site it had just seen. A
+flag that answers *whether* without recording *where* cannot be
+anchored later, and re-deriving the site at the gate would duplicate a
+predicate two other modules own. The repair belongs where the flag is
+set — `SCXMLModel::http_send_location`, written in the same statement,
+the shape `script_engine_causes` already established beside
+`needs_script_engine`.
+
 ⚠ A code counts as carrying when the **contract** holds at every site
 that raises it, which is not the same as a mechanism being present at
 every site. A site also satisfies it by raising on a document kind
@@ -192,9 +214,9 @@ shared across both pipelines — `validation/invalid-reference` is one —
 and the distinction is what makes them reachable at all.
 
 ⚠ **The contract is stated in full; the producer side reaches it
-incrementally.** As of Item 8 Atomic 3 ten codes satisfy it and the
-remaining 348 are registered as not yet satisfying it, each with the
-reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
+incrementally.** As of Item 8 Atomic 4 fourteen codes satisfy it and
+the remaining 344 are registered as not yet satisfying it, each with
+the reason, in `forge::diagnostic::tests::anchor_carriage`. That roster is
 compile-time exhaustive over `DiagnosticCode` — a code that neither
 carries nor registers fails the build — and the accompanying test
 demonstrates every carrying claim by executing it rather than
@@ -204,18 +226,40 @@ coverage goes stale silently, and this is a repository where a field
 declared in May stayed empty for four months while every gate was
 green.
 
-⚠ The 348 are not 348 pieces of remaining work, and the roster says so
-rather than letting the count imply it. Measured 2026-09-11 over all
-358 codes, by resolving each to the error variant that produces it and
-then to the modules that construct that variant: **211 are raised only
-from `forge/` and `mesh/`**, where the paragraph above already settles
-the question — the document kind has nowhere to write
+⚠ The 344 are not 344 pieces of remaining work, and the roster says so
+rather than letting the count imply it. A large majority are raised
+only from `forge/` and `mesh/`, where the paragraph above already
+settles the question — the document kind has nowhere to write
 `sce:provenance`, so the empty field is the final answer and not a
-pending one. 92 are statechart-only, **30 are raised by both
-pipelines**, and 25 the census does not resolve (18 `cli/` codes, 3
-forge source-hash codes, and 4 for which it finds no construction site
-at all — themselves worth a look, since a code nothing raises is a
-roster entry describing nothing).
+pending one. A smaller set is statechart-only, and a set in the tens
+is raised by **both** pipelines, which is the interesting one: a code
+both pipelines raise cannot claim the Forge exemption, because the
+contract asks that it hold at *every* site.
+
+⚠⚠ **Those groups are described without counts on purpose, and this
+is the finding rather than an omission.** The split has now been
+derived three times — twice on 2026-09-11 during Atomic 3, once
+independently during Atomic 4 — and no two derivations agreed:
+211/92/30 against 200/94/30, with the unresolved remainder moving from
+25 to 34. Each attempt classified a code by the *module* that
+constructs its error variant, and each mis-assigned a different chunk,
+because module is not pipeline. The first read `generator.rs` as a
+Forge file; the third read `lib.rs` as a statechart file, when
+`lib.rs` hosts the entry points of **both** pipelines and its 41
+apparently-statechart codes are mostly `Link*` / `Mem*` / `Worker*`
+cross-document validators.
+
+So: a per-code pipeline census by source text is **not a sound basis**,
+and no roster entry should be placed from one. What would be sound is
+an answer derived from execution rather than from text — the shape the
+roster already uses for its carrying claims, where a code earns its
+classification by a document being run through the real pipeline. The
+structural fact the Forge group rests on needs no census and should be
+asserted once on its own terms: `forge::parser` builds no
+`AnchorIndex` and `forge::model` holds no provenance field, so for a
+Forge document the resolver's answer and the empty field coincide by
+construction. Should Forge ever gain `sce:provenance`, that one
+assertion is what should go red.
 
 Those 211 are registered today under a reason that calls them
 remaining work, which is the one thing a work list must not do about

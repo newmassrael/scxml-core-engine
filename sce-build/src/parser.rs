@@ -2711,6 +2711,13 @@ impl SCXMLParser {
             && (action.target.starts_with("http://") || action.target.starts_with("https://"))
         {
             model.needs_http_send = true;
+            // See `SCXMLModel::http_send_location`. Recorded here as
+            // well as in the analyzer because either traversal can be
+            // the one that first sees a BasicHTTP send, and the field
+            // has to mean the same thing whichever did.
+            if model.http_send_location.is_none() {
+                model.http_send_location = action.source_location.clone();
+            }
         }
 
         // SCE_MESH.md §13 path B — SCXML purity: sce:qos / sce:pattern /
