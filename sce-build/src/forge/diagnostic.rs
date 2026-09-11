@@ -14764,9 +14764,9 @@ mod tests {
 
     /// Why a registered code cannot carry an anchor.
     ///
-    /// Grouped rather than one string per code. 342 of 358 codes are
-    /// registered today and 340 of those are registered for one
-    /// reason; writing that reason 340 times would make the roster
+    /// Grouped rather than one string per code. 337 of 358 codes are
+    /// registered today and 335 of those are registered for one
+    /// reason; writing that reason 335 times would make the roster
     /// look informative while saying one thing, and would bury the two
     /// entries that are registered for a different and permanent
     /// reason.
@@ -14996,7 +14996,13 @@ mod tests {
             // through the same walk and will classify the same way,
             // but the roster learns a code carries by running it —
             // never by reasoning that its neighbour does.
-            ExpressionUnknownIdentifier | ExpressionUnsupportedConstruct => Carries,
+            ExpressionUnknownIdentifier
+            | ExpressionUnsupportedConstruct
+            | ExpressionPropertyNotCallable
+            | ExpressionUnsupportedBuiltin
+            | ExpressionNamespaceNotCallable
+            | ExpressionNamespaceNotAValue
+            | ExpressionUnexpectedToken => Carries,
 
             // ── Registered — the anchor is the subject ───────────
             ValidationProvenanceMalformed | ValidationProvenanceDuplicate => {
@@ -15085,14 +15091,9 @@ mod tests {
             | ReassemblyPerPeerQuotaBuildInvariantViolated
             | ExpressionEmpty
             | ExpressionLex
-            | ExpressionUnsupportedBuiltin
-            | ExpressionPropertyNotCallable
-            | ExpressionNamespaceNotCallable
-            | ExpressionNamespaceNotAValue
             | ExpressionLiteralNotCallable
             | ExpressionStrictEquality
             | ExpressionParseMismatch
-            | ExpressionUnexpectedToken
             | ExpressionInvalidLvalue
             | ExpressionTypeCoercion
             | ExpressionGoTernaryUnsupported
@@ -15769,7 +15770,51 @@ mod tests {
                      </state>
                    </scxml>"#,
             ),
+            // The rest of the `expression/*` family, one document each.
+            // They differ only in the refused expression, so they are
+            // built from one shape by `expression_scenario` rather than
+            // repeated ten times — the anchor placement is the part
+            // that must not drift, and one copy of it cannot.
+            expression_scenario("expression/property-not-callable", r#"Math.PI()"#),
+            expression_scenario("expression/unsupported-builtin", r#"Math.nope(1)"#),
+            expression_scenario("expression/namespace-not-callable", r#"Math()"#),
+            expression_scenario("expression/namespace-not-a-value", r#"Math"#),
+            expression_scenario("expression/unexpected-token", r#"1 +"#),
         ]
+    }
+
+    /// One `expression/*` scenario: `expr` refused inside a state that
+    /// declares an anchor, with nothing else in the document that any
+    /// earlier stage rejects.
+    ///
+    /// The anchor sits on the enclosing `<state>` and never on the
+    /// `<assign>`, which is the whole point of Item 8 — exact match
+    /// answers `null` here, and the record carries an anchor only
+    /// because the walk resolved it down the containment chain.
+    fn expression_scenario(code: &'static str, expr: &str) -> (&'static str, &'static str) {
+        // Leaked deliberately: `carrying_scenarios` hands back
+        // `&'static str` for every other entry, and one owned `String`
+        // among them would widen the signature of the whole roster to
+        // carry a lifetime that exists only inside this test binary.
+        // A handful of small leaks in a test process is the cheaper
+        // half of that trade.
+        let doc: &'static str = Box::leak(
+            format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript">
+                     <state id="s0"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <datamodel><data id="x" expr="0"/></datamodel>
+                       <onentry>
+                         <assign location="x" expr="{expr}"/>
+                       </onentry>
+                     </state>
+                   </scxml>"#
+            )
+            .into_boxed_str(),
+        );
+        (code, doc)
     }
 
     /// Codes a scenario actually produced with a non-empty
