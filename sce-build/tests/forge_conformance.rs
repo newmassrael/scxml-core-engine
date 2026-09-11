@@ -789,32 +789,35 @@ fn forge_c11_algorithm_cobs_encode() {
 /// asserts the canonical COBS reference vectors at runtime. Byte goldens alone
 /// would not catch a miscompiled buffer-build body
 /// (`feedback_byte_goldens_not_compile`).
+///
+/// Its vectors come from the same `COBS_VECTORS` table the other five
+/// backends render, and that is not decoration: while the table was being
+/// introduced this harness kept a hand-written copy, and a deliberately
+/// corrupted vector turned every other backend red while Rust stayed green —
+/// the gate that reads its own copy of the answer cannot disagree with it.
 #[test]
 fn forge_rust_algorithm_cobs_encode_runtime() {
-    const HARNESS: &str = r#"
-#[cfg(test)]
-mod tests {
-    use crate::algorithm_cobs_encode::algorithm_cobs_encode as cobs;
-
-    fn ck(input: &[u8], want: &[u8]) {
-        let got = cobs(input).expect("COBS output fits the 32-byte buffer");
-        assert_eq!(got.as_slice(), want, "COBS({input:02x?})");
-    }
-
-    #[test]
-    fn cobs_reference_vectors() {
-        ck(&[], &[0x01]);
-        ck(&[0x00], &[0x01, 0x01]);
-        ck(&[0x11, 0x22, 0x00, 0x33], &[0x03, 0x11, 0x22, 0x02, 0x33]);
-        ck(&[0x11, 0x00, 0x00], &[0x02, 0x11, 0x01, 0x01]);
-        ck(&[0x11, 0x22, 0x33], &[0x04, 0x11, 0x22, 0x33]);
-    }
-}
-"#;
+    let checks = cobs_cases(|_, input, want| format!("        ck(&[{input}], &[{want}]);"));
+    let harness = format!(
+        "#[cfg(test)]\n\
+         mod tests {{\n\
+         \x20   use crate::algorithm_cobs_encode::algorithm_cobs_encode as cobs;\n\
+         \n\
+         \x20   fn ck(input: &[u8], want: &[u8]) {{\n\
+         \x20       let got = cobs(input).expect(\"COBS output fits the 32-byte buffer\");\n\
+         \x20       assert_eq!(got.as_slice(), want, \"COBS({{input:02x?}})\");\n\
+         \x20   }}\n\
+         \n\
+         \x20   #[test]\n\
+         \x20   fn cobs_reference_vectors() {{\n\
+         {checks}\n\
+         \x20   }}\n\
+         }}\n"
+    );
     rustc_test_codec_set_with_extra(
         &resource_dir(),
         &["algorithm_cobs_encode.scxml"],
-        &[("cobs_vectors.rs", HARNESS)],
+        &[("cobs_vectors.rs", &harness)],
         "algorithm_cobs_encode_runtime",
     )
     .expect("COBS encode must compile against sce-portable-bytes and match the reference vectors");
