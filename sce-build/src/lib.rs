@@ -17,6 +17,12 @@
 //   include!(concat!(env!("OUT_DIR"), "/traffic_light_sm.rs"));
 
 pub mod analyzer;
+/// The innermost-enclosing-anchor lookup behind
+/// `SCE_ERROR_CONTRACT.md` §2.1.2 — source location to the
+/// `sce:provenance` of the innermost anchored region enclosing it.
+/// Built by the parser, carried on [`model::SCXMLModel`], read by the
+/// stages that raise diagnostics.
+pub mod anchor_index;
 pub mod cli_error;
 pub mod cli_language;
 pub mod conformance;

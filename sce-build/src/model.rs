@@ -1153,6 +1153,60 @@ pub struct State {
     pub unhandled: Vec<String>,
 }
 
+impl SCXMLModel {
+    /// Give a rejection the `spec_provenance` of the innermost
+    /// anchored node enclosing its location, per
+    /// `SCE_ERROR_CONTRACT.md` §2.1.2.
+    ///
+    /// This is what a stage holding the model calls, once, where its
+    /// rejections leave it — see
+    /// [`crate::anchor_index::AnchorIndex::enrich`] for why a boundary
+    /// rather than each raise site.
+    ///
+    /// # The precondition this method exists to hold
+    ///
+    /// The index is in *expanded* coordinates, and a rejection on its
+    /// way out is often not: `scxml_references::located` resolves
+    /// through [`AuthoredPositions`] first, so after `<xi:include>` or
+    /// `<sce:use>` expansion the record names an authored file and an
+    /// authored row. Those rows are a different numbering from the
+    /// index's, and the outer document keeps its own basename across
+    /// the remap — so the document check in
+    /// [`crate::anchor_index::AnchorIndex::enclosing`] would *pass*
+    /// and the rows would be read against the wrong scale. That is the
+    /// one failure mode worse than answering nothing: a confident
+    /// wrong anchor sends a reviewer to a paragraph that does not
+    /// govern the defect.
+    ///
+    /// So enrichment is refused unless the two spaces provably
+    /// coincide — no preprocessor ran, or it ran and changed nothing.
+    /// An expanded document therefore keeps the empty field, which
+    /// still means exactly what §2.1.2 says it means. Widening this to
+    /// expanded documents means giving the index authored coordinates,
+    /// which is a separate change with its own question (containment
+    /// can cross files once regions are mapped back), and it is not
+    /// answered by loosening the check here.
+    ///
+    /// The check lives here rather than at the call site because a
+    /// call site cannot be relied on to remember it: the two spaces
+    /// are identical for every document without a preprocessor
+    /// directive, which is nearly all of them and all of the obvious
+    /// fixtures, so a forgotten check is invisible until it is wrong.
+    pub fn with_enclosing_anchor<E>(
+        &self,
+        err: crate::forge::error::Located<E>,
+    ) -> crate::forge::error::Located<E> {
+        let spaces_coincide = match self.authored_positions.as_ref() {
+            None => true,
+            Some(positions) => positions.map.is_identity(),
+        };
+        if !spaces_coincide {
+            return err;
+        }
+        self.anchor_index.enrich(err)
+    }
+}
+
 /// What a model needs to translate its own recorded positions back
 /// into the files an author wrote.
 ///
@@ -1730,6 +1784,27 @@ pub struct SCXMLModel {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub authored_positions: Option<AuthoredPositions>,
+
+    /// Where this document's `sce:provenance` anchors are, as regions
+    /// of it — NL→IR Mapping Roadmap Item 8.
+    ///
+    /// Beside [`Self::authored_positions`] and for the same reason:
+    /// both are knowledge only the parse holds, and both are read by
+    /// stages that run long after the XML tree is gone. A diagnostic
+    /// raised at any of those stages asks this which anchors enclose
+    /// the location it is about, per `SCE_ERROR_CONTRACT.md` §2.1.2;
+    /// see [`crate::anchor_index`] for why the lookup is keyed by
+    /// position rather than by IR node.
+    ///
+    /// Positions here are the same expanded coordinates
+    /// [`Self::authored_positions`] describes, so a caller resolves
+    /// against this *before* remapping to authored ones, not after.
+    ///
+    /// Empty — answering "nothing encloses that" — on a model
+    /// assembled in memory rather than parsed.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub anchor_index: crate::anchor_index::AnchorIndex,
 
     // Analysis helpers (set by analyzer)
     #[serde(default, skip_serializing_if = "Option::is_none")]

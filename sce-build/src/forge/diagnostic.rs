@@ -14719,10 +14719,35 @@ mod tests {
     enum AnchorCarriage {
         /// A rejection with this code, raised on a node an anchored
         /// node encloses, reaches the wire with a non-empty
-        /// `spec_provenance`. Every site that raises it threads the
-        /// anchor — partial coverage is not this classification,
-        /// because a consumer branches on the code and cannot see
-        /// which site produced the record.
+        /// `spec_provenance`.
+        ///
+        /// The property is over every site that raises the code, not
+        /// over one of them: a consumer branches on the code and
+        /// cannot see which site produced the record, so partial
+        /// coverage is not this classification.
+        ///
+        /// ⚠ "Every site" is a claim about the contract holding, not
+        /// about a mechanism being present, and the two are not the
+        /// same — Item 8 Atomic 2 had to separate them. A site
+        /// satisfies it two ways:
+        ///
+        ///   * it resolves or threads the enclosing anchor, or
+        ///   * it raises on a document kind that has no anchors at
+        ///     all, where the empty field is already the true answer
+        ///     §2.1.2 promises — "nothing enclosing this location is
+        ///     anchored to a specification".
+        ///
+        /// The second is not a loophole, it is the reason several
+        /// codes are reachable at all. `sce:provenance` is read off
+        /// statechart documents; a Forge document (codec, mesh
+        /// binding, event schema) has nowhere to write one, and
+        /// `crate::forge::model` holds none of the annotation types.
+        /// Many wire codes are deliberately REUSED across both
+        /// pipelines — `validation/invalid-reference` is raised by
+        /// `forge/parser.rs` and by the statechart semantic gate — so
+        /// a rule demanding a threaded anchor at literally every site
+        /// would make those codes permanently unreachable while the
+        /// contract they are measured against was already satisfied.
         Carries,
         /// It does not, and [`NoAnchor::why`] says why.
         Registered(NoAnchor),
@@ -14738,9 +14763,9 @@ mod tests {
     /// reason.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum NoAnchor {
-        /// No site raising this code threads an anchor, and no
-        /// resolver exists yet to look one up from the record's
-        /// location.
+        /// The code has not been demonstrated carrying yet. Since
+        /// Atomic 2 the resolver exists and is wired, so this names
+        /// remaining work rather than a missing mechanism.
         AwaitingResolver,
         /// The anchor itself is what the code is complaining about.
         TheAnchorIsTheSubject,
@@ -14753,18 +14778,23 @@ mod tests {
         fn why(self) -> &'static str {
             match self {
                 NoAnchor::AwaitingResolver => {
-                    "no site that raises this code threads an anchor, and \
-                     nothing yet looks one up from the record's location. \
-                     `with_spec_provenance` is called from five sites — four \
-                     in `parser.rs`, one in `unresolved_check.rs` — which is \
-                     where the model does not exist yet and a lookup is \
-                     therefore impossible; every other stage holds the parsed \
-                     model and can resolve, but does not. This is the work \
-                     list, not a verdict: a code leaves this group when the \
-                     resolver reaches it, and whichever codes remain after \
-                     that are the ones whose records carry no location at \
-                     all, which is a different question and gets a different \
-                     answer."
+                    "this code has not been demonstrated carrying the \
+                     enclosing anchor. As of Atomic 2 that is remaining work \
+                     rather than a missing mechanism: the resolver exists \
+                     and runs where `analyzer::can_generate_static` returns, \
+                     so a code sits here for one of three reasons, and which \
+                     one is not recorded per code because finding out is the \
+                     work itself. Either no scenario raises it yet — the \
+                     roster only learns a code carries by executing it; or \
+                     its raises reach the wire from outside a stage that \
+                     resolves, such as mid-parse where the model does not \
+                     exist and the four `parser.rs` sites thread by hand; or \
+                     the record carries no location for a lookup to start \
+                     from, which several document-scoped rejections in that \
+                     same gate genuinely do not. The third group is a \
+                     different question and gets its own answer in Atomic 3, \
+                     which either gives each one a location or records why \
+                     it has none."
                 }
                 NoAnchor::TheAnchorIsTheSubject => {
                     "the record is a complaint ABOUT `sce:provenance`, raised \
@@ -14797,6 +14827,19 @@ mod tests {
             // one each. `validation/invalid-attribute` is threaded at
             // three of its sites and is NOT here, because it has 133.
             ValidationDuplicateRequirementId | ValidationUnresolvedPlaceholder => Carries,
+
+            // Resolved rather than threaded — Item 8 Atomic 2. Every
+            // statechart-side raise of this code reaches the wire
+            // through `analyzer::can_generate_static`, which looks the
+            // anchor up from the record's own location as it returns
+            // (`SCXMLModel::with_enclosing_anchor`). Measured
+            // 2026-09-11: the production raises are `analyzer.rs`
+            // inside that gate and two in `scxml_references.rs`, which
+            // is reached only from it; every other site in the crate
+            // is a test, or is `forge/parser.rs` / `forge/generator.rs`
+            // raising on a Forge document, which carries no anchors to
+            // enclose anything — the second admissible case above.
+            ValidationInvalidReference => Carries,
 
             // ── Registered — the anchor is the subject ───────────
             ValidationProvenanceMalformed | ValidationProvenanceDuplicate => {
@@ -14839,7 +14882,6 @@ mod tests {
             | ValidationCountMismatch
             | ValidationIncompatibleAttributes
             | ValidationMissingContext
-            | ValidationInvalidReference
             | ValidationInvalidDirection
             | ValidationNumericParse
             | ValidationEmptyValue
@@ -15284,6 +15326,31 @@ mod tests {
                             sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112"/>
                    </scxml>"#,
             ),
+            // `validation/invalid-reference` — the case this whole
+            // item exists for, and the one the RFC measured returning
+            // `null` (§1). The anchor is on the enclosing `<state>`;
+            // the complaint is about the `<transition>` inside it,
+            // which declares no anchor of its own. Nothing threads
+            // anything here: `scxml_references::validate` never sees
+            // an anchor, and the record arrives carrying one because
+            // the gate it leaves through resolved it from the
+            // location.
+            //
+            // Keeping this scenario honest in the direction that
+            // matters: the anchor must NOT be on the transition. An
+            // anchor there would be answered by exact match, and the
+            // enclosing rule — the substantive half of §2.1.2 — would
+            // go untested while the test still passed.
+            (
+                "validation/invalid-reference",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0">
+                     <state id="s0" sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <transition event="go" target="no_such_state"/>
+                     </state>
+                   </scxml>"#,
+            ),
         ]
     }
 
@@ -15327,13 +15394,23 @@ mod tests {
     /// being built, and one raised by a validator that walks the
     /// finished model.
     fn run_scenario(scxml: &str) -> Vec<Diagnostic> {
-        match crate::parser::SCXMLParser::new().parse_string(scxml, "anchor_contract") {
-            Err(e) => e.to_diagnostics(),
-            Ok(model) => match crate::unresolved_check::check_strict_unresolved(&model) {
-                Err(e) => e.to_diagnostics(),
-                Ok(()) => Vec::new(),
-            },
+        let label = "anchor_contract";
+        let model = match crate::parser::SCXMLParser::new().parse_string(scxml, label) {
+            Err(e) => return e.to_diagnostics(),
+            Ok(model) => model,
+        };
+        if let Err(e) = crate::unresolved_check::check_strict_unresolved(&model) {
+            return e.to_diagnostics();
         }
+        // The third regime, added with Item 8 Atomic 2: a rejection
+        // raised by a stage that holds the finished model and resolves
+        // its own anchors. `can_generate_static` is the gate both
+        // pipelines share, and `scxml_references::validate` is reached
+        // only through it, so one call covers both.
+        if let Err(e) = crate::analyzer::can_generate_static(&model, label) {
+            return e.to_diagnostics();
+        }
+        Vec::new()
     }
 
     /// Drift guard between [`ALL_DIAGNOSTIC_CODES`] and the
