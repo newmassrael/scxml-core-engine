@@ -44,10 +44,14 @@ edit("sce-build/src/forge/diagnostic.rs",
      "        Some(self)")
 PY
 
+# Re-aimed at `model.rs`: Item 8 moved this from a free function in
+# `scxml_references.rs` into `SCXMLModel::locate`, so the anchor named a
+# file the code had left and matched nothing. The indent moved with it —
+# 4 spaces in the free function, 8 inside the method.
 mutation_case "the call site that chose the parameters is dropped" <<'PY'
-edit("sce-build/src/scxml_references.rs",
-     "    match positions.and_then(|p| p.call_site_on(line)) {\n        Some((file, row, col)) => located.expanded_from(file, row, col),\n        None => located,\n    }",
-     "    located")
+edit("sce-build/src/model.rs",
+     "        match positions.and_then(|p| p.call_site_on(line)) {\n            Some((file, row, col)) => located.expanded_from(file, row, col),\n            None => located,\n        }",
+     "        located")
 PY
 
 mutation_case "an empty choice set ships as a degenerate closed set" <<'PY'
