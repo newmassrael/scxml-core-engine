@@ -642,6 +642,14 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
                     || !action.targetexpr.is_empty())
             {
                 model.needs_http_send = true;
+                // The *where* beside the *whether*, recorded in the
+                // same statement so the two cannot disagree. First
+                // send wins: the no_std rejection is about the
+                // document using BasicHTTP at all, so the earliest
+                // site is the one an author reads first.
+                if model.http_send_location.is_none() {
+                    model.http_send_location = action.source_location.clone();
+                }
             }
             // W3C SCXML: SCXMLEventProcessor external flag
             if action.send_type == "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" {

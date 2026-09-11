@@ -87,7 +87,8 @@ fn plain_fsm_passes_no_std_validation() {
 fn fsm_with_inline_script_fires_no_std_script_diagnostic() {
     let model = parse(FSM_WITH_INLINE_SCRIPT, "script_fsm");
     let err = validate_no_std_compatibility(&model, Path::new("script_fsm.scxml"))
-        .expect_err("script-bearing SCXML must reject under --no-std");
+        .expect_err("script-bearing SCXML must reject under --no-std")
+        .error;
 
     match err {
         ForgeError::Generate(boxed) => match *boxed {
@@ -111,7 +112,8 @@ fn fsm_with_inline_script_fires_no_std_script_diagnostic() {
 fn fsm_with_http_send_fires_no_std_http_diagnostic() {
     let model = parse(FSM_WITH_HTTP_SEND, "http_fsm");
     let err = validate_no_std_compatibility(&model, Path::new("http_fsm.scxml"))
-        .expect_err("HTTP-send SCXML must reject under --no-std");
+        .expect_err("HTTP-send SCXML must reject under --no-std")
+        .error;
 
     match err {
         ForgeError::Generate(boxed) => match *boxed {
@@ -151,7 +153,8 @@ fn script_axis_fires_before_http_when_both_present() {
 "#;
     let model = parse(both, "both");
     let err = validate_no_std_compatibility(&model, Path::new("both.scxml"))
-        .expect_err("doc with both axes must reject");
+        .expect_err("doc with both axes must reject")
+        .error;
     assert!(
         matches!(
             err,
@@ -193,7 +196,8 @@ const FSM_WITH_MULTIPLE_DATA_SRC: &str = r#"<?xml version="1.0" encoding="UTF-8"
 fn fsm_with_data_src_fires_no_std_fs_load_diagnostic() {
     let model = parse(FSM_WITH_DATA_SRC, "fs_fsm");
     let err = validate_no_std_compatibility(&model, Path::new("fs_fsm.scxml"))
-        .expect_err("doc with <data src> must reject under --no-std");
+        .expect_err("doc with <data src> must reject under --no-std")
+        .error;
 
     match err {
         ForgeError::Generate(boxed) => match *boxed {
@@ -223,7 +227,8 @@ fn fsm_with_multiple_data_src_reports_all_sites() {
     // state-nested `<data src>` must surface in one summary.
     let model = parse(FSM_WITH_MULTIPLE_DATA_SRC, "multi_fs");
     let err = validate_no_std_compatibility(&model, Path::new("multi_fs.scxml"))
-        .expect_err("multi-src doc must reject under --no-std");
+        .expect_err("multi-src doc must reject under --no-std")
+        .error;
     let locations = match err {
         ForgeError::Generate(boxed) => match *boxed {
             GenerateError::CodegenNoStdFsLoadNotSupported { locations, .. } => locations,
@@ -258,7 +263,8 @@ const FSM_WITH_INVOKE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 fn fsm_with_invoke_fires_no_std_invoke_diagnostic() {
     let model = parse(FSM_WITH_INVOKE, "invoke_fsm");
     let err = validate_no_std_compatibility(&model, Path::new("invoke_fsm.scxml"))
-        .expect_err("doc with <invoke> must reject under --no-std");
+        .expect_err("doc with <invoke> must reject under --no-std")
+        .error;
 
     match err {
         ForgeError::Generate(boxed) => match *boxed {
@@ -307,7 +313,8 @@ fn axis_ordering_is_fs_then_invoke_then_script_then_http() {
 "#;
     let model = parse(fs_and_invoke, "fs_and_invoke");
     let err = validate_no_std_compatibility(&model, Path::new("fs_and_invoke.scxml"))
-        .expect_err("multi-axis doc must reject");
+        .expect_err("multi-axis doc must reject")
+        .error;
     assert!(
         matches!(
             err,
@@ -325,7 +332,8 @@ fn document_basename_is_extracted_from_path() {
     // so downstream consumers dispatching on `key_fragments` can match
     // the SCXML file independent of the calling CWD.
     let err = validate_no_std_compatibility(&model, Path::new("/abs/some/path/widget_fsm.scxml"))
-        .expect_err("script-bearing SCXML must reject");
+        .expect_err("script-bearing SCXML must reject")
+        .error;
     let ForgeError::Generate(boxed) = err else {
         panic!("unexpected error variant");
     };
@@ -333,4 +341,39 @@ fn document_basename_is_extracted_from_path() {
         panic!("unexpected error variant");
     };
     assert_eq!(document, "widget_fsm");
+}
+
+/// Every axis names a ROW, not just a file — `SCE_ERROR_CONTRACT.md`
+/// §2.2.
+///
+/// This is the half of Item 8 Atomic 4 that is easy to leave undone and
+/// impossible to notice: `with_enclosing_anchor` can only answer about
+/// a location the record carries, so a gate wired without one returns
+/// every rejection unchanged while reading as wired. All four axes
+/// raised with a file and no row before this, and the anchor lookup
+/// bolted onto that would have been theatre.
+///
+/// Asserted per axis rather than once, because the axes read their
+/// position from four different places — a `<data>` element, an
+/// `<invoke>`, the script-engine causes, and the recorded BasicHTTP
+/// send — and any one of them can regress to `None` on its own.
+#[test]
+fn every_no_std_axis_locates_on_a_row() {
+    for (fixture, label) in [
+        (FSM_WITH_DATA_SRC, "fs_fsm"),
+        (FSM_WITH_INVOKE, "invoke_fsm"),
+        (FSM_WITH_INLINE_SCRIPT, "script_fsm"),
+        (FSM_WITH_HTTP_SEND, "http_fsm"),
+    ] {
+        let model = parse(fixture, label);
+        let located = validate_no_std_compatibility(&model, Path::new(label))
+            .expect_err("fixture must reject under --no-std");
+        assert!(
+            located.location.line.is_some(),
+            "`{label}` rejected with no row. The gate resolves the \
+             enclosing anchor from the record's own position, so a \
+             rejection without one silently carries no anchor: {:?}",
+            located.error,
+        );
+    }
 }

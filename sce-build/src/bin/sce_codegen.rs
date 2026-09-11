@@ -3258,9 +3258,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 if let Err(err) =
                     sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path))
                 {
-                    let located =
-                        sce_build::forge::error::Located::new(err, scxml_path, None, None);
-                    error_format.emit_forge_and_exit(&located);
+                    // Already located on the offending node and already
+                    // carrying the anchor enclosing it — the gate owns
+                    // both. Re-wrapping here is what used to discard
+                    // the row before either could exist.
+                    error_format.emit_forge_and_exit(&err);
                 }
             }
 
@@ -3925,8 +3927,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // the parser + analyzer passes; this gate just reads them.
     if no_std && lang == Language::Rust {
         if let Err(err) = sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path)) {
-            let located = sce_build::forge::error::Located::new(err, scxml_path, None, None);
-            error_format.emit_and_exit(&located, "");
+            // See the `check` call site: the gate returns a located,
+            // anchored record, so there is nothing left to wrap.
+            error_format.emit_and_exit(&err, "");
         }
     }
 
