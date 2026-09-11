@@ -85,6 +85,19 @@ pub struct Located<E> {
     /// case almost none of them hit is what `clippy::result_large_err`
     /// objects to.
     pub expanded_from: Option<Box<SourceLocation>>,
+    /// NL→IR Mapping Roadmap Item 7 — the spec documents the rejected
+    /// node is anchored at, carried verbatim from its
+    /// `sce:provenance`. Rides onto the diagnostic wire's
+    /// `spec_provenance`, which has existed since Item 6 with no
+    /// producer.
+    ///
+    /// `Box<[…]>` rather than `Vec` for the reason the two fields
+    /// above are boxed: `Located` is the `Err` half of most signatures
+    /// in the crate and `clippy::result_large_err` prices every byte
+    /// of it against the success path. An empty boxed slice allocates
+    /// nothing, so the case that is almost always true costs one
+    /// pointer and no heap.
+    pub spec_provenance: Box<[crate::provenance::SpecProvenance]>,
 }
 
 impl<E> Located<E> {
@@ -102,6 +115,7 @@ impl<E> Located<E> {
                 col,
             }),
             expanded_from: None,
+            spec_provenance: Vec::new().into_boxed_slice(),
         }
     }
 
@@ -112,6 +126,26 @@ impl<E> Located<E> {
             line: Some(line),
             col: Some(col),
         }));
+        self
+    }
+
+    /// Record the spec documents the rejected node is anchored at.
+    ///
+    /// The counterpart of [`Self::expanded_from`] one axis over:
+    /// `location` says where the value is, `expanded_from` says which
+    /// call site chose it, and this says which document the author
+    /// says governs it. A consumer triaging the rejection can go
+    /// straight to the paragraph instead of stopping at an SCXML line.
+    ///
+    /// Empty by default and left empty everywhere the raising code
+    /// does not have the node in hand — SCE never infers an anchor
+    /// (RFC §4.3), so a rejection about an unannotated node carries
+    /// nothing rather than a guess.
+    pub fn with_spec_provenance(
+        mut self,
+        anchors: impl Into<Box<[crate::provenance::SpecProvenance]>>,
+    ) -> Self {
+        self.spec_provenance = anchors.into();
         self
     }
 }

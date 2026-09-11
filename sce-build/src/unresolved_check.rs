@@ -19,50 +19,78 @@ use serde::Serialize;
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
 use crate::model::{Invoke, SCXMLModel, State};
-use crate::provenance::UnresolvedMarker;
+use crate::provenance::{SpecProvenance, UnresolvedMarker};
+
+/// The first unresolved placeholder in a model, with everything the
+/// rejection needs to describe the node that owns it.
+///
+/// A named struct rather than a tuple because the third member is the
+/// one a reader would otherwise have to guess at: it is the node's
+/// spec anchors, not the marker's.
+pub struct Unresolved<'a> {
+    /// Author-facing element label, e.g. `<state id="armed">`.
+    pub element: String,
+    pub marker: &'a UnresolvedMarker,
+    /// `sce:provenance` of the node that owns the marker, verbatim.
+    pub provenance: &'a [SpecProvenance],
+}
 
 /// Walk `model` in document order and return the first
-/// `UnresolvedMarker` paired with the author-facing element label
-/// of the node that owns it. `None` means the model is clean —
-/// `--strict-unresolved` lets the build proceed.
-pub fn first_unresolved(model: &SCXMLModel) -> Option<(String, &UnresolvedMarker)> {
+/// `UnresolvedMarker`, the author-facing element label of the node
+/// that owns it, and that node's `sce:provenance` anchors. `None`
+/// means the model is clean — `--strict-unresolved` lets the build
+/// proceed.
+///
+/// The anchors ride along because this walker is the one place that
+/// knows WHICH node the rejection is about: an unresolved placeholder
+/// is a question, and the spec paragraph the author anchored the node
+/// at is where its answer lives. Returning the label without them
+/// would hand a triager an SCXML line and stop.
+pub fn first_unresolved(model: &SCXMLModel) -> Option<Unresolved<'_>> {
     let mut states: Vec<&State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
-        if let Some(m) = state.unresolved.first() {
-            return Some((format!("<state id=\"{}\">", state.id), m));
+        if let Some(marker) = state.unresolved.first() {
+            return Some(Unresolved {
+                element: format!("<state id=\"{}\">", state.id),
+                marker,
+                provenance: &state.provenance,
+            });
         }
         for (i, transition) in state.transitions.iter().enumerate() {
-            if let Some(m) = transition.unresolved.first() {
-                return Some((
-                    format!("<transition #{i} in <state id=\"{}\">>", state.id),
-                    m,
-                ));
+            if let Some(marker) = transition.unresolved.first() {
+                return Some(Unresolved {
+                    element: format!("<transition #{i} in <state id=\"{}\">>", state.id),
+                    marker,
+                    provenance: &transition.provenance,
+                });
             }
         }
         for block in state.on_entry_blocks.iter() {
             for action in block.iter() {
-                if let Some(m) = action.unresolved.first() {
-                    return Some((
-                        format!(
+                if let Some(marker) = action.unresolved.first() {
+                    return Some(Unresolved {
+                        element: format!(
                             "<{} in <onentry> of <state id=\"{}\">>",
                             action.action_type, state.id
                         ),
-                        m,
-                    ));
+                        marker,
+                        provenance: &action.provenance,
+                    });
                 }
             }
         }
         for block in state.on_exit_blocks.iter() {
             for action in block.iter() {
-                if let Some(m) = action.unresolved.first() {
-                    return Some((
-                        format!(
+                if let Some(marker) = action.unresolved.first() {
+                    return Some(Unresolved {
+                        element: format!(
                             "<{} in <onexit> of <state id=\"{}\">>",
                             action.action_type, state.id
                         ),
-                        m,
-                    ));
+                        marker,
+                        provenance: &action.provenance,
+                    });
                 }
             }
         }
@@ -73,14 +101,15 @@ pub fn first_unresolved(model: &SCXMLModel) -> Option<(String, &UnresolvedMarker
                 Invoke::MeshRpc(info) => &info.base,
                 Invoke::Unsupported(info) => &info.base,
             };
-            if let Some(m) = base.unresolved.first() {
-                return Some((
-                    format!(
+            if let Some(marker) = base.unresolved.first() {
+                return Some(Unresolved {
+                    element: format!(
                         "<invoke #{i} (id=\"{}\") in <state id=\"{}\">>",
                         base.invoke_id, state.id
                     ),
-                    m,
-                ));
+                    marker,
+                    provenance: &base.provenance,
+                });
             }
         }
     }
@@ -95,22 +124,28 @@ pub fn first_unresolved(model: &SCXMLModel) -> Option<(String, &UnresolvedMarker
 pub fn check_strict_unresolved(model: &SCXMLModel) -> Result<(), Located<ForgeError>> {
     match first_unresolved(model) {
         None => Ok(()),
-        Some((element, marker)) => {
-            let location = marker.location.clone().unwrap_or(SourceLocation {
+        Some(found) => {
+            let location = found.marker.location.clone().unwrap_or(SourceLocation {
                 file: String::new(),
                 line: None,
                 col: None,
             });
-            Err(Located {
-                error: ValidationError::UnresolvedPlaceholder {
-                    element,
-                    id: marker.id.clone(),
-                    reason: marker.reason.clone(),
+            Err(Located::new(
+                ValidationError::UnresolvedPlaceholder {
+                    element: found.element,
+                    id: found.marker.id.clone(),
+                    reason: found.marker.reason.clone(),
                 }
                 .into(),
-                location: Box::new(location),
-                expanded_from: None,
-            })
+                location.file,
+                location.line,
+                location.col,
+            )
+            // The node's spec anchors ride onto the wire's
+            // `spec_provenance`, so a CI gate that refuses the build
+            // hands the reader the document to go read, not only the
+            // line to go look at.
+            .with_spec_provenance(found.provenance.to_vec()))
         }
     }
 }

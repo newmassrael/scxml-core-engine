@@ -1205,6 +1205,16 @@ omits the field on a node that has none. SCE reports what the IR
 claims to depend on; comparing that set against the revisions
 actually in force belongs to whoever owns the document set.
 
+The anchors reach two further surfaces. Generated source carries
+them as a comment on every backend, one line per anchor in the
+same compact spelling the attribute uses, next to the `sce:req`
+line — so a reader of the emitted code can go to the paragraph
+without going back to the SCXML. And a rejection raised about an
+anchored node carries them on the diagnostic wire's
+`spec_provenance` (`SCE_ERROR_CONTRACT.md` §2.1), so a CI gate
+that refuses a build hands the reader the document to consult
+rather than only the line to look at.
+
 **`sce:unresolved`** — explicit "revisit later" markers.
 
 Two equivalent forms (attribute carries one marker; element

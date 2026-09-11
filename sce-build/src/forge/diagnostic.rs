@@ -97,6 +97,18 @@ pub trait SingleDiagnostic: ToDiagnostics {
         None
     }
 
+    /// NL→IR Mapping Roadmap Item 7 — the spec anchors of the node
+    /// this rejection is about.
+    ///
+    /// Defaults to empty and is overridden only by wrappers that
+    /// actually carry one, exactly as `diagnostic_expanded_from` is:
+    /// SCE never infers an anchor, so "the raising code did not have
+    /// the node in hand" and "the node declared nothing" must reach
+    /// the wire as the same absent field.
+    fn diagnostic_spec_provenance(&self) -> Vec<crate::provenance::SpecProvenance> {
+        Vec::new()
+    }
+
     fn to_single_diagnostic(&self) -> Diagnostic {
         let payload = self.diagnostic_payload();
         let location = self.diagnostic_location();
@@ -138,7 +150,7 @@ pub trait SingleDiagnostic: ToDiagnostics {
                 .fix
                 .and_then(Fix::with_a_choice_to_offer)
                 .and_then(|fix| fix.applicable_to_a_synthesised_value(synthesised)),
-            spec_provenance: Vec::new(),
+            spec_provenance: self.diagnostic_spec_provenance(),
             question_kind: None,
         }
     }
@@ -4756,6 +4768,10 @@ impl SingleDiagnostic for Located<ForgeError> {
             line: at.line,
             col: at.col,
         })
+    }
+
+    fn diagnostic_spec_provenance(&self) -> Vec<crate::provenance::SpecProvenance> {
+        self.spec_provenance.to_vec()
     }
 }
 
@@ -13120,6 +13136,14 @@ mod tests {
                 ));
             }
         }
+        for (label, err, golden) in located_golden_entries() {
+            let actual = without_generator_stamp(&serde_json::to_string(&single(&err)).unwrap());
+            if actual != golden {
+                mismatches.push(format!(
+                    "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
+                ));
+            }
+        }
         assert!(
             mismatches.is_empty(),
             "byte-stable goldens drifted:\n{}\n\nIf this change is intentional, update the table AND bump SCHEMA_VERSION if the shape changed.",
@@ -15329,6 +15353,9 @@ mod tests {
         for (label, err, _golden) in cli_golden_entries() {
             out.push((label, serde_json::to_string(&single(&err)).unwrap()));
         }
+        for (label, err, _golden) in located_golden_entries() {
+            out.push((label, serde_json::to_string(&single(&err)).unwrap()));
+        }
         out
     }
 
@@ -15402,6 +15429,54 @@ mod tests {
             goldens.len(),
             violations.join(""),
         );
+    }
+
+    /// NL→IR Mapping Roadmap Item 7 — goldens for records that carry
+    /// a NON-EMPTY `spec_provenance`.
+    ///
+    /// Their own table because they are the only goldens built from a
+    /// `Located<ForgeError>` rather than a bare `ForgeError`: the
+    /// anchors ride on the wrapper, which is the whole mechanism, so a
+    /// golden constructed from the inner error could not express one.
+    ///
+    /// `spec_provenance` has been on the wire since Item 6 with every
+    /// record omitting it, which means no instance had ever exercised
+    /// the schema's declaration of the field. These are the first, and
+    /// they run through `every_golden_record_validates_against_the_wire_schema`
+    /// like every other golden — so the published schema is now
+    /// checked against a populated record and not only against the
+    /// absence of one.
+    fn located_golden_entries() -> Vec<(&'static str, Located<ForgeError>, &'static str)> {
+        let anchors = vec![
+            crate::provenance::SpecProvenance {
+                doc_id: "OEM-DIAG-SPEC".into(),
+                rev: Some("D".into()),
+                section: Some("3.4.2".into()),
+                page: Some(112),
+            },
+            crate::provenance::SpecProvenance {
+                doc_id: "ISO-14229-1".into(),
+                rev: None,
+                section: Some("11.2.1".into()),
+                page: None,
+            },
+        ];
+        vec![(
+            "forge/unresolved-placeholder-anchored",
+            Located::new(
+                ValidationError::UnresolvedPlaceholder {
+                    element: "<state id=\"armed\">".into(),
+                    id: "tbd_threshold".into(),
+                    reason: Some("waiting on calibration data".into()),
+                }
+                .into(),
+                "chart.scxml",
+                Some(12),
+                Some(3),
+            )
+            .with_spec_provenance(anchors),
+            r#"{"v":1,"id":"fnv1a:446dc7444b0cf549","code":"validation/unresolved-placeholder","stage":"validation","message":"<state id=\"armed\">: unresolved placeholder id='tbd_threshold' reason='waiting on calibration data'","location":{"file":"chart.scxml","line":12,"col":3},"actual":"tbd_threshold","spec_provenance":[{"doc_id":"OEM-DIAG-SPEC","rev":"D","section":"3.4.2","page":112},{"doc_id":"ISO-14229-1","section":"11.2.1"}]}"#,
+        )]
     }
 
     /// Label of the golden every negative case mutates from.

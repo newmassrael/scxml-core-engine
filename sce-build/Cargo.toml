@@ -326,13 +326,24 @@ name = "event_schema_bytes_guard"
 path = "tests/event_schema_bytes_guard.rs"
 required-features = ["cli"]
 
-# `sce:req` / `sce:unresolved`
+# `sce:req` / `sce:provenance` / `sce:unresolved`
 # annotation comment emission across all six codegen backends. Pair
 # with `codegen_smoke` (compile gate on annotated output) so both
 # emission shape and toolchain acceptance stay covered.
 [[test]]
 name = "sce_annotation_emission"
 path = "tests/sce_annotation_emission.rs"
+required-features = ["cli"]
+
+# `sce:provenance` parse + the diagnostic wire's `spec_provenance`
+# producer. Cli-gated because the wire half spawns `sce-codegen` with
+# `--strict-unresolved --error-format json`: reading the bytes an
+# external consumer sees is the only way to catch a producer that
+# regressed to empty, since the field is skipped when empty and a
+# dropped anchor still serialises cleanly.
+[[test]]
+name = "sce_provenance_parse"
+path = "tests/sce_provenance_parse.rs"
 required-features = ["cli"]
 
 # Integration test for spec §6.2.6 generated-source drift detection

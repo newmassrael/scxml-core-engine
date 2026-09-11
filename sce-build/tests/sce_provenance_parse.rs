@@ -16,13 +16,22 @@
 //! What each fixture is for is written in its own leading comment.
 
 use std::path::PathBuf;
+use std::process::Command;
 
+use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};
 use sce_build::model::{Invoke, SCXMLModel};
 use sce_build::parser::SCXMLParser;
 use sce_build::provenance::SpecProvenance;
 
 const FIXTURES_DIR: &str = "tests/fixtures/provenance";
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("CARGO_MANIFEST_DIR has a parent (workspace root)")
+        .to_path_buf()
+}
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -228,6 +237,116 @@ fn one_doc_id_anchored_twice_on_a_node_rejects() {
         }
         other => panic!("expected DuplicateProvenanceDocId, got: {other:?}"),
     }
+}
+
+/// A rejection raised about an anchored node carries that node's
+/// anchors onto the diagnostic — the wire field's first producer.
+///
+/// `spec_provenance` has been declared on the diagnostic schema since
+/// Item 6 and empty in every record SCE ever emitted, which is the
+/// shape of defect this whole item exists to close: a declaration
+/// that reads as landed and fires nothing. This is the assertion that
+/// it fires.
+#[test]
+fn a_rejection_on_an_anchored_node_carries_its_anchors() {
+    // A duplicate `sce:req` on a node that also declares two anchors.
+    // The anchors are read first precisely so this rejection can name
+    // them; parsed in the other order they would not exist yet.
+    let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext"
+                          version="1.0" initial="s0">
+        <state id="s0" sce:req="REQ_A REQ_A"
+               sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+          <sce:provenance doc-id="ISO-14229-1" section="11.2.1"/>
+        </state>
+    </scxml>"#;
+    let err = SCXMLParser::new()
+        .parse_string(scxml, "provenance_anchored_rejection")
+        .expect_err("duplicate sce:req must reject");
+
+    assert!(
+        matches!(
+            validation_error(&err),
+            ValidationError::DuplicateRequirementId { .. }
+        ),
+        "expected the duplicate-req rejection, got: {:?}",
+        validation_error(&err),
+    );
+    assert_eq!(
+        anchors(&err.spec_provenance),
+        vec![
+            ("OEM-DIAG-SPEC", Some("D"), Some("3.4.2"), Some(112)),
+            ("ISO-14229-1", None, Some("11.2.1"), None),
+        ],
+        "the rejection must carry the node's anchors, in document order",
+    );
+
+    // And they survive the hop onto the wire record, which is the
+    // half a consumer actually reads.
+    let diagnostics = err.to_diagnostics();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        anchors(&diagnostics[0].spec_provenance),
+        anchors(&err.spec_provenance),
+        "the diagnostic must carry what the located error carried",
+    );
+}
+
+/// The same claim through the CLI, on stderr, as JSON — the only
+/// surface an external consumer actually sees.
+///
+/// A unit test can hold the field populated on a struct while the
+/// serialiser, the flag plumbing, or the stream discipline drops it;
+/// `spec_provenance` is `skip_serializing_if = "Vec::is_empty"`, so a
+/// producer that regressed to empty would still serialise cleanly and
+/// silently. Reading the bytes is the only way to tell.
+#[test]
+fn the_strict_build_puts_the_anchors_on_the_json_wire() {
+    let fixture = fixture("negative_anchored_unresolved.scxml");
+    let out_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("provenance_wire");
+    std::fs::create_dir_all(&out_dir).expect("create scratch");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .env("SCE_WORKSPACE_ROOT", workspace_root())
+        .args(["generate", "-l", "rust", "--strict-unresolved"])
+        .arg("--error-format")
+        .arg("json")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg(&fixture)
+        .output()
+        .expect("spawn sce-codegen");
+
+    assert!(
+        !output.status.success(),
+        "--strict-unresolved must refuse the fixture; it exited {:?}",
+        output.status.code(),
+    );
+
+    let stderr = String::from_utf8(output.stderr).expect("stderr is UTF-8");
+    let record: serde_json::Value = stderr
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .find_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .unwrap_or_else(|| panic!("no JSON diagnostic on stderr:\n{stderr}"));
+
+    assert_eq!(
+        record["code"], "validation/unresolved-placeholder",
+        "unexpected record: {record}",
+    );
+    let anchors_on_wire = record["spec_provenance"]
+        .as_array()
+        .unwrap_or_else(|| panic!("spec_provenance absent or not an array: {record}"));
+    assert_eq!(
+        anchors_on_wire.len(),
+        2,
+        "expected both of the node's anchors on the wire: {record}",
+    );
+    assert_eq!(anchors_on_wire[0]["doc_id"], "OEM-DIAG-SPEC");
+    assert_eq!(anchors_on_wire[0]["rev"], "D");
+    assert_eq!(anchors_on_wire[0]["page"], 112);
+    assert_eq!(anchors_on_wire[1]["doc_id"], "ISO-14229-1");
+    assert_eq!(anchors_on_wire[1]["section"], "11.2.1");
 }
 
 #[test]
