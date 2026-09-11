@@ -14729,6 +14729,42 @@ mod tests {
     // says nothing about the year after. Written first it is mostly
     // red, and the red list is the work list.
 
+    /// Which pipeline's documents a classification is about.
+    ///
+    /// The roster used to be keyed on the code alone, and that was the
+    /// defect rather than a simplification: **the contract's answer for
+    /// a code depends on which pipeline raised it**, so a single answer
+    /// per code had to be wrong for one of them. It was wrong in the
+    /// direction that matters — every code the non-statechart kinds
+    /// raise was filed as "not demonstrated", which reads as work
+    /// outstanding, when §2.1.2's second admissible case had already
+    /// settled it.
+    ///
+    /// Splitting the key is what lets each half be answered by the
+    /// thing that actually decides it, and neither answer is a guess:
+    ///
+    /// * [`Pipeline::ForgeKind`] is answered ONCE, for every code, by
+    ///   [`a_forge_document_has_no_anchor_for_a_diagnostic_to_carry`].
+    /// * [`Pipeline::Statechart`] is answered per code, by executing a
+    ///   document — the standard the roster already held itself to.
+    ///
+    /// ⚠ What this deliberately does NOT do is decide which pipeline
+    /// raises a given code. That membership was derived three times on
+    /// 2026-09-11 by three source censuses which disagreed, because the
+    /// module constructing an error variant is not the pipeline that
+    /// raises it. Keying by axis removes the need to know: a code the
+    /// statechart pipeline never raises is vacuously fine on that axis
+    /// and proven fine on the other.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Pipeline {
+        /// A statechart document — the only kind that carries
+        /// `sce:provenance`, and so the only one where an anchor can be
+        /// resolved or missed.
+        Statechart,
+        /// One of the seventeen non-statechart Forge kinds.
+        ForgeKind,
+    }
+
     /// What the contract delivers for one code **today**.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum AnchorCarriage {
@@ -14764,6 +14800,16 @@ mod tests {
         /// would make those codes permanently unreachable while the
         /// contract they are measured against was already satisfied.
         Carries,
+        /// Nothing on this axis can violate the contract, so there is
+        /// nothing here to do and never was.
+        ///
+        /// The only user is [`Pipeline::ForgeKind`], and it is not a
+        /// per-code judgement: those documents hold no provenance at
+        /// all, so the resolver's answer and the empty field coincide
+        /// by construction for every code alike. That is §2.1.2's
+        /// second admissible case, and the guard named in
+        /// [`Pipeline`]'s docs is what keeps it true.
+        SatisfiedByAnchorlessKind,
         /// It does not, and [`NoAnchor::why`] says why.
         Registered(NoAnchor),
     }
@@ -14903,9 +14949,17 @@ mod tests {
     /// — the failure this guards against is not a wrong answer, it is
     /// no answer given silently, which is how a declared-but-empty
     /// field survived four months of green gates.
-    fn anchor_carriage(code: DiagnosticCode) -> AnchorCarriage {
+    fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarriage {
         use AnchorCarriage::*;
         use DiagnosticCode::*;
+        // One rule, every code. Not a shortcut past the per-code work:
+        // there is no per-code work to do on this axis, because a
+        // non-statechart Forge kind holds no provenance for any code's
+        // record to carry. Writing 358 identical arms would make the
+        // roster look like it had decided 358 things.
+        if matches!(pipeline, Pipeline::ForgeKind) {
+            return SatisfiedByAnchorlessKind;
+        }
         match code {
             // ── Carries ──────────────────────────────────────────
             // Each has exactly one raise site, and that site threads
@@ -15565,14 +15619,40 @@ mod tests {
     ///      carrying while registered as not-carrying is red.
     #[test]
     fn every_code_carries_the_enclosing_anchor_or_is_registered() {
-        // (1) Classification is total. The match cannot be reached
-        //     with an unclassified code, but a roster that reached
-        //     nothing would satisfy (2) and (3) vacuously, so count it.
+        // (0) The Forge axis is answered, for every code, by the one
+        //     rule the anchorless-kind proof backs. Asserted rather
+        //     than assumed so that a later edit cannot quietly turn it
+        //     into a per-code judgement — which is the guessing the
+        //     axis split exists to remove.
+        for &code in ALL_DIAGNOSTIC_CODES {
+            assert_eq!(
+                anchor_carriage(code, Pipeline::ForgeKind),
+                AnchorCarriage::SatisfiedByAnchorlessKind,
+                "`{}` is classified per-code on the Forge axis. That \
+                 axis has one answer for every code, held by \
+                 `a_forge_document_has_no_anchor_for_a_diagnostic_to_carry`; \
+                 deciding it per code means deciding which pipeline \
+                 raises the code, which no census answered.",
+                code.as_str(),
+            );
+        }
+
+        // (1) Classification is total on the statechart axis. The match
+        //     cannot be reached with an unclassified code, but a roster
+        //     that reached nothing would satisfy (2) and (3) vacuously,
+        //     so count it.
         let mut carries: Vec<&'static str> = Vec::new();
         let mut registered: Vec<(&'static str, NoAnchor)> = Vec::new();
         for &code in ALL_DIAGNOSTIC_CODES {
-            match anchor_carriage(code) {
+            match anchor_carriage(code, Pipeline::Statechart) {
                 AnchorCarriage::Carries => carries.push(code.as_str()),
+                AnchorCarriage::SatisfiedByAnchorlessKind => panic!(
+                    "`{}` claims the anchorless-kind case on the \
+                     STATECHART axis. A statechart carries \
+                     `sce:provenance`, so that case cannot apply to it \
+                     — the record either resolves or is registered.",
+                    code.as_str(),
+                ),
                 AnchorCarriage::Registered(why) => registered.push((code.as_str(), why)),
             }
         }
