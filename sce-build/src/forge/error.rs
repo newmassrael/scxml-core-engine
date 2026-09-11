@@ -4048,8 +4048,27 @@ pub enum GenerateError {
     /// gap is in the codegen backend, and the message names both the
     /// feature and the language so the operator can pick a different
     /// `--lang` or wait on backend support.
-    #[error("feature unsupported in this language: {0}")]
-    UnsupportedFeature(String),
+    ///
+    /// `at` is where the refused construct was written, when the
+    /// refusal knows — `SCE_ERROR_CONTRACT.md` §2.1.2. It is optional
+    /// rather than required because this one variant answers two
+    /// shapes of question and only one of them has a position: a
+    /// document construct the target cannot lower (a `cpp:` guard, a
+    /// mesh-rpc `<invoke>`) is written at a row, while a gap in SCE's
+    /// own coverage (a per-kind template the backend never shipped) is
+    /// not written anywhere.
+    ///
+    /// ⚠ Optional, and NOT two variants. Splitting it would need a
+    /// line between "the document is wrong" and "SCE does not cover
+    /// it", and that line does not survive its own first case: a
+    /// mesh-rpc `<invoke>` compiled for Rust is a legal document AND a
+    /// coverage gap AND has a row. A taxonomy bought to avoid an
+    /// `Option` would be false about the very cases it sorts.
+    #[error("feature unsupported in this language: {detail}")]
+    UnsupportedFeature {
+        detail: String,
+        at: Option<SourceLocation>,
+    },
 
     /// SCE Protocol-Synthesis RFC §synth-5-J-4: an MCU-class kind (link / worker /
     /// buffer-pool / reassembly, or an MCU-only codec sub-feature)
@@ -4241,6 +4260,37 @@ pub enum GenerateError {
         expected: SceType,
         actual: String,
     },
+}
+
+impl GenerateError {
+    /// [`GenerateError::UnsupportedFeature`] for a refusal that knows
+    /// no position.
+    ///
+    /// Every Forge-side raise is one of these by construction rather
+    /// than by omission: a Forge document builds no
+    /// [`crate::anchor_index::AnchorIndex`] and
+    /// `crate::forge::model` holds no provenance field, so there is no
+    /// anchor for a row to resolve to and the empty
+    /// `spec_provenance` is already the true answer
+    /// (`SCE_ERROR_CONTRACT.md` §2.1.2).
+    pub fn unsupported(detail: impl Into<String>) -> Self {
+        GenerateError::UnsupportedFeature {
+            detail: detail.into(),
+            at: None,
+        }
+    }
+
+    /// The same refusal, carrying the element it is about.
+    ///
+    /// `at` stays an `Option` here because a node's own recorded
+    /// position is one — the parser records what it has — so a caller
+    /// that holds the node still cannot promise a row.
+    pub fn unsupported_at(detail: impl Into<String>, at: Option<SourceLocation>) -> Self {
+        GenerateError::UnsupportedFeature {
+            detail: detail.into(),
+            at,
+        }
+    }
 }
 
 /// CLI exit code by error category.

@@ -833,16 +833,38 @@ fn compile_scxml_configured(
 }
 
 /// Adapt an arbitrary ForgeError-convertible codegen error into the
-/// public typed channel. `source_name` tags the file/record label so
-/// downstream consumers can route repairs; `line`/`col` stay `None`
-/// because `GenerateError` is raised by minijinja well after the DOM
-/// is discarded — fabricating `(1, 1)` would mislead the repair loop
-/// (see the `feedback_correctness_before_features` memory).
+/// public typed channel, and — NL→IR Mapping Roadmap Item 8 — give it
+/// the anchor enclosing whatever it is about.
+///
+/// This is the fourth resolver boundary, and the generation stage's
+/// only one: every backend's `generate_*` returns through here, so one
+/// call covers all six and covers a seventh added later.
+///
+/// `source_name` tags the file/record label so downstream consumers can
+/// route repairs. The position comes from the error itself: most of
+/// `GenerateError` is raised by minijinja well after the DOM is
+/// discarded and carries none — fabricating `(1, 1)` for those would
+/// mislead the repair loop — while the refusals that inspect the MODEL
+/// before any template renders do know the element they are about, and
+/// `GenerateError::unsupported_at` is how they say so.
 fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
     err: E,
     source_name: &str,
+    model: &SCXMLModel,
 ) -> CompileError {
-    forge::error::Located::new(err.into(), source_name, None, None)
+    use forge::error::{ForgeError, GenerateError};
+    let err = err.into();
+    // Read before the record takes ownership. Only the variant that
+    // can carry a position is asked; everything else answers `None`
+    // and reaches the wire exactly as it did before.
+    let at = match &err {
+        ForgeError::Generate(generate) => match generate.as_ref() {
+            GenerateError::UnsupportedFeature { at, .. } => at.clone(),
+            _ => None,
+        },
+        _ => None,
+    };
+    model.with_enclosing_anchor(model.locate(err, at.as_ref(), source_name))
 }
 
 /// Typed analogue of [`compile_scxml_to_string`] — consumers that can
@@ -860,7 +882,7 @@ pub fn compile_scxml_to_string_typed(
     // set survives to the depfile sink.
     let ParsedSCXML { model, .. } = compile_model(scxml_path)?;
     generator::generate(&model, template_dir, false)
-        .map_err(|e| locate_codegen_error(e, scxml_path))
+        .map_err(|e| locate_codegen_error(e, scxml_path, &model))
 }
 
 /// Compile a single SCXML file to Rust source code string.
@@ -881,7 +903,7 @@ pub fn compile_from_string_typed(
 ) -> Result<String, CompileError> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
     generator::generate_with_templates(&model, templates, false)
-        .map_err(|e| locate_codegen_error(e, scxml_name))
+        .map_err(|e| locate_codegen_error(e, scxml_name, &model))
 }
 
 /// Compile SCXML content string to Rust code (no filesystem access).
@@ -916,7 +938,7 @@ pub fn compile_from_string_lang_typed(
     match language {
         generator::Language::Rust => {
             let code = generator::generate_with_templates(&model, templates, false)
-                .map_err(|e| locate_codegen_error(e, scxml_name))?;
+                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.rs"), code)],
                 ..Default::default()
@@ -924,11 +946,11 @@ pub fn compile_from_string_lang_typed(
         }
         generator::Language::Cpp => {
             generator::generate_cpp_with_templates(&model, templates, scxml_name)
-                .map_err(|e| locate_codegen_error(e, scxml_name))
+                .map_err(|e| locate_codegen_error(e, scxml_name, &model))
         }
         generator::Language::Kotlin => {
             let code = generator::generate_kotlin_with_templates(&model, templates, None)
-                .map_err(|e| locate_codegen_error(e, scxml_name))?;
+                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}Sm.kt"), code)],
                 ..Default::default()
@@ -936,7 +958,7 @@ pub fn compile_from_string_lang_typed(
         }
         generator::Language::Go => {
             let code = generator::generate_go_with_templates(&model, templates)
-                .map_err(|e| locate_codegen_error(e, scxml_name))?;
+                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.go"), code)],
                 ..Default::default()
@@ -944,7 +966,7 @@ pub fn compile_from_string_lang_typed(
         }
         generator::Language::Python => {
             let code = generator::generate_python_with_templates(&model, templates)
-                .map_err(|e| locate_codegen_error(e, scxml_name))?;
+                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.py"), code)],
                 ..Default::default()
@@ -952,7 +974,7 @@ pub fn compile_from_string_lang_typed(
         }
         generator::Language::C11 => {
             generator::generate_c11_with_templates(&model, templates, scxml_name)
-                .map_err(|e| locate_codegen_error(e, scxml_name))
+                .map_err(|e| locate_codegen_error(e, scxml_name, &model))
         }
     }
 }
@@ -1142,17 +1164,17 @@ fn compile_scxml_lang_typed_mutated(
     let mut output = match language {
         generator::Language::Rust => {
             let code = generator::generate_with_options(&model, template_dir, options)
-                .map_err(|e| locate_codegen_error(e, scxml_path))?;
+                .map_err(|e| locate_codegen_error(e, scxml_path, &model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
                 deps: Vec::new(),
             }
         }
         generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem, None)
-            .map_err(|e| locate_codegen_error(e, scxml_path))?,
+            .map_err(|e| locate_codegen_error(e, scxml_path, &model))?,
         generator::Language::Kotlin => {
             let code = generator::generate_kotlin(&model, template_dir, None)
-                .map_err(|e| locate_codegen_error(e, scxml_path))?;
+                .map_err(|e| locate_codegen_error(e, scxml_path, &model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
                 deps: Vec::new(),
@@ -1160,7 +1182,7 @@ fn compile_scxml_lang_typed_mutated(
         }
         generator::Language::Go => {
             let code = generator::generate_go(&model, template_dir)
-                .map_err(|e| locate_codegen_error(e, scxml_path))?;
+                .map_err(|e| locate_codegen_error(e, scxml_path, &model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
                 deps: Vec::new(),
@@ -1168,14 +1190,14 @@ fn compile_scxml_lang_typed_mutated(
         }
         generator::Language::Python => {
             let code = generator::generate_python(&model, template_dir)
-                .map_err(|e| locate_codegen_error(e, scxml_path))?;
+                .map_err(|e| locate_codegen_error(e, scxml_path, &model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.py"), code)],
                 deps: Vec::new(),
             }
         }
         generator::Language::C11 => generator::generate_c11(&model, template_dir, input_stem, None)
-            .map_err(|e| locate_codegen_error(e, scxml_path))?,
+            .map_err(|e| locate_codegen_error(e, scxml_path, &model))?,
     };
     output.deps = preprocessor_deps;
     Ok(output)

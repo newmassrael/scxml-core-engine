@@ -1598,16 +1598,26 @@ fn reject_mesh_rpc_in_unsupported_lang(
         .map(|lang| format!("`--lang {lang}`"))
         .collect::<Vec<_>>()
         .join(" / ");
-    Err(GenerateError::UnsupportedFeature(format!(
-        "<invoke type=\"sce:mesh-rpc\"> in '{}' has no {:?} codegen path \
-         (mesh transport emission exists for: {}). \
-         Either generate this machine with {} or remove the \
-         mesh-rpc invokes from the SCXML.",
-        model.name,
-        language,
-        served.join(", "),
-        remedy
-    )))
+    Err(GenerateError::unsupported_at(
+        format!(
+            "<invoke type=\"sce:mesh-rpc\"> in '{}' has no {:?} codegen path \
+             (mesh transport emission exists for: {}). \
+             Either generate this machine with {} or remove the \
+             mesh-rpc invokes from the SCXML.",
+            model.name,
+            language,
+            served.join(", "),
+            remedy
+        ),
+        // The first mesh-rpc `<invoke>` — the element the message
+        // already names. `Invoke::base()` answers for every kind, so a
+        // sixth invoke kind cannot quietly lose its row here.
+        model
+            .invokes
+            .iter()
+            .find(|invoke| matches!(invoke, crate::model::Invoke::MeshRpc(_)))
+            .and_then(|invoke| invoke.base().source_location.clone()),
+    ))
 }
 
 // §scxml-G-7 `<sce:action>`: every backend (Rust, C++, C11, Kotlin, Go,
@@ -1688,15 +1698,27 @@ const NATIVE_COND_PREFIXES: &[(&str, &str)] = &[("cpp:", "C++"), ("kt:", "Kotlin
 
 /// The first `cond` in `model` carrying a native prefix this language
 /// cannot lower.
-fn first_unlowerable_native_cond(model: &SCXMLModel, language: &str) -> Option<(String, String)> {
-    fn scan_actions(actions: &[crate::model::Action], language: &str) -> Option<(String, String)> {
+/// The refused guard, the backend that owns its prefix, and **where it
+/// was written**.
+///
+/// The position rides with the finding rather than being looked up
+/// again later: only this walk knows which of the document's guards it
+/// stopped on, and a second search for "the first `cpp:` cond" would be
+/// a duplicate of the rule below that can disagree with it.
+type UnlowerableCond = (String, String, Option<crate::forge::error::SourceLocation>);
+
+fn first_unlowerable_native_cond(model: &SCXMLModel, language: &str) -> Option<UnlowerableCond> {
+    fn scan_actions(actions: &[crate::model::Action], language: &str) -> Option<UnlowerableCond> {
         for action in actions {
-            if let Some(hit) = unlowerable(&action.cond, language) {
-                return Some(hit);
+            if let Some((cond, owner)) = unlowerable(&action.cond, language) {
+                return Some((cond, owner, action.source_location.clone()));
             }
             for branch in &action.elseif_branches {
-                if let Some(hit) = unlowerable(&branch.cond, language) {
-                    return Some(hit);
+                // The owning `<if>`'s position: an `<elseif>` records
+                // none of its own, and the enclosing element is the
+                // nearest thing the document actually wrote down.
+                if let Some((cond, owner)) = unlowerable(&branch.cond, language) {
+                    return Some((cond, owner, action.source_location.clone()));
                 }
                 if let Some(hit) = scan_actions(&branch.actions, language) {
                     return Some(hit);
@@ -1727,8 +1749,8 @@ fn first_unlowerable_native_cond(model: &SCXMLModel, language: &str) -> Option<(
     states.sort_by_key(|s| s.document_order);
     for state in states {
         for transition in &state.transitions {
-            if let Some(hit) = unlowerable(&transition.cond, language) {
-                return Some(hit);
+            if let Some((cond, owner)) = unlowerable(&transition.cond, language) {
+                return Some((cond, owner, transition.source_location.clone()));
             }
             if let Some(hit) = scan_actions(&transition.actions, language) {
                 return Some(hit);
@@ -1776,16 +1798,19 @@ fn reject_native_conditions_in_unsupported_lang(
     model: &SCXMLModel,
     language: &'static str,
 ) -> Result<(), GenerateError> {
-    let Some((cond, owner)) = first_unlowerable_native_cond(model, language) else {
+    let Some((cond, owner, at)) = first_unlowerable_native_cond(model, language) else {
         return Ok(());
     };
-    Err(GenerateError::UnsupportedFeature(format!(
-        "cond=\"{cond}\" in '{}' is a native {owner} guard and has no {language} \
-         codegen path — a native cond is lowered only by the backend whose \
-         language it names. Either generate this machine for that backend or \
-         write the guard as an ECMAScript expression.",
-        model.name
-    )))
+    Err(GenerateError::unsupported_at(
+        format!(
+            "cond=\"{cond}\" in '{}' is a native {owner} guard and has no {language} \
+             codegen path — a native cond is lowered only by the backend whose \
+             language it names. Either generate this machine for that backend or \
+             write the guard as an ECMAScript expression.",
+            model.name
+        ),
+        at,
+    ))
 }
 
 /// The backend that can emit `action`'s body, when the body is not
@@ -1814,14 +1839,19 @@ fn native_script_owner(action: &crate::model::Action) -> Option<&'static str> {
 
 /// The first `<script>` in `model` written in a language this backend
 /// cannot emit.
-fn first_unlowerable_native_script(model: &SCXMLModel, language: &str) -> Option<String> {
-    fn owner(action: &crate::model::Action, language: &str) -> Option<String> {
+fn first_unlowerable_native_script(
+    model: &SCXMLModel,
+    language: &str,
+) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
+    type Hit = (String, Option<crate::forge::error::SourceLocation>);
+
+    fn owner(action: &crate::model::Action, language: &str) -> Option<Hit> {
         native_script_owner(action)
             .filter(|owner| *owner != language)
-            .map(str::to_string)
+            .map(|owner| (owner.to_string(), action.source_location.clone()))
     }
 
-    fn scan(actions: &[crate::model::Action], language: &str) -> Option<String> {
+    fn scan(actions: &[crate::model::Action], language: &str) -> Option<Hit> {
         for action in actions {
             if let Some(hit) = owner(action, language) {
                 return Some(hit);
@@ -1888,18 +1918,21 @@ fn reject_native_scripts_in_unsupported_lang(
     model: &SCXMLModel,
     language: &'static str,
 ) -> Result<(), GenerateError> {
-    let Some(owner) = first_unlowerable_native_script(model, language) else {
+    let Some((owner, at)) = first_unlowerable_native_script(model, language) else {
         return Ok(());
     };
-    Err(GenerateError::UnsupportedFeature(format!(
-        "<script><{}>…</{}></script> in '{}' is a native {owner} body and has no \
-         {language} codegen path — a native script is lowered only by the backend \
-         whose language it names. Either generate this machine for that backend or \
-         write the script as ECMAScript.",
-        if owner == "C++" { "cpp" } else { "kt" },
-        if owner == "C++" { "cpp" } else { "kt" },
-        model.name
-    )))
+    Err(GenerateError::unsupported_at(
+        format!(
+            "<script><{}>…</{}></script> in '{}' is a native {owner} body and has no \
+             {language} codegen path — a native script is lowered only by the backend \
+             whose language it names. Either generate this machine for that backend or \
+             write the script as ECMAScript.",
+            if owner == "C++" { "cpp" } else { "kt" },
+            if owner == "C++" { "cpp" } else { "kt" },
+            model.name
+        ),
+        at,
+    ))
 }
 
 // EventSchema MCU native lowering: every backend
@@ -1933,20 +1966,32 @@ fn reject_barrier_timeout_without_handler(model: &SCXMLModel) -> Result<(), Gene
         return Ok(());
     }
     let parallels: Vec<String> = model.partition_barrier_timeouts.keys().cloned().collect();
-    Err(GenerateError::UnsupportedFeature(format!(
-        "machine '{}' declares `barrier_timeout_ms:` on a Root partition \
-         for <parallel id=\"{}\"> but the SCXML has no transition for \
-         event `error.communication`. SCE_MESH.md §16.5 raises \
-         `error.communication` (reason PARALLEL_BARRIER_TIMEOUT) when \
-         the barrier elapses — without a transition the raise is \
-         silently discarded and the timeout has no observable effect. \
-         Add a `<transition event=\"error.communication\">` handler \
-         (optionally guarded on `_event.data.reason == \
-         'PARALLEL_BARRIER_TIMEOUT'`) or drop `barrier_timeout_ms:` \
-         from the partition declaration.",
-        model.name,
-        parallels.join(", ")
-    )))
+    // The first `<parallel>` the message names. This rejection is
+    // about that element carrying a `barrier_timeout_ms:` the document
+    // cannot observe, so it belongs on the element rather than on the
+    // document — the anchor a reader wants is whichever spec paragraph
+    // governs that region.
+    let at = parallels
+        .first()
+        .and_then(|id| model.states.get(id))
+        .and_then(|state| state.source_location.clone());
+    Err(GenerateError::unsupported_at(
+        format!(
+            "machine '{}' declares `barrier_timeout_ms:` on a Root partition \
+             for <parallel id=\"{}\"> but the SCXML has no transition for \
+             event `error.communication`. SCE_MESH.md §16.5 raises \
+             `error.communication` (reason PARALLEL_BARRIER_TIMEOUT) when \
+             the barrier elapses — without a transition the raise is \
+             silently discarded and the timeout has no observable effect. \
+             Add a `<transition event=\"error.communication\">` handler \
+             (optionally guarded on `_event.data.reason == \
+             'PARALLEL_BARRIER_TIMEOUT'`) or drop `barrier_timeout_ms:` \
+             from the partition declaration.",
+            model.name,
+            parallels.join(", ")
+        ),
+        at,
+    ))
 }
 
 // ── §16.4 / §16.7 liveness observability gate ────────────────────
@@ -1974,19 +2019,29 @@ fn reject_liveliness_without_handler(model: &SCXMLModel) -> Result<(), GenerateE
     if model.events.contains("error.communication") {
         return Ok(());
     }
-    Err(GenerateError::UnsupportedFeature(format!(
-        "machine '{}' declares `liveliness:` but the SCXML has no \
-         transition for event `error.communication`. SCE_MESH.md \
-         §16.4 / §16.7 rows 8 and 13 raise `error.communication` \
-         (reason PEER_PARTITIONED or REGION_PARTITIONED) when a \
-         peer's Zenoh liveliness token drops — without a transition \
-         the raise is silently discarded and the signal has no \
-         observable effect. Add a `<transition \
-         event=\"error.communication\">` handler (optionally guarded \
-         on `_event.data.reason`) or drop `liveliness:` from the \
-         machine declaration.",
-        model.name
-    )))
+    Err(GenerateError::unsupported_at(
+        format!(
+            "machine '{}' declares `liveliness:` but the SCXML has no \
+             transition for event `error.communication`. SCE_MESH.md \
+             §16.4 / §16.7 rows 8 and 13 raise `error.communication` \
+             (reason PEER_PARTITIONED or REGION_PARTITIONED) when a \
+             peer's Zenoh liveliness token drops — without a transition \
+             the raise is silently discarded and the signal has no \
+             observable effect. Add a `<transition \
+             event=\"error.communication\">` handler (optionally guarded \
+             on `_event.data.reason`) or drop `liveliness:` from the \
+             machine declaration.",
+            model.name
+        ),
+        // The `<scxml>` root, and this one is genuinely document-scoped
+        // rather than a fallback: what is wrong is that the document
+        // declares NO handler anywhere, so no inner element is the
+        // subject. Pointing at an arbitrary inner node would be the
+        // confident-wrong-anchor failure `with_enclosing_anchor` warns
+        // about — the root is the innermost node that actually encloses
+        // an absence.
+        model.source_location.clone(),
+    ))
 }
 
 // ── Rust generator ───────────────────────────────────────────────
@@ -3898,7 +3953,7 @@ mod tests {
         let templates: &[(&str, &str)] = &[];
         let err = generate_with_templates(&model, templates, false).unwrap_err();
         match err {
-            GenerateError::UnsupportedFeature(msg) => {
+            GenerateError::UnsupportedFeature { detail: msg, .. } => {
                 assert!(msg.contains("sce:mesh-rpc"), "msg names the feature: {msg}");
                 assert!(msg.contains("Rust"), "msg names the language: {msg}");
                 assert!(msg.contains("brake"), "msg names the machine: {msg}");
@@ -3912,7 +3967,7 @@ mod tests {
         let model = parse(MESH_RPC_SCXML);
         let templates: &[(&str, &str)] = &[];
         let err = generate_kotlin_with_templates(&model, templates, None).unwrap_err();
-        assert!(matches!(err, GenerateError::UnsupportedFeature(_)));
+        assert!(matches!(err, GenerateError::UnsupportedFeature { .. }));
     }
 
     #[test]
@@ -3920,7 +3975,7 @@ mod tests {
         let model = parse(MESH_RPC_SCXML);
         let templates: &[(&str, &str)] = &[];
         let err = generate_go_with_templates(&model, templates).unwrap_err();
-        assert!(matches!(err, GenerateError::UnsupportedFeature(_)));
+        assert!(matches!(err, GenerateError::UnsupportedFeature { .. }));
     }
 
     #[test]
@@ -3929,7 +3984,7 @@ mod tests {
         let templates: &[(&str, &str)] = &[];
         match generate_c11_with_templates(&model, templates, "fixture") {
             Ok(_) => panic!("expected UnsupportedFeature, got Ok"),
-            Err(GenerateError::UnsupportedFeature(msg)) => {
+            Err(GenerateError::UnsupportedFeature { detail: msg, .. }) => {
                 assert!(msg.contains("sce:mesh-rpc"), "msg names the feature: {msg}");
                 assert!(msg.contains("C11"), "msg names the language: {msg}");
             }
@@ -4006,11 +4061,13 @@ mod tests {
         match err {
             // Template loading is as far as an empty template list goes.
             GenerateError::TemplateLoad(_) | GenerateError::TemplateRender(_) => {}
-            GenerateError::UnsupportedFeature(msg) if msg.contains("sce:action") => panic!(
-                "{lang} still refuses <sce:action> as an unsupported feature. That \
+            GenerateError::UnsupportedFeature { detail: msg, .. } if msg.contains("sce:action") => {
+                panic!(
+                    "{lang} still refuses <sce:action> as an unsupported feature. That \
                  backend-coverage refusal was retired when every backend grew a \
                  native-action path; a refusal here means one of them lost it: {msg}"
-            ),
+                )
+            }
             other => panic!(
                 "{lang}: expected to reach template loading, got {other:?} — the \
                  document stopped somewhere before the emitter"
@@ -4397,7 +4454,7 @@ mod tests {
             Err(e) => e,
         };
         match err {
-            GenerateError::UnsupportedFeature(msg) => {
+            GenerateError::UnsupportedFeature { detail: msg, .. } => {
                 assert!(
                     msg.contains("barrier_timeout_ms"),
                     "msg cites the knob: {msg}"
@@ -4459,7 +4516,7 @@ mod tests {
                 Err(e) => e,
             };
             match err {
-                GenerateError::UnsupportedFeature(msg) => {
+                GenerateError::UnsupportedFeature { detail: msg, .. } => {
                     assert!(
                         msg.contains("liveliness"),
                         "{label}: msg cites the knob: {msg}"
@@ -4514,7 +4571,7 @@ mod tests {
         let templates: &[(&str, &str)] = &[];
         // Anything other than UnsupportedFeature (Ok / template error / etc.)
         // means the gate let the model through, which is the contract.
-        if let Err(GenerateError::UnsupportedFeature(_)) =
+        if let Err(GenerateError::UnsupportedFeature { .. }) =
             generate_with_templates(&model, templates, false)
         {
             panic!("plain SCXML must not trip the mesh-rpc gate")
