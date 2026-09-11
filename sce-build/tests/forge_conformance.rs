@@ -11823,12 +11823,24 @@ fn toolchain_present(binary: &str) -> bool {
 /// via `SCE_REQUIRE_ALL_COMPILERS=1`; local runs degrade gracefully
 /// with a one-line warning so the missing-toolchain condition stays
 /// visible (not silently muted).
+///
+/// `SCE_REQUIRE_TOOLS` says the same thing about the same lane, and this
+/// function honours it too. `rust-workspace-tests.yml` — the lane that runs
+/// this suite — sets only that one, with the comment that it "promotes 'tool
+/// not found, skipping' into a hard failure". It did not, here: two variables
+/// spelling one intention meant a missing toolchain still skipped in the lane
+/// that had asked for the opposite, and `toolchain::tools_are_required` is
+/// documented as existing precisely so the question is asked once ("two
+/// readings of one variable are two answers waiting to disagree"). Either
+/// variable now arms the gate.
 fn require_all_or_warn(test_id: &str, binary: &str) -> Result<(), String> {
-    if std::env::var("SCE_REQUIRE_ALL_COMPILERS").as_deref() == Ok("1") {
+    if std::env::var("SCE_REQUIRE_ALL_COMPILERS").as_deref() == Ok("1")
+        || sce_build::toolchain::tools_are_required()
+    {
         Err(format!(
             "{test_id}: {binary} not on PATH and \
-             SCE_REQUIRE_ALL_COMPILERS=1 — install the toolchain or \
-             unset the env var to fall back to skip-with-warn"
+             SCE_REQUIRE_ALL_COMPILERS=1 (or SCE_REQUIRE_TOOLS) — install the \
+             toolchain or unset the env var to fall back to skip-with-warn"
         ))
     } else {
         eprintln!(
