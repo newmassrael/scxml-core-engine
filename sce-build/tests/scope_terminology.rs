@@ -114,6 +114,19 @@ const EXEMPT_PREFIXES: &[(&str, &str)] = &[
          rule forbids is SCE claiming who reads its wire surfaces, and \
          this example claims nothing about that.",
     ),
+    (
+        ".claude/sce_loop.scxml",
+        "the same distinction as `examples/ai_loop/`, in the file that \
+         actually runs it: this state machine SUPERVISES an agent \
+         working in this tree, so every `agent` here names the process \
+         it drives, not the audience of anything SCE emits. It is a \
+         loop definition rather than a wire surface or a contract \
+         document — nothing SCE produces carries it to a consumer — so \
+         the claim the rule forbids cannot be made from here. Named as \
+         one file rather than as `.claude/`, because the directory is \
+         shared with settings and instruction files that could later \
+         hold a genuine claim about who reads a surface.",
+    ),
 ];
 
 /// Lower bound on files the scan must read. Measured, not guessed:
