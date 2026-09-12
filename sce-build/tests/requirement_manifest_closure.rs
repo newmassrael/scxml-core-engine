@@ -43,7 +43,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use sce_build::parser::SCXMLParser;
-use sce_build::requirement_manifest::{classify, prose_reason, Outcome, RequirementManifest};
+use sce_build::requirement_manifest::{
+    classify, prose_reason, ModalityConvention, Outcome, RequirementManifest,
+};
 
 /// A manifest whose one section title is `title`, everything else a
 /// coordinate.
@@ -158,7 +160,7 @@ fn heading_shaped_section_titles_are_not_refused() {
     let mut checked = 0usize;
     for title in accepted {
         assert!(
-            prose_reason(title).is_none(),
+            prose_reason(title, ModalityConvention::EnglishModalVerbs).is_none(),
             "`{title}` is a heading and must load; the guard read it as prose",
         );
         RequirementManifest::from_json(&manifest_titled(title), "titled")
@@ -290,7 +292,7 @@ fn a_single_token_is_never_read_as_prose() {
     let mut checked = 0usize;
     for token in tokens {
         assert!(
-            prose_reason(token).is_none(),
+            prose_reason(token, ModalityConvention::EnglishModalVerbs).is_none(),
             "`{token}` has no whitespace and so cannot be a sentence, but \
              the guard read it as prose",
         );

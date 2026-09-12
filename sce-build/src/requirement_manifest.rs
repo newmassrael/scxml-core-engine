@@ -297,17 +297,32 @@ pub enum Trace {
 /// executable code — a rule the data must not be allowed to route
 /// around.
 ///
-/// ⚠⚠ One variant is what SCE can honestly claim today. A second
-/// convention is measured and waiting — a Korean OEM standard matches
-/// **zero** of these verbs and instead writes 하여야 한다 fourteen times
-/// — but adding its name here before the table behind it exists would
-/// be the schema promising a lookup that is not implemented. It lands
-/// with that table, not before it.
+/// ⚠⚠ The second variant landed with its table, not before it — see
+/// [`normative_markers`], whose entries were counted over a real OEM
+/// standard rather than guessed.
+///
+/// ⚠⚠⚠ A correction worth keeping, because the note that stood here
+/// was wrong in a way that would have produced a wrong dictionary. It
+/// said the Korean standard "matches **zero** of these verbs". Measured
+/// across all 275 pages of `ES95486-02`: `shall` occurs **651** times.
+/// The document is MIXED — Korean-normative for its first twenty pages,
+/// English-normative from page 21 on — so the earlier figure was true
+/// of a slice and read as true of the document. That is why a declared
+/// convention adds a vocabulary instead of replacing one.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 pub enum ModalityConvention {
     /// `shall` / `should` / `may` / `must`, read as whole words.
     #[serde(rename = "english-modal-verbs")]
     EnglishModalVerbs,
+    /// The Korean auxiliary endings that carry obligation, prohibition,
+    /// permission and recommendation — `-어야 한다`, `-지 않아야`,
+    /// `-수 있다`, `권장`. Named for the endings themselves, never for a
+    /// document that uses them, because
+    /// `a_standard_named_in_code_is_one_sce_implements` refuses a
+    /// specification's name in executable code and a convention value
+    /// is exactly where such a name would try to enter.
+    #[serde(rename = "korean-formal-endings")]
+    KoreanFormalEndings,
 }
 
 /// How the requirement list was produced.
@@ -499,16 +514,90 @@ pub enum ManifestError {
 /// not one contains any of the four.
 const NORMATIVE_MODALS: [&str; 4] = ["shall", "should", "must", "may"];
 
+/// The normative vocabulary of one convention.
+///
+/// ⭐ Measured, not intuited. `ES95486-02` — an OEM engineering
+/// standard, read but never copied here — writes obligation with the
+/// auxiliary `-어야/아야/여야 한다` rather than with any single verb, so
+/// the entries below are the ENDINGS and not a list of verbs. Counted
+/// over its 275 pages: `야 한다` 55, `야 함` 4, `야 하며` 1 (obligation);
+/// `서는 안` 2, `지 않아야` 1 (prohibition); `수 있다` 29 (permission);
+/// `권장` 1 (recommendation). Listing verbs instead would have matched
+/// `하여야 한다` (13) and missed `해야 한다` (20) — the commoner form.
+///
+/// ⚠ `이내에` ("within …") is deliberately absent although it occurs.
+/// It is a quantity phrase, not a modality: in "N ms 이내에 응답하여야
+/// 한다" the obligation is carried by `야 한다` and `이내에` only says
+/// how much. Admitting it would make every timing bound read as
+/// normative prose.
+///
+/// ⚠⚠ This is a SET of markers, not a map from marker to [`Modality`],
+/// and the difference is a measurement rather than a shortcut. Nothing
+/// in this crate derives a modality from text: there is no function
+/// returning [`Modality`] anywhere in `sce-build/src`, because SCE
+/// consumes a manifest whose `modality` is already declared and never
+/// sees the sentence at all — the sentence lives in the uncommitted
+/// sidecar, which is the copyright split this format is built on.
+///
+/// A marker-to-modality map therefore has no consumer HERE. It belongs
+/// to whatever authoring pass turns sentences into manifest entries,
+/// and that pass is upstream of this repository. Building the map here
+/// would be a table no test could exercise and no caller could be wrong
+/// about — the "declared but unread" shape this module already refuses
+/// once, where `RequirementId::validate` sat uncalled for 113 days.
+fn normative_markers(convention: ModalityConvention) -> &'static [&'static str] {
+    match convention {
+        ModalityConvention::EnglishModalVerbs => &NORMATIVE_MODALS,
+        ModalityConvention::KoreanFormalEndings => &[
+            "야 한다",
+            "야 함",
+            "야 하며",
+            "서는 안",
+            "지 않아야",
+            "수 있다",
+            "권장",
+        ],
+    }
+}
+
 /// Whether `value` carries one of [`NORMATIVE_MODALS`] as a whole word.
 ///
 /// Whole-word rather than substring, or `may` would fire on "Maybe"
 /// and `must` on "mustard". Byte indexing is safe here: a non-ASCII
 /// byte is not `is_ascii_alphanumeric`, so it reads as a boundary,
 /// which is the answer a word check wants anyway.
-fn carries_normative_modal(value: &str) -> bool {
+/// ⭐ The declared convention ADDS a vocabulary; it never removes one.
+///
+/// A manifest that declares Korean is still checked against the English
+/// markers, and the reason is a measurement rather than caution:
+/// `ES95486-02` is the very document this convention was added for, and
+/// it is MIXED — its first twenty pages are Korean-normative and carry
+/// no `shall` at all, while the body from page 21 on carries 651 of
+/// them. A guard that consulted only the declared table would have gone
+/// blind to two thirds of that one document.
+///
+/// The direction matters more than the symmetry. This guard's failure
+/// mode is committing somebody else's copyrighted sentence into a
+/// public repository, which is permanent; its false-positive mode is a
+/// refused heading, which is an inconvenience. So declaring a
+/// convention may only ever make it see more.
+fn carries_normative_modal(value: &str, convention: ModalityConvention) -> bool {
     let lower = value.to_ascii_lowercase();
     let bytes = lower.as_bytes();
-    NORMATIVE_MODALS.iter().any(|modal| {
+    let mut tables = vec![normative_markers(ModalityConvention::EnglishModalVerbs)];
+    if convention != ModalityConvention::EnglishModalVerbs {
+        tables.push(normative_markers(convention));
+    }
+    tables.into_iter().flatten().any(|modal| {
+        // ASCII markers are matched whole-word, or `may` fires on
+        // "Maybe" and `must` on "mustard". A marker carrying non-ASCII
+        // is a Korean ending, which is a distinctive sequence rather
+        // than a word between spaces — Korean does not delimit these
+        // the way English does, so the boundary test does not apply and
+        // a substring match is the correct reading.
+        if !modal.is_ascii() {
+            return lower.contains(modal);
+        }
         lower.match_indices(modal).any(|(start, _)| {
             let end = start + modal.len();
             let before = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
@@ -567,10 +656,11 @@ fn reject_prose_anywhere(
     tree: &serde_json::Value,
     field: &mut String,
     label: &str,
+    convention: ModalityConvention,
 ) -> Result<(), ManifestError> {
     match tree {
         serde_json::Value::String(value) => {
-            if let Some(reason) = prose_reason(value) {
+            if let Some(reason) = prose_reason(value, convention) {
                 return Err(ManifestError::Prose {
                     path: label.to_string(),
                     field: if field.is_empty() {
@@ -586,7 +676,7 @@ fn reject_prose_anywhere(
             for (index, item) in items.iter().enumerate() {
                 let mark = field.len();
                 field.push_str(&format!("[{index}]"));
-                reject_prose_anywhere(item, field, label)?;
+                reject_prose_anywhere(item, field, label, convention)?;
                 field.truncate(mark);
             }
         }
@@ -597,7 +687,7 @@ fn reject_prose_anywhere(
                     field.push('.');
                 }
                 field.push_str(key);
-                reject_prose_anywhere(item, field, label)?;
+                reject_prose_anywhere(item, field, label, convention)?;
                 field.truncate(mark);
             }
         }
@@ -606,7 +696,7 @@ fn reject_prose_anywhere(
     Ok(())
 }
 
-pub fn prose_reason(value: &str) -> Option<&'static str> {
+pub fn prose_reason(value: &str, convention: ModalityConvention) -> Option<&'static str> {
     // ⭐ Prose is multi-word. A string with no whitespace is a token —
     // an id, a section number, a revision, or one of the format's own
     // closed vocabulary words — and no amount of it is a sentence.
@@ -632,8 +722,8 @@ pub fn prose_reason(value: &str) -> Option<&'static str> {
     if trimmed.ends_with('.') || trimmed.ends_with('!') || trimmed.ends_with('?') {
         return Some("it ends in sentence punctuation");
     }
-    if carries_normative_modal(value) {
-        return Some("it carries a normative modal (shall / should / must / may)");
+    if carries_normative_modal(value, convention) {
+        return Some("it carries a normative marker of the declared convention");
     }
     None
 }
@@ -729,7 +819,17 @@ impl RequirementManifest {
                 path: label.to_string(),
                 source,
             })?;
-        reject_prose_anywhere(&tree, &mut String::new(), label)?;
+        // The sweep runs with the convention the manifest DECLARED, which
+        // is why the wire parse has to come first: a Korean-authored
+        // manifest is checked against Korean prose markers, and a
+        // manifest that never said would be checked against English
+        // alone — which is the state every manifest was in before this.
+        reject_prose_anywhere(
+            &tree,
+            &mut String::new(),
+            label,
+            wire.extraction.modality_convention,
+        )?;
         let manifest = RequirementManifest {
             doc_id: wire.doc_id,
             rev: wire.rev,
