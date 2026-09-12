@@ -199,6 +199,16 @@ name = "iso13400_requirement_closure"
 path = "tests/iso13400_requirement_closure.rs"
 required-features = ["cli"]
 
+# HOLE-2 — `sce:req` tokens are opaque, asserted at the parse AND at
+# the wire. The wire half spawns sce-codegen, so this declaration is
+# what stops the target building against whatever binary is lying in
+# target/: a stale one would report green for a report shape it does
+# not produce.
+[[test]]
+name = "requirement_id_opacity"
+path = "tests/requirement_id_opacity.rs"
+required-features = ["cli"]
+
 # W3C SCXML 4.9 `<log>` on C11 without a script engine. Compiles the
 # generated translation unit under the same `-Werror` the repo builds
 # C11 with; the `<stdio.h>` include used to be gated on the scripting
