@@ -65,10 +65,10 @@ const MANIFEST: &str = r#"{
   },
   "sections": [{ "id": "3.1", "title": "Start procedure" }],
   "requirements": [
-    { "id": "REQ-001", "section": "3.1", "page": 12 },
-    { "id": "REQ-002", "section": "3.1", "page": 41 },
-    { "id": "REQ-003", "section": "3.1", "page": 42 },
-    { "id": "REQ-004", "section": "3.1", "page": 55 }
+    { "id": "REQ-001", "section": "3.1", "at": { "page": 12 } },
+    { "id": "REQ-002", "section": "3.1", "at": { "page": 41 } },
+    { "id": "REQ-003", "section": "3.1", "at": { "page": 42 } },
+    { "id": "REQ-004", "section": "3.1", "at": { "page": 55 } }
   ]
 }"#;
 

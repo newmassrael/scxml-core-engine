@@ -27,6 +27,71 @@
 
 use crate::forge::error::SourceLocation;
 
+/// Where inside its source document a requirement or node sits.
+///
+/// ⭐ A variant, because this half of a coordinate is SOURCE-SHAPED and
+/// the landed design had it nailed to one shape. RFC §5.2g measured the
+/// corpus a real consumer holds — 146 PDF, 3 xlsx, 1 docx, 1 arxml — and
+/// `page: Option<u32>` can only address the first of those. A
+/// spreadsheet requirement is at a row, a structured document's at a
+/// path; a field named `page` makes every non-paginated source lose the
+/// coordinate that makes a review report checkable at all.
+///
+/// ⚠ The DIVISION a requirement belongs to is deliberately NOT part of
+/// this type. That is `section`, it stays a plain key beside this, and
+/// the reason is load-bearing: `section` is what
+/// [`crate::requirement_manifest::Classification::section_counts`]
+/// groups by, and RFC §5.2a calls those per-division counts its only
+/// handle on omission. Folding the division into a source-shaped variant
+/// would mean each shape had to answer "which group" its own way — and
+/// for a path-addressed source there is no honest answer without
+/// measuring one, which nobody has. Keeping it out means every source
+/// shape answers the grouping question the same way, by naming a
+/// division the manifest already declares.
+///
+/// ⚠⚠ Closed, like the extraction block's fields and for the same
+/// reason: an open string here would let a source's identity in through
+/// the data, where the executable-code gate cannot see it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Position {
+    /// A page of a paginated document.
+    Page(u32),
+    /// A row of a worksheet.
+    Row(u32),
+    /// A path into a structured document.
+    Path(String),
+}
+
+/// The position a compact form's trailing segment spells, if it spells
+/// one.
+///
+/// Two spellings, and the bare one is the compatibility affordance the
+/// [`SpecProvenance`] documentation argues for: `page=118` is the
+/// explicit form every shape shares, and `118` is what documents written
+/// before [`Position`] existed say.
+fn position_of(segment: &str) -> Option<Position> {
+    let segment = segment.trim();
+    Position::parse_tagged(segment).or_else(|| segment.parse().ok().map(Position::Page))
+}
+
+impl Position {
+    /// The `kind=value` spelling the compact URI form uses.
+    ///
+    /// Parsed here rather than at the call site so the compact form and
+    /// the JSON form cannot drift into naming the same shape two ways.
+    pub fn parse_tagged(text: &str) -> Option<Self> {
+        let (kind, value) = text.split_once('=')?;
+        match (kind.trim(), value.trim()) {
+            ("page", v) => v.parse().ok().map(Position::Page),
+            ("row", v) => v.parse().ok().map(Position::Row),
+            ("path", v) if !v.is_empty() => Some(Position::Path(v.to_string())),
+            _ => None,
+        }
+    }
+}
+
 /// Pointer to the source-of-truth specification document anchoring an
 /// IR node, requirement ID, or diagnostic.
 ///
@@ -38,11 +103,20 @@ use crate::forge::error::SourceLocation;
 /// SCXML serialisation accepts two forms:
 ///
 /// - compact URI: `sce:provenance="OEM-SPEC-01@23#4.4.2"`
-///   (`doc_id @ rev # section`; trailing `:page` optional after the
-///   section to carry a page number, e.g. `OEM-SPEC-01#4.4.2:118`)
+///   (`doc_id @ rev # section`; a trailing `:kind=value` after the
+///   section carries a [`Position`], e.g. `OEM-SPEC-01#4.4.2:page=118`,
+///   `WB-2#Sheet1:row=41`, `AR-1#Pkg:path=/Elem`)
 /// - child element: `<sce:provenance doc-id="..." rev="..." section="..." page="..."/>`
 ///   (one or more allowed; element form lets one node anchor at
 ///   multiple documents)
+///
+/// ⚠ The compact form also accepts a bare number — `#4.4.2:118` — and
+/// reads it as a page. That spelling predates [`Position`] and is kept
+/// because the alternative is worse: with it removed, an unmigrated
+/// document does not fail, it silently re-reads `4.4.2:118` as a section
+/// id, and a coordinate that quietly becomes part of a division name is
+/// the kind of wrong nobody sees. Every shape is expressible in the
+/// explicit spelling, and the committed documents use it.
 ///
 /// `doc-id` is the element form's only required attribute — it is the
 /// decomposed spelling of the compact form's `doc_id`, and an anchor
@@ -56,14 +130,19 @@ pub struct SpecProvenance {
     pub doc_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rev: Option<String>,
+    /// The division of the source this anchor names. Source-neutral —
+    /// a subclause, a worksheet, a package — and the key the per-division
+    /// coverage counts group by. See [`Position`] for why it is not part
+    /// of that type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section: Option<String>,
+    /// Where inside that division, if the anchor says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub page: Option<u32>,
+    pub at: Option<Position>,
 }
 
 impl SpecProvenance {
-    /// Parse the compact URI form `doc_id[@rev][#section[:page]]`.
+    /// Parse the compact URI form `doc_id[@rev][#section[:position]]`.
     /// Returns `None` if `input` is empty or `doc_id` would be empty.
     pub fn parse_compact(input: &str) -> Option<Self> {
         let input = input.trim();
@@ -81,12 +160,16 @@ impl SpecProvenance {
         if doc_id.is_empty() {
             return None;
         }
-        let (section, page) = match section_and_page {
+        // A trailing `:` segment is a position when it spells one, and
+        // part of the section otherwise — a division id may legitimately
+        // contain a colon, and reading such an id as a malformed
+        // coordinate would lose the division instead of reporting it.
+        let (section, at) = match section_and_page {
             None => (None, None),
             Some(tail) => match tail.rsplit_once(':') {
-                Some((sec, page_str)) => match page_str.trim().parse::<u32>() {
-                    Ok(p) => (Some(sec.trim().to_string()), Some(p)),
-                    Err(_) => (Some(tail.trim().to_string()), None),
+                Some((sec, rest)) => match position_of(rest) {
+                    Some(position) => (Some(sec.trim().to_string()), Some(position)),
+                    None => (Some(tail.trim().to_string()), None),
                 },
                 None => (Some(tail.trim().to_string()), None),
             },
@@ -95,7 +178,7 @@ impl SpecProvenance {
             doc_id: doc_id.to_string(),
             rev,
             section: section.filter(|s| !s.is_empty()),
-            page,
+            at,
         })
     }
 }
@@ -221,7 +304,7 @@ mod tests {
     fn compact_doc_only() {
         let p = SpecProvenance::parse_compact("OEM-SPEC-01").unwrap();
         assert_eq!(p.doc_id, "OEM-SPEC-01");
-        assert!(p.rev.is_none() && p.section.is_none() && p.page.is_none());
+        assert!(p.rev.is_none() && p.section.is_none() && p.at.is_none());
     }
 
     #[test]
@@ -230,14 +313,52 @@ mod tests {
         assert_eq!(p.doc_id, "OEM-SPEC-01");
         assert_eq!(p.rev.as_deref(), Some("23"));
         assert_eq!(p.section.as_deref(), Some("4.4.2"));
-        assert!(p.page.is_none());
+        assert!(p.at.is_none());
     }
 
+    /// The bare-number spelling, kept so an unmigrated document is read
+    /// the way it was written rather than silently re-read as a longer
+    /// section id. See [`SpecProvenance`].
     #[test]
-    fn compact_with_page() {
+    fn compact_with_bare_page() {
         let p = SpecProvenance::parse_compact("OEM-SPEC-01@23#4.4.2:118").unwrap();
-        assert_eq!(p.page, Some(118));
+        assert_eq!(p.at, Some(Position::Page(118)));
         assert_eq!(p.section.as_deref(), Some("4.4.2"));
+    }
+
+    /// Every position shape reaches the compact form, which is the
+    /// point of the variant: a source that is not paginated still has a
+    /// coordinate a reviewer can open.
+    #[test]
+    fn compact_carries_every_position_shape() {
+        let cases: [(&str, Position, &str); 3] = [
+            ("D#4.4.2:page=118", Position::Page(118), "4.4.2"),
+            ("D#Sheet1:row=41", Position::Row(41), "Sheet1"),
+            (
+                "D#Pkg:path=/Elem/x",
+                Position::Path("/Elem/x".into()),
+                "Pkg",
+            ),
+        ];
+        let mut checked = 0usize;
+        for (input, expected, section) in cases {
+            let p = SpecProvenance::parse_compact(input)
+                .unwrap_or_else(|| panic!("`{input}` must parse"));
+            assert_eq!(p.at, Some(expected), "for `{input}`");
+            assert_eq!(p.section.as_deref(), Some(section), "for `{input}`");
+            checked += 1;
+        }
+        assert_eq!(checked, 3, "every shape must have a case");
+    }
+
+    /// A division id may contain a colon, and a trailing segment that
+    /// spells no position leaves it part of the section — losing the
+    /// division would be worse than carrying no coordinate.
+    #[test]
+    fn a_colon_that_spells_no_position_stays_in_the_section() {
+        let p = SpecProvenance::parse_compact("D#4.4.2:draft").unwrap();
+        assert_eq!(p.section.as_deref(), Some("4.4.2:draft"));
+        assert!(p.at.is_none());
     }
 
     #[test]

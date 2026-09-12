@@ -624,16 +624,31 @@ fn the_copyright_gate_refuses_the_real_iso_manifest_once_it_carries_text() {
     RequirementManifest::from_json(&raw, "iso-committed")
         .expect("the committed manifest carries coordinates only and must load");
 
-    let anchor = r#"{ "id": "3.DoIP-152", "section": "12.6.1.2", "page": 68 }"#;
-    assert!(
-        raw.contains(anchor),
-        "the entry this test mutates has moved; without it the mutation \
-         is a no-op and the refusal below would be proving nothing",
+    // ⚠ Anchored on the entry's IDENTITY, not on its body. An earlier
+    // version quoted the whole entry — `{ "id": …, "section": …, "page":
+    // 68 }` — and died the first time the locator changed shape, which
+    // is a test failing for a reason that has nothing to do with what it
+    // guards. The id is what this test needs to find; everything else
+    // about the entry is free to move.
+    let anchor = r#"{ "id": "3.DoIP-152", "#;
+    assert_eq!(
+        raw.matches(anchor).count(),
+        1,
+        "the entry this test mutates must appear exactly once; without it \
+         the mutation is a no-op and the refusal below would be proving \
+         nothing",
     );
     let with_text = raw.replace(
         anchor,
-        r#"{ "id": "3.DoIP-152", "section": "12.6.1.2", "page": 68,
-             "text": "<the requirement sentence, which must never be committed>" }"#,
+        concat!(
+            r#"{ "id": "3.DoIP-152", "#,
+            r#""text": "<the requirement sentence, which must never be committed>", "#,
+        ),
+    );
+    assert_ne!(
+        with_text, raw,
+        "the injection changed nothing, so the refusal below would be \
+         about the committed manifest rather than about the `text` field",
     );
 
     let err = RequirementManifest::from_json(&with_text, "iso-with-text")

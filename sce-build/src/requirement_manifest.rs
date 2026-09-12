@@ -151,6 +151,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::model::SCXMLModel;
+use crate::provenance::Position;
 
 /// One section of the source document's table of contents.
 ///
@@ -236,13 +237,18 @@ pub struct RequirementEntry {
     /// existed keeps the meaning it had.
     #[serde(default)]
     pub modality: Modality,
-    /// Section of the source document. Matches `sections[].id` so the
-    /// per-section counts of RFC §5.2a can be computed.
+    /// Division of the source document. Matches `sections[].id` so the
+    /// per-division counts of RFC §5.2a can be computed.
+    ///
+    /// Source-neutral despite the name: a workbook writes its sheet
+    /// here, a structured document its package. See [`Position`] for why
+    /// this is not folded into that type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section: Option<String>,
-    /// Page in the source document, for a reviewer to open.
+    /// Where inside that division, for a reviewer to open. Source-shaped
+    /// and therefore a variant — see [`Position`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub page: Option<u32>,
+    pub at: Option<Position>,
 }
 
 /// Whether the source document names its own requirements.
@@ -642,7 +648,7 @@ impl std::fmt::Display for ManifestError {
                 f,
                 "requirement manifest {path} is not valid: {source}. \
                  Note that a requirement entry carries COORDINATES only \
-                 (`id`, `section`, `page`); the requirement sentence \
+                 (`id`, `section`, `at`); the requirement sentence \
                  lives in an uncommitted sidecar, because a manifest is \
                  checked in and specification text is usually somebody \
                  else's copyright"
@@ -670,8 +676,9 @@ impl std::fmt::Display for ManifestError {
                  specification prose, because {reason}. A manifest is \
                  checked in and specification text is usually somebody \
                  else's copyright, so the committed side carries \
-                 COORDINATES only — an id, a section, a page, or the \
-                 heading a contents page prints. The sentence belongs \
+                 COORDINATES only — an id, a division, a position \
+                 inside it, or the heading a contents page prints. The \
+                 sentence belongs \
                  in the uncommitted sidecar. If this is a real heading \
                  the check has misread, shorten it to the wording the \
                  contents page uses"
@@ -796,8 +803,10 @@ pub struct RequirementOutcome {
     pub outcome: Outcome,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub section: Option<String>,
+    /// Carried through from the manifest entry unchanged, so the report
+    /// tells a reviewer where to open whatever shape the source is.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub page: Option<u32>,
+    pub at: Option<Position>,
     /// `node_path`s from the requirement report, so a reader can find
     /// the nodes in the very report this classification walked. Empty
     /// for `missing` by definition.
@@ -990,7 +999,7 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
             id: entry.id.clone(),
             outcome,
             section: entry.section.clone(),
-            page: entry.page,
+            at: entry.at.clone(),
             node_paths,
         });
     }
@@ -1001,7 +1010,7 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
                 id: (*id).to_string(),
                 outcome: Outcome::Dangling,
                 section: None,
-                page: None,
+                at: None,
                 node_paths: paths.clone(),
             });
         }

@@ -35,7 +35,7 @@
 
    Spec-anchor shape — the SAME compact URI the `sce:provenance`
    attribute is written in, one line per anchor:
-     `sce:provenance: doc_id[@rev][#section[:page]]`
+     `sce:provenance: doc_id[@rev][#section[:kind=value]]`
 
    One line per anchor rather than one joined line (the shape
    `sce:req` uses) because a `doc_id` is not whitespace-delimited:
@@ -102,8 +102,19 @@
     emission patterns below differ only in where their newline goes,
     and a second copy of `doc_id[@rev][#section[:page]]` is exactly
     the kind of thing that drifts on one side. -#}
+{#- The position is rendered by ITERATING the variant rather than by
+    naming its arms. `at` serialises as a one-key map — `{"page": 118}`,
+    `{"row": 41}`, `{"path": "/Elem"}` — so `kind=value` falls out of the
+    key and the value, and a fourth shape needs no edit here.
+
+    ⚠ Written this way because the alternative already failed once: this
+    macro read `p.page` by name, and when the Rust field became a
+    variant the lookup silently returned nothing. Every backend went on
+    emitting anchors with the coordinate quietly missing, and no
+    compiler could see it — a template reads the IR by string. The
+    round-trip in `sce_annotation_emission.rs` is what caught it. -#}
 {%- macro provenance_compact(p) -%}
-{{ p.doc_id }}{% if p.rev %}@{{ p.rev }}{% endif %}{% if p.section or p.page %}#{{ p.section | default("") }}{% if p.page %}:{{ p.page }}{% endif %}{% endif %}
+{{ p.doc_id }}{% if p.rev %}@{{ p.rev }}{% endif %}{% if p.section or p.at %}#{{ p.section | default("") }}{% if p.at %}:{% for kind, value in p.at | items %}{{ kind }}={{ value }}{% endfor %}{% endif %}{% endif %}
 {%- endmacro -%}
 
 {%- macro annotation_comment(node, backend, indent="") -%}
