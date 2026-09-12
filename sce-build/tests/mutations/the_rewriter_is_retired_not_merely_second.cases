@@ -215,9 +215,18 @@ edit("scripts/gates/tree-hygiene.sh",
 PY
 
 mutation_case "the pin names a commit this repository does not carry" <<'PY'
-edit("docs/SCE_LUA_TRANSLATION_SEAM.md",
-     '`retired-measurement:59eb7f96022fa4a10330fbfd70c05b45671af443` | `scripts/measure-lowering-per-call.sh`',
-     '`retired-measurement:0000000000000000000000000000000000000000` | `scripts/measure-lowering-per-call.sh`')
+# The pin is READ, not quoted. A history rewrite re-keys every sha, and the
+# literal one this case used to carry went stale when the seam's pins were
+# re-keyed on 2026-09-13: the anchor matched nothing, and the corpus gate went
+# red on a tree whose check was still correct. What this case mutates is the
+# per-call row's pin, whatever commit it names today.
+import re
+PATH = "docs/SCE_LUA_TRANSLATION_SEAM.md"
+TAIL = " | `scripts/measure-lowering-per-call.sh`"
+pins = re.findall(r"`retired-measurement:[0-9a-f]{40}`" + re.escape(TAIL), open(PATH).read())
+if len(pins) != 1:
+    raise SystemExit("expected exactly one per-call pin in %s, found %d" % (PATH, len(pins)))
+edit(PATH, pins[0], "`retired-measurement:0000000000000000000000000000000000000000`" + TAIL)
 PY
 
 mutation_case "a departed path is claimed for a file that is still here" <<'PY'
