@@ -210,6 +210,19 @@ fn delay_of(action: &crate::model::Action) -> String {
 /// classifier, and the two must agree — RFC §6.2's claim that ① and ②
 /// are two readings of one export is exactly that agreement, and
 /// `transition_table_closure.rs` asserts it rather than assuming it.
+///
+/// ⚠ `declared` is the ids of the **`shall` entries**, not of every
+/// entry, and the caller does that filtering because only the caller
+/// holds the manifest. The agreement above is a statement about one
+/// question — *is there a node carrying this id* — and
+/// [`crate::requirement_manifest::Modality::ShallNot`] entries are
+/// exactly the ones that question may not be asked of. Passing them
+/// in makes this function report a prohibition as `missing` however
+/// well it is implemented, which is the false alarm
+/// [`crate::requirement_manifest::Outcome::NeedsScenario`] exists to
+/// stop; it would also make the two readings disagree, and the
+/// disagreement would be read as drift in the export rather than as
+/// the modality confusion it is.
 pub fn requirements_without_a_row<'a>(
     rows: &[TransitionRow],
     declared: impl Iterator<Item = &'a str>,

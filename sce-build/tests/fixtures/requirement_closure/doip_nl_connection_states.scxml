@@ -1,0 +1,160 @@
+<?xml version="1.0"?>
+<!--
+  Requirement-closure RFC Atomic D — the first real consumer.
+
+  This is pass 2's output: the statechart an authoring pass produced
+  from ISO 13400-2:2019 subclause 12.6.1, "NL connection states",
+  which is the lifecycle a vehicle-side DoIP entity keeps for one
+  logical connection. The manifest beside it,
+  `iso13400_2_nl_socket_handling.manifest.json`, is pass 1's output
+  over the whole of 12.6 and was sealed before this file existed, so
+  the numerator did not write the denominator (RFC section 5.5).
+
+  COORDINATES ONLY, here as in the manifest. Not one sentence of
+  ISO 13400-2 is reproduced: `sce:req` values are requirement
+  IDENTIFIERS, `sce:provenance` anchors are subclause and page
+  NUMBERS, and the timer names are the symbols the standard uses to
+  refer to values it tabulates elsewhere. The standard may be read.
+  It may not be redistributed.
+
+  What this document deliberately does not do is come out clean.
+  Atomic A and Atomic B were only ever measured against fixtures
+  their own author wrote (RFC section 15), and a first real
+  conversion that scored 100 % would reproduce that defect one level
+  up instead of ending it. Every departure below is sourced from the
+  standard rather than invented, and each is what makes one of the
+  outcomes demonstrable on something nobody here controls:
+
+  - Subclause 12.6.4's socket handler (3.DoIP-088, -089, -090..-096,
+    -106) is a DIFFERENT machine: it arbitrates among sockets, where
+    this one is the life of a single connection. It is not modelled,
+    so those ten read `missing`, and that is true rather than
+    tolerated.
+
+  - The alive-check transition cites `DoIP-134`. That is the spelling
+    the standard's own prose uses on p.70; the REQ box four lines
+    below it on the same page spells the id `3.DoIP-134`. The
+    manifest refuses to normalise ids on purpose — two spellings that
+    normalise together are two requirements to the document that
+    issued them — so this reads `dangling` while the requirement it
+    meant is claimed by nothing. That pair IS the signature of a
+    mis-spelled citation, and is why `dangling` is worth reporting.
+
+  - Both inactivity timers are armed by the names the standard gives
+    them and NOT with the values from its Table 12, which are the
+    standard's data. The `expr="0"` placeholders are not those
+    values and are not meant to pass for them, which is exactly what
+    the `sce:unresolved` marker on each arming action says.
+
+  - The `close_requested` transition and the `<onexit>` cancel carry
+    no `sce:req` because no requirement asks for them. 3.DoIP-133
+    mentions a close request from either side only in a parenthetical
+    example, and nothing requires the timer to be cancelled on the
+    way out — the socket is closing anyway. They are what an
+    authoring pass adds on its own initiative, so they are what the
+    transition table's `(none)` block exists to show.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="doip_nl_connection" initial="listen"
+       datamodel="ecmascript">
+
+  <datamodel>
+    <data id="authentication_required" expr="true"/>
+    <data id="confirmation_required" expr="true"/>
+    <data id="T_TCP_Initial_Inactivity" expr="0"/>
+    <data id="T_TCP_General_Inactivity" expr="0"/>
+  </datamodel>
+
+  <!-- The state a socket is reset to once a connection is finalized. -->
+  <state id="listen" sce:req="3.DoIP-133">
+    <sce:provenance doc-id="ISO-13400-2" rev="2019" section="12.6.1.3" page="70"/>
+    <transition event="tcp_established" target="initialized" sce:req="3.DoIP-127"/>
+  </state>
+
+  <!-- Added to the connection table as "initialized", with the
+       initial inactivity timer started and assigned to the entry. -->
+  <state id="initialized" sce:req="3.DoIP-127">
+    <sce:provenance doc-id="ISO-13400-2" rev="2019" section="12.6.1.3" page="69"/>
+    <onentry>
+      <send id="initial_inactivity" event="initial_inactivity_elapsed"
+            delayexpr="T_TCP_Initial_Inactivity"
+            sce:req="3.DoIP-083 3.DoIP-084"
+            sce:unresolved="T_TCP_Initial_Inactivity"
+            sce:unresolved-reason="the bound is Table 12 data and is not copied into this repository"/>
+    </onentry>
+    <transition event="routing_activation_completed" target="registered"
+                sce:req="3.DoIP-128 3.DoIP-085">
+      <cancel sendid="initial_inactivity"/>
+    </transition>
+    <transition event="initial_inactivity_elapsed" target="finalize"
+                sce:req="3.DoIP-086 3.DoIP-132"/>
+  </state>
+
+  <!-- The three "Registered [...]" states share this parent, which is
+       what makes "one of the Registered connection states" a place a
+       transition can sit rather than a sentence about three ids. -->
+  <state id="registered" initial="pending_authentication"
+         sce:req="3.DoIP-153 3.DoIP-154">
+    <sce:provenance doc-id="ISO-13400-2" rev="2019" section="12.6.1.3" page="69"/>
+    <onentry>
+      <send id="general_inactivity" event="general_inactivity_elapsed"
+            delayexpr="T_TCP_General_Inactivity"
+            sce:req="3.DoIP-079 3.DoIP-080"
+            sce:unresolved="T_TCP_General_Inactivity"
+            sce:unresolved-reason="the bound is Table 12 data and is not copied into this repository"/>
+    </onentry>
+    <onexit>
+      <cancel sendid="general_inactivity"/>
+    </onexit>
+    <transition event="general_inactivity_elapsed" target="finalize"
+                sce:req="3.DoIP-082 3.DoIP-132"/>
+    <transition event="alive_check_timeout" target="finalize" sce:req="3.DoIP-132"/>
+    <transition event="alive_check_response" sce:req="3.DoIP-124 3.DoIP-081">
+      <cancel sendid="general_inactivity"/>
+      <send id="general_inactivity" event="general_inactivity_elapsed"
+            delayexpr="T_TCP_General_Inactivity"/>
+    </transition>
+    <transition event="alive_check_due" sce:req="DoIP-134">
+      <send event="alive_check_request"/>
+    </transition>
+    <transition event="close_requested" target="finalize"/>
+
+    <state id="pending_authentication" sce:req="3.DoIP-128">
+      <transition event="authentication_succeeded" target="pending_confirmation"
+                  sce:req="3.DoIP-129"/>
+      <transition cond="authentication_required == false" target="pending_confirmation"
+                  sce:req="3.DoIP-129"/>
+      <transition event="authentication_rejected" target="finalize" sce:req="3.DoIP-132"/>
+    </state>
+
+    <state id="pending_confirmation" sce:req="3.DoIP-129">
+      <transition event="confirmation_succeeded" target="routing_active"
+                  sce:req="3.DoIP-130"/>
+      <transition cond="confirmation_required == false" target="routing_active"
+                  sce:req="3.DoIP-130"/>
+      <transition event="confirmation_rejected" target="finalize" sce:req="3.DoIP-132"/>
+    </state>
+
+    <!-- 3.DoIP-131 forbids routing a diagnostic message before this
+         state is reached. The handler sits here and nowhere else,
+         which is how a statechart expresses that — but placement is
+         a claim, not a proof: a second handler added to `initialized`
+         would break the requirement and leave this annotation
+         untouched. That is why the manifest types this entry
+         `shall_not` and coverage refuses to call it implemented. -->
+    <state id="routing_active" sce:req="3.DoIP-130">
+      <transition event="diagnostic_message" sce:req="3.DoIP-131">
+        <send event="route_to_target"/>
+      </transition>
+    </state>
+  </state>
+
+  <state id="finalize" sce:req="3.DoIP-132">
+    <sce:provenance doc-id="ISO-13400-2" rev="2019" section="12.6.1.3" page="70"/>
+    <onentry>
+      <send event="tcp_close" sce:req="3.DoIP-133"/>
+    </onentry>
+    <transition target="listen" sce:req="3.DoIP-133"/>
+  </state>
+</scxml>
