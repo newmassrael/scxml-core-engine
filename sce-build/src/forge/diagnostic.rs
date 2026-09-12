@@ -15604,6 +15604,117 @@ mod tests {
         );
     }
 
+    /// The contract, asserted over **documents** instead of codes.
+    ///
+    /// > For any document that produced an anchor index, every
+    /// > diagnostic whose location lies inside an anchored region
+    /// > reaches the wire with a non-empty `spec_provenance`.
+    ///
+    /// # Why this exists next to the per-code roster
+    ///
+    /// The roster answers "has this code been shown to carry", and
+    /// that question has a blind spot it cannot close: it only sees
+    /// the codes it lists, and it is fed by `run_scenario`, which is a
+    /// HAND-MAINTAINED list of pipeline stages. A seventh stage added
+    /// next year, raising on an anchored node and forgetting to
+    /// resolve, breaks the contract while every roster entry stays
+    /// exactly as true as it was. That is the Item 6 shape one level
+    /// up — a promise nothing asks about.
+    ///
+    /// This test asks about the promise itself. It takes no view on
+    /// which code appeared or which stage produced it: whatever came
+    /// out, if it points inside a region the document anchored, it
+    /// must carry that anchor.
+    ///
+    /// # Why parse failures are outside it, structurally
+    ///
+    /// The index is built at the END of a successful parse
+    /// (`parser.rs`, right after the model is otherwise complete), so
+    /// a document that fails to parse produces none — there is no
+    /// "anchored region" for the premise to be true of. The four
+    /// mid-parse sites that thread by hand are therefore not an
+    /// exemption carved out here; they sit outside the quantifier
+    /// because the thing it quantifies over does not exist yet. RFC
+    /// §4.1 states the same split from the other side.
+    ///
+    /// # Why `enclosing` is a fair oracle here
+    ///
+    /// It is the same lookup the resolvers use, so this is not a check
+    /// that `enclosing` is *correct* — it is a check that the pipeline
+    /// CALLED it. That is the failure being guarded: a stage that
+    /// knows the node and never asks. A wrong `enclosing` would be a
+    /// different defect, and `anchor_index`'s own tests are where it
+    /// is measured.
+    #[test]
+    fn every_diagnostic_inside_an_anchored_region_carries_it() {
+        let label = "anchor_contract";
+        let mut examined = 0usize;
+
+        for (_, scxml) in carrying_scenarios() {
+            let Ok(model) = crate::parser::SCXMLParser::new().parse_string(scxml, label) else {
+                // No parse, no index — outside the quantifier.
+                continue;
+            };
+            assert!(
+                !model.anchor_index.is_empty(),
+                "a fixture declared no anchored region, so every record \
+                 it produces is vacuously fine and measures nothing",
+            );
+            // Resolution is deliberately refused when the recorded and
+            // authored coordinate spaces differ, so a preprocessed
+            // document would fail this for a reason the contract
+            // endorses. These fixtures run no preprocessor; asserted
+            // rather than assumed, because a later fixture might.
+            assert!(
+                model.authored_positions.is_none(),
+                "this fixture was preprocessed, so `enclosing` is being \
+                 asked about rows in a different space than the index's",
+            );
+
+            for diagnostic in run_scenario(scxml) {
+                let Some(location) = diagnostic.location.as_ref() else {
+                    continue;
+                };
+                let at = crate::forge::error::SourceLocation {
+                    file: location.file.clone(),
+                    line: location.line,
+                    col: location.col,
+                };
+                if model.anchor_index.enclosing(&at).is_empty() {
+                    continue;
+                }
+                examined += 1;
+                assert!(
+                    !diagnostic.spec_provenance.is_empty(),
+                    "`{}` was raised at {}:{:?}, which lies inside a \
+                     region this document anchored, and reached the wire \
+                     with an empty `spec_provenance`. Per §2.1.2 empty \
+                     means 'no enclosing node carried an anchor', and \
+                     one did — so the stage that raised this knew the \
+                     node and never asked for its anchor. Wire that \
+                     stage's exit through `SCXMLModel::with_enclosing_anchor` \
+                     (or `enclosing_anchors`, if its records never \
+                     become a `Located`).",
+                    diagnostic.code.as_str(),
+                    location.file,
+                    location.line,
+                );
+            }
+        }
+
+        // An empty sweep prints the same green as a clean one. The
+        // floor is what makes the assertions above evidence: it is set
+        // under today's count so ordinary fixture growth does not move
+        // it, and far above zero so a corpus that stopped producing
+        // located records cannot pass silently.
+        assert!(
+            examined >= 15,
+            "the invariant examined {examined} anchored records, which \
+             is too few to mean anything — the corpus stopped producing \
+             located diagnostics inside anchored regions",
+        );
+    }
+
     /// Every code either carries the enclosing anchor or is registered
     /// with the reason it cannot. Nothing is unclassified.
     ///
