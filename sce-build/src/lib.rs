@@ -130,6 +130,9 @@ pub mod position_map;
 /// fragment into incompatible representations if each grew its own.
 pub mod provenance;
 /// Per-node `sce:req` requirement-annotation NDJSON emit.
+/// The closed requirement set a document is measured against, and the
+/// four-way comparison it makes possible — Requirement-closure RFC ①.
+pub mod requirement_manifest;
 /// Drives the `sce-codegen requirements` CLI subcommand for
 /// downstream req-coverage tooling.
 pub mod requirements_report;

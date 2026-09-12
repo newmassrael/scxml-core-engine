@@ -1749,6 +1749,15 @@ enum Commands {
     Requirements {
         /// SCXML file path
         scxml: String,
+        /// Closed requirement set to measure this document against.
+        ///
+        /// Without it the subcommand reports what the document claims;
+        /// with it, what the specification asked for — the four-way
+        /// classification of Requirement-closure RFC §5.3. `missing`
+        /// exists only on this path: a document cannot be asked what
+        /// it left out unless something outside it holds the answer.
+        #[arg(long)]
+        manifest: Option<String>,
     },
     /// Emit `<sce:unresolved>` placeholder NDJSON for a single SCXML
     /// file. One JSON record per
@@ -2240,7 +2249,9 @@ fn main() {
         Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
-        Commands::Requirements { scxml } => cmd_requirements(&scxml, error_format),
+        Commands::Requirements { scxml, manifest } => {
+            cmd_requirements(&scxml, manifest.as_deref(), error_format)
+        }
         Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
         Commands::GenerateConformance {
             language,
@@ -7184,12 +7195,28 @@ fn cmd_manifest(dir: &str) {
 // drift between "what compiles" and "what the report claims is
 // annotated" is structurally impossible.
 
-fn cmd_requirements(scxml: &str, error_format: ErrorFormat) {
+fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorFormat) {
     let mut parser = sce_build::parser::SCXMLParser::new();
     let model = parser
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
-    out_stream(|w| sce_build::requirements_report::emit_requirements_ndjson(&model, w));
+    let Some(manifest_path) = manifest else {
+        out_stream(|w| sce_build::requirements_report::emit_requirements_ndjson(&model, w));
+        return;
+    };
+
+    // A manifest that cannot be loaded is fatal rather than skipped.
+    // Falling back to the annotation-only report would answer a
+    // different question than the one asked, print a clean-looking
+    // result, and never mention that the denominator was dropped.
+    let loaded =
+        sce_build::requirement_manifest::RequirementManifest::load(Path::new(manifest_path))
+            .unwrap_or_else(|e| {
+                eprintln!("sce-codegen: {e}");
+                std::process::exit(1);
+            });
+    let classification = sce_build::requirement_manifest::classify(&model, &loaded);
+    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));
 }
 
 // ── Subcommand: unresolved ─────────────────────────────────────
