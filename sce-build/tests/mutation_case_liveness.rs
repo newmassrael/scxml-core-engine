@@ -121,7 +121,7 @@ fn fixture_with_selector(selector: &str, target_body: &str, cases: &str) -> Fixt
 /// exited and its `tempdir()` snapshot was already unlinked, which is exactly
 /// the unrecoverable shape the guard hard-refuses. The refusal then stood
 /// where the rejection under test should have been, and the assertion failed
-/// reporting the wrong reason. Measured on job 98430990425 (sha bb02f7ad53):
+/// reporting the wrong reason. Measured on job 98430990425 (sha 279507c14c):
 /// 11 of 28 failed that way, every message naming a sibling's temp path, while
 /// the same commit passed locally — the pass was ordering luck, not health.
 ///
@@ -1164,7 +1164,7 @@ fn build_refusal(captured: &str) -> Vec<String> {
 #[test]
 fn a_refused_rust_build_is_quoted_from_the_compilers_first_line() {
     // The shape this parser exists for, taken verbatim from the round of
-    // `f81cc8e500`: `warnings = "deny"` turns an unused binding into a hard
+    // `7e74f5bc40`: `warnings = "deny"` turns an unused binding into a hard
     // error, and the mutation that caused it is inexpressible as written.
     // `tail` would have returned the "could not compile" line, which names no
     // file, no line and no rule — the reason three cases sat INCONCLUSIVE for

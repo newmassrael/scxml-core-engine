@@ -1,6 +1,6 @@
 # Where ECMAScript becomes Lua, per backend
 
-Measured 2026-08-27 against `0824c496c7`. This file is the starting point for
+Measured 2026-08-27 against `4e4d0ab33d`. This file is the starting point for
 closing the ECMA-262 divergences (`tests/ecmascript/lua_engine_divergences.json`,
 `tests/ecmascript/kotlin_lua_divergences.json`), and it exists because the
 answer is not the same on every backend and nothing wrote it down.
@@ -228,7 +228,7 @@ C++ templates, then see what breaks — is wrong, and it fails silently.
 
 **38 sites must move together — the number survived a re-derivation but the
 SET did not.** This section first said 26, counted by looking for `escape_cpp`
-on an expression-bearing field. Re-measured 2026-08-28 against `37b1452386`,
+on an expression-bearing field. Re-measured 2026-08-28 against `0c93b39b14`,
 that method is wrong **five** ways, each of which hides sites rather than
 showing them:
 
@@ -274,7 +274,7 @@ grep -rnE -A2 "evaluateExpression\(|safeEvaluateGuard\(|executeScript\(|initiali
   tools/codegen/templates/_macros/*.jinja2
 ```
 
-Measured 2026-08-28 on `37b1452386`: **38** such sites carry a model
+Measured 2026-08-28 on `0c93b39b14`: **38** such sites carry a model
 expression (`cond` / `expr` / `content` / `typeexpr` / `targetexpr` /
 `sendidexpr` / `delayexpr` / `contentexpr` / `srcexpr` / `eventexpr` /
 `array`) — 33 on the call's own line, 5 on the line after it. ⚠ This method
@@ -508,7 +508,7 @@ engine). Measured while landing this: with the bodies inline, that header —
 which every generated state machine includes — changed GCC 13's inlining and
 surfaced the known `-Wmaybe-uninitialized` false positive in `std::variant`'s
 move constructor, failing `W3CTestRunner_Test561.cpp` under `-Werror` when it
-had compiled clean at `8023a18b41`. The repo already names that false positive
+had compiled clean at `a9ce6578b0`. The repo already names that false positive
 at `tests/CMakeLists.txt:221`; suppressing it on one more target would have
 hidden a header that had simply grown code it did not need to carry.
 
@@ -1406,7 +1406,7 @@ diff before re-syncing. The lowering seam's C entry points
 (`scripts/gate embed-vendor` names them) are public headers under
 `embed/include/scripting/`, so adding them changed that surface — and the
 manifest was not regenerated with them. `Embed Vendor Smoke` went red on
-`9192789c88` and again on `e74dc3a001`, saying `symbol_count: 283 -> 292`.
+`d8a9a4ffe2` and again on `f9de9ba94c`, saying `symbol_count: 283 -> 292`.
 
 Re-derived in the turn that repaid it, and this is the command rather than the
 number:
@@ -1433,7 +1433,7 @@ answers in a minute and the wrong one for this one: it needs longer than the
 two of them. Its own median lives in the `LANES` row that
 `sce-build/tests/ci_supersession_policy.rs` carries, which is also what holds
 this paragraph's figure to the measurement. It was cancelled
-on `9192789c88` and `1a1f1169f8`, both times by a mid-session push 17 and 14
+on `d8a9a4ffe2` and `1c702d6f9d`, both times by a mid-session push 17 and 14
 minutes behind the run it took down.
 
 ⚠ **Its cancellation RATIO hides this** — 2 of its last 11 runs, which reads
@@ -2116,10 +2116,10 @@ someone has read the warning.
 
 | id | status | kind | the number | check | evidence |
 |---|---|---|---|---|---|
-| `per-call-cost` | CLOSED | measurement | 577ns against 1085ns cold — parsing is **1.88x faster**; the rewriter's whole advantage is a memo worth **89x**. ⚠ RETIRED: the second side of this comparison was deleted with the rewriter, so the number cannot be re-measured in this tree — the pinned commit still holds the probe and the subject, and the check requires both | `retired-measurement:59eb7f96022fa4a10330fbfd70c05b45671af443` | `scripts/measure-lowering-per-call.sh` |
+| `per-call-cost` | CLOSED | measurement | 577ns against 1085ns cold — parsing is **1.88x faster**; the rewriter's whole advantage is a memo worth **89x**. ⚠ RETIRED: the second side of this comparison was deleted with the rewriter, so the number cannot be re-measured in this tree — the pinned commit still holds the probe and the subject, and the check requires both | `retired-measurement:7d85c2edad6a543c407799609f8ca2381423ab8e` | `scripts/measure-lowering-per-call.sh` |
 | `scope-obligation` | CLOSED | measurement | **301** of 1120 sites diverge with no scope; **298** of them are discharged by `<data id>` alone, before anything runs; residue **3**, named rather than counted | `census:ScopeObligation` | `scripts/measure-scope-obligation.sh` |
 | `error-channel` | CLOSED | counting | **15** distinguishable failures against **0** — so the FFI carries a code plus a string, and the code already exists | `derive:expression-alphabet=15` | `sce-build/src/forge/diagnostic.rs` |
-| `swap-net-footprint` | CLOSED | measurement | the link is a SWAP, not an addition: **+223.7 KB** in, **−76.0 KB** out ⇒ **net +147.8 KB**, so pricing it as an addition overstates by **34%**. The rewriter's **2262** tracked lines have now LEFT — the OUT half was actually paid. ⚠ RETIRED: the object this weighed no longer exists in the tree, so the number is re-derivable only at the pinned commit, which the check requires to still hold it | `retired-measurement:59eb7f96022fa4a10330fbfd70c05b45671af443` | `scripts/measure-lowering-footprint.sh` |
+| `swap-net-footprint` | CLOSED | measurement | the link is a SWAP, not an addition: **+223.7 KB** in, **−76.0 KB** out ⇒ **net +147.8 KB**, so pricing it as an addition overstates by **34%**. The rewriter's **2262** tracked lines have now LEFT — the OUT half was actually paid. ⚠ RETIRED: the object this weighed no longer exists in the tree, so the number is re-derivable only at the pinned commit, which the check requires to still hold it | `retired-measurement:7d85c2edad6a543c407799609f8ca2381423ab8e` | `scripts/measure-lowering-footprint.sh` |
 | `scope-answer` | CLOSED | measurement | **0** sites diverge once the caller has read every `<data id>` AND every document-level `<script>` — both readable before the first macrostep — so the surface needs `declare` + `declare_chunk` and NO execution-time scope | `derive:scope-ladder=LoadTime` | `sce-build/src/ecmascript/scope.rs` |
 | `link-beside-lua` | CLOSED | decision | the owner chose to LINK, beside `SCE_ENABLE_LUA`, and retire the rewriter. Priced on the shape chosen: a staticlib costs **474.6 KB** of stripped image, not the **223.7 KB** the cdylib delta reported — that baseline already held Rust's runtime and a C++ image does not | `decision:linked-beside-lua` | `sce/CMakeLists.txt` |
 | `retire-rewriter` | CLOSED | decision | the second half of that decision, carried out to the end: **zero** tracked C++ files reach `EcmaScriptToLuaTransformer` in code, and the unit is now DELETED — nothing is named after it, `sce/sce_base_sources.cmake` no longer lists it, and no exemption of any shape is left. The fallback is gone from all three sites — `loweredTextOf`, `loweredScriptOf`, `reset` — and refusal is the engine's own answer (§scxml-5.9.1) rather than a second translator's cue. ⚠ Deleting the unit deleted the control that made the zero mean something, so the check buys it back from the PROSE: the files that still explain the rewriter in comments must stay above a floor, because a sweep that read nothing answers zero the same way | `retirement:rewriter-deleted` | `sce/src/scripting/LuaEngine.cpp` |
@@ -3810,7 +3810,7 @@ with text a test chose — neither compiles a machine.
 
 ⚠ **And it was not confined to the fixture.** Over the 312 committed Kotlin
 machines, `executeTransitionActions` carried **41** guard re-evaluations across
-**26** files at `aecea0c0d1`, and carries **0** now. None of those 26 answered
+**26** files at `e53bdf48e2`, and carries **0** now. None of those 26 answered
 wrongly, because no committed fixture guards on a side effect — the defect was
 latent in every one of them.
 
@@ -3838,7 +3838,7 @@ effective transitions on the other — and the two would silently disagree for
 every state that inherits one.
 
 That the other backends had this from the start is not a memory:
-`git grep -l transition_index aecea0c0d1 -- tools/codegen/templates/` returns
+`git grep -l transition_index e53bdf48e2 -- tools/codegen/templates/` returns
 C, C++, Go, Python and Rust, and no Kotlin file.
 
 ### The list reached zero, and reaching zero was a MEASUREMENT
@@ -3918,7 +3918,7 @@ collision being avoided.
 - **The flip itself**, still. `Language::Kotlin.default_script_engine_target()`
   is ECMAScript and `EcmaScriptToLuaTransformer` is 1175 lines. This round
   removes a reason to distrust the flip rather than performing it.
-- **`Mutation Rounds` was red at `aecea0c0d1`**, and not from this work: both
+- **`Mutation Rounds` was red at `e53bdf48e2`**, and not from this work: both
   shards of `mutation_rounds_selection.cases` failed while
   `ecma262_lowered_kotlin.cases` passed. It is a debt of its own round.
 
@@ -4249,7 +4249,7 @@ registered from it. Their slack is small, not zero.
 
 The round above left the contract test in `sce-build/tests/gate_registry_contract.rs`
 still demanding the floor it had just retired — `code.contains("if (( cases <
-200 )); then")` — so `Tree Hygiene` was red on `main` from `fd892c8c35`
+200 )); then")` — so `Tree Hygiene` was red on `main` from `d237783de8`
 onward. The obvious repair is to delete the assertion. What was done instead
 was to BUILD the thing the assertion was written about and see what happens.
 

@@ -235,7 +235,7 @@ The commit is the field to record:
 
 ```console
 $ sce-codegen --version
-sce-codegen 0.1.0 (b497eacf7d94)
+sce-codegen 0.1.0 (619ff5be8834)
 ```
 
 It is also in the stdout manifest of every `generate` run, so a build
@@ -243,7 +243,7 @@ system capturing that JSON attributes its output with no extra
 invocation:
 
 ```json
-{"v":1,"kind":"generate","generator":"b497eacf7d94","artifacts":[…]}
+{"v":1,"kind":"generate","generator":"619ff5be8834","artifacts":[…]}
 ```
 
 If you keep a version sidecar next to committed output, derive it from

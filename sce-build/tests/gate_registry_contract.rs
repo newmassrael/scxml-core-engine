@@ -1400,7 +1400,7 @@ fn staged_citation_fixture_files(dir: &Path, files: &[(&str, &str)]) {
     // repository has none of its own, so the gate fell through to the global
     // config: on a developer machine that answered and the hook ran, and on a
     // hosted runner with no identity `git var GIT_AUTHOR_IDENT` failed.
-    // Measured 2026-08-26 on `6937e04f38` — green locally, red in BOTH `Rust
+    // Measured 2026-08-26 on `f0bb1330bc` — green locally, red in BOTH `Rust
     // Workspace Tests` and `Tree Hygiene`, and red as "the hook did not reach
     // the citation stage", which reads as a defect in the stage under test.
     let allowed = allowed_ident_email(&root);
@@ -1442,7 +1442,7 @@ fn staged_citation_fixture_files(dir: &Path, files: &[(&str, &str)]) {
     // comment says "so it resolves the same way when the hook is invoked
     // against another tree", which is exactly this fixture — so a copy naming
     // one file dies on the first `source` a later stage adds, before reaching
-    // the stage under test. Measured: `ident-gate.sh` landed in `ca9210ea8b`
+    // the stage under test. Measured: `ident-gate.sh` landed in `d51ae7543a`
     // and left this fixture failing at `pre-commit` line 68 with "no such file
     // or directory", which reads as a defect in the citation stage it never
     // got to. A sweep cannot go stale the next time a stage grows a sibling.

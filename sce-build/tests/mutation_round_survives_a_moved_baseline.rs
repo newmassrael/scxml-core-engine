@@ -432,7 +432,13 @@ fn a_build_that_is_reproducible_never_retakes_the_baseline() {
 /// libraries this pinned script sources makes it undrivable, that is a decision
 /// for a person — retire the control deliberately — and not something the test
 /// may take silently.
-const DEFECT_REVISION: &str = "79f1bf284d2010af4b727ae79e3c6f941621dce6";
+/// ⚠⚠ This pin was re-keyed on 2026-09-13 when the history was rewritten to
+/// take a downstream consumer's identifiers out of four commit messages. The
+/// rewrite changed no file content — the trees are byte-identical — but every
+/// commit from 2026-05-23 onward received a new hash, and a pinned hash is
+/// exactly the kind of reference that goes dangling under one. It previously
+/// read `79f1bf284d`.
+const DEFECT_REVISION: &str = "0fc4da0837f1f7ff478ff692ba51fc056b8b5769";
 
 #[test]
 fn the_harness_this_replaces_ends_the_casefile_at_its_first_case() {

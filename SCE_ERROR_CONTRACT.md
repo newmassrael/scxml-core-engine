@@ -50,7 +50,7 @@ fatal, for authors who have no conformance excuse for carrying them.
 {
   "v": 1,
   "id": "fnv1a:dd04a37de468ffb4",
-  "generator": "2be6e02c2c2c",
+  "generator": "5c428c71e991",
   "code": "validation/invalid-attribute",
   "stage": "validation",
   "message": "sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)",
@@ -1123,7 +1123,7 @@ is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
 {
   "v": 1,
   "kind": "generate",
-  "generator": "b497eacf7d94",
+  "generator": "619ff5be8834",
   "artifacts": [
     {"path": "/abs/path/foo_sm.rs"}
   ],
