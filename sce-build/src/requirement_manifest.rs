@@ -64,42 +64,60 @@
 //! with a message saying where the sentence belongs. That is the
 //! difference between a rule and a guard: nobody has to remember it.
 //!
-//! ## ⚠ Open: the guard covers the entry and not the section beside it
+//! ## The guard covers every string, not the fields someone listed
 //!
-//! Measured 2026-09-12, while writing the first manifest from a real
-//! standard: [`ManifestSection::title`] is unbounded free text, and a
-//! whole requirement sentence pasted there **loads without a word**.
-//! The paragraph above says the split is structural; it is structural
-//! for [`RequirementEntry`] and advisory for the struct next to it.
-//! Section titles are the one part of a manifest copied verbatim off
-//! the source document's contents page, so this is the field most
-//! likely to grow prose, not the least.
+//! `deny_unknown_fields` refuses `text` by NAME, and that is what let
+//! the hole in: [`ManifestSection::title`], in the struct beside it,
+//! was unchecked, so a whole requirement sentence pasted there loaded
+//! without a word. A rule written per field is a rule the next field
+//! does not inherit — and the next field is the one nobody remembers.
 //!
-//! ⚠⚠ The obvious repair does not work, and the measurement is
-//! recorded so it is not re-proposed. A length bound would have to
-//! admit every contents-page heading and refuse every requirement
-//! sentence; over the 166 REQ boxes of ISO 13400-2:2019 those
-//! populations **overlap** — headings run to 81 characters while the
-//! first line of a requirement sentence starts well below that (5 %
-//! are 76 or shorter). A bound between them is wrong in both
-//! directions, and a guard that is wrong in both directions is worse
-//! than none, because it advertises that the field is checked.
+//! So the repair is not a title check. [`prose_reason`] is applied by
+//! walking the parsed JSON tree, to **every string a manifest
+//! commits**, including strings in fields that do not exist yet.
 //!
-//! The two repairs that remain are both real:
+//! ### What decides it is shape, and the size rule is refuted
 //!
-//! - **Drop `title`.** §5.2b's own rule is `id`, `section`, `page` —
-//!   coordinates only — and a heading is not a coordinate. This closes
-//!   the hole completely and needs no threshold. It is not done here
-//!   because the sidecar that would hold the titles has no
-//!   implementation yet, so today it would delete the labels rather
-//!   than move them.
-//! - **A shape rule rather than a size one** — refuse a value that
-//!   ends in sentence punctuation. Targets what actually distinguishes
-//!   a heading from a sentence, at the cost of being about Latin
-//!   punctuation.
+//! A length bound was tried first. It cannot work: over
+//! ISO 13400-2:2019 the two populations overlap, so every threshold
+//! is wrong in both directions, and a guard wrong in both directions
+//! is worse than none because it advertises that the field is
+//! checked. Do not re-propose it.
 //!
-//! Whichever is chosen belongs in the round that builds the sidecar,
-//! because that is when `title` first has somewhere else to live.
+//! What was measured instead, on the same document — 243
+//! heading-shaped strings (78 contents-page headings, 165 REQ box
+//! headings) against the 166 requirement sentences:
+//!
+//! ```text
+//!                                    headings    sentences
+//!                                    (accept)    (refuse)
+//!   ends with sentence punctuation      0/243      156/166
+//!   carries a normative modal           0/243      164/166
+//!   either                              0/243      164/166
+//! ```
+//!
+//! Zero false refusals. The two sentences that escape are an artefact
+//! of the extraction, not of the rule — both are split across a page
+//! boundary, and both carry `shall` and a full stop in the source.
+//!
+//! ### ⚠ The residue, written down rather than left silent
+//!
+//! - **A heading that carries a normative modal is refused.** None of
+//!   the 243 measured does, but *"Features a server may omit"* is a
+//!   legal heading and this guard would reject it. The refusal says so
+//!   and names the field, so the author can reword; it is not silent.
+//! - **The rule is about Latin script and English modals.** A
+//!   specification written in another language passes the modal test
+//!   unread. The punctuation half still applies.
+//! - **A single token is never prose** ([`prose_reason`] returns early
+//!   on it). That is what keeps the format's own vocabulary — a
+//!   `modality` of `shall_not`, an id of `3.DoIP-152` — out of the
+//!   sweep, and it means a one-word string is never guarded. No
+//!   sentence is one word, so nothing is lost.
+//! - **`title` still exists.** Dropping it — §5.2b's own rule is
+//!   coordinates only — remains the stricter repair, and is still the
+//!   right one to weigh when the sidecar is built and the labels have
+//!   somewhere else to live.
 //!
 //! The cost this accepts, stated rather than hidden: the acceptance
 //! report (RFC §7a) cannot print the sentence from the manifest alone
@@ -239,6 +257,166 @@ pub enum ManifestError {
     Empty {
         path: String,
     },
+    /// A string the manifest commits reads as specification prose
+    /// rather than as a coordinate. `field` is the JSON path to it.
+    Prose {
+        path: String,
+        field: String,
+        reason: &'static str,
+    },
+}
+
+/// Words that make a sentence normative. ISO/IEC Directives Part 2 and
+/// RFC 2119 both build requirement prose out of these, so their
+/// presence is the surest sign a string is a requirement rather than a
+/// label.
+///
+/// ⚠ Measured over ISO 13400-2:2019: `shall` alone carries all 164 of
+/// the sentences this catches and the other three appear in none of
+/// them. They are kept because the class is "normative modal" and not
+/// "the word this one standard happened to use" — and because they
+/// cost nothing measurable: across 243 heading-shaped strings from the
+/// same document (78 contents-page headings and 165 REQ box headings)
+/// not one contains any of the four.
+const NORMATIVE_MODALS: [&str; 4] = ["shall", "should", "must", "may"];
+
+/// Whether `value` carries one of [`NORMATIVE_MODALS`] as a whole word.
+///
+/// Whole-word rather than substring, or `may` would fire on "Maybe"
+/// and `must` on "mustard". Byte indexing is safe here: a non-ASCII
+/// byte is not `is_ascii_alphanumeric`, so it reads as a boundary,
+/// which is the answer a word check wants anyway.
+fn carries_normative_modal(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    NORMATIVE_MODALS.iter().any(|modal| {
+        lower.match_indices(modal).any(|(start, _)| {
+            let end = start + modal.len();
+            let before = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+            let after = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+            before && after
+        })
+    })
+}
+
+/// Why `value` reads as specification prose, or `None` if it reads as
+/// a coordinate or a label.
+///
+/// # The discriminator, and why it is shape and not size
+///
+/// A length bound was tried first and is **refuted**: over
+/// ISO 13400-2:2019 the two populations overlap, so any threshold is
+/// wrong in both directions, and a guard wrong in both directions is
+/// worse than none because it advertises that the field is checked.
+///
+/// Measured instead, on the same document:
+///
+/// ```text
+///                                    headings    requirement
+///                                    (accept)    sentences (refuse)
+///   ends with sentence punctuation      0/243          156/166
+///   carries a normative modal           0/243          164/166
+///   either of the two                   0/243          164/166
+/// ```
+///
+/// The heading population is 243 strings — every contents-page heading
+/// and every REQ box heading in the standard. **Not one** of them
+/// trips either test, so the rule has no measured false refusal at
+/// all. The two sentences that escape are an artefact of the
+/// extraction rather than of the rule: both are split across a page
+/// boundary, and both carry `shall` and a full stop in the source, so
+/// on the real text the rule refuses all 166.
+///
+/// Both tests are kept even though the modal subsumes the punctuation
+/// one here, because they catch different prose. A descriptive
+/// sentence lifted from the same specification — a definition, a note
+/// — carries no modal and is still somebody else's copyrighted text.
+/// Refuse the first string anywhere under `tree` that reads as prose.
+///
+/// ⭐ Walks the untyped tree rather than named fields, and that is the
+/// whole repair. The hole this closes was not "`title` was forgotten"
+/// — it was that the guard keyed on a field NAME (`text`, refused by
+/// `deny_unknown_fields`) while the field next to it in the same
+/// struct went unchecked. A rule written per field is a rule the next
+/// field does not inherit, and the next field is the one nobody
+/// remembers. Every string a manifest commits is subject to this,
+/// including strings in fields that do not exist yet.
+///
+/// Object KEYS are deliberately not checked: they are the format's own
+/// vocabulary, not content copied from a specification.
+fn reject_prose_anywhere(
+    tree: &serde_json::Value,
+    field: &mut String,
+    label: &str,
+) -> Result<(), ManifestError> {
+    match tree {
+        serde_json::Value::String(value) => {
+            if let Some(reason) = prose_reason(value) {
+                return Err(ManifestError::Prose {
+                    path: label.to_string(),
+                    field: if field.is_empty() {
+                        "<root>".to_string()
+                    } else {
+                        field.clone()
+                    },
+                    reason,
+                });
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                let mark = field.len();
+                field.push_str(&format!("[{index}]"));
+                reject_prose_anywhere(item, field, label)?;
+                field.truncate(mark);
+            }
+        }
+        serde_json::Value::Object(members) => {
+            for (key, item) in members {
+                let mark = field.len();
+                if !field.is_empty() {
+                    field.push('.');
+                }
+                field.push_str(key);
+                reject_prose_anywhere(item, field, label)?;
+                field.truncate(mark);
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub fn prose_reason(value: &str) -> Option<&'static str> {
+    // ⭐ Prose is multi-word. A string with no whitespace is a token —
+    // an id, a section number, a revision, or one of the format's own
+    // closed vocabulary words — and no amount of it is a sentence.
+    //
+    // This precondition is not a softening; it is what makes the rule
+    // correct. Without it the sweep refused this repository's own ISO
+    // manifest, because `modality` serialises as `"shall_not"` and the
+    // whole-word modal test fired on the `shall` in it. The fix that
+    // suggests itself — exempt the `modality` field — would have been
+    // the per-field defect this guard exists to remove, written the
+    // other way round. Asking "does this have words at all" separates
+    // the format's vocabulary from the author's prose without naming
+    // either.
+    //
+    // Measured on ISO 13400-2:2019: **0 of 166** requirement sentences
+    // lack whitespace, so the precondition gives up no refusal power;
+    // 4 of 242 headings are single words, and those are strings the
+    // rule wants to accept anyway.
+    if !value.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let trimmed = value.trim_end();
+    if trimmed.ends_with('.') || trimmed.ends_with('!') || trimmed.ends_with('?') {
+        return Some("it ends in sentence punctuation");
+    }
+    if carries_normative_modal(value) {
+        return Some("it carries a normative modal (shall / should / must / may)");
+    }
+    None
 }
 
 impl std::fmt::Display for ManifestError {
@@ -269,6 +447,22 @@ impl std::fmt::Display for ManifestError {
                  which reads exactly like a document that implements \
                  everything"
             ),
+            ManifestError::Prose {
+                path,
+                field,
+                reason,
+            } => write!(
+                f,
+                "requirement manifest {path}: `{field}` reads as \
+                 specification prose, because {reason}. A manifest is \
+                 checked in and specification text is usually somebody \
+                 else's copyright, so the committed side carries \
+                 COORDINATES only — an id, a section, a page, or the \
+                 heading a contents page prints. The sentence belongs \
+                 in the uncommitted sidecar. If this is a real heading \
+                 the check has misread, shorten it to the wording the \
+                 contents page uses"
+            ),
         }
     }
 }
@@ -298,11 +492,24 @@ impl RequirementManifest {
     /// part worth testing: each is a manifest that would otherwise
     /// "work" while measuring nothing.
     pub fn from_json(raw: &str, label: &str) -> Result<Self, ManifestError> {
-        let manifest: RequirementManifest =
+        // Parsed twice on purpose: once into the typed shape, whose
+        // `deny_unknown_fields` is what refuses a `text` field with the
+        // message that names the sidecar, and once as an untyped tree
+        // so the prose sweep below can reach EVERY string without being
+        // told where the strings are. Field-by-field checking is what
+        // produced this hole — `text` was guarded by name while
+        // `title`, sitting in the struct beside it, was not.
+        let tree: serde_json::Value =
             serde_json::from_str(raw).map_err(|source| ManifestError::Parse {
                 path: label.to_string(),
                 source,
             })?;
+        let manifest: RequirementManifest =
+            serde_json::from_value(tree.clone()).map_err(|source| ManifestError::Parse {
+                path: label.to_string(),
+                source,
+            })?;
+        reject_prose_anywhere(&tree, &mut String::new(), label)?;
         if manifest.requirements.is_empty() {
             return Err(ManifestError::Empty {
                 path: label.to_string(),

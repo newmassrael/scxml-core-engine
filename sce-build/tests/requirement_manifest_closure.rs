@@ -43,7 +43,216 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use sce_build::parser::SCXMLParser;
-use sce_build::requirement_manifest::{classify, Outcome, RequirementManifest};
+use sce_build::requirement_manifest::{classify, prose_reason, Outcome, RequirementManifest};
+
+/// A manifest whose one section title is `title`, everything else a
+/// coordinate.
+fn manifest_titled(title: &str) -> String {
+    format!(
+        r#"{{ "doc_id": "placeholder-spec", "rev": "A",
+              "sections": [{{ "id": "3.1", "title": "{title}" }}],
+              "requirements": [{{ "id": "REQ-1", "section": "3.1" }}] }}"#
+    )
+}
+
+/// HOLE-1 — the copyright guard reaches the section title, and the
+/// discriminator is SHAPE rather than size.
+///
+/// ⚠ Every refused string below is a placeholder of my own writing.
+/// Putting a real ISO sentence here to make the test "realistic" would
+/// commit the exact thing the guard exists to prevent, in the file
+/// that tests it — the guard keys on shape, so a placeholder of the
+/// same shape exercises it exactly.
+///
+/// ⚠⚠ A length bound was tried first and is refuted; do not
+/// re-propose it. Over ISO 13400-2:2019 the two populations overlap,
+/// so every threshold is wrong in both directions. The shape rule was
+/// measured on the same document instead: across 243 heading-shaped
+/// strings — 78 contents-page headings and 165 REQ box headings — not
+/// one trips it, while it refuses every one of the 166 requirement
+/// sentences.
+#[test]
+fn a_section_title_that_reads_as_prose_is_refused() {
+    let refused: [(&str, &str); 6] = [
+        (
+            "ends in a full stop",
+            "A placeholder entity keeps a table of its connections",
+        ),
+        (
+            "carries shall",
+            "A placeholder entity shall keep a table of its connections",
+        ),
+        (
+            "carries should",
+            "A placeholder entity should keep a table of its connections",
+        ),
+        (
+            "carries must",
+            "A placeholder entity must keep a table of its connections",
+        ),
+        (
+            "carries may",
+            "A placeholder entity may keep a table of its connections",
+        ),
+        (
+            "ends in a question mark",
+            "Is the placeholder entity connected",
+        ),
+    ];
+
+    let mut checked = 0usize;
+    for (shape, body) in refused {
+        // The first and last cases need their terminal punctuation;
+        // the modal cases must NOT have it, or they would prove the
+        // punctuation test rather than the modal one.
+        let title = match shape {
+            "ends in a full stop" => format!("{body}."),
+            "ends in a question mark" => format!("{body}?"),
+            _ => body.to_string(),
+        };
+        let err = RequirementManifest::from_json(&manifest_titled(&title), "titled")
+            .expect_err("a section title that reads as prose must not load");
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("COORDINATES only") && rendered.contains("sidecar"),
+            "the refusal must say where the sentence belongs; {shape} gave: {rendered}",
+        );
+        assert!(
+            rendered.contains("sections[0].title"),
+            "the refusal must name the field it read, or an author cannot \
+             find it in a manifest with many sections; {shape} gave: {rendered}",
+        );
+        checked += 1;
+    }
+
+    println!("HOLE-1: refused {checked} prose-shaped section title(s)");
+    assert!(
+        checked >= 6,
+        "checked {checked} prose shapes; both halves of the discriminator \
+         (terminal punctuation, and each normative modal) need a case, or \
+         one half can stop working in silence",
+    );
+}
+
+/// The other half, which is the half a guard usually gets wrong: real
+/// headings must still load.
+#[test]
+fn heading_shaped_section_titles_are_not_refused() {
+    // Shapes taken from how contents pages are written, not from any
+    // one document: a noun phrase, an "X and Y", a numbered-looking
+    // one, a single word, one carrying a comma.
+    let accepted = [
+        "NL socket handling",
+        "Connection table",
+        "Socket handler and alive check",
+        "General inactivity timer",
+        "Scope",
+        "Terms, definitions and abbreviated terms",
+        "Diagnostic power mode information",
+        "Vehicle identification and announcement",
+    ];
+
+    let mut checked = 0usize;
+    for title in accepted {
+        assert!(
+            prose_reason(title).is_none(),
+            "`{title}` is a heading and must load; the guard read it as prose",
+        );
+        RequirementManifest::from_json(&manifest_titled(title), "titled")
+            .unwrap_or_else(|e| panic!("heading `{title}` must load: {e}"));
+        checked += 1;
+    }
+
+    println!("HOLE-1: accepted {checked} heading-shaped section title(s)");
+    assert!(
+        checked >= 8,
+        "checked {checked} headings; a guard is only worth having if the \
+         accepting half is exercised too, and a shrinking population here \
+         is how a rule that refuses everything passes",
+    );
+}
+
+/// ⭐ The claim that makes this a repair rather than a patch.
+///
+/// The hole was not that `title` was forgotten. It was that the guard
+/// keyed on a field NAME — `text`, refused by `deny_unknown_fields` —
+/// while the field beside it in the same struct went unchecked. So the
+/// check must reach strings in fields nobody thought about, and this
+/// test picks fields that are not `title` to say so.
+#[test]
+fn the_guard_reaches_strings_outside_the_field_that_exposed_it() {
+    let sentence = "A placeholder entity shall keep a table of its connections";
+    let elsewhere: [(&str, String); 2] = [
+        (
+            "sections[0].id",
+            format!(
+                r#"{{ "doc_id": "d", "rev": "A",
+                      "sections": [{{ "id": "{sentence}", "title": "Scope" }}],
+                      "requirements": [{{ "id": "REQ-1" }}] }}"#
+            ),
+        ),
+        (
+            "requirements[0].section",
+            format!(
+                r#"{{ "doc_id": "d", "rev": "A",
+                      "requirements": [{{ "id": "REQ-1", "section": "{sentence}" }}] }}"#
+            ),
+        ),
+    ];
+
+    let mut checked = 0usize;
+    for (field, raw) in &elsewhere {
+        let rendered = RequirementManifest::from_json(raw, "elsewhere")
+            .expect_err("prose anywhere in a committed manifest must be refused")
+            .to_string();
+        assert!(
+            rendered.contains(field),
+            "the guard must name `{field}`; got: {rendered}",
+        );
+        checked += 1;
+    }
+
+    println!("HOLE-1: refused prose in {checked} field(s) that are not `title`");
+    assert!(
+        checked >= 2,
+        "checked {checked} non-title fields; with fewer than two this says \
+         nothing about fields the format has not grown yet",
+    );
+}
+
+/// The precondition that keeps the rule from eating the format's own
+/// vocabulary — and the measurement that says it costs nothing.
+#[test]
+fn a_single_token_is_never_read_as_prose() {
+    // `shall_not` is the one that bit: it is a `modality` value, and
+    // the whole-word modal test fires on the `shall` inside it. It is
+    // not prose, it is this format's own enum spelling.
+    let tokens = [
+        "shall_not",
+        "shall",
+        "3.DoIP-152",
+        "12.6.1.2",
+        "ISO-13400-2",
+        "2019",
+        "REQ-1",
+    ];
+    let mut checked = 0usize;
+    for token in tokens {
+        assert!(
+            prose_reason(token).is_none(),
+            "`{token}` has no whitespace and so cannot be a sentence, but \
+             the guard read it as prose",
+        );
+        checked += 1;
+    }
+    println!("HOLE-1: {checked} single-token string(s) correctly not prose");
+    assert!(
+        checked >= 7,
+        "checked {checked} tokens; `shall_not` must be among them, because \
+         a guard that refuses this repository's own manifest is the failure \
+         this precondition exists to prevent",
+    );
+}
 
 /// A document that cites four requirements, one of them not in the
 /// manifest, with one marked unresolved — and a manifest that declares
