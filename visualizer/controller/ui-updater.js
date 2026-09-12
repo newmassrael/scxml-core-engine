@@ -398,7 +398,6 @@ class UIUpdater {
                 <span class="log-event">${eventText}</span>
                 <span class="log-transition">${lastTransition.source} → ${lastTransition.target}</span>
                 ${actionsHtml}
-                ${this.controller.getW3CReference(lastTransition)}
             `;
 
             // Prepend (newest first)

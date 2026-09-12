@@ -88,46 +88,6 @@ class Formatters {
         return text;
     }
 
-    getW3CReference(transition) {
-        try {
-            // Get test ID from URL
-            const params = new URLSearchParams(window.location.hash.substring(1));
-            const testId = params.get('test');
-
-            if (!testId || !window.specReferences || !window.specReferences[testId]) {
-                return '';
-            }
-
-            const testRefs = window.specReferences[testId];
-
-            // Check transition-specific references
-            if (testRefs.transitions && transition.id && testRefs.transitions[transition.id]) {
-                const ref = testRefs.transitions[transition.id];
-                return `<a href="https://www.w3.org/TR/scxml/#${ref.section}"
-                           target="_blank"
-                           class="w3c-ref"
-                           title="${ref.description}">
-                        W3C SCXML ${ref.section}
-                       </a>`;
-            }
-
-            // Fallback to general test specs
-            if (testRefs.specs && testRefs.specs.length > 0) {
-                const section = testRefs.specs[0];
-                return `<a href="https://www.w3.org/TR/scxml/#${section}"
-                           target="_blank"
-                           class="w3c-ref"
-                           title="${testRefs.description}">
-                        W3C SCXML ${section}
-                       </a>`;
-            }
-        } catch (error) {
-            console.error('Error getting W3C reference:', error);
-        }
-
-        return '';
-    }
-
     formatValue(value) {
         if (typeof value === 'string') {
             return `"${value}"`;

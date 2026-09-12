@@ -160,7 +160,6 @@ class ExecutionController {
     escapeHtml(unsafe) { return this.formatters.escapeHtml(unsafe); }
     appendOptionalAttributes(text, action, attrNames) { return this.formatters.appendOptionalAttributes(text, action, attrNames); }
     formatAction(action) { return this.formatters.formatAction(action); }
-    getW3CReference(transition) { return this.formatters.getW3CReference(transition); }
     formatValue(value) { return this.formatters.formatValue(value); }
     getElementKeyFromId(id) { return this.formatters.getElementKeyFromId(id); }
 
