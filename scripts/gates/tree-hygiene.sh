@@ -99,6 +99,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # does not exist today, so a filter written over the tree as it stands names
 # the answers and not the case.
 #
+# `spec_surface_registration` is here for the registry's own reason, and it
+# is the sharpest instance of it. What it reads is every tracked path, and
+# what it judges is whether `SCE_WIRE_CONTRACTS.md` names the spec-bearing
+# surfaces the tree holds — stores under `docs/spec/**` and
+# `docs/sce-ledger/**`, conformance registries under `tests/**`, the embed
+# manifest, a visualizer annotation file and the vendored W3C snapshot under
+# `tools/**`. rust-workspace-tests.yml's `paths:` filter names none of those
+# five roots, so the case the gate exists for — a NEW surface, in a directory
+# that does not exist today — is precisely the commit that would not start
+# the lane holding it. This workflow declares no filter, so it runs on
+# exactly those pushes.
+#
 # `ffi` is here so that SOMETHING in the Rust lanes compiles the C
 # surface. It is off by default and `clippy-check.yml` runs `--workspace
 # --all-targets` without `--all-features`, so without this no Rust lane
@@ -111,6 +123,7 @@ cargo test -p sce-build --features cli,ffi \
     --test ffi_header_parity \
     --test roadmap_marker_gate \
     --test scope_terminology \
+    --test spec_surface_registration \
     --test workflow_trigger_coverage \
     --test hook_ci_parity \
     --test build_jobs_has_one_owner \

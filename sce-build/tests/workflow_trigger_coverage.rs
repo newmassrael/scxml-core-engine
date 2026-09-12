@@ -210,6 +210,20 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "scope_terminology",
     "sourced_scripts_are_tracked",
     "sourcemap_symbol_markers",
+    // Asks `git ls-files` for every tracked path and derives, by shape,
+    // which of them carry this repository's specification model — a
+    // `.atomic/` store, a `conformance/` registry, a vendored upstream
+    // snapshot, a JSON claiming to catalogue something — then refuses any
+    // that `SCE_WIRE_CONTRACTS.md` does not name. What it judges spans
+    // `docs/spec/**`, `docs/sce-ledger/**`, `tests/**`, `embed/`, `web/`
+    // and `tools/`, and no workflow's `paths:` filter names those roots;
+    // more to the point, the case it exists for is a surface in a
+    // directory that does not exist today, which is by construction the
+    // one a filter written over the current tree cannot enumerate. That
+    // is not hypothetical here: the eight `.atomic` stores arrived
+    // exactly that way and stayed unregistered until 2026-09-13, when a
+    // session spent a day rebuilding one of them.
+    "spec_surface_registration",
     // Reads every workflow to check that a test-running step can fail its
     // job. A `paths:` filter on `.github/workflows/**` would cover its
     // inputs today and stop covering them the moment a workflow moves.
