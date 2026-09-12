@@ -179,6 +179,86 @@ fn an_unresolved_marker_on_a_transition_action_reaches_the_verdict() {
     println!("HOLE-3: the unresolved marker on a transition action is read");
 }
 
+/// ⭐⭐ The fourth reading, and the one with the worst failure mode.
+///
+/// `classify` derives its revision-staleness note from the
+/// `sce:provenance` anchors the same walk yields. An anchor sitting
+/// only on a transition's own action was therefore invisible too — so
+/// a document citing a superseded revision **there** was compared
+/// against a stale manifest in silence, and the comparison came back
+/// clean. `requirement_manifest`'s own doc says the staleness check is
+/// worth more than the comparison it qualifies, which is exactly why
+/// this gets its own assertion rather than being assumed to follow
+/// from the `sce:req` case.
+#[test]
+fn a_provenance_anchor_on_a_transition_action_reaches_the_staleness_check() {
+    let doc = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                        xmlns:sce="http://sce.dev/ext" version="1.0"
+                        name="prov" initial="s0">
+                   <state id="s0">
+                     <transition event="go" target="done">
+                       <raise event="e" sce:req="REQ_A"
+                              sce:provenance="probe-spec@D3#1.1"/>
+                     </transition>
+                   </state>
+                   <final id="done"/>
+                 </scxml>"#;
+    let model = SCXMLParser::new()
+        .parse_string(doc, "prov")
+        .unwrap_or_else(|e| panic!("probe parses: {:?}", e.error));
+    let manifest = RequirementManifest::from_json(
+        r#"{ "doc_id": "probe-spec", "rev": "D4",
+             "requirements": [{ "id": "REQ_A" }] }"#,
+        "probe",
+    )
+    .expect("probe manifest loads");
+
+    let note = classify(&model, &manifest).revision_note.expect(
+        "the anchor sits only on the transition's own action, and the \
+         manifest is a revision ahead of it — without the note, a document \
+         is scored against a denominator that no longer describes it and \
+         nothing says so",
+    );
+    assert!(
+        note.contains("D3") && note.contains("D4"),
+        "the note must name both revisions so a reader can tell which way \
+         the drift runs; got: {note}",
+    );
+    println!("HOLE-3: a transition-action anchor reaches the staleness note");
+}
+
+/// The same claim at the wire, which is what a consumer reads.
+///
+/// ⚠ The three checks above drive the library. A consumer runs the
+/// command, and this repository has twice shipped a check that was
+/// green at the library and blind at the wire, so the wire gets its
+/// own assertion rather than an argument that it must follow.
+#[test]
+fn the_command_reports_a_transitions_own_action() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(WITNESS);
+    let output =
+        std::process::Command::new(std::path::PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen")))
+            .arg("requirements")
+            .arg(&path)
+            .output()
+            .expect("sce-codegen runs");
+    assert!(
+        output.status.success(),
+        "sce-codegen requirements failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains(&format!("\"node_path\":\"{TRANSITION_ACTION}\"")),
+        "the emitted report carries no record for {TRANSITION_ACTION}.\n{stdout}",
+    );
+    assert!(
+        stdout.contains("REQ_TRANS_LOG"),
+        "the emitted report does not carry the id the fixture writes.\n{stdout}",
+    );
+    println!("HOLE-3: the command reports the transition's own action");
+}
+
 /// The sweep: what the walk now reaches, counted and floored.
 ///
 /// ⚠ Without the floor this file would pass over a fixture that had
