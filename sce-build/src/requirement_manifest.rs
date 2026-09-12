@@ -64,6 +64,43 @@
 //! with a message saying where the sentence belongs. That is the
 //! difference between a rule and a guard: nobody has to remember it.
 //!
+//! ## ⚠ Open: the guard covers the entry and not the section beside it
+//!
+//! Measured 2026-09-12, while writing the first manifest from a real
+//! standard: [`ManifestSection::title`] is unbounded free text, and a
+//! whole requirement sentence pasted there **loads without a word**.
+//! The paragraph above says the split is structural; it is structural
+//! for [`RequirementEntry`] and advisory for the struct next to it.
+//! Section titles are the one part of a manifest copied verbatim off
+//! the source document's contents page, so this is the field most
+//! likely to grow prose, not the least.
+//!
+//! ⚠⚠ The obvious repair does not work, and the measurement is
+//! recorded so it is not re-proposed. A length bound would have to
+//! admit every contents-page heading and refuse every requirement
+//! sentence; over the 166 REQ boxes of ISO 13400-2:2019 those
+//! populations **overlap** — headings run to 81 characters while the
+//! first line of a requirement sentence starts well below that (5 %
+//! are 76 or shorter). A bound between them is wrong in both
+//! directions, and a guard that is wrong in both directions is worse
+//! than none, because it advertises that the field is checked.
+//!
+//! The two repairs that remain are both real:
+//!
+//! - **Drop `title`.** §5.2b's own rule is `id`, `section`, `page` —
+//!   coordinates only — and a heading is not a coordinate. This closes
+//!   the hole completely and needs no threshold. It is not done here
+//!   because the sidecar that would hold the titles has no
+//!   implementation yet, so today it would delete the labels rather
+//!   than move them.
+//! - **A shape rule rather than a size one** — refuse a value that
+//!   ends in sentence punctuation. Targets what actually distinguishes
+//!   a heading from a sentence, at the cost of being about Latin
+//!   punctuation.
+//!
+//! Whichever is chosen belongs in the round that builds the sidecar,
+//! because that is when `title` first has somewhere else to live.
+//!
 //! The cost this accepts, stated rather than hidden: the acceptance
 //! report (RFC §7a) cannot print the sentence from the manifest alone
 //! and must read the sidecar beside it. The sidecar is not implemented

@@ -118,6 +118,23 @@ impl RequirementId {
     /// whitespace, first character is a letter or underscore, rest
     /// are letters / digits / `.` / `-` / `_` / `:`. Returns the
     /// invalid character index for diagnostic carry-through.
+    ///
+    /// ⚠ **Nothing calls this outside its own unit tests** (measured
+    /// 2026-09-12: the only call sites in the crate are in the `tests`
+    /// module below). `sce:req` values reach the IR unvalidated, so
+    /// the "opaque token" contract this function describes is enforced
+    /// nowhere.
+    ///
+    /// ⚠⚠ That is not merely unfinished — wiring it up as written
+    /// would **reject a real standard's own spelling**. ISO 13400-2
+    /// numbers its requirements `3.DoIP-152`, which begins with a
+    /// digit, and the rule above refuses a leading digit; the fixture
+    /// under `tests/fixtures/requirement_closure/` is built entirely
+    /// from ids of that shape. The rule is stricter than the
+    /// `NMTOKEN` its own summary claims, because an XML `NMTOKEN` may
+    /// start with a digit and it is `Name` that may not. So the
+    /// disagreement to settle first is which of the two this was meant
+    /// to be, not whether to call it.
     pub fn validate(token: &str) -> Result<(), usize> {
         if token.is_empty() {
             return Err(0);
