@@ -236,3 +236,59 @@ fn the_document_side_carries_every_shape_too() {
         "only {checked} coordinate shape(s) parsed, floor {SHAPE_FLOOR}",
     );
 }
+
+/// The fourth source shape: addressed by its DIVISION alone.
+///
+/// ⭐ RFC §5.2g names four shapes, and this is the one with no position
+/// at all — a flowed document's requirement sits at a heading, and the
+/// heading IS its division. The design covers it by the position being
+/// optional rather than by a fourth variant, which is why it needs a
+/// case of its own: a shape that works because nothing forbids it is a
+/// promise with nothing behind it, and it would keep passing if the
+/// field ever stopped being optional.
+///
+/// ⚠ The sharp assertion is the last one. It is not enough that the
+/// entry loads — the artefact must OMIT the position rather than invent
+/// one, because a coordinate a reviewer cannot act on is worse than an
+/// absent one: it sends them to a page that does not exist.
+#[test]
+fn a_requirement_addressed_by_its_division_alone_is_carried() {
+    let raw = r#"{ "doc_id": "d", "rev": "A",
+                   "extraction": { "ids": "native", "trace": "none",
+                                   "modality_convention": "english-modal-verbs",
+                                   "method": "hand" },
+                   "sections": [{ "id": "Timing requirements", "title": "h" }],
+                   "requirements": [{ "id": "REQ-1",
+                                      "section": "Timing requirements" }] }"#;
+    let declared = RequirementManifest::from_json(raw, "heading_manifest")
+        .unwrap_or_else(|e| panic!("a division-only entry must load: {e}"));
+    let model = SCXMLParser::new()
+        .parse_string(DOC, "k2_doc")
+        .unwrap_or_else(|e| panic!("fixture parses: {:?}", e.error));
+    let classification = classify(&model, &declared);
+
+    let counts = &classification.section_counts;
+    assert_eq!(
+        counts.iter().find(|(id, _)| id == "Timing requirements"),
+        Some(&("Timing requirements".to_string(), 1)),
+        "a heading groups like any other division: {counts:?}",
+    );
+
+    let mut bytes: Vec<u8> = Vec::new();
+    emit_classification_ndjson(&classification, &mut bytes).expect("writing to a Vec cannot fail");
+    let artefact = String::from_utf8(bytes).expect("the artefact is UTF-8");
+    let record = artefact
+        .lines()
+        .find(|l| l.contains(r#""id":"REQ-1""#))
+        .unwrap_or_else(|| panic!("REQ-1 has no record:\n{artefact}"));
+    assert!(
+        !record.contains(r#""at":"#),
+        "the artefact invented a position for an entry that declared \
+         none, which sends a reviewer somewhere that does not exist:\n  {record}",
+    );
+    assert!(
+        record.contains(r#""section":"Timing requirements""#),
+        "the division must survive even when nothing follows it:\n  {record}",
+    );
+    println!("carried 1 division-only requirement, position omitted");
+}
