@@ -97,84 +97,134 @@ pub(crate) struct AnnotatedNode<'a> {
     pub(crate) record: RequirementRecord<'a>,
     /// Whether this node carries at least one `<sce:unresolved>`.
     pub(crate) unresolved: bool,
+    /// The IR node itself, for a reading that needs more than the
+    /// annotation — the transition table needs `event` / `cond` /
+    /// `target` / the delay, none of which the wire record carries.
+    ///
+    /// Borrowed rather than copied into flat columns here, because the
+    /// columns are the table's business: putting them on the shared
+    /// node would make every reading pay for the widest one.
+    pub(crate) subject: NodeSubject<'a>,
 }
 
-/// Every annotated node in stable document order — states sorted by
-/// `document_order`, and inside each state transitions →
-/// on_entry_blocks → on_exit_blocks → invokes.
+/// Which kind of IR node a walk entry is, with the node behind it.
+pub(crate) enum NodeSubject<'a> {
+    State(&'a crate::model::State),
+    Transition {
+        state: &'a crate::model::State,
+        transition: &'a crate::model::Transition,
+    },
+    /// `entry` distinguishes `<onentry>` from `<onexit>`; the table
+    /// prints them as different pseudo-events.
+    Action {
+        state: &'a crate::model::State,
+        action: &'a crate::model::Action,
+        entry: bool,
+    },
+    Invoke {
+        state: &'a crate::model::State,
+        base: &'a crate::model::InvokeBase,
+    },
+}
+
+/// Every annotated node in stable document order.
 ///
-/// THE traversal. `emit_requirements_ndjson` is a writer over it and
-/// `requirement_manifest` is a set comparison over it, so the two
-/// cannot disagree about which nodes are annotated or what their
-/// `node_path` is — a second walk written to answer the manifest
-/// question would be free to drift from the one the report prints, and
-/// the whole value of the classification is that it names nodes a
-/// reader can find in that report.
+/// A **filter over [`walk_nodes`]**, not a walk of its own. The
+/// distinction is the whole reason the filter moved out: this view
+/// answers "what does the document claim", and the transition table
+/// (`transition_table`) answers "what does the document DO", which
+/// necessarily includes the nodes claiming nothing. When the emptiness
+/// test lived inside the traversal, the unannotated transition could
+/// not be reached at all — and that row is precisely the one the table
+/// exists to show.
 pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
+    walk_nodes(model)
+        .into_iter()
+        .filter(|node| {
+            !node.record.requirement_ids.is_empty() || !node.record.spec_provenance.is_empty()
+        })
+        .collect()
+}
+
+/// Every node that can carry `sce:req`, annotated or not, in stable
+/// document order — states sorted by `document_order`, and inside each
+/// state transitions → on_entry_blocks → on_exit_blocks → invokes.
+///
+/// THE traversal. Three readings sit on it and none of them re-walks:
+/// the NDJSON report and the manifest comparison take the annotated
+/// subset, the transition table takes all of it. So the three cannot
+/// disagree about which nodes exist or what a `node_path` is — and a
+/// requirement's classification and its row in the table are answers
+/// about the same node rather than two walks that happen to agree.
+pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
     let mut out = Vec::new();
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
-        if is_annotated(&state.req, &state.provenance) {
+        out.push(AnnotatedNode {
+            record: RequirementRecord {
+                node_path: format!("states.{}", state.id),
+                node_type: "state",
+                action_type: None,
+                requirement_ids: refs_of(&state.req),
+                spec_provenance: &state.provenance,
+                location: state.source_location.as_ref(),
+            },
+            unresolved: !state.unresolved.is_empty(),
+            subject: NodeSubject::State(state),
+        });
+        for (i, transition) in state.transitions.iter().enumerate() {
             out.push(AnnotatedNode {
                 record: RequirementRecord {
-                    node_path: format!("states.{}", state.id),
-                    node_type: "state",
+                    node_path: format!("states.{}.transitions[{i}]", state.id),
+                    node_type: "transition",
                     action_type: None,
-                    requirement_ids: refs_of(&state.req),
-                    spec_provenance: &state.provenance,
-                    location: state.source_location.as_ref(),
+                    requirement_ids: refs_of(&transition.req),
+                    spec_provenance: &transition.provenance,
+                    location: transition.source_location.as_ref(),
                 },
-                unresolved: !state.unresolved.is_empty(),
+                unresolved: !transition.unresolved.is_empty(),
+                subject: NodeSubject::Transition { state, transition },
             });
-        }
-        for (i, transition) in state.transitions.iter().enumerate() {
-            if is_annotated(&transition.req, &transition.provenance) {
-                out.push(AnnotatedNode {
-                    record: RequirementRecord {
-                        node_path: format!("states.{}.transitions[{i}]", state.id),
-                        node_type: "transition",
-                        action_type: None,
-                        requirement_ids: refs_of(&transition.req),
-                        spec_provenance: &transition.provenance,
-                        location: transition.source_location.as_ref(),
-                    },
-                    unresolved: !transition.unresolved.is_empty(),
-                });
-            }
         }
         for (i, block) in state.on_entry_blocks.iter().enumerate() {
             for (j, action) in block.iter().enumerate() {
-                if is_annotated(&action.req, &action.provenance) {
-                    out.push(AnnotatedNode {
-                        record: RequirementRecord {
-                            node_path: format!("states.{}.on_entry_blocks[{i}][{j}]", state.id),
-                            node_type: "action",
-                            action_type: Some(action.action_type.as_str()),
-                            requirement_ids: refs_of(&action.req),
-                            spec_provenance: &action.provenance,
-                            location: action.source_location.as_ref(),
-                        },
-                        unresolved: !action.unresolved.is_empty(),
-                    });
-                }
+                out.push(AnnotatedNode {
+                    record: RequirementRecord {
+                        node_path: format!("states.{}.on_entry_blocks[{i}][{j}]", state.id),
+                        node_type: "action",
+                        action_type: Some(action.action_type.as_str()),
+                        requirement_ids: refs_of(&action.req),
+                        spec_provenance: &action.provenance,
+                        location: action.source_location.as_ref(),
+                    },
+                    unresolved: !action.unresolved.is_empty(),
+                    subject: NodeSubject::Action {
+                        state,
+                        action,
+                        entry: true,
+                    },
+                });
             }
         }
         for (i, block) in state.on_exit_blocks.iter().enumerate() {
             for (j, action) in block.iter().enumerate() {
-                if is_annotated(&action.req, &action.provenance) {
-                    out.push(AnnotatedNode {
-                        record: RequirementRecord {
-                            node_path: format!("states.{}.on_exit_blocks[{i}][{j}]", state.id),
-                            node_type: "action",
-                            action_type: Some(action.action_type.as_str()),
-                            requirement_ids: refs_of(&action.req),
-                            spec_provenance: &action.provenance,
-                            location: action.source_location.as_ref(),
-                        },
-                        unresolved: !action.unresolved.is_empty(),
-                    });
-                }
+                out.push(AnnotatedNode {
+                    record: RequirementRecord {
+                        node_path: format!("states.{}.on_exit_blocks[{i}][{j}]", state.id),
+                        node_type: "action",
+                        action_type: Some(action.action_type.as_str()),
+                        requirement_ids: refs_of(&action.req),
+                        spec_provenance: &action.provenance,
+                        location: action.source_location.as_ref(),
+                    },
+                    unresolved: !action.unresolved.is_empty(),
+                    subject: NodeSubject::Action {
+                        state,
+                        action,
+                        entry: false,
+                    },
+                });
             }
         }
         for (i, invoke) in state.invokes.iter().enumerate() {
@@ -184,32 +234,21 @@ pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
                 crate::model::Invoke::MeshRpc(info) => &info.base,
                 crate::model::Invoke::Unsupported(info) => &info.base,
             };
-            if is_annotated(&base.req, &base.provenance) {
-                out.push(AnnotatedNode {
-                    record: RequirementRecord {
-                        node_path: format!("states.{}.invokes[{i}]", state.id),
-                        node_type: "invoke",
-                        action_type: None,
-                        requirement_ids: refs_of(&base.req),
-                        spec_provenance: &base.provenance,
-                        location: None,
-                    },
-                    unresolved: !base.unresolved.is_empty(),
-                });
-            }
+            out.push(AnnotatedNode {
+                record: RequirementRecord {
+                    node_path: format!("states.{}.invokes[{i}]", state.id),
+                    node_type: "invoke",
+                    action_type: None,
+                    requirement_ids: refs_of(&base.req),
+                    spec_provenance: &base.provenance,
+                    location: None,
+                },
+                unresolved: !base.unresolved.is_empty(),
+                subject: NodeSubject::Invoke { state, base },
+            });
         }
     }
     out
-}
-
-/// Whether a node has anything to report. One predicate rather than
-/// the condition spelled at each of the five node kinds, so a third
-/// annotation family widens the report in one place — and so the five
-/// cannot disagree about what "annotated" means, which is the failure
-/// the `sce:provenance` half of this file already had once: the field
-/// was on the model and no record carried it.
-fn is_annotated(req: &[RequirementId], provenance: &[SpecProvenance]) -> bool {
-    !req.is_empty() || !provenance.is_empty()
 }
 
 fn refs_of(ids: &[RequirementId]) -> Vec<&str> {

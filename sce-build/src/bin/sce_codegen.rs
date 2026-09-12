@@ -1746,6 +1746,17 @@ enum Commands {
     /// node carrying a non-empty `sce:req` or `sce:provenance`
     /// annotation, the latter on `spec_provenance` and omitted when
     /// absent; empty output when the document has neither.
+    /// Emit the transition table as NDJSON — one record per IR node
+    /// that can carry `sce:req`, with the `source` column.
+    ///
+    /// The table is the trace table: sort by `source` and every
+    /// `(none)` row collects into one block, which is behaviour the
+    /// specification never asked for; compare `source` against a
+    /// manifest and a requirement with no row is `missing`.
+    TransitionTable {
+        /// SCXML file path
+        scxml: String,
+    },
     Requirements {
         /// SCXML file path
         scxml: String,
@@ -2252,6 +2263,7 @@ fn main() {
         Commands::Requirements { scxml, manifest } => {
             cmd_requirements(&scxml, manifest.as_deref(), error_format)
         }
+        Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
         Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
         Commands::GenerateConformance {
             language,
@@ -7194,6 +7206,20 @@ fn cmd_manifest(dir: &str) {
 // the report sees exactly the same node walk the build does —
 // drift between "what compiles" and "what the report claims is
 // annotated" is structurally impossible.
+
+// ── Subcommand: transition-table ───────────────────────────────
+//
+// Same architecture as `requirements`: parse through the production
+// parser and walk the model, so what the table shows and what the
+// build compiles cannot drift.
+
+fn cmd_transition_table(scxml: &str, error_format: ErrorFormat) {
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    out_stream(|w| sce_build::transition_table::emit_transition_table_ndjson(&model, w));
+}
 
 fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorFormat) {
     let mut parser = sce_build::parser::SCXMLParser::new();
