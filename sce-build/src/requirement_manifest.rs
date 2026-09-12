@@ -345,12 +345,11 @@ pub enum Method {
 /// consumer is a field that records whatever the author felt like — it
 /// belongs with the acceptance record that will actually ask for it.
 ///
-/// ⚠⚠⚠ The RFC calls the first field `ids` in its JSON sketch and
-/// `id_scheme` in the paragraph immediately below it. The two spellings
-/// are the same field and the sketch is the one that landed. Recorded
-/// here rather than corrected there because `claudedocs/` is untracked:
-/// a reader comparing this type against that document will meet the
-/// discrepancy, and the tree is the half of the pair that can answer.
+/// ⚠⚠⚠ The design note this block was sketched from spells the first
+/// field two ways — `ids` in its JSON example and `id_scheme` in the
+/// paragraph under it. They are one field, and the example's spelling is
+/// the one that landed. Written down here because this type is the half
+/// of that pair a reader of this repository can open.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Extraction {
