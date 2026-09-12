@@ -156,6 +156,24 @@ pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
 /// disagree about which nodes exist or what a `node_path` is — and a
 /// requirement's classification and its row in the table are answers
 /// about the same node rather than two walks that happen to agree.
+///
+/// ⚠ **A `<transition>`'s own actions are not reached.** Measured
+/// 2026-09-12: `sce:req` on a `<raise>` inside an `<onentry>` produces
+/// a record, and the same annotation on a `<raise>` inside a
+/// `<transition>` produces **none** — the loop below descends into
+/// `on_entry_blocks`, `on_exit_blocks` and `invokes`, and takes a
+/// transition whole. Because all three readings sit on this walk, such
+/// a requirement is invisible to every one of them: absent from the
+/// report, and reported `missing` by the manifest comparison however
+/// carefully it was annotated.
+///
+/// That is a silent wrong answer rather than a gap, so it is written
+/// here rather than left to be rediscovered. What it is not is a
+/// one-line fix: a transition's actions would need `node_path`s of
+/// their own, and the transition row of the trace table already
+/// summarises them in its `action` column, so widening the walk
+/// without deciding what the table then prints would make one node
+/// appear twice with two different answers.
 pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
     let mut out = Vec::new();
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
