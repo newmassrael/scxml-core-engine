@@ -78,7 +78,7 @@ use std::process::Command;
 
 use sce_build::parser::SCXMLParser;
 use sce_build::requirement_manifest::{
-    classify, Classification, Modality, Outcome, RequirementManifest,
+    classify, prose_reason, Classification, Modality, Outcome, RequirementManifest,
 };
 use sce_build::transition_table::{
     requirements_without_a_row, transition_table, TransitionRow, EMPTY_CELL, NO_SOURCE,
@@ -686,6 +686,41 @@ fn the_command_emits_a_table_whose_columns_carry_values() {
              carries nothing and the trace table has lost that dimension",
         );
     }
+}
+
+/// HOLE-1 on the real standard: every contents-page heading the
+/// committed manifest carries survives the prose guard.
+///
+/// ⚠ This is the half that decides whether the guard is usable. The
+/// refusing half is exercised with placeholders in
+/// `requirement_manifest_closure.rs`, because a guard keyed on shape
+/// needs no real sentence to fire — but the ACCEPTING half cannot be
+/// faked, since the question is whether real headings off a real
+/// contents page get through. These seven are real, and they are
+/// already committed, so asserting over them adds no ISO text.
+#[test]
+fn every_committed_iso_section_title_survives_the_prose_guard() {
+    let manifest = load_manifest();
+
+    let mut checked = 0usize;
+    for section in &manifest.sections {
+        assert!(
+            prose_reason(&section.title).is_none(),
+            "§{} of ISO 13400-2:2019 has the contents-page heading the \
+             manifest carries, and the prose guard refused it — a guard \
+             that rejects real headings is worse than the hole it closed",
+            section.id,
+        );
+        checked += 1;
+    }
+
+    println!("HOLE-1: {checked} real ISO contents-page heading(s) accepted");
+    assert!(
+        checked >= 7,
+        "checked {checked} heading(s); §12.6 has seven subclauses on the \
+         contents page, and a shrinking population here is how this test \
+         passes while guarding nothing",
+    );
 }
 
 /// End to end through the shipped subcommand, on the real pair.
