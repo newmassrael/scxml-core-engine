@@ -174,7 +174,7 @@ fn a_targetless_eventless_transition_reaches_the_null_selection_surface() {
 /// actions and no way to select them compiles, runs, and silently skips a
 /// microstep — which is exactly what shipped.
 ///
-/// ⚠ The action surface stopped re-deciding on 2026-08-30 (`c5cfa53bd9`): it
+/// ⚠ The action surface stopped re-deciding on 2026-08-30 (`a4688c69cc`): it
 /// used to guard the arm with `event == null && <the same guard>` and now
 /// switches on the `transitionIndex` the SELECTION handed it. This case asked
 /// for the old string and went red over a repair that only strengthened its

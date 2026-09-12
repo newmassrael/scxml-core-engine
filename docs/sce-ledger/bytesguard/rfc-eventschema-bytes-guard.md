@@ -1,7 +1,7 @@
 # RFC — EventSchema `bytes`-field native transition guards (all-6 backends)
 
 Status: DRAFT, 2026-06-03. Commits 0 LOC; implementation lands after §3 locks are confirmed.
-Branch: `main` (HEAD `8e13729a1` at draft time).
+Branch: `main` (HEAD `294b7371e` at draft time).
 Date: 2026-06-03.
 Driver: a downstream switchboard example wires a `bytes`
 EventSchema field into an observable transition guard

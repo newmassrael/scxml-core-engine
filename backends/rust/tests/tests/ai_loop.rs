@@ -9,7 +9,7 @@
 // ai_loop_example.cpp` drives it through the C++ AOT engine; this file drives
 // the same document through the Rust one. Two engines asserting one document
 // is what makes a topology change fail loudly instead of half-landing — and
-// the parallel defect that shipped in `1419a050ed` (a self-transition whose
+// the parallel defect that shipped in `8385e481a9` (a self-transition whose
 // exit set swallowed the parallel root) was invisible to every W3C fixture
 // because they are all one region deep. This document is three.
 //

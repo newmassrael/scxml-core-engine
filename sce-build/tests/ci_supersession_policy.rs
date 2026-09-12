@@ -66,7 +66,7 @@
 //! ⚠ **A cancellation COUNT is not evidence of the defect, and must not be read
 //! as one.** `cancel-in-progress: false` still cancels a PENDING run, so a
 //! repaired lane goes on reporting cancellations forever. Measured 2026-09-02,
-//! `cpp-suite.yml` -- repaired at `74f83197b7` and long since declaring `false`
+//! `cpp-suite.yml` -- repaired at `83fc43272a` and long since declaring `false`
 //! -- shows 12 cancellations in its last 25 runs, and its eight newest
 //! cancelled NO JOB AT ALL: every one was still entirely pending. That is the
 //! setting working, not failing.
@@ -202,7 +202,7 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // 12 of its last 25 cancelled while declaring `false`, and that is the
     // setting WORKING: probed 2026-09-02, its eight newest cancellations
     // killed no job at all -- every one was still entirely pending. Its repair
-    // (`74f83197b7`, 2026-08-29T00:53) sits BEFORE this window, so the count is
+    // (`83fc43272a`, 2026-08-29T00:53) sits BEFORE this window, so the count is
     // post-fix history.
     ("cpp-suite.yml", 79.1, 12, 11, 2),
     // ⚠⚠⚠ CROSSED THE LINE, 15.9 -> 17.9 against a 17.6 gap. The row it
@@ -302,9 +302,9 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // cancellations killed a job that had ALREADY STARTED, 68s to 1264s of
     // work in -- so `false`, which saves the run in flight, is the setting
     // every one of them needed. Ten are consecutive: every push from
-    // `b59ed99b10` (04:28Z) through `9a16e970cf` (05:56Z), among them
-    // `06ab3dcf44`, the commit repairing a red THIS job had raised at
-    // `55620099a7`. The lane stopped answering at the moment its answer
+    // `0c5c6204db` (04:28Z) through `0277f53058` (05:56Z), among them
+    // `d003d94e1d`, the commit repairing a red THIS job had raised at
+    // `070793ddea`. The lane stopped answering at the moment its answer
     // mattered, and stayed stopped.
     //
     // Split the job verdicts out rather than reading the run conclusion --

@@ -57,7 +57,7 @@ letting consumers be written in any language with a JSON parser.
 ```json
 {
   "v": 1,
-  "generator": "896629cf07d4",
+  "generator": "bf4c6555a291",
   "ast": {
     "document": { "kind": "...", "name": "...", ... },
     "imports": [ { "src": "...", "kind": "...", "alias": "..." } ],
