@@ -5,6 +5,15 @@
 //! denominator for: `implemented`, `unresolved`, `missing`,
 //! `dangling`.
 //!
+//! ⚠ Those four are the **`shall` column**, and every manifest in this
+//! file is `shall` because that is what Atomic A shipped. They are not
+//! the whole of [`Outcome`]: a requirement met by something being
+//! ABSENT cannot be settled by any of them, and reads
+//! `needs-scenario`. A reader who took the count above for the size of
+//! the enum would be wrong about the tool, which is why this note is
+//! here rather than in the file that added the fifth — the misreading
+//! happens here.
+//!
 //! # What this file is really guarding
 //!
 //! Not "does the classifier run" — that a passing test of a set

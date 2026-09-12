@@ -1763,10 +1763,24 @@ enum Commands {
         /// Closed requirement set to measure this document against.
         ///
         /// Without it the subcommand reports what the document claims;
-        /// with it, what the specification asked for — the four-way
-        /// classification of Requirement-closure RFC §5.3. `missing`
-        /// exists only on this path: a document cannot be asked what
-        /// it left out unless something outside it holds the answer.
+        /// with it, what the specification asked for — the outcome
+        /// classification of Requirement-closure RFC §5.3, which names
+        /// the outcomes rather than this help enumerating them.
+        /// `missing` exists only on this path: a document cannot be
+        /// asked what it left out unless something outside it holds
+        /// the answer.
+        //
+        // Plain `//`, so it stays with the code and does NOT render
+        // into `--help`: this is why the sentence above is shaped that
+        // way, which is a maintainer's business and not a user's.
+        //
+        // It used to say "four-way", and stopped being true the day
+        // `needs-scenario` landed for requirements met by something
+        // being ABSENT. Same lesson the `--language` help below
+        // records for backends — a sentence that counts has to be
+        // corrected every time one lands — but the lesson itself is
+        // not something a person running this command needs read to
+        // them.
         #[arg(long)]
         manifest: Option<String>,
     },
