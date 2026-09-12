@@ -284,6 +284,19 @@ fn the_command_reports_a_transitions_own_action() {
 /// walk against another hand-kept list would be a third enumeration to
 /// drift; comparing it against the text cannot drift, because the text
 /// is what an author wrote.
+///
+/// ⚠⚠ What it does NOT cover, stated so it is not mistaken for total:
+/// this sweep is **corpus-driven**, so it catches a site the moment
+/// some document annotates it, and not before. Measured over the
+/// working tree, the corpus annotates three kinds of node — `state`
+/// (9), `transition` (16) and `action` (6) — and **no document
+/// annotates an `<invoke>`**. A regression that made invoke
+/// annotations unreachable would therefore pass here. That site is
+/// held by the unit test in `requirements_report.rs`, which asserts
+/// one record for each of state, onentry action, transition and
+/// invoke. The two checks are complements: this one generalises over
+/// sites nobody enumerated, that one covers a site nobody has used
+/// yet.
 #[test]
 fn the_walk_reaches_every_annotation_any_document_declares() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
