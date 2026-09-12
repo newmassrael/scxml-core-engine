@@ -44,9 +44,12 @@ Matching is case-insensitive and the separator is flexible, so `ATOMIC-B`,
     ATOMIC-G   review artefacts for the remaining Forge kind families
     ATOMIC-H   modality and variants: a question per modality, coverage per variant
     ATOMIC-I   disposition and decomposition: delegated, out_of_scope, parent/child
+    ATOMIC-K   extraction properties and a locator that is not PDF-shaped
+    ATOMIC-L   a gate refusing a specification's identity in executable code
     HOLE-1     the manifest copyright guard covers entries, not section titles
     HOLE-2     RequirementId::validate has no caller and would refuse ISO ids
     HOLE-3     sce:req on a transition's own action reaches no reading
+    HOLE-4     an opaque requirement id can break the C11 comment form
     ITEM-8     bounded close of the per-code anchor roster
 
 The design behind ATOMIC-A through ATOMIC-I is
@@ -76,7 +79,32 @@ tidy-up of this one:
   the `NMTOKEN` its own summary claims. The question to settle is which of the
   two it was meant to be — not whether to call it.
 - **HOLE-3** is a coverage gap in the walk: an annotation on a transition's own
-  action is written and read by nobody.
+  action is written and read by nobody. ⚠ Scoped by run 345 before it was
+  started: the gap is in the walk and not the parse, codegen already emits what
+  the report drops, and 1 of 32 tracked annotations sits there.
+- **HOLE-4** was found by repairing HOLE-2 rather than by the standard: once an
+  id is genuinely opaque, one can break the C11 backend's comment form. A repair
+  that widens what an input may contain owes a look at every backend that
+  formats it.
+
+## The general-purpose rule ATOMIC-L enforces
+
+Owner's instruction, 2026-09-12: *"범용적으로 만들어야 해, 특정 스펙에 종속되면
+안 돼"*.
+
+> No production code may branch on the identity of a specification. It branches
+> on declared properties, which a source SCE has never seen can supply too.
+
+Measured the same day: standard names outside comments in `sce-build/src/**/*.rs`
+number **4**, all of them fixture strings inside tests, and behavioural
+dependencies number **0**. The gate is therefore cheap now and expensive later,
+which is the whole argument for sequencing it early.
+
+⚠ Its discriminator is *executable position*, not the word — a comment citing the
+document that justifies a rule is exactly what should survive. ⚠⚠ And it needs an
+allowlist for a protocol SCE actually implements: Mesh names SOME/IP the way it
+may name TCP, because it emits that wire format. A standard SCE *transports* is
+not a standard SCE *depends on for meaning*.
 
 ⚠ HOLE-1 and HOLE-2 are worth paying before the next specification is admitted:
 the first lets copyrighted text in quietly, and the second turns a real
