@@ -732,7 +732,7 @@ fn every_committed_iso_section_title_survives_the_prose_guard() {
     let mut checked = 0usize;
     for section in &manifest.sections {
         assert!(
-            prose_reason(&section.title).is_none(),
+            prose_reason(&section.title, manifest.extraction.modality_convention).is_none(),
             "§{} of ISO 13400-2:2019 has the contents-page heading the \
              manifest carries, and the prose guard refused it — a guard \
              that rejects real headings is worse than the hole it closed",
