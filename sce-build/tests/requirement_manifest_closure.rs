@@ -50,6 +50,9 @@ use sce_build::requirement_manifest::{classify, prose_reason, Outcome, Requireme
 fn manifest_titled(title: &str) -> String {
     format!(
         r#"{{ "doc_id": "placeholder-spec", "rev": "A",
+              "extraction": {{ "ids": "native", "trace": "none",
+                               "modality_convention": "english-modal-verbs",
+                               "method": "hand" }},
               "sections": [{{ "id": "3.1", "title": "{title}" }}],
               "requirements": [{{ "id": "REQ-1", "section": "3.1" }}] }}"#
     )
@@ -187,6 +190,9 @@ fn the_guard_reaches_strings_outside_the_field_that_exposed_it() {
             "sections[0].id",
             format!(
                 r#"{{ "doc_id": "d", "rev": "A",
+                      "extraction": {{ "ids": "native", "trace": "none",
+                                       "modality_convention": "english-modal-verbs",
+                                       "method": "hand" }},
                       "sections": [{{ "id": "{sentence}", "title": "Scope" }}],
                       "requirements": [{{ "id": "REQ-1" }}] }}"#
             ),
@@ -195,6 +201,9 @@ fn the_guard_reaches_strings_outside_the_field_that_exposed_it() {
             "requirements[0].section",
             format!(
                 r#"{{ "doc_id": "d", "rev": "A",
+                      "extraction": {{ "ids": "native", "trace": "none",
+                                       "modality_convention": "english-modal-verbs",
+                                       "method": "hand" }},
                       "requirements": [{{ "id": "REQ-1", "section": "{sentence}" }}] }}"#
             ),
         ),
@@ -330,6 +339,10 @@ const DOC: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
 const MANIFEST: &str = r#"{
   "doc_id": "car-body-spec",
   "rev": "D3",
+  "extraction": {
+    "ids": "native", "trace": "none",
+    "modality_convention": "english-modal-verbs", "method": "hand"
+  },
   "sections": [
     { "id": "3.1", "title": "Start procedure" },
     { "id": "3.3", "title": "Emergency mode" },
@@ -457,6 +470,9 @@ fn a_document_citing_another_revision_says_so() {
     let stale = r#"{
       "doc_id": "car-body-spec",
       "rev": "D4",
+      "extraction": { "ids": "native", "trace": "none",
+                      "modality_convention": "english-modal-verbs",
+                      "method": "hand" },
       "requirements": [{ "id": "REQ-001" }]
     }"#;
     let model = parse(DOC, "closure_doc");
@@ -489,6 +505,9 @@ fn the_staleness_check_sees_an_anchor_on_an_action() {
       </state>
     </scxml>"#;
     let stale = r#"{ "doc_id": "car-body-spec", "rev": "D4",
+                     "extraction": { "ids": "native", "trace": "none",
+                                     "modality_convention": "english-modal-verbs",
+                                     "method": "hand" },
                      "requirements": [{ "id": "REQ-1" }] }"#;
     let model = parse(anchored_on_action, "action_anchor");
     let declared = manifest(stale, "stale_manifest");
@@ -511,6 +530,9 @@ fn a_manifest_carrying_requirement_text_is_refused() {
     let with_text = r#"{
       "doc_id": "car-body-spec",
       "rev": "D3",
+      "extraction": { "ids": "native", "trace": "none",
+                      "modality_convention": "english-modal-verbs",
+                      "method": "hand" },
       "requirements": [
         { "id": "REQ-001", "section": "3.1", "page": 12,
           "text": "Holding the start button for 3 seconds enters emergency mode." }
@@ -528,7 +550,11 @@ fn a_manifest_carrying_requirement_text_is_refused() {
 
 #[test]
 fn a_manifest_that_would_measure_nothing_is_refused() {
-    let empty = r#"{ "doc_id": "d", "rev": "1", "requirements": [] }"#;
+    let empty = r#"{ "doc_id": "d", "rev": "1",
+                     "extraction": { "ids": "native", "trace": "none",
+                                     "modality_convention": "english-modal-verbs",
+                                     "method": "hand" },
+                     "requirements": [] }"#;
     assert!(
         RequirementManifest::from_json(empty, "empty")
             .expect_err("an empty manifest must not load")
@@ -539,6 +565,9 @@ fn a_manifest_that_would_measure_nothing_is_refused() {
 
     let duplicated = r#"{
       "doc_id": "d", "rev": "1",
+      "extraction": { "ids": "native", "trace": "none",
+                      "modality_convention": "english-modal-verbs",
+                      "method": "hand" },
       "requirements": [{ "id": "REQ-1" }, { "id": "REQ-1" }]
     }"#;
     assert!(
@@ -626,6 +655,9 @@ fn the_command_refuses_a_manifest_it_cannot_use() {
     std::fs::write(
         &manifest_path,
         r#"{ "doc_id": "d", "rev": "1",
+             "extraction": { "ids": "native", "trace": "none",
+                             "modality_convention": "english-modal-verbs",
+                             "method": "hand" },
              "requirements": [{ "id": "REQ-1", "text": "a sentence" }] }"#,
     )
     .expect("write fixture manifest");
@@ -672,6 +704,9 @@ fn the_sweep_reports_what_it_examined_and_asserts_a_floor() {
                  <state id="s1" sce:req="REQ-ZZZ"/>
                </scxml>"#,
             r#"{ "doc_id": "other-spec", "rev": "A",
+                 "extraction": { "ids": "native", "trace": "none",
+                                 "modality_convention": "english-modal-verbs",
+                                 "method": "hand" },
                  "sections": [{ "id": "1", "title": "Only section" }],
                  "requirements": [
                    { "id": "REQ-A", "section": "1" },

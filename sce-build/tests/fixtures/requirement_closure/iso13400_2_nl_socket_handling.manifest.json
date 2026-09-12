@@ -1,6 +1,12 @@
 {
   "doc_id": "ISO-13400-2",
   "rev": "2019",
+  "extraction": {
+    "ids": "native",
+    "trace": "none",
+    "modality_convention": "english-modal-verbs",
+    "method": "ai-pass-1"
+  },
   "sections": [
     { "id": "12.6.1.1", "title": "NL general" },
     { "id": "12.6.1.2", "title": "NL connection table" },

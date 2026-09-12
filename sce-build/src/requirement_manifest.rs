@@ -245,6 +245,157 @@ pub struct RequirementEntry {
     pub page: Option<u32>,
 }
 
+/// Whether the source document names its own requirements.
+///
+/// This is the field the denominator's standing rests on, and the two
+/// values are not a quality scale. `native` means the ids in the
+/// manifest are the ones the source document itself writes, so a
+/// reviewer can go to the document and check that the list is complete.
+/// `synthesized` means whatever performed the extraction decided what
+/// counted as a requirement, and there is nothing in the source to
+/// audit that decision against.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Ids {
+    Native,
+    Synthesized,
+}
+
+/// Whether the source publishes its own requirement-to-artefact map.
+///
+/// Some documents ship a tracing chapter that names, per requirement,
+/// what satisfies it — including the ones nothing satisfies. Where that
+/// exists the document supplies its own `missing` column and SCE's
+/// comparison is checking a published claim rather than making one.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Trace {
+    Published,
+    None,
+}
+
+/// Which table of verbal forms decides a sentence's [`Modality`].
+///
+/// ⭐ A closed set, and that is this type's whole job. RFC §5.2h forbids
+/// a manifest field whose values are specification names: `"autosar"`
+/// or `"iso"` would make SCE the keeper of a catalogue of standards, and
+/// the next source — an OEM document, a spreadsheet, a ticket system —
+/// has no entry in it. A closed enum refuses such a value without SCE
+/// holding any such list, because a standard's name is simply not a
+/// member. Nothing here has to know what standards exist.
+///
+/// ⚠ The one variant is named for the WORDS, not for the document that
+/// codified them. Naming that document would be the same mistake one
+/// level down, and it is the mistake
+/// `a_standard_named_in_code_is_one_sce_implements` refuses in
+/// executable code — a rule the data must not be allowed to route
+/// around.
+///
+/// ⚠⚠ One variant is what SCE can honestly claim today. A second
+/// convention is measured and waiting — a Korean OEM standard matches
+/// **zero** of these verbs and instead writes 하여야 한다 fourteen times
+/// — but adding its name here before the table behind it exists would
+/// be the schema promising a lookup that is not implemented. It lands
+/// with that table, not before it.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ModalityConvention {
+    /// `shall` / `should` / `may` / `must`, read as whole words.
+    #[serde(rename = "english-modal-verbs")]
+    EnglishModalVerbs,
+}
+
+/// How the requirement list was produced.
+///
+/// Recorded because it is what a reviewer needs in order to know how
+/// much of the list to re-check, and deliberately NOT part of
+/// [`Extraction::denominator_basis`] — see that function for why
+/// confidence and auditability are different questions.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum Method {
+    /// Read out of a map the source document publishes.
+    #[serde(rename = "derived")]
+    Derived,
+    /// A first machine pass over the source's prose, unreviewed.
+    #[serde(rename = "ai-pass-1")]
+    AiPass1,
+    /// Typed by a person from the source.
+    #[serde(rename = "hand")]
+    Hand,
+}
+
+/// What is true of the extraction that produced this manifest.
+///
+/// ⭐ Required, not optional, and that is the point of the field. A
+/// coverage figure computed against a standard's own published
+/// requirement list and one computed against a list a machine invented
+/// from prose are not the same kind of number, and printing both as
+/// "94 %" is a lie of omission. A manifest that declines to say which
+/// it is cannot be told apart from the trustworthy one, so declining is
+/// not allowed: [`RequirementManifest::from_json`] refuses a manifest
+/// without this block.
+///
+/// ⚠ Every field asks what is TRUE of the extraction, never what
+/// produced it. There is no `source` field and no `standard` field, by
+/// design: `ids: native` + `trace: published` is a property a source SCE
+/// has never heard of can satisfy, while a name is a property only a
+/// catalogue can interpret.
+///
+/// ⚠⚠ `reviewed_by` appears in the RFC's sketch of this block and is
+/// deliberately absent here. Nothing reads it yet, and a field with no
+/// consumer is a field that records whatever the author felt like — it
+/// belongs with the acceptance record that will actually ask for it.
+///
+/// ⚠⚠⚠ The RFC calls the first field `ids` in its JSON sketch and
+/// `id_scheme` in the paragraph immediately below it. The two spellings
+/// are the same field and the sketch is the one that landed. Recorded
+/// here rather than corrected there because `claudedocs/` is untracked:
+/// a reader comparing this type against that document will meet the
+/// discrepancy, and the tree is the half of the pair that can answer.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Extraction {
+    pub ids: Ids,
+    pub trace: Trace,
+    pub modality_convention: ModalityConvention,
+    pub method: Method,
+}
+
+/// What a coverage percentage is a percentage OF.
+///
+/// The distinction the artefact has to carry, because the denominator is
+/// the half of a coverage figure that nobody looks at.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DenominatorBasis {
+    /// The source document states which requirements exist; the list can
+    /// be checked against it.
+    Derived,
+    /// SCE's own extraction decided what counted; the list cannot be
+    /// checked against anything, and a short list reads as high coverage.
+    Synthesized,
+}
+
+impl Extraction {
+    /// Which kind of denominator this manifest's requirement list is.
+    ///
+    /// Decided by [`Ids`] alone. [`Method`] is deliberately not consulted,
+    /// and the reason is worth stating because the opposite looks
+    /// reasonable: `method` records how much care went into building the
+    /// list, which is a claim about CONFIDENCE, while this function
+    /// answers whether the list can be AUDITED at all. A hand-typed list
+    /// of invented ids is careful and still unauditable; a machine pass
+    /// that collected the document's own tags is unreviewed and still
+    /// checkable against the document. Folding the two together would
+    /// let care substitute for evidence, which is the failure the whole
+    /// block exists to make visible.
+    pub fn denominator_basis(&self) -> DenominatorBasis {
+        match self.ids {
+            Ids::Native => DenominatorBasis::Derived,
+            Ids::Synthesized => DenominatorBasis::Synthesized,
+        }
+    }
+}
+
 /// The manifest exactly as JSON spells it, before any check has run.
 ///
 /// ⭐ Private, and that is the point. [`RequirementManifest`] does
@@ -274,6 +425,10 @@ pub struct RequirementEntry {
 struct ManifestWire {
     doc_id: String,
     rev: String,
+    /// No `#[serde(default)]`, unlike `sections`: a manifest that does
+    /// not say how it was made is refused rather than assumed. See
+    /// [`Extraction`].
+    extraction: Extraction,
     #[serde(default)]
     sections: Vec<ManifestSection>,
     requirements: Vec<RequirementEntry>,
@@ -289,6 +444,10 @@ pub struct RequirementManifest {
     /// Revision. A document citing `@D3` checked against a `D4`
     /// manifest is stale — see [`Classification::revision_note`].
     pub rev: String,
+    /// What is true of the extraction that produced `requirements`.
+    /// Travels with the manifest into every artefact, because the
+    /// denominator's standing is not recoverable from the numbers.
+    pub extraction: Extraction,
     #[serde(default)]
     pub sections: Vec<ManifestSection>,
     pub requirements: Vec<RequirementEntry>,
@@ -568,6 +727,7 @@ impl RequirementManifest {
         let manifest = RequirementManifest {
             doc_id: wire.doc_id,
             rev: wire.rev,
+            extraction: wire.extraction,
             sections: wire.sections,
             requirements: wire.requirements,
         };
@@ -655,6 +815,10 @@ pub struct RequirementOutcome {
 /// time it is not, it misinforms silently.
 #[derive(Debug, Clone)]
 pub struct Classification {
+    /// Carried from the manifest, unchanged. A classification that did
+    /// not hold this would let a consumer print a percentage with the
+    /// standing of its denominator left behind in a file it never read.
+    pub extraction: Extraction,
     pub outcomes: Vec<RequirementOutcome>,
     /// Per-section requirement counts, sections with none included —
     /// RFC §5.2a's only handle on omission.
@@ -687,6 +851,21 @@ pub fn emit_classification_ndjson<W: std::io::Write + ?Sized>(
     #[derive(Serialize)]
     #[serde(tag = "kind", rename_all = "kebab-case")]
     enum Line<'a> {
+        Extraction {
+            /// What the manifest said about itself, verbatim.
+            declared: &'a Extraction,
+            /// What SCE concluded from it. Nested beside `declared`
+            /// rather than flattened into it so the artefact says which
+            /// half is a claim and which half is a reading of that
+            /// claim — a reader who disagrees with the conclusion can
+            /// see the input it was drawn from on the same line.
+            ///
+            /// Written out rather than left for the consumer to infer:
+            /// the rule that maps one to the other lives in exactly one
+            /// place ([`Extraction::denominator_basis`]), and a consumer
+            /// re-deriving it would be a second copy free to drift.
+            denominator: DenominatorBasis,
+        },
         Requirement(&'a RequirementOutcome),
         SectionCoverage {
             section: &'a str,
@@ -696,6 +875,19 @@ pub fn emit_classification_ndjson<W: std::io::Write + ?Sized>(
             detail: &'a str,
         },
     }
+
+    // First, before any count. A reader who stops after one line has the
+    // standing of everything below it; a reader who stops before
+    // reaching it has no numbers yet either.
+    writeln!(
+        writer,
+        "{}",
+        serde_json::to_string(&Line::Extraction {
+            declared: &classification.extraction,
+            denominator: classification.extraction.denominator_basis(),
+        })
+        .expect("Extraction serialises; every field is a unit enum")
+    )?;
 
     for outcome in &classification.outcomes {
         writeln!(
@@ -857,6 +1049,7 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
         });
 
     Classification {
+        extraction: manifest.extraction,
         outcomes,
         section_counts,
         revision_note,
