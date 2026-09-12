@@ -193,10 +193,31 @@
     <data id="milestone_check" expr="'claude -p --output-format json'"/>
 
     <!--
-      WHO SAYS A PROPOSED NEXT MILESTONE IS ONE TO TAKE: the same generic
-      checker, for the same reason.
+      WHO SAYS A PROPOSED NEXT MILESTONE IS ONE TO TAKE: this tree's own
+      register, asked by a script, and NOT the generic checker above.
+
+      MEASURED, run 341, 2026-09-12. The slot held `claude -p` and the run
+      reached its milestone, proposed a next checkpoint, and closed
+      `unadmitted` — because the classifier answered nothing three times in a
+      row, and the plugin's contract makes every non-YES answer a refusal.
+      That is the right contract: an instrument that cannot answer must not be
+      the reason a run wanders. It also means a NON-DETERMINISTIC instrument in
+      this slot does not degrade the loop, it STOPS it, one milestone per
+      launch, with a person relaunching each time.
+
+      The two slots are not the same question, which is why only this one
+      moves. `milestone_check` above asks WAS THE CLAIM TRUE — a judgement
+      about work just done, which is why the sibling repository fills it with
+      the same generic checker. This one asks IS THIS SOMETHING WE WANT DONE
+      NEXT, which is a fact about this repository's direction, and a fact has a
+      register. The sibling repository answers it the same way: a program that
+      reads a ledger, not a model that reads a prompt.
+
+      The population lives in `.claude/sce_checkpoints.md` and a PERSON owns
+      it. What that register deliberately does not answer is written in it.
     -->
-    <data id="successor_check" expr="'claude -p --output-format json'"/>
+    <data id="successor_check"
+          expr="'/home/coin/scxml-core-engine/.claude/sce_admits.sh'"/>
 
     <!--
       WHAT A SERVICE OUTAGE LOOKS LIKE ON THE SCREEN, and how long to wait it
