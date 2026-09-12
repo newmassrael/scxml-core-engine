@@ -767,4 +767,20 @@ fn the_command_classifies_the_real_standard() {
         stdout.contains(r#""kind":"section-coverage""#),
         "the per-section counts are absent. stdout:\n{stdout}",
     );
+
+    // Atomic K ⑴ — the declaration reaches the SHIPPED artefact, not just
+    // the library. This standard numbers its own requirements and
+    // publishes no trace table, so the denominator is one a reviewer can
+    // check against the document; a reader of these counts has to be told
+    // that on the same page as the counts.
+    assert!(
+        stdout.contains(r#""kind":"extraction""#),
+        "the command printed counts with no statement of what its \
+         denominator is. stdout:\n{stdout}",
+    );
+    assert!(
+        stdout.contains(r#""denominator":"derived""#),
+        "this standard's ids are its own, so its denominator is derived \
+         rather than synthesized. stdout:\n{stdout}",
+    );
 }

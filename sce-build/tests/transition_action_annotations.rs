@@ -113,6 +113,9 @@ fn the_report_the_table_and_the_classifier_all_see_a_transitions_own_action() {
     // ③ the manifest classification
     let manifest = RequirementManifest::from_json(
         r#"{ "doc_id": "probe-spec", "rev": "A",
+             "extraction": { "ids": "native", "trace": "none",
+                             "modality_convention": "english-modal-verbs",
+                             "method": "hand" },
              "requirements": [{ "id": "REQ_TRANS_LOG" }] }"#,
         "probe",
     )
@@ -158,6 +161,9 @@ fn an_unresolved_marker_on_a_transition_action_reaches_the_verdict() {
     let model = witness_model();
     let manifest = RequirementManifest::from_json(
         r#"{ "doc_id": "probe-spec", "rev": "A",
+             "extraction": { "ids": "native", "trace": "none",
+                             "modality_convention": "english-modal-verbs",
+                             "method": "hand" },
              "requirements": [{ "id": "REQ_TRANS_LOG" }] }"#,
         "probe",
     )
@@ -208,6 +214,9 @@ fn a_provenance_anchor_on_a_transition_action_reaches_the_staleness_check() {
         .unwrap_or_else(|e| panic!("probe parses: {:?}", e.error));
     let manifest = RequirementManifest::from_json(
         r#"{ "doc_id": "probe-spec", "rev": "D4",
+             "extraction": { "ids": "native", "trace": "none",
+                             "modality_convention": "english-modal-verbs",
+                             "method": "hand" },
              "requirements": [{ "id": "REQ_A" }] }"#,
         "probe",
     )

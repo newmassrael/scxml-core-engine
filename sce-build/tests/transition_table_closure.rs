@@ -59,6 +59,10 @@ const DOC: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
 const MANIFEST: &str = r#"{
   "doc_id": "car-body-spec",
   "rev": "D3",
+  "extraction": {
+    "ids": "native", "trace": "none",
+    "modality_convention": "english-modal-verbs", "method": "hand"
+  },
   "sections": [{ "id": "3.1", "title": "Start procedure" }],
   "requirements": [
     { "id": "REQ-001", "section": "3.1", "page": 12 },
@@ -263,6 +267,9 @@ fn the_sweep_reports_what_it_examined_and_asserts_a_floor() {
                </scxml>"#,
             Some(
                 r#"{ "doc_id": "other-spec", "rev": "A",
+                     "extraction": { "ids": "native", "trace": "none",
+                                     "modality_convention": "english-modal-verbs",
+                                     "method": "hand" },
                      "requirements": [
                        { "id": "REQ-A" }, { "id": "REQ-GONE" } ] }"#,
             ),
