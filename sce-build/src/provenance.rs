@@ -143,7 +143,38 @@ impl RequirementId {
     //
     // What replaces it is a check rather than a promise:
     // `tests/requirement_id_opacity.rs` drives diverse id spellings
-    // through the parser and fails if any is refused or altered.
+    // through the parser and fails if any is refused or altered, at
+    // the parse AND at the wire.
+    //
+    // ⚠ How long it sat there, because the number decides whether
+    // this needs a gate: introduced `7f1ec92c66` (2026-05-22),
+    // deleted 2026-09-12 — **113 days**, called by nothing but its
+    // own tests the whole time.
+    //
+    // Nothing flagged it, and the reasons are worth stating so the
+    // next person does not assume a lint will:
+    //
+    //   - `dead_code` does not apply to a `pub` item in a library —
+    //     rustc cannot know whether a consumer outside the crate
+    //     calls it.
+    //   - `unreachable_pub` would not have fired either: `provenance`
+    //     is a `pub mod`, so the function really was reachable from
+    //     outside.
+    //   - Had it been private, `cargo build` would not merely have
+    //     warned — it FAILS. Measured by adding such a function and
+    //     building: *error: associated function … is never used*,
+    //     an error rather than a warning because this crate denies
+    //     dead code. Its only callers sat behind `#[cfg(test)]` and
+    //     are compiled out of a normal build. `pub` is what
+    //     suppressed that, and `pub` was not needed — no caller was
+    //     ever outside.
+    //
+    // So the cheap rule that would have caught this is "do not make
+    // an item `pub` before something outside the crate calls it".
+    // Detecting the general case — a `pub` item no one anywhere
+    // calls — needs whole-workspace analysis that neither rustc nor
+    // clippy offers, which is why this is recorded rather than
+    // gated.
 
     /// Split a whitespace-separated `sce:req="ID1 ID2 ID3"` value
     /// into individual ids without performing validation. Empty
