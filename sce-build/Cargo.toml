@@ -167,6 +167,17 @@ name = "error_format_json"
 path = "tests/error_format_json.rs"
 required-features = ["cli"]
 
+# Requirement-closure RFC Atomic A. Spawns sce-codegen to prove the
+# four-way classification reaches the COMMAND, not only the library —
+# so the same reason as the target above applies, and so does the same
+# hazard: without this declaration the target builds against whatever
+# sce-codegen happens to be lying in target/, which is how a stale
+# binary reports green for a flag it does not have.
+[[test]]
+name = "requirement_manifest_closure"
+path = "tests/requirement_manifest_closure.rs"
+required-features = ["cli"]
+
 # W3C SCXML 4.9 `<log>` on C11 without a script engine. Compiles the
 # generated translation unit under the same `-Werror` the repo builds
 # C11 with; the `<stdio.h>` include used to be gated on the scripting

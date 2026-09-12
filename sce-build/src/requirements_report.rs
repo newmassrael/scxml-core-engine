@@ -30,24 +30,24 @@ use crate::model::SCXMLModel;
 use crate::provenance::{RequirementId, SpecProvenance};
 
 #[derive(Debug, Clone, Serialize)]
-struct RequirementRecord<'a> {
+pub(crate) struct RequirementRecord<'a> {
     /// Hierarchical path identifying the IR node — e.g.
     /// `"states.armed"`, `"states.armed.transitions[0]"`,
     /// `"states.armed.on_entry_blocks[0][1]"`,
     /// `"states.armed.invokes[0]"`. Stable across re-parses of the
     /// same document.
-    node_path: String,
+    pub(crate) node_path: String,
     /// Lowercase short tag for routing — `state` / `transition` /
     /// `action` / `invoke`. Action records additionally carry the
     /// SCXML element name (`raise`/`send`/...) on `action_type`.
-    node_type: &'static str,
+    pub(crate) node_type: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     action_type: Option<&'a str>,
     /// Verbatim requirement ids in document order. Emitted even when
     /// empty: it is the record's defining field, and a consumer
     /// reading `record.requirement_ids` must not find it undefined on
     /// a node annotated only with `sce:provenance`.
-    requirement_ids: Vec<&'a str>,
+    pub(crate) requirement_ids: Vec<&'a str>,
     /// `sce:provenance` spec-document anchors in document order,
     /// verbatim from the IR — SCE never reads the documents they name.
     ///
@@ -74,60 +74,106 @@ pub fn emit_requirements_ndjson<W: Write + ?Sized>(
     model: &SCXMLModel,
     writer: &mut W,
 ) -> io::Result<()> {
+    for node in annotated_nodes(model) {
+        write_record(writer, &node.record)?;
+    }
+    Ok(())
+}
+
+/// One annotated IR node, as the walk found it.
+///
+/// [`RequirementRecord`] is the *wire* projection and carries only what
+/// the NDJSON consumer contract promises. This carries that plus what a
+/// caller inside the crate needs and the wire does not offer — today,
+/// whether the node also holds an `<sce:unresolved>` marker, which
+/// `requirement_manifest` needs to tell an honest "I did not know" from
+/// a claim of implementation.
+///
+/// Kept a separate type rather than widening the record, because the
+/// record's shape is a promise to consumers parsing stdout line by
+/// line: a field added for an in-crate caller would change every line
+/// of every report to serve something no consumer asked for.
+pub(crate) struct AnnotatedNode<'a> {
+    pub(crate) record: RequirementRecord<'a>,
+    /// Whether this node carries at least one `<sce:unresolved>`.
+    pub(crate) unresolved: bool,
+}
+
+/// Every annotated node in stable document order — states sorted by
+/// `document_order`, and inside each state transitions →
+/// on_entry_blocks → on_exit_blocks → invokes.
+///
+/// THE traversal. `emit_requirements_ndjson` is a writer over it and
+/// `requirement_manifest` is a set comparison over it, so the two
+/// cannot disagree about which nodes are annotated or what their
+/// `node_path` is — a second walk written to answer the manifest
+/// question would be free to drift from the one the report prints, and
+/// the whole value of the classification is that it names nodes a
+/// reader can find in that report.
+pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
+    let mut out = Vec::new();
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
         if is_annotated(&state.req, &state.provenance) {
-            let record = RequirementRecord {
-                node_path: format!("states.{}", state.id),
-                node_type: "state",
-                action_type: None,
-                requirement_ids: refs_of(&state.req),
-                spec_provenance: &state.provenance,
-                location: state.source_location.as_ref(),
-            };
-            write_record(writer, &record)?;
+            out.push(AnnotatedNode {
+                record: RequirementRecord {
+                    node_path: format!("states.{}", state.id),
+                    node_type: "state",
+                    action_type: None,
+                    requirement_ids: refs_of(&state.req),
+                    spec_provenance: &state.provenance,
+                    location: state.source_location.as_ref(),
+                },
+                unresolved: !state.unresolved.is_empty(),
+            });
         }
         for (i, transition) in state.transitions.iter().enumerate() {
             if is_annotated(&transition.req, &transition.provenance) {
-                let record = RequirementRecord {
-                    node_path: format!("states.{}.transitions[{i}]", state.id),
-                    node_type: "transition",
-                    action_type: None,
-                    requirement_ids: refs_of(&transition.req),
-                    spec_provenance: &transition.provenance,
-                    location: transition.source_location.as_ref(),
-                };
-                write_record(writer, &record)?;
+                out.push(AnnotatedNode {
+                    record: RequirementRecord {
+                        node_path: format!("states.{}.transitions[{i}]", state.id),
+                        node_type: "transition",
+                        action_type: None,
+                        requirement_ids: refs_of(&transition.req),
+                        spec_provenance: &transition.provenance,
+                        location: transition.source_location.as_ref(),
+                    },
+                    unresolved: !transition.unresolved.is_empty(),
+                });
             }
         }
         for (i, block) in state.on_entry_blocks.iter().enumerate() {
             for (j, action) in block.iter().enumerate() {
                 if is_annotated(&action.req, &action.provenance) {
-                    let record = RequirementRecord {
-                        node_path: format!("states.{}.on_entry_blocks[{i}][{j}]", state.id),
-                        node_type: "action",
-                        action_type: Some(action.action_type.as_str()),
-                        requirement_ids: refs_of(&action.req),
-                        spec_provenance: &action.provenance,
-                        location: action.source_location.as_ref(),
-                    };
-                    write_record(writer, &record)?;
+                    out.push(AnnotatedNode {
+                        record: RequirementRecord {
+                            node_path: format!("states.{}.on_entry_blocks[{i}][{j}]", state.id),
+                            node_type: "action",
+                            action_type: Some(action.action_type.as_str()),
+                            requirement_ids: refs_of(&action.req),
+                            spec_provenance: &action.provenance,
+                            location: action.source_location.as_ref(),
+                        },
+                        unresolved: !action.unresolved.is_empty(),
+                    });
                 }
             }
         }
         for (i, block) in state.on_exit_blocks.iter().enumerate() {
             for (j, action) in block.iter().enumerate() {
                 if is_annotated(&action.req, &action.provenance) {
-                    let record = RequirementRecord {
-                        node_path: format!("states.{}.on_exit_blocks[{i}][{j}]", state.id),
-                        node_type: "action",
-                        action_type: Some(action.action_type.as_str()),
-                        requirement_ids: refs_of(&action.req),
-                        spec_provenance: &action.provenance,
-                        location: action.source_location.as_ref(),
-                    };
-                    write_record(writer, &record)?;
+                    out.push(AnnotatedNode {
+                        record: RequirementRecord {
+                            node_path: format!("states.{}.on_exit_blocks[{i}][{j}]", state.id),
+                            node_type: "action",
+                            action_type: Some(action.action_type.as_str()),
+                            requirement_ids: refs_of(&action.req),
+                            spec_provenance: &action.provenance,
+                            location: action.source_location.as_ref(),
+                        },
+                        unresolved: !action.unresolved.is_empty(),
+                    });
                 }
             }
         }
@@ -139,19 +185,21 @@ pub fn emit_requirements_ndjson<W: Write + ?Sized>(
                 crate::model::Invoke::Unsupported(info) => &info.base,
             };
             if is_annotated(&base.req, &base.provenance) {
-                let record = RequirementRecord {
-                    node_path: format!("states.{}.invokes[{i}]", state.id),
-                    node_type: "invoke",
-                    action_type: None,
-                    requirement_ids: refs_of(&base.req),
-                    spec_provenance: &base.provenance,
-                    location: None,
-                };
-                write_record(writer, &record)?;
+                out.push(AnnotatedNode {
+                    record: RequirementRecord {
+                        node_path: format!("states.{}.invokes[{i}]", state.id),
+                        node_type: "invoke",
+                        action_type: None,
+                        requirement_ids: refs_of(&base.req),
+                        spec_provenance: &base.provenance,
+                        location: None,
+                    },
+                    unresolved: !base.unresolved.is_empty(),
+                });
             }
         }
     }
-    Ok(())
+    out
 }
 
 /// Whether a node has anything to report. One predicate rather than
