@@ -42,9 +42,42 @@ Matching is case-insensitive and the separator is flexible, so `ATOMIC-B`,
     ATOMIC-E   visualizer overlay for sce:req and sce:provenance, unclaimed in grey
     ATOMIC-F   the acceptance record and the scenario pin
     ATOMIC-G   review artefacts for the remaining Forge kind families
+    ATOMIC-H   modality and variants: a question per modality, coverage per variant
+    ATOMIC-I   disposition and decomposition: delegated, out_of_scope, parent/child
+    HOLE-1     the manifest copyright guard covers entries, not section titles
+    HOLE-2     RequirementId::validate has no caller and would refuse ISO ids
+    HOLE-3     sce:req on a transition's own action reaches no reading
     ITEM-8     bounded close of the per-code anchor roster
 
-The design behind ATOMIC-A through ATOMIC-G is
+The design behind ATOMIC-A through ATOMIC-I is
 `claudedocs/rfc-nl-to-ir-requirement-closure.md` §12. That document is not
 tracked, which is why the keys live here: a register the tree cannot read is not
 a register.
+
+## Where the HOLE keys came from
+
+They are not planned work. Run 343 (2026-09-12) wrote the first manifest from a
+real standard — ISO 13400-2:2019 §12.6 — and the three were what that document
+exposed in machinery its own author had believed finished. They are registered
+because a hole found once and not written down is found again at the same cost,
+and because each of the three is a trap for the NEXT specification rather than a
+tidy-up of this one:
+
+- **HOLE-1** is a gap in the copyright guard itself. `ManifestSection.title` is
+  unbounded free text, so a requirement sentence pasted there loads silently.
+  ⚠ Measured and recorded so it is not re-proposed: a length bound cannot fix it.
+  Over 166 REQ boxes the two populations **overlap** — headings reach 81
+  characters, and 5 % of requirement first lines are 76 or shorter. A guard wrong
+  in both directions is worse than none, because it advertises that the field is
+  checked.
+- **HOLE-2** is a trap, not an omission. Wiring the validator up as written would
+  **reject the real standard's own spelling**: ISO numbers its requirements
+  `3.DoIP-152`, and the rule refuses a leading digit. It is also stricter than
+  the `NMTOKEN` its own summary claims. The question to settle is which of the
+  two it was meant to be — not whether to call it.
+- **HOLE-3** is a coverage gap in the walk: an annotation on a transition's own
+  action is written and read by nobody.
+
+⚠ HOLE-1 and HOLE-2 are worth paying before the next specification is admitted:
+the first lets copyrighted text in quietly, and the second turns a real
+standard's ids into errors the moment anyone completes the obvious wiring.
