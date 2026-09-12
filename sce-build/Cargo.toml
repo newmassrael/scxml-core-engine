@@ -209,6 +209,16 @@ name = "requirement_id_opacity"
 path = "tests/requirement_id_opacity.rs"
 required-features = ["cli"]
 
+# HOLE-3 — `sce:req` on a transition's own action, asserted at the
+# library and at the wire. The wire half spawns sce-codegen, so this
+# declaration is what stops the target building against whatever
+# binary is lying in target/: a stale one predates the widened walk
+# and would report green for a record it cannot emit.
+[[test]]
+name = "transition_action_annotations"
+path = "tests/transition_action_annotations.rs"
+required-features = ["cli"]
+
 # W3C SCXML 4.9 `<log>` on C11 without a script engine. Compiles the
 # generated translation unit under the same `-Werror` the repo builds
 # C11 with; the `<stdio.h>` include used to be gated on the scripting
