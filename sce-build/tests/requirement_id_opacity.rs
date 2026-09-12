@@ -37,6 +37,9 @@
 //! every one to arrive **verbatim**. If anybody re-adds shape
 //! enforcement — or normalisation — this goes red and names §2.10.
 
+use std::path::PathBuf;
+use std::process::Command;
+
 use sce_build::parser::SCXMLParser;
 
 /// Id spellings that a shape rule would plausibly reject, each with
@@ -123,6 +126,73 @@ fn every_id_shape_survives_the_parse_verbatim() {
          characters a shape rule would reject first — a leading digit, \
          a slash, a hash, a bare number",
         seen.len(),
+    );
+}
+
+/// The same claim at the wire, which is what a consumer reads.
+///
+/// ⚠ The library check above proves the ids reach the IR. It does not
+/// prove they reach the REPORT — `sce-codegen requirements` is a
+/// separate layer, and a sort, a dedupe or a normalisation added there
+/// would leave the model intact while changing every consumer's input.
+/// This repository has twice had a check that was green at the library
+/// and blind at the wire, so the wire gets its own assertion rather
+/// than an argument that it must follow.
+#[test]
+fn the_command_reports_every_id_shape_verbatim() {
+    let ids: Vec<&str> = SHAPES.iter().map(|(id, _)| *id).collect();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let doc = dir.path().join("opacity.scxml");
+    std::fs::write(
+        &doc,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                      xmlns:sce="http://sce.dev/ext"
+                      version="1.0" name="opacity" initial="s0">
+                 <state id="s0" sce:req="{}"/>
+               </scxml>"#,
+            ids.join(" "),
+        ),
+    )
+    .expect("write fixture");
+
+    let output = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen")))
+        .arg("requirements")
+        .arg(&doc)
+        .output()
+        .expect("sce-codegen runs");
+    assert!(
+        output.status.success(),
+        "sce-codegen requirements failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf-8 stdout");
+
+    // Exact array, in order: anything that reorders, dedupes or
+    // rewrites a token fails here, and none of those would be caught
+    // by asking whether each id appears somewhere.
+    let expected = format!(
+        "\"requirement_ids\":[{}]",
+        ids.iter()
+            .map(|id| format!("\"{id}\""))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    assert!(
+        stdout.contains(&expected),
+        "the report did not carry the ids verbatim and in order.\n\
+         expected substring: {expected}\nstdout: {stdout}",
+    );
+
+    println!(
+        "HOLE-2: {} id shape(s) survived to the report verbatim",
+        ids.len()
+    );
+    assert!(
+        ids.len() >= 10,
+        "checked {} shape(s) at the wire; the floor is the same one the \
+         parse-level check carries, for the same reason",
+        ids.len(),
     );
 }
 
