@@ -1,5 +1,5 @@
-//! Requirement-closure RFC ① — the requirement manifest and the
-//! four-way comparison against a parsed document.
+//! Requirement-closure RFC ① — the requirement manifest and the set
+//! comparison against a parsed document.
 //!
 //! SCE **consumes** a closed requirement set and never derives one.
 //! Deriving it would mean reading the source specification, which is
@@ -377,7 +377,14 @@ pub struct RequirementOutcome {
     pub node_paths: Vec<String>,
 }
 
-/// The four-way comparison of a document against a manifest.
+/// The comparison of a document against a manifest, one
+/// [`RequirementOutcome`] per requirement.
+///
+/// ⚠ Deliberately not "the four-way comparison", which is what this
+/// line said until [`Outcome::NeedsScenario`] landed and made it
+/// false. [`Outcome`] is the list; a doc comment that repeats its
+/// length has to be corrected every time a variant lands, and the one
+/// time it is not, it misinforms silently.
 #[derive(Debug, Clone)]
 pub struct Classification {
     pub outcomes: Vec<RequirementOutcome>,
