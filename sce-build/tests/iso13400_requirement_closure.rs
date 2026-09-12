@@ -19,6 +19,37 @@
 //! one at run time out of a placeholder, because what the guard keys
 //! on is the FIELD and not what anyone puts in it.
 //!
+//! # ⭐ How to re-derive the coordinates, and why that is not a test
+//!
+//! A coordinate-only manifest is **not self-checking** (RFC §5.2b): a
+//! reader cannot tell from `{"id": "3.DoIP-152", "page": 68}` alone
+//! that the standard really puts it there, and nothing in this file
+//! can, because the standard is not in this repository and must not
+//! be. So the check lives outside, is run against a local copy, and is
+//! recorded here as a procedure rather than as an assertion:
+//!
+//! ```text
+//!   1. take the subclause region, 12.6 .. the next numbered clause
+//!   2. strip the PDF's control bytes  (the page footers carry \x08,
+//!      and a naive regex silently matches NOTHING because of them)
+//!   3. every `REQ <id>` in order, and every page footer in order
+//!   4. a REQ belongs to the page whose footer comes after it
+//!   5. compare ids, ORDER and pages against this manifest
+//! ```
+//!
+//! Run 2026-09-12 against ISO 13400-2:2019: 30 REQ boxes derived, 30
+//! committed, id set identical, id order identical, **zero page
+//! mismatches**. Worth repeating whenever the manifest's `rev` moves,
+//! which RFC §5.6 says it will — the seal is per revision, not
+//! forever.
+//!
+//! ⚠ Step 2 is in the list because it cost a wrong answer first time:
+//! the footers are `"           68\x08"`, and a `^\s*(\d{2})\s*$`
+//! match finds none of them while reporting no error at all. An
+//! extraction that quietly matches zero page numbers assigns every
+//! requirement a null page and then agrees with nothing, which reads
+//! like a manifest defect rather than a scanner defect.
+//!
 //! # What a real standard changed
 //!
 //! Two things, and both were found by running the tools rather than by
