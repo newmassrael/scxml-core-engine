@@ -342,19 +342,6 @@ public:
 #endif
 
     /**
-     * @brief Get W3C specification references for current test
-     *
-     * Returns JavaScript object mapping transition IDs to W3C spec sections.
-     *
-     * @return JavaScript object {transitionId: "3.13", ...}
-     */
-#ifdef __EMSCRIPTEN__
-    emscripten::val getW3CReferences() const;
-#else
-    std::string getW3CReferences() const;
-#endif
-
-    /**
      * @brief Preload SCXML file content for invoke resolution (WASM)
      *
      * In WASM environment, there's no filesystem access. This method allows

@@ -806,24 +806,6 @@ body {
     pointer-events: auto;  /* Label is clickable for highlighting */
 }
 
-/* W3C spec reference links */
-.w3c-ref {
-    display: inline-block;
-    margin-left: 8px;
-    padding: 2px 6px;
-    background-color: #ddf4ff;
-    color: var(--color-blue);
-    border-radius: 3px;
-    text-decoration: none;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.w3c-ref:hover {
-    background-color: #b6e3ff;
-    text-decoration: underline;
-}
-
 /* Loading state */
 .loading {
     display: flex;

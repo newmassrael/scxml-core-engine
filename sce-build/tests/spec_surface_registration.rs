@@ -173,10 +173,12 @@ const RULES: &[&str] = &[
 
 /// Lower bound on surfaces the walk must observe.
 ///
-/// Measured 2026-09-13: 19 tracked paths are derived, of which 18 are
-/// spec-bearing and one (`schemas/sce-manifest.v1.schema.json`) is a wire
-/// surface the name-family rule also reaches — it is registered either
-/// way, so no arm needs to special-case it.
+/// Measured 2026-09-13: 19 tracked paths were derived, and the same day's
+/// removal of two hand-written copies of the W3C test-to-section column
+/// left 17. Of those, 16 are spec-bearing and one
+/// (`schemas/sce-manifest.v1.schema.json`) is a wire surface the
+/// name-family rule also reaches — it is registered either way, so no arm
+/// needs to special-case it.
 ///
 /// The floor exists because every per-path assertion below passes
 /// vacuously over an empty list. A walk that finds nothing certifies

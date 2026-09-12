@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://sce.dev/schemas/w3c-conformance-fixtures.v1.schema.json",
   "title": "W3C SCXML statechart conformance fixture catalog",
-  "description": "Editor/IDE aid only. Runtime validation is hand-rolled in sce-build/src/w3c_registry.rs, and `w3c_registry_matches_the_schema_file` keeps the two descriptions of the shape in lockstep so this file cannot drift into fiction. Not a wire surface — it is a repository input, not a produced record, so it carries no x-sce-schema-status and is absent from SCE_WIRE_CONTRACTS.md, matching tests/forge/conformance/fixtures.schema.json.",
+  "description": "Editor/IDE aid only. Runtime validation is hand-rolled in sce-build/src/w3c_registry.rs, and `w3c_registry_matches_the_schema_file` keeps the two descriptions of the shape in lockstep so this file cannot drift into fiction. Not a wire surface — it is a repository input, not a produced record, so it carries no x-sce-schema-status. It is registered in SCE_WIRE_CONTRACTS.md as a spec-bearing surface with status `registered`, as is tests/forge/conformance/fixtures.schema.json.",
   "type": "object",
   "required": ["version", "harnesses", "fixtures"],
   "additionalProperties": false,
@@ -46,8 +46,11 @@
             "minLength": 1
           },
           "summary": {
-            "description": "This repository's curation note for the fixture, shown by `generate-w3c --list`. Distinct from the upstream description in resources/<id>/metadata.txt, which the generator reads separately and which this must not duplicate.",
-            "type": "string"
+            "description": "This repository's curation note for the fixture, shown by `generate-w3c --list`. Distinct from the upstream description in resources/<id>/metadata.txt, which the generator reads separately and which this must not duplicate. It states no spec section: the section a fixture targets is `specnum` in that metadata, derived into docs/spec/scxml/.atomic/verifies-catalog.json, and a hand-typed copy here contradicted it in 74 of 202 entries when measured on 2026-09-13. The loader refuses one.",
+            "type": "string",
+            "not": {
+              "pattern": "\\bW3C(\\s+SCXML)?\\s+([0-9]+(\\.[0-9]+)*|[A-H](\\.[0-9]+)+)\\b|§scxml-"
+            }
           }
         }
       }

@@ -1235,16 +1235,6 @@ emscripten::val InteractiveTestRunner::getSCXMLStructure() const {
     return buildStructureFromModel(model);
 }
 
-emscripten::val InteractiveTestRunner::getW3CReferences() const {
-    auto obj = emscripten::val::object();
-
-    // W3C SCXML spec references are loaded by JavaScript (main.js:loadSpecReferences)
-    // and stored in window.specReferences for access by execution-controller.js
-    // This method returns empty object as references are managed client-side
-
-    return obj;
-}
-
 bool InteractiveTestRunner::preloadFile(const std::string &filename, const std::string &content) {
     SCE_LOG_DEBUG("InteractiveTestRunner: Preloading file: {} ({} bytes)", filename, content.size());
     preloadedFiles_[filename] = content;
@@ -1372,10 +1362,6 @@ std::string InteractiveTestRunner::getDataModel() const {
 
 std::string InteractiveTestRunner::getSCXMLStructure() const {
     return "{\"states\":[],\"transitions\":[],\"initial\":\"\"}";
-}
-
-std::string InteractiveTestRunner::getW3CReferences() const {
-    return "{}";
 }
 
 std::string InteractiveTestRunner::getInvokedChildren() const {

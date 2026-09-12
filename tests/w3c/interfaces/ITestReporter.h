@@ -38,7 +38,6 @@ struct TestReport {
     TestExecutionContext executionContext;
     ValidationResult validationResult;
     std::chrono::system_clock::time_point timestamp;
-    bool verified{false};  // true if test passed validate-test-execution with LOW RISK assessment
 };
 
 /**
