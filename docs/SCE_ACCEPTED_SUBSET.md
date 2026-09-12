@@ -1175,6 +1175,22 @@ first, and note what it would cost — ISO 13400-2 numbers its
 requirements `3.DoIP-152`, which a leading-character rule
 refuses.
 
+⚠⚠ Opacity has a downstream cost that is **open**, measured
+2026-09-12. An opaque id may contain `*/`, and the C11 backend
+renders annotations in a block comment (`/* sce:req: … */`)
+where the other five backends use line comments. So
+`sce:req="REQ*/x"` generates C that does not compile: the
+comment closes at `REQ*/` and the remainder is parsed as code
+(`gcc -std=c11`: *error: unknown type name*). The emitter is
+`tools/codegen/templates/_macros/sce_annotation_marker.jinja2`,
+whose header already records the sibling decision for newlines
+in `sce:unresolved` reasons — "author-side hygiene, not a SCE
+invariant". That reasoning does not carry over: a newline
+cannot occur in a `req` id, which is whitespace-split, whereas
+`*/` can. Registered rather than fixed here because any edit
+to that template repins the `template-hash` in 1317 committed
+files, which is a round of its own.
+
 **`sce:provenance`** — spec-document anchors.
 
 Two equivalent forms:
