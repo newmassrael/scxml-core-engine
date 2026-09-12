@@ -220,6 +220,48 @@ fn the_guard_reaches_strings_outside_the_field_that_exposed_it() {
     );
 }
 
+/// ⭐ The sweep cannot be reached around, and the compiler is what
+/// says so.
+///
+/// ⚠ This was a measured bypass, not a hypothetical one. While the
+/// derive sat on the public type, `serde_json::from_str` loaded a
+/// manifest whose section title was a requirement sentence — the same
+/// bytes `from_json` refused. The guard was attached to a call path
+/// rather than to the type, which is the defect it exists to close,
+/// one level up.
+///
+/// The repair is that `RequirementManifest` no longer implements
+/// `Deserialize` at all, so the bypass is not a thing a caller can
+/// spell. That makes this test a compile-time claim: the commented
+/// line below is the bypass, and it must not build. A runtime
+/// assertion could not say this, because there is nothing left to
+/// call.
+#[test]
+fn the_prose_sweep_cannot_be_reached_around() {
+    let raw = manifest_titled("A placeholder entity shall keep a table");
+
+    // The bypass, kept as the record of what must stay impossible:
+    //
+    //     let m: RequirementManifest = serde_json::from_str(&raw).unwrap();
+    //
+    // `RequirementManifest: Deserialize` is not implemented, so that
+    // line does not compile. `ManifestWire` carries the derive and is
+    // private to the module.
+    assert!(
+        RequirementManifest::from_json(&raw, "only-way-in").is_err(),
+        "the one remaining way to build a manifest must run the sweep",
+    );
+
+    // And the guarded path still accepts a real one, so the line above
+    // is not passing because everything fails.
+    let clean = manifest_titled("Socket handling");
+    assert!(
+        RequirementManifest::from_json(&clean, "only-way-in").is_ok(),
+        "a heading-titled manifest must still load through the one door",
+    );
+    println!("HOLE-1: the sweep has one door, and it is the only one");
+}
+
 /// The precondition that keeps the rule from eating the format's own
 /// vocabulary — and the measurement that says it costs nothing.
 #[test]

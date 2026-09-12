@@ -76,6 +76,14 @@
 //! walking the parsed JSON tree, to **every string a manifest
 //! commits**, including strings in fields that do not exist yet.
 //!
+//! And it cannot be reached around. `RequirementManifest` does not
+//! implement `Deserialize`; the derive sits on a private wire type, so
+//! [`RequirementManifest::from_json`] is the only way to obtain one
+//! and the sweep is not a step a caller can skip. That was measured
+//! rather than assumed: while the derive was public,
+//! `serde_json::from_str` loaded a manifest whose section title was a
+//! requirement sentence, refusing nothing that `from_json` refused.
+//!
 //! ### What decides it is shape, and the size rule is refuted
 //!
 //! A length bound was tried first. It cannot work: over
@@ -237,9 +245,44 @@ pub struct RequirementEntry {
     pub page: Option<u32>,
 }
 
-/// A closed requirement set for one `(doc_id, rev)`.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+/// The manifest exactly as JSON spells it, before any check has run.
+///
+/// ⭐ Private, and that is the point. [`RequirementManifest`] does
+/// **not** implement `Deserialize`, so the only way to obtain one is
+/// [`RequirementManifest::from_json`], which runs the prose sweep. The
+/// derive lives here instead, where nobody outside this module can
+/// reach it.
+///
+/// ⚠ This exists because of a measurement, not a worry. With the
+/// derive on the public type, `serde_json::from_str::<RequirementManifest>`
+/// **loaded a manifest whose section title was a requirement
+/// sentence**, while `from_json` refused the same bytes — so the
+/// module's claim that such a manifest "fails to load, for everyone"
+/// was true only of callers who picked the guarded spelling. That is
+/// the same defect as the one this guard was written to close, one
+/// level up: the protection was attached to a call path rather than to
+/// the type, exactly as `text` was guarded by field name while the
+/// field beside it was not. The next consumer is the acceptance
+/// report, which has to load manifests, and `from_str` is the obvious
+/// thing to reach for.
+///
+/// The cost is four field names written twice. It is paid at compile
+/// time: add a field to [`RequirementManifest`] and forget it here and
+/// the conversion below does not build.
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ManifestWire {
+    doc_id: String,
+    rev: String,
+    #[serde(default)]
+    sections: Vec<ManifestSection>,
+    requirements: Vec<RequirementEntry>,
+}
+
+/// A closed requirement set for one `(doc_id, rev)`.
+///
+/// Deliberately not `Deserialize` — see [`ManifestWire`].
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct RequirementManifest {
     /// Must match the `doc-id` a document's `sce:provenance` cites.
     pub doc_id: String,
@@ -516,12 +559,18 @@ impl RequirementManifest {
                 path: label.to_string(),
                 source,
             })?;
-        let manifest: RequirementManifest =
+        let wire: ManifestWire =
             serde_json::from_value(tree.clone()).map_err(|source| ManifestError::Parse {
                 path: label.to_string(),
                 source,
             })?;
         reject_prose_anywhere(&tree, &mut String::new(), label)?;
+        let manifest = RequirementManifest {
+            doc_id: wire.doc_id,
+            rev: wire.rev,
+            sections: wire.sections,
+            requirements: wire.requirements,
+        };
         if manifest.requirements.is_empty() {
             return Err(ManifestError::Empty {
                 path: label.to_string(),
