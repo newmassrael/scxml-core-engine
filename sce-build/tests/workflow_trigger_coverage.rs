@@ -46,6 +46,15 @@ use common::rust_source::{code_mask, code_only, continues_ident};
 /// enumerated as globs — and it obliges the unfiltered workflow to run
 /// that target by name.
 const UNFILTERABLE_GATES: &[&str] = &[
+    // Asks `git ls-files` for every tracked source file in six languages and
+    // lexes each one, so that a standards designation reaching a position
+    // that RUNS is refused while the same name in a comment survives. The
+    // case it exists for is a specification SCE has never seen, arriving in
+    // a file that does not exist today — the requirement-closure machinery
+    // is built to not know which standard wrote the document it reads — so a
+    // `paths:` filter written over today's tree would enumerate the answers
+    // it already has and by construction miss the arrival.
+    "a_standard_named_in_code_is_one_sce_implements",
     // Sweeps every tracked file under `scripts/` for a second spelling of the
     // parallel-jobs rule, so a script added anywhere under that tree changes
     // what it reads — and a NEW script carrying its own copy is the case the
