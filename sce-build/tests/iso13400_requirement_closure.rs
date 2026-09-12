@@ -378,6 +378,18 @@ fn the_unclaimed_block_and_the_rowless_requirements_are_each_non_empty() {
     // the authoring pass added on its own initiative: §12.6 has no REQ
     // box for either.
     //
+    // ⚠ The printed count is larger than two and must not be read as
+    // "this many unasked-for behaviours". Closing HOLE-3 widened the
+    // walk to a transition's own actions, so this document's unclaimed
+    // block went from 2 rows to 7: the five new ones are transition
+    // actions carrying no `sce:req` of their own, and they ARE asked
+    // for — `states.initialized.transitions[0].actions[0]` is the
+    // `<cancel>` implementing `3.DoIP-085`, annotated one level up on
+    // the transition. A `<transition>`'s annotation does not inherit
+    // onto its actions the way an `<onentry>`'s does, which is the
+    // asymmetry `requirements_report`'s walk doc registers and which
+    // is not this test's to settle.
+    //
     // ⚠ By SUBJECT — the owning state and the event — and deliberately
     // not by `node_path`. The first spelling of this assertion named
     // `states.registered.transitions[4]`, which is a position: adding
