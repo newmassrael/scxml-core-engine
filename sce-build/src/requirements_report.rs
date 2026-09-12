@@ -55,7 +55,7 @@ pub(crate) struct RequirementRecord<'a> {
     /// keeps a document without `sce:provenance` byte-identical to the
     /// pre-Item-7 report.
     #[serde(skip_serializing_if = "<[SpecProvenance]>::is_empty")]
-    spec_provenance: &'a [SpecProvenance],
+    pub(crate) spec_provenance: &'a [SpecProvenance],
     #[serde(skip_serializing_if = "Option::is_none")]
     location: Option<&'a SourceLocation>,
 }
