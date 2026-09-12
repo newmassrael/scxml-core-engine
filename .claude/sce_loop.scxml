@@ -161,9 +161,22 @@
       re-aims twice has stopped doing the work it was given and started
       choosing work, and the choosing belongs to whoever wrote the brief.
 
-      ⚠ Measured relevance: all four runs of this kind re-aimed zero times —
-      each was given one atomic and worked it. This clause has not yet bitten,
-      which is the state to keep it in.
+      ⚠ IT HAS NOW BITTEN, and the earlier note here saying it had not is
+      superseded. Run 343 (2026-09-12) was given ATOMIC-B, re-aimed once onto
+      ATOMIC-D, finished that too, and then closed `capped` — a classifier had
+      ADMITTED the next proposal and this budget turned it away. So a launch of
+      this kind delivers TWO checkpoints: the one it is given plus one re-aim.
+
+      That is not a defect to raise away. The reason above is exactly why it
+      fired: by the third checkpoint the run is choosing the work, and choosing
+      belongs to whoever writes the brief. What the measurement changes is what
+      the SUPERVISOR must expect — relaunch with a new brief every two
+      checkpoints — not what this number should be.
+
+      ⚠⚠ Do not read `capped` as the failure `unadmitted` was. Run 341 closed
+      `unadmitted` because `successor_check` could not answer at all, which is a
+      broken instrument; 343 closed `capped` with the instrument working. The
+      two words exist to keep those apart.
     -->
     <data id="reaim_max" expr="1"/>
 
