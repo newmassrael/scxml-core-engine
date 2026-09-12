@@ -318,8 +318,13 @@ fn the_walk_reaches_every_annotation_any_document_declares() {
         declared_total += declared.len();
 
         let Ok(model) = SCXMLParser::new().parse_string(&text, "sweep") else {
-            // A document the parser refuses carries no annotations the
-            // walk could reach; counted, not silently dropped.
+            // ⚠ Reached only by a document that DECLARES ids and then
+            // will not parse. Its annotations cannot be checked at all,
+            // so this is an unverified population rather than a clean
+            // one, and the assertion below refuses to call it a pass.
+            // (A malformed fixture carrying no ids never gets here —
+            // it is skipped above, which is why this counter reads 0
+            // while the tree does contain one on purpose.)
             unparsable += 1;
             continue;
         };
@@ -338,8 +343,17 @@ fn the_walk_reaches_every_annotation_any_document_declares() {
 
     println!(
         "HOLE-3 sweep: {} document(s), {files_with_ids} carrying ids, \
-         {declared_total} declared id(s), {unparsable} unparsable",
+         {declared_total} declared id(s), {unparsable} of those unparsable",
         documents.len(),
+    );
+
+    assert_eq!(
+        unparsable, 0,
+        "{unparsable} document(s) declare `sce:req` and do not parse, so \
+         their annotations were skipped rather than checked. A skipped \
+         check is an unrun one: this sweep would go green while saying \
+         nothing about exactly the documents that carry the thing it \
+         guards",
     );
 
     // ⚠ 26, and the number's basis matters more than the number. An
