@@ -349,10 +349,10 @@ const MANIFEST: &str = r#"{
     { "id": "3.5", "title": "Diagnostic access" }
   ],
   "requirements": [
-    { "id": "REQ-001", "section": "3.1", "page": 12 },
-    { "id": "REQ-002", "section": "3.3", "page": 41 },
-    { "id": "REQ-003", "section": "3.3", "page": 42 },
-    { "id": "REQ-004", "section": "3.5", "page": 55 }
+    { "id": "REQ-001", "section": "3.1", "at": { "page": 12 } },
+    { "id": "REQ-002", "section": "3.3", "at": { "page": 41 } },
+    { "id": "REQ-003", "section": "3.3", "at": { "page": 42 } },
+    { "id": "REQ-004", "section": "3.5", "at": { "page": 55 } }
   ]
 }"#;
 
@@ -534,7 +534,7 @@ fn a_manifest_carrying_requirement_text_is_refused() {
                       "modality_convention": "english-modal-verbs",
                       "method": "hand" },
       "requirements": [
-        { "id": "REQ-001", "section": "3.1", "page": 12,
+        { "id": "REQ-001", "section": "3.1", "at": { "page": 12 },
           "text": "Holding the start button for 3 seconds enters emergency mode." }
       ]
     }"#;

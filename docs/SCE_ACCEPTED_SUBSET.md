@@ -1196,18 +1196,42 @@ files, which is a round of its own.
 Two equivalent forms:
 
 ```xml
-<state id="armed" sce:provenance="OEM-SPEC-01@23#4.4.2"/>
+<state id="armed" sce:provenance="OEM-SPEC-01@23#4.4.2:page=118"/>
 
 <state id="armed">
-  <sce:provenance doc-id="OEM-SPEC-01" rev="23" section="4.4.2"/>
+  <sce:provenance doc-id="OEM-SPEC-01" rev="23" section="4.4.2" page="118"/>
+  <sce:provenance doc-id="WORKBOOK-2" section="Sheet1" row="41"/>
   <sce:provenance doc-id="ISO-14229-1" section="11.2.1"/>
 </state>
 ```
 
-The compact URI form is `doc_id[@rev][#section[:page]]`. The
+The compact URI form is `doc_id[@rev][#section[:position]]`. The
 element form decomposes the same grammar — `doc-id` is its only
 required attribute — and allows multi-document anchoring on a
-single node. Both forms attach to every element `sce:req` does
+single node.
+
+An anchor names a **division** of the source in `section` and,
+optionally, a **position** inside it. The two are separate
+because they answer different questions and only one of them is
+shaped by the kind of source: every source has divisions a
+reviewer can be sent to — a numbered subclause, a worksheet, a
+package — and the per-division coverage counts group by that key
+for all of them alike. Where inside the division is source-shaped,
+so it is one of a closed set:
+
+| Position | Compact spelling | Element attribute | A source that uses it |
+|---|---|---|---|
+| page | `:page=118` | `page="118"` | a paginated specification |
+| row | `:row=41` | `row="41"` | a worksheet |
+| path | `:path=/Elem/x` | `path="/Elem/x"` | a structured document |
+
+A compact form whose trailing `:` segment spells none of these
+leaves it part of the section — a division id may legitimately
+contain a colon, and losing the division would be worse than
+carrying no position. The bare spelling `#4.4.2:118` is also
+still read as a page: it predates the closed set, and removing it
+would not fail an unmigrated document but silently re-read the
+number as part of a longer division id. Both forms attach to every element `sce:req` does
 (`<state>`, `<final>`, `<parallel>`, `<transition>`, `<onentry>`,
 `<onexit>`, executable content, `<invoke>`), compose additively
 in document order, and inherit from `<onentry>` / `<onexit>` onto

@@ -49,6 +49,12 @@ fn parse(name: &str) -> Result<SCXMLModel, Located<ForgeError>> {
 /// `(doc_id, rev, section, page)` in declaration order — the shape the
 /// assertions read, so a failure prints the whole anchor rather than
 /// the one field that differed.
+///
+/// The last element stays a page number rather than a
+/// [`sce_build::provenance::Position`] because every anchor in this
+/// file's fixtures is written in the paginated shape; the variant's
+/// other arms are exercised where they are authored, in
+/// `provenance.rs`'s own cases and in the locator suite.
 type Anchor<'a> = (&'a str, Option<&'a str>, Option<&'a str>, Option<u32>);
 
 fn anchors(list: &[SpecProvenance]) -> Vec<Anchor<'_>> {
@@ -58,7 +64,10 @@ fn anchors(list: &[SpecProvenance]) -> Vec<Anchor<'_>> {
                 p.doc_id.as_str(),
                 p.rev.as_deref(),
                 p.section.as_deref(),
-                p.page,
+                match &p.at {
+                    Some(sce_build::provenance::Position::Page(n)) => Some(*n),
+                    _ => None,
+                },
             )
         })
         .collect()
@@ -344,7 +353,9 @@ fn the_strict_build_puts_the_anchors_on_the_json_wire() {
     );
     assert_eq!(anchors_on_wire[0]["doc_id"], "OEM-DIAG-SPEC");
     assert_eq!(anchors_on_wire[0]["rev"], "D");
-    assert_eq!(anchors_on_wire[0]["page"], 112);
+    // The position rides the wire as the variant spells it, so a
+    // non-paginated source's coordinate survives serialisation too.
+    assert_eq!(anchors_on_wire[0]["at"]["page"], 112);
     assert_eq!(anchors_on_wire[1]["doc_id"], "ISO-14229-1");
     assert_eq!(anchors_on_wire[1]["section"], "11.2.1");
 }

@@ -4561,6 +4561,54 @@
       ],
       "type": "object"
     },
+    "Position": {
+      "description": "Where inside its source document a requirement or node sits.\n\n⭐ A variant, because this half of a coordinate is SOURCE-SHAPED and the landed design had it nailed to one shape. RFC §5.2g measured the corpus a real consumer holds — 146 PDF, 3 xlsx, 1 docx, 1 arxml — and `page: Option<u32>` can only address the first of those. A spreadsheet requirement is at a row, a structured document's at a path; a field named `page` makes every non-paginated source lose the coordinate that makes a review report checkable at all.\n\n⚠ The DIVISION a requirement belongs to is deliberately NOT part of this type. That is `section`, it stays a plain key beside this, and the reason is load-bearing: `section` is what [`crate::requirement_manifest::Classification::section_counts`] groups by, and RFC §5.2a calls those per-division counts its only handle on omission. Folding the division into a source-shaped variant would mean each shape had to answer \"which group\" its own way — and for a path-addressed source there is no honest answer without measuring one, which nobody has. Keeping it out means every source shape answers the grouping question the same way, by naming a division the manifest already declares.\n\n⚠⚠ Closed, like the extraction block's fields and for the same reason: an open string here would let a source's identity in through the data, where the executable-code gate cannot see it.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A page of a paginated document.",
+          "properties": {
+            "page": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "page"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A row of a worksheet.",
+          "properties": {
+            "row": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "row"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A path into a structured document.",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "PresentIfPredicate": {
       "description": "RFC §synth-5-B present-if predicate — a single bit-test on either a flags-bearing sibling field declared earlier in the same codec (Local scope) or a declared `<sce:flag-input>` on the codec itself (Input scope).\n\nv1 grammar covers four forms: - `<field_id>.<flag_name>` (Local positive) — predicate is true iff the named flag bit on the local carrier is set. - `!<field_id>.<flag_name>` (Local negative) — predicate is true iff the bit is clear. Required for Zenoh OpenSyn body where cookie is present iff the `A` input is NOT set. - `<name>` (Input positive) — true iff the named `<sce:flag-input>` value is non-zero. Single-bit input (v1 width=1). - `!<name>` (Input negative) — true iff the input is zero. - `<a> || <b> [|| <c> ...]` (Disjunction) — predicate is true iff ANY listed clause is true. Each clause is itself one of the four forms above (each can independently carry a leading `!`). Required for Zenoh interest where `not is_final` is `header.CURRENT || header.FUTURE` — `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` per `interest.h:35`. Outer negation `!(a || b)` is not implemented until a consumer needs it.\n\n`field_id` is empty when `scope = Input` (carrier is implicit — the codec's own `<sce:flag-input>` parameter).\n\nConjunction (`flag1 && flag2`) and equality (`field == value`) are not implemented until a reachable consumer surfaces.",
       "properties": {
@@ -4985,18 +5033,21 @@
       "type": "object"
     },
     "SpecProvenance": {
-      "description": "Pointer to the source-of-truth specification document anchoring an IR node, requirement ID, or diagnostic.\n\nSCE never *infers* this — IR generators (hand-authored DSL, NL→IR pipeline, ARXML transcoder) populate it; SCE merely propagates it through model nodes and onto diagnostics. Absent `doc_id` means the producer did not record provenance.\n\nSCXML serialisation accepts two forms:\n\n- compact URI: `sce:provenance=\"OEM-SPEC-01@23#4.4.2\"` (`doc_id @ rev # section`; trailing `:page` optional after the section to carry a page number, e.g. `OEM-SPEC-01#4.4.2:118`) - child element: `<sce:provenance doc-id=\"...\" rev=\"...\" section=\"...\" page=\"...\"/>` (one or more allowed; element form lets one node anchor at multiple documents)\n\n`doc-id` is the element form's only required attribute — it is the decomposed spelling of the compact form's `doc_id`, and an anchor without it names no document. Both forms reject that the same way (`validation/provenance-malformed`), and a `doc_id` repeated on one node across either form rejects as `validation/provenance-duplicate`.",
+      "description": "Pointer to the source-of-truth specification document anchoring an IR node, requirement ID, or diagnostic.\n\nSCE never *infers* this — IR generators (hand-authored DSL, NL→IR pipeline, ARXML transcoder) populate it; SCE merely propagates it through model nodes and onto diagnostics. Absent `doc_id` means the producer did not record provenance.\n\nSCXML serialisation accepts two forms:\n\n- compact URI: `sce:provenance=\"OEM-SPEC-01@23#4.4.2\"` (`doc_id @ rev # section`; a trailing `:kind=value` after the section carries a [`Position`], e.g. `OEM-SPEC-01#4.4.2:page=118`, `WB-2#Sheet1:row=41`, `AR-1#Pkg:path=/Elem`) - child element: `<sce:provenance doc-id=\"...\" rev=\"...\" section=\"...\" page=\"...\"/>` (one or more allowed; element form lets one node anchor at multiple documents)\n\n⚠ The compact form also accepts a bare number — `#4.4.2:118` — and reads it as a page. That spelling predates [`Position`] and is kept because the alternative is worse: with it removed, an unmigrated document does not fail, it silently re-reads `4.4.2:118` as a section id, and a coordinate that quietly becomes part of a division name is the kind of wrong nobody sees. Every shape is expressible in the explicit spelling, and the committed documents use it.\n\n`doc-id` is the element form's only required attribute — it is the decomposed spelling of the compact form's `doc_id`, and an anchor without it names no document. Both forms reject that the same way (`validation/provenance-malformed`), and a `doc_id` repeated on one node across either form rejects as `validation/provenance-duplicate`.",
       "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Position"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where inside that division, if the anchor says."
+        },
         "doc_id": {
           "type": "string"
-        },
-        "page": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
         },
         "rev": {
           "type": [
@@ -5005,6 +5056,7 @@
           ]
         },
         "section": {
+          "description": "The division of the source this anchor names. Source-neutral — a subclause, a worksheet, a package — and the key the per-division coverage counts group by. See [`Position`] for why it is not part of that type.",
           "type": [
             "string",
             "null"

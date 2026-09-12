@@ -118,7 +118,7 @@ fn declared_anchors() -> Vec<SpecProvenance> {
             doc_id: doc.to_string(),
             rev: rev.map(str::to_string),
             section: section.map(str::to_string),
-            page,
+            at: page.map(sce_build::provenance::Position::Page),
         };
     vec![
         anchor("OEM-DIAG-SPEC", Some("D"), Some("3.4.2"), Some(112)),

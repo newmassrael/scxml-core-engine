@@ -783,7 +783,7 @@ pub(crate) fn collect_sce_provenance(
 > {
     use crate::forge::error::{Located, ValidationError};
     use crate::forge::model::SCE_NAMESPACE;
-    use crate::provenance::SpecProvenance;
+    use crate::provenance::{Position, SpecProvenance};
     use std::collections::HashSet;
 
     let locate = |err: ValidationError, at: &roxmltree::Node| {
@@ -833,25 +833,44 @@ pub(crate) fn collect_sce_provenance(
                 &child,
             ));
         }
-        // `page` is the one typed part, and a non-numeric value is
-        // dropped rather than rejected — the compact form does the
-        // same (`#4.4.2:draft` reads as the section `4.4.2:draft` with
-        // no page). The two spellings of one grammar must agree about
-        // what they accept, and the page slot is a convenience for
-        // human readers rather than a load-bearing field.
-        let page = child
-            .attribute("page")
-            .and_then(|p| p.trim().parse::<u32>().ok());
         let non_empty = |s: &str| {
             let t = s.trim();
             (!t.is_empty()).then(|| t.to_string())
         };
+        // The element form spells a `Position` as one of three sibling
+        // attributes, where the compact form spells it `kind=value`.
+        // A value that does not parse is dropped rather than rejected,
+        // because the compact form does the same (`#4.4.2:draft` reads
+        // as the section `4.4.2:draft` with no position) — the two
+        // spellings of one grammar must agree about what they accept.
+        //
+        // ⚠ First match wins, in the order written. Two position
+        // attributes on one anchor is an authoring mistake this grammar
+        // does not have the vocabulary to report: refusing it needs a
+        // diagnostic code, and that is governed by SCE_ERROR_CONTRACT.md
+        // rather than by this function.
+        let at = child
+            .attribute("page")
+            .and_then(|p| p.trim().parse::<u32>().ok())
+            .map(Position::Page)
+            .or_else(|| {
+                child
+                    .attribute("row")
+                    .and_then(|r| r.trim().parse::<u32>().ok())
+                    .map(Position::Row)
+            })
+            .or_else(|| {
+                child
+                    .attribute("path")
+                    .and_then(non_empty)
+                    .map(Position::Path)
+            });
         anchors.push((
             SpecProvenance {
                 doc_id: doc_id.to_string(),
                 rev: child.attribute("rev").and_then(non_empty),
                 section: child.attribute("section").and_then(non_empty),
-                page,
+                at,
             },
             child.document().text_pos_at(child.range().start),
         ));

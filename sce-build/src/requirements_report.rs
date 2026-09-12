@@ -423,7 +423,7 @@ mod tests {
         // optional parts expanded and its absent ones omitted.
         assert!(
             lines[0].contains(
-                r#""spec_provenance":[{"doc_id":"OEM-DIAG-SPEC","rev":"D","section":"3.4.2","page":112},{"doc_id":"OEM-TIMING-REQ","rev":"B","section":"7.1"}]"#
+                r#""spec_provenance":[{"doc_id":"OEM-DIAG-SPEC","rev":"D","section":"3.4.2","at":{"page":112}},{"doc_id":"OEM-TIMING-REQ","rev":"B","section":"7.1"}]"#
             ),
             "state record must carry both anchors verbatim: {}",
             lines[0],

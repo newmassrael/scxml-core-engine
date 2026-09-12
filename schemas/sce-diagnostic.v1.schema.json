@@ -529,7 +529,29 @@
           "doc_id": { "type": "string" },
           "rev": { "type": "string" },
           "section": { "type": "string" },
-          "page": { "type": "integer", "minimum": 0 }
+          "at": {
+            "description": "Where inside the division the anchor names. Source-shaped: a paginated document has a page, a worksheet a row, a structured document a path. Exactly one of the three; `section` carries the division and is not part of this, because the per-division coverage counts group by it and every source shape must answer that question the same way.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["page"],
+                "additionalProperties": false,
+                "properties": { "page": { "type": "integer", "minimum": 0 } }
+              },
+              {
+                "type": "object",
+                "required": ["row"],
+                "additionalProperties": false,
+                "properties": { "row": { "type": "integer", "minimum": 0 } }
+              },
+              {
+                "type": "object",
+                "required": ["path"],
+                "additionalProperties": false,
+                "properties": { "path": { "type": "string" } }
+              }
+            ]
+          }
         }
       }
     },

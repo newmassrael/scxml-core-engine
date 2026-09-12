@@ -17110,13 +17110,13 @@ mod tests {
                 doc_id: "OEM-DIAG-SPEC".into(),
                 rev: Some("D".into()),
                 section: Some("3.4.2".into()),
-                page: Some(112),
+                at: Some(crate::provenance::Position::Page(112)),
             },
             crate::provenance::SpecProvenance {
                 doc_id: "ISO-14229-1".into(),
                 rev: None,
                 section: Some("11.2.1".into()),
-                page: None,
+                at: None,
             },
         ];
         vec![(
@@ -17133,7 +17133,7 @@ mod tests {
                 Some(3),
             )
             .with_spec_provenance(anchors),
-            r#"{"v":1,"id":"fnv1a:446dc7444b0cf549","code":"validation/unresolved-placeholder","stage":"validation","message":"<state id=\"armed\">: unresolved placeholder id='tbd_threshold' reason='waiting on calibration data'","location":{"file":"chart.scxml","line":12,"col":3},"actual":"tbd_threshold","spec_provenance":[{"doc_id":"OEM-DIAG-SPEC","rev":"D","section":"3.4.2","page":112},{"doc_id":"ISO-14229-1","section":"11.2.1"}]}"#,
+            r#"{"v":1,"id":"fnv1a:446dc7444b0cf549","code":"validation/unresolved-placeholder","stage":"validation","message":"<state id=\"armed\">: unresolved placeholder id='tbd_threshold' reason='waiting on calibration data'","location":{"file":"chart.scxml","line":12,"col":3},"actual":"tbd_threshold","spec_provenance":[{"doc_id":"OEM-DIAG-SPEC","rev":"D","section":"3.4.2","at":{"page":112}},{"doc_id":"ISO-14229-1","section":"11.2.1"}]}"#,
         )]
     }
 
