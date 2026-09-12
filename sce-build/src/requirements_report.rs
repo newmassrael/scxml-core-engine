@@ -174,6 +174,34 @@ pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
 /// summarises them in its `action` column, so widening the walk
 /// without deciding what the table then prints would make one node
 /// appear twice with two different answers.
+///
+/// ⚠ Corrected 2026-09-12: an earlier note here reasoned that the
+/// gap might be in the PARSE. It is not. `collect_sce_req` has one
+/// call site, but it sits inside `collect_sce_traceability`, which
+/// has eleven — and a transition's action is one of them. Measured
+/// on one document, the annotation reaches the IR and is emitted by
+/// codegen (`// sce:req: REQ_TRANSITION_ACTION`) while the report
+/// shows nothing. The blindness is confined to this walk.
+///
+/// # What it costs today, measured rather than guessed
+///
+/// Over all 733 tracked `.scxml` (one parse failure, a deliberately
+/// malformed fixture): 32 `sce:req` annotations exist, and **one**
+/// sits on a transition's own action —
+/// `tests/fixtures/codegen_smoke/sce_annotations.scxml`, a `<log>`
+/// carrying `REQ_TRANS_LOG`.
+///
+/// ⚠⚠ That one is not idle. `sce_annotation_emission.rs` lists
+/// `REQ_TRANS_LOG` among the tokens it requires every backend to
+/// emit. So the tree already asserts that annotation reaches
+/// generated source, and simultaneously cannot see it in the report,
+/// the manifest classification or the trace table. The two halves
+/// disagree about whether that requirement is implemented, and only
+/// the coverage half is wrong.
+///
+/// The blast radius is therefore small today (1 of 32) and the defect
+/// is a silent wrong answer rather than a crash — which is an
+/// argument about when to fix it, not whether.
 pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
     let mut out = Vec::new();
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
