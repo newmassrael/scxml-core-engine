@@ -208,6 +208,36 @@ fn a_document_citing_another_revision_says_so() {
     assert!(note.contains("D3") && note.contains("D4"), "got: {note}");
 }
 
+/// The staleness check sees an anchor wherever the IR allows one.
+///
+/// Regression: the first version of `classify` walked states and
+/// transitions by hand, so a document whose only `sce:provenance` sat
+/// on an `<onentry>` action was compared against a stale manifest in
+/// silence. A partial walk is worst exactly here — the note qualifies
+/// every other verdict in the report, so losing it leaves the rest
+/// confidently wrong rather than merely incomplete.
+#[test]
+fn the_staleness_check_sees_an_anchor_on_an_action() {
+    let anchored_on_action = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                                       xmlns:sce="http://sce.dev/ext"
+                                       version="1.0" initial="s0" datamodel="null">
+      <state id="s0">
+        <onentry>
+          <raise event="e" sce:req="REQ-1"
+                 sce:provenance="car-body-spec@D3#3.1:12"/>
+        </onentry>
+      </state>
+    </scxml>"#;
+    let stale = r#"{ "doc_id": "car-body-spec", "rev": "D4",
+                     "requirements": [{ "id": "REQ-1" }] }"#;
+    let model = parse(anchored_on_action, "action_anchor");
+    let declared = manifest(stale, "stale_manifest");
+    let note = classify(&model, &declared)
+        .revision_note
+        .expect("the only anchor in this document is on an action, and it is stale");
+    assert!(note.contains("D3") && note.contains("D4"), "got: {note}");
+}
+
 /// ⭐ A manifest cannot carry the requirement sentence.
 ///
 /// This is the copyright split made structural rather than advisory.

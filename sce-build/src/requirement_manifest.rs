@@ -337,10 +337,14 @@ pub fn emit_classification_ndjson<W: std::io::Write + ?Sized>(
 /// reader finds in the report. A private second walk would be free to
 /// drift.
 pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classification {
+    // Walked once, read three times below — the citations, the
+    // dangling ids, and the revision check all answer from this.
+    let nodes = crate::requirements_report::annotated_nodes(model);
+
     // id -> node_paths citing it, and whether every citing node is
     // marked unresolved.
     let mut cited: BTreeMap<&str, (Vec<String>, bool)> = BTreeMap::new();
-    for node in crate::requirements_report::annotated_nodes(model) {
+    for node in &nodes {
         for id in &node.record.requirement_ids {
             let entry = cited.entry(id).or_insert_with(|| (Vec::new(), true));
             entry.0.push(node.record.node_path.clone());
@@ -410,17 +414,17 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
         .collect();
     section_counts.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let revision_note = model
-        .states
-        .values()
-        .flat_map(|state| state.provenance.iter())
-        .chain(
-            model
-                .states
-                .values()
-                .flat_map(|state| state.transitions.iter())
-                .flat_map(|transition| transition.provenance.iter()),
-        )
+    // Over the SAME traversal as everything else above, and not a
+    // hand-rolled walk of states and transitions. The first version of
+    // this was exactly that, and it could not see an anchor on an
+    // `<onentry>` action or an `<invoke>` — so a document whose only
+    // `sce:provenance` sat on an action would be compared against a
+    // stale manifest in silence. The staleness check is worth more than
+    // the comparison it qualifies, which makes a partial walk here the
+    // worst place in the file to have one.
+    let revision_note = nodes
+        .iter()
+        .flat_map(|node| node.record.spec_provenance.iter())
         .find(|anchor| {
             anchor.doc_id == manifest.doc_id && anchor.rev.as_deref() != Some(&manifest.rev)
         })
