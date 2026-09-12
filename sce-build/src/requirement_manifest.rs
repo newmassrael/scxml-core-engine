@@ -100,6 +100,18 @@
 //! of the extraction, not of the rule — both are split across a page
 //! boundary, and both carry `shall` and a full stop in the source.
 //!
+//! ⚠ Measured on one document, a zero is a property of that document.
+//! So it was re-measured on two more, and the accepting half holds:
+//!
+//! ```text
+//!   ISO 13400-2:2019   243 headings   0 falsely refused
+//!   ISO 13400-1:2011    24 headings   0 falsely refused
+//!   ISO 14229-1:2013    62 headings   0 falsely refused
+//! ```
+//!
+//! 329 real contents-page headings across three standards, none of
+//! which this guard rejects.
+//!
 //! ### ⚠ The residue, written down rather than left silent
 //!
 //! - **A heading that carries a normative modal is refused.** None of
