@@ -80,7 +80,9 @@ use sce_build::parser::SCXMLParser;
 use sce_build::requirement_manifest::{
     classify, Classification, Modality, Outcome, RequirementManifest,
 };
-use sce_build::transition_table::{requirements_without_a_row, transition_table, NO_SOURCE};
+use sce_build::transition_table::{
+    requirements_without_a_row, transition_table, TransitionRow, EMPTY_CELL, NO_SOURCE,
+};
 
 fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/requirement_closure")
@@ -389,6 +391,83 @@ fn the_unclaimed_block_and_the_rowless_requirements_are_each_non_empty() {
              {unclaimed:?}",
         );
     }
+}
+
+/// One trace-table column: the name RFC §6.2 gives it, and the way to
+/// read it off a row.
+type Column = (&'static str, fn(&TransitionRow) -> &str);
+
+/// Every column the trace table names carries a real value somewhere
+/// in the real document.
+///
+/// ⚠ The checks that existed asserted the **key** was present — that
+/// `"guard":` appears in the emitted JSON. A column that stopped being
+/// populated keeps its key and fills every row with
+/// [`EMPTY_CELL`], so it passes that check while the trace table
+/// quietly loses a dimension. That is the repository's standing shape:
+/// the signal is absent and absence reads as success.
+///
+/// `guard` and `after` are the two to fear rather than a hypothetical
+/// worry — measured on this document they are carried by **two rows
+/// each out of twenty-seven**, so they are exactly the columns a
+/// regression could empty with nothing else noticing.
+#[test]
+fn every_trace_column_is_exercised_by_the_real_document() {
+    let rows = transition_table(&parse_file(&document_path()));
+    assert!(!rows.is_empty(), "the real document produced no rows");
+
+    // `from` is absent from this list deliberately: every row is owned
+    // by a state, so it cannot be blank and asserting that it is not
+    // would be a check that cannot fail. It is covered below as the
+    // invariant it actually is.
+    let columns: [Column; 5] = [
+        ("source", |row| row.source.as_str()),
+        ("guard", |row| row.guard.as_str()),
+        ("after", |row| row.after.as_str()),
+        ("to", |row| row.to.as_str()),
+        ("action", |row| row.action.as_str()),
+    ];
+    for (name, get) in columns {
+        let filled = rows
+            .iter()
+            .filter(|row| {
+                let cell = get(row);
+                cell != EMPTY_CELL && cell != NO_SOURCE
+            })
+            .count();
+        println!(
+            "  column `{name}`: {filled} of {} row(s) carry a value",
+            rows.len(),
+        );
+        assert!(
+            filled > 0,
+            "column `{name}` is `{EMPTY_CELL}` on every one of the {} \
+             row(s). The column still exists and still serialises, so a \
+             check for its key passes — but the table has stopped \
+             reporting that dimension of the document",
+            rows.len(),
+        );
+    }
+
+    assert!(
+        rows.iter().all(|row| !row.from.is_empty()),
+        "a row names no owning state, so it cannot be traced back to \
+         anything in the document",
+    );
+
+    // The pseudo-events are what let a node that is not event-driven
+    // have a row at all, which is what makes "a requirement with no row
+    // is missing" sound. A table carrying only real events would have
+    // silently dropped the states and actions.
+    let pseudo = rows.iter().filter(|row| row.event.starts_with('(')).count();
+    let real = rows.len() - pseudo;
+    println!("  column `event`: {real} real, {pseudo} pseudo-event row(s)");
+    assert!(
+        pseudo > 0 && real > 0,
+        "the `event` column carries only one kind ({real} real, \
+         {pseudo} pseudo); both are needed, or the table has stopped \
+         covering either the event-driven nodes or the rest",
+    );
 }
 
 /// ① and ② are two readings of one export — over the `shall` column.
