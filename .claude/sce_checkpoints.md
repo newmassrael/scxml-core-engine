@@ -46,6 +46,8 @@ Matching is case-insensitive and the separator is flexible, so `ATOMIC-B`,
     ATOMIC-I   disposition and decomposition: delegated, out_of_scope, parent/child
     ATOMIC-K   extraction properties and a locator that is not PDF-shaped
     ATOMIC-L   a gate refusing a specification's identity in executable code
+    SURFACES   register every spec-bearing surface, and gate the registry
+    UNIFY      measure, then promote one schema both the mirror and SCE read
     HOLE-1     the manifest copyright guard covers entries, not section titles
     HOLE-2     RequirementId::validate has no caller and would refuse ISO ids
     HOLE-3     sce:req on a transition's own action reaches no reading
@@ -86,6 +88,32 @@ tidy-up of this one:
   id is genuinely opaque, one can break the C11 backend's comment form. A repair
   that widens what an input may contain owes a look at every backend that
   formats it.
+
+## Why SURFACES and UNIFY were added (2026-09-13)
+
+A complete three-column trace table was found already running for W3C SCXML —
+`docs/spec/scxml/.atomic/` holds 197 sections and 199 test bindings, and a
+mnemosyne plugin already validates SCE's own `§scxml-n.m` citations against that
+section set. A second `verifies-catalog.json` exists for Mesh. None of it was
+found while this repository spent a day designing the same thing, because the
+search used one vocabulary (`requirement`, `provenance`, `trace`, `coverage` —
+**zero** hits in that catalogue) and the catalogue uses another (`section_ids`,
+199 hits), while no entry document names any of the eight `.atomic` stores.
+
+- **SURFACES** is the repair for *that*, and it is a registration gate rather
+  than a rule because a rule would be forgotten the same way. ⚠ The registry
+  already exists — `SCE_WIRE_CONTRACTS.md`, "the single registry of which
+  surfaces are pre-release vs stable" — and simply does not name these. Add
+  them there; do not build a second registry, which would be the same defect.
+- **UNIFY** is the SSOT repair. ⛔ It is NOT "compare the two vocabularies and
+  align them": two definitions plus a mapping is a drift generator. One model,
+  many specifications — the existing one is the better base (tagged-union
+  locator that survives repagination, URL source, `text` + `text_sha256`, which
+  is also the answer to the copyright split this tree invented separately).
+  ⚠⚠ UNIFY has a measurement prerequisite: can the existing section model
+  express `shall_not` and `shall_within`? `coverage_expectation` carries only
+  `informational` / `out_of_scope_here` / unset. Do not promote a schema before
+  that is answered.
 
 ## The general-purpose rule ATOMIC-L enforces
 
