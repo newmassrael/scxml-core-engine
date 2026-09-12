@@ -92,11 +92,19 @@ impl TransitionRow {
     }
 }
 
-const EMPTY: &str = "-";
+/// The literal printed in a column the row has no value for.
+///
+/// `pub` for the same reason [`NO_SOURCE`] is: a caller asking "does
+/// this column ever carry anything" has to compare against the
+/// producer's own sentinel. A test that spelled `"-"` itself would be
+/// checking its own copy, and would keep passing if this one changed —
+/// every cell would then differ from the test's literal and read as
+/// filled, which is the wrong answer in the safe-looking direction.
+pub const EMPTY_CELL: &str = "-";
 
 fn or_dash(value: &str) -> String {
     if value.is_empty() {
-        EMPTY.to_string()
+        EMPTY_CELL.to_string()
     } else {
         value.to_string()
     }
@@ -124,10 +132,10 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     source,
                     from: state.id.clone(),
                     event: "(state)".to_string(),
-                    guard: EMPTY.to_string(),
-                    after: EMPTY.to_string(),
-                    to: EMPTY.to_string(),
-                    action: EMPTY.to_string(),
+                    guard: EMPTY_CELL.to_string(),
+                    after: EMPTY_CELL.to_string(),
+                    to: EMPTY_CELL.to_string(),
+                    action: EMPTY_CELL.to_string(),
                     node_path,
                 },
                 NodeSubject::Transition { state, transition } => TransitionRow {
@@ -142,10 +150,10 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                         transition.event.clone()
                     },
                     guard: or_dash(&transition.cond),
-                    after: EMPTY.to_string(),
+                    after: EMPTY_CELL.to_string(),
                     to: or_dash(&transition.target),
                     action: if transition.actions.is_empty() {
-                        EMPTY.to_string()
+                        EMPTY_CELL.to_string()
                     } else {
                         transition
                             .actions
@@ -174,9 +182,9 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     source,
                     from: state.id.clone(),
                     event: "(invoke)".to_string(),
-                    guard: EMPTY.to_string(),
-                    after: EMPTY.to_string(),
-                    to: EMPTY.to_string(),
+                    guard: EMPTY_CELL.to_string(),
+                    after: EMPTY_CELL.to_string(),
+                    to: EMPTY_CELL.to_string(),
                     action: or_dash(&base.invoke_id),
                     node_path,
                 },
@@ -200,7 +208,7 @@ fn delay_of(action: &crate::model::Action) -> String {
     } else if action.delay_ms > 0 {
         format!("{}ms", action.delay_ms)
     } else {
-        EMPTY.to_string()
+        EMPTY_CELL.to_string()
     }
 }
 
