@@ -30,7 +30,9 @@ use std::process::Command;
 
 use sce_build::parser::SCXMLParser;
 use sce_build::requirement_manifest::{classify, Modality, Outcome, RequirementManifest};
-use sce_build::transition_table::{requirements_without_a_row, transition_table, NO_SOURCE};
+use sce_build::transition_table::{
+    requirements_without_a_row, transition_table, EMPTY_CELL, NO_SOURCE,
+};
 
 /// Two claimed transitions, one unclaimed transition, a claimed entry
 /// action, and a manifest requirement nothing implements.
@@ -215,10 +217,24 @@ fn the_command_emits_the_table() {
         stdout.contains("\"source\":\"REQ-002\"") && stdout.contains("\"source\":\"(none)\""),
         "the command must emit both a claimed and an unclaimed row. stdout:\n{stdout}",
     );
+    // ⚠ Presence of the KEY is not presence of the column. `"guard":`
+    // stays in the output when every row's guard is `-`, so this loop
+    // used to pass over a table that had stopped reporting a whole
+    // dimension. Each column is now required to carry a value on some
+    // row: delete the dashed cells, and the column must still be there.
     for column in ["from", "event", "guard", "after", "to", "action"] {
+        let key = format!("\"{column}\":\"");
         assert!(
-            stdout.contains(&format!("\"{column}\":")),
+            stdout.contains(&key),
             "column `{column}` is absent from the emitted table. stdout:\n{stdout}",
+        );
+        let remaining = stdout
+            .replace(&format!("\"{column}\":\"{EMPTY_CELL}\""), "")
+            .replace(&format!("\"{column}\":\"{NO_SOURCE}\""), "");
+        assert!(
+            remaining.contains(&key),
+            "every emitted `{column}` cell is `{EMPTY_CELL}`; the key is \
+             on the wire but the column carries nothing. stdout:\n{stdout}",
         );
     }
 }

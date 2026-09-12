@@ -634,6 +634,60 @@ fn the_copyright_gate_refuses_the_real_iso_manifest_once_it_carries_text() {
     );
 }
 
+/// Condition ① end to end: the shipped subcommand emits the table for
+/// the real standard, and its columns arrive carrying values.
+///
+/// ⚠ The library-level check lives in
+/// [`every_trace_column_is_exercised_by_the_real_document`]; this one
+/// exists because the **wire** is what a consumer reads, and the wire
+/// had the same hole. The assertion it replaces asked whether
+/// `"guard":` appears in stdout — which stays true when every row's
+/// guard is [`EMPTY_CELL`], so a table that had stopped reporting a
+/// whole dimension emitted output that passed.
+///
+/// The technique is deliberately content-agnostic: delete every dashed
+/// cell for the column, then require the column to still appear.
+/// Naming the expected values instead would pin this to the DoIP
+/// document's particular guards and turn any edit of the fixture into
+/// a failure of the tool.
+#[test]
+fn the_command_emits_a_table_whose_columns_carry_values() {
+    let output = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen")))
+        .arg("transition-table")
+        .arg(document_path())
+        .output()
+        .expect("sce-codegen runs");
+    assert!(
+        output.status.success(),
+        "sce-codegen transition-table failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.lines().count() >= 25,
+        "the command emitted {} line(s) for a document the library walks \
+         in far more rows",
+        stdout.lines().count(),
+    );
+
+    for column in ["source", "guard", "after", "to", "action"] {
+        let key = format!("\"{column}\":\"");
+        assert!(
+            stdout.contains(&key),
+            "column `{column}` is absent from the emitted table",
+        );
+        let dashed = format!("\"{column}\":\"{EMPTY_CELL}\"");
+        let unclaimed = format!("\"{column}\":\"{NO_SOURCE}\"");
+        let remaining = stdout.replace(&dashed, "").replace(&unclaimed, "");
+        assert!(
+            remaining.contains(&key),
+            "every emitted `{column}` cell is `{EMPTY_CELL}`. The key is \
+             still on the wire, so a check for it passes, but the column \
+             carries nothing and the trace table has lost that dimension",
+        );
+    }
+}
+
 /// End to end through the shipped subcommand, on the real pair.
 #[test]
 fn the_command_classifies_the_real_standard() {
