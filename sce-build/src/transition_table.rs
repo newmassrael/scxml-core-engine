@@ -54,7 +54,7 @@ use std::io::{self, Write};
 use serde::Serialize;
 
 use crate::model::SCXMLModel;
-use crate::requirements_report::{walk_nodes, NodeSubject};
+use crate::requirements_report::{walk_nodes, ActionSite, NodeSubject};
 
 /// The literal printed in `source` for a node claiming no requirement.
 ///
@@ -167,11 +167,25 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                 NodeSubject::Action {
                     state,
                     action,
-                    entry,
+                    site,
                 } => TransitionRow {
                     source,
                     from: state.id.clone(),
-                    event: if entry { "(entry)" } else { "(exit)" }.to_string(),
+                    // Three sites, three pseudo-events. `(transition)`
+                    // is not redundant with the transition's own row:
+                    // that row summarises its actions in the `action`
+                    // column to say what the transition DOES, while
+                    // this row is the node an `sce:req` can hang on.
+                    // The table's rule is one row per node that can
+                    // carry a requirement — without this row, "a
+                    // requirement with no row is missing" would call
+                    // an annotated transition action missing.
+                    event: match site {
+                        ActionSite::Entry => "(entry)",
+                        ActionSite::Exit => "(exit)",
+                        ActionSite::Transition => "(transition)",
+                    }
+                    .to_string(),
                     guard: or_dash(&action.cond),
                     after: delay_of(action),
                     to: or_dash(&action.target),

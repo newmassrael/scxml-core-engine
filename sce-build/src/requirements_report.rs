@@ -108,18 +108,37 @@ pub(crate) struct AnnotatedNode<'a> {
 }
 
 /// Which kind of IR node a walk entry is, with the node behind it.
+/// Where an executable action sits, which is a three-valued fact.
+///
+/// ⭐ This replaced a `entry: bool`, and the replacement is the repair
+/// rather than tidying around it. An action can sit in `<onentry>`, in
+/// `<onexit>`, or inside a `<transition>` — three places, and a
+/// boolean can name two. The walk below reached exactly the two the
+/// boolean could describe, so `sce:req` on a transition's own action
+/// was read by nobody while the parser stored it and every backend
+/// emitted it. A type that cannot express the third case is how the
+/// third case goes missing without an argument about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ActionSite {
+    Entry,
+    Exit,
+    /// Executable content inside the `<transition>` itself — run when
+    /// the transition is taken, not when a state is entered or left.
+    Transition,
+}
+
 pub(crate) enum NodeSubject<'a> {
     State(&'a crate::model::State),
     Transition {
         state: &'a crate::model::State,
         transition: &'a crate::model::Transition,
     },
-    /// `entry` distinguishes `<onentry>` from `<onexit>`; the table
-    /// prints them as different pseudo-events.
+    /// `site` says which of the three places the action sits in; the
+    /// table prints each as a different pseudo-event.
     Action {
         state: &'a crate::model::State,
         action: &'a crate::model::Action,
-        entry: bool,
+        site: ActionSite,
     },
     Invoke {
         state: &'a crate::model::State,
@@ -157,51 +176,59 @@ pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
 /// requirement's classification and its row in the table are answers
 /// about the same node rather than two walks that happen to agree.
 ///
-/// ⚠ **A `<transition>`'s own actions are not reached.** Measured
-/// 2026-09-12: `sce:req` on a `<raise>` inside an `<onentry>` produces
-/// a record, and the same annotation on a `<raise>` inside a
-/// `<transition>` produces **none** — the loop below descends into
-/// `on_entry_blocks`, `on_exit_blocks` and `invokes`, and takes a
-/// transition whole. Because all three readings sit on this walk, such
-/// a requirement is invisible to every one of them: absent from the
-/// report, and reported `missing` by the manifest comparison however
-/// carefully it was annotated.
+/// # A transition's own actions are reached (HOLE-3, closed)
 ///
-/// That is a silent wrong answer rather than a gap, so it is written
-/// here rather than left to be rediscovered. What it is not is a
-/// one-line fix: a transition's actions would need `node_path`s of
-/// their own, and the transition row of the trace table already
-/// summarises them in its `action` column, so widening the walk
-/// without deciding what the table then prints would make one node
-/// appear twice with two different answers.
+/// They were not, until 2026-09-12: the loop descended into
+/// `on_entry_blocks`, `on_exit_blocks` and `invokes` and took a
+/// `<transition>` whole, so `sce:req` on executable content *inside*
+/// a transition reached the IR, was emitted by every backend, and was
+/// read by nobody. All three readings sit on this walk, so the
+/// annotation was absent from the report, absent from the table, and
+/// reported `missing` by the manifest comparison however carefully it
+/// had been written — a silent wrong answer, not a gap.
 ///
-/// ⚠ Corrected 2026-09-12: an earlier note here reasoned that the
-/// gap might be in the PARSE. It is not. `collect_sce_req` has one
-/// call site, but it sits inside `collect_sce_traceability`, which
-/// has eleven — and a transition's action is one of them. Measured
-/// on one document, the annotation reaches the IR and is emitted by
-/// codegen (`// sce:req: REQ_TRANSITION_ACTION`) while the report
-/// shows nothing. The blindness is confined to this walk.
+/// The repair was to [`ActionSite`]: the site of an action is
+/// three-valued and the walk carried a `bool`, which is why exactly
+/// the two cases a boolean can name were the two it reached.
 ///
-/// # What it costs today, measured rather than guessed
+/// ⚠ The defect was in this walk and **not in the parse** — an
+/// earlier note here reasoned otherwise and was wrong.
+/// `collect_sce_req` has one call site, but it sits inside
+/// `collect_sce_traceability`, which has eleven, and a transition's
+/// action is one of them.
 ///
-/// Over all 733 tracked `.scxml` (one parse failure, a deliberately
-/// malformed fixture): 32 `sce:req` annotations exist, and **one**
-/// sits on a transition's own action —
-/// `tests/fixtures/codegen_smoke/sce_annotations.scxml`, a `<log>`
-/// carrying `REQ_TRANS_LOG`.
+/// # ⚠ What widening it exposed, measured and left open
 ///
-/// ⚠⚠ That one is not idle. `sce_annotation_emission.rs` lists
-/// `REQ_TRANS_LOG` among the tokens it requires every backend to
-/// emit. So the tree already asserts that annotation reaches
-/// generated source, and simultaneously cannot see it in the report,
-/// the manifest classification or the trace table. The two halves
-/// disagree about whether that requirement is implemented, and only
-/// the coverage half is wrong.
+/// Two things, both consequences rather than regressions:
 ///
-/// The blast radius is therefore small today (1 of 32) and the defect
-/// is a silent wrong answer rather than a crash — which is an
-/// argument about when to fix it, not whether.
+/// **The unclaimed block dilutes.** On the ISO 13400-2 §12.6 document
+/// the table went 27 rows to 32, and its `(none)` block went **2 to
+/// 7**. The five new rows are transition actions carrying no
+/// `sce:req` — but they are not "behaviour the specification never
+/// asked for", which is what that block is supposed to mean.
+/// `states.initialized.transitions[0].actions[0]` is the `<cancel>`
+/// that implements `3.DoIP-085`, *"the initial inactivity timer shall
+/// be stopped"* — asked for, and annotated one level up on the
+/// transition.
+///
+/// **Because a transition's annotation does not inherit onto its
+/// actions, while an `<onentry>`'s does.** Measured on the witness
+/// fixture: `on_entry_blocks[0][0]` carries `["REQ_LOG_LEAF",
+/// "REQ_ONENTRY"]` — the block's id inherited onto the child — while
+/// `transitions[0].actions[0]` carries only `["REQ_TRANS_LOG"]`, not
+/// the enclosing `REQ_TRANS_GO`. `docs/SCE_ACCEPTED_SUBSET.md` §2.10
+/// promises inheritance for `<onentry>` / `<onexit>` and says nothing
+/// about transitions, so the behaviour matches the written contract —
+/// the asymmetry was simply invisible until these nodes became
+/// readable.
+///
+/// ⚠⚠ Not changed here, deliberately. HOLE-3 was "the annotation on
+/// the action is read", and extending inheritance is a different
+/// decision: it alters parse semantics and what
+/// `sce_annotation_emission.rs` requires every backend to emit. The
+/// choice is between annotating such actions document-side and making
+/// `<transition>` inherit the way `<onentry>` does, and it wants its
+/// own round rather than being folded into this one.
 pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
     let mut out = Vec::new();
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
@@ -232,6 +259,27 @@ pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
                 unresolved: !transition.unresolved.is_empty(),
                 subject: NodeSubject::Transition { state, transition },
             });
+            // Immediately after their transition, so the walk stays in
+            // document order: a reader following `node_path` down the
+            // list meets the transition and then what it does.
+            for (j, action) in transition.actions.iter().enumerate() {
+                out.push(AnnotatedNode {
+                    record: RequirementRecord {
+                        node_path: format!("states.{}.transitions[{i}].actions[{j}]", state.id),
+                        node_type: "action",
+                        action_type: Some(action.action_type.as_str()),
+                        requirement_ids: refs_of(&action.req),
+                        spec_provenance: &action.provenance,
+                        location: action.source_location.as_ref(),
+                    },
+                    unresolved: !action.unresolved.is_empty(),
+                    subject: NodeSubject::Action {
+                        state,
+                        action,
+                        site: ActionSite::Transition,
+                    },
+                });
+            }
         }
         for (i, block) in state.on_entry_blocks.iter().enumerate() {
             for (j, action) in block.iter().enumerate() {
@@ -248,7 +296,7 @@ pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
                     subject: NodeSubject::Action {
                         state,
                         action,
-                        entry: true,
+                        site: ActionSite::Entry,
                     },
                 });
             }
@@ -268,7 +316,7 @@ pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
                     subject: NodeSubject::Action {
                         state,
                         action,
-                        entry: false,
+                        site: ActionSite::Exit,
                     },
                 });
             }
