@@ -63,6 +63,32 @@ fn document_path() -> PathBuf {
     fixture_dir().join("doip_nl_connection_states.scxml")
 }
 
+/// Every conversion the fixture directory holds, **discovered rather
+/// than listed**.
+///
+/// ⚠ This is a function because the list it replaced was a literal of
+/// one element, and that made two things wrong at once. The count the
+/// sweep prints is supposed to be a measurement of the corpus; over a
+/// literal it is a restatement of the literal, and a floor asserted
+/// against it cannot fail however broken everything else gets. Worse,
+/// a second standard dropped into this directory would have been
+/// **silently unexamined** — the corpus grows, the number does not,
+/// and the run stays green. That is this repository's most-repeated
+/// defect shape, and the fixture sweep that exists to guard against it
+/// is the last place it should have been reproduced.
+fn documents_in_fixture_dir() -> Vec<PathBuf> {
+    let dir = fixture_dir();
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("fixture dir must be readable at {}: {e}", dir.display()))
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().is_some_and(|ext| ext == "scxml"))
+        .collect();
+    // `read_dir` order is not stable across filesystems; sort so a
+    // failure list reads the same on every machine.
+    paths.sort();
+    paths
+}
+
 fn load_manifest() -> RequirementManifest {
     RequirementManifest::load(&manifest_path())
         .unwrap_or_else(|e| panic!("the committed ISO manifest must load: {e}"))
@@ -205,48 +231,91 @@ fn the_section_counts_cover_the_whole_subclause() {
 #[test]
 fn the_unclaimed_block_and_the_rowless_requirements_are_each_non_empty() {
     let manifest = load_manifest();
-    let documents = [document_path()];
+    let documents = documents_in_fixture_dir();
+    assert!(
+        !documents.is_empty(),
+        "no .scxml under {} — the scan resolved nothing, and every count \
+         below would then be a floor over an empty population, which is \
+         exactly the green this test exists to refuse",
+        fixture_dir().display(),
+    );
 
     let mut documents_examined = 0usize;
     let mut rows_examined = 0usize;
     let mut unclaimed_rows = Vec::new();
-    let mut without_a_row = Vec::new();
+    // ⚠ Per document, not summed. Rows and unclaimed rows are
+    // POPULATION facts and adding them across documents is meaningful;
+    // "requirements with no row" is a COVERAGE fact and adding those is
+    // not. RFC §5.2d says coverage is per variant and a single number
+    // over several documents is meaningless — a requirement one
+    // conversion implements and another does not would be counted as
+    // uncovered while being covered where it applies. Summed over two
+    // documents this printed 39 out of a 30-entry manifest, which is
+    // the shape of that mistake announcing itself.
+    let mut without_a_row: Vec<(String, Vec<String>)> = Vec::new();
 
     for path in &documents {
-        let model = parse_file(path);
+        let raw = std::fs::read_to_string(path).expect("discovered document is readable");
+        // The sweep classifies whatever it discovers against THIS
+        // manifest, so a document for another standard would be scored
+        // against a denominator that never mentions it and would read
+        // as a total failure to implement anything. A guard rather than
+        // a note in the directory, because a note is something someone
+        // has to remember: a conversion of another standard belongs in
+        // its own directory beside its own manifest.
+        assert!(
+            raw.contains(&manifest.doc_id),
+            "{} anchors at no `{}` provenance, so it is not a conversion \
+             of the standard this manifest declares and must not be \
+             swept against it",
+            path.display(),
+            manifest.doc_id,
+        );
+        let model = parse_str(&raw, &path.display().to_string());
         let rows = transition_table(&model);
         documents_examined += 1;
         rows_examined += rows.len();
         unclaimed_rows.extend(
             rows.iter()
                 .filter(|row| row.is_unclaimed())
-                .map(|row| row.node_path.clone()),
+                .map(|row| (row.from.clone(), row.event.clone())),
         );
         // The `shall` entries only. `requirements_without_a_row` answers
         // "is there a node carrying this id", which is the one question
         // a `shall_not` entry may not be asked — see its doc comment.
-        without_a_row.extend(requirements_without_a_row(
-            &rows,
-            manifest
-                .requirements
-                .iter()
-                .filter(|entry| entry.modality == Modality::Shall)
-                .map(|entry| entry.id.as_str()),
+        without_a_row.push((
+            path.file_name()
+                .expect("a discovered file has a name")
+                .to_string_lossy()
+                .into_owned(),
+            requirements_without_a_row(
+                &rows,
+                manifest
+                    .requirements
+                    .iter()
+                    .filter(|entry| entry.modality == Modality::Shall)
+                    .map(|entry| entry.id.as_str()),
+            ),
         ));
     }
 
     println!(
         "transition table over ISO 13400-2:2019 §12.6: examined \
          {rows_examined} row(s) across {documents_examined} document(s); \
-         {} unclaimed, {} declared `shall` requirement(s) with no row",
+         {} unclaimed",
         unclaimed_rows.len(),
-        without_a_row.len(),
     );
+    for (name, ids) in &without_a_row {
+        println!(
+            "  {name}: {} declared `shall` requirement(s) with no row",
+            ids.len(),
+        );
+    }
 
-    assert!(
-        documents_examined >= 1,
-        "examined {documents_examined} document(s) — the fixture path \
-         stopped resolving and this file measured nothing",
+    assert_eq!(
+        documents_examined,
+        documents.len(),
+        "the sweep examined fewer documents than the directory holds",
     );
     assert!(
         rows_examined >= 25,
@@ -259,24 +328,34 @@ fn the_unclaimed_block_and_the_rowless_requirements_are_each_non_empty() {
          never asked for — has no non-empty example on a real standard",
     );
     assert!(
-        !without_a_row.is_empty(),
-        "no declared requirement lacked a row: reading (b) has no \
-         non-empty example on a real standard",
+        without_a_row.iter().any(|(_, ids)| !ids.is_empty()),
+        "no declared requirement lacked a row in any document examined: \
+         reading (b) has no non-empty example on a real standard",
     );
 
     // Named, because a count alone would survive the two honest rows
     // being replaced by two accidental ones. These two are behaviour
     // the authoring pass added on its own initiative: §12.6 has no REQ
     // box for either.
-    let unclaimed: BTreeSet<&str> = unclaimed_rows.iter().map(String::as_str).collect();
-    for expected in [
-        "states.registered.transitions[4]",
-        "states.registered.on_exit_blocks[0][0]",
-    ] {
+    //
+    // ⚠ By SUBJECT — the owning state and the event — and deliberately
+    // not by `node_path`. The first spelling of this assertion named
+    // `states.registered.transitions[4]`, which is a position: adding
+    // any earlier transition to `registered` renumbers it, and the
+    // test would then fail for a reason that has nothing to do with
+    // what it is checking. An anchor that quotes a position dies on
+    // every reordering, and the failure it produces sends the reader
+    // to the wrong place.
+    let unclaimed: BTreeSet<(&str, &str)> = unclaimed_rows
+        .iter()
+        .map(|(from, event)| (from.as_str(), event.as_str()))
+        .collect();
+    for (from, event) in [("registered", "close_requested"), ("registered", "(exit)")] {
         assert!(
-            unclaimed.contains(expected),
-            "{expected} is behaviour no §12.6 requirement asks for and \
-             must sit in the `{NO_SOURCE}` block; got {unclaimed:?}",
+            unclaimed.contains(&(from, event)),
+            "`{event}` on `{from}` is behaviour no §12.6 requirement \
+             asks for and must sit in the `{NO_SOURCE}` block; got \
+             {unclaimed:?}",
         );
     }
 }
