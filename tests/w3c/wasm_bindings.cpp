@@ -106,8 +106,6 @@ EMSCRIPTEN_BINDINGS(interactive_test_runner) {
         // SCXML structure for visualization
         .function("getSCXMLStructure", &InteractiveTestRunner::getSCXMLStructure)
 
-        .function("getW3CReferences", &InteractiveTestRunner::getW3CReferences)
-
         .function("preloadFile", &InteractiveTestRunner::preloadFile)
         .function("setBasePath", &InteractiveTestRunner::setBasePath)
         .function("getInvokedChildren", &InteractiveTestRunner::getInvokedChildren)

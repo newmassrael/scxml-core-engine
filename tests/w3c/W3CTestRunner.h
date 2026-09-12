@@ -120,12 +120,6 @@ public:
  * Dependency Inversion: Depends on interfaces, not concrete implementations
  */
 class W3CTestRunner {
-public:
-    // Verification status tracking: tests that passed validate-test-execution
-    struct VerificationInfo {
-        std::string description;  // W3C SCXML spec reference from notes field
-    };
-
 private:
     std::unique_ptr<ITestConverter> converter_;
     std::unique_ptr<ITestMetadataParser> metadataParser_;
@@ -137,10 +131,6 @@ private:
     // Performance optimization: cache HTTP requirement checks to avoid redundant file I/O
     mutable std::unordered_map<std::string, bool> httpRequirementCache_;
     mutable std::mutex cacheMutex_;
-
-    // Verification status tracking
-    mutable std::unordered_map<std::string, VerificationInfo> verifiedTests_;
-    mutable std::mutex verificationMutex_;
 
     // Failed test log directory (empty = disabled)
     std::string failedLogDir_;

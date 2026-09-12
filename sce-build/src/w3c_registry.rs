@@ -42,6 +42,34 @@ pub const W3C_REGISTRY_RELATIVE_PATH: &str = "tests/w3c/conformance/fixtures.jso
 /// catalog never has to know it, and so adding a fixture is one line.
 pub const DEFAULT_HARNESS: &str = "simple";
 
+/// What a curation note must not contain: a statement of which spec
+/// section a fixture targets.
+///
+/// That answer has one home. `resources/<id>/metadata.txt` carries the
+/// upstream `specnum`, and `tools/mnemosyne-adoption/gen_verifies_catalog.py`
+/// derives it into `docs/spec/scxml/.atomic/verifies-catalog.json`, which
+/// the citation gate reads. Summaries restated it by hand, and measured on
+/// 2026-09-13 the copy contradicted `specnum` in 74 of 202 entries — not
+/// finer-grained, a different section — while nothing noticed, because
+/// nothing read the copy as data.
+///
+/// Matches `W3C 6.2`, `W3C SCXML 3.12.1`, `W3C SCXML C.2` and a
+/// `§scxml-` citation; leaves `W3C conformance`, `W3C C++` and `BasicHTTP`
+/// alone. A lettered label must carry a dotted part (`C.2`, `B.1`): every
+/// appendix label the registry ever held does, and a bare letter would
+/// read `W3C C++` as appendix C. The sibling JSON Schema carries the same
+/// pattern under `summary.not`, held to this constant by
+/// `the_schema_refuses_what_the_loader_refuses`.
+pub const SPEC_SECTION_STATEMENT: &str =
+    r"\bW3C(\s+SCXML)?\s+([0-9]+(\.[0-9]+)*|[A-H](\.[0-9]+)+)\b|§scxml-";
+
+/// The spec-section statement a summary carries, if it carries one.
+fn stated_spec_section(summary: &str) -> Option<String> {
+    let pattern = regex::Regex::new(SPEC_SECTION_STATEMENT)
+        .expect("SPEC_SECTION_STATEMENT is a valid regular expression");
+    pattern.find(summary).map(|m| m.as_str().to_string())
+}
+
 /// One registered upstream test.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -204,6 +232,15 @@ impl W3cRegistry {
                     fixture.id, fixture.harness
                 )));
             }
+            if let Some(stated) = stated_spec_section(&fixture.summary) {
+                return Err(invalid(format!(
+                    "fixture `{}` has a summary stating `{stated}`. The section a fixture \
+                     targets is `specnum` in resources/<id>/metadata.txt, derived into \
+                     docs/spec/scxml/.atomic/verifies-catalog.json; a copy in the summary \
+                     is a second answer to that question. Drop the section from the summary",
+                    fixture.id
+                )));
+            }
         }
         Ok(())
     }
@@ -363,6 +400,103 @@ mod tests {
         .expect("write");
         let err = W3cRegistry::load(&path).expect_err("a future version must be refused");
         assert!(err.to_string().contains("version 1 only"), "{err}");
+    }
+
+    /// A summary stating a spec section is refused, whichever of the
+    /// spellings the committed registry actually carried it in.
+    #[test]
+    fn a_summary_stating_a_spec_section_is_refused() {
+        for summary in [
+            "W3C SCXML 3.12.1: executable content executes in document order",
+            "invalid target raises error.execution (W3C SCXML 6.2)",
+            "BasicHTTP param encoding (W3C C.2 AOT)",
+            "executable content execution order (§scxml-D-executeTransitionContent)",
+        ] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("fixtures.json");
+            let body = serde_json::json!({
+                "version": 1,
+                "harnesses": {"simple": "x"},
+                "fixtures": [{"id": "158", "summary": summary}],
+            });
+            std::fs::write(&path, body.to_string()).expect("write");
+            let err = W3cRegistry::load(&path)
+                .expect_err("a summary stating a spec section must be refused");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("`158`") && msg.contains("verifies-catalog.json"),
+                "the diagnostic must name the fixture and the one place the answer \
+                 lives: {msg}",
+            );
+        }
+    }
+
+    /// The control for the case above: a note that mentions W3C, SCXML or a
+    /// dotted token without naming a section still loads. Without it the
+    /// refusal could fire on every summary, and the case above would pass
+    /// for that reason alone.
+    #[test]
+    fn a_summary_naming_no_section_loads() {
+        for summary in [
+            "W3C conformance, C++ Interpreter + AOT",
+            "W3C C++ harness",
+            "BasicHTTP event processor (optional)",
+            "SCXML Event I/O Processor location field as send target",
+            "_event.sendid field binding in error events; send idlocation attribute",
+        ] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("fixtures.json");
+            let body = serde_json::json!({
+                "version": 1,
+                "harnesses": {"simple": "x"},
+                "fixtures": [{"id": "158", "summary": summary}],
+            });
+            std::fs::write(&path, body.to_string()).expect("write");
+            W3cRegistry::load(&path)
+                .unwrap_or_else(|e| panic!("{summary:?} names no spec section and must load: {e}"));
+        }
+    }
+
+    /// The editor schema refuses the same statement the loader does.
+    ///
+    /// Two checks, because one is not enough: the pattern strings being
+    /// equal says nothing about whether the schema applies it, and a `not`
+    /// placed at the wrong depth would compile and refuse nothing.
+    #[test]
+    fn the_schema_refuses_what_the_loader_refuses() {
+        let schema_path = repo_root().join("tests/w3c/conformance/fixtures.schema.json");
+        let schema: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&schema_path).expect("read schema"))
+                .expect("schema is JSON");
+        assert_eq!(
+            schema
+                .pointer("/properties/fixtures/items/properties/summary/not/pattern")
+                .and_then(|p| p.as_str()),
+            Some(SPEC_SECTION_STATEMENT),
+            "fixtures.schema.json `summary.not.pattern` must equal \
+             w3c_registry::SPEC_SECTION_STATEMENT",
+        );
+        let validator = jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .compile(&schema)
+            .expect("schema compiles as draft-07");
+        let valid = serde_json::json!({
+            "version": 1,
+            "harnesses": {"simple": "x"},
+            "fixtures": [{"id": "158", "harness": "simple",
+                          "summary": "executable content executes in document order"}],
+        });
+        assert!(
+            validator.is_valid(&valid),
+            "the control instance must be valid, or the refusal below proves nothing",
+        );
+        let mut stating = valid.clone();
+        stating["fixtures"][0]["summary"] =
+            serde_json::json!("W3C SCXML 3.12.1: executable content executes in document order");
+        assert!(
+            !validator.is_valid(&stating),
+            "the schema accepted a summary stating a spec section",
+        );
     }
 
     /// The hand-rolled validation and the sibling JSON Schema describe

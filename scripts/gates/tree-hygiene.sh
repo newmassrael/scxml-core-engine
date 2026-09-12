@@ -104,9 +104,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # what it judges is whether `SCE_WIRE_CONTRACTS.md` names the spec-bearing
 # surfaces the tree holds — stores under `docs/spec/**` and
 # `docs/sce-ledger/**`, conformance registries under `tests/**`, the embed
-# manifest, a visualizer annotation file and the vendored W3C snapshot under
-# `tools/**`. rust-workspace-tests.yml's `paths:` filter names none of those
-# five roots, so the case the gate exists for — a NEW surface, in a directory
+# manifest and the vendored W3C snapshot under `tools/**`.
+# rust-workspace-tests.yml's `paths:` filter names none of those roots, so
+# the case the gate exists for — a NEW surface, in a directory
 # that does not exist today — is precisely the commit that would not start
 # the lane holding it. This workflow declares no filter, so it runs on
 # exactly those pushes.

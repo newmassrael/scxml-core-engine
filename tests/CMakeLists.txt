@@ -1263,15 +1263,6 @@ if(NOT EMSCRIPTEN)
 # - Interpreter Engine: Runtime SCXML parsing and execution
 # - AOT Engine: Ahead-of-Time compiled static state machines
 #
-# Test Validation:
-# - Use /validate-test-execution [test-number] to verify test correctness
-# - Validates both engines for false positives by comparing:
-#   1. Test intent (from resources/*/metadata.txt and *.txml)
-#   2. Interpreter execution logs (trace level)
-#   3. AOT execution logs (trace level)
-#   4. 1:1 behavioral comparison (state transitions, events, data)
-# - See .claude/commands/validate-test-execution.md for details
-#
 # Output directory for generated static W3C test code (used by both w3c_test_cli and w3c_static_test_cli)
 set(STATIC_W3C_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/w3c_static_generated")
 
@@ -1831,8 +1822,6 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${W3C_REGISTRY}"
 #
 # CUSTOM TESTS: For tests needing PASS_STATE override, custom timeouts, etc.,
 #   create tests/w3c/aot_tests/TestXXX.h manually. Auto-generation skips existing files.
-#
-# VALIDATE: Run /validate-test-execution [test-number] to verify correctness.
 #
 # FILES GENERATED:
 # - build/W3CAotTestList.cmake (auto-accumulated test list for WASM + tooling)

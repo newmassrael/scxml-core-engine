@@ -215,8 +215,8 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // `.atomic/` store, a `conformance/` registry, a vendored upstream
     // snapshot, a JSON claiming to catalogue something — then refuses any
     // that `SCE_WIRE_CONTRACTS.md` does not name. What it judges spans
-    // `docs/spec/**`, `docs/sce-ledger/**`, `tests/**`, `embed/`, `web/`
-    // and `tools/`, and no workflow's `paths:` filter names those roots;
+    // `docs/spec/**`, `docs/sce-ledger/**`, `tests/**`, `embed/` and
+    // `tools/`, and no workflow's `paths:` filter names those roots;
     // more to the point, the case it exists for is a surface in a
     // directory that does not exist today, which is by construction the
     // one a filter written over the current tree cannot enumerate. That

@@ -57,8 +57,14 @@ sce-codegen generate /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/ -l cpp
    visualizer's test list is rendered from it. Entries stay sorted by
    `id`.
    ```json
-   { "id": "XXX", "harness": "simple", "summary": "W3C SCXML X.Y: description" }
+   { "id": "XXX", "harness": "simple", "summary": "what the fixture exercises" }
    ```
+   ⚠ `summary` states **no spec section**. The section a fixture targets is
+   `specnum` in `resources/XXX/metadata.txt`, and
+   `tools/mnemosyne-adoption/gen_verifies_catalog.py` derives it into
+   `docs/spec/scxml/.atomic/verifies-catalog.json` — the one place that
+   answers it. Measured 2026-09-13, a hand-typed section contradicted
+   `specnum` in 74 of 202 summaries, so `W3cRegistry::load` refuses one.
    `harness` is `simple` (default), `scheduled` for a fixture that needs
    delayed `<send>` to fire, or `http` for one that sends over
    BasicHTTPEventProcessor. Omitting it means `simple`.

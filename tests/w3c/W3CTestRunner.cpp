@@ -652,7 +652,6 @@ std::unique_ptr<ITestReporter> TestComponentFactory::createXMLReporter(const std
                             << "time=\"" << (report.executionContext.executionTime.count() / 1000.0) << "\" "
                             << "type=\"" << report.testType << "\" "
                             << "result=\"" << testResultToString(report.validationResult.finalResult) << "\" "
-                            << "verified=\"" << (report.verified ? "true" : "false") << "\" "
                             << "description=\"" << escapeXml(report.validationResult.reason) << "\"";
 
                     if (report.validationResult.finalResult != TestResult::PASS) {
@@ -882,103 +881,6 @@ std::unique_ptr<TestResources> TestComponentFactory::createResources() {
 
 // W3CTestRunner implementation
 /**
- * @brief Load verification status from w3c_test_verification.json
- *
- * Loads the list of verified tests (tests that passed validate-test-execution
- * with LOW RISK assessment). This information is used to mark tests with
- * a verified badge in XML/HTML reports.
- */
-static std::unordered_map<std::string, W3CTestRunner::VerificationInfo> loadVerificationStatus() {
-    std::unordered_map<std::string, W3CTestRunner::VerificationInfo> verified;
-
-    // Look for verification file in tests/w3c directory
-    std::vector<std::filesystem::path> searchPaths = {
-        std::filesystem::path(__FILE__).parent_path() / "w3c_test_verification.json",
-        "tests/w3c/w3c_test_verification.json", "w3c_test_verification.json"};
-
-    for (const auto &path : searchPaths) {
-        if (std::filesystem::exists(path)) {
-            std::ifstream file(path);
-            if (file.is_open()) {
-                std::string line;
-                bool inVerifiedTests = false;
-                int braceDepth = 0;  // Track brace nesting depth
-                std::string currentTestId;
-                std::string currentNotes;
-
-                while (std::getline(file, line)) {
-                    // Simple JSON parsing for "verified_tests" section
-                    if (line.find("\"verified_tests\"") != std::string::npos) {
-                        inVerifiedTests = true;
-                        // Don't continue - need to count the opening brace on this line
-                    }
-
-                    if (inVerifiedTests) {
-                        // Count braces to track nesting depth
-                        for (char c : line) {
-                            if (c == '{') {
-                                braceDepth++;
-                            } else if (c == '}') {
-                                braceDepth--;
-                            }
-                        }
-
-                        // Look for test number in quotes (e.g., "144": {)
-                        // Skip the "verified_tests" line itself
-                        if (line.find("\"verified_tests\"") == std::string::npos) {
-                            size_t quoteStart = line.find('"');
-                            if (quoteStart != std::string::npos) {
-                                size_t quoteEnd = line.find('"', quoteStart + 1);
-                                if (quoteEnd != std::string::npos) {
-                                    std::string key = line.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-
-                                    // Check if it's a test ID (number)
-                                    if (!key.empty() && std::all_of(key.begin(), key.end(), ::isdigit)) {
-                                        currentTestId = key;
-                                        currentNotes.clear();
-                                        SCE_LOG_DEBUG("Found verification entry for test {}", currentTestId);
-                                    }
-                                    // Check if it's a notes field
-                                    else if (key == "notes" && !currentTestId.empty()) {
-                                        // Extract notes value (between quotes after colon)
-                                        size_t colonPos = line.find(':', quoteEnd);
-                                        if (colonPos != std::string::npos) {
-                                            size_t notesStart = line.find('"', colonPos);
-                                            if (notesStart != std::string::npos) {
-                                                size_t notesEnd = line.find('"', notesStart + 1);
-                                                if (notesEnd != std::string::npos) {
-                                                    currentNotes =
-                                                        line.substr(notesStart + 1, notesEnd - notesStart - 1);
-                                                    verified[currentTestId] = {currentNotes};
-                                                    SCE_LOG_DEBUG("Loaded verification: Test {} - {}", currentTestId,
-                                                                  currentNotes);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // End of verified_tests section when braceDepth returns to 0
-                        if (braceDepth == 0) {
-                            break;
-                        }
-                    }
-                }
-
-                file.close();
-                SCE_LOG_INFO("Loaded {} verified tests from {}", verified.size(), path.string());
-                return verified;
-            }
-        }
-    }
-
-    SCE_LOG_DEBUG("No verification file found, no tests marked as verified");
-    return verified;
-}
-
-/**
  * @brief Save captured debug logs to a file for a failed test
  *
  * @param logDir Directory to save the log file
@@ -1034,10 +936,7 @@ W3CTestRunner::W3CTestRunner(std::unique_ptr<ITestConverter> converter,
                              std::unique_ptr<ITestExecutor> executor, std::unique_ptr<ITestResultValidator> validator,
                              std::unique_ptr<ITestSuite> testSuite, std::unique_ptr<ITestReporter> reporter)
     : converter_(std::move(converter)), metadataParser_(std::move(metadataParser)), executor_(std::move(executor)),
-      validator_(std::move(validator)), testSuite_(std::move(testSuite)), reporter_(std::move(reporter)) {
-    // Load verification status on construction
-    verifiedTests_ = loadVerificationStatus();
-}
+      validator_(std::move(validator)), testSuite_(std::move(testSuite)), reporter_(std::move(reporter)) {}
 
 TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
     auto testSuiteInfo = testSuite_->getInfo();
@@ -1340,16 +1239,6 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
 
         SCE_LOG_DEBUG("W3C Single Test: Test {} completed with result: {}", report.testId,
                       static_cast<int>(report.validationResult.finalResult));
-
-        // Check if test is verified (passed validate-test-execution with LOW RISK)
-        {
-            std::lock_guard<std::mutex> lock(verificationMutex_);
-            auto it = verifiedTests_.find(report.testId);
-            if (it != verifiedTests_.end()) {
-                report.verified = true;
-                SCE_LOG_DEBUG("Test {} is verified (passed validate-test-execution)", report.testId);
-            }
-        }
 
         // Save captured logs on failure
         if (!failedLogDir_.empty()) {
@@ -1965,16 +1854,6 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         SCE_LOG_DEBUG("W3C Single Test (HTTP): Test {} completed with result: {}", report.testId,
                       static_cast<int>(report.validationResult.finalResult));
 
-        // Check if test is verified (passed validate-test-execution with LOW RISK)
-        {
-            std::lock_guard<std::mutex> lock(verificationMutex_);
-            auto it = verifiedTests_.find(report.testId);
-            if (it != verifiedTests_.end()) {
-                report.verified = true;
-                SCE_LOG_DEBUG("Test {} is verified (passed validate-test-execution)", report.testId);
-            }
-        }
-
         return report;
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("W3C Single Test (HTTP): Exception in test {}: {}", testDirectory, e.what());
@@ -2005,17 +1884,6 @@ TestReport W3CTestRunner::runAotTest(int testId) {
                 // Mark as AOT engine but using Interpreter fallback
                 report.engineType = "aot";
                 report.testType = "interpreter_fallback";
-
-                // Check if test is verified (passed validate-test-execution with LOW RISK)
-                {
-                    std::lock_guard<std::mutex> lock(verificationMutex_);
-                    auto it = verifiedTests_.find(report.testId);
-                    if (it != verifiedTests_.end()) {
-                        report.verified = true;
-                        SCE_LOG_DEBUG("AOT Test {} (Interpreter fallback) is verified (passed validate-test-execution)",
-                                      report.testId);
-                    }
-                }
 
                 return report;
             }
@@ -2069,16 +1937,6 @@ TestReport W3CTestRunner::runAotTest(int testId) {
 
             SCE_LOG_INFO("AOT Test {} ({}): {} in {}ms", testId, testDescription, testPassed ? "PASS" : "FAIL",
                          duration.count());
-
-            // Check if test is verified (passed validate-test-execution with LOW RISK)
-            {
-                std::lock_guard<std::mutex> lock(verificationMutex_);
-                auto it = verifiedTests_.find(report.testId);
-                if (it != verifiedTests_.end()) {
-                    report.verified = true;
-                    SCE_LOG_DEBUG("AOT Test {} is verified (passed validate-test-execution)", report.testId);
-                }
-            }
 
             // Save captured logs on failure
             if (!failedLogDir_.empty()) {
@@ -2157,17 +2015,6 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
                 report.engineType = "aot";
                 report.testType = "interpreter_fallback";
 
-                // Check if test is verified (passed validate-test-execution with LOW RISK)
-                {
-                    std::lock_guard<std::mutex> lock(verificationMutex_);
-                    auto it = verifiedTests_.find(report.testId);
-                    if (it != verifiedTests_.end()) {
-                        report.verified = true;
-                        SCE_LOG_DEBUG("AOT Test {} (Interpreter fallback) is verified (passed validate-test-execution)",
-                                      report.testId);
-                    }
-                }
-
                 return report;
             }
         }
@@ -2220,16 +2067,6 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
 
             SCE_LOG_INFO("AOT Test {} ({}): {} in {}ms", testId, testDescription, testPassed ? "PASS" : "FAIL",
                          duration.count());
-
-            // Check if test is verified (passed validate-test-execution with LOW RISK)
-            {
-                std::lock_guard<std::mutex> lock(verificationMutex_);
-                auto it = verifiedTests_.find(report.testId);
-                if (it != verifiedTests_.end()) {
-                    report.verified = true;
-                    SCE_LOG_DEBUG("AOT Test {} is verified (passed validate-test-execution)", report.testId);
-                }
-            }
 
             // Save captured logs on failure
             if (!failedLogDir_.empty()) {
@@ -2373,13 +2210,6 @@ TestReport W3CTestRunner::runManualTest178(const std::string &testDirectory, Tes
             report.validationResult = ValidationResult(
                 false, TestResult::FAIL,
                 "Timeout: StateMachine did not complete within 5000ms (current state: " + finalState + ")");
-        }
-
-        // Check if test is verified (passed validate-test-execution)
-        auto it = verifiedTests_.find(report.testId);
-        if (it != verifiedTests_.end()) {
-            report.verified = true;
-            SCE_LOG_DEBUG("Test {} is verified (passed validate-test-execution)", report.testId);
         }
 
         return report;
