@@ -189,6 +189,9 @@ pub mod template_registry;
 /// verification harness compiles with. Searches beyond `PATH` because a
 /// tool it cannot find is a check that silently does not run.
 pub mod toolchain;
+/// The transition table, which is also the trace table —
+/// Requirement-closure RFC ②.
+pub mod transition_table;
 /// `<sce:unresolved>` placeholder
 /// detection — strict-mode build gate + NDJSON report. Drives
 /// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
