@@ -1154,26 +1154,26 @@ unchanged.
 
 Tokens are opaque to SCE (no shape enforcement — IR generators
 own the semantic layer). Duplicates on a single node fail at
-parse time with `validation/duplicate-requirement-id`.
-
-⚠ "Opaque" is checked, not merely promised:
-`sce-build/tests/requirement_id_opacity.rs` drives ten id
-spellings through the parser — a leading digit, a bare number,
-a slash, a hash, a colon — and fails if any is refused or
-rewritten. The sentence above was unenforced until that file
-existed, and the tree contradicted it: a `RequirementId::validate`
-enforcing a letter-or-underscore first character sat in
-`provenance.rs` with no production caller. It is deleted.
-Re-adding shape enforcement means changing this paragraph first,
-and note what it would cost — ISO 13400-2 numbers its
-requirements `3.DoIP-152`, which a leading-character rule
-refuses. Block
+parse time with `validation/duplicate-requirement-id`. Block
 annotations on `<onentry>` / `<onexit>` inherit onto every
 action inside the block, appended after any per-action ids.
 `sce-codegen requirements <file>` emits one NDJSON record per
 annotated node for downstream req-coverage tooling — annotated
 by `sce:req` or by `sce:provenance`, since the two are
 orthogonal and either alone is worth reporting.
+
+⚠ "Opaque" is checked, not merely promised:
+`sce-build/tests/requirement_id_opacity.rs` drives ten id
+spellings through the parser — a leading digit, a bare number,
+a slash, a hash, a colon — and fails if any is refused or
+rewritten. That sentence was unenforced until the file existed,
+and the tree contradicted it: a `RequirementId::validate`
+enforcing a letter-or-underscore first character sat in
+`provenance.rs` with no production caller. It is deleted.
+Re-adding shape enforcement means changing this paragraph
+first, and note what it would cost — ISO 13400-2 numbers its
+requirements `3.DoIP-152`, which a leading-character rule
+refuses.
 
 **`sce:provenance`** — spec-document anchors.
 
