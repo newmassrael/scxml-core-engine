@@ -100,15 +100,22 @@ fn document_path() -> PathBuf {
 /// than listed**.
 ///
 /// ⚠ This is a function because the list it replaced was a literal of
-/// one element, and that made two things wrong at once. The count the
-/// sweep prints is supposed to be a measurement of the corpus; over a
-/// literal it is a restatement of the literal, and a floor asserted
-/// against it cannot fail however broken everything else gets. Worse,
-/// a second standard dropped into this directory would have been
-/// **silently unexamined** — the corpus grows, the number does not,
-/// and the run stays green. That is this repository's most-repeated
-/// defect shape, and the fixture sweep that exists to guard against it
-/// is the last place it should have been reproduced.
+/// one element, and the defect that produced is worth stating exactly
+/// rather than dramatically — an overstated reason is the kind that
+/// gets discovered to be false later and takes the real one down with
+/// it.
+///
+/// The floor over a literal was **not** unable to fail: delete the
+/// element and the count goes to zero and the assertion fires. What it
+/// could not do is rise. A second conversion dropped into this
+/// directory would have been **silently unexamined** — the corpus
+/// grows, the number does not, and the run stays green while measuring
+/// less than it claims. Shrinkage was caught; growth was not, and
+/// growth is the direction a fixture corpus actually moves.
+///
+/// Discovering the directory makes the printed count a measurement in
+/// both directions, which is the property the sweep was supposed to
+/// have.
 fn documents_in_fixture_dir() -> Vec<PathBuf> {
     let dir = fixture_dir();
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
