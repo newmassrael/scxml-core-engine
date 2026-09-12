@@ -257,8 +257,33 @@ their `kind` discriminant rather than by a list kept in the test, and
 proves its own walk by first finding the provenance the statechart
 branch does carry.
 
+### The check that holds this clause
+
+> For any document that produced an anchor index, every diagnostic
+> whose location lies inside an anchored region reaches the wire with a
+> non-empty `spec_provenance`.
+
+`forge::diagnostic::tests::every_diagnostic_inside_an_anchored_region_carries_it`
+asserts exactly that, and it is the **primary** guard for §2.1.2 — the
+per-code roster below is a coverage report beside it, not the contract.
+The difference matters. A roster answers "has this code been shown to
+carry", which is a question about the codes someone thought to list,
+fed by a hand-maintained list of pipeline stages; a stage added later
+that raises on an anchored node and forgets to resolve breaks the
+clause while every roster entry stays as true as it was. The invariant
+takes no view on which code appeared or which stage produced it:
+whatever came out, if it points inside a region the document anchored,
+it carries that anchor. Removing any one resolver reds it, naming the
+code and the row.
+
+Parse failures sit outside it structurally rather than by exemption:
+the index is built at the end of a successful parse, so a document that
+does not parse produces no anchored region for the premise to be true
+of. That is the same split RFC §4.1 states from the other side, and it
+is why the four mid-parse sites thread by hand.
+
 ⚠ **The contract is stated in full; the producer side reaches it
-incrementally.** The roster that tracks that is
+incrementally.** The coverage report that tracks that is
 `forge::diagnostic::tests::anchor_carriage`, and as of Item 8 Atomic 8
 it is keyed on **(code, pipeline)** rather than on the code alone.
 That key is the substantive part. The contract's answer for a code
