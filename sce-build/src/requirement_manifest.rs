@@ -17,6 +17,20 @@
 //! and is the reason this module is worth building: a document can
 //! only be measured against a denominator it did not write.
 //!
+//! ⚠⚠ **Those four are the `shall` column, and saying so is not a
+//! caveat — it is the correction a real standard forced.** All four
+//! ask one question, *is there a node carrying this id*, and that
+//! question is evidence only for a requirement met by something
+//! **existing**. A requirement met by something being **absent** —
+//! ISO 13400-2:2019 `3.DoIP-131`, "shall not be routed before the
+//! connection is Registered [Routing Active]" — has no honest answer
+//! among them, and the tool answered anyway: it read `implemented`
+//! from an annotation on the one handler that *was* allowed, and went
+//! on reading `implemented` after a second, forbidden handler was
+//! added elsewhere. See [`Modality`], which is how an entry now says
+//! which question may be asked of it, and [`Outcome::NeedsScenario`],
+//! which is the answer when none of the four may.
+//!
 //! ⚠ There is a fifth case no id comparison can see — design elements
 //! carrying no `sce:req` at all, which is behaviour the specification
 //! never asked for. That one needs the transition table (RFC §6.2),
@@ -81,6 +95,54 @@ pub struct ManifestSection {
     pub title: String,
 }
 
+/// What kind of requirement an entry is, which decides **what
+/// question coverage is allowed to ask of it**.
+///
+/// The rule underneath is one line:
+///
+/// > Presence can be labelled. Absence can only be tested.
+///
+/// A `shall` is met by a design element being *there*, and a node
+/// carrying `sce:req` is evidence of exactly that. A `shall_not` is
+/// met by a transition being *absent*, and absence cannot carry an
+/// annotation — so no annotation is evidence for it, and the
+/// comparison in [`classify`] must not treat one as if it were.
+///
+/// ⚠⚠ This enum exists because of a measurement, not a prediction.
+/// ISO 13400-2:2019 §12.6.1.3 `3.DoIP-131` forbids routing a
+/// diagnostic message before the connection reaches
+/// "Registered [Routing Active]". The statechart satisfies it by
+/// handling `diagnostic_message` only inside `routing_active` — so
+/// the natural annotation goes on that handler, and it read
+/// `implemented`. Adding a second `diagnostic_message` handler to
+/// `initialized` **violates the requirement outright** and the
+/// classification still read `implemented`, because the annotated
+/// node was still there. Coverage was green across a document that
+/// does the opposite of what the standard says.
+///
+/// ⚠ Only the two modalities the classifier actually routes are
+/// spelled here. `shall_within` and `may` are named by the
+/// Requirement-closure RFC §5.2c/§5.2d and are deliberately absent:
+/// measured over ISO 13400-2:2019 §12.6, that section contains
+/// neither — its timing requirements are *triggers* ("if the timeout
+/// elapsed, close the socket"), not deadlines on the entity's own
+/// response, and it carries no `may` requirement box at all. A
+/// variant no manifest can populate and no branch can route is a
+/// declared field with no check, which is the shape this repository
+/// keeps finding underneath a false green.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Modality {
+    /// Met by something existing. Traced through the `sce:req`
+    /// annotation, which is what the four outcomes below measure.
+    #[default]
+    Shall,
+    /// Met by something being absent. Traceable only through a
+    /// scenario that asserts the thing does not occur — the RFC's
+    /// third trace column, which does not exist yet.
+    ShallNot,
+}
+
 /// One requirement, by coordinate.
 ///
 /// ⚠ `deny_unknown_fields` is load-bearing, not tidiness. It is what
@@ -94,6 +156,11 @@ pub struct RequirementEntry {
     /// spellings that normalise together are two requirements to the
     /// document that issued them.
     pub id: String,
+    /// Which question coverage may ask of this entry. Defaults to
+    /// [`Modality::Shall`], so a manifest written before this field
+    /// existed keeps the meaning it had.
+    #[serde(default)]
+    pub modality: Modality,
     /// Section of the source document. Matches `sections[].id` so the
     /// per-section counts of RFC §5.2a can be computed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -217,7 +284,16 @@ impl RequirementManifest {
     }
 }
 
-/// Which of the four buckets a requirement landed in.
+/// Which bucket a requirement landed in.
+///
+/// The first four are the set comparison a `shall` admits. The fifth
+/// is not a refinement of them but the admission that they do not
+/// apply: for a [`Modality::ShallNot`] entry, *every* one of the four
+/// would be a false answer. `implemented` would certify a prohibition
+/// from the presence of a node, which is what let a violating document
+/// score green; `missing` would report a correctly-implemented
+/// prohibition as silently dropped, which is how a risk column fills
+/// with false alarms until people learn to ignore it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Outcome {
@@ -225,6 +301,16 @@ pub enum Outcome {
     Unresolved,
     Missing,
     Dangling,
+    /// The annotation cannot decide this requirement, and nothing
+    /// else here can either.
+    ///
+    /// Not a severity between `implemented` and `missing` — a
+    /// different axis. It says the only column that could carry this
+    /// requirement is the third one (a scenario asserting the thing
+    /// does not occur, and passing), and that column does not exist
+    /// yet. When it does, a `shall_not` with a passing scenario
+    /// becomes `implemented` and this bucket empties from the top.
+    NeedsScenario,
 }
 
 impl Outcome {
@@ -234,6 +320,7 @@ impl Outcome {
             Outcome::Unresolved => "unresolved",
             Outcome::Missing => "missing",
             Outcome::Dangling => "dangling",
+            Outcome::NeedsScenario => "needs-scenario",
         }
     }
 }
@@ -366,16 +453,35 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
 
     let mut outcomes = Vec::new();
     for entry in &manifest.requirements {
-        let (outcome, node_paths) = match cited.get(entry.id.as_str()) {
-            None => (Outcome::Missing, Vec::new()),
-            Some((paths, all_unresolved)) => (
-                if *all_unresolved {
-                    Outcome::Unresolved
-                } else {
-                    Outcome::Implemented
-                },
-                paths.clone(),
-            ),
+        let citation = cited.get(entry.id.as_str());
+        // Carried for EVERY modality, including the one whose verdict
+        // does not depend on it. For a `shall_not` the citation is not
+        // evidence, but it is still the author saying where they
+        // believe the prohibition is enforced — which is the first
+        // place a reviewer, or the scenario that finally settles it,
+        // has to look. Dropping it would make the honest verdict less
+        // actionable than the false one it replaced.
+        let node_paths = citation.map_or_else(Vec::new, |(paths, _)| paths.clone());
+        let outcome = match entry.modality {
+            // Presence can be labelled: the annotation is the evidence,
+            // and its absence is the finding.
+            Modality::Shall => match citation {
+                None => Outcome::Missing,
+                Some((_, all_unresolved)) => {
+                    if *all_unresolved {
+                        Outcome::Unresolved
+                    } else {
+                        Outcome::Implemented
+                    }
+                }
+            },
+            // Absence can only be tested. Nothing about which nodes
+            // carry this id can settle a prohibition — a document that
+            // keeps the annotated node AND adds the forbidden
+            // behaviour beside it is more annotated, not more
+            // compliant. So the verdict deliberately does not read the
+            // citation, and is the same whether or not one exists.
+            Modality::ShallNot => Outcome::NeedsScenario,
         };
         outcomes.push(RequirementOutcome {
             id: entry.id.clone(),

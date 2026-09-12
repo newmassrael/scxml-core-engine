@@ -188,6 +188,17 @@ name = "transition_table_closure"
 path = "tests/transition_table_closure.rs"
 required-features = ["cli"]
 
+# Requirement-closure RFC Atomic D — A and B over ISO 13400-2:2019
+# §12.6 rather than over fixtures their own author wrote. Spawns
+# sce-codegen for the same reason the two targets above do, and
+# carries the same hazard: without this declaration it builds against
+# whatever sce-codegen is lying in target/, and a stale binary would
+# report green for an outcome it cannot emit.
+[[test]]
+name = "iso13400_requirement_closure"
+path = "tests/iso13400_requirement_closure.rs"
+required-features = ["cli"]
+
 # W3C SCXML 4.9 `<log>` on C11 without a script engine. Compiles the
 # generated translation unit under the same `-Werror` the repo builds
 # C11 with; the `<stdio.h>` include used to be gated on the scripting
