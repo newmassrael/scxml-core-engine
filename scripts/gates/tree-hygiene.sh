@@ -89,6 +89,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # is what keeps that census honest, so it is precisely a NEW document — the
 # thing a `paths:` filter over today's trees cannot name — that this gate
 # must not miss.
+#
+# `a_standard_named_in_code_is_one_sce_implements` lexes every tracked
+# source file in six languages and refuses a standards designation that
+# reaches a position which RUNS, while leaving the same name in a comment
+# alone — a citation is the evidence a rule was derived from. Its reason for
+# being here is the registry's own: the case it exists for is a
+# specification SCE has never seen, named for the first time in a file that
+# does not exist today, so a filter written over the tree as it stands names
+# the answers and not the case.
+#
 # `ffi` is here so that SOMETHING in the Rust lanes compiles the C
 # surface. It is off by default and `clippy-check.yml` runs `--workspace
 # --all-targets` without `--all-features`, so without this no Rust lane
@@ -97,6 +107,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # breakage found there is found by a 30-minute lane; found here it is
 # found in seconds.
 cargo test -p sce-build --features cli,ffi \
+    --test a_standard_named_in_code_is_one_sce_implements \
     --test ffi_header_parity \
     --test roadmap_marker_gate \
     --test scope_terminology \
