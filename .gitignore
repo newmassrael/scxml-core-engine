@@ -147,10 +147,18 @@ claudedocs
 # what counts as progress here — is an answer this tree owes rather than one
 # the driver's template should make on its behalf. Listed rather than
 # force-added so `git add .claude/` keeps working and the intent is readable.
+#
+# The two files beside it are what one of its clauses NAMES. `successor_check`
+# points at `sce_admits.sh`, which reads `sce_checkpoints.md` — the register of
+# checkpoints this tree admits as next work. A document that names a program
+# the tree does not carry is a clause nobody can run, so the three are tracked
+# together or not at all.
 .claude/*
 !.claude/hooks/
 !.claude/hooks/**
 !.claude/sce_loop.scxml
+!.claude/sce_admits.sh
+!.claude/sce_checkpoints.md
 
 __pycache__/
 archive/
