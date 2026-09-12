@@ -259,6 +259,172 @@ fn the_command_reports_a_transitions_own_action() {
     println!("HOLE-3: the command reports the transition's own action");
 }
 
+/// ⭐⭐⭐ What generated HOLE-3, guarded — not the instance it took.
+///
+/// The defect was never "transition actions were forgotten". It was
+/// that **two enumerations of where annotations live** existed with
+/// nothing tying them together: the parser (and every codegen
+/// template) knew about a transition's own actions, and [`walk_nodes`]
+/// did not. Nothing compared the two, so they drifted, and the drift
+/// was found by accident four months later.
+///
+/// This sweep removes the need for anyone to notice. It reads every
+/// `sce:req` a document in the working tree *declares*, textually and
+/// without going through the walk, and requires the walk to yield each
+/// one. A site the parser learns about and the walk does not now fails
+/// here, on the day it is added, whatever site it is.
+///
+/// ⚠ The working tree, not `git ls-files` — so generated trees are
+/// swept too and the document count differs between machines (1409
+/// locally, 2556 on the build host, which carries generated output).
+/// That is deliberate: for a reachability check a superset is the safe
+/// direction, and the annotation-bearing set was identical on both.
+///
+/// ⚠ The document is the independent source on purpose. Comparing the
+/// walk against another hand-kept list would be a third enumeration to
+/// drift; comparing it against the text cannot drift, because the text
+/// is what an author wrote.
+#[test]
+fn the_walk_reaches_every_annotation_any_document_declares() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build has a parent")
+        .to_path_buf();
+
+    let mut documents = Vec::new();
+    collect_scxml(&root, &mut documents);
+    assert!(
+        documents.len() >= 400,
+        "found only {} .scxml under {}; the scan resolved far less than \
+         the tree holds and would pass while checking almost nothing",
+        documents.len(),
+        root.display(),
+    );
+
+    let mut files_with_ids = 0usize;
+    let mut declared_total = 0usize;
+    let mut unreachable: Vec<String> = Vec::new();
+    let mut unparsable = 0usize;
+
+    for path in &documents {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let declared = declared_req_ids(&text);
+        if declared.is_empty() {
+            continue;
+        }
+        files_with_ids += 1;
+        declared_total += declared.len();
+
+        let Ok(model) = SCXMLParser::new().parse_string(&text, "sweep") else {
+            // A document the parser refuses carries no annotations the
+            // walk could reach; counted, not silently dropped.
+            unparsable += 1;
+            continue;
+        };
+        let reached: std::collections::BTreeSet<String> = report_lines(&model)
+            .iter()
+            .filter_map(|r| r["requirement_ids"].as_array().cloned())
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+        for id in declared {
+            if !reached.contains(&id) {
+                unreachable.push(format!("{}: {id}", path.display()));
+            }
+        }
+    }
+
+    println!(
+        "HOLE-3 sweep: {} document(s), {files_with_ids} carrying ids, \
+         {declared_total} declared id(s), {unparsable} unparsable",
+        documents.len(),
+    );
+
+    // ⚠ 26, and the number's basis matters more than the number. An
+    // earlier floor here said 30, taken from a measurement of 32 —
+    // but that 32 counted annotated ELEMENTS, and this counts distinct
+    // IDS summed per file. Three documents carry annotations: 6, 1 and
+    // 19 ids across 6, 1 and 25 elements. Reusing a figure measured
+    // for a neighbouring quantity is how a floor ends up right-looking
+    // and wrong, so this one names what it counts.
+    assert!(
+        declared_total >= 25,
+        "only {declared_total} declared id(s) across the tree; 26 were \
+         measured when this was written, so a number below that means the \
+         scan stopped matching rather than that the tree got cleaner",
+    );
+    assert!(
+        unreachable.is_empty(),
+        "the walk does not reach {} annotation(s) that documents declare. \
+         Each is an `sce:req` an author wrote, the parser stored and every \
+         backend emits, which no requirement-closure reading can see — the \
+         shape HOLE-3 was:\n  {}",
+        unreachable.len(),
+        unreachable.join("\n  "),
+    );
+}
+
+/// Every `.scxml` under `dir`, skipping build and VCS directories.
+fn collect_scxml(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if path.is_dir() {
+            if name == "target" || name == ".git" || name == "node_modules" {
+                continue;
+            }
+            collect_scxml(&path, out);
+        } else if path.extension().is_some_and(|e| e == "scxml") {
+            out.push(path);
+        }
+    }
+}
+
+/// The `sce:req` tokens a document's TEXT declares, read without the
+/// parser and without the walk.
+///
+/// XML comments are stripped first: several fixtures discuss `sce:req`
+/// in their leading comment, and counting prose as a declaration would
+/// make this sweep fail for a reason that has nothing to do with the
+/// walk.
+fn declared_req_ids(text: &str) -> std::collections::BTreeSet<String> {
+    let mut body = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("<!--") {
+        body.push_str(&rest[..start]);
+        match rest[start..].find("-->") {
+            Some(end) => rest = &rest[start + end + 3..],
+            None => return scan_req_attrs(&body),
+        }
+    }
+    body.push_str(rest);
+    scan_req_attrs(&body)
+}
+
+fn scan_req_attrs(body: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for (idx, _) in body.match_indices("sce:req=") {
+        let rest = &body[idx + "sce:req=".len()..];
+        let quote = match rest.chars().next() {
+            Some(q @ ('"' | '\'')) => q,
+            _ => continue,
+        };
+        let Some(end) = rest[1..].find(quote) else {
+            continue;
+        };
+        for token in rest[1..1 + end].split_whitespace() {
+            out.insert(token.to_string());
+        }
+    }
+    out
+}
+
 /// The sweep: what the walk now reaches, counted and floored.
 ///
 /// ⚠ Without the floor this file would pass over a fixture that had
