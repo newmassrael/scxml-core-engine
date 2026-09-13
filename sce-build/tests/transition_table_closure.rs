@@ -29,7 +29,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use sce_build::parser::SCXMLParser;
-use sce_build::requirement_manifest::{classify, Modality, Outcome, RequirementManifest};
+use sce_build::requirement_manifest::{classify, Outcome, RequirementManifest};
 use sce_build::transition_table::{
     requirements_without_a_row, transition_table, EMPTY_CELL, NO_SOURCE,
 };
@@ -289,9 +289,10 @@ fn the_sweep_reports_what_it_examined_and_asserts_a_floor() {
         unclaimed += rows.iter().filter(|row| row.is_unclaimed()).count();
         if let Some(raw) = manifest_json {
             let declared = manifest(raw, label);
-            // `shall` entries only — "no row means missing" is the
-            // presence question, and a `shall_not` entry is exactly the
-            // one it may not be asked of. Both fixtures here are
+            // Entries the presence question may be asked of only — "no
+            // row means missing" is that question, and a `shall_not` or
+            // a requirement disposed elsewhere is exactly what it may
+            // not be asked of. Both fixtures here are implemented
             // `shall`, so the filter changes nothing today; it is
             // written out because the call is the contract's example
             // and an example that drops the filter teaches the wrong
@@ -301,7 +302,7 @@ fn the_sweep_reports_what_it_examined_and_asserts_a_floor() {
                 declared
                     .requirements
                     .iter()
-                    .filter(|entry| entry.modality == Modality::Shall)
+                    .filter(|entry| entry.is_settled_by_annotation())
                     .map(|entry| entry.id.as_str()),
             )
             .len();

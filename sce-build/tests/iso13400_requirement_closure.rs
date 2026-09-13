@@ -320,9 +320,10 @@ fn the_unclaimed_block_and_the_rowless_requirements_are_each_non_empty() {
                 .filter(|row| row.is_unclaimed())
                 .map(|row| (row.from.clone(), row.event.clone())),
         );
-        // The `shall` entries only. `requirements_without_a_row` answers
-        // "is there a node carrying this id", which is the one question
-        // a `shall_not` entry may not be asked — see its doc comment.
+        // The entries a node can settle only. `requirements_without_a_row`
+        // answers "is there a node carrying this id", which a
+        // `shall_not` entry and a requirement disposed elsewhere may not
+        // be asked — see its doc comment.
         without_a_row.push((
             path.file_name()
                 .expect("a discovered file has a name")
@@ -333,7 +334,7 @@ fn the_unclaimed_block_and_the_rowless_requirements_are_each_non_empty() {
                 manifest
                     .requirements
                     .iter()
-                    .filter(|entry| entry.modality == Modality::Shall)
+                    .filter(|entry| entry.is_settled_by_annotation())
                     .map(|entry| entry.id.as_str()),
             ),
         ));
@@ -504,7 +505,7 @@ fn table_derived_missing_agrees_with_the_classifier() {
         manifest
             .requirements
             .iter()
-            .filter(|entry| entry.modality == Modality::Shall)
+            .filter(|entry| entry.is_settled_by_annotation())
             .map(|entry| entry.id.as_str()),
     )
     .into_iter()

@@ -37,6 +37,20 @@
 //! not this file, and is deliberately absent here rather than
 //! half-answered.
 //!
+//! ⚠⚠ **Every question above assumes the requirement is satisfied
+//! HERE.** A layered standard satisfies most of its requirements in
+//! another document, and asking *is there a node carrying this id* of
+//! those reports them `missing` — true of this document and useless to
+//! a reader. [`Disposition`] is how an entry says where it is
+//! satisfied, and each answer owes different evidence:
+//!
+//! | disposition | refused at load unless it carries | a node citing the id |
+//! |---|---|---|
+//! | `implemented` | nothing more — the annotation is the evidence, per [`Modality`] | is the evidence |
+//! | `delegated` | `to_doc` and `to_id`, naming a document other than this one | [`Outcome::Contradicted`] |
+//! | `out_of_scope` | a `reason` of more than one word | [`Outcome::Contradicted`] |
+//! | `system_level` | `realised_by`, the deployment artefact | [`Outcome::Contradicted`] |
+//!
 //! # ⭐ Why the manifest holds no requirement text
 //!
 //! RFC §5.2 originally put the requirement sentence in the manifest,
@@ -232,6 +246,11 @@ pub struct RequirementEntry {
     /// spellings that normalise together are two requirements to the
     /// document that issued them.
     pub id: String,
+    /// WHERE this requirement is satisfied. Defaults to
+    /// [`Disposition::Implemented`], so a manifest written before this
+    /// field existed keeps the meaning it had.
+    #[serde(default)]
+    pub disposition: Disposition,
     /// Which question coverage may ask of this entry. Defaults to
     /// [`Modality::Shall`], so a manifest written before this field
     /// existed keeps the meaning it had.
@@ -249,6 +268,28 @@ pub struct RequirementEntry {
     /// and therefore a variant — see [`Position`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<Position>,
+}
+
+impl RequirementEntry {
+    /// Whether a node carrying this id is the evidence that settles it.
+    ///
+    /// True only for a requirement satisfied HERE ([`Disposition`]) by
+    /// something EXISTING ([`Modality`]). Both halves are needed: a
+    /// `shall_not` is met by an absence no annotation can mark, and a
+    /// `delegated` requirement is met in a document this one is not.
+    ///
+    /// ⭐ Published because the presence question is asked in more than
+    /// one place — [`classify`] asks it, and so does every reading of
+    /// the transition table that names requirements with no row. Those
+    /// readings used to filter on modality by hand, which was the whole
+    /// rule until [`Disposition`] landed and made it half of one: a
+    /// caller that kept filtering on modality alone would report every
+    /// delegated requirement as missing from the table while the
+    /// classifier called it delegated. One predicate is what keeps the
+    /// two readings asking the same question.
+    pub fn is_settled_by_annotation(&self) -> bool {
+        matches!(self.disposition, Disposition::Implemented {}) && self.modality == Modality::Shall
+    }
 }
 
 /// Whether the source document names its own requirements.
@@ -416,6 +457,197 @@ impl Extraction {
     }
 }
 
+/// Where a requirement is satisfied, and the evidence that disposition
+/// owes.
+///
+/// ⭐ A layered standard satisfies most of its requirements SOMEWHERE
+/// ELSE, and that is the normal case rather than an exception. Measured
+/// in ISO 13400-2:2019, a middle layer: it defers to the layer below
+/// ("as specified in ISO 13400-3"), to the layer above ("as specified
+/// in ISO 14229-1"), to IETF documents seven times, and declares
+/// something out of scope once. If every one of those reported
+/// `missing`, the risk column would fill with correct-but-uninteresting
+/// rows until a reader stopped looking at it — which is the same
+/// failure [`Outcome::NeedsScenario`] exists to prevent, arriving by a
+/// different route.
+///
+/// ⚠⚠ **Each variant carries its own evidence, and that is why this is
+/// an enum with fields rather than a flag beside optional columns.**
+/// `delegated` is the dangerous one: written alone it is a
+/// not-our-problem stamp — the requirement leaves this manifest and
+/// nothing checks that it arrived anywhere. Binding the target INTO the
+/// variant means a delegation with no destination cannot be written at
+/// all; the wire format refuses it rather than a reviewer having to
+/// notice. Had the evidence lived in sibling `Option` fields, the stamp
+/// would parse cleanly and the guard would be a runtime check somebody
+/// could forget to call.
+///
+/// The evidence is held in two steps, and both run inside
+/// [`RequirementManifest::from_json`], so neither is a step a caller
+/// can skip:
+///
+/// - the FORMAT refuses a variant with a field absent, and a field that
+///   belongs to another variant — a delegation carrying a `reason`
+///   instead of a destination has no spelling;
+/// - `Disposition::missing_evidence` refuses a field that is present
+///   and says nothing. The format admits `"to_doc": ""`, and a key
+///   filled in blank is the same stamp with its label left empty.
+///
+/// ⚠ `out_of_scope` carries prose for the same reason: a requirement
+/// silently dropped into it is indistinguishable from one that was
+/// never read. The line is one word, and it is the line the prose sweep
+/// already draws between a token and a sentence (`is_one_word`): a
+/// one-word reason is a flag spelled as a string — `n/a`, `tbd` — and
+/// no reason is one word. Whether a longer reason is a GOOD one is a
+/// reviewer's judgement, which this does not claim to make.
+///
+/// ⚠⚠ The reason is still swept for specification prose, and that is
+/// deliberate rather than an oversight to exempt. It is the one field
+/// meant to hold words, which makes it the likeliest place for a
+/// specification's own "not covered by this document" sentence to be
+/// pasted. So a reason is the author's words: it may not end in
+/// sentence punctuation or carry a normative marker, and the refusal
+/// names the field, so a false one is an inconvenience and not a
+/// silence. Exempting the field would be the per-field defect the sweep
+/// exists to remove.
+///
+/// ⚠⚠⚠ **What is NOT checked: that a delegation ARRIVED.** Naming
+/// `to_doc` and `to_id` says a delegation was intended. Only the
+/// target's own manifest can say it carries the requirement — RFC
+/// §5.2e's second clause, inter-document traceability — and this crate
+/// is handed one manifest at a time. A two-manifest check was drafted
+/// and removed before landing, because it answered the wrong question:
+/// given one target, it reported every delegation to any OTHER document
+/// as broken, and a middle-layer document delegates to several at once.
+/// It also left "arrived" undefined for a target entry that is itself
+/// `out_of_scope` or delegated onward. Both are decisions for a real
+/// second manifest to force, not for a fixture to guess.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Disposition {
+    /// Satisfied in this artefact. The evidence is the annotation, read
+    /// through [`Modality`] exactly as before this field existed.
+    ///
+    /// ⚠ An EMPTY STRUCT variant rather than a unit one, and the braces
+    /// are load-bearing. serde applies `deny_unknown_fields` to the
+    /// fields of a struct variant, but not to a unit variant of an
+    /// internally tagged enum. Written as a unit, `{"kind":
+    /// "implemented", "to_doc": "lower", "to_id": "L-1"}` LOADED, and
+    /// the destination was dropped without a word. A delegation whose
+    /// `kind` was mistyped became a requirement satisfied here: the
+    /// silent drop this type exists to refuse, arriving through the
+    /// default. This was measured, not supposed:
+    /// `a_disposition_owes_its_own_evidence.rs` went red on it before
+    /// the braces were added.
+    Implemented {},
+    /// Satisfied by another document or component.
+    Delegated {
+        /// The `doc_id` of the manifest that carries it.
+        to_doc: String,
+        /// The requirement id it becomes over there. Named separately
+        /// because a layered standard renumbers: the same obligation is
+        /// `3.DoIP-131` in one document and something else in the next,
+        /// and a delegation that only named the document would leave a
+        /// reader searching.
+        to_id: String,
+    },
+    /// This toolchain cannot carry it.
+    OutOfScope {
+        /// Why. Prose, not a flag — see above.
+        reason: String,
+    },
+    /// Realised by the deployment rather than by any behaviour.
+    SystemLevel {
+        /// The deployment artefact that realises it.
+        ///
+        /// ⚠ Weaker evidence than the others by necessity, and the
+        /// weakness is stated rather than hidden: RFC §5.2f measured
+        /// that the system level has **no annotation surface at all**,
+        /// so nothing can confirm the requirement arrived there. Naming
+        /// the artefact is what a reviewer can act on today; confirming
+        /// it needs an annotation surface that does not exist.
+        realised_by: String,
+    },
+}
+
+/// `implemented`, so a manifest written before [`Disposition`] existed
+/// keeps the meaning it had. Written by hand because `#[derive(Default)]`
+/// accepts only a unit variant, and the variant must not be one — see
+/// [`Disposition::Implemented`].
+impl Default for Disposition {
+    fn default() -> Self {
+        Disposition::Implemented {}
+    }
+}
+
+impl Disposition {
+    /// The field that is present and says nothing, and why that is a
+    /// refusal — or `None` when the disposition carries what it owes.
+    ///
+    /// `doc_id` is the document the manifest describes, because one
+    /// delegation is empty without being blank: a `to_doc` naming the
+    /// very document it leaves. RFC §5.2e defines `delegated` as
+    /// satisfied by ANOTHER document, and a requirement satisfied in its
+    /// own document is implemented here — or, if it is satisfied by
+    /// other requirements beside it, decomposed, which is a parent/child
+    /// relation and not a delegation. Admitting it would let the stamp
+    /// point at itself.
+    ///
+    /// Ids are compared verbatim, as everywhere in this module.
+    fn missing_evidence(&self, doc_id: &str) -> Option<(&'static str, &'static str)> {
+        const BLANK: &str = "is blank";
+        match self {
+            Disposition::Implemented {} => None,
+            Disposition::Delegated { to_doc, to_id } => {
+                if to_doc.trim().is_empty() {
+                    Some(("to_doc", BLANK))
+                } else if to_doc == doc_id {
+                    Some((
+                        "to_doc",
+                        "names the document this manifest describes, and a \
+                         requirement satisfied in its own document is \
+                         implemented there, not delegated",
+                    ))
+                } else if to_id.trim().is_empty() {
+                    Some(("to_id", BLANK))
+                } else {
+                    None
+                }
+            }
+            Disposition::OutOfScope { reason } => {
+                if reason.trim().is_empty() {
+                    Some(("reason", BLANK))
+                } else if is_one_word(reason) {
+                    Some((
+                        "reason",
+                        "is one word, and a flag spelled as a string is not a \
+                         reason — silence is not a disposition",
+                    ))
+                } else {
+                    None
+                }
+            }
+            Disposition::SystemLevel { realised_by } => realised_by
+                .trim()
+                .is_empty()
+                .then_some(("realised_by", BLANK)),
+        }
+    }
+}
+
+/// Whether `value` holds at most one word.
+///
+/// ⭐ The module's one line between a token and words, used from both
+/// sides so it cannot be drawn twice. The prose sweep reads a one-word
+/// string as a token and never as a sentence ([`prose_reason`]); an
+/// `out_of_scope` reason of one word is a flag and not a reason
+/// ([`Disposition`]). Two definitions would let a string be too short to
+/// count as a reason and long enough to be swept as prose, or the
+/// reverse, and neither answer would say which rule had moved.
+fn is_one_word(value: &str) -> bool {
+    value.split_whitespace().nth(1).is_none()
+}
+
 /// The manifest exactly as JSON spells it, before any check has run.
 ///
 /// ⭐ Private, and that is the point. [`RequirementManifest`] does
@@ -496,6 +728,15 @@ pub enum ManifestError {
     Prose {
         path: String,
         field: String,
+        reason: &'static str,
+    },
+    /// A requirement disposed somewhere other than this document, whose
+    /// disposition carries a field that says nothing. `field` names it
+    /// inside the disposition; `reason` says why it does not count.
+    DispositionWithoutEvidence {
+        path: String,
+        id: String,
+        field: &'static str,
         reason: &'static str,
     },
 }
@@ -697,9 +938,11 @@ fn reject_prose_anywhere(
 }
 
 pub fn prose_reason(value: &str, convention: ModalityConvention) -> Option<&'static str> {
-    // ⭐ Prose is multi-word. A string with no whitespace is a token —
-    // an id, a section number, a revision, or one of the format's own
-    // closed vocabulary words — and no amount of it is a sentence.
+    // ⭐ Prose is multi-word. A string of one word is a token — an id,
+    // a section number, a revision, or one of the format's own closed
+    // vocabulary words — and no amount of it is a sentence. The line is
+    // `is_one_word`, which an `out_of_scope` reason is held to from the
+    // other side, so the two cannot be drawn in different places.
     //
     // This precondition is not a softening; it is what makes the rule
     // correct. Without it the sweep refused this repository's own ISO
@@ -715,7 +958,7 @@ pub fn prose_reason(value: &str, convention: ModalityConvention) -> Option<&'sta
     // lack whitespace, so the precondition gives up no refusal power;
     // 4 of 242 headings are single words, and those are strings the
     // rule wants to accept anyway.
-    if !value.chars().any(char::is_whitespace) {
+    if is_one_word(value) {
         return None;
     }
     let trimmed = value.trim_end();
@@ -771,7 +1014,24 @@ impl std::fmt::Display for ManifestError {
                  sentence belongs \
                  in the uncommitted sidecar. If this is a real heading \
                  the check has misread, shorten it to the wording the \
-                 contents page uses"
+                 contents page uses. If it is an `out_of_scope` reason, \
+                 say why in your own words rather than the document's"
+            ),
+            ManifestError::DispositionWithoutEvidence {
+                path,
+                id,
+                field,
+                reason,
+            } => write!(
+                f,
+                "requirement manifest {path}: `{id}` is disposed outside \
+                 this document, but its `disposition.{field}` {reason}. A \
+                 disposition other than `implemented` takes the \
+                 requirement out of the `missing` column, and what it owes \
+                 in exchange is something a reviewer can follow: the \
+                 document and id it was delegated to, the reason this \
+                 toolchain cannot carry it, or the deployment artefact \
+                 that realises it"
             ),
         }
     }
@@ -850,6 +1110,19 @@ impl RequirementManifest {
                     id: entry.id.clone(),
                 });
             }
+            // Here and not in the classifier: a disposition that owes
+            // evidence and lacks it is a manifest that must not be used,
+            // not a verdict to print beside the others. Refusing at load
+            // is what makes every consumer inherit it, the same way the
+            // prose sweep above is not a step a caller can skip.
+            if let Some((field, reason)) = entry.disposition.missing_evidence(&manifest.doc_id) {
+                return Err(ManifestError::DispositionWithoutEvidence {
+                    path: label.to_string(),
+                    id: entry.id.clone(),
+                    field,
+                    reason,
+                });
+            }
         }
         Ok(manifest)
     }
@@ -882,6 +1155,38 @@ pub enum Outcome {
     /// yet. When it does, a `shall_not` with a passing scenario
     /// becomes `implemented` and this bucket empties from the top.
     NeedsScenario,
+    /// The manifest says another document carries this, and named it.
+    ///
+    /// ⚠ This is a claim, not a confirmation. The name was required at
+    /// load, so a reviewer can follow it; nothing here has followed it.
+    /// Whether the target carries the requirement needs the target's
+    /// own manifest — see [`Disposition`] for why that check is not
+    /// here yet. A reader who treats this bucket as "handled" is making
+    /// exactly the mistake the disposition exists to prevent.
+    Delegated,
+    /// The manifest says this toolchain cannot carry it, and said why.
+    OutOfScope,
+    /// The manifest says the deployment realises it, and named the
+    /// artefact. Unconfirmable today — see [`Disposition::SystemLevel`].
+    SystemLevel,
+    /// The manifest places this requirement outside the document, and
+    /// the document cites it on a node anyway.
+    ///
+    /// ⭐ For a disposition other than `implemented`, an annotation is
+    /// not evidence. It is a second claim about where the requirement
+    /// is met, and it disagrees with the first. Reporting the
+    /// disposition's own bucket would certify the manifest's claim
+    /// while the document's contrary claim sat in `node_paths`, a column
+    /// nobody sorts a risk list by.
+    ///
+    /// One of the two is wrong. Either the annotation was invented, or
+    /// the disposition is stale, or the requirement is met partly here
+    /// and partly elsewhere. The last is decomposition, which the
+    /// manifest cannot express yet (RFC §5.2f); naming the disagreement
+    /// helps a reader more than a bucket that hides it. The row carries
+    /// both claims, the disposition and the citing nodes, so the reader
+    /// can tell which.
+    Contradicted,
 }
 
 impl Outcome {
@@ -892,6 +1197,10 @@ impl Outcome {
             Outcome::Missing => "missing",
             Outcome::Dangling => "dangling",
             Outcome::NeedsScenario => "needs-scenario",
+            Outcome::Delegated => "delegated",
+            Outcome::OutOfScope => "out-of-scope",
+            Outcome::SystemLevel => "system-level",
+            Outcome::Contradicted => "contradicted",
         }
     }
 }
@@ -901,6 +1210,28 @@ impl Outcome {
 pub struct RequirementOutcome {
     pub id: String,
     pub outcome: Outcome,
+    /// The disposition's own evidence, carried into the artefact.
+    ///
+    /// ⭐ Without this the report says `"outcome":"delegated"` and stops
+    /// — which is the not-our-problem stamp rebuilt one layer out.
+    /// Binding the destination into [`Disposition`] stops the stamp
+    /// being WRITTEN; carrying it here is what stops the stamp being
+    /// READ. A reviewer meets the verdict and the destination on the
+    /// same line, or the verdict is unactionable.
+    ///
+    /// `None` for [`Outcome::Dangling`]. The manifest has no entry for
+    /// that id, so it has no disposition to report. Reporting the
+    /// default instead would say the manifest had placed a requirement
+    /// it never listed.
+    ///
+    /// Omitted from the artefact when `None`, and when
+    /// [`Disposition::Implemented`]. That one is the default and says
+    /// nothing a reader needs: every row would otherwise carry a word
+    /// that only means "not elsewhere", and a column that is nearly
+    /// always the same word is one a reader learns to skip, including
+    /// on the rows where it is not.
+    #[serde(skip_serializing_if = "places_nothing_elsewhere")]
+    pub disposition: Option<Disposition>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub section: Option<String>,
     /// Carried through from the manifest entry unchanged, so the report
@@ -944,6 +1275,12 @@ impl Classification {
             .filter(|o| o.outcome == outcome)
             .count()
     }
+}
+
+/// Whether a row's disposition would tell a reader nothing — see
+/// [`RequirementOutcome::disposition`].
+fn places_nothing_elsewhere(disposition: &Option<Disposition>) -> bool {
+    matches!(disposition, None | Some(Disposition::Implemented {}))
 }
 
 /// The classification as NDJSON, one record per requirement.
@@ -1074,30 +1411,56 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
         // has to look. Dropping it would make the honest verdict less
         // actionable than the false one it replaced.
         let node_paths = citation.map_or_else(Vec::new, |(paths, _)| paths.clone());
-        let outcome = match entry.modality {
-            // Presence can be labelled: the annotation is the evidence,
-            // and its absence is the finding.
-            Modality::Shall => match citation {
-                None => Outcome::Missing,
-                Some((_, all_unresolved)) => {
-                    if *all_unresolved {
-                        Outcome::Unresolved
-                    } else {
-                        Outcome::Implemented
+        // ⭐ Disposition is asked BEFORE modality, and the order is the
+        // point. Modality decides what evidence would settle a
+        // requirement satisfied HERE; disposition decides whether it is
+        // satisfied here at all. Asking modality first would report a
+        // delegated requirement as `missing` — technically true of this
+        // document and useless to a reader, because for a middle-layer
+        // standard that is most of the rows.
+        //
+        // For the three dispositions that place a requirement elsewhere,
+        // their evidence was required at load and a citation here is
+        // not evidence but a contrary claim — see
+        // [`Outcome::Contradicted`]. The citation is read for that and
+        // for nothing else.
+        let placed_elsewhere = |outcome: Outcome| {
+            if citation.is_some() {
+                Outcome::Contradicted
+            } else {
+                outcome
+            }
+        };
+        let outcome = match &entry.disposition {
+            Disposition::Delegated { .. } => placed_elsewhere(Outcome::Delegated),
+            Disposition::OutOfScope { .. } => placed_elsewhere(Outcome::OutOfScope),
+            Disposition::SystemLevel { .. } => placed_elsewhere(Outcome::SystemLevel),
+            Disposition::Implemented {} => match entry.modality {
+                // Presence can be labelled: the annotation is the evidence,
+                // and its absence is the finding.
+                Modality::Shall => match citation {
+                    None => Outcome::Missing,
+                    Some((_, all_unresolved)) => {
+                        if *all_unresolved {
+                            Outcome::Unresolved
+                        } else {
+                            Outcome::Implemented
+                        }
                     }
-                }
+                },
+                // Absence can only be tested. Nothing about which nodes
+                // carry this id can settle a prohibition — a document that
+                // keeps the annotated node AND adds the forbidden
+                // behaviour beside it is more annotated, not more
+                // compliant. So the verdict deliberately does not read the
+                // citation, and is the same whether or not one exists.
+                Modality::ShallNot => Outcome::NeedsScenario,
             },
-            // Absence can only be tested. Nothing about which nodes
-            // carry this id can settle a prohibition — a document that
-            // keeps the annotated node AND adds the forbidden
-            // behaviour beside it is more annotated, not more
-            // compliant. So the verdict deliberately does not read the
-            // citation, and is the same whether or not one exists.
-            Modality::ShallNot => Outcome::NeedsScenario,
         };
         outcomes.push(RequirementOutcome {
             id: entry.id.clone(),
             outcome,
+            disposition: Some(entry.disposition.clone()),
             section: entry.section.clone(),
             at: entry.at.clone(),
             node_paths,
@@ -1109,6 +1472,10 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
             outcomes.push(RequirementOutcome {
                 id: (*id).to_string(),
                 outcome: Outcome::Dangling,
+                // A dangling id is one the manifest does not contain, so
+                // it has no disposition, and saying so is not the same as
+                // saying `implemented`.
+                disposition: None,
                 section: None,
                 at: None,
                 node_paths: paths.clone(),
