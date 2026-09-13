@@ -387,6 +387,14 @@ name = "sce_annotation_emission"
 path = "tests/sce_annotation_emission.rs"
 required-features = ["cli"]
 
+# Every template value written into a target-language comment passes
+# through `comment_text`, and the rendered half runs hostile documents
+# through all six backends — which is why it spawns `sce-codegen`.
+[[test]]
+name = "a_value_written_into_a_comment_is_encoded"
+path = "tests/a_value_written_into_a_comment_is_encoded.rs"
+required-features = ["cli"]
+
 # `sce:provenance` parse + the diagnostic wire's `spec_provenance`
 # producer. Cli-gated because the wire half spawns `sce-codegen` with
 # `--strict-unresolved --error-format json`: reading the bytes an

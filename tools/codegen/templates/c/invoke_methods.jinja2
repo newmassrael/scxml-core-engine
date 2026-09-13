@@ -304,7 +304,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             {% if invoke_info.params %}
             {% for param in invoke_info.params %}
             {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
-            /* `<param name="{{ param.name }}" expr="{{ param.expr | escape_c }}"/>` */
+            /* `<param name="{{ param.name }}" expr="{{ param.expr }}"/>` */
             if (luaL_dostring(sm->L,
                 "return ({{ param.expr | to_lua_expr | escape_c }})") == 0) {
 {{ se.lua_xfer_top_to_child("sm->L", "sm->child_" ~ invoke_info.field_suffix ~ ".L", param.name) }}

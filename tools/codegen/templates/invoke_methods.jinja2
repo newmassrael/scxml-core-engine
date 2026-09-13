@@ -210,7 +210,7 @@
                             }
                         }
                         {% else %}
-                        // §scxml-6.4.3: `{{ param.name | escape_cpp }}` matches no top-level
+                        // §scxml-6.4.3: `{{ param.name }}` matches no top-level
                         // `<data>` of the child, so the Processor MUST NOT add
                         // it to the invoked session's data model.
                         {% endif %}

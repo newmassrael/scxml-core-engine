@@ -38,7 +38,7 @@
 {% endif %}
 	}
 {% elif action.expr %}
-	// W3C SCXML 5.3: <assign location="{{ loc }}" expr="{{ action.expr | escape_go }}">
+	// W3C SCXML 5.3: <assign location="{{ loc }}" expr="{{ action.expr }}">
 	{# W3C SCXML B.2: the target is authored ECMAScript, lowered by the
 	   same frontend the reads go through — `arr[0]` names one cell
 	   whichever side of the `=` it is written on. #}

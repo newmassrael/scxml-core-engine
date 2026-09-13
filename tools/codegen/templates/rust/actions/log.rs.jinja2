@@ -18,7 +18,7 @@
     }
 }
 {% elif action.label %}
-// W3C SCXML 4.7: <log label="{{ action.label | escape_rust }}">
+// W3C SCXML 4.7: <log label="{{ action.label }}">
 ::sce_rust_runtime::sce_log_info!("{{ action.label | escape_rust }}");
 {% else %}
 // W3C SCXML 4.7: <log> (no label or expr)

@@ -47,18 +47,99 @@
 //! flush against a closing `*/` with no separating space is the
 //! template's defect, not the encoder's.
 //!
-//! # Scope, stated rather than hidden
+//! # Every value a template writes into a comment
 //!
-//! The annotation macro (`tools/codegen/templates/_macros/
-//! sce_annotation_marker.jinja2`) is the first consumer. It is not the
-//! only place author text reaches a comment: other templates echo author
-//! attributes verbatim, and the C11 `/* W3C SCXML 4.4: <log expr="…"> */`
-//! echo was measured breaking on `*/` the same day, the same way. Those
-//! sites are not yet routed through this encoder. Re-derive their extent
-//! by lexing `tools/codegen/templates/` for interpolations that fall inside
-//! a target-language comment, rather than trusting a count written here.
+//! The annotation macro was the first consumer, and it was not the only
+//! place author text reaches a comment. Measured 2026-09-13, 963
+//! interpolations across the template tree sat inside a comment of the
+//! language their template emits, and none was encoded: the C11 block
+//! comment that echoes a `<log>` element's `expr` closed at a value's `*/`,
+//! and the Go line comment that echoes a `<data>` element's `expr` put the
+//! second line of a value into code.
+//!
+//! Writing the filter at each of those sites would be manual escaping — the
+//! arrangement that forgets one, and the one this tree had. So the
+//! generator encodes by CONTEXT instead. [`encode_template_comments`] runs
+//! when a template is registered (`generator::register_template`), finds
+//! every `{{ … }}` that [`crate::template_lexing`] places inside a comment of
+//! the emitted language, and routes the whole value through [`filter`]. A
+//! template says `// {{ action.cond }}` and no value can break that comment,
+//! the way contextual autoescaping keeps a value inside the HTML attribute it
+//! was written into.
+//!
+//! Three consequences are deliberate:
+//!
+//! - **A string-literal escaper inside a comment would run twice.** `escape_c`
+//!   and then this encoder is neither encoding, so templates do not write one
+//!   there, and `a_value_written_into_a_comment_is_encoded` refuses it.
+//! - **A macro that spells its comment delimiter from a variable** writes a
+//!   comment no reading of its text can see, so the annotation macro still
+//!   writes `| comment_text` itself. The rewrite leaves a tag that already
+//!   applies the filter last, to its whole value, as it is.
+//! - **A value written into a string literal is not this module's.** Its
+//!   encoder is the literal's escaper, which differs per language, and that
+//!   rule is registered as open in `docs/SCE_ACCEPTED_SUBSET.md`.
 
 use std::borrow::Cow;
+
+use crate::template_lexing::{
+    applies_last_to_the_whole_value, interpolations, Class, Interpolation, Syntax,
+};
+
+/// The name the filter is registered under, and the one the rewrite writes.
+pub const FILTER: &str = "comment_text";
+
+/// `template` with every value it writes into a comment of `syntax` routed
+/// through [`filter`]. Borrowed and unchanged when there is none.
+///
+/// No newline is added and each tag keeps its whitespace control, so the
+/// rendered layout is the template's and a template error still names the
+/// line its author wrote.
+pub fn encode_template_comments(template: &str, syntax: Syntax) -> Cow<'_, str> {
+    let sites: Vec<Interpolation> = interpolations(template, syntax)
+        .into_iter()
+        .filter(|site| {
+            site.context == Class::Comment && !applies_last_to_the_whole_value(&site.tag, FILTER)
+        })
+        .collect();
+    if sites.is_empty() {
+        return Cow::Borrowed(template);
+    }
+    let chars: Vec<char> = template.chars().collect();
+    let mut out = String::with_capacity(template.len() + sites.len() * (FILTER.len() + 6));
+    let mut at = 0usize;
+    for site in &sites {
+        out.extend(&chars[at..site.start]);
+        out.push_str(&routed_through_the_filter(&site.tag));
+        at = site.end;
+    }
+    out.extend(&chars[at..]);
+    Cow::Owned(out)
+}
+
+/// `{{- value -}}` as `{{- (value) | comment_text -}}`.
+///
+/// Parenthesised because a filter binds tighter than every operator:
+/// `{{ a ~ b | comment_text }}` would encode `b` and write `a` raw.
+fn routed_through_the_filter(tag: &str) -> String {
+    let Some(inner) = tag.strip_prefix("{{").and_then(|t| t.strip_suffix("}}")) else {
+        // Unterminated: the template engine reports it, and a rewrite would
+        // only move the report away from what the author wrote.
+        return tag.to_string();
+    };
+    let (open_control, inner) = match inner.strip_prefix(['-', '+']) {
+        Some(rest) => (&inner[..1], rest),
+        None => ("", inner),
+    };
+    let (inner, close_control) = match inner.strip_suffix(['-', '+']) {
+        Some(rest) => (rest, &inner[inner.len() - 1..]),
+        None => (inner, ""),
+    };
+    format!(
+        "{{{{{open_control} ({}) | {FILTER} {close_control}}}}}",
+        inner.trim()
+    )
+}
 
 /// Encode `text` for a comment body. See the module docs for the grammar.
 pub fn encode(text: &str) -> Cow<'_, str> {
@@ -213,5 +294,65 @@ mod tests {
         for foreign in ["\\", "\\q", "\\x", "\\x5", "\\x41", "tail\\"] {
             assert_eq!(decode(foreign), None, "{foreign:?} must be refused");
         }
+    }
+
+    fn rewrite(template: &str, syntax: Syntax) -> String {
+        encode_template_comments(template, syntax).into_owned()
+    }
+
+    #[test]
+    fn a_value_inside_a_comment_is_routed_through_the_filter() {
+        assert_eq!(
+            rewrite("/* {{ x }} */\n", Syntax::CFamily),
+            "/* {{ (x) | comment_text }} */\n"
+        );
+        // Whitespace control survives on both sides, and an operator is kept
+        // inside the parentheses so the filter covers the whole value.
+        assert_eq!(
+            rewrite("// {{- a ~ b -}}\n", Syntax::Go),
+            "// {{- (a ~ b) | comment_text -}}\n"
+        );
+        assert_eq!(
+            rewrite("# {{ x | default('-') }}\n", Syntax::Python),
+            "# {{ (x | default('-')) | comment_text }}\n"
+        );
+    }
+
+    #[test]
+    fn a_value_anywhere_else_is_left_as_written() {
+        for (template, syntax) in [
+            ("int a = {{ x }};\n", Syntax::CFamily),
+            ("const char *s = \"{{ x }}\";\n", Syntax::CFamily),
+            ("{# // {{ x }} #}\n", Syntax::CFamily),
+            ("{% raw %}// {{ x }}{% endraw %}\n", Syntax::Rust),
+            ("// {{ x | comment_text }}\n", Syntax::Kotlin),
+        ] {
+            assert!(
+                matches!(encode_template_comments(template, syntax), Cow::Borrowed(_)),
+                "{template:?} was rewritten",
+            );
+        }
+    }
+
+    /// The whole door, rendered: registration rewrites, the environment knows
+    /// the filter, and a hostile value stays inside the comment it was written
+    /// into. The second line is a conditional whose value is undefined, which
+    /// must render as nothing rather than fail.
+    #[test]
+    fn a_registered_template_renders_a_hostile_value_inside_its_comment() {
+        let mut env = minijinja::Environment::new();
+        crate::generator::register_template(
+            &mut env,
+            "probe.c.jinja2".to_string(),
+            "/* expr=\"{{ e }}\" */\n/* [{{ 'x' if flag }}] */\n",
+            crate::generator::Language::C11,
+        )
+        .expect("the rewritten template parses");
+        let out = env
+            .get_template("probe.c.jinja2")
+            .expect("registered")
+            .render(minijinja::context! { e => "a*/int b;/*", flag => false })
+            .expect("renders");
+        assert_eq!(out, "/* expr=\"a*\\x2Fint b;/\\x2A\" */\n/* [] */");
     }
 }

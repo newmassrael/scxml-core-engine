@@ -145,7 +145,7 @@ PY
 mutation_case "the c11 engine transfers an invoke param the child never declared" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
      """            {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
-            /* `<param name="{{ param.name }}" expr="{{ param.expr | escape_c }}"/>` */""",
+            /* `<param name="{{ param.name }}" expr="{{ param.expr }}"/>` */""",
      """            {% if true %}
-            /* `<param name="{{ param.name }}" expr="{{ param.expr | escape_c }}"/>` */""")
+            /* `<param name="{{ param.name }}" expr="{{ param.expr }}"/>` */""")
 PY

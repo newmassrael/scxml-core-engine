@@ -294,6 +294,7 @@ Adding a new utility or template group means editing `sce_codegen_assets.cmake` 
 - Automatic optimization: simple features → static, complex → dynamic
 - Transparent hybrid: user doesn't choose, generator decides
 - Template-based: easy to modify and extend
+- Template values are encoded for the comment they land in. Every template enters its environment through `generator::register_template`, which reads it in the language it emits (`sce-build/src/template_lexing.rs`) and routes each `{{ … }}` inside a comment through `comment_text` — `\`, CR, LF, the `/` of `*/` and the `*` of `/*` become `\xHH`, and every other character is unchanged. A template therefore writes `// cond="{{ trans.cond }}"`, never `| comment_text` and never a literal escaper (`escape_*`) inside a comment; `sce-build/tests/a_value_written_into_a_comment_is_encoded.rs` refuses both, refuses a template registered any other way, and renders hostile documents through all six backends. A value inside a string literal is not covered by this rule — its encoder is that language's escaper (`docs/SCE_ACCEPTED_SUBSET.md` §2.10).
 
 ### Stability and Library Use
 

@@ -306,7 +306,7 @@
         {% endif %}
         {% for var in model.variables %}
         {% if var.expr %}
-        /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}">.
+        /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr }}">.
            On expression failure the data element is left undefined (lua nil)
            and error.execution is queued so the SM can react. memset on the
            SM struct in `_init` zero-initialised both queues before this
@@ -395,7 +395,7 @@
         {% if state.datamodel %}
         {% for var in state.datamodel %}
         {% if var.expr %}
-        /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
+        /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr }}"> */
         if (luaL_dostring(sm->L,
             "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
@@ -493,7 +493,7 @@
 {% macro lua_init_state_datamodel(state, state_id) %}
     {% for var in state.datamodel %}
     {% if var.expr %}
-    /* W3C SCXML 5.3 (late): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
+    /* W3C SCXML 5.3 (late): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr }}"> */
     if (luaL_dostring(sm->L,
         "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);

@@ -9,6 +9,7 @@ use crate::filters;
 use crate::forge::error::GenerateError;
 use crate::forge::symbol_mangling;
 use crate::model::SCXMLModel;
+use crate::template_lexing::Syntax;
 use minijinja::Environment;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,12 +40,6 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
     //    allowing optional attribute chains like `model.foo.bar` to work.
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
     register_symbol_artifact_global(&mut env);
-    // Registered here, not in a backend's filter set, for the reason the
-    // artifact global above is: this is the one function every backend's
-    // environment passes through. The annotation macro that calls it is
-    // shared by all six, so a filter any one backend forgot would be an
-    // "unknown filter" error in exactly that backend and nowhere else.
-    env.add_filter("comment_text", crate::comment_text::filter);
     env
 }
 
@@ -2139,7 +2134,7 @@ pub fn generate_with_options(
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
-    load_templates(&mut env, template_dir)?;
+    load_templates(&mut env, template_dir, Language::Rust)?;
     filters::register_filters(&mut env, &document_scope(model));
     render_rust(&mut env, model, options)
 }
@@ -2159,7 +2154,7 @@ pub fn generate_rust_module_index(
     module_stem: &str,
 ) -> Result<String, GenerateError> {
     let mut env = new_env();
-    load_templates(&mut env, template_dir)?;
+    load_templates(&mut env, template_dir, Language::Rust)?;
     filters::register_filters(&mut env, &document_scope(model));
     let tmpl = env
         .get_template("module_index.rs.jinja2")
@@ -2195,7 +2190,7 @@ pub fn generate_rust_include_shim(
     module_file: &Path,
 ) -> Result<String, GenerateError> {
     let mut env = new_env();
-    load_templates(&mut env, template_dir)?;
+    load_templates(&mut env, template_dir, Language::Rust)?;
     // No document, and none is needed: `module_index.rs.jinja2` renders
     // two items naming a path, and the one thing a scope decides — which
     // identifiers an authored expression may read — has no expression
@@ -2229,7 +2224,7 @@ pub fn generate_with_templates(
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
-    load_template_strings(&mut env, templates)?;
+    load_template_strings(&mut env, templates, Language::Rust)?;
     filters::register_filters(&mut env, &document_scope(model));
     render_rust(
         &mut env,
@@ -2397,7 +2392,7 @@ pub fn generate_cpp_for_engine(
     script_engine: ScriptEngineTarget,
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
-    load_templates(&mut env, template_dir)?;
+    load_templates(&mut env, template_dir, Language::Cpp)?;
     filters::register_cpp_filters_for_engine(&mut env, &document_scope(model), script_engine);
     render_cpp(&mut env, model, input_stem, cpp_namespace_prefix)
 }
@@ -2409,7 +2404,7 @@ pub fn generate_cpp_with_templates(
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
-    load_template_strings(&mut env, templates)?;
+    load_template_strings(&mut env, templates, Language::Cpp)?;
     filters::register_cpp_filters(&mut env, &document_scope(model));
     render_cpp(&mut env, model, input_stem, None)
 }
@@ -2561,7 +2556,7 @@ pub fn generate_c11(
     c_symbol_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
-    load_templates(&mut env, template_dir)?;
+    load_templates(&mut env, template_dir, Language::C11)?;
     filters::register_c11_filters(&mut env, &document_scope(model));
     render_c11(&mut env, model, input_stem, c_symbol_prefix)
 }
@@ -2573,7 +2568,7 @@ pub fn generate_c11_with_templates(
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
-    load_template_strings(&mut env, templates)?;
+    load_template_strings(&mut env, templates, Language::C11)?;
     filters::register_c11_filters(&mut env, &document_scope(model));
     render_c11(&mut env, model, input_stem, None)
 }
@@ -2743,7 +2738,7 @@ pub fn generate_kotlin_for_engine(
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
-    load_templates(&mut env, template_dir)?;
+    load_templates(&mut env, template_dir, Language::Kotlin)?;
     filters::register_kotlin_filters_for_engine(&mut env, &document_scope(model), script_engine);
     register_kotlin_dynamic_filters(&mut env, model);
     render_kotlin(&mut env, model, package_prefix)
@@ -2763,7 +2758,7 @@ pub fn generate_kotlin_with_templates(
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
-    load_template_strings(&mut env, templates)?;
+    load_template_strings(&mut env, templates, Language::Kotlin)?;
     filters::register_kotlin_filters(&mut env, &document_scope(model));
     register_kotlin_dynamic_filters(&mut env, model);
     render_kotlin(&mut env, model, package_prefix)
@@ -2945,7 +2940,7 @@ pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, Ge
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
-    load_templates(&mut env, template_dir)?;
+    load_templates(&mut env, template_dir, Language::Go)?;
     filters::register_go_filters(&mut env, &document_scope(model));
     render_go(&mut env, model)
 }
@@ -2960,7 +2955,7 @@ pub fn generate_go_with_templates(
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
-    load_template_strings(&mut env, templates)?;
+    load_template_strings(&mut env, templates, Language::Go)?;
     filters::register_go_filters(&mut env, &document_scope(model));
     render_go(&mut env, model)
 }
@@ -2988,7 +2983,7 @@ pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String
     reject_native_scripts_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
-    load_templates(&mut env, template_dir)?;
+    load_templates(&mut env, template_dir, Language::Python)?;
     filters::register_python_filters(&mut env, &document_scope(model));
     render_python(&mut env, model)
 }
@@ -3005,7 +3000,7 @@ pub fn generate_python_with_templates(
     reject_native_scripts_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
-    load_template_strings(&mut env, templates)?;
+    load_template_strings(&mut env, templates, Language::Python)?;
     filters::register_python_filters(&mut env, &document_scope(model));
     render_python(&mut env, model)
 }
@@ -3284,16 +3279,47 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
 
 // ── Template loading helpers ─────────────────────────────────────
 
+/// Register one template with `env`, encoding every value it writes into a
+/// comment.
+///
+/// The one door into a template environment, so that no template reaches
+/// minijinja without [`crate::comment_text::encode_template_comments`] having
+/// read it: a value a template renders inside a comment of the language it
+/// emits is routed through `comment_text`, and an author's `*/` or line break
+/// cannot leave that comment. `backend` is the backend this environment
+/// renders for; it decides the syntax of a template whose name carries no
+/// language extension ([`Syntax::of_template`]).
+///
+/// The source text is rewritten once, here, rather than the values being
+/// escaped at render time, because where a value lands is a fact about the
+/// template's text and not about the value — the same fact for every render.
+pub fn register_template(
+    env: &mut Environment<'_>,
+    name: String,
+    content: &str,
+    backend: Language,
+) -> Result<(), minijinja::Error> {
+    // The rewrite writes the filter, so the door that writes it registers it.
+    // Every environment that renders a template has come through here, which
+    // `new_env` alone could not promise: mesh builds its own environment, and
+    // there the rewritten header would have failed to render with an unknown
+    // filter.
+    env.add_filter(crate::comment_text::FILTER, crate::comment_text::filter);
+    let syntax = Syntax::of_template(&name, backend);
+    let encoded = crate::comment_text::encode_template_comments(content, syntax).into_owned();
+    env.add_template_owned(name, encoded)
+}
+
 /// Load templates from pre-loaded string pairs (WASM-compatible).
 fn load_template_strings(
     env: &mut Environment<'_>,
     templates: &[(&str, &str)],
+    backend: Language,
 ) -> Result<(), GenerateError> {
     for (name, content) in templates {
-        env.add_template_owned(name.to_string(), content.to_string())
-            .map_err(|e| {
-                GenerateError::TemplateLoad(format!("Template parse error in {name}: {e}"))
-            })?;
+        register_template(env, name.to_string(), content, backend).map_err(|e| {
+            GenerateError::TemplateLoad(format!("Template parse error in {name}: {e}"))
+        })?;
     }
     Ok(())
 }
@@ -3310,19 +3336,27 @@ fn load_template_strings(
 /// they would lose access to the cross-backend macro family. The
 /// shared load skips silently when `_macros/` is absent (vendored
 /// builds without the macro tree).
-pub fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), GenerateError> {
+///
+/// `backend` is the backend the environment renders for. Every template goes
+/// through [`register_template`], which needs it to read a template whose
+/// name carries no language extension.
+pub fn load_templates(
+    env: &mut Environment<'_>,
+    dir: &Path,
+    backend: Language,
+) -> Result<(), GenerateError> {
     if !dir.exists() {
         return Err(GenerateError::TemplateLoad(format!(
             "Template directory not found: {}",
             dir.display()
         )));
     }
-    load_templates_recursive(env, dir, dir)?;
+    load_templates_recursive(env, dir, dir, backend)?;
     if let Some((macro_base, macro_dir)) = shared_macro_dir(dir) {
         // base_dir = the parent so loaded names start with `_macros/...`
         // — matching the path callers use in
         // `{% import "_macros/sce_map_marker.jinja2" as sce_map %}`.
-        load_templates_recursive(env, &macro_base, &macro_dir)?;
+        load_templates_recursive(env, &macro_base, &macro_dir, backend)?;
     }
     Ok(())
 }
@@ -3407,6 +3441,7 @@ fn load_templates_recursive(
     env: &mut Environment<'_>,
     base_dir: &Path,
     current_dir: &Path,
+    backend: Language,
 ) -> Result<(), GenerateError> {
     let entries = std::fs::read_dir(current_dir).map_err(|e| {
         GenerateError::TemplateLoad(format!("Cannot read {}: {e}", current_dir.display()))
@@ -3417,7 +3452,7 @@ fn load_templates_recursive(
             entry.map_err(|e| GenerateError::TemplateLoad(format!("Dir entry error: {e}")))?;
         let path = entry.path();
         if path.is_dir() {
-            load_templates_recursive(env, base_dir, &path)?;
+            load_templates_recursive(env, base_dir, &path, backend)?;
         } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2") {
             let rel = path
                 .strip_prefix(base_dir)
@@ -3426,13 +3461,12 @@ fn load_templates_recursive(
             let content = std::fs::read_to_string(&path).map_err(|e| {
                 GenerateError::TemplateLoad(format!("Cannot read template {}: {e}", path.display()))
             })?;
-            env.add_template_owned(template_name, content)
-                .map_err(|e| {
-                    GenerateError::TemplateLoad(format!(
-                        "Template parse error in {}: {e}",
-                        path.display()
-                    ))
-                })?;
+            register_template(env, template_name, &content, backend).map_err(|e| {
+                GenerateError::TemplateLoad(format!(
+                    "Template parse error in {}: {e}",
+                    path.display()
+                ))
+            })?;
         }
     }
     Ok(())
