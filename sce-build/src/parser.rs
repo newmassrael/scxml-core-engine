@@ -656,6 +656,12 @@ fn inherit_req(block_req: &[crate::provenance::RequirementId], block: &mut [crat
                 action.req.push(r.clone());
             }
         }
+        // §2.10: "every action inside the block". An action nested in an
+        // `<if>` / `<foreach>` inside the block is inside it; stopping at
+        // the top level is how its own id arrived without the block's.
+        for nested in action.nested_blocks_mut() {
+            inherit_req(block_req, nested);
+        }
     }
 }
 
@@ -732,6 +738,10 @@ fn inherit_provenance(
             if !action.provenance.iter().any(|a| a.doc_id == anchor.doc_id) {
                 action.provenance.push(anchor.clone());
             }
+        }
+        // Nested actions inherit exactly as `inherit_req` makes them.
+        for nested in action.nested_blocks_mut() {
+            inherit_provenance(block_provenance, nested);
         }
     }
 }

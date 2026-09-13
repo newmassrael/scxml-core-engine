@@ -1,7 +1,17 @@
-//! NL→IR Mapping Roadmap Item 5 — strict-mode + reporting walker
+//! NL→IR Mapping Roadmap Item 5 — strict-mode + reporting reader
 //! for `<sce:unresolved>` placeholders.
 //!
-//! Two consumer surfaces share this walker:
+//! ⚠ It has no walk of its own, and the absence is the repair. It used
+//! to keep one, and that walk stopped short of a transition's own
+//! actions, of everything nested inside `<if>` / `<foreach>`, and of the
+//! `<initial>` and `<history>` default actions — so `--strict-unresolved`
+//! passed placeholders the parser had stored and the manifest
+//! classification reported as `unresolved`. It now reads
+//! [`crate::requirements_report::walk_nodes`], the traversal the report,
+//! the classification and the transition table already share, so a
+//! marker one of them can see is a marker all of them can.
+//!
+//! Two consumer surfaces share this reader:
 //!
 //! - `--strict-unresolved` (CLI flag on `generate`): if any IR node
 //!   carries an [`UnresolvedMarker`], the build fails with
@@ -18,8 +28,9 @@ use std::io::{self, Write};
 use serde::Serialize;
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
-use crate::model::{Invoke, SCXMLModel, State};
+use crate::model::SCXMLModel;
 use crate::provenance::{SpecProvenance, UnresolvedMarker};
+use crate::requirements_report::{walk_nodes, ActionSite, NodeSubject};
 
 /// The first unresolved placeholder in a model, with everything the
 /// rejection needs to describe the node that owns it.
@@ -47,73 +58,50 @@ pub struct Unresolved<'a> {
 /// at is where its answer lives. Returning the label without them
 /// would hand a triager an SCXML line and stop.
 pub fn first_unresolved(model: &SCXMLModel) -> Option<Unresolved<'_>> {
-    let mut states: Vec<&State> = model.states.values().collect();
-    states.sort_by_key(|s| s.document_order);
-    for state in states {
-        if let Some(marker) = state.unresolved.first() {
-            return Some(Unresolved {
-                element: format!("<state id=\"{}\">", state.id),
-                marker,
-                provenance: &state.provenance,
-            });
+    walk_nodes(model).into_iter().find_map(|node| {
+        let marker = node.subject.unresolved().first()?;
+        Some(Unresolved {
+            element: element_label(&node.subject),
+            marker,
+            provenance: node.record.spec_provenance,
+        })
+    })
+}
+
+/// The element a rejection names, in the vocabulary the author wrote.
+///
+/// The labels for a state, a transition, an `<onentry>` / `<onexit>`
+/// action and an invoke are the ones this check printed before it moved
+/// onto the shared walk, byte for byte. The three action sites that walk
+/// newly reaches name their container the same way.
+fn element_label(subject: &NodeSubject<'_>) -> String {
+    match subject {
+        NodeSubject::State(state) => format!("<state id=\"{}\">", state.id),
+        NodeSubject::Transition { state, index, .. } => {
+            format!("<transition #{index} in <state id=\"{}\">>", state.id)
         }
-        for (i, transition) in state.transitions.iter().enumerate() {
-            if let Some(marker) = transition.unresolved.first() {
-                return Some(Unresolved {
-                    element: format!("<transition #{i} in <state id=\"{}\">>", state.id),
-                    marker,
-                    provenance: &transition.provenance,
-                });
-            }
-        }
-        for block in state.on_entry_blocks.iter() {
-            for action in block.iter() {
-                if let Some(marker) = action.unresolved.first() {
-                    return Some(Unresolved {
-                        element: format!(
-                            "<{} in <onentry> of <state id=\"{}\">>",
-                            action.action_type, state.id
-                        ),
-                        marker,
-                        provenance: &action.provenance,
-                    });
-                }
-            }
-        }
-        for block in state.on_exit_blocks.iter() {
-            for action in block.iter() {
-                if let Some(marker) = action.unresolved.first() {
-                    return Some(Unresolved {
-                        element: format!(
-                            "<{} in <onexit> of <state id=\"{}\">>",
-                            action.action_type, state.id
-                        ),
-                        marker,
-                        provenance: &action.provenance,
-                    });
-                }
-            }
-        }
-        for (i, invoke) in state.invokes.iter().enumerate() {
-            let base = match invoke {
-                Invoke::Scxml(info) => &info.common.base,
-                Invoke::Hybrid(info) => &info.common.base,
-                Invoke::MeshRpc(info) => &info.base,
-                Invoke::Unsupported(info) => &info.base,
+        NodeSubject::Action {
+            state,
+            action,
+            site,
+        } => {
+            let container = match site {
+                ActionSite::Entry => "<onentry>".to_string(),
+                ActionSite::Exit => "<onexit>".to_string(),
+                ActionSite::Transition { index } => format!("<transition #{index}>"),
+                ActionSite::Initial => "<initial>".to_string(),
+                ActionSite::HistoryDefault { history } => format!("<history id=\"{history}\">"),
             };
-            if let Some(marker) = base.unresolved.first() {
-                return Some(Unresolved {
-                    element: format!(
-                        "<invoke #{i} (id=\"{}\") in <state id=\"{}\">>",
-                        base.invoke_id, state.id
-                    ),
-                    marker,
-                    provenance: &base.provenance,
-                });
-            }
+            format!(
+                "<{} in {container} of <state id=\"{}\">>",
+                action.action_type, state.id
+            )
         }
+        NodeSubject::Invoke { state, index, base } => format!(
+            "<invoke #{index} (id=\"{}\") in <state id=\"{}\">>",
+            base.invoke_id, state.id
+        ),
     }
-    None
 }
 
 /// Strict-mode gate. Returns `Err` iff the model carries at least
@@ -175,58 +163,19 @@ pub fn emit_unresolved_ndjson<W: Write + ?Sized>(
     model: &SCXMLModel,
     writer: &mut W,
 ) -> io::Result<()> {
-    let mut states: Vec<&State> = model.states.values().collect();
-    states.sort_by_key(|s| s.document_order);
-    for state in states {
-        let node_path_state = format!("states.{}", state.id);
-        for marker in &state.unresolved {
-            write_marker(writer, &node_path_state, "state", None, marker)?;
-        }
-        for (i, transition) in state.transitions.iter().enumerate() {
-            let path = format!("states.{}.transitions[{i}]", state.id);
-            for marker in &transition.unresolved {
-                write_marker(writer, &path, "transition", None, marker)?;
-            }
-        }
-        for (i, block) in state.on_entry_blocks.iter().enumerate() {
-            for (j, action) in block.iter().enumerate() {
-                let path = format!("states.{}.on_entry_blocks[{i}][{j}]", state.id);
-                for marker in &action.unresolved {
-                    write_marker(
-                        writer,
-                        &path,
-                        "action",
-                        Some(action.action_type.as_str()),
-                        marker,
-                    )?;
-                }
-            }
-        }
-        for (i, block) in state.on_exit_blocks.iter().enumerate() {
-            for (j, action) in block.iter().enumerate() {
-                let path = format!("states.{}.on_exit_blocks[{i}][{j}]", state.id);
-                for marker in &action.unresolved {
-                    write_marker(
-                        writer,
-                        &path,
-                        "action",
-                        Some(action.action_type.as_str()),
-                        marker,
-                    )?;
-                }
-            }
-        }
-        for (i, invoke) in state.invokes.iter().enumerate() {
-            let base = match invoke {
-                Invoke::Scxml(info) => &info.common.base,
-                Invoke::Hybrid(info) => &info.common.base,
-                Invoke::MeshRpc(info) => &info.base,
-                Invoke::Unsupported(info) => &info.base,
-            };
-            let path = format!("states.{}.invokes[{i}]", state.id);
-            for marker in &base.unresolved {
-                write_marker(writer, &path, "invoke", None, marker)?;
-            }
+    for node in walk_nodes(model) {
+        let action_type = match &node.subject {
+            NodeSubject::Action { action, .. } => Some(action.action_type.as_str()),
+            _ => None,
+        };
+        for marker in node.subject.unresolved() {
+            write_marker(
+                writer,
+                &node.record.node_path,
+                node.record.node_type,
+                action_type,
+                marker,
+            )?;
         }
     }
     Ok(())

@@ -62,9 +62,7 @@ pub(crate) struct RequirementRecord<'a> {
 
 /// Emit one NDJSON record per IR node carrying `sce:req` IDs or
 /// `sce:provenance` anchors.
-/// Records are written in stable document order: states sorted by
-/// `document_order`, with transitions → on_entry_blocks →
-/// on_exit_blocks → invokes inside each state.
+/// Records are written in the order [`walk_nodes`] yields them.
 ///
 /// `?Sized` so a caller holding an erased sink (`&mut dyn Write`) can
 /// stream into it. The CLI does: every one of its stdout writers goes
@@ -107,8 +105,7 @@ pub(crate) struct AnnotatedNode<'a> {
     pub(crate) subject: NodeSubject<'a>,
 }
 
-/// Which kind of IR node a walk entry is, with the node behind it.
-/// Where an executable action sits, which is a three-valued fact.
+/// Where an executable action sits.
 ///
 /// ⭐ This replaced a `entry: bool`, and the replacement is the repair
 /// rather than tidying around it. An action can sit in `<onentry>`, in
@@ -118,32 +115,74 @@ pub(crate) struct AnnotatedNode<'a> {
 /// was read by nobody while the parser stored it and every backend
 /// emitted it. A type that cannot express the third case is how the
 /// third case goes missing without an argument about it.
+///
+/// ⚠ Five places now, not three. `<initial>` and `<history>` each carry
+/// a default transition whose executable content the IR stores as a
+/// bare action vector — no transition node of its own — and the walk
+/// reached neither until an annotation placed there was measured
+/// reaching no reader.
+///
+/// An action nested inside `<if>` / `<foreach>` keeps the site of the
+/// block it sits in: it runs when that block runs. Its `node_path` is
+/// what says how deep it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ActionSite {
+pub(crate) enum ActionSite<'a> {
     Entry,
     Exit,
     /// Executable content inside the `<transition>` itself — run when
     /// the transition is taken, not when a state is entered or left.
-    Transition,
+    /// `index` is the transition's position in its state.
+    Transition {
+        index: usize,
+    },
+    /// Inside the default transition of a state's `<initial>`.
+    Initial,
+    /// Inside the default transition of the `<history>` named here —
+    /// run when that history has no stored configuration.
+    HistoryDefault {
+        history: &'a str,
+    },
 }
 
+/// Which kind of IR node a walk entry is, with the node behind it.
 pub(crate) enum NodeSubject<'a> {
     State(&'a crate::model::State),
     Transition {
         state: &'a crate::model::State,
+        /// Position among the state's transitions, which is how an
+        /// author-facing label names a transition that has no id.
+        index: usize,
         transition: &'a crate::model::Transition,
     },
-    /// `site` says which of the three places the action sits in; the
+    /// `site` says which of the five places the action sits in; the
     /// table prints each as a different pseudo-event.
     Action {
         state: &'a crate::model::State,
         action: &'a crate::model::Action,
-        site: ActionSite,
+        site: ActionSite<'a>,
     },
     Invoke {
         state: &'a crate::model::State,
+        index: usize,
         base: &'a crate::model::InvokeBase,
     },
+}
+
+impl<'a> NodeSubject<'a> {
+    /// The `<sce:unresolved>` markers the node itself carries.
+    ///
+    /// Here rather than in the unresolved check so that check can sit on
+    /// this walk instead of keeping its own, which is what it did — and
+    /// its own stopped short of a transition's actions, so
+    /// `--strict-unresolved` passed a placeholder this walk could see.
+    pub(crate) fn unresolved(&self) -> &'a [crate::provenance::UnresolvedMarker] {
+        match self {
+            NodeSubject::State(state) => &state.unresolved,
+            NodeSubject::Transition { transition, .. } => &transition.unresolved,
+            NodeSubject::Action { action, .. } => &action.unresolved,
+            NodeSubject::Invoke { base, .. } => &base.unresolved,
+        }
+    }
 }
 
 /// Every annotated node in stable document order.
@@ -167,7 +206,10 @@ pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
 
 /// Every node that can carry `sce:req`, annotated or not, in stable
 /// document order — states sorted by `document_order`, and inside each
-/// state transitions → on_entry_blocks → on_exit_blocks → invokes.
+/// state transitions → on_entry_blocks → on_exit_blocks → invokes →
+/// the `<initial>` default transition's actions → each child
+/// `<history>`'s default actions. Every action is followed by the
+/// actions nested inside it, to any depth.
 ///
 /// THE traversal. Three readings sit on it and none of them re-walks:
 /// the NDJSON report and the manifest comparison take the annotated
@@ -257,69 +299,40 @@ pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
                     location: transition.source_location.as_ref(),
                 },
                 unresolved: !transition.unresolved.is_empty(),
-                subject: NodeSubject::Transition { state, transition },
+                subject: NodeSubject::Transition {
+                    state,
+                    index: i,
+                    transition,
+                },
             });
             // Immediately after their transition, so the walk stays in
             // document order: a reader following `node_path` down the
             // list meets the transition and then what it does.
-            for (j, action) in transition.actions.iter().enumerate() {
-                out.push(AnnotatedNode {
-                    record: RequirementRecord {
-                        node_path: format!("states.{}.transitions[{i}].actions[{j}]", state.id),
-                        node_type: "action",
-                        action_type: Some(action.action_type.as_str()),
-                        requirement_ids: refs_of(&action.req),
-                        spec_provenance: &action.provenance,
-                        location: action.source_location.as_ref(),
-                    },
-                    unresolved: !action.unresolved.is_empty(),
-                    subject: NodeSubject::Action {
-                        state,
-                        action,
-                        site: ActionSite::Transition,
-                    },
-                });
-            }
+            push_actions(
+                &mut out,
+                state,
+                ActionSite::Transition { index: i },
+                &format!("states.{}.transitions[{i}].actions", state.id),
+                &transition.actions,
+            );
         }
         for (i, block) in state.on_entry_blocks.iter().enumerate() {
-            for (j, action) in block.iter().enumerate() {
-                out.push(AnnotatedNode {
-                    record: RequirementRecord {
-                        node_path: format!("states.{}.on_entry_blocks[{i}][{j}]", state.id),
-                        node_type: "action",
-                        action_type: Some(action.action_type.as_str()),
-                        requirement_ids: refs_of(&action.req),
-                        spec_provenance: &action.provenance,
-                        location: action.source_location.as_ref(),
-                    },
-                    unresolved: !action.unresolved.is_empty(),
-                    subject: NodeSubject::Action {
-                        state,
-                        action,
-                        site: ActionSite::Entry,
-                    },
-                });
-            }
+            push_actions(
+                &mut out,
+                state,
+                ActionSite::Entry,
+                &format!("states.{}.on_entry_blocks[{i}]", state.id),
+                block,
+            );
         }
         for (i, block) in state.on_exit_blocks.iter().enumerate() {
-            for (j, action) in block.iter().enumerate() {
-                out.push(AnnotatedNode {
-                    record: RequirementRecord {
-                        node_path: format!("states.{}.on_exit_blocks[{i}][{j}]", state.id),
-                        node_type: "action",
-                        action_type: Some(action.action_type.as_str()),
-                        requirement_ids: refs_of(&action.req),
-                        spec_provenance: &action.provenance,
-                        location: action.source_location.as_ref(),
-                    },
-                    unresolved: !action.unresolved.is_empty(),
-                    subject: NodeSubject::Action {
-                        state,
-                        action,
-                        site: ActionSite::Exit,
-                    },
-                });
-            }
+            push_actions(
+                &mut out,
+                state,
+                ActionSite::Exit,
+                &format!("states.{}.on_exit_blocks[{i}]", state.id),
+                block,
+            );
         }
         for (i, invoke) in state.invokes.iter().enumerate() {
             let base = match invoke {
@@ -338,11 +351,78 @@ pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
                     location: None,
                 },
                 unresolved: !base.unresolved.is_empty(),
-                subject: NodeSubject::Invoke { state, base },
+                subject: NodeSubject::Invoke {
+                    state,
+                    index: i,
+                    base,
+                },
             });
+        }
+        push_actions(
+            &mut out,
+            state,
+            ActionSite::Initial,
+            &format!("states.{}.initial_transition_actions", state.id),
+            &state.initial_transition_actions,
+        );
+        // From `history_states`, the one place every history's default
+        // actions live. `State::initial_history_default_actions` is a
+        // copy the parser makes only when the history is its parent's
+        // initial child; walking it would miss a history reached by a
+        // transition, and walking both would report one node twice.
+        for (history, info) in model
+            .history_states
+            .iter()
+            .filter(|(_, info)| info.parent == state.id)
+        {
+            push_actions(
+                &mut out,
+                state,
+                ActionSite::HistoryDefault { history },
+                &format!("history_states.{history}.default_actions"),
+                &info.default_actions,
+            );
         }
     }
     out
+}
+
+/// One row per action in `actions`, and — immediately after each — one
+/// per action nested inside it, to any depth.
+///
+/// The nesting comes from [`crate::model::Action::nested_blocks`], the
+/// single definition of what lies inside an action, and the
+/// `node_path` segment is that function's field path, so a path walks
+/// the serialised model exactly.
+fn push_actions<'a>(
+    out: &mut Vec<AnnotatedNode<'a>>,
+    state: &'a crate::model::State,
+    site: ActionSite<'a>,
+    prefix: &str,
+    actions: &'a [crate::model::Action],
+) {
+    for (j, action) in actions.iter().enumerate() {
+        let node_path = format!("{prefix}[{j}]");
+        out.push(AnnotatedNode {
+            record: RequirementRecord {
+                node_path: node_path.clone(),
+                node_type: "action",
+                action_type: Some(action.action_type.as_str()),
+                requirement_ids: refs_of(&action.req),
+                spec_provenance: &action.provenance,
+                location: action.source_location.as_ref(),
+            },
+            unresolved: !action.unresolved.is_empty(),
+            subject: NodeSubject::Action {
+                state,
+                action,
+                site,
+            },
+        });
+        for (segment, block) in action.nested_blocks() {
+            push_actions(out, state, site, &format!("{node_path}.{segment}"), block);
+        }
+    }
 }
 
 fn refs_of(ids: &[RequirementId]) -> Vec<&str> {
