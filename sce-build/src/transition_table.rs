@@ -3,9 +3,9 @@
 //!
 //! ```text
 //!   source     | from      | event      | guard | after | to         | action
-//!   -----------+-----------+------------+-------+-------+------------+--------
+//!   -----------+-----------+------------+-------+-------+------------+---------------------
 //!   REQ-042    | idle      | btn_press  | -     | -     | emergency  | -
-//!   REQ-043    | emergency | (entry)    | -     | 3s    | -          | send
+//!   REQ-043    | emergency | (entry)    | -     | 3s    | -          | send event=drive_off
 //!   (none)     | idle      | diag_req   | -     | -     | diagnostic | -
 //! ```
 //!
@@ -196,7 +196,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     guard: or_dash(&action.cond),
                     after: delay_of(action),
                     to: or_dash(&action.target),
-                    action: action.action_type.clone(),
+                    action: what_the_action_does(action),
                     node_path,
                 },
                 NodeSubject::Invoke { state, base, .. } => TransitionRow {
@@ -231,6 +231,77 @@ fn delay_of(action: &crate::model::Action) -> String {
     } else {
         EMPTY_CELL.to_string()
     }
+}
+
+/// What an action does, in the attribute names its author wrote.
+///
+/// ⭐ One function, because two readers need the same answer: this table,
+/// and the acceptance report's per-requirement fragment (RFC §7a), which
+/// has to move under every mutation of what a requirement depends on. A
+/// second rendering there would be free to print less, and the two would
+/// then disagree about what one node does.
+///
+/// The cell used to be the action's kind alone — `send`, `cancel` — and
+/// that hid exactly what a timer is made of: the event a `<send>` raises
+/// and the `sendid` a `<cancel>` names. Rename either and the transition
+/// waiting for the timer never fires, while the table stayed
+/// byte-identical. `an_attribute_that_changes_an_action_changes_its_row`
+/// mutates every attribute inside executable content and requires this
+/// cell to move whenever the parsed action does.
+///
+/// Every field is printed as `name=value` in the SCXML attribute's own
+/// spelling, empty ones omitted, in a fixed order. Three are left to the
+/// columns that already carry them rather than printed twice: `target`
+/// (`to`), `delay` / `delayexpr` (`after`) and `cond` (`guard`).
+///
+/// ⚠ Nested actions are not rendered here — each has a row of its own,
+/// and its `node_path` says which branch or body it sits in.
+pub(crate) fn what_the_action_does(action: &crate::model::Action) -> String {
+    let mut parts = vec![action.action_type.clone()];
+    let fields: [(&str, &str); 19] = [
+        ("name", action.native_action_name.as_str()),
+        ("event", action.event.as_str()),
+        ("eventexpr", action.eventexpr.as_str()),
+        ("id", action.id.as_str()),
+        ("idlocation", action.idlocation.as_str()),
+        ("sendid", action.sendid.as_str()),
+        ("sendidexpr", action.sendidexpr.as_str()),
+        ("targetexpr", action.targetexpr.as_str()),
+        ("type", action.send_type.as_str()),
+        ("typeexpr", action.typeexpr.as_str()),
+        ("namelist", action.namelist.as_str()),
+        ("location", action.location.as_str()),
+        ("expr", action.expr.as_str()),
+        ("label", action.label.as_str()),
+        ("array", action.array.as_str()),
+        ("item", action.item.as_str()),
+        ("index", action.index.as_str()),
+        ("contentexpr", action.contentexpr.as_str()),
+        ("content", action.content.as_str()),
+    ];
+    for (name, value) in fields {
+        if !value.is_empty() {
+            parts.push(format!("{name}={value}"));
+        }
+    }
+    // `<param>` on a `<send>`, `<sce:arg>` on an `<sce:action>`: both
+    // parse into `params`, and each pair is part of what the action sends.
+    for param in &action.params {
+        let mut pair = vec![format!("name={}", param.name)];
+        if !param.expr.is_empty() {
+            pair.push(format!("expr={}", param.expr));
+        }
+        if !param.location.is_empty() {
+            pair.push(format!("location={}", param.location));
+        }
+        parts.push(format!("param({})", pair.join(" ")));
+    }
+    // An `<if>`'s own `cond` is in the guard column; its `<elseif>`
+    // conditions decide which nested row runs and have no column.
+    for branch in &action.elseif_branches {
+        parts.push(format!("elseif({})", branch.cond));
+    }
+    parts.join(" ")
 }
 
 /// Requirement ids the manifest declares that no row claims.
