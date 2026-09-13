@@ -2,8 +2,14 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Install the rev-pinned `mnemosyne-cli` where `scripts/gates/ledger-citations.sh`
-# looks for it.
+# Install the rev-pinned Mnemosyne build where this repository looks for it.
+#
+# The unit is the REVISION, not a binary: every name in
+# `MNEMOSYNE_PIN_BINARIES` goes into one revision root, because a root
+# holding some of them passed every check this repository had while the MCP
+# servers it was supposed to serve died at start-up. The list, the revision
+# and the verifier all live in `scripts/lib/mnemosyne_pin.sh`; the file name
+# here still says `cli` because the workflows and docs that call it do.
 #
 # Two lanes besides the citations one need this binary and neither had it:
 # `gate_registry_contract` drives the *staged* citation stage as a subprocess,
@@ -34,32 +40,48 @@
 # is deliberately no automation for it in this script — reaching into a
 # machine registry is not a repository's business, and a script that tried
 # would go stale the first time a host was added.
+#
+# ⚠ AND A HOST THAT IS DOWN AT BUMP TIME KEEPS THE OLD REVISION. Measured
+# 2026-09-14, bumping to `df1f17ce`: `pc2` and `pc3` took the install and
+# `pc4` did not answer at all, so it still carries whatever it had. Nothing
+# notices until something is sent there, and then the symptom is this
+# script's install line arriving where a verdict was expected. Running this
+# script on a host is idempotent, so the remedy on any doubt is to run it
+# rather than to check first.
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-PIN_FILE="$REPO_ROOT/.github/workflows/spec-citations.yml"
+source "$REPO_ROOT/scripts/lib/mnemosyne_pin.sh"
 
-rev="$(sed -n 's/^[[:space:]]*MNEMOSYNE_REV:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' "$PIN_FILE")"
-if [[ -z "$rev" ]]; then
-    echo "install_mnemosyne_cli: no MNEMOSYNE_REV pin found in $PIN_FILE" >&2
-    exit 1
-fi
-
+rev="$(mnemosyne_pin_rev "$REPO_ROOT")"
 short="${rev:0:8}"
-root="${HOME}/.local/share/mnemosyne-rev/${short}"
-bin="${root}/bin/mnemosyne-cli"
+root="$(mnemosyne_pin_root "$rev")"
 
-# The revision is checked, not just the path: `cargo install --root` leaves a
-# binary behind when the rev moves, and a stale one answers every question
-# with the wrong ledger schema. The gate makes the same check before it runs.
-if [[ -x "$bin" ]] && "$bin" --version 2>&1 | grep -q "$short"; then
-    echo "install_mnemosyne_cli: $bin is already at $short"
+# A REVISION is installed, not a binary. Both names go to one `cargo install`
+# so the root is complete or absent, never the half that reads green — see
+# the header of `scripts/lib/mnemosyne_pin.sh` for what the half cost.
+missing="$(mnemosyne_pin_missing "$rev")"
+if [[ -z "$missing" ]]; then
+    echo "install_mnemosyne_cli: $root already carries ${MNEMOSYNE_PIN_BINARIES[*]} at $short"
     exit 0
 fi
 
-echo "install_mnemosyne_cli: installing mnemosyne-cli $short into $root"
+echo "install_mnemosyne_cli: $root needs:"
+while IFS= read -r line; do printf '  %s\n' "$line"; done <<<"$missing"
+echo "install_mnemosyne_cli: installing ${MNEMOSYNE_PIN_BINARIES[*]} $short into $root"
 cargo install --git https://github.com/newmassrael/mnemosyne \
-    --rev "$rev" --locked --root "$root" mnemosyne-cli
+    --rev "$rev" --locked --root "$root" "${MNEMOSYNE_PIN_BINARIES[@]}"
 
-"$bin" --version
+# Verified after installing, not assumed from exit 0: `cargo install` succeeds
+# for a package whose binary lands under a name this repository does not ask
+# for, and that root would still be half-filled.
+still="$(mnemosyne_pin_missing "$rev")"
+if [[ -n "$still" ]]; then
+    echo "install_mnemosyne_cli: install finished and the root is still incomplete:" >&2
+    while IFS= read -r line; do printf '  %s\n' "$line" >&2; done <<<"$still"
+    exit 1
+fi
+for bin in "${MNEMOSYNE_PIN_BINARIES[@]}"; do
+    "$root/bin/$bin" --version
+done
