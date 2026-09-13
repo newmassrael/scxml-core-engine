@@ -116,7 +116,11 @@ fn the_table_carries_the_seven_columns_of_the_trace_table() {
     assert_eq!(entry.source, "REQ-003");
     assert_eq!(entry.from, "emergency");
     assert_eq!(entry.after, "3s", "verbatim, not resolved to milliseconds");
-    assert_eq!(entry.action, "send");
+    assert_eq!(
+        entry.action, "send event=drive_off",
+        "the cell says what the send raises, not only that it sends — a \
+         timer whose event is renamed must not leave the row unchanged",
+    );
 }
 
 /// (a) The `(none)` block is non-empty.
