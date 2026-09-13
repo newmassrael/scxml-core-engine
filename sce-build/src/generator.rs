@@ -39,6 +39,12 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
     //    allowing optional attribute chains like `model.foo.bar` to work.
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
     register_symbol_artifact_global(&mut env);
+    // Registered here, not in a backend's filter set, for the reason the
+    // artifact global above is: this is the one function every backend's
+    // environment passes through. The annotation macro that calls it is
+    // shared by all six, so a filter any one backend forgot would be an
+    // "unknown filter" error in exactly that backend and nowhere else.
+    env.add_filter("comment_text", crate::comment_text::filter);
     env
 }
 

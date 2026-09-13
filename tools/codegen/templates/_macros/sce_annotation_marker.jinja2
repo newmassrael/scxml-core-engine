@@ -27,6 +27,27 @@
      - c (C11)                  : `/* sce:req: … */` (block form)
      - python                   : `# sce:req: …` / `# sce:unresolved: …`
 
+   ⚠ Every author-supplied value below goes through `| comment_text`
+   (`sce_build::comment_text::encode`). The annotations are opaque by
+   contract (SCE_ACCEPTED_SUBSET §2.10), so an id may contain `*/` or end
+   in `\`, and an unresolved reason may carry a newline. Before the
+   encoder existed, each of those put author text into generated CODE:
+   measured 2026-09-13, an id `A*/B` closed the C11 block comment, a
+   reason with a newline broke the five line-comment backends (Python
+   failed to compile; Go parsed the injected line as a statement), and a
+   trailing `\` spliced the next C++ line. This header used to call the
+   newline case "author-side hygiene, not a SCE invariant". It is an
+   invariant: author text that is opaque by contract cannot be the
+   author's job to keep out of the emitter's syntax.
+
+   The encoding writes `\`, LF, CR, the `/` of `*/` and the `*` of `/*`
+   as `\xHH` and leaves every other character alone, so an ordinary id
+   is byte-identical. One grammar for all six backends, reversed by
+   `comment_text::decode`. `sce_annotation_emission.rs` holds both
+   halves: `hostile_annotation_text_stays_inside_its_comment` fails if
+   any value reaches code, and the provenance round-trip decodes before
+   it re-parses.
+
    Ordering is the document order surfaced by the parser
    (`RequirementId::split` preserves token order; the `unresolved`
    vector is push-order from the parse walker). The macros do not
@@ -47,17 +68,12 @@
    can set `page` with no `section`, so the section part is emitted
    whenever EITHER is present and an empty section reads back as
    absent — `OEM-TIMING-REQ#:7` parses to exactly (doc_id, page=7).
-   `SpecProvenance::parse_compact` accepts every string this emits,
-   and `sce_annotation_emission.rs` re-parses each emitted line to
-   hold that true rather than asserting it here.
+   `SpecProvenance::parse_compact` accepts every string this emits
+   once decoded, and `sce_annotation_emission.rs` re-parses each
+   emitted line to hold that true rather than asserting it here.
 
    Unresolved-marker shape (kept compact, opaque to SCE):
      `sce:unresolved: id=<ID>[ reason=<R>][ candidates=<A,B,C>]`
-
-   The author is responsible for keeping `reason` / `candidates`
-   free of newlines — the parser does not sanitise. A newline in
-   `reason` would visibly break a `//` single-line comment; this is
-   author-side hygiene, not a SCE invariant.
 
    Two call patterns are supported. Pick the one that fits the
    emission site without disturbing the surrounding indentation.
@@ -130,13 +146,13 @@
 {%- set close = "" -%}
 {%- endif -%}
 {%- if node.req -%}
-{{ "\n" }}{{ indent }}{{ open }}sce:req: {{ node.req | join(" ") }}{{ close }}
+{{ "\n" }}{{ indent }}{{ open }}sce:req: {{ node.req | join(" ") | comment_text }}{{ close }}
 {%- endif -%}
 {%- for p in node.provenance -%}
-{{ "\n" }}{{ indent }}{{ open }}sce:provenance: {{ provenance_compact(p) }}{{ close }}
+{{ "\n" }}{{ indent }}{{ open }}sce:provenance: {{ provenance_compact(p) | comment_text }}{{ close }}
 {%- endfor -%}
 {%- for marker in node.unresolved -%}
-{{ "\n" }}{{ indent }}{{ open }}sce:unresolved: id={{ marker.id }}{% if marker.reason %} reason={{ marker.reason }}{% endif %}{% if marker.candidates %} candidates={{ marker.candidates | join(",") }}{% endif %}{{ close }}
+{{ "\n" }}{{ indent }}{{ open }}sce:unresolved: id={{ marker.id | comment_text }}{% if marker.reason %} reason={{ marker.reason | comment_text }}{% endif %}{% if marker.candidates %} candidates={{ marker.candidates | join(",") | comment_text }}{% endif %}{{ close }}
 {%- endfor -%}
 {%- endif -%}
 {%- endmacro -%}
@@ -154,13 +170,13 @@
 {%- set close = "" -%}
 {%- endif -%}
 {%- if node.req -%}
-{{ indent }}{{ open }}sce:req: {{ node.req | join(" ") }}{{ close }}{{ "\n" }}
+{{ indent }}{{ open }}sce:req: {{ node.req | join(" ") | comment_text }}{{ close }}{{ "\n" }}
 {%- endif -%}
 {%- for p in node.provenance -%}
-{{ indent }}{{ open }}sce:provenance: {{ provenance_compact(p) }}{{ close }}{{ "\n" }}
+{{ indent }}{{ open }}sce:provenance: {{ provenance_compact(p) | comment_text }}{{ close }}{{ "\n" }}
 {%- endfor -%}
 {%- for marker in node.unresolved -%}
-{{ indent }}{{ open }}sce:unresolved: id={{ marker.id }}{% if marker.reason %} reason={{ marker.reason }}{% endif %}{% if marker.candidates %} candidates={{ marker.candidates | join(",") }}{% endif %}{{ close }}{{ "\n" }}
+{{ indent }}{{ open }}sce:unresolved: id={{ marker.id | comment_text }}{% if marker.reason %} reason={{ marker.reason | comment_text }}{% endif %}{% if marker.candidates %} candidates={{ marker.candidates | join(",") | comment_text }}{% endif %}{{ close }}{{ "\n" }}
 {%- endfor -%}
 {%- endif -%}
 {%- endmacro -%}
