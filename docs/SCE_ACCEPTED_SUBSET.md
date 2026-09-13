@@ -63,6 +63,26 @@ The accepted surface comprises:
 - **Communication**: `_ioprocessors`, `_sessionid`, `_name`,
   `_event` (excluding the exclusions listed in §3).
 
+⚠⚠ **Open — identifier-bearing attributes are not checked against the
+grammar W3C gives them.** W3C SCXML types a state's `id` as `ID`
+(§3.3.1, §3.4.1, §3.7.1 — *"A valid id as defined in [XML Schema]"*)
+and describes an event name as alphanumeric tokens separated by `.`
+(§3.12.1). SCE enforces neither: `schemas/sce-forge.xsd` is `xs:any
+lax` for W3C structural elements, and no parse-time check stands in
+for it. Measured 2026-09-13, a document with `<state id="s0*/X">` and
+`<transition event="go*/Y" target="done*/Z">` generates without a
+diagnostic, and the ids become code identifiers — `…_STATE_S0*/X` in
+C, `S0*/X = 1` in Python — so the emitted source does not compile.
+
+This is not the comment-encoding problem §2.10 describes, and the
+repair is not an encoder. An id that satisfies the W3C grammar cannot
+carry `*/`, a line terminator or a trailing `\`, so typing these
+attributes at parse closes this hole and, with it, every template
+comment that echoes an id, an event or a target. What an encoder is
+still owed for after that are the free-text and expression fields
+(`cond`, `expr`, `location`, …) that the grammar does not constrain.
+Registered, not fixed.
+
 The **AOT code generator** is the default path; the Interpreter exists
 as a fallback for documents that cannot be statically generated. At
 HEAD, `tests/CMakeLists.txt` lists every W3C IRP test in
