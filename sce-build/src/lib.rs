@@ -25,6 +25,10 @@ pub mod analyzer;
 pub mod anchor_index;
 pub mod cli_error;
 pub mod cli_language;
+/// Text placed inside a comment in generated source — the one encoding
+/// that keeps opaque author text (`sce:req`, `sce:provenance`,
+/// `sce:unresolved`) from reaching code in any backend.
+pub mod comment_text;
 pub mod conformance;
 /// The W3C SCXML ECMAScript datamodel — parsed, then emitted as Lua. It replaces the
 /// string-rewriting transformer whose entry point could not fail; see the

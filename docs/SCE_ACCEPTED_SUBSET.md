@@ -1175,21 +1175,30 @@ first, and note what it would cost — ISO 13400-2 numbers its
 requirements `3.DoIP-152`, which a leading-character rule
 refuses.
 
-⚠⚠ Opacity has a downstream cost that is **open**, measured
-2026-09-12. An opaque id may contain `*/`, and the C11 backend
-renders annotations in a block comment (`/* sce:req: … */`)
-where the other five backends use line comments. So
-`sce:req="REQ*/x"` generates C that does not compile: the
-comment closes at `REQ*/` and the remainder is parsed as code
-(`gcc -std=c11`: *error: unknown type name*). The emitter is
-`tools/codegen/templates/_macros/sce_annotation_marker.jinja2`,
-whose header already records the sibling decision for newlines
-in `sce:unresolved` reasons — "author-side hygiene, not a SCE
-invariant". That reasoning does not carry over: a newline
-cannot occur in a `req` id, which is whitespace-split, whereas
-`*/` can. Registered rather than fixed here because any edit
-to that template repins the `template-hash` in 1317 committed
-files, which is a round of its own.
+⚠⚠ **Annotation text is encoded for the comment it lands in.**
+Opacity has a downstream cost, and it was wider than first
+registered. An id may contain `*/` or end in `\`, and an
+`sce:unresolved` reason may carry a newline (`&#10;`). Measured
+2026-09-13 through all six backends, each of those put author
+text into generated code: the C11 block comment closed at `*/`;
+the five line-comment backends broke at the newline, where
+Python then failed to compile and Go parsed the injected line as
+a statement; and a trailing `\` spliced the next C++ line into
+its comment. The emitter's own header had called the newline case
+"author-side hygiene, not a SCE invariant" — text that is opaque
+by contract cannot be the author's job to keep out of the
+emitter's syntax.
+
+Every annotation value therefore passes through
+`sce_build::comment_text::encode`, which writes `\`, LF, CR, the
+`/` of `*/` and the `*` of `/*` as `\xHH` and leaves every other
+character alone. An ordinary id is byte-identical, and the grammar
+is the same in all six backends. **A reader recovering ids,
+anchors or reasons from generated source must decode them** with
+`comment_text::decode`, which refuses a payload the encoder did
+not write. `sce-build/tests/sce_annotation_emission.rs::hostile_annotation_text_stays_inside_its_comment`
+generates one hostile document per backend and fails if any
+annotation text lands outside its comment or fails to round-trip.
 
 **`sce:provenance`** — spec-document anchors.
 

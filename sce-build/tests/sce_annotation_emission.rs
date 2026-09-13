@@ -167,9 +167,15 @@ const BARE_SCXML: &str = r#"<?xml version="1.0"?>
 "#;
 
 /// All six backends emit the same annotation tokens (req IDs and the
-/// unresolved marker id) as backend-appropriate comments. We check
-/// only the SCE-emitted *content*: backend-specific syntax (`//` vs
-/// `#` vs `/* */`) is verified by codegen_smoke's toolchain check.
+/// unresolved marker id) as backend-appropriate comments. This checks
+/// the SCE-emitted *content*. Whether that content stays inside its
+/// comment — the syntax half — is held by
+/// `hostile_annotation_text_stays_inside_its_comment`.
+///
+/// ⚠ This note used to say the syntax half was "verified by
+/// codegen_smoke's toolchain check". It was not: no annotated document
+/// is compiled there, and every backend let annotation text into code
+/// while that sentence stood.
 fn assert_all_backends_emit_annotations(scratch: &Path) {
     for lang in BACKENDS {
         let out_dir = scratch.join(lang);
@@ -288,7 +294,13 @@ fn every_backend_emits_the_spec_anchors_and_only_those() {
         //   comment: it promises a machine-readable link and breaks
         //   the tool that follows it.
         let mut emitted: Vec<SpecProvenance> = Vec::new();
-        for payload in &payloads {
+        for encoded in &payloads {
+            // Decoded first: the comment carries `comment_text`'s grammar,
+            // and a reader that skipped this step would misread any anchor
+            // holding a `\`, a line terminator, `*/` or `/*`.
+            let payload = &sce_build::comment_text::decode(encoded).unwrap_or_else(|| {
+                panic!("backend {lang}: {encoded:?} is not comment_text encoder output")
+            });
             let parsed = SpecProvenance::parse_compact(payload).unwrap_or_else(|| {
                 panic!(
                     "backend {lang}: emitted anchor {payload:?} is not accepted by \
@@ -323,4 +335,167 @@ fn bare_scxml_emits_no_annotation_comments() {
     let _ = std::fs::remove_dir_all(&scratch);
     std::fs::create_dir_all(&scratch).expect("create scratch");
     assert_no_backend_emits_annotations(&scratch);
+}
+
+/// Annotation values that each broke a backend's comment before
+/// `comment_text` existed — measured 2026-09-13, one per hazard:
+///
+/// - `A*/INJ_BLOCK` closed the C11 block comment, leaving code behind;
+/// - `/*INJ_NEST` opens a nested block comment in Rust and Kotlin;
+/// - a reason carrying LF (`&#10;`) and CR (`&#13;`) broke every
+///   line-comment backend — Python failed to compile, Go parsed the
+///   injected line as a statement;
+/// - `SPLICE\` spliced the next C++ line into its `//` comment;
+/// - the provenance doc id carries `*/` the same way the id does.
+///
+/// `CTRL_OK` is the positive control. Without it a backend that stopped
+/// emitting annotations at all would pass every "nothing leaked" check
+/// below, which is how this defect sat under a green suite: the only
+/// test of annotations asserted content, and its note that syntax was
+/// "verified by codegen_smoke's toolchain check" was untrue — no
+/// annotated document is compiled there.
+const HOSTILE_SCXML: &str = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="annot_emit" initial="s0">
+  <state id="s0" sce:req="CTRL_OK A*/INJ_BLOCK /*INJ_NEST"
+         sce:unresolved="U1" sce:unresolved-reason="one&#10;INJ_NL = 1&#13;INJ_CR">
+    <onentry sce:req="SPLICE\">
+      <log sce:req="LEAF_OK" expr="'entered s0'"/>
+    </onentry>
+    <transition event="go" target="done" sce:req="TRANS_OK"
+                sce:provenance="DOC*/INJ_PROV@1#2.3">
+      <log sce:req="TRANS_LOG" expr="'on go'"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+
+/// Text that exists in the hostile document only inside an annotation.
+/// If any of it appears on a line that is not wholly a comment, author
+/// text reached generated code.
+const HOSTILE_MARKERS: [&str; 6] = [
+    "INJ_BLOCK",
+    "INJ_NEST",
+    "INJ_NL",
+    "INJ_CR",
+    "INJ_PROV",
+    "SPLICE",
+];
+
+/// Lines of `text` that carry annotation-only text but are not a whole,
+/// intact comment in `lang`'s syntax.
+///
+/// A line-level check is exact here because the encoder's job is to keep
+/// each annotation on ONE physical line: a line comment is intact when it
+/// starts with the opener and does not end in `\` (a C/C++ splice), and a
+/// C11 block comment when it opens at the start, closes at the end, and
+/// closes nowhere in between.
+fn comment_violations(lang: &str, text: &str) -> Vec<String> {
+    let opener = match lang {
+        "python" => "#",
+        "c" => "/*",
+        _ => "//",
+    };
+    text.lines()
+        .filter(|line| HOSTILE_MARKERS.iter().any(|m| line.contains(m)))
+        .filter(|line| {
+            let body = line.trim();
+            let intact = body.starts_with(opener)
+                && !body.ends_with('\\')
+                && (lang != "c" || (body.ends_with("*/") && body.matches("*/").count() == 1));
+            !intact
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn hostile_annotation_text_stays_inside_its_comment() {
+    use sce_build::comment_text::decode;
+
+    // The checker has to be shown refusing before its silence means
+    // anything: these are the exact shapes the unencoded macro emitted.
+    let unencoded = [
+        ("c", "    /* sce:req: CTRL_OK A*/INJ_BLOCK */"),
+        ("cpp", "    // sce:unresolved: id=U1 reason=one\nINJ_NL = 1"),
+        (
+            "python",
+            "    # sce:unresolved: id=U1 reason=one\nINJ_NL = 1",
+        ),
+        ("cpp", "    // sce:req: LEAF_OK SPLICE\\"),
+    ];
+    for (lang, rendering) in unencoded {
+        assert!(
+            !comment_violations(lang, rendering).is_empty(),
+            "the checker accepted the pre-encoder {lang} rendering {rendering:?}, so its \
+             silence on real output would prove nothing",
+        );
+    }
+
+    let scratch = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sce_annotation_hostile");
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(&scratch).expect("create scratch");
+
+    for lang in BACKENDS {
+        let out_dir = scratch.join(lang);
+        std::fs::create_dir_all(&out_dir).expect("create lang scratch");
+        let scxml = write_scxml(&out_dir, "annot_emit", HOSTILE_SCXML);
+        generate(lang, &out_dir, &scxml);
+        let joined = read_concat_outputs(&out_dir);
+
+        // The leak is checked FIRST because it is the property this test
+        // exists for. Run against the unencoded macro, the round-trip
+        // assertions below also go red — `SPLICE\` is not encoder output —
+        // but a red that names a decode failure sends the reader to the
+        // wrong symptom. This one names the lines that became code.
+        let leaks = comment_violations(lang, &joined);
+        assert!(
+            leaks.is_empty(),
+            "backend {lang}: annotation text reached generated CODE on {} line(s):\n{}",
+            leaks.len(),
+            leaks.join("\n"),
+        );
+
+        let req: Vec<String> = annotation_payloads(&joined, "req")
+            .iter()
+            .map(|p| decode(p).unwrap_or_else(|| panic!("{lang}: {p:?} is not encoder output")))
+            .collect();
+        assert!(
+            req.iter().any(|p| p == "CTRL_OK A*/INJ_BLOCK /*INJ_NEST"),
+            "backend {lang}: the state's ids did not come back intact from its comment — \
+             the positive control failed, so nothing else here can be trusted. Decoded: \
+             {req:?}",
+        );
+        assert!(
+            req.iter().any(|p| p.split(' ').any(|id| id == "SPLICE\\")),
+            "backend {lang}: the inherited `SPLICE\\` id did not round-trip. Decoded: {req:?}",
+        );
+
+        let unresolved: Vec<String> = annotation_payloads(&joined, "unresolved")
+            .iter()
+            .filter_map(|p| decode(p))
+            .collect();
+        assert!(
+            unresolved
+                .iter()
+                .any(|p| p == "id=U1 reason=one\nINJ_NL = 1\rINJ_CR"),
+            "backend {lang}: the unresolved reason did not round-trip with its line \
+             terminators. Decoded: {unresolved:?}",
+        );
+
+        let anchors: Vec<SpecProvenance> = annotation_payloads(&joined, "provenance")
+            .iter()
+            .filter_map(|p| decode(p))
+            .filter_map(|p| SpecProvenance::parse_compact(&p))
+            .collect();
+        assert!(
+            anchors.iter().any(|a| a.doc_id == "DOC*/INJ_PROV"
+                && a.rev.as_deref() == Some("1")
+                && a.section.as_deref() == Some("2.3")),
+            "backend {lang}: the `*/`-bearing provenance anchor did not round-trip. \
+             Parsed: {anchors:?}",
+        );
+    }
 }
