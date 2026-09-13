@@ -233,18 +233,22 @@ fn delay_of(action: &crate::model::Action) -> String {
 /// are two readings of one export is exactly that agreement, and
 /// `transition_table_closure.rs` asserts it rather than assuming it.
 ///
-/// ⚠ `declared` is the ids of the **`shall` entries**, not of every
-/// entry, and the caller does that filtering because only the caller
-/// holds the manifest. The agreement above is a statement about one
-/// question — *is there a node carrying this id* — and
-/// [`crate::requirement_manifest::Modality::ShallNot`] entries are
-/// exactly the ones that question may not be asked of. Passing them
-/// in makes this function report a prohibition as `missing` however
-/// well it is implemented, which is the false alarm
+/// ⚠ `declared` is the ids of the entries for which
+/// [`crate::requirement_manifest::RequirementEntry::is_settled_by_annotation`]
+/// holds, not of every entry, and the caller does that filtering
+/// because only the caller holds the manifest. The agreement above is a
+/// statement about one question — *is there a node carrying this id* —
+/// and two kinds of entry may not be asked it.
+/// [`crate::requirement_manifest::Modality::ShallNot`] entries are met
+/// by an absence: passing them in reports a prohibition as `missing`
+/// however well it is implemented, which is the false alarm
 /// [`crate::requirement_manifest::Outcome::NeedsScenario`] exists to
-/// stop; it would also make the two readings disagree, and the
-/// disagreement would be read as drift in the export rather than as
-/// the modality confusion it is.
+/// stop. Entries disposed elsewhere
+/// ([`crate::requirement_manifest::Disposition`]) are met in another
+/// document or the deployment: passing them in reports a delegation as
+/// dropped. Either way the two readings would disagree, and the
+/// disagreement would be read as drift in the export rather than as the
+/// confusion it is.
 pub fn requirements_without_a_row<'a>(
     rows: &[TransitionRow],
     declared: impl Iterator<Item = &'a str>,
