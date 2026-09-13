@@ -137,8 +137,11 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     event: "(state)".to_string(),
                     guard: EMPTY_CELL.to_string(),
                     after: EMPTY_CELL.to_string(),
-                    to: EMPTY_CELL.to_string(),
-                    action: EMPTY_CELL.to_string(),
+                    // Where entering this state actually goes, which is
+                    // the same question this column answers for a
+                    // transition.
+                    to: or_dash(&state.initial),
+                    action: what_the_state_is(state),
                     node_path,
                 },
                 NodeSubject::Transition {
@@ -256,6 +259,43 @@ fn delay_of(action: &crate::model::Action) -> String {
 ///
 /// ⚠ Nested actions are not rendered here — each has a row of its own,
 /// and its `node_path` says which branch or body it sits in.
+/// What a state IS, for the reason its sibling above exists.
+///
+/// A state's row carried its NAME and nothing else, so every structural
+/// attribute an author writes was off the page: which child a compound
+/// state enters, whether it is `<parallel>`, whether it is `<final>`,
+/// and which history it restores. Change any of them and the machine
+/// enters somewhere else, while the row stayed byte-identical — the
+/// same shape the action cell had, found the same way, by
+/// `an_acceptance_report_moves_when_a_requirement_is_violated` reporting
+/// that a requirement cited on a state had nothing on the page that a
+/// violation could move.
+///
+/// `initial` is left to the `to` column, which now carries it: a state's
+/// initial child is where entering it actually goes.
+pub(crate) fn what_the_state_is(state: &crate::model::State) -> String {
+    let mut parts = vec![if state.is_parallel {
+        "parallel".to_string()
+    } else if state.is_final {
+        "final".to_string()
+    } else {
+        "state".to_string()
+    }];
+    if !state.initial_children.is_empty() {
+        parts.push(format!("enters({})", state.initial_children.join(" ")));
+    }
+    if !state.initial_history_id.is_empty() {
+        parts.push(format!("history={}", state.initial_history_id));
+    }
+    if !state.initial_history_default_target.is_empty() {
+        parts.push(format!(
+            "history_default={}",
+            state.initial_history_default_target
+        ));
+    }
+    parts.join(" ")
+}
+
 pub(crate) fn what_the_action_does(action: &crate::model::Action) -> String {
     let mut parts = vec![action.action_type.clone()];
     let fields: [(&str, &str); 19] = [

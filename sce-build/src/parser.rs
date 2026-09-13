@@ -2991,8 +2991,9 @@ impl SCXMLParser {
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
                 // §scxml-5.4: "The children of the <assign> element provide
-                // an in-line specification of the legal data value ... to be
-                // inserted into the data model at the specified location."
+                // an in-line specification of the legal data value (see
+                // §scxml-5.9.3) to be inserted into the data model at the
+                // specified location."
                 // That is the same reading `<data>`'s in-line content gets,
                 // so it is read by the same function rather than by a second
                 // copy — and the second copy that used to be here had only
@@ -5386,8 +5387,9 @@ fn serialize_node(node: &roxmltree::Node) -> String {
 /// compared against elsewhere already produces.
 fn inline_data_value(node: &roxmltree::Node) -> String {
     // §scxml-5.4: children are an in-line specification of the same legal
-    // data value the element's value-expression attribute would carry, so
-    // element children serialise and everything else is the text.
+    // data value (§scxml-5.9.3) the element's value-expression attribute
+    // would carry, so element children serialise and everything else is
+    // the text.
     if node.children().any(|c| c.is_element()) {
         let mut xml = String::new();
         for child in node.children().filter(|c| c.is_element()) {

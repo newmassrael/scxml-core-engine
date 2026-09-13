@@ -947,6 +947,10 @@
           "file": "backends/rust/runtime/src/helpers/event_matching.rs",
           "symbol": "matches_event_descriptor",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7579,6 +7583,17 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::assignVariable",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {

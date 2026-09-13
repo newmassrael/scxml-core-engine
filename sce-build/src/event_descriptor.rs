@@ -1,4 +1,4 @@
-//! W3C SCXML §3.12.1 — event descriptors, the one definition in this crate.
+//! §scxml-3.12.1 — event descriptors, the one definition in this crate.
 //!
 //! > Like an event name, an event descriptor is a series of alphanumeric
 //! > characters segmented into tokens by the "." character. [...] An event

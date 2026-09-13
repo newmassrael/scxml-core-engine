@@ -140,7 +140,8 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
         bool success = AssignmentExecutionHelper::executeAssignment(
             scriptEngine_, sessionId_, jsLocation, expr, [this, &location, &expr](const std::string &error) {
                 handleJSError("assignment execution", error);
-                // §scxml-5.9: Raise error.execution for assignment failure
+                // §scxml-5.9.3: the value expression did not return a legal data
+                // value, so error.execution goes on the internal queue
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution",
                                              "Assignment failed - location: " + location + ", expr: " + expr);
@@ -156,7 +157,8 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
 
     } catch (const std::exception &e) {
         handleJSError("variable assignment", e.what());
-        // §scxml-5.9: Raise error.execution for assignment exception
+        // §scxml-5.9.3: an expression that threw returned no legal data value
+        // either, and the same error is owed
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", std::string("Assignment exception: ") + e.what());
         }

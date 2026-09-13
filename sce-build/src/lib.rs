@@ -16,6 +16,9 @@
 //   // main.rs
 //   include!(concat!(env!("OUT_DIR"), "/traffic_light_sm.rs"));
 
+/// What a requirement's evidence depends on, as a closure over the IR
+/// rather than the nodes carrying its id — Requirement-closure RFC §7a.
+pub mod acceptance_report;
 pub mod analyzer;
 /// The innermost-enclosing-anchor lookup behind
 /// `SCE_ERROR_CONTRACT.md` §2.1.2 — source location to the
@@ -35,7 +38,7 @@ pub mod conformance;
 /// module docs for what that signature cost.
 pub mod ecmascript;
 pub mod ecmascript_acceptance;
-/// W3C SCXML §3.12.1 event descriptors — the one definition of which
+/// §scxml-3.12.1 event descriptors — the one definition of which
 /// events a transition's `event` attribute matches.
 pub mod event_descriptor;
 /// The C-callable lowering surface, behind an off-by-default feature.
@@ -139,6 +142,9 @@ pub mod provenance;
 /// The closed requirement set a document is measured against, and the
 /// set comparison it makes possible — Requirement-closure RFC ①.
 pub mod requirement_manifest;
+/// The verbatim sentences a manifest deliberately does not carry, read
+/// from a file that is never committed — Requirement-closure RFC §7a.
+pub mod requirement_sidecar;
 /// Per-node `sce:req` requirement-annotation NDJSON emit.
 /// Drives the `sce-codegen requirements` CLI subcommand for
 /// downstream req-coverage tooling.

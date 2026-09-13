@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 3.12.1: event descriptor matching.
+//! §scxml-3.12.1: event descriptor matching.
 //!
 //! Mirrors `sce/include/core/EventMatchingHelper.h` and `sce-build`'s
 //! `event_descriptor` module: each reduces a descriptor to one token prefix
