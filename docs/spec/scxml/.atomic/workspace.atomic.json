@@ -917,6 +917,26 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "raiseInternal",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_sce_unhandled",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_states",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/event_descriptor.rs",
+          "symbol": "parse",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/event_descriptor.rs",
+          "symbol": "matches",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

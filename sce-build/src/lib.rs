@@ -35,6 +35,9 @@ pub mod conformance;
 /// module docs for what that signature cost.
 pub mod ecmascript;
 pub mod ecmascript_acceptance;
+/// W3C SCXML §3.12.1 event descriptors — the one definition of which
+/// events a transition's `event` attribute matches.
+pub mod event_descriptor;
 /// The C-callable lowering surface, behind an off-by-default feature.
 /// `sce_scripting` links it beside `lua54` so `LuaEngine` can send an
 /// expression to the frontend's parser instead of to
@@ -133,10 +136,10 @@ pub mod position_map;
 /// report, unresolved-placeholder report, and provenance emit would
 /// fragment into incompatible representations if each grew its own.
 pub mod provenance;
-/// Per-node `sce:req` requirement-annotation NDJSON emit.
 /// The closed requirement set a document is measured against, and the
 /// set comparison it makes possible — Requirement-closure RFC ①.
 pub mod requirement_manifest;
+/// Per-node `sce:req` requirement-annotation NDJSON emit.
 /// Drives the `sce-codegen requirements` CLI subcommand for
 /// downstream req-coverage tooling.
 pub mod requirements_report;

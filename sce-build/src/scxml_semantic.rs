@@ -410,8 +410,8 @@ pub enum ScxmlSemanticError {
     /// count as handling — a state with `event="foo"` handles
     /// `foo.bar` under the token-prefix rules, so declaring `foo.bar`
     /// unhandled there is the same contradiction spelled less
-    /// obviously. The rule itself is implemented and cited in
-    /// `scxml_exhaustiveness::transition_matches_event`; this variant
+    /// obviously. The rule itself is `crate::event_descriptor`, which
+    /// `scxml_exhaustiveness::transition_matches_event` asks; this variant
     /// only reports what that predicate decided.
     #[error(
         "State '{state}' declares sce:unhandled=\"{event}\" but has a \
