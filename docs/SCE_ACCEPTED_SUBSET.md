@@ -75,13 +75,12 @@ diagnostic, and the ids become code identifiers — `…_STATE_S0*/X` in
 C, `S0*/X = 1` in Python — so the emitted source does not compile.
 
 This is not the comment-encoding problem §2.10 describes, and the
-repair is not an encoder. An id that satisfies the W3C grammar cannot
-carry `*/`, a line terminator or a trailing `\`, so typing these
-attributes at parse closes this hole and, with it, every template
-comment that echoes an id, an event or a target. What an encoder is
-still owed for after that are the free-text and expression fields
-(`cond`, `expr`, `location`, …) that the grammar does not constrain.
-Registered, not fixed.
+repair is not an encoder. The comments are already safe: the
+generator encodes every value a template writes into one, ids and
+free-text fields alike. What the grammar is owed for is the CODE an id
+becomes — an identifier, and the string literals §2.10 registers as
+open — and an id that satisfies the W3C grammar cannot carry `*/`, a
+line terminator or a trailing `\` there either. Registered, not fixed.
 
 The **AOT code generator** is the default path; the Interpreter exists
 as a fallback for documents that cannot be statically generated. At
@@ -1209,16 +1208,52 @@ its comment. The emitter's own header had called the newline case
 by contract cannot be the author's job to keep out of the
 emitter's syntax.
 
-Every annotation value therefore passes through
-`sce_build::comment_text::encode`, which writes `\`, LF, CR, the
-`/` of `*/` and the `*` of `/*` as `\xHH` and leaves every other
-character alone. An ordinary id is byte-identical, and the grammar
-is the same in all six backends. **A reader recovering ids,
+Every template value written into a comment is therefore encoded,
+and not by the templates. `generator::register_template` is the one
+way a template enters an environment; it reads the template in the
+language it emits (`sce_build::template_lexing`) and routes each
+`{{ … }}` that sits inside a comment through
+`sce_build::comment_text::encode`, which writes `\`, LF, CR, the `/`
+of `*/` and the `*` of `/*` as `\xHH` and leaves every other
+character alone. An ordinary value is byte-identical, and the
+grammar is the same in all six backends. The annotation values were
+the first case and not the only one: measured 2026-09-13, 963
+template interpolations sat inside a comment and none was encoded —
+the C11 comment echoing a `<log>` element's `expr` closed at `*/`,
+and the Go comment echoing a `<data>` element's `expr` put a line
+break into code. The one macro whose comment delimiters come from a
+variable (`_macros/sce_annotation_marker.jinja2`) cannot be read that
+way and writes `| comment_text` itself. **A reader recovering ids,
 anchors or reasons from generated source must decode them** with
-`comment_text::decode`, which refuses a payload the encoder did
-not write. `sce-build/tests/sce_annotation_emission.rs::hostile_annotation_text_stays_inside_its_comment`
-generates one hostile document per backend and fails if any
-annotation text lands outside its comment or fails to round-trip.
+`comment_text::decode`, which refuses a payload the encoder did not
+write. `sce-build/tests/a_value_written_into_a_comment_is_encoded.rs`
+holds the arrangement — one registration door, a per-syntax census,
+no second encoder inside a comment, and hostile documents rendered
+through all six backends — and
+`sce-build/tests/sce_annotation_emission.rs::hostile_annotation_text_stays_inside_its_comment`
+holds the annotation macro.
+
+⚠⚠ **Open — a value written into a string literal is not encoded
+for it.** A comment has one encoder; a string literal's is the
+language's escaper, and templates apply one at some sites and not at
+others. Measured 2026-09-13, 1892 template interpolations sit inside a
+string literal and 1456 carry no escaper — most are ids, events and
+derived names, whose safety depends on the identifier grammar §1
+registers as open. One free-text case is measured to break: a `<log
+label>` holding a line break is written unescaped into a C++
+(`SCE_LOG_INFO("…")`) and a Go (`fmt.Printf("…")`) string literal, so
+the emitted source does not compile. The repair belongs with the id
+grammar, as a per-language rule of the same shape as the comment one.
+Registered, not fixed.
+
+⚠ **Open — sourcemap readers do not decode.** `SCE-MAP:` markers and
+Go `//line` directives are comments, so the path they carry is
+encoded like any other comment value. No tracked path holds a
+character the encoder changes, so no emitted marker moved, but a
+reader that parses these lines back reads the encoded form. The same
+path is also written into string literals (`#line N "…"`,
+`#[doc = "…"]`), which the open rule above covers. Registered, not
+fixed.
 
 **`sce:provenance`** — spec-document anchors.
 

@@ -801,8 +801,8 @@ public:
             {
                 switch (lastTransitionIndex_) {
 {% for trans in state.transitions %}
-                case {{ loop.index0 }}:  // Transition {{ loop.index0 }}{{ annot.annotation_comment(trans, "cpp", "                    ") }}
-{% if trans.source_location %}
+                case {{ loop.index0 }}:  // Transition {{ loop.index0 }}
+{{ annot.annotation_block(trans, "cpp", "                    ") }}{% if trans.source_location %}
                     {{ sce_map.source_marker(trans.source_location, "cpp", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
                     {

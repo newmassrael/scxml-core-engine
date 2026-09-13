@@ -544,7 +544,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
         }
 {% elif action.type == 'assign' %}
         {
-            /* W3C SCXML 5.4: <assign location="{{ action.location }}" expr="{{ action.expr | escape_c }}"> */
+            /* W3C SCXML 5.4: <assign location="{{ action.location }}" expr="{{ action.expr }}"> */
 {% if action.location in ['_sessionid', '_name', '_ioprocessors', '_event'] %}
             /* W3C SCXML 5.10: assignment to read-only system variable
                '{{ action.location }}' is illegal — raise error.execution
@@ -640,7 +640,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
         }
 {% elif action.type == 'send' %}
         {
-            /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr | escape_c }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
+            /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
 {% if action.send_type_host_served %}
             /* §scxml-6.2.5: "{{ action.send_type }}" is served by the HOST,
                which declared it to this build. Dispatch rather than refuse.
@@ -1837,7 +1837,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
         }
 {% elif action.type == 'if' %}
         {
-            /* W3C SCXML 4.3: <if cond="{{ action.cond | escape_c }}"> */
+            /* W3C SCXML 4.3: <if cond="{{ action.cond }}"> */
 {% if action.is_pure_in_predicate %}
             /* W3C 5.9.2 pure In() predicate — native C lower via
                `to_in_predicate_c11` (mirrors transition cond's pure-In branch).
@@ -1869,7 +1869,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endif %}
 {% for elif in action.elseif_branches %}
             else {
-                /* W3C SCXML 4.3: <elseif cond="{{ elif.cond | escape_c }}"> */
+                /* W3C SCXML 4.3: <elseif cond="{{ elif.cond }}"> */
 {% if elif.is_pure_in_predicate %}
                 if ({{ elif.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
                     {% for sub in elif.actions %}
@@ -1906,7 +1906,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endfor %}
         }
 {% elif action.type == 'log' %}
-        /* W3C SCXML 4.4: <log{% if action.label %} label="{{ action.label }}"{% endif %}{% if action.expr %} expr="{{ action.expr | escape_c }}"{% endif %}>
+        /* W3C SCXML 4.4: <log{% if action.label %} label="{{ action.label }}"{% endif %}{% if action.expr %} expr="{{ action.expr }}"{% endif %}>
            Logging is observable side-effect only — the W3C spec mandates no
            statechart effect, just developer-facing output. Mirrors cpp
            `actions/log.jinja2`: success path emits the evaluated expression
@@ -1951,7 +1951,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
         (void)fprintf(stderr, "{{ action.label | escape_c }}\n");
 {% endif %}
 {% elif action.type == 'cancel' %}
-        /* W3C SCXML 6.3: <cancel{% if action.sendid %} sendid="{{ action.sendid }}"{% endif %}{% if action.sendidexpr %} sendidexpr="{{ action.sendidexpr | escape_c }}"{% endif %}>
+        /* W3C SCXML 6.3: <cancel{% if action.sendid %} sendid="{{ action.sendid }}"{% endif %}{% if action.sendidexpr %} sendidexpr="{{ action.sendidexpr }}"{% endif %}>
            remove every entry from the scheduled queue whose send_id matches
            the cancel target. cpp `actions/cancel.jinja2` calls
            `engine.cancelEvent(...)` which routes through PullScheduler;
@@ -2897,11 +2897,11 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% endfor %}
         {% endif %}
         {% elif state.donedata.content.kind == "expression" %}
-        /* W3C SCXML 5.5: <content expr="{{ state.donedata.content.text | escape_c }}"/>
+        /* W3C SCXML 5.5: <content expr="{{ state.donedata.content.text }}"/>
            — evaluate against the active datamodel. */
         {{ se.lua_eval_donedata_content(state.donedata.content.text | to_lua_expr) }}
         {% elif state.donedata.content.kind == "inline_text" %}
-        /* W3C SCXML B.2: <content>{{ state.donedata.content.text | escape_c }}</content>
+        /* W3C SCXML B.2: <content>{{ state.donedata.content.text }}</content>
            under a datamodel with a value expression language. The clause
            orders the readings — an expression if it is one, otherwise the
            string — and `to_lua_data_content` is where that order is
@@ -3524,7 +3524,7 @@ SCE_SM_FN static bool try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm
             {% if trans.cond %}
             {% set native_payload_guard_expr = trans.native_payload_guard %}
             {% if trans.is_pure_in_predicate %}
-                /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond | escape_c }}" pure
+                /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond }}" pure
                    In() predicate — native C lower via `to_in_predicate_c11`
                    filter (mirrors cpp `parser::convert_in_to_cpp` of `this->
                    isStateActive("...")`). Routes In('xx') → `<machine>_in_state(
@@ -3537,7 +3537,7 @@ SCE_SM_FN static bool try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm
                 }
             {% elif native_payload_guard_expr %}
                 /* W3C SCXML 3.13 + NL→IR Item C1 Path A:
-                   cond="{{ trans.cond | escape_c }}" reads a typed
+                   cond="{{ trans.cond }}" reads a typed
                    `_event.data.<field>` of an EventSchema-imported event —
                    lowered to a native tagged-union comparison (no script
                    engine, MCU-clean). The tag check guards against an event
@@ -3549,14 +3549,14 @@ SCE_SM_FN static bool try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm
                     {{ emit_transition_body(trans) }}
                 }
             {% elif model.needs_script_engine %}
-                /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" (lua eval) */
+                /* W3C SCXML 3.13: cond="{{ trans.cond }}" (lua eval) */
                 bool _trans_pass;
 {{ se.lua_eval_guard(trans.cond, '_trans_pass') }}
                 if (_trans_pass) {
                     {{ emit_transition_body(trans) }}
                 }
             {% else %}
-                /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" decided at
+                /* W3C SCXML 3.13: cond="{{ trans.cond }}" decided at
                    build time (mirrors cpp process_transition.jinja2
                    else-branch — the C compiler dead-code-eliminates an
                    `if (false)` arm). */

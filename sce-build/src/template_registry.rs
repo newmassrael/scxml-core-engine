@@ -264,7 +264,8 @@ mod tests {
         for &language in SUPPORTED_LANGUAGES {
             let dir = crate::find_template_dir_for(language);
             let mut env = crate::generator::new_env();
-            crate::generator::load_templates(&mut env, &dir).expect("filesystem templates load");
+            crate::generator::load_templates(&mut env, &dir, language)
+                .expect("filesystem templates load");
             let mut from_disk: Vec<String> =
                 env.templates().map(|(name, _)| name.to_string()).collect();
             let mut from_registry: Vec<String> = embedded_templates_for(language)

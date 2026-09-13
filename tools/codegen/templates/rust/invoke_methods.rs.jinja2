@@ -160,7 +160,7 @@
                         }
                     }
 {% else %}
-                    // §scxml-6.4.3: `{{ param.name | escape_rust }}` matches no top-level `<data>` of
+                    // §scxml-6.4.3: `{{ param.name }}` matches no top-level `<data>` of
                     // the child, so the Processor MUST NOT add it to the invoked
                     // session's data model. Decided here because both the param
                     // names and the child's declarations are static.

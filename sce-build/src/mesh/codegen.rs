@@ -1740,10 +1740,23 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // The transport header carries a module-level SCE-MAP marker, so this
     // env needs the same artifact vocabulary the statechart envs publish.
     crate::generator::register_symbol_artifact_global(&mut env);
-    env.add_template_owned(macro_template_name.to_string(), macro_template_content)
-        .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
-    env.add_template("mesh_transport.h.jinja2", &template_content)
-        .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
+    // Through the generator's one door, so the values this header writes into
+    // its comments are encoded the way every other backend's are.
+    let backend = crate::generator::Language::Cpp;
+    crate::generator::register_template(
+        &mut env,
+        macro_template_name.to_string(),
+        &macro_template_content,
+        backend,
+    )
+    .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
+    crate::generator::register_template(
+        &mut env,
+        "mesh_transport.h.jinja2".to_string(),
+        &template_content,
+        backend,
+    )
+    .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
 
     let tmpl = env
         .get_template("mesh_transport.h.jinja2")

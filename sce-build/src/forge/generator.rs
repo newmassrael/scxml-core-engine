@@ -932,7 +932,7 @@ pub fn generate_cpp_with_imports_and_externs(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Cpp)?;
     let forge_dir = template_dir.join("forge/cpp");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir)?;
+    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Cpp)?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -13382,7 +13382,7 @@ pub fn generate_kotlin_with_imports(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Kotlin)?;
     let forge_dir = template_dir.join("forge/kotlin");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir)?;
+    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Kotlin)?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -13550,7 +13550,7 @@ pub fn generate_rust_with_imports_and_externs(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Rust)?;
     let forge_dir = template_dir.join("forge/rust");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir)?;
+    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Rust)?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -13875,7 +13875,7 @@ pub fn render_machine_concurrency_artifacts(
         crate::generator::Language::Rust => {
             let forge_dir = template_dir.join("forge/rust");
             let mut env = generator::new_env();
-            generator::load_templates(&mut env, &forge_dir)?;
+            generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Rust)?;
             // AP LinkBus emits unconditionally (it does not depend on
             // tick budget — it is the cross-link routing surface).
             let bus = render_machine_link_bus_rust(&env, machine_name, link_names)?;
@@ -13894,7 +13894,7 @@ pub fn render_machine_concurrency_artifacts(
             if let (Some(tick), Some(budget)) = (tick_period_us, per_link_budget_us) {
                 let forge_dir = template_dir.join("forge/c");
                 let mut env = generator::new_env();
-                generator::load_templates(&mut env, &forge_dir)?;
+                generator::load_templates(&mut env, &forge_dir, crate::generator::Language::C11)?;
                 let sched =
                     render_machine_scheduler_c(&env, machine_name, link_names, tick, budget)?;
                 files.push((format!("{}_scheduler.h", snake), sched));
@@ -15362,7 +15362,7 @@ pub fn generate_go_with_imports(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Go)?;
     let forge_dir = template_dir.join("forge/go");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir)?;
+    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Go)?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -15512,7 +15512,7 @@ pub fn generate_python_with_imports(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Python)?;
     let forge_dir = template_dir.join("forge/python");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir)?;
+    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Python)?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -15668,7 +15668,7 @@ pub fn generate_c11_with_imports_and_externs(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::C11)?;
     let forge_dir = template_dir.join("forge/c");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir)?;
+    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::C11)?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 

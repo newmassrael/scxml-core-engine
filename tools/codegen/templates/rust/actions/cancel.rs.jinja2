@@ -7,7 +7,7 @@
    wire `validation/require-either`). No `{% else %}` arm — parser
    guarantees one branch matches. #}
 {% if action.sendidexpr %}
-// W3C SCXML 6.3: <cancel sendidexpr="{{ action.sendidexpr | escape_rust }}">
+// W3C SCXML 6.3: <cancel sendidexpr="{{ action.sendidexpr }}">
 {
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();

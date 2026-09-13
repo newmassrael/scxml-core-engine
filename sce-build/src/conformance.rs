@@ -1678,7 +1678,8 @@ pub fn render_harness(
     // place (see `register_conformance_filters`) instead of being duplicated
     // as inline macros inside each harness template.
     register_conformance_filters(&mut env);
-    crate::generator::load_templates(&mut env, &template_dir).map_err(|e| e.to_string())?;
+    crate::generator::load_templates(&mut env, &template_dir, language)
+        .map_err(|e| e.to_string())?;
 
     let tmpl_name = layout.template_filename;
     let tmpl = env
