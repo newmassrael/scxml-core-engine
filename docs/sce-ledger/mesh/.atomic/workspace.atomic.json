@@ -67,6 +67,16 @@
         {
           "file": "tests/mesh/OutboundBufferTest.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_outbound_buffer",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MIN_OUTBOUND_BUFFER_MAX_PENDING",
+          "kind": "references"
         }
       ]
     },
@@ -188,6 +198,11 @@
         {
           "file": "tests/mesh/test_mesh_tcp_multipattern_runtime.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
+          "symbol": "CUSTOM_TCP",
+          "kind": "references"
         }
       ]
     },
@@ -267,6 +282,26 @@
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "MachineConfig",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validation_error",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_dedup_window",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "DEFAULT_DEDUP_WINDOW_SIZE",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "compute_needs_dedup",
+          "kind": "implements"
         }
       ]
     },
@@ -346,6 +381,11 @@
         {
           "file": "tests/mesh/test_mesh_order_injection.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "compute_needs_ordering",
+          "kind": "implements"
         }
       ]
     },
@@ -378,6 +418,16 @@
         {
           "file": "sce-build/src/mesh/error.rs",
           "symbol": "DeployError",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "DEFAULT_GAP_TIMEOUT_MS",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "DEFAULT_TICK_PERIOD_MS",
           "kind": "references"
         }
       ],
@@ -597,6 +647,11 @@
         {
           "file": "tests/mesh/MeshEnvelopeCodecTest.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "classify_pool_rpc_client_conflict",
+          "kind": "implements"
         }
       ]
     },
@@ -813,6 +868,56 @@
           "file": "sce-build/src/mesh/transport/mod.rs",
           "symbol": "SOMEIP",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_discovery_not_supported",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/pattern.rs",
+          "symbol": "detect_pattern",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/pattern.rs",
+          "symbol": "infer_reply_event",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/pattern.rs",
+          "symbol": "subscribe_to_unsubscribe",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "analyze_event_pairs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "collect_response_suffixes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "contribute_send_partials",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "contribute_subscription_partials",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "inject_auto_subscriptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "inject_server_response_sends",
+          "kind": "implements"
         }
       ]
     },
@@ -1006,6 +1111,76 @@
         {
           "file": "tests/mesh/test_mesh_partitions.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_platform_class_os_consistency",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_scheduler_cooperative_stack_budget",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_synth_invoke_infix",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "is_cpp_identifier",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "SYNTH_INVOKE_INFIX",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/distributability.rs",
+          "symbol": "analyze_distributability",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/external.rs",
+          "symbol": "reject_reserved_id_keys",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "enumerate_units",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "is_machine_partition_listed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "partition_for_machine",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "unit_path_region",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "validate_partitions_against_scxml",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "DEFAULT_PARTITION_SUFFIX",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "NESTED_PARALLEL",
+          "kind": "references"
         }
       ]
     },
@@ -1146,6 +1321,26 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_discovery_not_supported",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_server_pool_rejection",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "declared_pool_member_lists",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "validate_pool_param_names",
+          "kind": "implements"
         }
       ]
     },
@@ -1246,6 +1441,11 @@
         },
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "reply_from_yaml",
           "kind": "implements"
         }
       ]
@@ -1420,6 +1620,26 @@
         {
           "file": "sce-build/src/mesh/partitions.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/distributability.rs",
+          "symbol": "analyze_distributability",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/distributability.rs",
+          "symbol": "analyze_parallel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/mod.rs",
+          "symbol": "ResolvedDeployConfig",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/mod.rs",
+          "symbol": "snapshot_notices",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction"
@@ -1497,6 +1717,71 @@
         {
           "file": "tests/mesh/test_mesh_region_liveness_zenoh.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "deserialize_someip_liveness_service_id",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "machine_uses_someip_transport",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "assign_someip_invoke_service_ids",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "assign_someip_liveness_service_ids",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "from_map",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/distributability.rs",
+          "symbol": "analyze_distributability",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/distributability.rs",
+          "symbol": "apply_constraints",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/distributability.rs",
+          "symbol": "merge_into",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "assign_liveness_service_ids",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "SCXML_INVOKE_SERVICE_CEILING",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "SCXML_LIVENESS_SERVICE_BASE",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "SCXML_LIVENESS_SERVICE_CEILING",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "SCXML_LIVENESS_SERVICE_RANGE_SIZE",
+          "kind": "references"
         }
       ]
     },
@@ -1643,6 +1928,11 @@
         {
           "file": "tests/mesh/ParallelCompletionTrackerTest.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "is_machine_partition_listed",
+          "kind": "implements"
         }
       ]
     },
@@ -2048,6 +2338,56 @@
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "CustomTcpTransportConfig",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "deserialize_someip_machine_liveness_service_id",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_retry_policy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_auth_policy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "assign_someip_machine_liveness_service_ids",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MIN_LIVELINESS_LEASE_MS",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MIN_RETRY_MAX_RETRIES",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "assign_machine_liveness_service_ids",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "SCXML_MACHINE_LIVENESS_SERVICE_BASE",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "SCXML_MACHINE_LIVENESS_SERVICE_CEILING",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/someip.rs",
+          "symbol": "SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE",
+          "kind": "references"
         }
       ]
     },
@@ -2164,6 +2504,16 @@
         },
         {
           "file": "sce-build/src/mesh/codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_custom_tcp_socket",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
+          "symbol": "CUSTOM_TCP",
           "kind": "references"
         }
       ]
@@ -2540,6 +2890,11 @@
         {
           "file": "sce-build/tests/mesh_invoke_cycle.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "parse_machine_source",
+          "kind": "implements"
         }
       ]
     },
@@ -2581,6 +2936,11 @@
         },
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "detect_server_eventgroup_events",
           "kind": "implements"
         }
       ]
@@ -2627,6 +2987,11 @@
           "file": "sce/include/mesh/transports/DdsTransport.h",
           "symbol": "applyNotifyRxOOverlay",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_dds_qos",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction"
@@ -2670,6 +3035,26 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "detect_server_field_access_pairs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "detect_server_fire_forget_events",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "inject_server_response_sends",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "FIELD_GET_SCXML",
+          "kind": "references"
         }
       ],
       "coverage_expectation": "informational"
@@ -2895,6 +3280,26 @@
         {
           "file": "tests/mesh/test_mesh_invoke_rpc_runtime.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MIN_SERVER_RESPONSE_DEADLINE_MS",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "classify_pool_rpc_client_conflict",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "BRAKE_INVOKE_SCXML",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "TargetContributions",
+          "kind": "references"
         }
       ]
     },
@@ -3082,6 +3487,11 @@
         {
           "file": "tests/mesh/test_mesh_session_f_wire_roundtrip.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/zenoh.rs",
+          "symbol": "SCXML_INVOKE_KEY_PREFIX",
+          "kind": "references"
         }
       ]
     },
@@ -3362,6 +3772,16 @@
         {
           "file": "tests/mesh/test_mesh_synth_invoke_override_e2e.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_synth_invoke_infix",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "SYNTH_INVOKE_INFIX",
+          "kind": "references"
         }
       ]
     },
@@ -3391,5 +3811,5 @@
   "parameter_deltas": {},
   "parameter_gates": {},
   "fact_counts": {},
-  "schema_version": 46
+  "schema_version": 48
 }

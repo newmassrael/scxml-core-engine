@@ -362,6 +362,16 @@
           "file": "sce-build/src/scxml_semantic.rs",
           "symbol": "ScxmlSemanticError",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "symbol": "can_generate_static",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "guard_static_generatable",
+          "kind": "implements"
         }
       ]
     }
@@ -369,6 +379,7 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
+  "mutation_reasons": [],
   "frames": {},
   "branches": {},
   "entities": {},
@@ -383,5 +394,5 @@
   "parameter_deltas": {},
   "parameter_gates": {},
   "fact_counts": {},
-  "schema_version": 44
+  "schema_version": 48
 }

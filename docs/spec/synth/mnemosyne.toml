@@ -222,4 +222,4 @@ backend = "tree-sitter-python"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "ecee1fe0"
+pin = "df1f17ce"

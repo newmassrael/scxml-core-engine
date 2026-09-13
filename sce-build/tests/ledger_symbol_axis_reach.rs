@@ -91,7 +91,7 @@ enum Cause {
 /// must still be inside the scan set, it must still cite, the workspace must
 /// still report the language unresolved, and the cause must still be the cause.
 /// Empty, and empty for a measured reason rather than an unrecorded one: the
-/// `ecee1fe0` pin carries the three resolvers, the ledgers declare them, and
+/// `df1f17ce` pin carries the three resolvers, the ledgers declare them, and
 /// the 151 file-level bindings those trees carried now name symbols. The
 /// workspace reports no unresolved language, which is the condition the checks
 /// below hold it to.

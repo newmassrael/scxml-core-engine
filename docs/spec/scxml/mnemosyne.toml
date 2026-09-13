@@ -258,7 +258,7 @@ backend = "tree-sitter-rust"
 # Go, Kotlin and Python resolvers. The three trees have been in `paths` since
 # the R1142 pin, and the comment there recorded exactly what that bought and
 # what it did not: file-level binding enforcement, "without claiming
-# symbol-level coverage nobody can deliver". The `ecee1fe0` pin delivers it —
+# symbol-level coverage nobody can deliver". The `df1f17ce` pin delivers it —
 # that build carries tree-sitter-go, -kotlin and -python in process and routes
 # `.go`, `.kt`/`.kts` and `.py`.
 #
@@ -322,4 +322,4 @@ sha256 = "fd88796df0afd01c9febb650e8dd1a9ee62479ae797c7adc24ffc4f1d68c66c1"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "ecee1fe0"
+pin = "df1f17ce"

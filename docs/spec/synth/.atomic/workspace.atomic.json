@@ -362,6 +362,31 @@
         {
           "file": "tools/codegen/templates/forge/rust/conformance/kinds/algorithm.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "algorithm_format_bc_import_param",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "algorithm_param_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "collect_algorithm_local_types",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "BC_MUTATING_METHODS",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "collect_var_capacity_shapes",
+          "kind": "implements"
         }
       ]
     },
@@ -1325,6 +1350,351 @@
           "file": "backends/python/forge-runtime/tests/test_default_round_trip.py",
           "symbol": "test_round_trip_lands_in_declared_default_arm",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/codec.rs",
+          "symbol": "read_vle_inner",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/codec.rs",
+          "symbol": "write_vle_inner",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "fold_reject_vectors",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "has_test_vectors",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "PresentIfCarrier",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "TlvChainDecode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "collect_parent_tag_derivations",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "dotted_length_field",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "dotted_length_resolve",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "embed_streaming_decode_stmt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "inject_parent_tag_carrier_suffix",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "parent_tag_apply_simple_path_suffix",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "parent_tag_carrier_or_suffix_map",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "parent_tag_derivation_block",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "parent_tag_derivation_local_for_carrier",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_decode_fixed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_decode_tail",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_decode_vle",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_encode_fixed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_encode_tail",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_encode_vle",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_streaming_decode_stmt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_streaming_encode_block",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_test_literal_encode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_externs_sidecar",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_link_rust",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "repeat_streaming_decode_stmt_gated",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "repeat_streaming_encode_block_gated",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "resolve_repeat_body_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "resolve_variant_arm_body_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "resolve_variant_arm_encoder",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "rust_bit_extract",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "sibling_field_gated",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "tlv_chain_guard",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "tlv_chain_streaming_decode_stmt_gated",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "tlv_chain_streaming_encode_block",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "tlv_chain_streaming_encode_block_gated",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "validate_cross_codec_peek_byte",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "validate_cross_codec_variant_dispatch",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "vle_encode_block",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "has_dma_aligned_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "has_embed_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "has_mcu_only_features",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "has_present_if_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "has_repeat_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "has_string_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "has_tail_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "has_tlv_chain_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "int_bit_width",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "is_embed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "is_flags_carrier",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "is_repeat",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "is_string",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "is_tlv_chain",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "max_frame_bytes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "vle_cap_bytes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_int_u64",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_peek_byte_from_variant_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "validate_codec_dma_alignment",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "validate_codec_embed_length_from",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "validate_codec_repeat_present_if_co_gating",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "validate_codec_tail_is_last",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compute_codec_recursive_max_bytes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_keepalive_jitter_required_when_cooperative",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_worker_slot_budget_required_when_cooperative",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "KNOWN_DRIVERS",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "symbol": "assert_no_codec_sidecar_until_closure",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "symbol": "assert_sidecar_forge_lang",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "symbol": "rustc_compile_codec_set",
+          "kind": "references"
         }
       ]
     },
@@ -1554,6 +1924,66 @@
         },
         {
           "file": "tools/codegen/templates/forge/rust/link.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "check_listener_sibling_emitted_c",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "check_listener_sibling_emitted_rust",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_link_c",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_link_rust",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "accepting_substate_present",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_with_deploy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "link_ref_candidates",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_link_framer_refs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_link_pool_framer_resolution",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "write_link_pool_fixture_files",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_link_driver_class_consistency",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "KNOWN_DRIVERS",
           "kind": "references"
         }
       ]
@@ -1795,6 +2225,36 @@
         {
           "file": "tools/codegen/templates/forge/rust/worker.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_worker_c_header",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_worker_rust",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_worker_cross_refs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_worker_outbox_references",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_machine_scheduler_link_concurrency",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_machine_timer_wheel_capacity",
+          "kind": "implements"
         }
       ]
     },
@@ -2110,6 +2570,101 @@
           "file": "sce-build/src/forge/ownership_contract.rs",
           "symbol": "PointerEffect",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "symbol": "filter_callback_lang",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "symbol": "filter_extern_callback_path",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "check_analyzer_annotations_emitted_c11",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "check_inter_pool_padding_invariant",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_buffer_pool_linker_fragment",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "resolve_edge_cache",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/ownership_contract.rs",
+          "symbol": "coverity_annotations",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/ownership_contract.rs",
+          "symbol": "pc_lint_annotation",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/ownership_contract.rs",
+          "symbol": "RUNTIME_CONTRACTS",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_buffer_pool",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "link_ref_candidates",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_stage_pool_references",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_stage_pool_transport",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "TRANSPORTS_SUPPORTING_STAGE_POOL",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "collect_on_sample_blocks",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "validate_on_sample_callback_paths",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "validate_on_sample_event_names",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "validate_on_sample_placement",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "validate_on_sample_uniqueness",
+          "kind": "implements"
         }
       ]
     },
@@ -2230,6 +2785,36 @@
           "file": "sce-build/src/bin/sce_codegen.rs",
           "symbol": "OrchestrateArgs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/const_fold.rs",
+          "symbol": "iter_var_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/const_fold.rs",
+          "symbol": "DEFAULT_MAX_ITERS",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "lower_algorithm_consts",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "from_attr",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "parse_scetype_with_aliases",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_fold_range",
+          "kind": "implements"
         }
       ]
     },
@@ -2492,6 +3077,71 @@
         {
           "file": "tools/codegen/templates/forge/rust/worker.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "check_c11_section_attribute",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_buffer_pool_c",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_externs_sidecar",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "resolve_edge_cache",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/intrinsic_registry.rs",
+          "symbol": "is_cache_maintenance_trio",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/intrinsic_registry.rs",
+          "symbol": "BASELINE_SYMBOLS",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/intrinsic_registry.rs",
+          "symbol": "CACHE_MAINTENANCE_TRIO",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_buffer_pool",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/target_plugin.rs",
+          "symbol": "parse_target_plugin_yaml",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_worker_inbox_ordering_placement",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "known_driver_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_link_driver_class_consistency",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_stateless_accept_externs",
+          "kind": "implements"
         }
       ]
     },
@@ -2784,6 +3434,36 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "validate_no_std_compatibility_impl",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "get_active_states",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "schedule_event_at",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "Hal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_active_states",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_initial_children",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "populate_event_queue_capacity_from_deploy",
+          "kind": "implements"
         }
       ]
     },
@@ -2903,6 +3583,21 @@
         {
           "file": "tools/codegen/templates/forge/python/conformance/kinds/algorithm.py.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "codec_has_mcu_only_features",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "lang_supports_fixture",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "lookup",
+          "kind": "implements"
         }
       ]
     },
@@ -3022,6 +3717,31 @@
         {
           "file": "tools/codegen/templates/forge/python/conformance/kinds/algorithm.py.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "algorithm_format_param",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "algorithm_param_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "forge_algorithm_symbol",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "elem_or_scalar",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_platform_class_os_consistency",
+          "kind": "implements"
         }
       ]
     },
@@ -3203,6 +3923,71 @@
         {
           "file": "sce-build/src/bin/sce_codegen.rs",
           "symbol": "OrchestrateArgs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_check_document_set",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_buffer_pool",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "resolve_link_rx_pool_slot_count",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_keepalive_jitter_required_when_cooperative",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_links_burst_invariants",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_links_cross_doc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_machine_scheduler_link_concurrency",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_platform_class_os_consistency",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_pool_defaults",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_scheduler_cooperative_stack_budget",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_stateless_accept_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_worker_slot_budget_required_when_cooperative",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "KNOWN_DRIVERS",
           "kind": "references"
         }
       ]
@@ -3453,6 +4238,71 @@
         {
           "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "c_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "go_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "python_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_bounded_collection_c",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_bounded_collection_cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_bounded_collection_go",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_bounded_collection_kotlin",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_bounded_collection_python",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_bounded_collection_rust",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "accepting_substate_present",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "parse_bounded_collection_deploy_key",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "populate_event_queue_capacity_from_deploy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_bounded_collection_cross_refs",
+          "kind": "implements"
         }
       ]
     },
@@ -3648,6 +4498,36 @@
           "file": "sce-build/src/bin/sce_codegen.rs",
           "symbol": "OrchestrateArgs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_check_document_set",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "check_reassembly_peer_id_zid_invariant_c11",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "check_reassembly_peer_id_zid_invariant_rust",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_buffer_pool_variant",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "resolve_link_rx_pool_slot_count",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "KNOWN_DRIVERS",
+          "kind": "references"
         }
       ]
     },
@@ -3748,6 +4628,11 @@
         {
           "file": "tools/codegen/templates/forge/rust/scheduler.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_machine_scheduler_link_concurrency",
+          "kind": "implements"
         }
       ]
     },
@@ -4112,6 +4997,16 @@
         {
           "file": "sce-build/src/parser.rs",
           "symbol": "parse_global_scripts",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "SymbolAccumulator",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/sourcemap.rs",
+          "symbol": "to_json",
           "kind": "implements"
         }
       ]
@@ -4521,6 +5416,41 @@
         {
           "file": "scripts/regen_event_descriptor_spellings_agree_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "SymbolAccumulator",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "apply_drift_header",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "drift_hash_failure",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "locate_workspace_root",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "write_drift_aware",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/b9_drift_detection.rs",
+          "symbol": "collect_generated_at",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/b9_drift_detection.rs",
+          "symbol": "generate_headered_rust",
+          "kind": "references"
         }
       ]
     },
@@ -4690,5 +5620,5 @@
   "parameter_deltas": {},
   "parameter_gates": {},
   "fact_counts": {},
-  "schema_version": 46
+  "schema_version": 48
 }
