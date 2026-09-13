@@ -953,6 +953,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.12.1: `wild`, `wild.` and `wild.*` are "functionally
+    # equivalent", and a bare `.*` is an empty token prefix that matches every
+    # event. Each case is positive polarity because the four W3C documents that
+    # write a bare `.*` write it as a catch-all to fail, which an engine
+    # matching nothing on `.*` passes by never taking that transition.
+    sce_generate_static_integration_c_test(event_descriptor_spellings_agree "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_event_descriptor_spellings_agree
+        integration/test_event_descriptor_spellings_agree.c
+        ${INTEGRATION_C_TEST_event_descriptor_spellings_agree_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_event_descriptor_spellings_agree PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_event_descriptor_spellings_agree PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_event_descriptor_spellings_agree PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_event_descriptor_spellings_agree
+        COMMAND sce_c_integration_event_descriptor_spellings_agree
+    )
+    set_tests_properties(c11_integration_event_descriptor_spellings_agree PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.7: a <final> nested inside a compound state completes that
     # state, not the session — Appendix D enterStates ends the session only when
     # the final's parent is the <scxml> element. The fixture rests in the nested

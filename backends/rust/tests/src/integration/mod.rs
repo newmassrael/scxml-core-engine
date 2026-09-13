@@ -42,6 +42,7 @@ pub mod donedata_local_invoke;
 pub mod empty_finalize_updates_the_location;
 pub mod error_cascade_is_bounded;
 pub mod event_data_arrives_as_sent;
+pub mod event_descriptor_spellings_agree;
 pub mod event_origin_is_a_location;
 pub mod event_schema_native;
 pub mod eventless_macrostep_is_bounded;

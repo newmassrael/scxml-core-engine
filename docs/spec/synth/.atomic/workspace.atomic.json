@@ -4509,6 +4509,18 @@
         {
           "file": "sce-build/tests/mutations/the_regen_lane_starts_on_what_it_reproduces.cases",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_event_descriptor_spellings_agree.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_event_descriptor_spellings_agree_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_event_descriptor_spellings_agree_kotlin.sh",
+          "kind": "references"
         }
       ]
     },

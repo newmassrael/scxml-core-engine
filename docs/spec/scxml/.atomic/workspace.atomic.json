@@ -937,6 +937,16 @@
           "file": "sce-build/src/event_descriptor.rs",
           "symbol": "matches",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/event_matching.go",
+          "symbol": "MatchesEventDescriptor",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_matching.rs",
+          "symbol": "matches_event_descriptor",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7569,18 +7579,6 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
-      "bindings": [
-        {
-          "file": "backends/rust/runtime/src/helpers/event_matching.rs",
-          "symbol": "matches_event_descriptor",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/event_matching.go",
-          "symbol": "MatchesEventDescriptor",
-          "kind": "implements"
-        }
-      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -16280,6 +16278,18 @@
       "target_kind": "section",
       "target_id": "scxml-3.4",
       "reason": "the rule this enum variant states is §scxml-3.11 Legal State Configurations; §scxml-3.4 defines the <parallel> element and its citation here moved"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.3",
+      "reason": "the clause cited was wrong: §scxml-5.9.3 is Legal Data Values and Value Expressions, while event descriptor matching is §scxml-3.12.1, to which this symbol is now bound"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.3",
+      "reason": "the clause cited was wrong: §scxml-5.9.3 is Legal Data Values and Value Expressions, while event descriptor matching is §scxml-3.12.1, to which this symbol is now bound"
     }
   ],
   "frames": {},

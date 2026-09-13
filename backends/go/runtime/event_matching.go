@@ -6,21 +6,33 @@ package sce
 import "strings"
 
 // MatchesEventDescriptor checks if an event name matches a descriptor
-// (§scxml-5.9.3).
+// (§scxml-3.12.1).
 //
-// 1:1 port of Rust event_matching::matches_event_descriptor from
-// backends/rust/runtime/src/helpers/event_matching.rs.
+// Mirrors Rust event_matching::matches_event_descriptor and C++
+// EventMatchingHelper::matchesEventDescriptor: each reduces a descriptor to
+// one token prefix the same way. They called themselves 1:1 ports of one
+// another while they disagreed, so the reduction is written out rather than
+// claimed.
 //
-// Event matching rules (§scxml-5.9.3):
+// Event matching rules (§scxml-3.12.1):
 //  1. Event descriptor may contain multiple tokens separated by spaces
 //  2. Each token is matched against the event name using prefix matching
 //  3. Prefix matching uses dot (.) as token separator
-//  4. Special wildcards:
-//     - "*" matches any event
-//     - "foo.*" matches any event starting with "foo."
-//  5. Token boundaries are enforced: "foo" matches "foo.bar" but NOT "foobar"
+//  4. "error", "error." and "error.*" are "functionally equivalent": each
+//     reduces to the token prefix "error", so each matches bare "error" as
+//     well as "error.send"
+//  5. "*" matches any event, and so does a bare ".*", whose token prefix is
+//     empty
+//  6. Token boundaries are enforced: "foo" matches "foo.bar" but NOT "foobar"
+//
+// Rules 4 and 5 were wrong here until 2026-09-13: "foo.*" was read as the
+// string prefix "foo.", so bare "foo" did not match it, "foo." matched
+// nothing, and ".*" matched nothing. No W3C fixture delivers any of those
+// cases, which is why a green conformance suite never said so; the fixture at
+// integration_resources/event_descriptor_spellings_agree/ now does, on all
+// seven channels.
 func MatchesEventDescriptor(eventName, descriptor string) bool {
-	// §scxml-5.9.3: Split descriptor into space-separated tokens
+	// §scxml-3.12.1: Split descriptor into space-separated tokens
 	tokens := strings.Fields(descriptor)
 
 	// Empty descriptor: no match
@@ -28,31 +40,35 @@ func MatchesEventDescriptor(eventName, descriptor string) bool {
 		return false
 	}
 
-	// §scxml-5.9.3: Event matches if it matches ANY token
+	// §scxml-3.12.1: Event matches if it matches ANY token
 	for _, token := range tokens {
-		// §scxml-5.9.3: Universal wildcard "*" matches any event
+		// §scxml-3.12.1: Universal wildcard "*" matches any event
 		if token == "*" {
 			return true
 		}
 
-		// §scxml-5.9.3: Wildcard suffix "foo.*" matches "foo.xxx"
-		if len(token) >= 2 && strings.HasSuffix(token, ".*") {
-			prefix := token[:len(token)-1] // "foo."
-			if strings.HasPrefix(eventName, prefix) {
-				return true
-			}
-		}
+		// §scxml-3.12.1: a transition with "event" of "error", one with
+		// "error." and one with "error.*" are "functionally equivalent since
+		// they are token prefixes of exactly the same set of event names", so
+		// every spelling reduces to one token prefix before anything is
+		// compared. Reducing rather than branching keeps the three equivalent
+		// by construction.
+		prefix := strings.TrimSuffix(strings.TrimSuffix(token, ".*"), ".")
 
-		// §scxml-5.9.3: Exact match
-		if eventName == token {
+		// §scxml-3.12.1: a descriptor ending in ".*" matches "zero or more
+		// tokens", so a bare ".*" is an empty token prefix — a prefix of every
+		// event name, and thus a wildcard like "*".
+		if prefix == "" {
 			return true
 		}
 
-		// §scxml-5.9.3: Prefix match with dot separator
-		// "foo" matches "foo.bar" but NOT "foobar"
-		if len(eventName) > len(token) &&
-			eventName[len(token)] == '.' &&
-			strings.HasPrefix(eventName, token) {
+		// §scxml-3.12.1: the descriptor's tokens must be "an exact match or a
+		// prefix of the set of tokens in the event's name". The boundary is a
+		// whole token, so "foo" matches "foo.bar" and never "foobar".
+		if eventName == prefix ||
+			(len(eventName) > len(prefix) &&
+				strings.HasPrefix(eventName, prefix) &&
+				eventName[len(prefix)] == '.') {
 			return true
 		}
 	}
