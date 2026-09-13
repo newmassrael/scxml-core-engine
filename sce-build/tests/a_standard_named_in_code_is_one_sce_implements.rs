@@ -112,6 +112,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use common::rust_source::{code_mask, code_only};
+use common::source_lexing::{
+    comments_blanked, language_of, template_target_is_declared, Lang, Syntax,
+};
+use sce_build::template_lexing::starts_with;
 
 // ---------------------------------------------------------------------------
 // The rule's population
@@ -324,396 +328,26 @@ fn test_tree_of(path: &str) -> Option<String> {
     None
 }
 
-/// Source extensions the sweep reads, each mapped to its lexical rules.
-///
-/// A file whose extension is absent is not read, and that is the honest half
-/// of the coverage claim: [`the_sweep_reads_the_tree_it_claims_to`] pins how
-/// many files each language contributes, so a language dropping out of the
-/// enumeration is a red rather than a quieter green.
-fn language_of(path: &str) -> Option<Lang> {
-    let ext = path.rsplit('.').next()?;
-    match ext {
-        "rs" => Some(Lang::Rust),
-        "c" | "h" | "cpp" | "hpp" | "cc" | "inl" => Some(Lang::CFamily),
-        "go" => Some(Lang::Go),
-        "kt" | "kts" => Some(Lang::Kotlin),
-        "py" => Some(Lang::Python),
-        "jinja2" => Some(target_language_of_template(path)),
-        _ => None,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Lexing: where does a comment end and code begin
 // ---------------------------------------------------------------------------
 
-/// How a language spells a comment and a string.
-///
-/// Rust is its own arm because the suite already owns a Rust lexer
-/// ([`common::rust_source`]) that knows raw strings, lifetimes and nested
-/// block comments, and a second answer to where a Rust string ends is the
-/// duplication this repository forbids.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Lang {
-    Rust,
-    CFamily,
-    Go,
-    Kotlin,
-    Python,
-    /// A template: `{# #}` on top of the target language's own rules.
-    Template(Target),
-}
-
-/// The language a template emits.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Target {
-    CFamily,
-    Go,
-    Kotlin,
-    Python,
-    Rust,
-}
-
-/// The directory that says which language a template emits.
-///
-/// Derived rather than declared, because the template tree already says it:
-/// every backend has its own directory.
-const TEMPLATE_DIRS: &[(&str, Target)] = &[
-    ("/forge/c/", Target::CFamily),
-    ("/forge/cpp/", Target::CFamily),
-    ("/forge/go/", Target::Go),
-    ("/forge/kotlin/", Target::Kotlin),
-    ("/forge/python/", Target::Python),
-    ("/forge/rust/", Target::Rust),
-    ("/mesh/cpp/", Target::CFamily),
-    ("/templates/c/", Target::CFamily),
-    ("/templates/go/", Target::Go),
-    ("/templates/kotlin/", Target::Kotlin),
-    ("/templates/python/", Target::Python),
-    ("/templates/rust/", Target::Rust),
-];
-
-/// Where the C++ backend's own templates live. They predate the
-/// per-language directories and so have none of their own.
-const CPP_TEMPLATE_ROOTS: &[&str] = &[
-    "tools/codegen/templates/_macros/",
-    "tools/codegen/templates/actions/",
-];
-
-/// Which language a template emits, when its directory says.
-fn declared_template_target(path: &str) -> Option<Target> {
-    TEMPLATE_DIRS
-        .iter()
-        .find(|(segment, _)| path.contains(segment))
-        .map(|(_, target)| *target)
-}
-
-/// Whether a template is one of the C++ backend's, which carry no directory
-/// of their own: the templates directly in the templates root, and the two
-/// shared trees beside them.
-fn is_cpp_backend_template(path: &str) -> bool {
-    if CPP_TEMPLATE_ROOTS.iter().any(|r| path.starts_with(r)) {
-        return true;
-    }
-    path.strip_prefix("tools/codegen/templates/")
-        .is_some_and(|rest| !rest.contains('/'))
-}
-
-/// Which language a template emits.
-///
-/// [`every_template_resolves_to_a_target_language`] is what keeps the
-/// fallback honest when a seventh backend arrives with a directory this
-/// table does not know.
-fn target_language_of_template(path: &str) -> Lang {
-    Lang::Template(declared_template_target(path).unwrap_or(Target::CFamily))
-}
-
-/// Whether the derivation above knows this template, rather than having
-/// fallen through to the C++ default by accident.
-fn template_target_is_declared(path: &str) -> bool {
-    declared_template_target(path).is_some() || is_cpp_backend_template(path)
-}
-
 /// The source with its comments blanked, line numbering and length kept.
 ///
-/// Every arm preserves position: a scan that reports a line number reports
-/// the input's. Comments become spaces rather than disappearing, which is
-/// what lets the same offsets be used against the original text.
+/// The lexer is [`common::source_lexing`], shared with the gate that encodes
+/// values written into comments. What is this gate's own is the Rust arm: test
+/// modules live inside `src/` in that language, and a sweep over production
+/// code has to set them aside as well as the comments.
+///
+/// [`the_sweep_reads_the_tree_it_claims_to`] pins how many files each
+/// language contributes to [`common::source_lexing::language_of`], so a
+/// language dropping out of the enumeration is a red rather than a quieter
+/// green.
 fn executable_text(source: &str, lang: Lang) -> String {
     match lang {
         Lang::Rust => elide_rust_test_modules(source),
-        Lang::CFamily => strip(source, Syntax::c_family()),
-        Lang::Go => strip(source, Syntax::go()),
-        Lang::Kotlin => strip(source, Syntax::kotlin()),
-        Lang::Python => strip(source, Syntax::python()),
-        Lang::Template(target) => {
-            let without_template_prose = strip(source, Syntax::jinja());
-            let target_syntax = match target {
-                Target::CFamily => Syntax::c_family(),
-                Target::Go => Syntax::go(),
-                Target::Kotlin => Syntax::kotlin(),
-                Target::Python => Syntax::python(),
-                Target::Rust => Syntax::rust_like(),
-            };
-            strip(&without_template_prose, target_syntax)
-        }
+        _ => comments_blanked(source, lang),
     }
-}
-
-/// A language's comment and string delimiters.
-struct Syntax {
-    line: &'static [&'static str],
-    block: &'static [(&'static str, &'static str)],
-    /// Whether a block comment may contain another.
-    nests: bool,
-    /// String delimiters, longest first, paired with whether a backslash
-    /// escapes inside them.
-    ///
-    /// ⚠ The single quote is absent from every C-family arm, and that is a
-    /// measured decision rather than an oversight. C++ writes digit
-    /// separators with it — `0x0000'FFFF'FFFF'FFFFULL` in
-    /// `sce/src/common/Uuid.cpp` — and a lexer that read the third of those
-    /// as a character literal ran the literal to the end of the file,
-    /// swallowing eighteen lines of comment into what it called code. The
-    /// first run of this gate reported the `RFC 9562` citation eight lines
-    /// below it as a production branch, which is a false red on exactly the
-    /// prose the rule promises to protect.
-    ///
-    /// Dropping it costs nothing here: a character literal holds ONE
-    /// character, so it can contain neither `//` nor `/*` nor `#`, and no
-    /// comment can hide inside one. Python keeps its `'` because there it
-    /// delimits a full string, and Python has no digit separator spelled
-    /// that way.
-    strings: &'static [(&'static str, bool)],
-    /// Delimiters whose content reads as prose when the literal begins a
-    /// line — Python's docstring, which is that language's form of the
-    /// citation this gate exists to protect.
-    prose_when_line_initial: &'static [&'static str],
-    /// C++ raw strings: `R"delim( ... )delim"`.
-    cpp_raw: bool,
-}
-
-impl Syntax {
-    fn c_family() -> Self {
-        Syntax {
-            line: &["//"],
-            block: &[("/*", "*/")],
-            nests: false,
-            strings: &[("\"", true)],
-            prose_when_line_initial: &[],
-            cpp_raw: true,
-        }
-    }
-    fn go() -> Self {
-        Syntax {
-            line: &["//"],
-            block: &[("/*", "*/")],
-            nests: false,
-            strings: &[("`", false), ("\"", true)],
-            prose_when_line_initial: &[],
-            cpp_raw: false,
-        }
-    }
-    fn kotlin() -> Self {
-        // Kotlin's `"""` is an ordinary string; its documentation comment is
-        // `/** */`, which the block arm already covers.
-        Syntax {
-            line: &["//"],
-            block: &[("/*", "*/")],
-            nests: true,
-            strings: &[("\"\"\"", false), ("\"", true)],
-            prose_when_line_initial: &[],
-            cpp_raw: false,
-        }
-    }
-    fn python() -> Self {
-        Syntax {
-            line: &["#"],
-            block: &[],
-            nests: false,
-            strings: &[("\"\"\"", false), ("'''", false), ("\"", true), ("'", true)],
-            prose_when_line_initial: &["\"\"\"", "'''"],
-            cpp_raw: false,
-        }
-    }
-    /// Rust as reached through a template, where [`common::rust_source`]
-    /// cannot be used because the text is not a Rust file yet.
-    fn rust_like() -> Self {
-        Syntax {
-            line: &["//"],
-            block: &[("/*", "*/")],
-            nests: true,
-            strings: &[("\"", true)],
-            prose_when_line_initial: &[],
-            cpp_raw: false,
-        }
-    }
-    /// Jinja's own prose. `{{ }}` and `{% %}` are code and are left alone;
-    /// only `{# #}` is a comment.
-    fn jinja() -> Self {
-        Syntax {
-            line: &[],
-            block: &[("{#", "#}")],
-            nests: false,
-            strings: &[],
-            prose_when_line_initial: &[],
-            cpp_raw: false,
-        }
-    }
-}
-
-/// Blank every comment, leaving code and string literals in place.
-fn strip(source: &str, syntax: Syntax) -> String {
-    let s: Vec<char> = source.chars().collect();
-    let mut out: Vec<char> = s.clone();
-    let mut i = 0usize;
-    while i < s.len() {
-        // A string literal first: a `//` inside one is data, and `http://`
-        // in a URL is the case that proves it.
-        if let Some((delim, escapes)) = opening_string(&s, i, &syntax) {
-            let end = end_of_string(&s, i, delim, escapes);
-            if syntax.prose_when_line_initial.contains(&delim) && begins_a_line(&s, i) {
-                for slot in out.iter_mut().take(end).skip(i) {
-                    if *slot != '\n' {
-                        *slot = ' ';
-                    }
-                }
-            }
-            i = end;
-            continue;
-        }
-        if syntax.cpp_raw {
-            if let Some(end) = end_of_cpp_raw_string(&s, i) {
-                i = end;
-                continue;
-            }
-        }
-        if let Some(marker) = syntax.line.iter().find(|m| starts_with(&s, i, m)) {
-            let _ = marker;
-            while i < s.len() && s[i] != '\n' {
-                out[i] = ' ';
-                i += 1;
-            }
-            continue;
-        }
-        if let Some((open, close)) = syntax.block.iter().find(|(o, _)| starts_with(&s, i, o)) {
-            let mut depth = 1usize;
-            let start = i;
-            i += open.chars().count();
-            while i < s.len() && depth > 0 {
-                if syntax.nests && starts_with(&s, i, open) {
-                    depth += 1;
-                    i += open.chars().count();
-                } else if starts_with(&s, i, close) {
-                    depth -= 1;
-                    i += close.chars().count();
-                } else {
-                    i += 1;
-                }
-            }
-            for slot in out.iter_mut().take(i).skip(start) {
-                if *slot != '\n' {
-                    *slot = ' ';
-                }
-            }
-            continue;
-        }
-        i += 1;
-    }
-    out.into_iter().collect()
-}
-
-/// Whether `needle` sits at `at`.
-///
-/// Written without collecting the needle: this runs once per character of
-/// every tracked source file, and allocating there put the first run of this
-/// gate at 26 seconds inside a lane whose whole budget is already the
-/// largest a push can carry.
-fn starts_with(s: &[char], at: usize, needle: &str) -> bool {
-    for (i, nc) in (at..).zip(needle.chars()) {
-        if i >= s.len() || s[i] != nc {
-            return false;
-        }
-    }
-    true
-}
-
-/// Whether only whitespace precedes `at` on its line.
-///
-/// What separates a Python docstring — the citation form this gate must
-/// leave standing — from a triple-quoted literal used as a value. A branch
-/// on a specification's identity is never written as a line-initial
-/// docstring, so the direction this rule can be wrong in is not the
-/// direction that matters.
-fn begins_a_line(s: &[char], at: usize) -> bool {
-    let mut i = at;
-    while i > 0 {
-        i -= 1;
-        if s[i] == '\n' {
-            return true;
-        }
-        if !s[i].is_whitespace() {
-            return false;
-        }
-    }
-    true
-}
-
-/// The string delimiter opening at `at`, if one does.
-fn opening_string(s: &[char], at: usize, syntax: &Syntax) -> Option<(&'static str, bool)> {
-    // A quote that is really a Rust-style lifetime or a Kotlin character
-    // cannot arise here: the arms that use `'` as a delimiter are the
-    // languages where it always is one.
-    syntax
-        .strings
-        .iter()
-        .find(|(d, _)| starts_with(s, at, d))
-        .copied()
-}
-
-/// Where the string opening at `at` ends, one past its closing delimiter.
-fn end_of_string(s: &[char], at: usize, delim: &str, escapes: bool) -> usize {
-    let width = delim.chars().count();
-    let mut i = at + width;
-    while i < s.len() {
-        if escapes && s[i] == '\\' {
-            i += 2;
-            continue;
-        }
-        if starts_with(s, i, delim) {
-            return i + width;
-        }
-        i += 1;
-    }
-    s.len()
-}
-
-/// Where a C++ raw string `R"delim(` opening at `at` ends, if one does.
-fn end_of_cpp_raw_string(s: &[char], at: usize) -> Option<usize> {
-    if s[at] != 'R' || at + 1 >= s.len() || s[at + 1] != '"' {
-        return None;
-    }
-    if at > 0 && (s[at - 1].is_alphanumeric() || s[at - 1] == '_') {
-        return None;
-    }
-    let mut j = at + 2;
-    let mut delim = String::new();
-    while j < s.len() && s[j] != '(' {
-        delim.push(s[j]);
-        j += 1;
-    }
-    if j >= s.len() {
-        return None;
-    }
-    let closing = format!("){delim}\"");
-    let mut k = j + 1;
-    while k < s.len() {
-        if starts_with(s, k, &closing) {
-            return Some(k + closing.chars().count());
-        }
-        k += 1;
-    }
-    Some(s.len())
 }
 
 /// Rust source with its comments and its `#[cfg(test)]` modules blanked.
@@ -1371,9 +1005,8 @@ fn every_template_resolves_to_a_target_language() {
          falls back to C++ for the templates that predate the per-language \
          directories. A template somewhere else would be lexed with the wrong \
          comment rules — reading its prose as code, or its code as prose. Add \
-         the directory to BY_SEGMENT in {}.",
+         the directory to TEMPLATE_DIRS in sce-build/tests/common/source_lexing.rs.",
         undeclared.join("\n"),
-        file!(),
     );
 }
 
@@ -1461,13 +1094,13 @@ fn the_position_split_is_what_this_gate_asks() {
             code: "load(doc='ISO 13400-2')\n",
         },
         Case {
-            lang: Lang::Template(Target::CFamily),
+            lang: Lang::Template(Syntax::CFamily),
             what: "jinja comment and the emitted language's comment",
             prose: "{# ISO 13400-2 #}\n// also ISO 14229-1\nint x = 1;\n",
             code: "{% if d %}const char *k = \"ISO 13400-2\";{% endif %}\n",
         },
         Case {
-            lang: Lang::Template(Target::Python),
+            lang: Lang::Template(Syntax::Python),
             what: "a python template's hash comment",
             prose: "# ISO 13400-2\nx = 1\n",
             code: "x = 'ISO 13400-2'\n",
@@ -1594,14 +1227,14 @@ fn the_decision_is_exercised_where_it_fails() {
             what: "the mesh template emits the wire format and may name it",
             path: "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
             source: "const char *t = \"someip\";\n",
-            lang: Lang::Template(Target::CFamily),
+            lang: Lang::Template(Syntax::CFamily),
             refusals: 0,
         },
         Case {
             what: "a core template does not inherit mesh's exemption",
             path: "tools/codegen/templates/state_machine.jinja2",
             source: "const char *t = \"someip\";\n",
-            lang: Lang::Template(Target::CFamily),
+            lang: Lang::Template(Syntax::CFamily),
             refusals: 1,
         },
         Case {
@@ -1615,7 +1248,7 @@ fn the_decision_is_exercised_where_it_fails() {
             what: "...and inside the scope that argues for it, admitted",
             path: "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
             source: "const char *u = \"an RFC 4122 canonical UUID\";\n",
-            lang: Lang::Template(Target::CFamily),
+            lang: Lang::Template(Syntax::CFamily),
             refusals: 0,
         },
         Case {

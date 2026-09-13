@@ -185,6 +185,9 @@ pub mod scxml_semantic;
 /// so templates see a post-XInclude document. See [`template`]
 /// for the expansion semantics and error model.
 pub mod template;
+/// Where a comment ends and code begins in the language a template emits —
+/// the lexical context the generator encodes each template value for.
+pub mod template_lexing;
 /// Compile-time registry of the Jinja2 template tree, derived from
 /// `tools/codegen/templates/` by `build.rs`. Serves callers with no
 /// filesystem (WASM) from the same tree the filesystem loader walks.

@@ -27,6 +27,7 @@ use std::process::{Command, Output};
 pub mod gate_selectors;
 pub mod ledger;
 pub mod rust_source;
+pub mod source_lexing;
 pub mod workflow;
 
 /// What one probe run did, so a caller can assert on the route rather than
