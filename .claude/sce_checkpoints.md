@@ -48,6 +48,7 @@ Matching is case-insensitive and the separator is flexible, so `ATOMIC-B`,
     ATOMIC-L   a gate refusing a specification's identity in executable code
     SURFACES   register every spec-bearing surface, and gate the registry
     UNIFY      measure, then promote one schema both the mirror and SCE read
+    INVENTORY  measure whether the empty inventory layer can carry a modality
     HOLE-1     the manifest copyright guard covers entries, not section titles
     HOLE-2     RequirementId::validate has no caller and would refuse ISO ids
     HOLE-3     sce:req on a transition's own action reaches no reading
@@ -114,6 +115,41 @@ search used one vocabulary (`requirement`, `provenance`, `trace`, `coverage` —
   express `shall_not` and `shall_within`? `coverage_expectation` carries only
   `informational` / `out_of_scope_here` / unset. Do not promote a schema before
   that is answered.
+
+## Why INVENTORY was added (2026-09-13), and what UNIFY measured first
+
+UNIFY's measurement came back and it settled the shape of the problem:
+
+- **No existing section field is a modality**, and none can be overloaded into
+  one. The three candidates each answer something else — `decision_status` is
+  lifecycle (`active` ×197, one value in the whole corpus),
+  `coverage_expectation` asks whether a section needs code, and
+  `verification_expectation` asks how it is checked. ⚠ `mnemosyne.toml` already
+  sets `severity_coverage = reject`, so a second meaning in that slot would make
+  `MisclassifiedCoverage` fire on correctly-classified prohibitions.
+- **The negative modality is already in the corpus with nowhere to live**: across
+  192 stored excerpts, `must not` 32, `should not` 4, `shall not` 1. So the
+  prohibition problem is not an ISO peculiarity — the W3C corpus has the same
+  shape.
+- **⭐ The decisive one is granularity.** 30 sections carry two distinct
+  modalities, 12 carry three, 4 carry four. A section-level `modality` field
+  would have to collapse `must` and `must not` into one cell for 46 sections.
+  ⇒ **Modality belongs to a requirement, not to a section.**
+
+And a requirement layer already exists in the format, **empty**:
+`InventoryEntry` — the guide's own words are *"test cases / requirement ids …
+internal requirement ids"* — with `{ id, status: active|reserved|deprecated,
+section, source, reason }`, a CLI to register entries, and
+`set_equality_validator` already checking existence and status at cite time. The
+store reports `inventory_entries: 0`.
+
+⚠⚠ So the right move is **not** to widen anything and **not** to stand a second
+requirement layer beside it — that would repeat, as a design, the exact mistake
+this register's SURFACES entry was added to prevent. It is to measure whether
+that empty layer can carry `modality` and `disposition`, and only then decide.
+
+⚠ INVENTORY is a MEASUREMENT checkpoint. Changing the mnemosyne schema is out of
+its scope: that is another repository and another owner's format.
 
 ## The general-purpose rule ATOMIC-L enforces
 
