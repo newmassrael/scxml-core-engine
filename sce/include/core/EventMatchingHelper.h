@@ -31,10 +31,19 @@ namespace SCE::Core::EventMatchingHelper {
  * 1. Event descriptor may contain multiple tokens separated by spaces
  * 2. Each token is matched against the event name using prefix matching
  * 3. Prefix matching uses dot (.) as token separator
- * 4. Special wildcards:
- *    - "*" matches any event
- *    - "foo.*" matches any event starting with "foo."
- * 5. Token boundaries are enforced: "foo" matches "foo.bar" but NOT "foobar"
+ * 4. "error", "error." and "error.*" are "functionally equivalent": each
+ *    reduces to the token prefix "error", so each matches bare "error" as
+ *    well as "error.send"
+ * 5. "*" matches any event, and so does a bare ".*", whose token prefix is
+ *    empty
+ * 6. Token boundaries are enforced: "foo" matches "foo.bar" but NOT "foobar"
+ *
+ * Rules 4 and 5 were wrong here until 2026-09-13: "foo.*" was read as the
+ * string prefix "foo.", so bare "foo" did not match it, "foo." matched
+ * nothing, and ".*" matched nothing. No W3C fixture delivers any of those
+ * cases, which is why a green conformance suite never said so; the fixture at
+ * integration_resources/event_descriptor_spellings_agree/ now does, on all
+ * seven channels.
  *
  * @param eventName The actual event name (e.g., "foo.zoo", "bar")
  * @param descriptor The event descriptor from transition (e.g., "foo bar", "foo.*", "*")
@@ -47,6 +56,10 @@ namespace SCE::Core::EventMatchingHelper {
  * matchesEventDescriptor("foos", "foo")         → false (token boundary)
  * matchesEventDescriptor("foo.zoo", "foo.*")    → true  (wildcard suffix)
  * matchesEventDescriptor("anything", "*")       → true  (universal wildcard)
+ * matchesEventDescriptor("foo", "foo.*")        → true  (the three spellings
+ * matchesEventDescriptor("foo", "foo.")         → true   are one descriptor)
+ * matchesEventDescriptor("a.b.c", ".*")         → true  (empty token prefix)
+ * matchesEventDescriptor("foobar", "foo.*")     → false (whole tokens only)
  */
 inline bool matchesEventDescriptor(const std::string &eventName, const std::string &descriptor) {
     // §scxml-3.12.1: Split descriptor into space-separated tokens
@@ -77,23 +90,33 @@ inline bool matchesEventDescriptor(const std::string &eventName, const std::stri
             return true;
         }
 
-        // §scxml-3.12.1: Wildcard suffix "foo.*" matches "foo.xxx"
-        if (token.length() >= 2 && token.substr(token.length() - 2) == ".*") {
-            std::string prefix = token.substr(0, token.length() - 1);  // "foo."
-            if (eventName.length() >= prefix.length() && eventName.substr(0, prefix.length()) == prefix) {
-                return true;
-            }
+        // §scxml-3.12.1: a transition with 'event' of "error", one with
+        // "error." and one with "error.*" are "functionally equivalent since
+        // they are token prefixes of exactly the same set of event names", so
+        // every spelling reduces to one token prefix before anything is
+        // compared. Reducing rather than branching keeps the three equivalent
+        // by construction.
+        std::string prefix = token;
+        if (prefix.length() >= 2 && prefix.compare(prefix.length() - 2, 2, ".*") == 0) {
+            prefix.erase(prefix.length() - 2);
+        }
+        if (!prefix.empty() && prefix.back() == '.') {
+            prefix.pop_back();
         }
 
-        // §scxml-3.12.1: Exact match
-        if (eventName == token) {
+        // §scxml-3.12.1: a descriptor ending in ".*" matches "zero or more
+        // tokens", so a bare ".*" is an empty token prefix — a prefix of every
+        // event name, and thus a wildcard like "*".
+        if (prefix.empty()) {
             return true;
         }
 
-        // §scxml-3.12.1: Prefix match with dot separator
-        // "foo" matches "foo.bar" but NOT "foobar"
-        if (eventName.length() > token.length() && eventName[token.length()] == '.' &&
-            eventName.substr(0, token.length()) == token) {
+        // §scxml-3.12.1: the descriptor's tokens must be "an exact match or a
+        // prefix of the set of tokens in the event's name". The boundary is a
+        // whole token, so "foo" matches "foo.bar" and never "foobar".
+        if (eventName == prefix ||
+            (eventName.length() > prefix.length() && eventName.compare(0, prefix.length(), prefix) == 0 &&
+             eventName[prefix.length()] == '.')) {
             return true;
         }
     }

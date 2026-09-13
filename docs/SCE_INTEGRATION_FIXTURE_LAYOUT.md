@@ -196,6 +196,36 @@ the naming: Appendix D's separate `isInFinalState(s)` is a third thing again,
 asking whether a compound or parallel state has completed for the done.state
 computation.
 
+`event_descriptor_spellings_agree` covers W3C SCXML 3.12.1: a transition with
+`event` of `wild`, one with `wild.`, and one with `wild.*` are "functionally
+equivalent since they are token prefixes of exactly the same set of event
+names", and a descriptor ending in `.*` matches "zero or more tokens", so a
+bare `.*` is an empty token prefix that matches every event. The axis is
+descriptor matching itself, which is why the fixture carries no `<invoke>`,
+no `<parallel>`, no delay and no datamodel.
+
+Its cases are all positive polarity — the descriptor under test must fire for
+the machine to reach `pass` — because the W3C corpus writes these descriptors
+only in negative polarity. Test 399 sends `foo.zoo` to `foo.*` and catches its
+bare `foo` with `event="*"`, so no W3C document delivers a bare `foo` to a
+`foo.*` handler; and tests 311, 312, 313 and 314 each write
+`<transition event=".*" target="fail"/>`, which an engine whose `.*` matches
+nothing passes by never taking the transition it must not take. Measured
+2026-09-13, that is how five of the seven channels came to disagree with the
+clause under a green conformance suite. A fourth state, `bounded`, guards the
+opposite error: a matcher repaired by stripping `.*` and comparing raw string
+prefixes would match `wilder` against `wild.*`, which the token rule forbids.
+Each case has its own failure final, so one assertion per channel names the
+spelling that disagreed.
+
+⚠ Not every case measures every channel, and the difference is worth stating
+rather than leaving a reader to assume. `suffixed`, `dotted` and `bounded`
+reach a runtime matcher on C++, Rust, Go and Python, and the analyzer's
+precomputed lists on Kotlin and C11 — both halves are real there. `universal`
+is different: a bare `.*` compiles to Kotlin's `else` arm and to C11's
+`event != EVENT_NONE`, so on those two channels no matcher is consulted and
+the case cannot fail. It measures `.*` on the four matcher channels only.
+
 `parallel_regions_take_own_transitions` covers W3C SCXML 3.4: when one event
 enables a transition in more than one region of a `<parallel>`, every such
 region takes its own in the same microstep. The fixture is asymmetric on

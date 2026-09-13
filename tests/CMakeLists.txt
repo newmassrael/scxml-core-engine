@@ -972,6 +972,8 @@ add_executable(integration_tests
     integration/UnhandledErrorIsObservableAotTest.cpp
     integration/ErrorCascadeIsBoundedTest.cpp
     integration/ErrorCascadeIsBoundedAotTest.cpp
+    integration/EventDescriptorSpellingsAgreeTest.cpp
+    integration/EventDescriptorSpellingsAgreeAotTest.cpp
     integration/EventlessMacrostepIsBoundedTest.cpp
     integration/EventlessMacrostepIsBoundedAotTest.cpp
     integration/InternalChainIsBoundedTest.cpp
@@ -1432,6 +1434,13 @@ sce_generate_static_integration_test(targetless_transition_completes_macrostep $
 # transitions have run, so the cancel executes against a queue the event has
 # already left.
 sce_generate_static_integration_test(late_tick_honours_cancel ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.12.1: `wild`, `wild.` and `wild.*` are "functionally equivalent",
+# and a bare `.*` is an empty token prefix that matches every event. Each case
+# is positive polarity because the four W3C documents that write a bare `.*`
+# write it as a catch-all to fail, which an engine matching nothing on `.*`
+# passes by never taking the transition it must not take.
+sce_generate_static_integration_test(event_descriptor_spellings_agree ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.7: a `<final>` nested inside a compound state completes that
 # state, not the session — Appendix D `enterStates` ends the session only when

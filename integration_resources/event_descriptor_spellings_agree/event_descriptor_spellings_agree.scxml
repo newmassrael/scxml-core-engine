@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.12.1: three spellings of one event descriptor, and a token
+     boundary that survives them.
+
+     The clause says it in its own words:
+
+       "a transition with 'event' of "error", one with "error.", and one with
+        "error.*" are functionally equivalent since they are token prefixes of
+        exactly the same set of event names"
+
+     and, of the bare wildcard:
+
+       "An event designator consisting solely of "*" can be used as a wildcard
+        matching any sequence of tokens, and thus any event."
+
+     A descriptor ending in ".*" matches "zero or more tokens", so ".*" is an
+     empty token prefix and matches every event for the same reason.
+
+     Why this fixture exists rather than a W3C one. No W3C fixture delivers a
+     bare `foo` to a `foo.*` handler: test 399 sends `foo.zoo` to `foo.*` and
+     catches its bare `foo` with `event="*"`. And the four documents that do
+     write a bare `.*` — tests 311, 312, 313 and 314 — all write it as
+     `<transition event=".*" target="fail"/>`, a catch-all for the failure
+     case. An engine whose `.*` matches NOTHING therefore passes all four,
+     because the only transition it fails to take is one that must not be
+     taken. Measured 2026-09-13: that is how five of the seven channels came
+     to disagree with the clause under a green conformance suite.
+
+     So every case here is positive polarity — the descriptor under test must
+     fire for the machine to reach `pass`:
+
+       suffixed   raises `wild`                `wild.*` must catch it
+       dotted     raises `dot`                 `dot.`   must catch it
+       bounded    raises `wilder`              `wild.*` must NOT catch it
+       universal  raises `any.token.sequence`  `.*`     must catch it
+
+     `bounded` is the guard against over-correction: a matcher repaired by
+     stripping `.*` and comparing raw string prefixes would match `wilder`
+     against `wild.*`, which the clause's token rule forbids.
+
+     Each state lists the descriptor under test FIRST and a literal fallback
+     SECOND, because only the first matching transition fires. A wrong matcher
+     therefore lands in a final state immediately rather than parking until a
+     driver's timeout, so every channel reports the defect loudly and without
+     waiting.
+
+     Each case has its OWN failure final — `failSuffixed`, `failDotted`,
+     `failBounded`, `failUniversal` — so a driver that asserts the machine
+     rests in `pass` names the spelling that missed in its own failure
+     message, with no extra assertions and no per-channel diagnosis.
+
+     Deliberately single-axis: no <invoke>, no <parallel>, no delay, no
+     datamodel. Every event is raised internally so no channel needs a host
+     to drive it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="suffixed"
+       name="event_descriptor_spellings_agree">
+
+    <state id="suffixed">
+        <onentry>
+            <raise event="wild"/>
+        </onentry>
+        <transition event="wild.*" target="dotted"/>
+        <transition event="wild" target="failSuffixed"/>
+    </state>
+
+    <state id="dotted">
+        <onentry>
+            <raise event="dot"/>
+        </onentry>
+        <transition event="dot." target="bounded"/>
+        <transition event="dot" target="failDotted"/>
+    </state>
+
+    <state id="bounded">
+        <onentry>
+            <raise event="wilder"/>
+        </onentry>
+        <transition event="wild.*" target="failBounded"/>
+        <transition event="wilder" target="universal"/>
+    </state>
+
+    <state id="universal">
+        <onentry>
+            <raise event="any.token.sequence"/>
+        </onentry>
+        <transition event=".*" target="pass"/>
+        <transition event="any.token.sequence" target="failUniversal"/>
+    </state>
+
+    <final id="pass"/>
+    <final id="failSuffixed"/>
+    <final id="failDotted"/>
+    <final id="failBounded"/>
+    <final id="failUniversal"/>
+</scxml>

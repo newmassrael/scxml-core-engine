@@ -274,20 +274,60 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% endif %}
 {% endfor %}
 {% if ns_event.has %}
-{# --- Pre-scan for wildcards --- #}
-{% set ns = namespace(has_wildcard=false) %}
-{% for trans in state.transitions %}
-{% if trans.event == '*' or trans.event == '.*' %}
-{% set ns.has_wildcard = true %}
-{% endif %}
-{% endfor %}
+{# --- Document order (W3C SCXML 3.13) ------------------------------------
+
+   Transitions are emitted in the order the author wrote them, and `when`
+   takes the first branch that matches, so the two orders agree by
+   construction rather than by a sort.
+
+   ⚠ A bare wildcard used to be pre-scanned OUT of this loop and emitted as
+   the `else` branch wherever it sat, which placed it after transitions
+   written after it. Measured 2026-09-13 by
+   `integration_resources/event_descriptor_spellings_agree/`: a state whose
+   `.*` was written first took the literal transition written second.
+
+   An UNGUARDED wildcard still becomes `else`. It matches every event this
+   function can be called with — eventless transitions are dispatched by
+   `processNullEvent` and never reach here — so nothing written after it is
+   reachable, and `ns.sealed` both stops the loop and drops those dead
+   branches. A GUARDED wildcard is a branch like any other: when its guard is
+   false the transitions after it ARE reachable, so it is emitted in place
+   with its own condition instead of being hoisted to the end. #}
+{% set ns = namespace(sealed=false, seal_trans=none) %}
 
     private fun process{{ state_id | to_state_class_name }}(
         event: {{ machine_name }}Event
     ): TransitionResult<{{ machine_name }}State> = when {
 {# --- Event-based transitions --- #}
 {% for trans in state.transitions %}
-{% if trans.event and trans.event != '*' and trans.event != '.*' and trans.target %}
+{% if ns.sealed %}
+{# Unreachable: an unguarded wildcard above matches every event a call can
+   carry, so no transition written after it can ever be selected. #}
+{% elif trans.event == '*' or trans.event == '.*' %}
+{# --- Bare wildcard, in document order (W3C SCXML 3.13) --- #}
+{% if trans.history_target is defined %}
+{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
+{% elif trans.target %}
+{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
+{% else %}
+{% set target_expr = "" %}
+{% endif %}
+{% if trans.cond %}
+{% if trans.target or trans.history_target is defined %}
+        // W3C SCXML 3.12.1: guarded wildcard, in the place it was written
+        {{ render_cond(trans) }} -> {{ render_result(trans, target_expr, state_id) }}
+
+{% else %}
+        // W3C SCXML 3.12.1: guarded targetless wildcard, in the place it was written
+        {{ render_cond(trans) }} -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
+
+{% endif %}
+{% else %}
+{% set ns.sealed = true %}
+{% set ns.seal_trans = trans %}
+{% endif %}
+{% elif trans.event and trans.target %}
 {# --- Determine target expression (history resolution) --- #}
 {# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
 {% if trans.history_target is defined %}
@@ -317,7 +357,7 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 
 {% endif %}
 {% endif %}
-{% elif trans.event and trans.event != '*' and trans.event != '.*' and not trans.target %}
+{% elif trans.event and not trans.target %}
 {# --- Targetless transitions --- #}
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
         // W3C SCXML 3.12.1: Multi-descriptor targetless "{{ trans.event }}"
@@ -338,26 +378,29 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% endif %}
 {% endif %}
 {% endfor %}
-{# --- Wildcard transition as else --- #}
-{% if ns.has_wildcard %}
-{% for trans in state.transitions %}
-{% if trans.event == '*' or trans.event == '.*' %}
+{# --- The sealing wildcard, as `else` --- #}
+{% if ns.sealed %}
+{% set trans = ns.seal_trans %}
 {# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
 {% if trans.history_target is defined %}
 {% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
 {% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
-{% else %}
+{% elif trans.target %}
 {% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
-{% endif %}
-{% if trans.target %}
-        // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }}, {{ transition_id(trans, state_id) }})
 {% else %}
+{% set target_expr = "" %}
+{% endif %}
+{% if trans.target or trans.history_target is defined %}
+        // W3C SCXML 3.12.1: Wildcard transition
+        else -> {{ render_result(trans, target_expr, state_id) }}
+{% else %}
+{# A targetless transition runs its actions and stays put, whatever its
+   `type` says — `render_result` returns Internal only for type="internal",
+   so a targetless EXTERNAL wildcard would take the External arm and render
+   an empty target. W3C 403c is exactly that document. #}
         // W3C SCXML 3.12.1: Wildcard targetless transition
         else -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
 {% endif %}
-{% endif %}
-{% endfor %}
 {% else %}
         else -> TransitionResult.Ignored
 {% endif %}
