@@ -75,9 +75,13 @@ edit("sce-build/src/parser.rs",
 PY
 
 mutation_case "wildcard tokens are accepted, giving the attribute a second matching rule" <<'PY'
+# The anchor is the refusal predicate alone, not the `if … {` line around
+# it. The four spellings this case used to enumerate were replaced by one
+# call to the shared descriptor definition (§scxml-3.12.1), and an anchor
+# that had quoted the enumeration went stale the moment they were unified.
 edit("sce-build/src/parser.rs",
-     "if tok == \"*\" || tok == \".*\" || tok.ends_with(\".*\") || tok.contains('*') {",
-     "if false {")
+     "crate::event_descriptor::literal_event(tok).is_none() || tok.contains('*')",
+     "false")
 PY
 
 mutation_case "duplicate tokens are accepted" <<'PY'

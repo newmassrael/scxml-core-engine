@@ -133,12 +133,16 @@ PY
 # reach a template, so a backend can carry any reading at all and the
 # document still generates cleanly.
 
+# The anchor is the branch alone. It used to carry the comment line above
+# it as disambiguating context, which it does not need — `node.children()`
+# names the receiver only `inline_data_value` has, and the other candidate
+# reads `content_elem.children()`. What the comment did buy was a second
+# way to go stale: rewrapping that sentence, which is prose, retired a
+# case about code that had not moved.
 mutation_case "the parser reads only an assign's element children again" <<'PY'
 edit("sce-build/src/parser.rs",
-     """    // element children serialise and everything else is the text.
-    if node.children().any(|c| c.is_element()) {""",
-     """    // element children serialise and everything else is the text.
-    if true {""")
+     "if node.children().any(|c| c.is_element()) {",
+     "if true {")
 PY
 
 # The reading itself. `to_lua_assign_content` is one function for four

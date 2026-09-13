@@ -1757,6 +1757,28 @@ enum Commands {
         /// SCXML file path
         scxml: String,
     },
+    /// Render the acceptance report a person reviews in one sitting —
+    /// Requirement-closure RFC §7a.
+    ///
+    /// One block per requirement, carrying everything its behaviour
+    /// depends on rather than the nodes that happen to carry its id;
+    /// then the risk surface, then what the source says that this
+    /// document claims nothing about.
+    AcceptanceReport {
+        /// SCXML file path
+        scxml: String,
+        /// Closed requirement set this document is measured against.
+        #[arg(long)]
+        manifest: String,
+        /// Verbatim sentences, keyed by requirement id.
+        ///
+        /// Never committed: it holds the source document's own text,
+        /// which the manifest deliberately does not. Supplying it puts
+        /// each sentence beside the design that claims it, and marks
+        /// the rendered page as a local artefact.
+        #[arg(long)]
+        sidecar: Option<String>,
+    },
     Requirements {
         /// SCXML file path
         scxml: String,
@@ -2278,6 +2300,11 @@ fn main() {
             cmd_requirements(&scxml, manifest.as_deref(), error_format)
         }
         Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
+        Commands::AcceptanceReport {
+            scxml,
+            manifest,
+            sidecar,
+        } => cmd_acceptance_report(&scxml, &manifest, sidecar.as_deref(), error_format),
         Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
         Commands::GenerateConformance {
             language,
@@ -7233,6 +7260,46 @@ fn cmd_transition_table(scxml: &str, error_format: ErrorFormat) {
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
     out_stream(|w| sce_build::transition_table::emit_transition_table_ndjson(&model, w));
+}
+
+/// Render RFC §7a's acceptance report.
+///
+/// The manifest is required here, unlike `requirements`: a report is
+/// what a person accepts against, and without the closed set it could
+/// only show what the document claims about itself — which is the one
+/// question acceptance is not allowed to ask.
+fn cmd_acceptance_report(
+    scxml: &str,
+    manifest: &str,
+    sidecar: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+
+    let manifest = sce_build::requirement_manifest::RequirementManifest::load(Path::new(manifest))
+        .unwrap_or_else(|e| {
+            eprintln!("sce-codegen: {e}");
+            std::process::exit(1);
+        });
+
+    // A sidecar that was asked for and cannot be used is fatal. Falling
+    // back to a report without sentences would answer a weaker question
+    // than the one asked while looking exactly like the answer.
+    let sidecar = sidecar.map(|path| {
+        sce_build::requirement_sidecar::RequirementSidecar::load(Path::new(path), &manifest)
+            .unwrap_or_else(|e| {
+                eprintln!("sce-codegen: {e}");
+                std::process::exit(1);
+            })
+    });
+
+    print!(
+        "{}",
+        sce_build::acceptance_report::render(&model, &manifest, sidecar.as_ref())
+    );
 }
 
 fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorFormat) {

@@ -548,7 +548,7 @@ mod tests {
         let t = transition("error.*", "x");
         assert!(transition_matches_event(&t, "error.fatal"));
         assert!(transition_matches_event(&t, "error.fatal.detail"));
-        // W3C SCXML §3.12.1: "error", "error." and "error.*" are
+        // §scxml-3.12.1: "error", "error." and "error.*" are
         // "functionally equivalent", so bare `error` matches. This line
         // asserted the opposite until the specification was asked.
         assert!(transition_matches_event(&t, "error"));
