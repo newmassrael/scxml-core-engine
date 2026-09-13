@@ -52,14 +52,24 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # this gate "whatever is installed" rather than the revision CI runs.
 sce_citation_binary() {
     local rev short root bin have hint
-    rev="$(sed -n 's/^[[:space:]]*MNEMOSYNE_REV:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' \
-        "$SCE_REPO_ROOT/.github/workflows/spec-citations.yml")"
-    [[ -n "$rev" ]] \
+    # The revision and the install line come from `scripts/lib/mnemosyne_pin.sh`,
+    # which is the only shell reader of the pin. This function used to carry a
+    # second `sed` over the same workflow line; two readers of one fact are
+    # what the pin exists to prevent.
+    source "$SCE_REPO_ROOT/scripts/lib/mnemosyne_pin.sh"
+    rev="$(mnemosyne_pin_rev "$SCE_REPO_ROOT")" \
         || sce_gate_fail "no MNEMOSYNE_REV pin found in .github/workflows/spec-citations.yml"
     short="${rev:0:8}"
-    root="${HOME}/.local/share/mnemosyne-rev/${short}"
+    root="$(mnemosyne_pin_root "$rev")"
+    # Only the binary this gate RUNS is checked here, deliberately. The
+    # revision root must also carry `mnemosyne-mcp` for the MCP servers, and
+    # asserting that here would fail the citation gate for a reason that has
+    # nothing to do with citations — the fault this gate's own header calls
+    # "a status that does not carry a cause". Completeness is made true where
+    # the root is filled (`scripts/install_mnemosyne_cli.sh`), not re-checked
+    # by every consumer; CI installs only the CLI and passes MNEMOSYNE_BIN.
     bin="${MNEMOSYNE_BIN:-${root}/bin/mnemosyne-cli}"
-    hint="cargo install --git https://github.com/newmassrael/mnemosyne --rev ${rev} --locked --root ${root} mnemosyne-cli"
+    hint="$(mnemosyne_pin_install_hint "$rev")"
     # Both of these are the gate's own tooling, not the tree it judges, so they
     # exit 3 rather than 1 — see `sce_gate_cannot_run`.
     [[ -x "$bin" ]] \

@@ -228,6 +228,14 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // job. A `paths:` filter on `.github/workflows/**` would cover its
     // inputs today and stop covering them the moment a workflow moves.
     "test_result_gating",
+    // Asks `git ls-files` for every tracked `*.sh` under `scripts/` and for
+    // every `mnemosyne.toml`, and holds the Mnemosyne revision to one shell
+    // reader and one binary list. A second reader is added by writing a NEW
+    // script — which is precisely what a `paths:` filter over today's scripts
+    // cannot name — and the workspace configs sit under two roots no lane's
+    // filter shares. The pin it guards has been in three places at once; the
+    // copy that hurt was the one nothing enumerated.
+    "the_pin_is_read_from_one_place",
     "workflow_trigger_coverage",
 ];
 

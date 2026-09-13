@@ -155,4 +155,5 @@ cargo test -p sce-build --features cli,ffi \
     --test mesh_rpc_backend_contract \
     --test ecma262_scoreboard_contract \
     --test script_engine_language_parity \
+    --test the_pin_is_read_from_one_place \
     || sce_gate_fail "tree-wide hygiene gates"

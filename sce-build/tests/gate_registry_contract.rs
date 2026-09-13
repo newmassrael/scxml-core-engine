@@ -1436,6 +1436,42 @@ fn staged_citation_fixture_files(dir: &Path, files: &[(&str, &str)]) {
         )
         .unwrap_or_else(|e| panic!("copy {f}: {e}"));
     }
+    // ...and everything those two SOURCE out of the repository, derived from
+    // their own text rather than listed here.
+    //
+    // The list above is a declaration of what the gate opens, and a hand-typed
+    // one goes stale the moment a gate adds a `source` — which is not a
+    // hypothesis: when `ledger-citations.sh` began sourcing
+    // `scripts/lib/mnemosyne_pin.sh` (one reader for the Mnemosyne pin), six
+    // tests in this file failed with `mnemosyne_pin_rev: command not found`
+    // and blamed the workflow for carrying no pin. The sibling block below
+    // learned the same thing for `tools/git-hooks` and answered it by copying
+    // the directory; here the answer is to follow the `source` lines, so the
+    // next shared helper needs no edit in this file.
+    for f in ["lib.sh", "ledger-citations.sh"] {
+        let text = std::fs::read_to_string(root.join("scripts/gates").join(f))
+            .unwrap_or_else(|e| panic!("read {f}: {e}"));
+        for line in text.lines() {
+            let line = line.trim();
+            if !line.starts_with("source ") {
+                continue;
+            }
+            let Some(rest) = line.split_once("$SCE_REPO_ROOT/").map(|(_, r)| r) else {
+                continue;
+            };
+            let Some(rel) = rest.split('"').next().filter(|r| !r.is_empty()) else {
+                continue;
+            };
+            let from = root.join(rel);
+            if !from.is_file() {
+                continue;
+            }
+            let to = dir.join(rel);
+            std::fs::create_dir_all(to.parent().expect("a sourced path has a parent"))
+                .unwrap_or_else(|e| panic!("mkdir for {rel}: {e}"));
+            std::fs::copy(&from, &to).unwrap_or_else(|e| panic!("copy {rel}: {e}"));
+        }
+    }
     std::fs::create_dir_all(dir.join("tools/git-hooks")).expect("mkdir tools/git-hooks");
     // Every regular file in the hook directory, not `pre-commit` alone. The
     // hook sources its siblings out of its OWN directory on purpose — its

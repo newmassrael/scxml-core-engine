@@ -373,6 +373,45 @@ switches to it automatically, so export `MN_ROOT` to match the layout above:
 export MN_ROOT="$HOME/.local/share/mnemosyne-rev"
 ```
 
+### A revision is installed, not a binary
+
+`scripts/install_mnemosyne_cli.sh` fills a revision root with **every** name in
+`MNEMOSYNE_PIN_BINARIES` (`scripts/lib/mnemosyne_pin.sh`), in one
+`cargo install`. That list is the only place a consumer of the revision is
+named, and `sce-build/tests/the_pin_is_read_from_one_place.rs` holds it to one
+declaration and the revision to one shell reader.
+
+The reason is measured. Until 2026-09-14 the script installed `mnemosyne-cli`
+alone, so a root could satisfy every check here while lacking
+`mnemosyne-mcp` — and the MCP servers configured against these workspaces then
+execed toward a binary that was not there. Their refusal reached the client as
+`CONNECTION_CLOSED`: no revision, no install line, nothing to act on, where the
+CLI's identical failure names both. A half-filled root is now unreachable
+rather than merely detectable.
+
+### The MCP client names a script, never a revision
+
+Point an MCP client's `command` at `scripts/mnemosyne_mcp.sh` and pass the
+workspace in `args`:
+
+```json
+{
+  "command": "/path/to/scxml-core-engine/scripts/mnemosyne_mcp.sh",
+  "args": ["--workspace", "/path/to/scxml-core-engine/docs/spec/scxml"]
+}
+```
+
+A client configuration lives outside this repository, so a revision-keyed path
+written there is a **third copy of the pin** — the one no gate can read and no
+bump updates. Three servers sat two revisions behind for exactly that reason.
+The launcher resolves the revision from `MNEMOSYNE_REV` at start-up, so a bump
+carries to the MCP with no second edit, and it writes its refusals to
+`${XDG_STATE_HOME:-~/.local/state}/sce-mnemosyne-mcp/launch.log` because an
+stdio server's stderr does not reach the client.
+
+So a pin bump is: bump `MNEMOSYNE_REV`, bump the five `[tool] pin` values, run
+the install script here and once on each build host. The MCP needs no edit.
+
 The pin string is that directory's name, so it must match what `pre-push` derives
 (`${REV:0:8}`, an 8-character short revision). Procurement is never automatic: an
 absent pinned build is refused with the install line, not fetched.
