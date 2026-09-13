@@ -694,6 +694,16 @@
           "file": "backends/go/runtime/configuration.go",
           "symbol": "ConfigurationParallelChildCount",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_initial_or_history_child",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_exit_actions",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -815,6 +825,26 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "processEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_event",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "handle_hierarchical_transition",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "Event",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "is_descendant_of",
           "kind": "references"
         }
       ],
@@ -1222,6 +1252,16 @@
         {
           "file": "sce-build/src/forge/native_action.rs",
           "symbol": "guard_payload",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "MAX_ERROR_CASCADE_DEPTH",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "error_cascade_events",
           "kind": "references"
         }
       ],
@@ -2153,6 +2193,46 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::getStatistics",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "unseen_external_events",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "check_eventless_transitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "execute_transition",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "null_event",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "last_transition_is_internal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "last_transition_is_targetless",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "process_transition",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_transition_actions",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2349,6 +2429,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "enterAt",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "initial_state",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2751,6 +2836,21 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "enter_at",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "resolve_current_state_to_leaf",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "State",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "is_compound_state",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3102,6 +3202,36 @@
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "removeConflictingTransitions",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "HAS_PARALLEL_STATES",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "is_parallel_state",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_parallel_regions",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "last_transition_source_state",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_active_states",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "set_active_states",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3315,6 +3445,11 @@
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_initial_children",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3511,6 +3646,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_take_transitions",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "is_final_state",
           "kind": "references"
         }
       ],
@@ -3743,6 +3883,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "enterAt",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_entry_actions",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3928,6 +4073,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_take_transitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_exit_actions",
           "kind": "implements"
         }
       ],
@@ -4493,6 +4643,11 @@
         {
           "file": "sce-build/src/ecmascript_acceptance.rs",
           "symbol": "check_action",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "has_variable",
           "kind": "references"
         }
       ],
@@ -5504,6 +5659,31 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "performDeferredHostSend",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "setup_system_variables",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "set_current_event",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_event_with_meta",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "populate_event_metadata",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "clear_event_metadata",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -5778,6 +5958,11 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "ScheduledAct",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "set_next_event_is_external",
           "kind": "references"
         }
       ],
@@ -6296,6 +6481,31 @@
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::setVariableAsDOM",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "evaluate_expression",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "set_variable",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "get_variable",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "NEEDS_DATA_MODEL_INIT",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "initialize_data_model",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -6793,6 +7003,16 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "__init__",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "donedata_at_final",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "stash_donedata_at_final",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7232,6 +7452,11 @@
         {
           "file": "sce/include/scripting/LoweringScope.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "execute_script",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7479,6 +7704,16 @@
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::offerToScope",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "StateQueryCallback",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "IScriptEngine",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7514,11 +7749,6 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
-          "symbol": "IScriptEngine",
           "kind": "implements"
         },
         {
@@ -8324,6 +8554,46 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_scxml_with_imports",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/hal.rs",
+          "symbol": "now_ticks_ms",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "is_invalid_target",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "validate_target",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "is_supported_send_type",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "generate_send_id",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "parse_delay_to_ms",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "schedule_event_at",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "advance_time_ms",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -9022,6 +9292,11 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "scheduleHostSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "ScheduledSendId",
           "kind": "references"
         }
       ],
@@ -10153,6 +10428,61 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "timeUntilNextScheduledMs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/invoke.rs",
+          "symbol": "defer_invoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/invoke.rs",
+          "symbol": "cancel_invokes_for_state",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/invoke.rs",
+          "symbol": "get_pending_count",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/invoke.rs",
+          "symbol": "is_invoke_pending",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "step",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise_external_by_name_with_meta",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "HAS_INVOKE_SUPPORT",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_entry_actions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_pending_invokes",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "forward_to_autoforward_children",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "tick_children",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -10463,6 +10793,26 @@
         {
           "file": "sce-build/src/generator.rs",
           "symbol": "generate_kotlin_for_engine",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "UNSUPPORTED_INVOKE_SCXML",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise_external_by_name",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "HAS_AUTOFORWARD",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "forward_to_autoforward_children",
           "kind": "implements"
         }
       ],
@@ -10792,6 +11142,16 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "processEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "HAS_FINALIZE",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_finalize_for_child_event",
           "kind": "implements"
         }
       ],
@@ -11751,6 +12111,16 @@
           "file": "sce/include/common/DataModelInitHelper.h",
           "symbol": "initializeVariable",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_init.rs",
+          "symbol": "is_xml_content",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "set_variable_as_dom",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -11919,6 +12289,11 @@
         {
           "file": "backends/go/runtime/helpers.go",
           "symbol": "ScriptToBool",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "to_bool",
           "kind": "implements"
         }
       ],
@@ -12296,6 +12671,11 @@
         {
           "file": "sce-build/src/generator.rs",
           "symbol": "INERT_DESTINATIONS",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "set_current_event",
           "kind": "references"
         }
       ],
@@ -12780,6 +13160,21 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "performHostSend",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/io_processors.rs",
+          "symbol": "session_id_from_scxml_location",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise_external",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -13299,6 +13694,26 @@
         {
           "file": "backends/go/runtime/wire_value_test.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "symbol": "typed_params_to_wire_strings",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "is_http_target",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "requires_target_attribute",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "validate_basic_http_send",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -13784,6 +14199,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "execute_on_entry_as_ancestor",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -16305,6 +16725,12 @@
       "target_kind": "section",
       "target_id": "scxml-5.9.3",
       "reason": "the clause cited was wrong: §scxml-5.9.3 is Legal Data Values and Value Expressions, while event descriptor matching is §scxml-3.12.1, to which this symbol is now bound"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "In() is a conditional-expression predicate (§scxml-5.9.1); §scxml-5.9.2 is Location Expressions. The two cites this binding rested on named the wrong clause and now cite §scxml-5.9.1, where the C++ twin IScriptEngine.h was already bound."
     }
   ],
   "frames": {},
@@ -16321,5 +16747,5 @@
   "parameter_deltas": {},
   "parameter_gates": {},
   "fact_counts": {},
-  "schema_version": 46
+  "schema_version": 48
 }

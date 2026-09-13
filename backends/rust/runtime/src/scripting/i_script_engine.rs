@@ -100,7 +100,7 @@ pub type ScriptResult<T> = Result<T, ScriptError>;
 /// Matches C++ `NativeMethod = std::function<ScriptValue(const std::vector<ScriptValue>&)>`.
 pub type NativeMethod = Box<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>;
 
-/// Callback for resolving the SCXML `In(stateId)` predicate (§scxml-5.9.2).
+/// Callback for resolving the SCXML `In(stateId)` predicate (§scxml-5.9.1).
 ///
 /// Receives a state ID string and returns `true` if that state is in the engine's
 /// current active configuration. Matches the C++ `std::function<bool(const std::string &)>`
@@ -280,7 +280,7 @@ pub trait IScriptEngine: Send + Sync {
     fn collect_garbage(&self);
 
     // ════════════════════════════════════════
-    // State Query Callback (§scxml-5.9.2 In() predicate)
+    // State Query Callback (§scxml-5.9.1 In() predicate)
     // ════════════════════════════════════════
 
     /// Register a callback that resolves the SCXML `In()` predicate.

@@ -178,6 +178,41 @@
           "file": "sce-build/src/forge/expr.rs",
           "symbol": "tests",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "guard_is_native_lowerable",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "bytes_comparisons_are_native_representable",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "reject_non_representable_bytes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "decode_bytes_literal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "reinterpret_string_as_bytes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "bytes_ctx",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "c11_payload_field_decl",
+          "kind": "implements"
         }
       ]
     },
@@ -237,6 +272,7 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
+  "mutation_reasons": [],
   "frames": {},
   "branches": {},
   "entities": {},
@@ -251,5 +287,5 @@
   "parameter_deltas": {},
   "parameter_gates": {},
   "fact_counts": {},
-  "schema_version": 44
+  "schema_version": 48
 }
