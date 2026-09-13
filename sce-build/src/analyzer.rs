@@ -705,11 +705,13 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
 
 /// Add system-level events (wildcards, invoke events).
 fn add_system_events(model: &mut SCXMLModel) {
+    // Per descriptor, not per attribute: `event="foo *"` carries a
+    // wildcard just as `event="*"` does (§scxml-3.12.1).
     let has_wildcard = model.states.values().any(|state| {
-        state
-            .transitions
-            .iter()
-            .any(|t| t.event == "*" || t.event == ".*")
+        state.transitions.iter().any(|t| {
+            crate::event_descriptor::descriptors(&t.event)
+                .any(|d| d == crate::event_descriptor::EventDescriptor::Any)
+        })
     });
     if has_wildcard {
         model.events.insert("Wildcard".to_string());
@@ -814,7 +816,9 @@ fn compute_externally_drivable_events(model: &mut SCXMLModel) {
 /// has exactly one owner.
 fn is_reserved_ingress_event(event: &str) -> bool {
     event.is_empty()
-        || matches!(event, "*" | ".*" | "_*")
+        // A descriptor pattern (`*`, `.*`, `foo.*`, `foo.`) names no event a
+        // switchboard could target — §scxml-3.12.1 via `event_descriptor`.
+        || crate::event_descriptor::literal_event(event).is_none()
         || event.starts_with("error.")
         || event.starts_with("done.invoke")
         || event.starts_with("done.state")
@@ -837,49 +841,36 @@ fn build_prefix_matching(model: &mut SCXMLModel) {
                 continue;
             }
 
-            // Wildcards and glob patterns need runtime matching
-            if trans.event == "*"
-                || trans.event == ".*"
-                || trans.event == "_*"
-                || trans.event.contains(".*")
-                || trans.event.contains(' ')
-            {
+            // Which of the document's events this transition catches is
+            // §scxml-3.12.1, decided by `crate::event_descriptor` — the copy
+            // that stood here left bare `foo` out of `foo.*` and matched
+            // nothing for `foo.`, and C11 and Kotlin dispatch from this list.
+            // `all_events` comes from the `BTreeSet` of document events, so
+            // the list is already sorted and unique — the order generated
+            // dispatch is emitted in.
+            let matching: Vec<String> = all_events
+                .iter()
+                .filter(|event| crate::event_descriptor::attribute_matches(&trans.event, event))
+                .cloned()
+                .collect();
+
+            // One literal descriptor keeps the enum fast path. Every other
+            // spelling — several descriptors, `*`, `foo.*`, `foo.` — needs
+            // runtime string matching in the backends that match at run time.
+            let mut written = trans.event.split_whitespace();
+            let single_literal = matches!(
+                (written.next(), written.next()),
+                (Some(only), None) if crate::event_descriptor::literal_event(only).is_some()
+            );
+            if !single_literal {
                 trans.needs_string_matching = true;
                 model.needs_event_matching_helper = true;
-
-                // Compute prefix matching events
-                let mut matching = std::collections::BTreeSet::new();
-                for descriptor in trans.event.split_whitespace() {
-                    if descriptor == "*" || descriptor == ".*" || descriptor == "_*" {
-                        matching.extend(all_events.iter().cloned());
-                    } else if let Some(base) = descriptor.strip_suffix(".*") {
-                        for event in &all_events {
-                            if event.starts_with(&format!("{base}.")) {
-                                matching.insert(event.clone());
-                            }
-                        }
-                    } else {
-                        for event in &all_events {
-                            if event == descriptor || event.starts_with(&format!("{descriptor}.")) {
-                                matching.insert(event.clone());
-                            }
-                        }
-                    }
-                }
-                trans.prefix_matching_events = matching.into_iter().collect();
+                trans.prefix_matching_events = matching;
                 continue;
             }
 
-            // Standard prefix matching
-            let mut matching = std::collections::BTreeSet::new();
-            for event in &all_events {
-                if event == &trans.event || event.starts_with(&format!("{}.", trans.event)) {
-                    matching.insert(event.clone());
-                }
-            }
-            let sorted: Vec<String> = matching.into_iter().collect();
-            trans.prefix_matching_events = sorted.clone();
-            trans.matching_enum_values = sorted;
+            trans.prefix_matching_events = matching.clone();
+            trans.matching_enum_values = matching;
             trans.needs_string_matching = false;
         }
 

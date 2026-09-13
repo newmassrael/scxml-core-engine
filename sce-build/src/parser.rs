@@ -1007,7 +1007,10 @@ fn parse_sce_unhandled(
 
     let mut out: Vec<String> = Vec::new();
     for tok in raw.split_whitespace() {
-        if tok == "*" || tok == ".*" || tok.ends_with(".*") || tok.contains('*') {
+        // Any pattern is refused, not only the `*` spellings: a trailing-dot
+        // `foo.` is equivalent to `foo.*` (§scxml-3.12.1) and, accepted as a
+        // literal, would never equal the gap event it was meant to name.
+        if crate::event_descriptor::literal_event(tok).is_none() || tok.contains('*') {
             return Err(reject(
                 "sce:unhandled",
                 tok.to_string(),
@@ -2185,15 +2188,12 @@ impl SCXMLParser {
             // Parse transitions
             for trans_elem in scxml_children(&child, "transition") {
                 let transition = self.parse_transition(&trans_elem, model, source_name)?;
-                // Collect event names
-                if !transition.event.is_empty() {
-                    let ev = &transition.event;
-                    if ev != "*" && ev != ".*" && ev != "_*" {
-                        for e in ev.split_whitespace() {
-                            if e != "*" && e != ".*" && e != "_*" && !e.ends_with(".*") {
-                                model.events.insert(e.to_string());
-                            }
-                        }
+                // Collect event names: literal descriptors only. A pattern
+                // (`*`, `foo.*`, `foo.`) matches events and declares none —
+                // §scxml-3.12.1, via `crate::event_descriptor::literal_event`.
+                for e in transition.event.split_whitespace() {
+                    if let Some(literal) = crate::event_descriptor::literal_event(e) {
+                        model.events.insert(literal.to_string());
                     }
                 }
                 state.transitions.push(transition);
@@ -2368,14 +2368,10 @@ impl SCXMLParser {
 
             for trans_elem in scxml_children(&child, "transition") {
                 let transition = self.parse_transition(&trans_elem, model, source_name)?;
-                if !transition.event.is_empty() {
-                    let ev = &transition.event;
-                    if ev != "*" && ev != ".*" && ev != "_*" {
-                        for e in ev.split_whitespace() {
-                            if e != "*" && e != ".*" && e != "_*" && !e.ends_with(".*") {
-                                model.events.insert(e.to_string());
-                            }
-                        }
+                // Literal descriptors only, as for `<state>` above.
+                for e in transition.event.split_whitespace() {
+                    if let Some(literal) = crate::event_descriptor::literal_event(e) {
+                        model.events.insert(literal.to_string());
                     }
                 }
                 state.transitions.push(transition);

@@ -242,7 +242,8 @@ class Test399StateMachine(
     private fun processS05(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
-        event is Test399Event.Foo.Zoo -> TransitionResult.External(Test399State.S06, Test399State.S05, 6)
+        // W3C SCXML 3.12.1: Prefix match for "foo.*"
+        (event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S06, Test399State.S05, 6)
 
         else -> TransitionResult.Ignored
     }

@@ -2833,38 +2833,17 @@ fn collect_transition_events(model: &SCXMLModel) -> BTreeSet<String> {
     events
 }
 
-/// Check whether a sent event name matches any event descriptor in the
+/// Whether a sent event name matches any event descriptor in the
 /// receiver's transition set.
 ///
-/// §scxml-3.12.1 matching rules:
-///   - Exact match: "brake.activate" matches "brake.activate"
-///   - Prefix match: "brake.activate" matches "brake" or "brake.*"
-///   - Wildcard: receiver has "*" → matches everything
+/// §scxml-3.12.1, decided by [`crate::event_descriptor`] and nowhere here.
+/// This used to carry its own copy, which agreed with the specification on
+/// `brake.*` and not on a trailing-dot `brake.` — while the validator and the
+/// analyzer each disagreed somewhere else.
 fn event_matches_any(sent_event: &str, receiver_events: &BTreeSet<String>) -> bool {
-    if receiver_events.contains("*") {
-        return true;
-    }
-    if receiver_events.contains(sent_event) {
-        return true;
-    }
-    // W3C SCXML prefix matching: "brake.activate" matches descriptor "brake"
-    // Zero-allocation: compare via byte-level prefix check + '.' separator
-    for descriptor in receiver_events {
-        let desc = descriptor.trim_end_matches(".*");
-        if desc.is_empty() {
-            continue;
-        }
-        if sent_event == desc {
-            return true;
-        }
-        if sent_event.len() > desc.len()
-            && sent_event.starts_with(desc)
-            && sent_event.as_bytes()[desc.len()] == b'.'
-        {
-            return true;
-        }
-    }
-    false
+    receiver_events.iter().any(|descriptor| {
+        crate::event_descriptor::EventDescriptor::parse(descriptor).matches(sent_event)
+    })
 }
 
 /// Validate event coverage across multiple SCXML models in a deployment.

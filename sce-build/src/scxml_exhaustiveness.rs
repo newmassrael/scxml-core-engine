@@ -62,7 +62,7 @@
 // reported as `scxml/unreachable-state` / `scxml/dead-transition`
 // before the exhaustiveness pass surfaces a downstream consequence.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::error::{ForgeError, Located};
 use crate::model::{SCXMLModel, State, Transition};
@@ -452,22 +452,18 @@ fn declares_unhandled(model: &SCXMLModel, state_id: &str, event: &str) -> bool {
         .is_some_and(|s| s.unhandled.iter().any(|e| e == event))
 }
 
-/// Strip wildcard markers from a single event token. Returns the
-/// literal form when the token is a concrete event name (`foo`,
-/// `foo.bar`), the dot-prefix when it is a `.*`-suffixed pattern
-/// (`foo.*` → `foo`), and `None` for the universal wildcards (`*`,
-/// `.*`) which contribute no specific event to the analysis.
+/// The event a descriptor's token prefix names — `foo` for `foo`,
+/// `foo.` and `foo.*` alike — or `None` for a descriptor that matches
+/// everything and so contributes no specific event to the analysis.
+///
+/// The token prefix, not the literal, because this universe is the set of
+/// events the siblings are compared on: `foo.*` handles `foo`, so `foo`
+/// belongs in it. Reduced by [`crate::event_descriptor`], which is what
+/// stops `foo.` entering the universe as a separate event called `foo.`.
 fn literal_event_token(tok: &str) -> Option<String> {
-    if tok.is_empty() || tok == "*" || tok == ".*" {
-        return None;
-    }
-    if let Some(prefix) = tok.strip_suffix(".*") {
-        if prefix.is_empty() {
-            return None;
-        }
-        return Some(prefix.to_string());
-    }
-    Some(tok.to_string())
+    crate::event_descriptor::EventDescriptor::parse(tok)
+        .prefix()
+        .map(str::to_string)
 }
 
 /// Does any of `state`'s transitions match `event` per W3C SCXML
@@ -483,50 +479,16 @@ fn transitions_match_event(transitions: &[Transition], event: &str) -> bool {
         .any(|t| transition_matches_event(t, event))
 }
 
-/// Single-transition match per §scxml-3.12.1 token-prefix rules
-/// plus the `*` / `.*` universal-wildcard convention this codebase
-/// already adopts (mirrors the `is_pure_in_predicate` / event-set
-/// collection code in `parser.rs`).
+/// Single-transition match per §scxml-3.12.1, decided by
+/// [`crate::event_descriptor`].
+///
+/// ⚠ The copy that stood here said `prefix.*` "requires at least one more
+/// token after the prefix", and a unit test pinned it. The specification
+/// says the opposite in so many words — `error`, `error.` and `error.*` are
+/// "functionally equivalent" — so this validator rejected correct documents
+/// whose siblings spelled one descriptor two ways.
 fn transition_matches_event(t: &Transition, event: &str) -> bool {
-    if event.is_empty() {
-        return false;
-    }
-    // De-duplicate via HashSet so multi-token attributes with
-    // repeated entries do not pay the per-token comparison twice.
-    let mut seen: HashSet<&str> = HashSet::new();
-    for tok in t.event.split_whitespace() {
-        if !seen.insert(tok) {
-            continue;
-        }
-        if tok == "*" || tok == ".*" {
-            return true;
-        }
-        if let Some(prefix) = tok.strip_suffix(".*") {
-            // `prefix.*` requires at least one more token after the
-            // prefix. `event` must start with `prefix.` (with the
-            // dot) and have something after it.
-            if prefix.is_empty() {
-                return true; // bare `.*` is universal
-            }
-            if let Some(rest) = event.strip_prefix(prefix) {
-                if rest.starts_with('.') && rest.len() > 1 {
-                    return true;
-                }
-            }
-        } else {
-            // Bare descriptor: matches event == descriptor (exact)
-            // or event starts with descriptor + "." (token-prefix).
-            if tok == event {
-                return true;
-            }
-            if let Some(rest) = event.strip_prefix(tok) {
-                if rest.starts_with('.') {
-                    return true;
-                }
-            }
-        }
-    }
-    false
+    !event.is_empty() && crate::event_descriptor::attribute_matches(&t.event, event)
 }
 
 #[cfg(test)]
@@ -586,9 +548,10 @@ mod tests {
         let t = transition("error.*", "x");
         assert!(transition_matches_event(&t, "error.fatal"));
         assert!(transition_matches_event(&t, "error.fatal.detail"));
-        // Bare `error` does not match `error.*` — the pattern
-        // requires at least one more token.
-        assert!(!transition_matches_event(&t, "error"));
+        // W3C SCXML §3.12.1: "error", "error." and "error.*" are
+        // "functionally equivalent", so bare `error` matches. This line
+        // asserted the opposite until the specification was asked.
+        assert!(transition_matches_event(&t, "error"));
     }
 
     #[test]
