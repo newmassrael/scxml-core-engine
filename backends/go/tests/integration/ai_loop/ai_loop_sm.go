@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 321b42acfe8cb266c51aff87d805eb471548c8d5250d5f0a5214385ef864d6e9
-// template-hash: d4e22b42c8fb86f84b0969d1316ae4d81aa27fbb4a4a2d70f49968ff55378fdc
+// template-hash: 64b1b90fc896caa107ed5be9822ebfe043206adbf1adf56193dcf0fa4de9eaae
 // generated-at: 0
 
 
@@ -693,7 +693,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "reference", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize start_prompt from expr="'North star: ' + north_star + '\n' +                 'Milestone: ' + milestone + '\n' +                 'Reference: ' + reference + '\n' +                 'Report what you did and what is left.'"
+	// W3C SCXML 5.2/5.3: Initialize start_prompt from expr="'North star: ' + north_star + '\x5Cn' +                 'Milestone: ' + milestone + '\x5Cn' +                 'Reference: ' + reference + '\x5Cn' +                 'Report what you did and what is left.'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(("North star: " .. _scxml_tostring(north_star))) .. "\n")) .. "Milestone: "), milestone)) .. "\n")) .. "Reference: "), reference)) .. "\n")) .. "Report what you did and what is left.")`)
 		if err == nil {
@@ -703,7 +703,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "start_prompt", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize turn_prompt from expr="'Continue toward: ' + milestone + '\n' +                 'Do the next smallest thing that is verifiable, then report.'"
+	// W3C SCXML 5.2/5.3: Initialize turn_prompt from expr="'Continue toward: ' + milestone + '\x5Cn' +                 'Do the next smallest thing that is verifiable, then report.'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `(_scxml_tostring((_scxml_tostring(("Continue toward: " .. _scxml_tostring(milestone))) .. "\n")) .. "Do the next smallest thing that is verifiable, then report.")`)
 		if err == nil {
