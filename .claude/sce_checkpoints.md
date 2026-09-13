@@ -37,7 +37,7 @@ Matching is case-insensitive and the separator is flexible, so `ATOMIC-B`,
 
     ATOMIC-A   requirement manifest input and the four-way classification
     ATOMIC-B   transition table export carrying the source column
-    ATOMIC-C   the acceptance report that folds the manifest review into one sitting
+    ATOMIC-C   the acceptance report — done when a violating mutation moves it
     ATOMIC-D   a real consumer: one end-to-end conversion of a real specification
     ATOMIC-E   visualizer overlay for sce:req and sce:provenance, unclaimed in grey
     ATOMIC-F   the acceptance record and the scenario pin
@@ -150,6 +150,39 @@ that empty layer can carry `modality` and `disposition`, and only then decide.
 
 ⚠ INVENTORY is a MEASUREMENT checkpoint. Changing the mnemosyne schema is out of
 its scope: that is another repository and another owner's format.
+
+## ⭐ How ATOMIC-C is judged, and why the key says it that way
+
+The acceptance report is what a person's acceptance rests on, so "it emits three
+blocks" is not a completion test. The report is a **detector**, and this
+repository already owns the way detectors are tested — `scripts/mutate`'s own
+header: *"A test that passes proves nothing about whether it could fail. The way
+to find out is to break the code it guards and watch it turn red."*
+
+```
+take an accepted (spec, SCXML) pair
+inject a mutation that VIOLATES a requirement    after 3s -> after 5s
+regenerate the report
+  byte-identical -> the differing value is NOT ON THE PAGE; no reviewer,
+                    however careful, could catch it. The report does not
+                    support that requirement.
+  changed        -> at least it is visible
+```
+
+⭐ This also settles what block A's diagram fragment must contain — **not a list
+someone writes down, but whatever the mutations force**: transition event, guard,
+delay, target state, entry and exit actions, each mutated, each required to move
+the block. A fragment that never drew the delay then goes red on its own.
+
+⚠ It does not judge whether a person *noticed* — the change could be small type
+three screens down. That half is irreducible and stays a human judgement. The
+point is to mechanise the half that can be and stop counting the other half as
+covered.
+
+⚠⚠ Two questions belong to C and must be answered **before** it is launched: what
+draws the diagram fragment (C itself, the table alone, or ATOMIC-E first), and
+whether a per-requirement fragment is the right unit. The mutation test
+constrains any answer — whatever draws it must move under all of them.
 
 ## The general-purpose rule ATOMIC-L enforces
 
