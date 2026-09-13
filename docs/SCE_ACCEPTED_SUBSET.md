@@ -1175,7 +1175,8 @@ Tokens are opaque to SCE (no shape enforcement — IR generators
 own the semantic layer). Duplicates on a single node fail at
 parse time with `validation/duplicate-requirement-id`. Block
 annotations on `<onentry>` / `<onexit>` inherit onto every
-action inside the block, appended after any per-action ids.
+action inside the block — including actions nested inside
+`<if>` / `<foreach>` there — appended after any per-action ids.
 `sce-codegen requirements <file>` emits one NDJSON record per
 annotated node for downstream req-coverage tooling — annotated
 by `sce:req` or by `sce:provenance`, since the two are

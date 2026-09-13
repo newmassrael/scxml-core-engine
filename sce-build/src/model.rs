@@ -364,6 +364,57 @@ pub struct ElseIfBranch {
     pub actions: Vec<Action>,
 }
 
+impl Action {
+    /// Every block of executable content nested DIRECTLY inside this
+    /// action, in document order, each with the field path a `node_path`
+    /// names it by.
+    ///
+    /// ⭐ The one definition of what "inside an action" means. Before it
+    /// existed every reader of the action tree wrote its own recursion
+    /// and chose its own depth, and the readers of annotations chose
+    /// none: the requirements walk, the unresolved report, the
+    /// `--strict-unresolved` gate and block inheritance all stopped at
+    /// the top level, so an `sce:req` or `sce:unresolved` on an action
+    /// inside `<if>` / `<foreach>` was stored by the parser and read by
+    /// nobody. `an_annotation_the_model_holds_is_one_every_reader_reaches.rs`
+    /// holds the readers to the model itself rather than to this list.
+    ///
+    /// The shapes are exclusive by `action_type` — `<foreach>` fills
+    /// `actions`, `<if>` fills the branches — but all are listed
+    /// unconditionally, because an empty block costs nothing and a
+    /// list keyed on the type would be a second place to forget one.
+    ///
+    /// ⚠ [`Self::nested_blocks_mut`] lists the same blocks in the same
+    /// order. Rust cannot share one body between the two borrows; the
+    /// test above pins both against the serialised model, so a block
+    /// added to one and not the other goes red.
+    pub fn nested_blocks(&self) -> Vec<(String, &[Action])> {
+        let mut blocks: Vec<(String, &[Action])> = vec![
+            ("actions".to_string(), self.actions.as_slice()),
+            ("then_actions".to_string(), self.then_actions.as_slice()),
+        ];
+        for (k, branch) in self.elseif_branches.iter().enumerate() {
+            blocks.push((
+                format!("elseif_branches[{k}].actions"),
+                branch.actions.as_slice(),
+            ));
+        }
+        blocks.push(("else_actions".to_string(), self.else_actions.as_slice()));
+        blocks
+    }
+
+    /// [`Self::nested_blocks`], mutably, for a pass that rewrites what
+    /// it finds — block annotation inheritance is one.
+    pub fn nested_blocks_mut(&mut self) -> Vec<&mut Vec<Action>> {
+        let mut blocks = vec![&mut self.actions, &mut self.then_actions];
+        for branch in &mut self.elseif_branches {
+            blocks.push(&mut branch.actions);
+        }
+        blocks.push(&mut self.else_actions);
+        blocks
+    }
+}
+
 /// §scxml-6.2.4: Send parameter
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]

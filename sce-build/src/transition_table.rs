@@ -34,11 +34,14 @@
 //!
 //! The derivation is the load-bearing half, so the table widens to
 //! match it: one row per node the shared traversal yields, with the
-//! pseudo-events `(state)`, `(entry)`, `(exit)` and `(invoke)` where
-//! there is no real event. That also makes §6.2's closing claim true
-//! rather than aspirational — the classification and the table become
-//! two readings of ONE walk, so a requirement's verdict and its row
-//! are answers about the same node.
+//! pseudo-events `(state)`, `(entry)`, `(exit)`, `(transition)`,
+//! `(initial)`, `(history)` and `(invoke)` where there is no real event.
+//! An action nested inside `<if>` / `<foreach>` gets its own row with its
+//! block's pseudo-event; its `node_path` says how deep it is.
+//!
+//! That also makes §6.2's closing claim true rather than aspirational —
+//! the classification and the table become two readings of ONE walk, so
+//! a requirement's verdict and its row are answers about the same node.
 //!
 //! # What `after` means here
 //!
@@ -138,7 +141,9 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     action: EMPTY_CELL.to_string(),
                     node_path,
                 },
-                NodeSubject::Transition { state, transition } => TransitionRow {
+                NodeSubject::Transition {
+                    state, transition, ..
+                } => TransitionRow {
                     source,
                     from: state.id.clone(),
                     // An eventless transition is the SCXML spelling for
@@ -171,7 +176,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                 } => TransitionRow {
                     source,
                     from: state.id.clone(),
-                    // Three sites, three pseudo-events. `(transition)`
+                    // Five sites, five pseudo-events. `(transition)`
                     // is not redundant with the transition's own row:
                     // that row summarises its actions in the `action`
                     // column to say what the transition DOES, while
@@ -183,7 +188,9 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     event: match site {
                         ActionSite::Entry => "(entry)",
                         ActionSite::Exit => "(exit)",
-                        ActionSite::Transition => "(transition)",
+                        ActionSite::Transition { .. } => "(transition)",
+                        ActionSite::Initial => "(initial)",
+                        ActionSite::HistoryDefault { .. } => "(history)",
                     }
                     .to_string(),
                     guard: or_dash(&action.cond),
@@ -192,7 +199,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     action: action.action_type.clone(),
                     node_path,
                 },
-                NodeSubject::Invoke { state, base } => TransitionRow {
+                NodeSubject::Invoke { state, base, .. } => TransitionRow {
                     source,
                     from: state.id.clone(),
                     event: "(invoke)".to_string(),
