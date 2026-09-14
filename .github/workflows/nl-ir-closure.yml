@@ -1,0 +1,57 @@
+name: NL-IR Closure Ledger
+
+# docs/SCE_NL_IR_CLOSURE.md is the closed list of what remains on SCE's side of
+# the natural-language-specification -> IR path. It is a DENOMINATOR: it is
+# written before, and independently of, whatever closes its rows, because a
+# coverage figure whose denominator was written by the pass that fills it is
+# always 100% — what was left out is missing from both sides.
+#
+# A denominator is only worth having while it stays true, and prose does not
+# stay true on its own. scripts/gates/nl-ir-closure.sh measures every row
+# against the tree, and this lane is what stops the two drifting apart on a
+# path the push hook did not run.
+#
+# The gate answers TWO questions and this lane judges the first one:
+#
+#   exit status    is the ledger an honest description of the tree?
+#   closure: line  is there anything left to do?
+#
+# So a red here NEVER means "the work is unfinished" — it means the RECORD of
+# what is unfinished has stopped matching the tree, in one direction or the
+# other. A row recorded closed that the tree contradicts is a false green. A
+# row recorded open that the tree has in fact closed is a stale denominator,
+# and it is the more insidious of the two: it quietly keeps work on a list
+# after the work is done, which is how a list stops being read at all.
+#
+# The trigger is the catch-all on purpose, and for the same reason the
+# endpoint-SSOT lane's is. A row can close in almost any file — a template, a
+# header, a CMake list, a Rust module, the visualizer — and narrowing to the
+# paths anyone happens to remember misses exactly the one nobody thought of.
+# Affordable because the gate is grep and one short Python pass: 0.17s measured
+# over this tree across five consecutive runs (176 170 170 158 159 ms), on a
+# machine that was running two other agents' loops at the time.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  closure-ledger:
+    name: The closure ledger still describes the tree
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Measure every ledger row against the tree
+      # Prints the per-row verdict and the `closure:` line, and fails only when
+      # a row's recorded status disagrees with what the tree measures.
+      run: scripts/gate nl-ir-closure
