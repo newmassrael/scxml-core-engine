@@ -16189,6 +16189,36 @@ mod anchor_contract_tests {
     /// what each later atomic delivers.
     fn carrying_scenarios() -> Vec<(&'static str, &'static str)> {
         vec![
+            // `scxml/top-level-script-unloaded` — §scxml-5.8. The
+            // anchor is on `<scxml>` and the complaint is about a
+            // `<script>` inside it, so this is the enclosing case the
+            // clause exists for rather than an exact-node match.
+            //
+            // Added 2026-09-14 as the first payment on the residue the
+            // roster made visible: 317 of 360 codes were raised by no
+            // scenario at all, so the roster knew nothing about them.
+            // A scenario is the only thing that can change that — the
+            // roster learns a code carries by EXECUTING it, never by
+            // asserting it.
+            //
+            // ⚠ The empty `<script/>` and not a `src` that fails to
+            // load, though both reject per §scxml-5.8. The src arm
+            // reads the file only `if let Some(dir) = base_dir`, and a
+            // scenario parses from a string with no base dir — so a
+            // missing `src` is never read, never fails, and the
+            // document sails on to the no_std gate, which refuses
+            // every script-bearing document and answers with its own
+            // code instead. The guard said so in as many words.
+            (
+                "scxml/top-level-script-unloaded",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript"
+                         sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                     <script/>
+                     <state id="s0"/>
+                   </scxml>"#,
+            ),
             // `validation/duplicate-requirement-id` — raised inside
             // `collect_sce_req`, which runs after the anchors are read
             // precisely so this record can name them.
