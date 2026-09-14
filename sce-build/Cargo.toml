@@ -395,6 +395,15 @@ name = "a_value_written_into_a_comment_is_encoded"
 path = "tests/a_value_written_into_a_comment_is_encoded.rs"
 required-features = ["cli"]
 
+# The other encoding door: every template value written into a target-language
+# string literal is escaped for it, or guarded where the literal is raw. Shares
+# the comment gate's hostile document and its six backends, so it spawns
+# `sce-codegen` for the same reason and carries the same feature.
+[[test]]
+name = "a_value_written_into_a_string_literal_is_escaped"
+path = "tests/a_value_written_into_a_string_literal_is_escaped.rs"
+required-features = ["cli"]
+
 # `sce:provenance` parse + the diagnostic wire's `spec_provenance`
 # producer. Cli-gated because the wire half spawns `sce-codegen` with
 # `--strict-unresolved --error-format json`: reading the bytes an

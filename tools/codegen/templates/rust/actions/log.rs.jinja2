@@ -4,7 +4,7 @@
 {# W3C SCXML 4.7: <log> - Logging action #}
 {% if action.expr and not model.needs_script_engine %}
 // W3C SCXML 4.7: <log>
-::sce_rust_runtime::sce_log_info!("{% if action.label %}{{ action.label | escape_rust }}: {% endif %}{}", {{ action.expr | to_rust_string_expr }});
+::sce_rust_runtime::sce_log_info!("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, "{{ action.label }}"{% endif %}, {{ action.expr | to_rust_string_expr }});
 {% elif action.expr and model.needs_script_engine %}
 // W3C SCXML 4.7: <log> with script engine expression
 {
@@ -13,13 +13,13 @@
     let se = self.script_engine.clone();
     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     match se.evaluate_expression(&sid, "{{ action.expr | to_lua_expr | escape_rust }}") {
-        Ok(val) => ::sce_rust_runtime::sce_log_info!("{% if action.label %}{{ action.label | escape_rust }}: {% endif %}{:?}", val),
+        Ok(val) => ::sce_rust_runtime::sce_log_info!("{% if action.label %}{}: {% endif %}{:?}"{% if action.label %}, "{{ action.label }}"{% endif %}, val),
         Err(e) => ::sce_rust_runtime::sce_log_error!("Log expression eval failed: {}", e),
     }
 }
 {% elif action.label %}
 // W3C SCXML 4.7: <log label="{{ action.label }}">
-::sce_rust_runtime::sce_log_info!("{{ action.label | escape_rust }}");
+::sce_rust_runtime::sce_log_info!("{}", "{{ action.label }}");
 {% else %}
 // W3C SCXML 4.7: <log> (no label or expr)
 {% endif %}

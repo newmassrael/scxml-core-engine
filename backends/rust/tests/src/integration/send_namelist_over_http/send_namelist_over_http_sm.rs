@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4ee53cfb47d1fc9305452f53c97089f2edfbc8978dab68d1b49e898f5eb29582
-// template-hash: 0d77ae53d69cdd94d0cc8b121e680f72c14761c8608aaf32566e7024b4b7a060
+// template-hash: 8242715e68643a19a75f6875fe977fcc89e2fa2554e7563e56c2a5e420cb7ec4
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT

@@ -784,8 +784,11 @@ enum ExpressionSiteRole {
 /// with another one belongs here in the same commit.
 ///
 /// Module scope rather than function scope because three answers read it and
-/// a per-function copy is free to fall behind the others.
-const MODEL_EXPRESSION_FIELDS: &[&str] = &[
+/// a per-function copy is free to fall behind the others. Public because a
+/// fourth reader — the string-literal door's census — asks the same question
+/// of the same fields, and a list it kept of its own would be free to fall
+/// behind exactly as a per-function copy would.
+pub const MODEL_EXPRESSION_FIELDS: &[&str] = &[
     ".cond",
     ".expr",
     ".array",
@@ -1068,61 +1071,15 @@ fn line_is_prose(line: &str) -> bool {
     code.starts_with("//") || code.starts_with('*') || code.starts_with("/*")
 }
 
-/// One `{% set NAME = VALUE %}` occurrence.
-struct JinjaBinding<'a> {
-    name: String,
-    value: &'a str,
-    /// The whole `{% … %}` span, delimiters included — the needle a line
-    /// search finds, and what a refusal prints.
-    span: &'a str,
-    line: usize,
-}
-
-/// Every `{% set … %}` in the template.
+/// One `{% set NAME = VALUE %}` occurrence, read by
+/// [`crate::template_lexing::set_bindings`].
 ///
-/// `set` and nothing else. `{% if %}` and `{% for %}` TEST a value; `set`
-/// BINDS one, and only a bound value can be emitted somewhere the test was
-/// not. Widening this to every statement would report each
-/// `{% if action.expr %}` as a site and hold the refusal shut forever.
-fn jinja_set_bindings<'a>(lines: &[&'a str]) -> Vec<JinjaBinding<'a>> {
-    let mut bindings = Vec::new();
-    for (index, line) in lines.iter().copied().enumerate() {
-        let mut rest = line;
-        let mut offset = 0usize;
-        while let Some(open) = rest.find("{%") {
-            let after = &rest[open + 2..];
-            let Some(close) = after.find("%}") else { break };
-            let inner = &after[..close];
-            let span_start = offset + open;
-            let span_end = span_start + 2 + close + 2;
-            let span = &line[span_start..span_end];
-            // `{%-` / `-%}` whitespace control is part of the delimiter, not
-            // of the statement.
-            let statement = inner
-                .trim()
-                .trim_start_matches('-')
-                .trim_end_matches('-')
-                .trim();
-            if let Some(assignment) = statement.strip_prefix("set ") {
-                // `==` is a comparison inside a larger expression, not the
-                // binding's own `=`.
-                if let Some((name, value)) = assignment.split_once('=') {
-                    if !value.starts_with('=') {
-                        bindings.push(JinjaBinding {
-                            name: name.trim().to_string(),
-                            value,
-                            span,
-                            line: index,
-                        });
-                    }
-                }
-            }
-            offset = span_end;
-            rest = &line[offset..];
-        }
-    }
-    bindings
-}
+/// The parser moved there when the string-literal door needed the same
+/// answer: a value can acquire its escaper at a binding, and a door that read
+/// only the interpolation's own filter chain escaped it a second time.
+type JinjaBinding<'a> = crate::template_lexing::SetBinding<'a>;
+
+use crate::template_lexing::set_bindings as jinja_set_bindings;
 
 /// Names bound to a value that carries the author's text, transitively.
 ///
@@ -1265,10 +1222,33 @@ fn classify_expression_site(lines: &[&str], index: usize, needle: &str) -> Expre
         return ExpressionSiteRole::EngineBound;
     }
 
+    // A diagnostic macro ON THIS LINE is the site's own callee, and it beats
+    // an engine entry point further up the window.
+    //
+    // ⚠ Nearness is the whole rule here, and it is what the window's "an
+    // engine entry point anywhere in reach wins" could not express. Measured
+    // 2026-09-14 in `actions/log.jinja2`: the error arm reports the
+    // expression it FAILED to evaluate —
+    // `SCE_LOG_ERROR("… {}", "{{ action.expr }}")` — three lines below the
+    // `evaluateExpression` whose failure it is reporting. The window does not
+    // stop at the emitted language's `} else {` (it stops at Jinja branches),
+    // so the evaluate call was in reach and the report read as a second
+    // hand-off. It is not one: nothing on that line evaluates anything.
+    //
+    // A line carrying BOTH still reads as a hand-off, because the check below
+    // sees the same line and the tie goes to the engine — which is the case
+    // the window's own rule was written for.
+    let start = call_window_start(lines, index);
+    let carries_diagnostic =
+        line.contains('(') && DIAGNOSTIC_MACROS.iter().any(|name| line.contains(name));
+    let engine_on_this_line = ENGINE_ENTRY_POINTS.iter().any(|entry| line.contains(entry));
+    if carries_diagnostic && !engine_on_this_line {
+        return ExpressionSiteRole::Message;
+    }
+
     // The window: this line and the few above it, which is where a multi-line
     // call keeps its callee. An engine entry point anywhere in reach wins,
     // because a call that both logs and evaluates is still a hand-off.
-    let start = call_window_start(lines, index);
     if lines[start..=index]
         .iter()
         .any(|l| ENGINE_ENTRY_POINTS.iter().any(|entry| l.contains(entry)))
@@ -1286,18 +1266,6 @@ fn classify_expression_site(lines: &[&str], index: usize, needle: &str) -> Expre
         .any(|l| INERT_DESTINATIONS.iter().any(|inert| l.contains(inert)))
     {
         return ExpressionSiteRole::Inert;
-    }
-
-    // A diagnostic macro with no engine entry point in reach is a report.
-    // This catches the argument form the prose check cannot see:
-    // `SCE_LOG_ERROR("… {}: {}", "name", "{{ expr }}")` hands the expression
-    // as its OWN literal, so nothing shares the quotes with it.
-    if line.contains('(')
-        && DIAGNOSTIC_MACROS
-            .iter()
-            .any(|macro_name| line.contains(macro_name))
-    {
-        return ExpressionSiteRole::Message;
     }
 
     // Outside every string literal on the line, so the backend's own compiler
@@ -3293,6 +3261,12 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
 /// The source text is rewritten once, here, rather than the values being
 /// escaped at render time, because where a value lands is a fact about the
 /// template's text and not about the value — the same fact for every render.
+///
+/// Fails when the template writes a value into a raw string literal whose
+/// closing sequence ordinary text carries (`r#"…"#`, `R"d(…)d"`, `"""…"""`).
+/// That is a defect in the template rather than in any document, so it is
+/// reported here, once, against the template that holds it — see
+/// [`crate::literal_text`] for why a guard would be the wrong answer there.
 pub fn register_template(
     env: &mut Environment<'_>,
     name: String,
@@ -3306,8 +3280,29 @@ pub fn register_template(
     // filter.
     env.add_filter(crate::comment_text::FILTER, crate::comment_text::filter);
     let syntax = Syntax::of_template(&name, backend);
+    // Same door, second class of place. A value landing in a COMMENT is
+    // encoded for the comment; a value landing in a STRING LITERAL is escaped
+    // for the literal, or guarded where the literal is raw and admits no
+    // escape. The two never overlap — a character is in one class or the
+    // other — so the passes compose and order does not matter.
+    crate::filters::register_literal_escaper(env, syntax);
+    env.add_filter(crate::literal_text::GUARD, crate::literal_text::guard);
     let encoded = crate::comment_text::encode_template_comments(content, syntax).into_owned();
-    env.add_template_owned(name, encoded)
+    let encoded =
+        crate::literal_text::encode_template_literals(&encoded, syntax).map_err(|sites| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!(
+                    "{name} writes a value into a raw string literal:\n  {}",
+                    sites
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n  ")
+                ),
+            )
+        })?;
+    env.add_template_owned(name, encoded.into_owned())
 }
 
 /// Load templates from pre-loaded string pairs (WASM-compatible).

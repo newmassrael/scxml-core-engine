@@ -40,30 +40,26 @@
 //!   files do is derived ([`renders_for_several_backends`]), and each is named
 //!   in [`PER_BACKEND_MACROS`] with what holds it instead.
 //! - **A value written into a string literal.** Its encoder is the literal's
-//!   escaper, which differs per language. That rule is registered as open in
-//!   `docs/SCE_ACCEPTED_SUBSET.md`, and it is why the rendered half below puts
-//!   no line break into `<log label>`: C++ and Go write the label into a string
-//!   literal unescaped, and that would fail this gate for a defect it is not
-//!   about.
+//!   escaper, which differs per language, and its gate is the sibling
+//!   `a_value_written_into_a_string_literal_is_escaped`. The two share one
+//!   hostile document ([`common::hostile_document`]) and differ in the hazards
+//!   they put into it.
 
 mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
+use common::hostile_document::{code_structure, generate, BACKENDS, MARKER};
 use common::rust_source::code_only;
 use common::source_lexing::{comments_blanked, language_of, structure_mask, Lang};
 use sce_build::comment_text::FILTER;
-use sce_build::generator::{loader_template_files, Language};
 use sce_build::template_lexing::{interpolations, tag_filters, Class, Syntax};
 
 /// What a string-literal escaper's name starts with. Derived rather than
 /// listed, so an escaper added for a new language is refused inside a comment
 /// the day it is written.
 const LITERAL_ESCAPER_PREFIX: &str = "escape_";
-
-const TEMPLATE_ROOT: &str = "tools/codegen/templates";
 
 /// A template the static rules cannot read, and what holds it instead.
 struct PerBackendMacro {
@@ -110,33 +106,18 @@ const FLOORS: &[(Syntax, usize)] = &[
     (Syntax::Rust, 228),
 ];
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build has a parent directory")
-        .to_path_buf()
-}
+use common::hostile_document::repo_root;
 
-/// Every `(template on disk, syntax it is read in)` the generator registers.
+/// The generator binary, named HERE rather than in the shared helper.
 ///
-/// Read from the statechart loaders of every backend. The C++ and C11 loaders
-/// are rooted at the whole template tree, so between them they register every
-/// template, and each other backend's loader adds the shared `_macros/` tree
-/// under that backend's syntax. The forge and mesh loaders register subsets of
-/// the root's templates under names whose extension already fixes the syntax,
-/// so they add no pair this does not hold.
-fn registrations(root: &Path) -> BTreeMap<(PathBuf, Syntax), String> {
-    let templates = root.join(TEMPLATE_ROOT);
-    let mut out = BTreeMap::new();
-    for &language in Language::ALL {
-        let dir = templates.join(language.template_subdir());
-        for (name, path) in loader_template_files(&dir) {
-            let syntax = Syntax::of_template(&name, language);
-            out.entry((path, syntax)).or_insert(name);
-        }
-    }
-    out
-}
+/// `env!` expands at compile time, and `common` compiles into every target in
+/// this directory — so a target that reached the binary through the helper
+/// alone would both force the `cli` feature on the whole suite and hide the
+/// reach from `cli_feature_gating`, which reads this expansion out of the
+/// target's own source.
+const CODEGEN: &str = env!("CARGO_BIN_EXE_sce-codegen");
+
+use common::template_registration::registrations;
 
 fn relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
@@ -503,8 +484,6 @@ fn the_rules_are_exercised_in_both_directions() {
 // The rendered half
 // ---------------------------------------------------------------------------
 
-const BACKENDS: [&str; 6] = ["cpp", "rust", "c", "go", "kotlin", "python"];
-
 /// The characters that end, open or extend a comment in some backend.
 #[derive(Clone, Copy, Debug)]
 enum Hazard {
@@ -520,9 +499,6 @@ const HAZARDS: [Hazard; 4] = [
     Hazard::BreaksALine,
     Hazard::SplicesTheNextLine,
 ];
-
-/// Where a hostile document carries its markers, and nowhere else.
-const MARKER: &str = "INJ_";
 
 /// The value an ECMAScript expression field carries: `hostile` puts the hazard
 /// in, the control puts inert characters of the same kind where it was, so the
@@ -559,9 +535,12 @@ fn free_text(field: &str, hazard: Hazard, hostile: bool) -> String {
             "{field}{}{MARKER}{field}",
             if hostile { "/*" } else { "xx" }
         ),
-        // Not a line break: C++ and Go write the label into a string literal
-        // unescaped, which is the separate literal-escaping rule (module docs).
-        Hazard::BreaksALine => format!("{field} {MARKER}{field}"),
+        // A line break, now that a value written into a string literal is
+        // escaped for it (`sce_build::literal_text`). Until 2026-09-14 this
+        // arm carried a space instead, because C++ and Go wrote the label into
+        // a literal unescaped and the resulting source did not compile — a
+        // defect this gate is not about, carved out here rather than hidden.
+        Hazard::BreaksALine => format!("{field}&#10;{MARKER}{field}"),
         Hazard::SplicesTheNextLine => {
             format!(
                 "{MARKER}{field} {field}{}",
@@ -572,88 +551,15 @@ fn free_text(field: &str, hazard: Hazard, hostile: bool) -> String {
 }
 
 /// A document echoing a hostile value from every field a backend comments on.
+///
+/// The document, the six backends and the structural comparison are
+/// [`common::hostile_document`]'s: the string-literal door's gate runs the same
+/// experiment with its own hazards, and two copies would be two answers to
+/// what "the value stayed where it was written" means.
 fn document(hazard: Hazard, hostile: bool) -> String {
-    let e = |f: &str| expression(f, hazard, hostile);
-    let label = free_text("LABEL", hazard, hostile);
-    format!(
-        r#"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="probe" initial="s0" datamodel="ecmascript">
-  <datamodel>
-    <data id="d" expr="{data}"/>
-    <data id="arr" expr="[1, 2]"/>
-  </datamodel>
-  <state id="s0">
-    <onentry>
-      <log label="{label}" expr="{log}"/>
-      <assign location="d" expr="{assign}"/>
-      <if cond="d == {if_}">
-        <log expr="1"/>
-      <elseif cond="d == {elseif}"/>
-        <log expr="2"/>
-      <else/>
-        <log expr="3"/>
-      </if>
-      <foreach array="arr" item="it" index="ix">
-        <log expr="{foreach}"/>
-      </foreach>
-      <script>var sv = {script};</script>
-      <send event="tick"><param name="p" expr="{param}"/></send>
-      <raise event="go"/>
-    </onentry>
-    <transition event="go" cond="d != {cond}" target="done"/>
-  </state>
-  <final id="done">
-    <donedata><content expr="{done}"/></donedata>
-  </final>
-</scxml>
-"#,
-        data = e("DATA"),
-        log = e("LOG"),
-        assign = e("ASSIGN"),
-        if_ = e("IF"),
-        elseif = e("ELSEIF"),
-        foreach = e("FOREACH"),
-        script = e("SCRIPT"),
-        param = e("PARAM"),
-        cond = e("COND"),
-        done = e("DONE"),
-    )
-}
-
-/// Generate `doc` for `lang` into `dir`, returning the output directory.
-fn generate(lang: &str, dir: &Path, doc: &str) -> PathBuf {
-    std::fs::create_dir_all(dir).expect("create scratch directory");
-    // One basename for both renderings: generated file names follow the
-    // document's, and a control under another name would compare against
-    // files that do not exist.
-    let scxml = dir.join("probe.scxml");
-    std::fs::write(&scxml, doc).expect("write probe document");
-    let out = dir.join("gen");
-    std::fs::create_dir_all(&out).expect("create output directory");
-    let output = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
-        .env("SCE_WORKSPACE_ROOT", repo_root())
-        .args(["generate", "-l", lang, "-o"])
-        .arg(&out)
-        .arg(&scxml)
-        .output()
-        .expect("spawn sce-codegen");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success() && !stdout.contains("\"rejected\""),
-        "sce-codegen generate -l {lang} did not generate the probe:\nstdout: {stdout}\nstderr: {}",
-        String::from_utf8_lossy(&output.stderr),
-    );
-    out
-}
-
-/// What a generated file DOES: its text with comments and literals blanked
-/// and whitespace removed. Two renderings that differ only inside comments and
-/// literals have the same structure.
-fn code_structure(source: &str, lang: Lang) -> String {
-    structure_mask(source, lang)
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect()
+    common::hostile_document::document(&free_text("LABEL", hazard, hostile), |f| {
+        expression(f, hazard, hostile)
+    })
 }
 
 /// Marker occurrences that sit inside a comment.
@@ -698,8 +604,18 @@ fn hostile_text_in_an_echoed_field_stays_out_of_code() {
         let mut census = Vec::new();
         for lang in BACKENDS {
             let base = scratch.join(format!("{hazard:?}")).join(lang);
-            let hostile_dir = generate(lang, &base.join("hostile"), &document(hazard, true));
-            let control_dir = generate(lang, &base.join("control"), &document(hazard, false));
+            let hostile_dir = generate(
+                CODEGEN,
+                lang,
+                &base.join("hostile"),
+                &document(hazard, true),
+            );
+            let control_dir = generate(
+                CODEGEN,
+                lang,
+                &base.join("control"),
+                &document(hazard, false),
+            );
             let mut names: Vec<String> = std::fs::read_dir(&hostile_dir)
                 .expect("read generated output")
                 .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())

@@ -1,16 +1,28 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 4.7: Log action #}
+{# W3C SCXML 4.7: Log action
+
+   An author's label is an ARGUMENT to Printf, never part of its format
+   string. `fmt` reads `%` as a verb, so a label reading `percent %s here`
+   spliced into the format string is a verb with no argument behind it and
+   `go vet` fails the build — measured 2026-09-14. Escaping cannot fix that:
+   `\%` is not how Printf escapes a percent, and the value was never wrong,
+   its POSITION was. `generator::register_template` escapes it for the
+   literal it sits in (`literal_text`), which is the other half.
+
+   The default is hoisted once rather than restated at each of the three
+   sites below, so the three cannot drift apart. #}
+{%- set label = action.label | default('') -%}
 {% if action.expr and model.needs_script_engine %}
 	{
 		logResult, logErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.expr | to_lua_expr }}`)
 		if logErr == nil {
-			fmt.Printf("{{ action.label | default('') }}%v\n", logResult)
+			fmt.Printf("%s%v\n", "{{ label }}", logResult)
 		}
 	}
 {% elif action.expr %}
-	fmt.Println("{{ action.label | default('') }}{{ action.expr | escape_go }}")
+	fmt.Println("{{ label }}{{ action.expr | escape_go }}")
 {% else %}
-	fmt.Println("{{ action.label | default('') }}")
+	fmt.Println("{{ label }}")
 {% endif %}

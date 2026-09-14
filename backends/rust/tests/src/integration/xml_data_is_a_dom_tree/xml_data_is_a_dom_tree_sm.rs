@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c990b384ae6d27b45cff45f6fb75ecde882d112d0f07d342d547b178e6a4257
-// template-hash: 0d77ae53d69cdd94d0cc8b121e680f72c14761c8608aaf32566e7024b4b7a060
+// template-hash: 8242715e68643a19a75f6875fe977fcc89e2fa2554e7563e56c2a5e420cb7ec4
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -249,14 +249,7 @@ impl XmlDataIsADomTreePolicy {
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
         // W3C SCXML B.2: XML inline content for 'doc' (global)
-        if let Err(e) = se.set_variable_as_dom(
-            &sid,
-            "doc",
-            r#"<books xmlns="" count="2">
-        <book title="t1">first</book>
-        <book title="t2"></book>
-      </books>"#,
-        ) {
+        if let Err(e) = se.set_variable_as_dom(&sid, "doc", "<books xmlns=\"\" count=\"2\">\n        <book title=\"t1\">first</book>\n        <book title=\"t2\"></book>\n      </books>") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'doc' in global: {}", e);
         }
 
@@ -286,19 +279,9 @@ impl XmlDataIsADomTreePolicy {
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
         // W3C SCXML B.2: XML inline content for 'doc' (global)
-        if let Err(e) = se.set_variable_as_dom(
-            &sid,
-            "doc",
-            r#"<books xmlns="" count="2">
-        <book title="t1">first</book>
-        <book title="t2"></book>
-      </books>"#,
-        ) {
+        if let Err(e) = se.set_variable_as_dom(&sid, "doc", "<books xmlns=\"\" count=\"2\">\n        <book title=\"t1\">first</book>\n        <book title=\"t2\"></book>\n      </books>") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'doc' in global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                XmlDataIsADomTreeEvent::ErrorExecution,
-                "<data id='doc'> XML content could not be parsed",
-            ));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(XmlDataIsADomTreeEvent::ErrorExecution, "<data id='doc'> XML content could not be parsed"));
         }
 
         self.script_engine_initialized = true;

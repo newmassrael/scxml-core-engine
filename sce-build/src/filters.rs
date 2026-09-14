@@ -79,6 +79,32 @@ const RUST_KEYWORDS: &[&str] = &[
     "virtual", "yield", "try", "union",
 ];
 
+/// Register the string-literal escaper `syntax` needs, and nothing else.
+///
+/// The door that WRITES a filter registers it — the arrangement
+/// `generator::register_template` already holds for `comment_text::FILTER`,
+/// and for the same measured reason: the per-backend `register_*_filters`
+/// functions are not the only way an environment comes to exist. Mesh builds
+/// its own, and a rewritten literal there would fail to render with an
+/// unknown filter rather than escaping anything.
+///
+/// Registering the same filter twice is harmless — minijinja replaces the
+/// entry with an identical one — so this neither depends on nor disturbs the
+/// per-backend registration.
+pub fn register_literal_escaper(
+    env: &mut minijinja::Environment,
+    syntax: crate::template_lexing::Syntax,
+) {
+    use crate::template_lexing::Syntax;
+    match syntax {
+        Syntax::CFamily => env.add_filter("escape_cpp", escape_cpp),
+        Syntax::Go => env.add_filter("escape_go", escape_go),
+        Syntax::Kotlin => env.add_filter("escape_kotlin", escape_kotlin),
+        Syntax::Python => env.add_filter("escape_python", escape_python),
+        Syntax::Rust => env.add_filter("escape_rust", escape_rust),
+    }
+}
+
 /// Register all Rust-specific filters on the minijinja environment.
 pub fn register_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
@@ -1929,6 +1955,33 @@ pub fn to_python_const(name: String) -> String {
     prefixed
 }
 
+/// Escape the author's text for the BODY of a Python string literal.
+///
+/// The sibling of `escape_rust` / `escape_go` / `escape_kotlin`, and the one
+/// the family was missing: `py_string_literal` below returns a COMPLETE
+/// literal, quotes included, so it cannot be used at a site that already sits
+/// inside quotes — writing it there would close the literal and open another.
+/// `crate::literal_text` needs a body escaper for every syntax it routes, and
+/// this is Python's.
+///
+/// The grammar is `py_string_literal`'s own, minus the delimiters, so the two
+/// agree on what a Python literal may carry.
+pub fn escape_python(text: String) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// Render a string as a Python source literal. Uses double-quoted form with
 /// backslash escapes — `repr` would also work but always picks single quotes
 /// for unicode-free strings, which clashes with the rest of the generated
@@ -1949,4 +2002,113 @@ pub fn py_string_literal(text: String) -> String {
     }
     out.push('"');
     out
+}
+
+#[cfg(test)]
+mod literal_escaper_census {
+    use super::*;
+    use crate::literal_text::ALREADY_FIT_FOR_A_LITERAL;
+    use std::collections::BTreeSet;
+
+    /// A filter that takes the author's text and returns what a template
+    /// writes in its place.
+    type TextFilter = fn(String) -> String;
+
+    /// Every filter this module registers whose name begins `escape_`, paired
+    /// with the function it registers.
+    ///
+    /// The pairing is what lets the census below ask each one what it DOES.
+    /// `every_registered_escaper_appears_here` proves the table is complete,
+    /// so this is an index of the registrations rather than a hand-picked
+    /// list that can quietly fall behind them.
+    const ESCAPERS: &[(&str, TextFilter)] = &[
+        ("escape_c", escape_c),
+        ("escape_cpp", escape_cpp),
+        ("escape_cpp_format", escape_cpp_format),
+        ("escape_go", escape_go),
+        ("escape_go_keyword", escape_go_keyword),
+        ("escape_json_string", escape_json_string),
+        ("escape_keyword", escape_keyword),
+        ("escape_kotlin", escape_kotlin),
+        ("escape_lua", escape_lua),
+        ("escape_python", escape_python),
+        ("escape_rust", escape_rust),
+    ];
+
+    /// Text that a STRING-LITERAL escaper must change and an identifier
+    /// renamer must not: it carries the two characters that end a literal
+    /// early, and it is not any language's keyword.
+    const HOSTILE: &str = "a\"b\\c";
+
+    /// A filter belongs in `ALREADY_FIT_FOR_A_LITERAL` exactly when it
+    /// escapes for a literal — and what decides that is what it does, not
+    /// what it is called.
+    ///
+    /// ⚠ The name cannot decide it, and this test exists because relying on
+    /// the name got it wrong: `escape_go_keyword` and `escape_keyword` begin
+    /// with the same six letters as the real escapers and are nothing like
+    /// them — they rename an identifier that collides with a language
+    /// keyword (`type` to `type_`, `match` to `r#match`) and leave every
+    /// other string alone. Declaring one fit for a literal would tell the
+    /// door a value had been escaped when nothing had touched it.
+    ///
+    /// Delegation is the second reason a source scan cannot answer it:
+    /// `escape_c` and `escape_cpp` are one line each, forwarding to
+    /// `escape_rust`, so their own bodies never mention a quote.
+    #[test]
+    fn a_filter_is_declared_fit_exactly_when_it_escapes_for_a_literal() {
+        let declared: BTreeSet<&str> = ALREADY_FIT_FOR_A_LITERAL.iter().copied().collect();
+        for (name, f) in ESCAPERS {
+            let escapes = f(HOSTILE.to_string()) != HOSTILE;
+            assert_eq!(
+                escapes,
+                declared.contains(name),
+                "{name} {} the hostile text but is {} \
+                 ALREADY_FIT_FOR_A_LITERAL. A filter that escapes must be \
+                 declared or the door escapes it twice; one that does not \
+                 must not be, or the door believes a value is safe when \
+                 nothing has touched it.",
+                if escapes { "changes" } else { "leaves" },
+                if declared.contains(name) {
+                    "in"
+                } else {
+                    "not in"
+                }
+            );
+        }
+    }
+
+    /// The table above names every `escape_*` filter this module registers.
+    ///
+    /// Read off the registrations rather than restated, so a new escaper
+    /// added to an environment fails here until it is measured.
+    #[test]
+    fn every_registered_escaper_appears_here() {
+        let text = include_str!("filters.rs");
+        let needle = "add_filter(\"";
+        let mut registered: BTreeSet<&str> = BTreeSet::new();
+        for (at, _) in text.match_indices(needle) {
+            let rest = &text[at + needle.len()..];
+            let Some(end) = rest.find('"') else { continue };
+            let name = &rest[..end];
+            if name.starts_with("escape_") {
+                registered.insert(name);
+            }
+        }
+        // A floor: an empty sweep would pass while measuring nothing.
+        assert!(
+            registered.len() >= 5,
+            "only {} escape_* registration(s) found; the scan has stopped \
+             reading them",
+            registered.len()
+        );
+        let tabled: BTreeSet<&str> = ESCAPERS.iter().map(|(n, _)| *n).collect();
+        let missing: Vec<&&str> = registered.difference(&tabled).collect();
+        assert!(
+            missing.is_empty(),
+            "escape_* filter(s) registered but absent from ESCAPERS: \
+             {missing:?} — add each with its function so the census can ask \
+             what it does"
+        );
+    }
 }

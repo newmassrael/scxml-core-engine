@@ -1926,11 +1926,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {{ se.lua_eval_to_string(action.expr, '_log_buf', '256', '_log_ok') }}
             if (_log_ok) {
                 (void)fprintf(stderr,
-                    {% if action.label %}"{{ action.label | escape_c }}: %s\n"{% else %}"%s\n"{% endif %},
+                    {% if action.label %}"%s: %s\n", "{{ action.label }}"{% else %}"%s\n"{% endif %},
                     _log_buf);
             } else {
                 (void)fprintf(stderr,
-                    "Failed to evaluate log expression: {{ action.expr | escape_c }}\n");
+                    "Failed to evaluate log expression: %s\n", "{{ action.expr }}");
             }
         }
 {% else %}
@@ -1944,11 +1944,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
            the path, so the first MCU/null-datamodel consumer sees aligned
            behaviour with cpp. */
         (void)fprintf(stderr,
-            {% if action.label %}"{{ action.label | escape_c }}: %s\n"{% else %}"%s\n"{% endif %},
+            {% if action.label %}"%s: %s\n", "{{ action.label }}"{% else %}"%s\n"{% endif %},
             {{ action.expr | replace("'", '"') }});
 {% endif %}
 {% elif action.label %}
-        (void)fprintf(stderr, "{{ action.label | escape_c }}\n");
+        (void)fprintf(stderr, "%s\n", "{{ action.label }}");
 {% endif %}
 {% elif action.type == 'cancel' %}
         /* W3C SCXML 6.3: <cancel{% if action.sendid %} sendid="{{ action.sendid }}"{% endif %}{% if action.sendidexpr %} sendidexpr="{{ action.sendidexpr }}"{% endif %}>

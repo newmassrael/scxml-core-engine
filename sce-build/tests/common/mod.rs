@@ -25,9 +25,11 @@
 use std::process::{Command, Output};
 
 pub mod gate_selectors;
+pub mod hostile_document;
 pub mod ledger;
 pub mod rust_source;
 pub mod source_lexing;
+pub mod template_registration;
 pub mod workflow;
 
 /// What one probe run did, so a caller can assert on the route rather than

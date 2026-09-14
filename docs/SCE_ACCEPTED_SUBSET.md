@@ -1271,18 +1271,59 @@ through all six backends — and
 `sce-build/tests/sce_annotation_emission.rs::hostile_annotation_text_stays_inside_its_comment`
 holds the annotation macro.
 
-⚠⚠ **Open — a value written into a string literal is not encoded
-for it.** A comment has one encoder; a string literal's is the
-language's escaper, and templates apply one at some sites and not at
-others. Measured 2026-09-13, 1892 template interpolations sit inside a
-string literal and 1456 carry no escaper — most are ids, events and
-derived names, whose safety depends on the identifier grammar §1
-registers as open. One free-text case is measured to break: a `<log
-label>` holding a line break is written unescaped into a C++
-(`SCE_LOG_INFO("…")`) and a Go (`fmt.Printf("…")`) string literal, so
-the emitted source does not compile. The repair belongs with the id
-grammar, as a per-language rule of the same shape as the comment one.
-Registered, not fixed.
+**A value written into a string literal is escaped for it, at the
+same door.** A comment has one encoder; a string literal's is the
+emitted language's own escaper, and templates applied one at some
+sites and not at others — so whether an author's text was safe
+depended on whether whoever wrote that template line remembered.
+`generator::register_template` now reads each template once and routes
+every interpolation landing inside a literal through that syntax's
+escaper (`literal_text::encode_template_literals`), exactly as it
+already does for comments, so the guarantee is a property of the door
+rather than of a filter a template author can forget.
+
+The census is **derived rather than recorded** — a number this document
+kept would be a number nothing re-measures — by
+`the_census_the_documentation_cites_is_derived_from_the_tree` in
+`sce-build/tests/a_value_written_into_a_string_literal_is_escaped.rs`,
+which prints it. Read 2026-09-14 over the 282 `(template, syntax)`
+pairs the loaders register: 1868 interpolations land in an escapable
+literal and 1435 carry no escaper of their own. Most are ids, events
+and derived names, which §1 above checks against W3C's grammar **at
+parse** and which therefore cannot carry a quote or a line break; the
+remainder — 349 sites — is free text and expressions (`cond`, `expr`,
+`location`, `<log label>`, `src`, `namelist`), which no grammar
+constrains and which W3C does not permit SCE to constrain. The
+measured breaking case was a `<log label>` holding a line break,
+written unescaped into a C++ (`SCE_LOG_INFO("…")`) and a Go
+(`fmt.Println("…")`) literal so that the emitted source did not
+compile.
+
+**A RAW literal takes the opposite treatment, and the door tells the
+two apart.** Go's `` ` ``, Rust's `r#"…"#`, C++'s `R"d(…)d"` and
+Kotlin's `"""` process no escape sequence, so escaping a value for one
+corrupts it rather than protecting it — measured 2026-09-14, when a
+first version of this door wrote `<data>` XML content into the Rust
+and Go backends as `<books xmlns=\"\">\n …`, wrong in the parsed
+document and silent at compile time. `template_lexing` therefore
+classifies a raw literal as its own class, and the door answers it two
+ways. Where the closing sequence is a character free text all but
+never carries — Go's backtick, which holds the sites that put Lua
+source into readable Go — the value passes through untouched and a
+value that does carry one is refused, naming it. Where it is not —
+Rust's `"#`, which an `href="#top"` attribute is enough to produce —
+the template itself is refused at registration, and its repair is to
+write an escapable literal. One template did: the Rust `<data>` DOM
+site, which now emits an escaped literal of the same string.
+
+⚠ **Still open — a literal that is a FORMAT string needs more than
+escaping.** `SCE_LOG_*` expands to `fmt`, where `{` and `}` are a
+replacement field, and Go's `fmt.Printf` reads `%` as a verb. Escaping
+for the literal correctly leaves both alone, so a value carrying one
+must not be spliced into a format string at all — it belongs in an
+argument. `escape_cpp_format` is the stronger filter for the sites
+that still splice, and the door defers to it where a template applies
+it. Registered, not fixed.
 
 ⚠ **Open — sourcemap readers do not decode.** `SCE-MAP:` markers and
 Go `//line` directives are comments, so the path they carry is
@@ -1290,8 +1331,8 @@ encoded like any other comment value. No tracked path holds a
 character the encoder changes, so no emitted marker moved, but a
 reader that parses these lines back reads the encoded form. The same
 path is also written into string literals (`#line N "…"`,
-`#[doc = "…"]`), which the open rule above covers. Registered, not
-fixed.
+`#[doc = "…"]`), which the door above now escapes — so what is left
+open here is the READER, not the writing. Registered, not fixed.
 
 **`sce:provenance`** — spec-document anchors.
 

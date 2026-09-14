@@ -61,7 +61,10 @@
 {% elif var.content %}
 {% if (var.content | trim) is startingwith('<') %}
         // W3C SCXML B.2: XML inline content for '{{ var.id }}' ({{ state_id }})
-        if let Err(e) = se.set_variable_as_dom(&sid, "{{ var.id }}", r#"{{ var.content }}"#) {
+{# An escapable literal, not `r#"…"#`: the raw form ends at the first `"#` the
+   author's XML carries — `href="#top"` is enough — and no escape exists inside
+   it. `register_template` escapes the value for this one (`literal_text`). #}
+        if let Err(e) = se.set_variable_as_dom(&sid, "{{ var.id }}", "{{ var.content }}") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable '{{ var.id }}' in {{ state_id }}: {}", e);
 {% if raise_error and 'error.execution' in model.events %}
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> XML content could not be parsed"));
