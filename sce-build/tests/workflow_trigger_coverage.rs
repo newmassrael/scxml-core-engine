@@ -227,6 +227,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // Reads every workflow to check that a test-running step can fail its
     // job. A `paths:` filter on `.github/workflows/**` would cover its
     // inputs today and stop covering them the moment a workflow moves.
+    // Asks `git ls-files` for every tracked `*.scxml` and reads each one,
+    // because the arrival it exists for is a document that does not exist
+    // today: one carrying `sce:req` that nobody classified. A `paths:` filter
+    // written over the three annotated documents this tree has would enumerate
+    // the answers it already knows and by construction miss the fourth, which
+    // is the only case that matters.
+    "every_annotated_document_is_accounted_for",
     "test_result_gating",
     // Asks `git ls-files` for every tracked `*.sh` under `scripts/` and for
     // every `mnemosyne.toml`, and holds the Mnemosyne revision to one shell
