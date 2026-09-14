@@ -38,9 +38,16 @@
 //!
 //! # Two things it deliberately does not do
 //!
-//! - **`_*` is not a wildcard.** Two copies treated it as one. It appears in
-//!   no W3C text, no document in this repository and no template, so it is
-//!   read as the literal token it is spelled as.
+//! - **`_*` is not a wildcard.** It appears in no W3C text and in no document
+//!   in this repository, so it is read as the literal token it is spelled as.
+//!   ⚠ This list also claimed no TEMPLATE carried it, and that half was false
+//!   when it was written: the C11 template read `_*` as a wildcard, so one
+//!   backend took such a transition on every event where the other six took
+//!   it on none — closure-ledger row C4. Neither half is asserted any more.
+//!   [`crate::event_descriptor::is_event_token`] refuses it at parse, held by
+//!   `a_star_outside_the_two_positions_the_clause_defines_is_refused_at_parse`;
+//!   and the templates read [`crate::model::Transition::matches_any_event`]
+//!   rather than each keeping its own list of wildcard spellings.
 //! - **A bare `.*` is universal.** The specification does not spell that
 //!   case out, but it follows from its rule — `.*` is an empty token prefix
 //!   followed by "zero or more tokens", and the empty prefix is a prefix of
