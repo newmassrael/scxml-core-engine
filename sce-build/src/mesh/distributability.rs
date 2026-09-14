@@ -440,17 +440,16 @@ fn collect_action_writes_reads(
         }
         "if" => {
             text_read_match(&action.cond, ancestor_data, reads);
-            for then_a in &action.then_actions {
-                collect_action_writes_reads(then_a, ancestor_data, writes, reads);
-            }
-            for branch in &action.elseif_branches {
-                text_read_match(&branch.cond, ancestor_data, reads);
-                for a in &branch.actions {
+            // Blocks and their guarding conditions both come from
+            // `Action::nested_blocks`: a branch condition reads data just
+            // as the branch body does, and missing one is a missed read.
+            for block in action.nested_blocks() {
+                if let Some(cond) = block.cond {
+                    text_read_match(cond, ancestor_data, reads);
+                }
+                for a in block.actions {
                     collect_action_writes_reads(a, ancestor_data, writes, reads);
                 }
-            }
-            for else_a in &action.else_actions {
-                collect_action_writes_reads(else_a, ancestor_data, writes, reads);
             }
         }
         "foreach" => {

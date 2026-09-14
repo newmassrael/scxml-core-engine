@@ -6753,15 +6753,14 @@ fn collect_cross_machine_send_sites<'a>(
                 });
             }
         }
-        // Composite-action bodies. The shapes are mutually exclusive
-        // by `action_type` but the parallel `Vec<Action>` fields are
-        // safe to walk unconditionally (empty vecs cost nothing).
-        collect_cross_machine_send_sites(&action.then_actions, out);
-        for branch in &action.elseif_branches {
-            collect_cross_machine_send_sites(&branch.actions, out);
+        // Composite-action bodies. Which blocks those are is
+        // `Action::nested_blocks` — the shapes are mutually exclusive by
+        // `action_type`, and it lists them all unconditionally because an
+        // empty vec costs nothing and a list keyed on the type would be a
+        // second place to forget one.
+        for block in action.nested_blocks() {
+            collect_cross_machine_send_sites(block.actions, out);
         }
-        collect_cross_machine_send_sites(&action.else_actions, out);
-        collect_cross_machine_send_sites(&action.actions, out);
     }
 }
 

@@ -3573,17 +3573,14 @@ fn collect_nested_subscribe_notices(
     action: &crate::model::Action,
     notices: &mut Vec<SubscriptionLintNotice>,
 ) {
-    // Flat list of all action sequences inside this conditional/iterative.
-    let sequences: Vec<&[crate::model::Action]> = {
-        let mut seqs: Vec<&[crate::model::Action]> = Vec::new();
-        seqs.push(&action.then_actions);
-        for branch in &action.elseif_branches {
-            seqs.push(&branch.actions);
-        }
-        seqs.push(&action.else_actions);
-        seqs.push(&action.actions); // <foreach> body
-        seqs
-    };
+    // Flat list of all action sequences inside this conditional/iterative,
+    // as `Action::nested_blocks` defines them — `<if>`'s branches and
+    // `<foreach>`'s body, in document order.
+    let sequences: Vec<&[crate::model::Action]> = action
+        .nested_blocks()
+        .into_iter()
+        .map(|block| block.actions)
+        .collect();
 
     for seq in sequences {
         for a in seq {

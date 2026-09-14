@@ -527,17 +527,16 @@ fn check_action(action: &Action, into: &mut Collector) {
         }
         "if" => {
             check_condition("<if cond>", &action.cond, at, into);
-            for nested in &action.then_actions {
-                check_action(nested, into);
-            }
-            for branch in &action.elseif_branches {
-                check_condition("<elseif cond>", &branch.cond, at, into);
-                for nested in &branch.actions {
+            // `Action::nested_blocks` is what "inside an <if>" means, and
+            // it carries each branch's own condition, so neither the
+            // blocks nor the conditions are enumerated again here.
+            for block in action.nested_blocks() {
+                if let Some(cond) = block.cond {
+                    check_condition("<elseif cond>", cond, at, into);
+                }
+                for nested in block.actions {
                     check_action(nested, into);
                 }
-            }
-            for nested in &action.else_actions {
-                check_action(nested, into);
             }
         }
         // A `<cpp>` / `<kt>` child is emitted as source in that language
