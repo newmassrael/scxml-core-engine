@@ -1,0 +1,40 @@
+{
+  "_comment": [
+    "Which requirement manifest governs each document that carries `sce:req`,",
+    "or why none does. Read by sce-build/tests/every_annotated_document_is_accounted_for.rs;",
+    "that test is the schema, because its reader denies unknown fields and a",
+    "second JSON-schema file would be a second answer to the same question.",
+    "",
+    "WHY A REGISTRY RATHER THAN AN ATTRIBUTE IN THE DOCUMENT. `sce:req` is",
+    "something a document says: this transition satisfies that requirement. Which",
+    "manifest governs the document — or that the document is a fixture bound to no",
+    "specification at all — is something THIS REPOSITORY decides. A document does",
+    "not know it is a fixture; it is one because of how we use it. Spelling that",
+    "as an `sce:` attribute would also widen the accepted subset every backend",
+    "reads, for a fact no backend needs.",
+    "",
+    "An entry is exactly one of `governed_by` or `fixture`. A document carrying",
+    "`sce:req` and named by neither is refused: that is the arrival this file",
+    "exists to catch."
+  ],
+  "documents": [
+    {
+      "document": "sce-build/tests/fixtures/requirement_closure/doip_nl_connection_states.scxml",
+      "governed_by": "sce-build/tests/fixtures/requirement_closure/iso13400_2_nl_socket_handling.manifest.json",
+      "unresolved": [
+        {
+          "id": "DoIP-134",
+          "why": "ISO 13400-2 spells this id in the clause body while the REQ box on the same page writes `3.DoIP-134`. sce-build/tests/iso13400_requirement_closure.rs asserts the mismatch is REPORTED rather than quietly resolved, so the citation must stay unresolvable. If the manifest ever gains `DoIP-134`, this entry fails — the fixture's subject would have vanished and the test would be asserting nothing."
+        }
+      ]
+    },
+    {
+      "document": "sce-build/tests/fixtures/codegen_smoke/sce_annotations.scxml",
+      "fixture": "Synthetic ids (REQ_ONENTRY, REQ_ONEXIT, REQ_LOG_LEAF, ...) that exercise which syntactic sites carry an annotation and reach the emitted record. They name no specification, so no manifest can govern them."
+    },
+    {
+      "document": "sce-build/tests/fixtures/provenance/positive_all_attachment_sites.scxml",
+      "fixture": "One synthetic id (REQ_STATE_S0) proving every attachment site reaches the provenance record. It names no specification."
+    }
+  ]
+}
