@@ -149,7 +149,7 @@ clause promises), a code whose subject is argv or the filesystem and
 can never carry, and a code nothing has wired yet.
 
 ```
-sce-codegen provenance-roster   # <code> <carries|never|unknown> <reason>
+sce-codegen provenance-roster   # <code> <carries|never|unknown|pending> <reason>
 ```
 
 publishes that table, one line per code. **Read absence as this clause
@@ -158,11 +158,15 @@ reports as `never`, the reason column says why the field could not
 have been filled, and absence records that rather than an unanchored
 document.
 
-⚠ `unknown` is a third verdict and it is a claim about SCE, not about
-the code: no scenario has exercised it, so nothing is known either
-way. Do not read `unknown` as `never` — that would be the stronger
-sentence on evidence nobody has, and it is the reason this column has
-three values rather than two. The guarantee is stated with the lookup
+⚠ `unknown` and `pending` are both claims about SCE, not about the
+code, and neither may be read as `never`. `unknown` means no scenario
+has exercised the code, so nothing is known either way. `pending`
+means the opposite of ignorance: a run has exercised it, the field
+came back empty, and the cause is that its producer does not yet
+thread a position the record could be anchored from — owed work, and
+expected to become `carries`. Reading either as `never` is the
+stronger sentence on evidence nobody has, which is why this column has
+four values rather than two. The guarantee is stated with the lookup
 that settles it rather than asserted flat, because a contract a reader
 cannot check is one they will trust anyway.
 
@@ -178,9 +182,10 @@ directly above forbids. Count the wire instead —
 sce-codegen provenance-roster | cut -f2 | sort | uniq -c
 ```
 
-— where `unknown` is the work owed. That tally is a statement about
-how much of this contract anyone has looked at, never a property of
-the codes it counts.
+— where `unknown` counts what nobody has looked at yet and `pending`
+counts what SCE has looked at and owes. That tally is a statement
+about how far this contract has been carried, never a property of the
+codes it counts.
 
 What computes the answer is `anchor_index::AnchorIndex`, built while
 the document is parsed and carried on the model. It is keyed by
@@ -294,8 +299,8 @@ pipeline, which is the one place the anchor must actually be resolved.
 Measured 2026-09-11, when a guard written against the old wording
 failed against the checked-in schema and the failure was the wording.
 The set the case means is the seventeen non-statechart kinds, and
-`forge::diagnostic::tests::a_forge_document_has_no_anchor_for_a_diagnostic_to_carry`
-holds it: it walks each kind's own `$ref` closure, selects kinds by
+`a_forge_document_has_no_anchor_for_a_diagnostic_to_carry`
+(`sce-build/src/forge/diagnostic.rs`) holds it: it walks each kind's own `$ref` closure, selects kinds by
 their `kind` discriminant rather than by a list kept in the test, and
 proves its own walk by first finding the provenance the statechart
 branch does carry.
@@ -306,8 +311,8 @@ branch does carry.
 > whose location lies inside an anchored region reaches the wire with a
 > non-empty `spec_provenance`.
 
-`forge::diagnostic::tests::every_diagnostic_inside_an_anchored_region_carries_it`
-asserts exactly that, and it is the **primary** guard for §2.1.2 — the
+`every_diagnostic_inside_an_anchored_region_carries_it`
+(`sce-build/src/forge/diagnostic.rs`) asserts exactly that, and it is the **primary** guard for §2.1.2 — the
 per-code roster below is a coverage report beside it, not the contract.
 The difference matters. A roster answers "has this code been shown to
 carry", which is a question about the codes someone thought to list,
@@ -327,7 +332,7 @@ is why the four mid-parse sites thread by hand.
 
 ⚠ **The contract is stated in full; the producer side reaches it
 incrementally.** The coverage report that tracks that is
-`forge::diagnostic::tests::anchor_carriage`, and as of Item 8 Atomic 8
+`forge::diagnostic::anchor_carriage`, and as of Item 8 Atomic 8
 it is keyed on **(code, pipeline)** rather than on the code alone.
 That key is the substantive part. The contract's answer for a code
 *depends* on which pipeline raised it, so one answer per code had to be

@@ -204,6 +204,31 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// declaration cannot drift between the Rust source and the schema file.
 pub const SCHEMA_STATUS: &str = "pre-release";
 
+/// Stability status of the provenance roster — the surface
+/// `sce-codegen provenance-roster` prints.
+///
+/// # Why a surface with no schema file still declares one
+///
+/// `SCE_ERROR_CONTRACT.md` §2.1.2 tells a consumer to run that command
+/// as the lookup that settles what an empty `spec_provenance` means, so
+/// it is a wire surface by `SCE_WIRE_CONTRACTS.md`'s own definition:
+/// produced here, read as authority by something outside the code
+/// writing it. It was published without a registry row, and the reason
+/// nothing caught that is structural rather than an oversight — the
+/// cross-surface guard closes its loop by walking `schemas/` and
+/// `apis/` back to the declared lists, and a surface printed as TSV by
+/// a subcommand has no file in either directory for that walk to find.
+/// A meta-gate over every printed surface is separately recorded as not
+/// buildable, so the anchor has to be per-surface.
+///
+/// ⚠ Its counterpart is therefore the `SCE_WIRE_CONTRACTS.md` row
+/// rather than a schema header: `the_registry_declares_the_rosters_status`
+/// holds the two together the way `schema_file_declares_status` holds
+/// the const above to its JSON file. Moving this status means moving
+/// both in one commit, which is the rule §8.1 already sets for the
+/// surfaces that do have a file.
+pub const PROVENANCE_ROSTER_STATUS: &str = "pre-release";
+
 /// A single machine-readable diagnostic, one record per NDJSON line.
 ///
 /// Serialized field order is fixed: `v` first so any consumer can
@@ -14969,7 +14994,7 @@ pub enum NoAnchor {
     /// executed by nothing at all, so "awaiting a resolver" named a
     /// diagnosis for which no evidence existed. The two codes a run
     /// has since measured left for reasons neither the old name nor
-    /// each other shared ([`NoAnchor::NoPositionToResolveFrom`],
+    /// each other shared ([`NoAnchor::CoordinateNotThreaded`],
     /// [`NoAnchor::RaisedBeforeAnyResolvingStage`]), which is what a
     /// bucket asserting one cause for everything had been hiding.
     ///
@@ -14999,7 +15024,8 @@ pub enum NoAnchor {
     /// directions, so the list cannot drift from what it claims.
     NoAuthoredArtefact,
     /// The record reaches the wire with a file and no line, so there
-    /// is no coordinate for the anchor index to work from.
+    /// is no coordinate for the anchor index to work from — and the
+    /// producer could have supplied one.
     ///
     /// `SCE_ERROR_CONTRACT.md` §2.1.2 keys the index by POSITION — an
     /// anchored region is a span of the author's document — so a
@@ -15008,15 +15034,35 @@ pub enum NoAnchor {
     /// finds eleven, and two of those synthesise a diagnostic inside a
     /// test to keep the wire byte-stable, which is why the number is
     /// stated as the population it is evidence about rather than as
-    /// what the search returned. `ForgeError`
-    /// carries no position of its own for a wrapper to have
-    /// discarded, so this is what the producer HAS rather than
-    /// something anyone dropped.
+    /// what the search returned.
+    ///
+    /// ⚠⚠ This is DEBT, and the name now says so. It read
+    /// `NoPositionToResolveFrom` until 2026-09-15 — the SYMPTOM — and
+    /// under that name the wire published it as `never`, telling every
+    /// consumer the code can never carry. §6a.4 of the Item 8 RFC had
+    /// already ruled that out: the classification must separate *"this
+    /// complaint has no coordinate by nature"* from *"nobody threaded
+    /// the coordinate through"*, because filing the second as the
+    /// first *"turns debt into a permanent exemption"*. Its sole
+    /// member is the second, on its own producer's evidence —
+    /// `ScxmlSemanticError::TopLevelScriptUnloaded` documents that the
+    /// Rust site *"does not capture the index/src of the failing
+    /// script"* while *"C++ side captures both"*. A coordinate the
+    /// other implementation already carries is not one absent by
+    /// nature.
+    ///
+    /// ⚠ The earlier spelling reached the opposite conclusion from a
+    /// TRUE premise, which is why it read as settled: `ForgeError`
+    /// carries no position for a wrapper to have discarded, "so this
+    /// is what the producer HAS rather than something anyone dropped".
+    /// Nothing dropped the coordinate — and nothing obtained it
+    /// either. *Not dropped* and *not obtainable* are different
+    /// claims, and only the second would justify `never`.
     ///
     /// ⚠ Earned by a run, not by argument: the top-level-script code
     /// is here because a scenario executed it and the field came back
     /// empty.
-    NoPositionToResolveFrom,
+    CoordinateNotThreaded,
     /// The record is raised mid-parse, and every stage that resolves
     /// an anchor runs after parsing returns.
     ///
@@ -15144,13 +15190,18 @@ impl NoAnchor {
                      work that will never be done as though it were pending, \
                      and overstates the debt by nineteen."
             }
-            NoAnchor::NoPositionToResolveFrom => {
+            NoAnchor::CoordinateNotThreaded => {
                 "this record reaches the wire with a file and no line. The \
                  anchor index is keyed by position, because an anchored \
                  region is a span of the author's document — so a location \
                  with no line lies inside no span and nothing can enclose \
-                 it. Not a resolver's to fix and not a coordinate anyone \
-                 dropped: the producer never had one."
+                 it. This is OWED WORK rather than a property of the code: \
+                 nothing dropped the coordinate, and nothing obtained it \
+                 either, which are different things. The producer can \
+                 capture one — the C++ implementation of the same \
+                 diagnostic already captures the script index and src that \
+                 the Rust site does not. Expect this code to carry once its \
+                 producer threads a position; do not read it as `never`."
             }
             NoAnchor::RaisedBeforeAnyResolvingStage => {
                 "this record is raised while the document is still being \
@@ -15668,7 +15719,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationBytesComparisonNotEquality
             | MeshEventSchemaMismatch => Registered(NoAnchor::NotYetMeasured),
 
-            // ── Registered(NoPositionToResolveFrom, RaisedBeforeAnyResolvingStage) ──
+            // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──
             // Measured, and each here for its OWN reason.
             // Both were in the bucket above until a scenario ran them.
             // They are separated because the runs disagreed about
@@ -15676,7 +15727,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // one and still cannot be resolved. A single bucket said
             // "awaiting a resolver" for both, which was true of
             // neither.
-            ScxmlTopLevelScriptUnloaded => Registered(NoAnchor::NoPositionToResolveFrom),
+            ScxmlTopLevelScriptUnloaded => Registered(NoAnchor::CoordinateNotThreaded),
             ValidationDuplicateId => Registered(NoAnchor::RaisedBeforeAnyResolvingStage),
 
             // ── Registered(NoAuthoredArtefact) ──────────────────
@@ -16399,7 +16450,7 @@ mod anchor_contract_tests {
     /// # What it deliberately permits
     ///
     /// The banner's PROSE stays free. The groups under
-    /// `NoPositionToResolveFrom` and `NoAuthoredArtefact` explain a
+    /// `CoordinateNotThreaded` and `NoAuthoredArtefact` explain a
     /// grouping decision that no single variant's docs can state, and
     /// deleting that to satisfy a scanner would trade a true record for
     /// a checkable one. Only the naming half is held: a banner must
@@ -16412,7 +16463,7 @@ mod anchor_contract_tests {
             "TheAnchorIsTheSubject",
             "NotYetMeasured",
             "NoAuthoredArtefact",
-            "NoPositionToResolveFrom",
+            "CoordinateNotThreaded",
             "RaisedBeforeAnyResolvingStage",
         ];
 

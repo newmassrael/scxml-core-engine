@@ -1420,10 +1420,16 @@ descendant to keep the link. The consequence worth writing down
 is what an *empty* `spec_provenance` means, and it means exactly
 one thing: no node enclosing that location carried an anchor. It
 never means the complaint came from a stage that does not carry
-them. `SCE_ERROR_CONTRACT.md` §2.1.2 is the normative statement,
-and the roster of which codes satisfy it today — compile-time
-exhaustive, with a written reason for every code that does not
-yet — is `forge::diagnostic::tests::anchor_carriage`.
+them. `SCE_ERROR_CONTRACT.md` §2.1.2 is the normative statement, and
+which codes satisfy it today is a lookup rather than something to
+assume: `sce-codegen provenance-roster` publishes one line per
+code, with a verdict and a reason, so nobody has to read SCE's
+source to find out. The table behind it is compile-time
+exhaustive and carries a written reason for every code that does
+not carry — `forge::diagnostic::anchor_carriage`, which left
+`#[cfg(test)]` on 2026-09-14 for exactly that reason. ⚠ A code
+the roster reports as `unknown` or `pending` has not been shown
+to fail this clause; it has not been shown to meet it either.
 
 **`sce:unresolved`** — explicit "revisit later" markers.
 
