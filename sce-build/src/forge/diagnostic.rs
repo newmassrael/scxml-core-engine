@@ -14930,9 +14930,32 @@ mod tests {
         /// The code has not been demonstrated carrying yet. Since
         /// Atomic 2 the resolver exists and is wired, so this names
         /// remaining work rather than a missing mechanism.
+        ///
+        /// ⚠ DEBT, and owed by someone. Membership here is expected to
+        /// shrink; a code that can never leave belongs in
+        /// [`NoAnchor::NoAuthoredArtefact`] instead, or the roster
+        /// reports work that will never be done as though it were
+        /// pending.
         AwaitingResolver,
         /// The anchor itself is what the code is complaining about.
         TheAnchorIsTheSubject,
+        /// The complaint's subject is argv or the filesystem, so there
+        /// is no authored artefact behind it — no document, no
+        /// paragraph, nothing an anchor could point at.
+        ///
+        /// ⚠ PRINCIPLED and permanent, and that is why it is a
+        /// separate reason rather than a long stay in
+        /// [`NoAnchor::AwaitingResolver`]. Nineteen codes sat in the
+        /// debt bucket claiming to await a resolver they can never
+        /// use, which made the debt look larger than it is and — the
+        /// worse half — made a permanent exemption indistinguishable
+        /// from work in progress. `docs`-side: this is §6a.4 of the
+        /// Item 8 RFC, *"that turns debt into a permanent exemption"*.
+        ///
+        /// Membership is DERIVED from the wire-id namespace and the
+        /// arm below is checked against that derivation in both
+        /// directions, so the list cannot drift from what it claims.
+        NoAuthoredArtefact,
     }
 
     impl NoAnchor {
@@ -15034,6 +15057,16 @@ mod tests {
                      the record assert the thing it is refusing. This one is \
                      permanent: no resolver changes it, because the defect is \
                      upstream of anything a resolver could look up."
+                }
+                NoAnchor::NoAuthoredArtefact => {
+                    "the subject of this complaint is argv or the filesystem, \
+                     not a document. There is no authored artefact behind it, \
+                     so there is no paragraph an anchor could name, and no \
+                     resolver can ever change that. Permanent, and separated \
+                     from `AwaitingResolver` for exactly that reason: a \
+                     permanent exemption sitting in the debt bucket reports \
+                     work that will never be done as though it were pending, \
+                     and overstates the debt by nineteen."
                 }
             }
         }
@@ -15379,25 +15412,11 @@ mod tests {
             | ExternSignatureMismatch
             | ExternOrderingUnspecified
             | ExternTargetPluginSymbolConflict
-            | IoFilesystem
-            | CliUnknownLanguage
-            | CliUnsupportedLanguage
-            | CliReadInput
-            | CliWriteOutput
-            | CliCreateOutputDir
-            | CliScxmlGenerate
-            | CliMissingMetadataField
-            | CliNotADirectory
-            | CliInvalidFormatOption
-            | CliJsonSerialization
-            | CliProjectRootNotFound
-            | CliFormatStyleNotFound
-            | CliNoScxmlTag
-            | CliInvalidSuitePackage
-            | CliGeneratorSourceDrift
-            | CliGeneratorSourceUnverifiable
-            | CliUsage
-            | CliQueryNoMatch
+            // ⚠ The `cli/` and `io/` codes are NOT in this arm. They
+            // are classified below as `NoAuthoredArtefact`, and they
+            // sat here until 2026-09-14 — nineteen permanent
+            // exemptions claiming to await a resolver they can never
+            // use.
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployUnsupportedVersion
@@ -15541,6 +15560,33 @@ mod tests {
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality
             | MeshEventSchemaMismatch => Registered(NoAnchor::AwaitingResolver),
+
+            // ── No authored artefact — permanent ─────────────────
+            // The subject is argv or the filesystem. Listed rather
+            // than derived HERE because the match must stay
+            // exhaustive with no `_` arm, which is the whole
+            // mechanism; the list is held to the derivation by
+            // `a_permanent_exemption_is_not_filed_as_debt`, which
+            // checks both directions against the wire-id namespace.
+            IoFilesystem
+            | CliUnknownLanguage
+            | CliUnsupportedLanguage
+            | CliReadInput
+            | CliWriteOutput
+            | CliCreateOutputDir
+            | CliScxmlGenerate
+            | CliMissingMetadataField
+            | CliNotADirectory
+            | CliInvalidFormatOption
+            | CliJsonSerialization
+            | CliProjectRootNotFound
+            | CliFormatStyleNotFound
+            | CliNoScxmlTag
+            | CliInvalidSuitePackage
+            | CliGeneratorSourceDrift
+            | CliGeneratorSourceUnverifiable
+            | CliUsage
+            | CliQueryNoMatch => Registered(NoAnchor::NoAuthoredArtefact),
         }
     }
 
@@ -15818,6 +15864,79 @@ mod tests {
             "the invariant examined {examined} anchored records, which \
              is too few to mean anything — the corpus stopped producing \
              located diagnostics inside anchored regions",
+        );
+    }
+
+    /// A permanent exemption is filed as one, and a debt is filed as a
+    /// debt — derived from the wire-id namespace, both directions.
+    ///
+    /// ⚠ Without this the `NoAuthoredArtefact` arm is only a longer
+    /// hand-written list, and the defect it repairs is precisely that
+    /// a hand-written classification drifts from what it claims. The
+    /// namespace is what says whose the subject is: a `cli/` code
+    /// complains about argv and an `io/` code about the filesystem,
+    /// and neither has an authored artefact behind it in any possible
+    /// future. So membership is not a judgement anyone re-makes per
+    /// code — it is a reading, and this asserts the arm agrees with it.
+    ///
+    /// Both directions, because each catches a different mistake: a
+    /// `cli/` code left in `AwaitingResolver` overstates the debt and
+    /// promises work nobody can do, and a document-side code moved
+    /// into `NoAuthoredArtefact` would grant itself a permanent
+    /// exemption from a contract it could actually meet.
+    #[test]
+    fn a_permanent_exemption_is_not_filed_as_debt() {
+        let namespace = |code: DiagnosticCode| -> &'static str {
+            code.as_str().split('/').next().unwrap_or("")
+        };
+        let subject_is_not_authored =
+            |code: DiagnosticCode| matches!(namespace(code), "cli" | "io");
+
+        let mut filed: Vec<&'static str> = Vec::new();
+        for &code in ALL_DIAGNOSTIC_CODES {
+            let permanent = matches!(
+                anchor_carriage(code, Pipeline::Statechart),
+                AnchorCarriage::Registered(NoAnchor::NoAuthoredArtefact)
+            );
+            if permanent {
+                filed.push(code.as_str());
+            }
+            assert_eq!(
+                permanent,
+                subject_is_not_authored(code),
+                "`{}` is filed as {} but its wire-id namespace `{}` says {}. \
+                 A `cli/` or `io/` code complains about argv or the \
+                 filesystem — no authored artefact, so no anchor, ever — \
+                 and every other namespace complains about a document, \
+                 which an anchor can name. Filing the first as debt \
+                 promises work nobody can do; filing the second as \
+                 permanent grants an exemption from a contract it could \
+                 meet.",
+                code.as_str(),
+                if permanent {
+                    "NoAuthoredArtefact"
+                } else {
+                    "carrying-or-debt"
+                },
+                namespace(code),
+                if subject_is_not_authored(code) {
+                    "it has no authored artefact"
+                } else {
+                    "its subject is a document"
+                },
+            );
+        }
+
+        // A floor: an empty sweep would satisfy the equivalence above
+        // by measuring nothing at all.
+        assert_eq!(
+            filed.len(),
+            19,
+            "expected the 19 `cli`/`io` codes to be filed as permanent \
+             exemptions; got {}: {filed:?}. If the code set genuinely \
+             changed, re-derive this number from the namespace census \
+             rather than editing it to match.",
+            filed.len(),
         );
     }
 
