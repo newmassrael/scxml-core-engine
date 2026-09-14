@@ -2831,8 +2831,13 @@ pub enum DiagnosticCode {
 ///
 /// Entries are ordered by pipeline stage, matching the enum's source
 /// order so a `diff` against the enum definition reveals any gap.
-#[cfg(test)]
-pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
+// Not `#[cfg(test)]` since 2026-09-14. The enumeration is what
+// `sce-codegen provenance-roster` walks to publish the anchor roster,
+// and a list of every code this tool can emit is a fact about the
+// tool, not about its test suite — gating it meant the one surface a
+// consumer needs to enumerate the contract existed only while the
+// tests were being compiled.
+pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
     use DiagnosticCode::*;
     &[
         // Xml
@@ -8762,6 +8767,10 @@ impl Fnv1a64 {
 
 #[cfg(test)]
 mod tests {
+    // The golden corpus is split across this module and its sibling by
+    // the production roster that now sits between them, so the two
+    // borrow each other's fixtures rather than growing a second copy.
+    use super::anchor_contract_tests::located_golden_entries;
     use super::*;
     use crate::forge::model::ForgeKind;
 
@@ -8777,7 +8786,7 @@ mod tests {
     /// if the error produced zero or multiple records — tests that
     /// target multi-record paths (XSD) call `.to_diagnostics()`
     /// directly instead.
-    fn single(err: &impl ToDiagnostics) -> Diagnostic {
+    pub(super) fn single(err: &impl ToDiagnostics) -> Diagnostic {
         let mut v = err.to_diagnostics();
         assert_eq!(v.len(), 1, "expected single diagnostic, got {}", v.len());
         v.pop().unwrap()
@@ -8973,7 +8982,7 @@ mod tests {
     /// Each entry: `(label, error_instance, expected_json_golden)`.
     /// Update the JSON string deliberately alongside a `SCHEMA_VERSION`
     /// bump when the wire shape changes.
-    fn forge_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
+    pub(super) fn forge_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
         use crate::forge::error::{
             CallbackPathReason, ExprError, GenerateError, ImportError, ManifestError,
             WorkerSharedStateReason, XmlError,
@@ -11579,7 +11588,7 @@ mod tests {
     /// [`every_code_has_a_golden`], but **not** in
     /// [`human_mode_matches_json_message`] — that invariant does not
     /// hold by construction here.
-    fn xsd_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
+    pub(super) fn xsd_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
         use crate::forge::error::XmlError;
         use crate::forge::xsd_validator::{XsdDiag, XsdErrors};
         vec![(
@@ -11598,7 +11607,8 @@ mod tests {
 
     /// Shared golden table for first-party `MeshError` cases. See
     /// [`forge_golden_entries`] for the rationale; same shape.
-    fn mesh_golden_entries() -> Vec<(&'static str, crate::mesh::error::MeshError, &'static str)> {
+    pub(super) fn mesh_golden_entries(
+    ) -> Vec<(&'static str, crate::mesh::error::MeshError, &'static str)> {
         use crate::mesh::error::{
             CodegenError, DeployError, ExternalConfigError, MeshError, RpcClientKind,
             TopologyError, UnresolvedName,
@@ -12951,7 +12961,8 @@ mod tests {
     /// ([`diagnostic_goldens_are_byte_stable`],
     /// [`human_mode_matches_json_message`],
     /// [`every_code_has_a_golden`]).
-    fn cli_golden_entries() -> Vec<(&'static str, crate::cli_error::CliError, &'static str)> {
+    pub(super) fn cli_golden_entries(
+    ) -> Vec<(&'static str, crate::cli_error::CliError, &'static str)> {
         use crate::cli_error::CliError;
         vec![
             (
@@ -14825,157 +14836,177 @@ mod tests {
     // written after the mechanism is green on the day it lands and
     // says nothing about the year after. Written first it is mostly
     // red, and the red list is the work list.
+}
 
-    /// Which pipeline's documents a classification is about.
-    ///
-    /// The roster used to be keyed on the code alone, and that was the
-    /// defect rather than a simplification: **the contract's answer for
-    /// a code depends on which pipeline raised it**, so a single answer
-    /// per code had to be wrong for one of them. It was wrong in the
-    /// direction that matters — every code the non-statechart kinds
-    /// raise was filed as "not demonstrated", which reads as work
-    /// outstanding, when §2.1.2's second admissible case had already
-    /// settled it.
-    ///
-    /// Splitting the key is what lets each half be answered by the
-    /// thing that actually decides it, and neither answer is a guess:
-    ///
-    /// * [`Pipeline::ForgeKind`] is answered ONCE, for every code, by
-    ///   [`a_forge_document_has_no_anchor_for_a_diagnostic_to_carry`].
-    /// * [`Pipeline::Statechart`] is answered per code, by executing a
-    ///   document — the standard the roster already held itself to.
-    ///
-    /// ⚠ What this deliberately does NOT do is decide which pipeline
-    /// raises a given code. That membership was derived three times on
-    /// 2026-09-11 by three source censuses which disagreed, because the
-    /// module constructing an error variant is not the pipeline that
-    /// raises it. Keying by axis removes the need to know: a code the
-    /// statechart pipeline never raises is vacuously fine on that axis
-    /// and proven fine on the other.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum Pipeline {
-        /// A statechart document — the only kind that carries
-        /// `sce:provenance`, and so the only one where an anchor can be
-        /// resolved or missed.
-        Statechart,
-        /// One of the seventeen non-statechart Forge kinds.
-        ForgeKind,
-    }
+// ─────────────────────────────────────────────────────────────────
+// The anchor roster — PRODUCTION.
+//
+// It lived inside `#[cfg(test)] mod tests` until 2026-09-14, which
+// made `SCE_ERROR_CONTRACT.md` §2.1.2 true for a maintainer and false
+// for a reader: the table that separates "cannot carry" from "not yet
+// wired" was a compile-time constant a consumer could not see, so on
+// the wire an absent `spec_provenance` meant three different things.
+// `sce-codegen provenance-roster` publishes it, which is what makes
+// the clause checkable rather than merely asserted.
+//
+// ⚠ Moving it out and publishing it are ONE change, not two. Inside
+// `cfg(test)` the roster does not exist in a normal build; outside it
+// does, and with no consumer `-D dead-code` refuses the build.
+// `pub(crate)` does not help — an unused crate-internal item is still
+// dead. Only `pub` is exempt, and a `pub` surface with no reader is
+// the declared-but-never-fed shape this whole item exists to refuse.
+// ─────────────────────────────────────────────────────────────────
 
-    /// What the contract delivers for one code **today**.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum AnchorCarriage {
-        /// A rejection with this code, raised on a node an anchored
-        /// node encloses, reaches the wire with a non-empty
-        /// `spec_provenance`.
-        ///
-        /// The property is over every site that raises the code, not
-        /// over one of them: a consumer branches on the code and
-        /// cannot see which site produced the record, so partial
-        /// coverage is not this classification.
-        ///
-        /// ⚠ "Every site" is a claim about the contract holding, not
-        /// about a mechanism being present, and the two are not the
-        /// same — Item 8 Atomic 2 had to separate them. A site
-        /// satisfies it two ways:
-        ///
-        ///   * it resolves or threads the enclosing anchor, or
-        ///   * it raises on a document kind that has no anchors at
-        ///     all, where the empty field is already the true answer
-        ///     §2.1.2 promises — "nothing enclosing this location is
-        ///     anchored to a specification".
-        ///
-        /// The second is not a loophole, it is the reason several
-        /// codes are reachable at all. `sce:provenance` is read off
-        /// statechart documents; a Forge document (codec, mesh
-        /// binding, event schema) has nowhere to write one, and
-        /// `crate::forge::model` holds none of the annotation types.
-        /// Many wire codes are deliberately REUSED across both
-        /// pipelines — `validation/invalid-reference` is raised by
-        /// `forge/parser.rs` and by the statechart semantic gate — so
-        /// a rule demanding a threaded anchor at literally every site
-        /// would make those codes permanently unreachable while the
-        /// contract they are measured against was already satisfied.
-        Carries,
-        /// Nothing on this axis can violate the contract, so there is
-        /// nothing here to do and never was.
-        ///
-        /// The only user is [`Pipeline::ForgeKind`], and it is not a
-        /// per-code judgement: those documents hold no provenance at
-        /// all, so the resolver's answer and the empty field coincide
-        /// by construction for every code alike. That is §2.1.2's
-        /// second admissible case, and the guard named in
-        /// [`Pipeline`]'s docs is what keeps it true.
-        SatisfiedByAnchorlessKind,
-        /// It does not, and [`NoAnchor::why`] says why.
-        Registered(NoAnchor),
-    }
+/// Which pipeline's documents a classification is about.
+///
+/// The roster used to be keyed on the code alone, and that was the
+/// defect rather than a simplification: **the contract's answer for
+/// a code depends on which pipeline raised it**, so a single answer
+/// per code had to be wrong for one of them. It was wrong in the
+/// direction that matters — every code the non-statechart kinds
+/// raise was filed as "not demonstrated", which reads as work
+/// outstanding, when §2.1.2's second admissible case had already
+/// settled it.
+///
+/// Splitting the key is what lets each half be answered by the
+/// thing that actually decides it, and neither answer is a guess:
+///
+/// * [`Pipeline::ForgeKind`] is answered ONCE, for every code, by
+///   [`a_forge_document_has_no_anchor_for_a_diagnostic_to_carry`].
+/// * [`Pipeline::Statechart`] is answered per code, by executing a
+///   document — the standard the roster already held itself to.
+///
+/// ⚠ What this deliberately does NOT do is decide which pipeline
+/// raises a given code. That membership was derived three times on
+/// 2026-09-11 by three source censuses which disagreed, because the
+/// module constructing an error variant is not the pipeline that
+/// raises it. Keying by axis removes the need to know: a code the
+/// statechart pipeline never raises is vacuously fine on that axis
+/// and proven fine on the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pipeline {
+    /// A statechart document — the only kind that carries
+    /// `sce:provenance`, and so the only one where an anchor can be
+    /// resolved or missed.
+    Statechart,
+    /// One of the seventeen non-statechart Forge kinds.
+    ForgeKind,
+}
 
-    /// Why a registered code cannot carry an anchor.
+/// What the contract delivers for one code **today**.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorCarriage {
+    /// A rejection with this code, raised on a node an anchored
+    /// node encloses, reaches the wire with a non-empty
+    /// `spec_provenance`.
     ///
-    /// Grouped rather than one string per code. 336 of 358 codes are
-    /// registered today and 334 of those are registered for one
-    /// reason; writing that reason 334 times would make the roster
-    /// look informative while saying one thing, and would bury the two
-    /// entries that are registered for a different and permanent
-    /// reason.
+    /// The property is over every site that raises the code, not
+    /// over one of them: a consumer branches on the code and
+    /// cannot see which site produced the record, so partial
+    /// coverage is not this classification.
     ///
-    /// ⚠ That single reason is now known to be wrong for a large part
-    /// of its own membership, and the next atomic is what splits it —
-    /// see [`NoAnchor::AwaitingResolver`], which states the
-    /// measurement rather than leaving the bucket to imply something
-    /// false about itself.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum NoAnchor {
-        /// The code has not been demonstrated carrying yet. Since
-        /// Atomic 2 the resolver exists and is wired, so this names
-        /// remaining work rather than a missing mechanism.
-        ///
-        /// ⚠ DEBT, and owed by someone. Membership here is expected to
-        /// shrink; a code that can never leave belongs in
-        /// [`NoAnchor::NoAuthoredArtefact`] instead, or the roster
-        /// reports work that will never be done as though it were
-        /// pending.
-        ///
-        /// ⚠⚠ Measured 2026-09-14 by
-        /// `the_roster_knows_only_what_a_scenario_exercises`: of the
-        /// 317 codes here, **0** were executed and found not to carry
-        /// — every one of them is UNMEASURED, raised by no scenario at
-        /// all. So the sentence above is true of the bucket's purpose
-        /// and false of its present membership: what these codes await
-        /// is not a resolver, it is a scenario. The roster learns by
-        /// executing, never by asserting, and 22 of 360 codes are
-        /// executed by anything.
-        AwaitingResolver,
-        /// The anchor itself is what the code is complaining about.
-        TheAnchorIsTheSubject,
-        /// The complaint's subject is argv or the filesystem, so there
-        /// is no authored artefact behind it — no document, no
-        /// paragraph, nothing an anchor could point at.
-        ///
-        /// ⚠ PRINCIPLED and permanent, and that is why it is a
-        /// separate reason rather than a long stay in
-        /// [`NoAnchor::AwaitingResolver`]. Nineteen codes sat in the
-        /// debt bucket claiming to await a resolver they can never
-        /// use, which made the debt look larger than it is and — the
-        /// worse half — made a permanent exemption indistinguishable
-        /// from work in progress. `docs`-side: this is §6a.4 of the
-        /// Item 8 RFC, *"that turns debt into a permanent exemption"*.
-        ///
-        /// Membership is DERIVED from the wire-id namespace and the
-        /// arm below is checked against that derivation in both
-        /// directions, so the list cannot drift from what it claims.
-        NoAuthoredArtefact,
-    }
+    /// ⚠ "Every site" is a claim about the contract holding, not
+    /// about a mechanism being present, and the two are not the
+    /// same — Item 8 Atomic 2 had to separate them. A site
+    /// satisfies it two ways:
+    ///
+    ///   * it resolves or threads the enclosing anchor, or
+    ///   * it raises on a document kind that has no anchors at
+    ///     all, where the empty field is already the true answer
+    ///     §2.1.2 promises — "nothing enclosing this location is
+    ///     anchored to a specification".
+    ///
+    /// The second is not a loophole, it is the reason several
+    /// codes are reachable at all. `sce:provenance` is read off
+    /// statechart documents; a Forge document (codec, mesh
+    /// binding, event schema) has nowhere to write one, and
+    /// `crate::forge::model` holds none of the annotation types.
+    /// Many wire codes are deliberately REUSED across both
+    /// pipelines — `validation/invalid-reference` is raised by
+    /// `forge/parser.rs` and by the statechart semantic gate — so
+    /// a rule demanding a threaded anchor at literally every site
+    /// would make those codes permanently unreachable while the
+    /// contract they are measured against was already satisfied.
+    Carries,
+    /// Nothing on this axis can violate the contract, so there is
+    /// nothing here to do and never was.
+    ///
+    /// The only user is [`Pipeline::ForgeKind`], and it is not a
+    /// per-code judgement: those documents hold no provenance at
+    /// all, so the resolver's answer and the empty field coincide
+    /// by construction for every code alike. That is §2.1.2's
+    /// second admissible case, and the guard named in
+    /// [`Pipeline`]'s docs is what keeps it true.
+    SatisfiedByAnchorlessKind,
+    /// It does not, and [`NoAnchor::why`] says why.
+    Registered(NoAnchor),
+}
 
-    impl NoAnchor {
-        /// A reason a reader can weigh, not a label. Asserted to be
-        /// substantive below, the way `hook_ci_parity::CI_ONLY` asserts
-        /// its own.
-        fn why(self) -> &'static str {
-            match self {
-                NoAnchor::AwaitingResolver => {
-                    "this code has not been demonstrated carrying the \
+/// Why a registered code cannot carry an anchor.
+///
+/// Grouped rather than one string per code. 336 of 358 codes are
+/// registered today and 334 of those are registered for one
+/// reason; writing that reason 334 times would make the roster
+/// look informative while saying one thing, and would bury the two
+/// entries that are registered for a different and permanent
+/// reason.
+///
+/// ⚠ That single reason is now known to be wrong for a large part
+/// of its own membership, and the next atomic is what splits it —
+/// see [`NoAnchor::AwaitingResolver`], which states the
+/// measurement rather than leaving the bucket to imply something
+/// false about itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoAnchor {
+    /// The code has not been demonstrated carrying yet. Since
+    /// Atomic 2 the resolver exists and is wired, so this names
+    /// remaining work rather than a missing mechanism.
+    ///
+    /// ⚠ DEBT, and owed by someone. Membership here is expected to
+    /// shrink; a code that can never leave belongs in
+    /// [`NoAnchor::NoAuthoredArtefact`] instead, or the roster
+    /// reports work that will never be done as though it were
+    /// pending.
+    ///
+    /// ⚠⚠ Measured 2026-09-14 by
+    /// `the_roster_knows_only_what_a_scenario_exercises`: of the
+    /// 317 codes here, **0** were executed and found not to carry
+    /// — every one of them is UNMEASURED, raised by no scenario at
+    /// all. So the sentence above is true of the bucket's purpose
+    /// and false of its present membership: what these codes await
+    /// is not a resolver, it is a scenario. The roster learns by
+    /// executing, never by asserting, and 22 of 360 codes are
+    /// executed by anything.
+    AwaitingResolver,
+    /// The anchor itself is what the code is complaining about.
+    TheAnchorIsTheSubject,
+    /// The complaint's subject is argv or the filesystem, so there
+    /// is no authored artefact behind it — no document, no
+    /// paragraph, nothing an anchor could point at.
+    ///
+    /// ⚠ PRINCIPLED and permanent, and that is why it is a
+    /// separate reason rather than a long stay in
+    /// [`NoAnchor::AwaitingResolver`]. Nineteen codes sat in the
+    /// debt bucket claiming to await a resolver they can never
+    /// use, which made the debt look larger than it is and — the
+    /// worse half — made a permanent exemption indistinguishable
+    /// from work in progress. `docs`-side: this is §6a.4 of the
+    /// Item 8 RFC, *"that turns debt into a permanent exemption"*.
+    ///
+    /// Membership is DERIVED from the wire-id namespace and the
+    /// arm below is checked against that derivation in both
+    /// directions, so the list cannot drift from what it claims.
+    NoAuthoredArtefact,
+}
+
+impl NoAnchor {
+    /// A reason a reader can weigh, not a label. Asserted to be
+    /// substantive below, the way `hook_ci_parity::CI_ONLY` asserts
+    /// its own.
+    pub fn why(self) -> &'static str {
+        match self {
+            NoAnchor::AwaitingResolver => {
+                "this code has not been demonstrated carrying the \
                      enclosing anchor. Five resolution points exist as of \
                      Atomic 7 — the boundaries \
                      `analyzer::can_generate_static`, `lint_statechart`, \
@@ -15058,18 +15089,18 @@ mod tests {
                      NOTHING checks code -> producer. That absence is the \
                      Item 6 shape one axis over — a surface declared, \
                      never fed, green for as long as nobody asked."
-                }
-                NoAnchor::TheAnchorIsTheSubject => {
-                    "the record is a complaint ABOUT `sce:provenance`, raised \
+            }
+            NoAnchor::TheAnchorIsTheSubject => {
+                "the record is a complaint ABOUT `sce:provenance`, raised \
                      from inside the collector that reads it, so at the moment \
                      it is raised the node's anchors are precisely what could \
                      not be read. Attaching a half-read anchor list would make \
                      the record assert the thing it is refusing. This one is \
                      permanent: no resolver changes it, because the defect is \
                      upstream of anything a resolver could look up."
-                }
-                NoAnchor::NoAuthoredArtefact => {
-                    "the subject of this complaint is argv or the filesystem, \
+            }
+            NoAnchor::NoAuthoredArtefact => {
+                "the subject of this complaint is argv or the filesystem, \
                      not a document. There is no authored artefact behind it, \
                      so there is no paragraph an anchor could name, and no \
                      resolver can ever change that. Permanent, and separated \
@@ -15077,30 +15108,30 @@ mod tests {
                      permanent exemption sitting in the debt bucket reports \
                      work that will never be done as though it were pending, \
                      and overstates the debt by nineteen."
-                }
             }
         }
     }
+}
 
-    /// Compile-time exhaustive over `DiagnosticCode`.
-    ///
-    /// Deliberately no `_` arm: a code added next year must be
-    /// classified here or the build fails. That is the whole mechanism
-    /// — the failure this guards against is not a wrong answer, it is
-    /// no answer given silently, which is how a declared-but-empty
-    /// field survived four months of green gates.
-    fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarriage {
-        use AnchorCarriage::*;
-        use DiagnosticCode::*;
-        // One rule, every code. Not a shortcut past the per-code work:
-        // there is no per-code work to do on this axis, because a
-        // non-statechart Forge kind holds no provenance for any code's
-        // record to carry. Writing 358 identical arms would make the
-        // roster look like it had decided 358 things.
-        if matches!(pipeline, Pipeline::ForgeKind) {
-            return SatisfiedByAnchorlessKind;
-        }
-        match code {
+/// Compile-time exhaustive over `DiagnosticCode`.
+///
+/// Deliberately no `_` arm: a code added next year must be
+/// classified here or the build fails. That is the whole mechanism
+/// — the failure this guards against is not a wrong answer, it is
+/// no answer given silently, which is how a declared-but-empty
+/// field survived four months of green gates.
+pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarriage {
+    use AnchorCarriage::*;
+    use DiagnosticCode::*;
+    // One rule, every code. Not a shortcut past the per-code work:
+    // there is no per-code work to do on this axis, because a
+    // non-statechart Forge kind holds no provenance for any code's
+    // record to carry. Writing 358 identical arms would make the
+    // roster look like it had decided 358 things.
+    if matches!(pipeline, Pipeline::ForgeKind) {
+        return SatisfiedByAnchorlessKind;
+    }
+    match code {
             // ── Carries ──────────────────────────────────────────
             // Each has exactly one raise site, and that site threads
             // the node's anchors. Measured 2026-09-11 by counting
@@ -15598,7 +15629,20 @@ mod tests {
             | CliUsage
             | CliQueryNoMatch => Registered(NoAnchor::NoAuthoredArtefact),
         }
-    }
+}
+
+/// The tests that read the roster above.
+///
+/// A second module rather than a continuation of `tests`, because the
+/// roster between them is production now and a `#[cfg(test)]` block
+/// cannot enclose it. The split moves no test and renames none — only
+/// the module path they sit under.
+#[cfg(test)]
+mod anchor_contract_tests {
+    use super::tests::{
+        cli_golden_entries, forge_golden_entries, mesh_golden_entries, single, xsd_golden_entries,
+    };
+    use super::*;
 
     /// The one structural proof behind `SCE_ERROR_CONTRACT.md`
     /// §2.1.2's **second** admissible case: a Forge document has no
@@ -17413,7 +17457,8 @@ mod tests {
     /// like every other golden — so the published schema is now
     /// checked against a populated record and not only against the
     /// absence of one.
-    fn located_golden_entries() -> Vec<(&'static str, Located<ForgeError>, &'static str)> {
+    pub(super) fn located_golden_entries() -> Vec<(&'static str, Located<ForgeError>, &'static str)>
+    {
         let anchors = vec![
             crate::provenance::SpecProvenance {
                 doc_id: "OEM-DIAG-SPEC".into(),
