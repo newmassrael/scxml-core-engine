@@ -15330,16 +15330,19 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // the position is an `Option` rather than a promise.
             GenerateUnsupportedFeature => Carries,
 
-            // ── Registered — the anchor is the subject ───────────
+            // ── Registered(TheAnchorIsTheSubject) ────────────────
             ValidationProvenanceMalformed | ValidationProvenanceDuplicate => {
                 Registered(NoAnchor::TheAnchorIsTheSubject)
             }
 
-            // ── Registered — awaiting the resolver ───────────────
-            // The work list. It is long on purpose and it is written
-            // down on purpose: a reader learns which complaints cannot
-            // be routed back to a specification, instead of finding
-            // out from an empty field.
+            // ── Registered(NotYetMeasured) ───────────────────────
+            // The bulk. Its length measures how far `run_scenario`
+            // reaches, not how much is owed here: no scenario has
+            // raised these, so nothing is known about them either
+            // way. The variant's own docs carry the rest — reading
+            // this list as work owed on the resolver, or as codes
+            // that cannot be routed back to a specification, is the
+            // pair of claims its rename exists to stop.
             XmlParse
             | XmlSchemaValidation
             | XmlFileNotFound
@@ -15665,7 +15668,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationBytesComparisonNotEquality
             | MeshEventSchemaMismatch => Registered(NoAnchor::NotYetMeasured),
 
-            // ── Measured, and each here for its OWN reason ───────
+            // ── Registered(NoPositionToResolveFrom, RaisedBeforeAnyResolvingStage) ──
+            // Measured, and each here for its OWN reason.
             // Both were in the bucket above until a scenario ran them.
             // They are separated because the runs disagreed about
             // WHY: one record has no position at all, the other has
@@ -15675,8 +15679,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             ScxmlTopLevelScriptUnloaded => Registered(NoAnchor::NoPositionToResolveFrom),
             ValidationDuplicateId => Registered(NoAnchor::RaisedBeforeAnyResolvingStage),
 
-            // ── No authored artefact — permanent ─────────────────
-            // The subject is argv or the filesystem. Listed rather
+            // ── Registered(NoAuthoredArtefact) ──────────────────
+            // Permanent. The subject is argv or the filesystem. Listed rather
             // than derived HERE because the match must stay
             // exhaustive with no `_` arm, which is the whole
             // mechanism; the list is held to the derivation by
@@ -16366,6 +16370,148 @@ mod anchor_contract_tests {
              rather than editing it to match.",
             filed.len(),
         );
+    }
+
+    /// Every group banner inside [`anchor_carriage`] names the outcome
+    /// the arms beneath it return.
+    ///
+    /// # What this exists to stop
+    ///
+    /// A banner is a comment, so nothing in the language can see it
+    /// disagree with the arms it introduces. Measured 2026-09-15, after
+    /// `c8c9bc77b0` had renamed `AwaitingResolver` to
+    /// [`NoAnchor::NotYetMeasured`] because no member was awaiting
+    /// anything: the banner over the largest group still read
+    /// *"Registered — awaiting the resolver"*, still called that group
+    /// *"the work list"*, and still told a reader its members *"cannot
+    /// be routed back to a specification"*. All three are refuted by
+    /// the variant's own docs — the rename moved the identifier and
+    /// every arm, and left the retired diagnosis standing in the one
+    /// place a reader meets before the code.
+    ///
+    /// A declaration corrected in one copy while a second copy keeps
+    /// the retired claim is a recurring shape here, and the surviving
+    /// copy is the worse one: it promises a reader something the code
+    /// no longer says, so they go looking for it and believe it is
+    /// there. That is why the repair is a predicate and not a
+    /// corrected sentence.
+    ///
+    /// # What it deliberately permits
+    ///
+    /// The banner's PROSE stays free. The groups under
+    /// `NoPositionToResolveFrom` and `NoAuthoredArtefact` explain a
+    /// grouping decision that no single variant's docs can state, and
+    /// deleting that to satisfy a scanner would trade a true record for
+    /// a checkable one. Only the naming half is held: a banner must
+    /// spell the outcome its arms return, and must not spell one they
+    /// do not.
+    #[test]
+    fn a_group_banner_names_the_outcome_its_arms_return() {
+        const OUTCOMES: [&str; 6] = [
+            "Carries",
+            "TheAnchorIsTheSubject",
+            "NotYetMeasured",
+            "NoAuthoredArtefact",
+            "NoPositionToResolveFrom",
+            "RaisedBeforeAnyResolvingStage",
+        ];
+
+        let text = include_str!("diagnostic.rs");
+        let at = text
+            .find("pub fn anchor_carriage(")
+            .expect("`anchor_carriage` is the function this scan is about");
+        let body = &text[at..];
+        let body = &body[..body
+            .find("\n}\n")
+            .expect("the function ends at a column-zero brace")];
+        // The `Pipeline::ForgeKind` early return answers above the match
+        // and carries no banner, so the regime starts at the match.
+        let body = &body[body
+            .find("match code {")
+            .expect("the roster is a match over `DiagnosticCode`")..];
+
+        let mut banners: Vec<(&str, std::collections::BTreeSet<&str>)> = Vec::new();
+        let mut above_every_banner = std::collections::BTreeSet::new();
+        let mut sites = 0usize;
+
+        for line in body.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("// ──") {
+                banners.push((trimmed, std::collections::BTreeSet::new()));
+                continue;
+            }
+            if trimmed.starts_with("//") {
+                // Prose may name a variant while explaining it. That is
+                // not an arm, and counting it would let an explanation
+                // satisfy the banner it sits under.
+                continue;
+            }
+            let returned = match trimmed.split("Registered(NoAnchor::").nth(1) {
+                Some(rest) => rest.split(')').next(),
+                None if trimmed.contains("=> Carries") => Some("Carries"),
+                None => None,
+            };
+            let Some(returned) = returned else { continue };
+            sites += 1;
+            match banners.last_mut() {
+                Some((_, seen)) => {
+                    seen.insert(returned);
+                }
+                None => {
+                    above_every_banner.insert(returned);
+                }
+            }
+        }
+
+        assert!(
+            above_every_banner.is_empty(),
+            "arm(s) returning {above_every_banner:?} sit above the first \
+             banner, where nothing names them and this gate has nothing \
+             to hold them to. Put every arm under a banner — an \
+             unlabelled group is not one that cannot lie, it is one \
+             nobody checks.",
+        );
+        // Floors. An empty sweep passes every assertion below it while
+        // measuring nothing, and this scan reads source text, so it
+        // fails that way the moment the function is reshaped.
+        assert!(
+            banners.len() >= 5,
+            "found {} banner(s) in `anchor_carriage`; the scan has \
+             stopped reading them",
+            banners.len(),
+        );
+        assert!(
+            sites >= 8,
+            "found {sites} arm(s) returning an outcome; the scan has \
+             stopped reading the match body",
+        );
+
+        for (banner, returned) in &banners {
+            assert!(
+                !returned.is_empty(),
+                "the banner `{banner}` introduces no arm that returns an \
+                 outcome. Either it labels nothing and should go, or the \
+                 scan has lost the arms it labels.",
+            );
+            for outcome in returned {
+                assert!(
+                    banner.contains(outcome),
+                    "the banner `{banner}` introduces arm(s) returning \
+                     `{outcome}`, which it does not name. A reader meets \
+                     the banner before the arm, so when the two disagree \
+                     the banner is the copy they believe.",
+                );
+            }
+            for outcome in OUTCOMES {
+                assert!(
+                    !banner.contains(outcome) || returned.contains(outcome),
+                    "the banner `{banner}` names `{outcome}`, but no arm \
+                     beneath it returns that. This is how a retired \
+                     spelling survives a rename: `AwaitingResolver` \
+                     outlived its own (`c8c9bc77b0`) right here.",
+                );
+            }
+        }
     }
 
     /// Every code either carries the enclosing anchor or is registered
