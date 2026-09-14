@@ -15255,7 +15255,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // working in the direction it was built for — a
             // registration is a claim, and a claim a run contradicts
             // is not an exemption.
-            | ExpressionInvalidLvalue => Carries,
+            | ExpressionInvalidLvalue
+            // Same, and found by derivation rather than by trying
+            // codes: its producer lives under `ecmascript/`, which is
+            // what makes it reachable from a statechart at all.
+            | ExpressionLiteralNotCallable => Carries,
 
             // Generation — Item 8 Atomic 7, the last stage that holds
             // the model and the fourth resolution point.
@@ -15366,7 +15370,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ReassemblyPerPeerQuotaBuildInvariantViolated
             | ExpressionEmpty
             | ExpressionLex
-            | ExpressionLiteralNotCallable
             | ExpressionStrictEquality
             | ExpressionParseMismatch
             | ExpressionTypeCoercion
@@ -16196,6 +16199,28 @@ mod anchor_contract_tests {
     /// what each later atomic delivers.
     fn carrying_scenarios() -> Vec<(&'static str, &'static str)> {
         vec![
+            // `expression/literal-not-callable` — a call on a literal.
+            // Chosen by derivation rather than one code at a time: of
+            // the fifteen `ExprError` variants the acceptance walk can
+            // report, only those with a producer under `ecmascript/`
+            // are reachable from a statechart at all, and three of the
+            // five undemonstrated ones live solely in `forge/expr.rs`.
+            // The predicate is where the PRODUCER lives, not whether
+            // the error type lists the variant.
+            (
+                "expression/literal-not-callable",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript"
+                         sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                     <datamodel><data id="v" expr="0"/></datamodel>
+                     <state id="s0">
+                       <onentry>
+                         <assign location="v" expr="1()"/>
+                       </onentry>
+                     </state>
+                   </scxml>"#,
+            ),
             // ⚠ `expression/empty` was tried here on 2026-09-14 and
             // is NOT a scenario: an `<assign expr="">` renders no site
             // for the acceptance walk to judge, so the document falls
