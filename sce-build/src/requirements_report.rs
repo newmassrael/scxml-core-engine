@@ -166,6 +166,19 @@ pub(crate) enum NodeSubject<'a> {
         index: usize,
         base: &'a crate::model::InvokeBase,
     },
+    /// A top-level `<script>` — §scxml-5.8 executable content that
+    /// belongs to the DOCUMENT, not to any state.
+    ///
+    /// ⚠ It is an `Action` like the others, and it is a separate variant
+    /// only because [`NodeSubject::Action`] carries the `&State` that
+    /// owns it and this one has no owner. Giving it a borrowed state
+    /// would have meant inventing a state the document never wrote.
+    GlobalScript {
+        /// Position among `model.global_scripts`, which is how a path
+        /// names a script that has no id.
+        index: usize,
+        action: &'a crate::model::Action,
+    },
 }
 
 impl<'a> NodeSubject<'a> {
@@ -181,6 +194,7 @@ impl<'a> NodeSubject<'a> {
             NodeSubject::Transition { transition, .. } => &transition.unresolved,
             NodeSubject::Action { action, .. } => &action.unresolved,
             NodeSubject::Invoke { base, .. } => &base.unresolved,
+            NodeSubject::GlobalScript { action, .. } => &action.unresolved,
         }
     }
 }
@@ -273,6 +287,27 @@ pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
 /// own round rather than being folded into this one.
 pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
     let mut out = Vec::new();
+    // §scxml-5.8: a top-level `<script>` is executable content the
+    // document runs before any state is entered, so it leads the walk.
+    //
+    // ⚠ It was absent entirely, and that absence was half of a defect
+    // whose other half was in the parser: the annotation was dropped at
+    // parse AND unreachable here, so repairing either alone still left
+    // an author's `sce:req` unread by every consumer of this walk.
+    for (index, action) in model.global_scripts.iter().enumerate() {
+        out.push(AnnotatedNode {
+            record: RequirementRecord {
+                node_path: format!("global_scripts[{index}]"),
+                node_type: "action",
+                action_type: Some(action.action_type.as_str()),
+                requirement_ids: refs_of(&action.req),
+                spec_provenance: &action.provenance,
+                location: action.source_location.as_ref(),
+            },
+            unresolved: !action.unresolved.is_empty(),
+            subject: NodeSubject::GlobalScript { index, action },
+        });
+    }
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {

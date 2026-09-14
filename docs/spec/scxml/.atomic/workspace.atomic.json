@@ -7485,6 +7485,18 @@
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "symbol": "execute_script",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/requirements_report.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/transition_table.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/unresolved_check.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

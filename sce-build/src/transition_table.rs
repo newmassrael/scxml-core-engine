@@ -212,6 +212,24 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     action: or_dash(&base.invoke_id),
                     node_path,
                 },
+                // §scxml-5.8: the document runs this before entering any
+                // state, so `from` names the document rather than a
+                // state. `(global script)` is its pseudo-event for the
+                // same reason `(invoke)` above is one — it is not
+                // event-driven, and leaving the cell empty would read as
+                // "an event nobody wrote" instead of "not that kind of
+                // row". The action cell goes through the one renderer,
+                // so this row moves when the script does.
+                NodeSubject::GlobalScript { action, .. } => TransitionRow {
+                    source,
+                    from: "<scxml>".to_string(),
+                    event: "(global script)".to_string(),
+                    guard: EMPTY_CELL.to_string(),
+                    after: EMPTY_CELL.to_string(),
+                    to: EMPTY_CELL.to_string(),
+                    action: what_the_action_does(action),
+                    node_path,
+                },
             }
         })
         .collect()

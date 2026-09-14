@@ -101,6 +101,12 @@ fn element_label(subject: &NodeSubject<'_>) -> String {
             "<invoke #{index} (id=\"{}\") in <state id=\"{}\">>",
             base.invoke_id, state.id
         ),
+        // No owning state to name: §scxml-5.8 puts this one at the
+        // document, so the label says the document rather than
+        // borrowing a state it does not sit in.
+        NodeSubject::GlobalScript { index, .. } => {
+            format!("<script #{index} at the top level of <scxml>>")
+        }
     }
 }
 
