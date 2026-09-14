@@ -103,11 +103,21 @@ ASCII, and the event grammar refuses `:`. W3C is wider on both counts
 *"This markup is legal"*. SCE narrows because these values do not stay
 in the document: an id and an event name each become a code identifier
 in C, C++, Kotlin, Rust, Go and Python. A value the sweep admits is one
-all six can carry. Measured 2026-09-14 over the 794 SCXML documents in
-this tree, the narrowing costs nothing here — no document uses a
-Unicode or `:`-bearing identifier — but it is a boundary SCE draws and
+all six can carry. Measured 2026-09-14 over the 735 SCXML documents
+this repository commits — `git ls-files '*.scxml'`, the enumeration the
+corpus test uses — the narrowing costs nothing here: no document uses a
+Unicode or `:`-bearing identifier. But it is a boundary SCE draws and
 not one W3C drew, which is why it is written here rather than left for
 a rejected author to find.
+
+⚠ The enumeration is named because the number alone rotted once. This
+paragraph read "794 documents" until 2026-09-14, a count taken by
+walking the filesystem past a hand-written skip list — which counted
+generated build output as source, and which the corpus test dropped for
+exactly that reason. A bare total invites the reader to re-take it with
+whatever walk comes to hand, and the two walks do not agree — a `find`
+over this tree answers a different number on every machine, because it
+counts whatever the last build wrote.
 
 The **AOT code generator** is the default path; the Interpreter exists
 as a fallback for documents that cannot be statically generated. At

@@ -70,12 +70,22 @@
 //! carry. A value it refuses is refused at the author's own line rather than
 //! by a compiler reading generated source.
 //!
-//! Measured 2026-09-14 over the 794 SCXML documents in this tree, across
+//! Measured 2026-09-14 over the 735 SCXML documents this repository COMMITS
+//! — `git ls-files '*.scxml'`, the enumeration the corpus test uses — across
 //! every row of [`IDENTIFIER_ATTRIBUTES`]: the narrowing costs nothing here —
 //! zero documents use a Unicode or `:`-bearing identifier — but it is a
 //! boundary SCE draws and not one W3C drew, which is why it is written down
 //! here and registered in `docs/SCE_ACCEPTED_SUBSET.md` §1 rather than left
 //! for a rejected author to discover.
+//!
+//! ⚠ The enumeration is named because the number alone rotted once. This
+//! paragraph read "794 documents" until 2026-09-14, a count taken by walking
+//! the filesystem past a hand-written skip list — which counted generated
+//! build output as source, and which the corpus test dropped for exactly that
+//! reason. A bare total invites the reader to re-take it with whatever walk
+//! comes to hand, and the two walks do not agree — a `find` over this tree
+//! answers a different number on every machine, because it counts whatever
+//! the last build wrote.
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 
