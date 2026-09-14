@@ -94,11 +94,9 @@ fn first_native(action: &Action) -> Option<&Action> {
         return Some(action);
     }
     action
-        .then_actions
-        .iter()
-        .chain(action.else_actions.iter())
-        .chain(action.actions.iter())
-        .chain(action.elseif_branches.iter().flat_map(|b| b.actions.iter()))
+        .nested_blocks()
+        .into_iter()
+        .flat_map(|block| block.actions.iter())
         .find_map(first_native)
 }
 

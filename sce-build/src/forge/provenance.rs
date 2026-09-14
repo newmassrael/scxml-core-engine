@@ -151,12 +151,11 @@ fn check_action_block(
             let pinned = action_pinned_id(state_id, action);
             return Err(emit(scxml_path, "<action>", &pinned));
         }
-        // Nested executable content — same invariant applies.
-        check_action_block(&action.then_actions, state_id, scxml_path)?;
-        check_action_block(&action.else_actions, state_id, scxml_path)?;
-        check_action_block(&action.actions, state_id, scxml_path)?;
-        for branch in &action.elseif_branches {
-            check_action_block(&branch.actions, state_id, scxml_path)?;
+        // Nested executable content — same invariant applies. Which
+        // blocks those are is `Action::nested_blocks`, so a block added
+        // to the model reaches this check without editing it.
+        for block in action.nested_blocks() {
+            check_action_block(block.actions, state_id, scxml_path)?;
         }
     }
     Ok(())

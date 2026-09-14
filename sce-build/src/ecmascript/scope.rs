@@ -289,16 +289,8 @@ impl DocumentScope {
             }
             _ => {}
         }
-        for nested in action
-            .actions
-            .iter()
-            .chain(action.then_actions.iter())
-            .chain(action.else_actions.iter())
-        {
-            self.absorb_action(nested, stage);
-        }
-        for branch in &action.elseif_branches {
-            for nested in &branch.actions {
+        for block in action.nested_blocks() {
+            for nested in block.actions {
                 self.absorb_action(nested, stage);
             }
         }

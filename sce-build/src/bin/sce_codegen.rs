@@ -5226,16 +5226,12 @@ fn action_uses_http_send(actions: &[sce_build::model::Action]) -> bool {
         if action.action_type == "send" && action.send_type.contains("BasicHTTPEventProcessor") {
             return true;
         }
-        if action_uses_http_send(&action.then_actions)
-            || action_uses_http_send(&action.else_actions)
-            || action_uses_http_send(&action.actions)
+        if action
+            .nested_blocks()
+            .iter()
+            .any(|block| action_uses_http_send(block.actions))
         {
             return true;
-        }
-        for branch in &action.elseif_branches {
-            if action_uses_http_send(&branch.actions) {
-                return true;
-            }
         }
     }
     false
