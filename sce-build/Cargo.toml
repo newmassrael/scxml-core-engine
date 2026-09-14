@@ -590,6 +590,16 @@ name = "cli_language_surface"
 path = "tests/cli_language_surface.rs"
 required-features = ["cli"]
 
+# What `provenance-roster` publishes must say what the roster holds.
+# Cli-gated because it spawns the binary — which is the whole point:
+# every other gate on this axis asks the in-crate table what the table
+# answers, and that is why the wire could flatten `unknown` into
+# `never` for 312 codes and stay green through the full suite.
+[[test]]
+name = "cli_provenance_roster_wire"
+path = "tests/cli_provenance_roster_wire.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "cli_lint_parity"
 path = "tests/cli_lint_parity.rs"
