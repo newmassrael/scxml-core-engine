@@ -99,6 +99,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # does not exist today, so a filter written over the tree as it stands names
 # the answers and not the case.
 #
+# `an_identifier_is_checked_against_the_grammar_w3c_gives_it` sweeps every
+# committed `*.scxml` and checks each identifier-bearing attribute against
+# the grammar W3C gives it, so a document added anywhere changes what it
+# reads. It ran only under the workspace suite until 2026-09-14, and that
+# lane's `paths:` filter names today's fixture trees — so a hostile `id`
+# arriving in a directory the filter does not name was judged by a lane the
+# commit never started. That is precisely the case the gate exists for,
+# which is why it runs from this unfiltered workflow instead.
+#
 # `spec_surface_registration` is here for the registry's own reason, and it
 # is the sharpest instance of it. What it reads is every tracked path, and
 # what it judges is whether `SCE_WIRE_CONTRACTS.md` names the spec-bearing
@@ -120,6 +129,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # found in seconds.
 cargo test -p sce-build --features cli,ffi \
     --test a_standard_named_in_code_is_one_sce_implements \
+    --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
     --test ffi_header_parity \
     --test roadmap_marker_gate \
     --test scope_terminology \
