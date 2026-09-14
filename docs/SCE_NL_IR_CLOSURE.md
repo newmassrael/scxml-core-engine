@@ -17,7 +17,9 @@ answers two different questions, and they must not be collapsed:
 | exit status | is this ledger an honest description of the tree? | `rc=0` when every row's `Status` matches what the tree measures |
 | `closure:` line | is there anything left to do? | `closure: REACHED` only when every row measures closed |
 
-So the gate is green today with fourteen rows open, and goes red the moment a
+So the gate is green today with rows still open — the sweep prints how many,
+and a count written here would be stale the round after it was true — and goes
+red the moment a
 row's recorded status stops matching the tree — in **either** direction. A row
 marked `closed` that the tree contradicts is a false green; a row marked `open`
 that the tree has in fact closed is a stale denominator, and both are defects
@@ -46,7 +48,7 @@ Status is `open` or `closed`.
 | id | Status | What remains | Closed when |
 |---|---|---|---|
 | C1 | closed | Identifier-bearing attributes are not checked against the grammar W3C gives them. `<state id="s0*/X">` is accepted and becomes a code identifier, so the emitted source does not compile. | A parse-time check refuses a hostile `id`, `event` or `target`. Grammar is the NCName family — a token starts with a letter or `_`, continues with alphanumerics, `_` or `-`, and `.` separates tokens — which refuses 0 of 2480 event descriptors and 1 of 5281 ids in this tree (a pre-expansion template placeholder). The literal "alphanumeric" reading is refused: it rejects W3C's own conformance documents 364 and 576, whose event is `In-s11p112`. |
-| C2 | open | A value written into a string literal is not encoded for it. Templates apply an escaper at some sites and not others; a `<log label>` holding a line break is written unescaped into a C++ and a Go string literal, so the emitted source does not compile. | Encoding is a property of the one door every template passes through, as comment encoding already is — not of a per-site filter a template author can forget. |
+| C2 | closed | A value written into a string literal is not encoded for it. Templates apply an escaper at some sites and not others; a `<log label>` holding a line break is written unescaped into a C++ and a Go string literal, so the emitted source does not compile. | Encoding is a property of the one door every template passes through, as comment encoding already is — not of a per-site filter a template author can forget. |
 | C3 | open | Readers do not decode what the comment encoder wrote. `SCE-MAP:` markers and Go `//line` directives are comments, so a reader parsing them back reads the encoded form. | `comment_text::decode` has at least one production caller. |
 | C4 | open | Only the C11 template still reads `_*` as a wildcard; `event_descriptor` reads it as the literal token it is spelled as. C11 therefore takes a `_*` transition on every event where the other six take it on none. The template's own prose states the divergence as justification, and cites §5.9.3 — the clause for Legal Data Values, not Event Descriptors. | `'_*'` does not appear in `tools/codegen/templates/c/`. |
 | C5 | open | Two defects removed with Kotlin's hoisted wildcard block are untested: the `else` branch carried no `cond`, and it hand-wrote its result instead of calling the renderer. They owe a fixture on the document-order axis, which is not the descriptor-spelling stem's axis. | A document-order stem exists under `integration_resources/` and carries its registration sites. |

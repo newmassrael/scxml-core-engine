@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 0d77ae53d69cdd94d0cc8b121e680f72c14761c8608aaf32566e7024b4b7a060
+// template-hash: 8242715e68643a19a75f6875fe977fcc89e2fa2554e7563e56c2a5e420cb7ec4
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -1062,7 +1062,9 @@ impl StatePolicy for Test230Policy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se.evaluate_expression(&sid, "_event.name") {
-                                Ok(val) => ::sce_rust_runtime::sce_log_info!("name is : {:?}", val),
+                                Ok(val) => {
+                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "name is ", val)
+                                }
                                 Err(e) => ::sce_rust_runtime::sce_log_error!(
                                     "Log expression eval failed: {}",
                                     e
@@ -1077,7 +1079,9 @@ impl StatePolicy for Test230Policy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se.evaluate_expression(&sid, "_event.type") {
-                                Ok(val) => ::sce_rust_runtime::sce_log_info!("type is : {:?}", val),
+                                Ok(val) => {
+                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "type is ", val)
+                                }
                                 Err(e) => ::sce_rust_runtime::sce_log_error!(
                                     "Log expression eval failed: {}",
                                     e
@@ -1093,7 +1097,7 @@ impl StatePolicy for Test230Policy {
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se.evaluate_expression(&sid, "_event.sendid") {
                                 Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("sendid is : {:?}", val)
+                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "sendid is ", val)
                                 }
                                 Err(e) => ::sce_rust_runtime::sce_log_error!(
                                     "Log expression eval failed: {}",
@@ -1110,7 +1114,7 @@ impl StatePolicy for Test230Policy {
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se.evaluate_expression(&sid, "_event.origin") {
                                 Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("origin is : {:?}", val)
+                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "origin is ", val)
                                 }
                                 Err(e) => ::sce_rust_runtime::sce_log_error!(
                                     "Log expression eval failed: {}",
@@ -1126,9 +1130,11 @@ impl StatePolicy for Test230Policy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se.evaluate_expression(&sid, "_event.origintype") {
-                                Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("origintype is : {:?}", val)
-                                }
+                                Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                    "{}: {:?}",
+                                    "origintype is ",
+                                    val
+                                ),
                                 Err(e) => ::sce_rust_runtime::sce_log_error!(
                                     "Log expression eval failed: {}",
                                     e
@@ -1143,9 +1149,11 @@ impl StatePolicy for Test230Policy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se.evaluate_expression(&sid, "_event.invokeid") {
-                                Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("invokeid is : {:?}", val)
-                                }
+                                Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                    "{}: {:?}",
+                                    "invokeid is ",
+                                    val
+                                ),
                                 Err(e) => ::sce_rust_runtime::sce_log_error!(
                                     "Log expression eval failed: {}",
                                     e
@@ -1160,7 +1168,9 @@ impl StatePolicy for Test230Policy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se.evaluate_expression(&sid, "_event.data") {
-                                Ok(val) => ::sce_rust_runtime::sce_log_info!("data is : {:?}", val),
+                                Ok(val) => {
+                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "data is ", val)
+                                }
                                 Err(e) => ::sce_rust_runtime::sce_log_error!(
                                     "Log expression eval failed: {}",
                                     e

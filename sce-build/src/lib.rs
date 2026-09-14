@@ -119,6 +119,7 @@ pub mod generator_witness;
 /// decision rather than each re-spelling the list.
 pub mod host_processor_analyzer;
 pub mod kotlin;
+pub mod literal_text;
 /// The stdout manifest wire surface — the single JSON line
 /// `sce-codegen` writes on success. Shape, schema-file lockstep, and
 /// instance validation live together here; `SCE_ERROR_CONTRACT.md` §10

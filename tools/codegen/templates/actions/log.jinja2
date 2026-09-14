@@ -1,6 +1,14 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
+{# An author's `label` and `expr` are ARGUMENTS to SCE_LOG_*, never part of
+   its format string. SCE_LOG_* expands to `fmt`, where `{` opens a
+   replacement field, so a label reading `brace{0}here` spliced into the
+   format string is a second placeholder with no argument behind it and the
+   file does not compile — measured 2026-09-14. Escaping cannot fix that:
+   `\{` is not how fmt escapes a brace, and the value is not wrong, its
+   POSITION was. `generator::register_template` escapes each of these for the
+   literal it sits in (`literal_text`), which is the other half. #}
 // W3C SCXML 4.7: <log>
 {% if action.expr %}
 {% if model.needs_script_engine %}
@@ -9,15 +17,15 @@
     auto& scriptEngine = getScriptEngine();
     auto logResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.expr | to_script_source_expr }}).get();
     if (::SCE::ScriptResultUtils::isSuccess(logResult)) {
-        SCE_LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::SCE::ScriptResultUtils::resultToString(logResult));
+        SCE_LOG_INFO("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, "{{ action.label }}"{% endif %}, ::SCE::ScriptResultUtils::resultToString(logResult));
     } else {
-        SCE_LOG_ERROR("Failed to evaluate log expression: {{ action.expr | escape_cpp }}");
+        SCE_LOG_ERROR("Failed to evaluate log expression: {}", "{{ action.expr }}");
     }
 }
 {% else %}
 // Convert JavaScript single quotes to C++ double quotes for string literals
-SCE_LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", {{ action.expr | replace("'", '"') }});
+SCE_LOG_INFO("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, "{{ action.label }}"{% endif %}, {{ action.expr | replace("'", '"') }});
 {% endif %}
 {% else %}
-SCE_LOG_INFO("{{ action.label }}");
+SCE_LOG_INFO("{}", "{{ action.label }}");
 {% endif %}

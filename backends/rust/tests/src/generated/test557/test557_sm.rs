@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 0d77ae53d69cdd94d0cc8b121e680f72c14761c8608aaf32566e7024b4b7a060
+// template-hash: 8242715e68643a19a75f6875fe977fcc89e2fa2554e7563e56c2a5e420cb7ec4
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -246,18 +246,8 @@ impl Test557Policy {
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
         // W3C SCXML B.2: XML inline content for 'var1' (global)
-        if let Err(e) = se.set_variable_as_dom(
-            &sid,
-            "var1",
-            r#"<books xmlns="">
-     <book title="title1"></book>
-     <book title="title2"></book>
-   </books>"#,
-        ) {
-            ::sce_rust_runtime::sce_log_error!(
-                "Failed to set DOM variable 'var1' in global: {}",
-                e
-            );
+        if let Err(e) = se.set_variable_as_dom(&sid, "var1", "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>") {
+            ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'var1' in global: {}", e);
         }
 
         // W3C SCXML 5.2.2: Load variable 'var2' from src (global)
@@ -303,22 +293,9 @@ impl Test557Policy {
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
         // W3C SCXML B.2: XML inline content for 'var1' (global)
-        if let Err(e) = se.set_variable_as_dom(
-            &sid,
-            "var1",
-            r#"<books xmlns="">
-     <book title="title1"></book>
-     <book title="title2"></book>
-   </books>"#,
-        ) {
-            ::sce_rust_runtime::sce_log_error!(
-                "Failed to set DOM variable 'var1' in global: {}",
-                e
-            );
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                Test557Event::ErrorExecution,
-                "<data id='var1'> XML content could not be parsed",
-            ));
+        if let Err(e) = se.set_variable_as_dom(&sid, "var1", "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>") {
+            ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'var1' in global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test557Event::ErrorExecution, "<data id='var1'> XML content could not be parsed"));
         }
 
         // W3C SCXML 5.2.2: Load variable 'var2' from src (global)

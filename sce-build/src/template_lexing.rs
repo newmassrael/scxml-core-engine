@@ -16,12 +16,18 @@
 //! copy next to a production copy would be two answers to where a comment
 //! ends — the arrangement this repository's Zero Duplication rule forbids.
 //!
-//! # Every character gets one of four classes
+//! # Every character gets one of five classes
 //!
 //! [`Class`] rather than a blanked string, because readers want different
 //! things from the same walk: the encoder needs to know which class a tag sits
 //! in, a gate looking for names in running code blanks comments and keeps
 //! literals, and a gate comparing two renderings blanks both.
+//!
+//! A string literal is two of those five. Whether the literal processes escape
+//! sequences decides what a value written into it must be — escaped, for
+//! [`Class::Literal`]; left exactly as it is, for [`Class::RawLiteral`], where
+//! escaping corrupts instead of protecting — so the walk answers it rather
+//! than leaving each reader to guess from the delimiter.
 //!
 //! # Template tags are opaque
 //!
@@ -106,8 +112,18 @@ pub enum Class {
     Code,
     /// A comment, in the emitted language or in the template.
     Comment,
-    /// A string literal, delimiters included.
+    /// A string literal that processes escape sequences, delimiters included.
+    /// A value written into one is made safe by escaping it.
     Literal,
+    /// A string literal that processes NO escape sequence: Go's `` ` ``, Rust's
+    /// `r#"…"#`, C++'s `R"d(…)d"`, Kotlin's `"""`. Separate from [`Literal`]
+    /// because escaping a value for one CORRUPTS it — a `\"` written into a Go
+    /// raw string is a backslash followed by a quote, not a quote — so the
+    /// encoding a value needs here is not the escaper but a different rule
+    /// entirely, which [`crate::literal_text`] applies.
+    ///
+    /// [`Literal`]: Class::Literal
+    RawLiteral,
     /// A literal the language reads as documentation because it opens a line:
     /// Python's docstring. Prose to a reader looking for citations, and still a
     /// literal to a reader deciding what a value written into it must be
@@ -272,6 +288,123 @@ pub fn applies_last_to_the_whole_value(tag: &str, filter: &str) -> bool {
         && !tag_segments(tag).iter().any(|s| has_top_level_operator(s))
 }
 
+/// One `{% set NAME = VALUE %}` occurrence.
+///
+/// Here rather than beside either of its readers: a binding is a lexical fact
+/// about a template, and both the Lua-seam scan (which asks where a laundered
+/// value is emitted) and the string-literal door (which asks whether a value
+/// acquired its escaper at the binding) have to agree on what the template
+/// bound. Two parsers would be two answers.
+pub struct SetBinding<'a> {
+    /// The name bound.
+    pub name: String,
+    /// Everything right of the `=`, as written.
+    pub value: &'a str,
+    /// The whole `{% … %}` span, delimiters included — the needle a line
+    /// search finds, and what a refusal prints.
+    pub span: &'a str,
+    /// 0-based index into the lines the bindings were read from.
+    pub line: usize,
+}
+
+/// Every `{% set … %}` in the template.
+///
+/// `set` and nothing else. `{% if %}` and `{% for %}` TEST a value; `set`
+/// BINDS one, and only a bound value can be emitted somewhere the test was
+/// not. Widening this to every statement would report each
+/// `{% if action.expr %}` as a site and hold a refusal shut forever.
+pub fn set_bindings<'a>(lines: &[&'a str]) -> Vec<SetBinding<'a>> {
+    let mut bindings = Vec::new();
+    for (index, line) in lines.iter().copied().enumerate() {
+        let mut rest = line;
+        let mut offset = 0usize;
+        while let Some(open) = rest.find("{%") {
+            let after = &rest[open + 2..];
+            let Some(close) = after.find("%}") else { break };
+            let inner = &after[..close];
+            let span_start = offset + open;
+            let span_end = span_start + 2 + close + 2;
+            let span = &line[span_start..span_end];
+            // `{%-` / `-%}` whitespace control is part of the delimiter, not
+            // of the statement.
+            let statement = inner
+                .trim()
+                .trim_start_matches('-')
+                .trim_end_matches('-')
+                .trim();
+            if let Some(assignment) = statement.strip_prefix("set ") {
+                // `==` is a comparison inside a larger expression, not the
+                // binding's own `=`.
+                if let Some((name, value)) = assignment.split_once('=') {
+                    if !value.starts_with('=') {
+                        bindings.push(SetBinding {
+                            name: name.trim().to_string(),
+                            value,
+                            span,
+                            line: index,
+                        });
+                    }
+                }
+            }
+            offset = span_end;
+            rest = &line[offset..];
+        }
+    }
+    bindings
+}
+
+/// The single name a tag renders, when it renders exactly one and applies
+/// nothing to it.
+///
+/// `{{ item_loc }}` answers `item_loc`; `{{ item_loc | length }}` and
+/// `{{ a ~ item_loc }}` answer `None`, for the reason
+/// [`applies_last_to_the_whole_value`] gives — a filter or an operator means
+/// what reaches the output is no longer that name's value.
+pub fn tag_renders_bare_name(tag: &str) -> Option<String> {
+    let segments = tag_segments(tag);
+    if segments.len() != 1 || has_top_level_operator(&segments[0]) {
+        return None;
+    }
+    let name = segments[0].trim();
+    let is_name = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+    is_name.then(|| name.to_string())
+}
+
+/// `{{- value -}}` rewritten as `{{- (value) | filter -}}`.
+///
+/// Parenthesised because a filter binds tighter than every operator:
+/// `{{ a ~ b | f }}` would route `b` and write `a` raw — the same reason
+/// [`applies_last_to_the_whole_value`] refuses a tag carrying one.
+/// Whitespace-control markers are preserved on both sides, because they are
+/// part of what the author wrote about the surrounding text and not about the
+/// value.
+///
+/// One definition rather than one per pass: both encoding doors — the comment
+/// one and the string-literal one — wrap a value in a filter, and a second
+/// copy is a second place for the parenthesising rule to be got wrong.
+pub fn routed_through(tag: &str, filter: &str) -> String {
+    let Some(inner) = tag.strip_prefix("{{").and_then(|t| t.strip_suffix("}}")) else {
+        // Unterminated: the template engine reports it, and a rewrite would
+        // only move the report away from what the author wrote.
+        return tag.to_string();
+    };
+    let (open_control, inner) = match inner.strip_prefix(['-', '+']) {
+        Some(rest) => (&inner[..1], rest),
+        None => ("", inner),
+    };
+    let (inner, close_control) = match inner.strip_suffix(['-', '+']) {
+        Some(rest) => (rest, &inner[inner.len() - 1..]),
+        None => (inner, ""),
+    };
+    format!(
+        "{{{{{open_control} ({}) | {filter} {close_control}}}}}",
+        inner.trim()
+    )
+}
+
 fn has_top_level_operator(segment: &str) -> bool {
     let mut flat = String::new();
     let mut depth = 0i32;
@@ -384,8 +517,7 @@ struct Rules {
     block: &'static [(&'static str, &'static str)],
     /// Whether a block comment may contain another.
     nests: bool,
-    /// String delimiters, longest first, paired with whether a backslash
-    /// escapes inside them.
+    /// String delimiters, longest first.
     ///
     /// ⚠ The single quote is absent from every C-family arm, and that is a
     /// measured decision rather than an oversight. C++ writes digit separators
@@ -399,12 +531,19 @@ struct Rules {
     /// comment can hide inside one. Python keeps its `'` because there it
     /// delimits a full string, and Python has no digit separator spelled that
     /// way.
-    strings: &'static [(&'static str, bool)],
+    strings: &'static [StringDelim],
     /// Delimiters whose content reads as prose when the literal begins a line
     /// — Python's docstring.
     prose_when_line_initial: &'static [&'static str],
     /// C++ raw strings: `R"delim( ... )delim"`.
     cpp_raw: bool,
+    /// Rust raw strings: `r"…"`, `r#"…"#`, `r##"…"##`, with an optional `b`
+    /// prefix. Their `#` count is part of the closing delimiter, which is why
+    /// they cannot be read as an ordinary `"` literal: `r#"<a b="c">"#` ends
+    /// at the `"#`, and a lexer without this arm ends it at the `"` before
+    /// `c` — the reading that put an interpolation's context two classes
+    /// away from the truth.
+    rust_raw: bool,
     /// Whether a backslash immediately before a line break joins the next line
     /// to this one, comments included. C and C++ splice lines before they look
     /// for comments at all, so `// note \` makes the NEXT line a comment too —
@@ -418,15 +557,81 @@ struct Rules {
 /// The template tags whose content is the template's code.
 const TEMPLATE_TAGS: &[(&str, &str)] = &[("{{", "}}"), ("{%", "%}")];
 
+/// One string delimiter, and the two independent facts a reader needs about
+/// what it opens.
+///
+/// ⚠ The two are NOT each other's negation, which is why they are two fields
+/// rather than one. Python's `'''` ends at three quotes whatever precedes them
+/// — so a backslash does not decide where it ends — and it still reads `\n` as
+/// a newline, so a value escaped for it is correct. Reading one fact off the
+/// other classified Python's docstrings as raw and would have left every value
+/// written into one unescaped.
+#[derive(Clone, Copy)]
+struct StringDelim {
+    /// The delimiter, which closes the literal as well as opening it.
+    delim: &'static str,
+    /// Whether a backslash escapes the next character. A LEXING fact: it says
+    /// where the literal ENDS.
+    escapes: bool,
+    /// Whether the literal processes no escape sequence at all. An ENCODING
+    /// fact: it says what a value written INSIDE must be, and a value escaped
+    /// for a raw literal is corrupted rather than protected.
+    raw: bool,
+}
+
+/// A literal whose escapes work: escaping a value for it is what makes it safe.
+const fn escaped(delim: &'static str) -> StringDelim {
+    StringDelim {
+        delim,
+        escapes: true,
+        raw: false,
+    }
+}
+
+/// A multi-character delimiter a backslash cannot end early, whose escapes
+/// nevertheless work — Python's triple quotes.
+const fn escaped_undelimitable(delim: &'static str) -> StringDelim {
+    StringDelim {
+        delim,
+        escapes: false,
+        raw: false,
+    }
+}
+
+/// A literal that processes no escape at all.
+const fn raw(delim: &'static str) -> StringDelim {
+    StringDelim {
+        delim,
+        escapes: false,
+        raw: true,
+    }
+}
+
+// The per-syntax delimiter tables, longest delimiter first. Named `const`
+// items rather than slice literals inside [`Rules`]: a call to a `const fn` is
+// not promoted to `'static` where it is written, so a table built inline would
+// be a temporary the borrow outlives.
+const C_FAMILY_STRINGS: &[StringDelim] = &[escaped("\"")];
+const GO_STRINGS: &[StringDelim] = &[raw("`"), escaped("\"")];
+const KOTLIN_STRINGS: &[StringDelim] = &[raw("\"\"\""), escaped("\"")];
+const PYTHON_STRINGS: &[StringDelim] = &[
+    escaped_undelimitable("\"\"\""),
+    escaped_undelimitable("'''"),
+    escaped("\""),
+    escaped("'"),
+];
+const RUST_STRINGS: &[StringDelim] = &[escaped("\"")];
+
 impl Rules {
     fn c_family() -> Self {
         Rules {
             line: &["//"],
             block: &[("/*", "*/")],
             nests: false,
-            strings: &[("\"", true)],
+            strings: C_FAMILY_STRINGS,
             prose_when_line_initial: &[],
             cpp_raw: true,
+            rust_raw: false,
             line_splices: true,
             opaque: &[],
         }
@@ -436,23 +641,27 @@ impl Rules {
             line: &["//"],
             block: &[("/*", "*/")],
             nests: false,
-            strings: &[("`", false), ("\"", true)],
+            strings: GO_STRINGS,
             prose_when_line_initial: &[],
             cpp_raw: false,
+            rust_raw: false,
             line_splices: false,
             opaque: &[],
         }
     }
     fn kotlin() -> Self {
-        // Kotlin's `"""` is an ordinary string; its documentation comment is
-        // `/** */`, which the block arm already covers.
+        // Kotlin's documentation comment is `/** */`, which the block arm
+        // already covers. Its `"""` is a RAW string — `\n` inside one is a
+        // backslash and an `n` — and a `$` opens a template expression there
+        // as it does in every Kotlin literal.
         Rules {
             line: &["//"],
             block: &[("/*", "*/")],
             nests: true,
-            strings: &[("\"\"\"", false), ("\"", true)],
+            strings: KOTLIN_STRINGS,
             prose_when_line_initial: &[],
             cpp_raw: false,
+            rust_raw: false,
             line_splices: false,
             opaque: &[],
         }
@@ -462,23 +671,25 @@ impl Rules {
             line: &["#"],
             block: &[],
             nests: false,
-            strings: &[("\"\"\"", false), ("'''", false), ("\"", true), ("'", true)],
+            strings: PYTHON_STRINGS,
             prose_when_line_initial: &["\"\"\"", "'''"],
             cpp_raw: false,
+            rust_raw: false,
             line_splices: false,
             opaque: &[],
         }
     }
-    /// Rust as a template emits it. Raw strings and lifetimes are not
-    /// modelled: a `'` never delimits here, for the reason C-family's does not.
+    /// Rust as a template emits it. Lifetimes are not modelled: a `'` never
+    /// delimits here, for the reason C-family's does not.
     fn rust() -> Self {
         Rules {
             line: &["//"],
             block: &[("/*", "*/")],
             nests: true,
-            strings: &[("\"", true)],
+            strings: RUST_STRINGS,
             prose_when_line_initial: &[],
             cpp_raw: false,
+            rust_raw: true,
             line_splices: false,
             opaque: &[],
         }
@@ -493,6 +704,7 @@ impl Rules {
             strings: &[],
             prose_when_line_initial: &[],
             cpp_raw: false,
+            rust_raw: false,
             line_splices: false,
             opaque: &[],
         }
@@ -514,11 +726,30 @@ fn classify_chars(s: &[char], rules: &Rules) -> Vec<Class> {
             i = end;
             continue;
         }
-        // A string literal first: a `//` inside one is data, and `http://` in a
-        // URL is the case that proves it.
-        if let Some((delim, escapes)) = opening_string(s, i, rules) {
-            let end = end_of_string(s, i, delim, escapes, rules);
-            let kind = if rules.prose_when_line_initial.contains(&delim) && begins_a_line(s, i) {
+        // A prefixed raw string before a plain one: `r#"…"#` begins at the
+        // `r`, and reading it from its `"` instead ends the literal at the
+        // first quote the author's text contains.
+        if rules.rust_raw {
+            if let Some(end) = end_of_rust_raw_string(s, i) {
+                mark(&mut class, i, end, Class::RawLiteral);
+                i = end;
+                continue;
+            }
+        }
+        if rules.cpp_raw {
+            if let Some(end) = end_of_cpp_raw_string(s, i) {
+                mark(&mut class, i, end, Class::RawLiteral);
+                i = end;
+                continue;
+            }
+        }
+        // A string literal before a comment: a `//` inside one is data, and
+        // `http://` in a URL is the case that proves it.
+        if let Some(delim) = opening_string(s, i, rules) {
+            let end = end_of_string(s, i, delim, rules);
+            let kind = if delim.raw {
+                Class::RawLiteral
+            } else if rules.prose_when_line_initial.contains(&delim.delim) && begins_a_line(s, i) {
                 Class::DocLiteral
             } else {
                 Class::Literal
@@ -526,13 +757,6 @@ fn classify_chars(s: &[char], rules: &Rules) -> Vec<Class> {
             mark(&mut class, i, end, kind);
             i = end;
             continue;
-        }
-        if rules.cpp_raw {
-            if let Some(end) = end_of_cpp_raw_string(s, i) {
-                mark(&mut class, i, end, Class::Literal);
-                i = end;
-                continue;
-            }
         }
         if rules.line.iter().any(|m| starts_with(s, i, m)) {
             let start = i;
@@ -615,33 +839,75 @@ fn begins_a_line(s: &[char], at: usize) -> bool {
 }
 
 /// The string delimiter opening at `at`, if one does.
-fn opening_string(s: &[char], at: usize, rules: &Rules) -> Option<(&'static str, bool)> {
+fn opening_string(s: &[char], at: usize, rules: &Rules) -> Option<StringDelim> {
     rules
         .strings
         .iter()
-        .find(|(d, _)| starts_with(s, at, d))
+        .find(|d| starts_with(s, at, d.delim))
         .copied()
 }
 
 /// Where the string opening at `at` ends, one past its closing delimiter.
-fn end_of_string(s: &[char], at: usize, delim: &str, escapes: bool, rules: &Rules) -> usize {
-    let width = delim.chars().count();
+fn end_of_string(s: &[char], at: usize, delim: StringDelim, rules: &Rules) -> usize {
+    let width = delim.delim.chars().count();
     let mut i = at + width;
     while i < s.len() {
         if let Some(end) = end_of_opaque(s, i, rules) {
             i = end;
             continue;
         }
-        if escapes && s[i] == '\\' {
+        if delim.escapes && s[i] == '\\' {
             i += 2;
             continue;
         }
-        if starts_with(s, i, delim) {
+        if starts_with(s, i, delim.delim) {
             return i + width;
         }
         i += 1;
     }
     s.len()
+}
+
+/// Where a Rust raw string `r"`, `r#"`, `r##"` … opening at `at` ends, if one
+/// does. An optional `b` prefix is part of the token and is accepted.
+///
+/// The closing delimiter carries the same number of `#` as the opening one,
+/// which is the whole point of the form and the reason it needs its own arm:
+/// nothing inside ends it early.
+fn end_of_rust_raw_string(s: &[char], at: usize) -> Option<usize> {
+    if s[at] != 'r' {
+        return None;
+    }
+    // `r` may be preceded by `b` (a raw byte string) and by nothing else that
+    // could make it the tail of an identifier — `for"` is not a raw string.
+    let before = if at > 0 && s[at - 1] == 'b' {
+        at - 1
+    } else {
+        at
+    };
+    if before > 0 && (s[before - 1].is_alphanumeric() || s[before - 1] == '_') {
+        return None;
+    }
+    let mut j = at + 1;
+    let mut hashes = 0usize;
+    while j < s.len() && s[j] == '#' {
+        hashes += 1;
+        j += 1;
+    }
+    if j >= s.len() || s[j] != '"' {
+        return None;
+    }
+    let closing: String = std::iter::once('"')
+        .chain(std::iter::repeat_n('#', hashes))
+        .collect();
+    let mut k = j + 1;
+    while k < s.len() {
+        if starts_with(s, k, &closing) {
+            return Some(k + closing.chars().count());
+        }
+        k += 1;
+    }
+    Some(s.len())
 }
 
 /// Where a C++ raw string `R"delim(` opening at `at` ends, if one does.
@@ -704,6 +970,60 @@ mod tests {
                 ("{{ z }}".to_string(), Class::Literal),
             ]
         );
+    }
+
+    /// A raw literal is its own class, in each syntax that has one.
+    ///
+    /// Told apart from [`Class::Literal`] because the two need OPPOSITE
+    /// treatment from a value written into them: escaping is what makes one
+    /// safe and what corrupts the other.
+    #[test]
+    fn a_raw_literal_is_not_an_escapable_one() {
+        for (syntax, template) in [
+            (Syntax::Go, "x := `{{ v }}`\n"),
+            (Syntax::Rust, "let x = r#\"{{ v }}\"#;\n"),
+            (Syntax::CFamily, "auto x = R\"xml({{ v }})xml\";\n"),
+            (Syntax::Kotlin, "val x = \"\"\"{{ v }}\"\"\"\n"),
+        ] {
+            let found = contexts(template, syntax);
+            assert_eq!(
+                found,
+                vec![("{{ v }}".to_string(), Class::RawLiteral)],
+                "{syntax:?}"
+            );
+        }
+    }
+
+    /// A Rust raw string ends at its own `"#`, not at the first quote its
+    /// content carries.
+    ///
+    /// The reading this replaces ended the literal at the `"` before `c`, so
+    /// everything after it read as CODE — and an interpolation two characters
+    /// later was classified as sitting in running Rust.
+    #[test]
+    fn a_rust_raw_string_is_not_ended_by_a_quote_it_contains() {
+        let t = "let x = r#\"<a b=\"c\">{{ v }}</a>\"#;\nlet y = {{ w }};\n";
+        assert_eq!(
+            contexts(t, Syntax::Rust),
+            vec![
+                ("{{ v }}".to_string(), Class::RawLiteral),
+                ("{{ w }}".to_string(), Class::Code),
+            ]
+        );
+    }
+
+    /// Python's triple quote is NOT raw: it ends at three quotes whatever
+    /// precedes them, and it still reads `\n` as a newline.
+    ///
+    /// The two facts were one field once, and reading the second off the first
+    /// called every docstring raw — which would have left every value written
+    /// into one unescaped.
+    #[test]
+    fn pythons_triple_quote_is_escapable_rather_than_raw() {
+        let doc = contexts("\"\"\"{{ v }}\"\"\"\n", Syntax::Python);
+        assert_eq!(doc, vec![("{{ v }}".to_string(), Class::DocLiteral)]);
+        let mid = contexts("x = \"\"\"{{ v }}\"\"\"\n", Syntax::Python);
+        assert_eq!(mid, vec![("{{ v }}".to_string(), Class::Literal)]);
     }
 
     #[test]

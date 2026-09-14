@@ -23,7 +23,9 @@
 #   closure: line is there anything left to do?
 #                 `closure: REACHED` only when every row measures closed.
 #
-# So this gate is GREEN today with fourteen rows open. That is deliberate: a
+# So this gate is GREEN today with rows still open — the sweep below prints
+# how many, and a count written here would be stale the round after it was
+# written. That is deliberate: a
 # gate that went red for unfinished work could not be run in the push path at
 # all, and the thing worth guarding is not that the work is unfinished -- it
 # is that the record of what is unfinished stays true.

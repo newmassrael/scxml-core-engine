@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 0d77ae53d69cdd94d0cc8b121e680f72c14761c8608aaf32566e7024b4b7a060
+// template-hash: 8242715e68643a19a75f6875fe977fcc89e2fa2554e7563e56c2a5e420cb7ec4
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -803,7 +803,9 @@ impl StatePolicy for Test178Policy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se.evaluate_expression(&sid, "_event.raw") {
-                                Ok(val) => ::sce_rust_runtime::sce_log_info!("_event : {:?}", val),
+                                Ok(val) => {
+                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "_event ", val)
+                                }
                                 Err(e) => ::sce_rust_runtime::sce_log_error!(
                                     "Log expression eval failed: {}",
                                     e

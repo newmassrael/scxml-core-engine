@@ -77,8 +77,10 @@
 //!   writes `| comment_text` itself. The rewrite leaves a tag that already
 //!   applies the filter last, to its whole value, as it is.
 //! - **A value written into a string literal is not this module's.** Its
-//!   encoder is the literal's escaper, which differs per language, and that
-//!   rule is registered as open in `docs/SCE_ACCEPTED_SUBSET.md`.
+//!   encoder is the literal's escaper, which differs per language, and it is
+//!   applied at the same door by [`crate::literal_text`]. The two passes
+//!   compose because the classes do not overlap: a character is in a comment
+//!   or in a literal, never both.
 
 use std::borrow::Cow;
 
@@ -110,35 +112,11 @@ pub fn encode_template_comments(template: &str, syntax: Syntax) -> Cow<'_, str> 
     let mut at = 0usize;
     for site in &sites {
         out.extend(&chars[at..site.start]);
-        out.push_str(&routed_through_the_filter(&site.tag));
+        out.push_str(&crate::template_lexing::routed_through(&site.tag, FILTER));
         at = site.end;
     }
     out.extend(&chars[at..]);
     Cow::Owned(out)
-}
-
-/// `{{- value -}}` as `{{- (value) | comment_text -}}`.
-///
-/// Parenthesised because a filter binds tighter than every operator:
-/// `{{ a ~ b | comment_text }}` would encode `b` and write `a` raw.
-fn routed_through_the_filter(tag: &str) -> String {
-    let Some(inner) = tag.strip_prefix("{{").and_then(|t| t.strip_suffix("}}")) else {
-        // Unterminated: the template engine reports it, and a rewrite would
-        // only move the report away from what the author wrote.
-        return tag.to_string();
-    };
-    let (open_control, inner) = match inner.strip_prefix(['-', '+']) {
-        Some(rest) => (&inner[..1], rest),
-        None => ("", inner),
-    };
-    let (inner, close_control) = match inner.strip_suffix(['-', '+']) {
-        Some(rest) => (rest, &inner[inner.len() - 1..]),
-        None => (inner, ""),
-    };
-    format!(
-        "{{{{{open_control} ({}) | {FILTER} {close_control}}}}}",
-        inner.trim()
-    )
 }
 
 /// Encode `text` for a comment body. See the module docs for the grammar.
