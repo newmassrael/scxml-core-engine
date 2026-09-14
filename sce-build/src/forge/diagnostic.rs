@@ -16002,6 +16002,24 @@ mod anchor_contract_tests {
     /// awaiting a resolver — nothing is known about it at all, and the
     /// missing piece is a scenario.
     ///
+    /// ⚠⚠ THE COUNT HAS A CEILING, and it is not the number of codes.
+    /// `run_scenario` drives six stages — the parser,
+    /// `check_strict_unresolved`, `can_generate_static`,
+    /// `lint_statechart`, `ecmascript_acceptance::refusals` and
+    /// `validate_no_std_compatibility`. A code raised anywhere else
+    /// cannot be reached by ANY scenario, so it can never leave the
+    /// bucket by being run. Measured 2026-09-14: the mesh family is
+    /// exactly that case — `compile_scxml_with_imports` validates
+    /// deploy links during a statechart compile, so those codes are
+    /// reachable in the real pipeline and unreachable from here.
+    ///
+    /// So `NotYetMeasured` still mixes two populations: codes nobody
+    /// has looked at, and codes this harness cannot look at. Do not
+    /// read the number below as work a scenario author can finish.
+    /// Splitting it needs a derivation of which stage raises each
+    /// code, which the tree does not have — every attempt to count it
+    /// from producer names measured the grep instead of the tree.
+    ///
     /// This does not move the classification, because it cannot:
     /// [`anchor_carriage`] is a compile-time match and the corpus is
     /// test-only, and coupling the two would make production code
@@ -16035,7 +16053,9 @@ mod anchor_contract_tests {
             "anchor roster: {} code(s) total, {} exercised by a scenario; \
              of the `NotYetMeasured` bucket, {debt_with_scenario} were \
              executed and did not carry, {} are UNMEASURED — no scenario \
-             raises them, so nothing is known about them",
+             raises them, so nothing is known about them (and some of \
+             them no scenario CAN raise: this harness drives six stages, \
+             and a code raised outside them is out of its reach)",
             ALL_DIAGNOSTIC_CODES.len(),
             exercised.len(),
             debt_unmeasured.len(),
