@@ -15259,7 +15259,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // Same, and found by derivation rather than by trying
             // codes: its producer lives under `ecmascript/`, which is
             // what makes it reachable from a statechart at all.
-            | ExpressionLiteralNotCallable => Carries,
+            | ExpressionLiteralNotCallable
+            // Third by the same predicate. Three chosen that way, three
+            // landing on the first attempt; the two picked code-by-code
+            // earlier each cost a failed run and a re-aim.
+            | ExpressionParseMismatch => Carries,
 
             // Generation — Item 8 Atomic 7, the last stage that holds
             // the model and the fourth resolution point.
@@ -15371,7 +15375,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionStrictEquality
-            | ExpressionParseMismatch
             | ExpressionTypeCoercion
             | ExpressionGoTernaryUnsupported
             | ImportFileNotFound
@@ -16219,6 +16222,24 @@ mod anchor_contract_tests {
             // instance, and the roster's rule is that a reason is
             // earned by measurement rather than by argument.
             //
+            // `expression/parse-mismatch` — an unclosed group. Raised
+            // by the parser's `expect`, which is the only thing that
+            // reports "wanted this token, got that one"; `ecmascript/`
+            // is its home, so a statechart reaches it.
+            (
+                "expression/parse-mismatch",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript"
+                         sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                     <datamodel><data id="v" expr="0"/></datamodel>
+                     <state id="s0">
+                       <onentry>
+                         <assign location="v" expr="(1"/>
+                       </onentry>
+                     </state>
+                   </scxml>"#,
+            ),
             // `expression/literal-not-callable` — a call on a literal.
             // Chosen by derivation rather than one code at a time: of
             // the fifteen `ExprError` variants the acceptance walk can
