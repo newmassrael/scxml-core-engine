@@ -248,6 +248,15 @@ COST_MEASURED: dict[str, str] = {
     "forge-go": "2026-09-02",
     "http-endpoint-ssot": "2026-09-02",
     "license-ssot": "2026-09-02",
+    # Timed on the day it was written, five consecutive runs: 176 170 170 158
+    # 159 ms. `cost_s` is 0 because every one of them rounds there, and the
+    # spread is 18ms — narrow enough to say this is the gate's own cost and
+    # not the machine's, which mattered because two other agents' loops were
+    # running at the time and this tree's costs are not trustworthy to within
+    # a factor of two under that load. Nothing in it builds: it is grep over
+    # source (binaries and build trees pruned) plus one short Python pass
+    # over the AOT headers.
+    "nl-ir-closure": "2026-09-14",
     # `nostd-mcu` was re-timed on 2026-09-02 and LEFT `PACE_NORMALISED`: the
     # first entry to do so. Nine consecutive runs read
     #
@@ -351,6 +360,34 @@ GATES: dict[str, dict] = {
         "cost_s": 25,
         "cost_s_no_op": 0.111,
         "summary": "build target/debug/sce-codegen",
+    },
+    # The NL→IR closure ledger, measured against the tree it describes.
+    #
+    # `docs/SCE_NL_IR_CLOSURE.md` is a denominator — the closed list of what
+    # remains on SCE's side of the specification→IR path, written before and
+    # independently of whatever closes its rows. This gate is what keeps it
+    # from becoming prose: it measures every row and fails when the recorded
+    # status disagrees with the tree IN EITHER DIRECTION. A row recorded
+    # closed that the tree contradicts is a false green; a row recorded open
+    # that the tree has closed is a stale denominator.
+    #
+    # ⚠ It does NOT fail for unfinished work. The `closure:` line on stdout
+    # carries that answer, and the exit status carries whether the record is
+    # honest. Collapsing the two would make the gate unrunnable in the push
+    # path for as long as any row is open, which is the whole of its useful
+    # life.
+    #
+    # Catch-all trigger, for the endpoint-SSOT lane's reason: a row can close
+    # in a template, a header, a CMake list, a Rust module or the visualizer,
+    # and a `paths:` list narrowed to what anyone remembers misses the one
+    # nobody thought of. Affordable — 0.17s of grep plus one short Python
+    # pass, measured five times (176 170 170 158 159 ms) on a machine running
+    # two other agents' loops.
+    "nl-ir-closure": {
+        "workflows": ["nl-ir-closure.yml"],
+        "runner_workflow": True,
+        "cost_s": 0,
+        "summary": "the NL→IR closure ledger vs the tree it describes",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
     # break it, so the Rust trigger set is exactly right.
