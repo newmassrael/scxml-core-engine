@@ -752,6 +752,149 @@ fn unfiltered_carriers(gate: &str) -> Vec<String> {
         .collect()
 }
 
+/// The quoted patterns under a `paths-ignore:` key, in written order.
+fn ignore_patterns(on: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    for line in on.lines() {
+        let trimmed = line.trim();
+        if trimmed == "paths-ignore:" {
+            inside = true;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        let Some(item) = trimmed.strip_prefix("- ") else {
+            break; // the list ended
+        };
+        out.push(item.trim().trim_matches('\'').trim_matches('"').to_string());
+    }
+    out
+}
+
+/// Whether GitHub's filter `pattern` matches `path`.
+///
+/// ⚠ It understands four shapes and **panics on a fifth**, which is the
+/// point rather than a limitation. A matcher that quietly answered `false`
+/// for a pattern it could not read would report every unknown shape as
+/// "does not cover the workflow", turning this case green exactly when a
+/// new pattern arrives — the shape of failure where an absent answer reads
+/// as a passing one. Teaching it a new shape is a deliberate edit.
+///
+/// GitHub's semantics for the two wildcards: `*` does not cross `/`, `**`
+/// does.
+fn github_glob_matches(workflow: &str, pattern: &str, path: &str) -> bool {
+    if let Some(prefix) = pattern.strip_suffix("/**") {
+        return path.starts_with(&format!("{prefix}/"));
+    }
+    if let Some(suffix) = pattern.strip_prefix("**/*") {
+        return path.ends_with(suffix);
+    }
+    if let Some(suffix) = pattern.strip_prefix('*') {
+        // `*` does not cross `/`, so this can only match a bare file name.
+        return !path.contains('/') && path.ends_with(suffix);
+    }
+    if !pattern.contains('*') {
+        return path == pattern;
+    }
+    panic!(
+        "{workflow}: paths-ignore pattern {pattern:?} uses a glob shape this \
+         case does not understand. Teach `github_glob_matches` the shape — \
+         do not let it answer `false`, which would report the workflow as \
+         reachable without having checked."
+    );
+}
+
+/// A push that EDITS a workflow is a push that runs it.
+///
+/// Three ways to satisfy it, and a workflow needs one: declare no path
+/// filter, so every push reaches it; name its own path in an allow-list
+/// (`paths:`); or, in a deny-list (`paths-ignore:`), not be covered by it.
+/// A workflow that fails all three is edited without being run, so its next
+/// verdict is the first push that happens to touch something else — and the
+/// edit that broke it is not the one that reports.
+///
+/// ⚠ The two filter kinds take OPPOSITE evidence, and conflating them is
+/// how this case first read `cpp-suite.yml` as broken when it is fine: it
+/// declares `paths-ignore`, where naming yourself is what would exclude
+/// you. `declares_path_filter` deliberately collapses the two — for its own
+/// question, "does this narrow at all", they are the same — so this case
+/// asks which kind separately rather than reusing that answer.
+///
+/// # Why this exists now
+///
+/// `gate_registry.py`'s self-test says it in a comment, as settled fact:
+/// *"Every other workflow classifies its own edits by naming itself in its
+/// `paths:`. The unfiltered one has no such list to name itself in"* — and
+/// the `unfiltered-workflow-self` case rests on it, since a workflow that
+/// named itself would be classified and would not force the full run.
+///
+/// Nothing checked it. Measured 2026-09-14 the comment is true — 19
+/// filtered workflows all name their own path, 7 declare no filter, zero
+/// exceptions — but it is a fact about 26 files, not a structural property,
+/// so a 27th could falsify it in silence and take that self-test's premise
+/// with it. A filtered workflow omitting its own path is also the plain
+/// defect underneath: it is edited without being run, so the push that
+/// broke it is not the push that reports.
+#[test]
+fn a_push_that_edits_a_workflow_is_a_push_that_runs_it() {
+    let mut unreached: Vec<String> = Vec::new();
+    let all = workflows();
+    let mut examined = 0usize;
+    for (name, text) in &all {
+        let on = on_block(name, text);
+        if !declares_path_filter(&on) {
+            continue; // every push reaches it
+        }
+        examined += 1;
+        let own = format!(".github/workflows/{name}");
+        if on.lines().map(str::trim).any(|l| l == "paths-ignore:") {
+            // Deny-list: the edit runs it unless a pattern covers the file.
+            if let Some(pattern) = ignore_patterns(&on)
+                .into_iter()
+                .find(|p| github_glob_matches(name, p, &own))
+            {
+                unreached.push(format!(
+                    "  {name}: paths-ignore pattern {pattern:?} covers the \
+                     workflow's own path"
+                ));
+            }
+        } else {
+            // Allow-list: matched against the `on:` block alone rather than
+            // the whole document, so a mention in a job step or a trailing
+            // comment cannot satisfy it.
+            if !on.contains(name.as_str()) {
+                unreached.push(format!(
+                    "  {name}: paths: list does not name the workflow itself"
+                ));
+            }
+        }
+    }
+    assert!(
+        examined >= 15,
+        "only {examined} filtered workflow(s) examined; if the enumeration \
+         or the filter detection breaks, this case passes by looking at \
+         nothing"
+    );
+    assert!(
+        unreached.is_empty(),
+        "workflow(s) an edit does not run:\n{}\n\n\
+         Add the workflow's own path to its `paths:` list, or drop the \
+         filter. Until then the edit that breaks one of these lanes is not \
+         the push that reports it, and `gate_registry.py`'s \
+         `unfiltered-workflow-self` case rests on a premise the tree no \
+         longer satisfies.",
+        unreached.join("\n"),
+    );
+    assert!(
+        all.len() >= 20,
+        "only {} workflow(s) examined; a shrunken enumeration passes this \
+         for the wrong reason",
+        all.len(),
+    );
+}
+
 #[test]
 fn every_unfilterable_gate_runs_in_a_workflow_without_a_path_filter() {
     let mut unbacked = Vec::new();

@@ -266,6 +266,18 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // still not started, the oldest queued 5.7 hours. Nothing cancels them and
     // nothing runs them. The lever was traded, not the loss.
     ("mutation-rounds.yml", 49.8, 0, 10, 14),
+    // Landed 2026-09-14 with the closure ledger it measures, and reached this
+    // table by failing `every_workflow_is_classified` on the next round —
+    // which is the mechanism working: an unmeasured lane is red, not absent.
+    //
+    // ⚠ ONE run, so the median is a single observation and not a median.
+    // Measured 2026-09-14T05:5xZ over its own listing: created 04:00:37Z,
+    // updated 04:04:48Z, conclusion success — 4.2 minutes, no cancellation,
+    // no push left unanswered. Re-measure it once it has a window; the
+    // classification is not close (4.2 against a 17.6 gap) so a spread of a
+    // few minutes cannot move it, but the number is not yet what the column
+    // says it is.
+    ("nl-ir-closure.yml", 4.2, 0, 1, 0),
     // ⚠ REFUTED, and the row it replaces said the opposite. That row called
     // this lane "the standing evidence that the typical case is not the whole
     // distribution" and implied a repair was owed. Measured 2026-09-02 over

@@ -29,7 +29,7 @@ name: NL-IR Closure Ledger
 # paths anyone happens to remember misses exactly the one nobody thought of.
 # Affordable because the gate is grep and one short Python pass: 0.17s measured
 # over this tree across five consecutive runs (176 170 170 158 159 ms), on a
-# machine that was running two other agents' loops at the time.
+# machine that was running two other sessions' loops at the time.
 
 on:
   push:
