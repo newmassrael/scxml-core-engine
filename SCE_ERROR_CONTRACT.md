@@ -139,6 +139,25 @@ consumer may read absence as *nothing enclosing this location is
 anchored to a specification*, and act on it, without knowing which
 stage produced the record or how SCE is structured internally.
 
+⚠ **Not yet true for a consumer, and measured 2026-09-14.** The
+sentence above is the contract's intent and the maintainer can check
+it, because the table that separates *cannot carry* from *not yet
+wired* is a compile-time roster in Rust source. A consumer reads
+NDJSON and cannot see that table, so on the wire an absent field is
+still indistinguishable across three cases: no enclosing anchor (what
+this clause promises), a code whose subject is argv or the filesystem
+and so can never carry, and a code nothing has wired yet. Of 360
+codes, 22 are exercised by a scenario and **317 have never been
+executed at all** — for those, absence records that nobody has looked,
+not that nothing was anchored.
+
+⇒ What closes this is publishing the roster, so a consumer can ask of
+a code whether it carries at all rather than inferring it from an
+empty field. Until then, read absence as this clause says **only for a
+code the roster reports as carrying**; the guarantee is stated here
+with its bound rather than asserted flat, because a contract a reader
+cannot check is one they will trust anyway.
+
 What computes the answer is `anchor_index::AnchorIndex`, built while
 the document is parsed and carried on the model. It is keyed by
 position rather than by IR node because this clause is: an anchored
