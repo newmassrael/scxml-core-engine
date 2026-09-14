@@ -398,33 +398,49 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Every `.scxml` file in the tree, skipping what a build writes.
+/// Every `.scxml` document this repository COMMITS.
+///
+/// `git ls-files` is the enumeration source, the way `roadmap_marker_gate`
+/// and the other tree-wide targets here already do it, and the reason is the
+/// same: what a build writes and what a developer leaves lying around are not
+/// this tree's documents, and a gate that reads them answers a question about
+/// one machine.
+///
+/// ⚠ It replaced a hand-written directory skip list — `build`, `target`,
+/// `node_modules`, `dist`, `.git`, `wasm` — which is the shape this
+/// repository has been bitten by before. Measured 2026-09-14 the list was
+/// already wrong by 51 documents: it catches a directory literally named
+/// `build` and misses every other spelling of build output, so 47 synthesized
+/// `<invoke>` documents under `backends/go/tests/generated/`, 2 under
+/// `backends/python/tests/generated/` and 2 under a gitignored `claudedocs/`
+/// were being judged as though the repository had authored them — 786 walked
+/// against 735 committed.
+///
+/// That is not a tidiness point. Those documents are the GENERATOR'S OWN
+/// OUTPUT, so the sweep was asking whether SCE's codegen emits identifiers
+/// SCE accepts — a different question from the one this case states, and one
+/// whose answer no other checkout could reproduce. A hostile id emitted into
+/// a synthesized document would have reddened this case on a developer's
+/// machine and stayed green in CI.
 fn scxml_documents(root: &Path) -> Vec<PathBuf> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if path.is_dir() {
-                if matches!(
-                    name.as_ref(),
-                    "build" | "target" | "node_modules" | "dist" | ".git" | "wasm"
-                ) {
-                    continue;
-                }
-                walk(&path, out);
-            } else if name.ends_with(".scxml") {
-                out.push(path);
-            }
-        }
-    }
-    let mut out = Vec::new();
-    walk(root, &mut out);
-    out.sort();
-    out
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z", "*.scxml"])
+        .output()
+        .expect("git ls-files runs");
+    assert!(
+        out.status.success(),
+        "git ls-files must succeed; without it this case cannot say which \
+         documents the tree has and must not guess"
+    );
+    let mut documents: Vec<PathBuf> = String::from_utf8_lossy(&out.stdout)
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .map(|p| root.join(p))
+        .collect();
+    documents.sort();
+    documents
 }
 
 /// The files other documents pull in — template bodies and XInclude
