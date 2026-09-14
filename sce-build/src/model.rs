@@ -378,6 +378,40 @@ pub struct ElseIfBranch {
     pub actions: Vec<Action>,
 }
 
+/// One block of executable content nested directly inside an action,
+/// with everything a reader needs to handle it without naming the field
+/// it came from.
+///
+/// ⭐ `cond` is here because leaving it out is what kept readers on the
+/// raw fields. [`Action::nested_blocks`] used to yield the block alone,
+/// so anything that also needed the `<elseif>` condition selecting that
+/// block — the transition table's `elseif(...)` cell, the script-engine
+/// analyzer deciding whether a branch condition needs an engine — had to
+/// reach past the one definition and walk `elseif_branches` itself. A
+/// definition that answers only half the question is a definition its
+/// readers are forced to bypass.
+#[derive(Debug, Clone)]
+pub struct NestedBlock<'a> {
+    /// The field path a `node_path` names this block by.
+    pub path: String,
+    /// The condition that selects THIS block, when the block declares
+    /// one of its own — only `<elseif>` branches do. `then_actions` is
+    /// selected by the action's own `cond`, `else_actions` by nothing,
+    /// and `actions` is `<foreach>`'s body, so all three are `None`.
+    pub cond: Option<&'a str>,
+    pub actions: &'a [Action],
+}
+
+impl<'a> NestedBlock<'a> {
+    fn unguarded(path: &str, actions: &'a [Action]) -> Self {
+        NestedBlock {
+            path: path.to_string(),
+            cond: None,
+            actions,
+        }
+    }
+}
+
 impl Action {
     /// Every block of executable content nested DIRECTLY inside this
     /// action, in document order, each with the field path a `node_path`
@@ -402,18 +436,22 @@ impl Action {
     /// order. Rust cannot share one body between the two borrows; the
     /// test above pins both against the serialised model, so a block
     /// added to one and not the other goes red.
-    pub fn nested_blocks(&self) -> Vec<(String, &[Action])> {
-        let mut blocks: Vec<(String, &[Action])> = vec![
-            ("actions".to_string(), self.actions.as_slice()),
-            ("then_actions".to_string(), self.then_actions.as_slice()),
+    pub fn nested_blocks(&self) -> Vec<NestedBlock<'_>> {
+        let mut blocks: Vec<NestedBlock<'_>> = vec![
+            NestedBlock::unguarded("actions", self.actions.as_slice()),
+            NestedBlock::unguarded("then_actions", self.then_actions.as_slice()),
         ];
         for (k, branch) in self.elseif_branches.iter().enumerate() {
-            blocks.push((
-                format!("elseif_branches[{k}].actions"),
-                branch.actions.as_slice(),
-            ));
+            blocks.push(NestedBlock {
+                path: format!("elseif_branches[{k}].actions"),
+                cond: Some(branch.cond.as_str()),
+                actions: branch.actions.as_slice(),
+            });
         }
-        blocks.push(("else_actions".to_string(), self.else_actions.as_slice()));
+        blocks.push(NestedBlock::unguarded(
+            "else_actions",
+            self.else_actions.as_slice(),
+        ));
         blocks
     }
 
