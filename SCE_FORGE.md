@@ -159,7 +159,27 @@ No new binary or project is introduced. `sce-build` gains new templates for each
 
 ### 3.1 W3C Compliance
 
-W3C SCXML Section 3.1 explicitly allows elements and attributes from foreign namespaces. The `sce:` extension namespace is a standard XML extension mechanism — not a spec violation.
+The W3C SCXML 1.0 Recommendation does not say what a conforming processor does
+with foreign-namespace nodes. What it does provide:
+
+| Where | What it says | Normative? |
+|---|---|---|
+| Appendix G.7 *Custom Action Elements* | shows custom elements in another namespace (a CCXML `<ccxml:accept>`) as the intended shape for an extension | informative |
+| §4.10 *Extensibility of Executable Content* | implementations MAY provide additional executable content; it MUST NOT cause transitions | normative |
+| Appendix A.2 *Conforming Processors* | on a document "containing non-SCXML elements or attributes which are proprietary, or defined in a non-SCXML namespace, **its behavior is undefined**" | normative |
+
+So `sce:` is the shape the Recommendation anticipates for an extension, and it
+keeps SCE's names from colliding with W3C ones. It is **not** a guarantee that
+other tools ignore those nodes — A.2 leaves that undefined. What IS guaranteed
+is SCE's own policy, in the table below.
+
+⚠ **An earlier revision of this paragraph cited "W3C SCXML Section 3.1" as
+explicitly allowing foreign namespaces. Both halves were wrong.** §3.1 of the
+Recommendation is *Introduction*, it is informative, and it is about basic state
+machine notation — it says nothing about namespaces; and A.2 makes the processor
+behavior undefined rather than allowed. Re-derive against the Recommendation
+rather than trusting a sentence here: a snapshot is committed at
+`tools/mnemosyne-adoption/spec-snapshot/scxml-REC-20150901.html`.
 
 ```xml
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -167,13 +187,14 @@ W3C SCXML Section 3.1 explicitly allows elements and attributes from foreign nam
        sce:kind="statechart"
        initial="defaultSession">
   <!-- Standard W3C SCXML content -->
-  <!-- sce: attributes are ignored by standard parsers -->
+  <!-- sce: attributes carry no W3C meaning; what a non-SCE tool does
+       with them is undefined by the Recommendation (A.2) -->
 </scxml>
 ```
 
 #### Foreign Namespace Policy (non-`sce:` extensions)
 
-SCE accepts foreign-namespace elements and attributes (other than `sce:`) per W3C SCXML §3.1. The behavior is split across stages and documented here so downstream tooling can rely on it:
+SCE accepts foreign-namespace elements and attributes (other than `sce:`). The Recommendation leaves processor behavior undefined here (Appendix A.2), so what follows is SCE's own choice rather than a spec requirement. It is split across stages and documented so downstream tooling can rely on it:
 
 | Stage | Behavior on foreign-namespace nodes |
 |-------|-------------------------------------|
