@@ -15004,7 +15004,11 @@ pub enum NoAnchor {
     /// `SCE_ERROR_CONTRACT.md` §2.1.2 keys the index by POSITION — an
     /// anchored region is a span of the author's document — so a
     /// location with no line lies inside no span and nothing encloses
-    /// it. Eleven sites construct such a `Located`, and `ForgeError`
+    /// it. Nine production sites construct such a `Located` — a grep
+    /// finds eleven, and two of those synthesise a diagnostic inside a
+    /// test to keep the wire byte-stable, which is why the number is
+    /// stated as the population it is evidence about rather than as
+    /// what the search returned. `ForgeError`
     /// carries no position of its own for a wrapper to have
     /// discarded, so this is what the producer HAS rather than
     /// something anyone dropped.
@@ -16432,7 +16436,8 @@ mod anchor_contract_tests {
             // index by POSITION, so a coordinate with no line is
             // inside no span and no anchor can enclose it. That is not
             // a resolver's to fix and not a coordinate anyone dropped:
-            // 11 sites construct a positionless `Located`, `ForgeError`
+            // 9 production sites construct a positionless `Located`
+            // (a grep finds 11; two are test fixtures), `ForgeError`
             // carries no position of its own for a wrapper to discard,
             // and §2.2 sanctions the shape outright — the complaint
             // belongs to the document, not to a node in it.
