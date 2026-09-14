@@ -923,6 +923,37 @@ pub(crate) fn collect_sce_provenance(
 /// that cannot be read at all is the more basic failure, and the
 /// alternative would attach a half-read anchor list to the other
 /// rejection.
+/// An [`Action`] of `tag`, carrying every stamp an action gets from the
+/// element it was written as.
+///
+/// ⭐ The one way an action is born. There are three stamps — the source
+/// coordinate, the `sce:req` / `sce:provenance` pair, and the
+/// `sce:unresolved` markers — and they used to live inline at the single
+/// site that parses executable content. That made them unreachable to
+/// any OTHER builder, so the top-level `<script>`, which does not travel
+/// through that site, hand-copied the coordinate and silently took
+/// `Default` for the other two: an `sce:req` an author wrote on it was
+/// dropped at parse and no reader could have found it.
+///
+/// Keeping the three together here is what makes that shape impossible
+/// to repeat — a fourth stamp added below reaches every builder, where a
+/// fourth line added inline would have reached one.
+fn stamped_action(
+    tag: &str,
+    node: &roxmltree::Node,
+    source_name: &str,
+) -> Result<Action, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    let mut action = Action {
+        action_type: tag.to_string(),
+        source_location: source_location_of(node, source_name),
+        ..Default::default()
+    };
+    (action.req, action.provenance) =
+        collect_sce_traceability(node, || format!("<{tag}>"), source_name)?;
+    action.unresolved = collect_sce_unresolved(node, source_name);
+    Ok(action)
+}
+
 fn collect_sce_traceability(
     node: &roxmltree::Node,
     element_label_fn: impl Fn() -> String,
@@ -1546,7 +1577,7 @@ impl SCXMLParser {
         self.parse_datamodel(&root, &mut model, diag_label)?;
 
         // Parse global scripts
-        self.parse_global_scripts(&root, &mut model, base_dir, diag_label);
+        self.parse_global_scripts(&root, &mut model, base_dir, diag_label)?;
 
         // Parse Named Context declarations (must be before states for transforms)
         self.parse_sce_contexts(&root, &mut model, diag_label)?;
@@ -2054,13 +2085,18 @@ impl SCXMLParser {
         }))
     }
 
+    /// Returns `Err` when a global `<script>`'s own traceability is
+    /// malformed. It became fallible with [`stamped_action`]: reading an
+    /// author's `sce:req` is what can fail, and this element now reads
+    /// it like every other. Swallowing that here would put the top-level
+    /// `<script>` back outside the rules it is finally inside.
     fn parse_global_scripts(
         &mut self,
         root: &roxmltree::Node,
         model: &mut SCXMLModel,
         base_dir: Option<&Path>,
         source_name: &str,
-    ) {
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         for child in root.children() {
             if !child.is_element() || local_name(&child) != "script" {
                 continue;
@@ -2108,22 +2144,21 @@ impl SCXMLParser {
                 }
             }
 
-            model.global_scripts.push(Action {
-                action_type: "script".to_string(),
-                content: content.trim().to_string(),
-                // §synth-5-O: this `Action` is emission-eligible, so
-                // `forge::provenance` requires the coordinate. The
-                // top-level `<script>` does not travel through
-                // `parse_executable_content_single` — the site that
-                // stamps every other action — so the stamp has to
-                // happen here or the node reaches codegen with a
-                // silent `None`.
-                source_location: source_location_of(&child, source_name),
-                ..Default::default()
-            });
+            // §synth-5-O: this `Action` is emission-eligible, so
+            // `forge::provenance` requires the coordinate — and an
+            // author's `sce:req` / `sce:provenance` / `sce:unresolved`
+            // on it are as real here as on any other action. The
+            // top-level `<script>` does not travel through
+            // `parse_executable_content_single`, so it takes its stamps
+            // from `stamped_action`, the site that defines them, rather
+            // than copying the one it happened to need.
+            let mut script = stamped_action("script", &child, source_name)?;
+            script.content = content.trim().to_string();
+            model.global_scripts.push(script);
             // [`NeedsScriptEngineCause::GlobalScript`] —
             // derived post-parse from `model.global_scripts`.
         }
+        Ok(())
     }
 
     /// Pin every state element's `document_order` to its position in the
@@ -2976,14 +3011,7 @@ impl SCXMLParser {
             return Ok(None);
         }
         let tag = local_name(child);
-        let mut action = Action {
-            action_type: tag.clone(),
-            source_location: source_location_of(child, source_name),
-            ..Default::default()
-        };
-        (action.req, action.provenance) =
-            collect_sce_traceability(child, || format!("<{tag}>"), source_name)?;
-        action.unresolved = collect_sce_unresolved(child, source_name);
+        let mut action = stamped_action(&tag, child, source_name)?;
         match tag.as_str() {
             "raise" => {
                 action.event = child.attribute("event").unwrap_or("").to_string();
