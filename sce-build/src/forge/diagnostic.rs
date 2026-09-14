@@ -16199,6 +16199,26 @@ mod anchor_contract_tests {
     /// what each later atomic delivers.
     fn carrying_scenarios() -> Vec<(&'static str, &'static str)> {
         vec![
+            // ⚠ `validation/dynamic-features` is NOT a scenario, and
+            // the reason is worth more than the entry would have been:
+            // NO DOCUMENT CAN RAISE IT. Its one production site is
+            // `analyzer.rs`'s `if model.initial.is_empty()`, and the
+            // parser never leaves `initial` empty — a document that
+            // omits the attribute is given the default the spec
+            // prescribes for it, in `parser.rs`, which is where that
+            // clause is cited and bound. Tried
+            // 2026-09-14 with exactly that document: the guard
+            // answered "produced no diagnostic at all". The only other
+            // reference is a unit test that builds the model by hand,
+            // bypassing the parser, which is why the site looks live.
+            //
+            // So its registration is honest but for a reason the enum
+            // does not yet name — not awaiting a resolver, not lacking
+            // an authored artefact, but unreachable from the only
+            // input a scenario has. Left unfiled: this is one
+            // instance, and the roster's rule is that a reason is
+            // earned by measurement rather than by argument.
+            //
             // `expression/literal-not-callable` — a call on a literal.
             // Chosen by derivation rather than one code at a time: of
             // the fifteen `ExprError` variants the acceptance walk can
