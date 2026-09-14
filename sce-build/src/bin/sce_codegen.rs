@@ -1887,7 +1887,14 @@ enum Commands {
     /// registry so a build system need not parse JSON — knowledge kept
     /// only on the inside is absent from the outside.
     ///
-    /// One line per code, `<code>\t<carries|never>\t<reason>`.
+    /// One line per code, `<code>\t<carries|never|unknown>\t<reason>`.
+    ///
+    /// Three verdicts because the roster holds three states. `never`
+    /// is a claim about the code — nothing enclosing it could ever be
+    /// anchored. `unknown` is a claim about US: no scenario has run
+    /// that code, so the field's emptiness records that nobody looked.
+    /// Collapsing the second into the first would publish the stronger
+    /// sentence on evidence nobody has.
     ProvenanceRoster,
     /// Print the conformance fixture name list from a manifest. Build
     /// systems consume this so they don't need a native JSON parser
@@ -7610,11 +7617,22 @@ fn cmd_generate_conformance(
 /// publish 360 identical rows that decided nothing.
 fn cmd_provenance_roster() {
     use sce_build::forge::diagnostic::{
-        anchor_carriage, AnchorCarriage, Pipeline, ALL_DIAGNOSTIC_CODES,
+        anchor_carriage, AnchorCarriage, NoAnchor, Pipeline, ALL_DIAGNOSTIC_CODES,
     };
     for &code in ALL_DIAGNOSTIC_CODES {
         let (verdict, reason) = match anchor_carriage(code, Pipeline::Statechart) {
             AnchorCarriage::Carries => ("carries", String::new()),
+            // ⚠ THREE verdicts, not two. `NotYetMeasured` means nobody
+            // has run this code, which is not the same claim as "it
+            // cannot carry" — and publishing both as `never` told a
+            // consumer the stronger one. That was this command's own
+            // defect on the day it landed: the roster distinguishes
+            // ignorance from impossibility internally and the wire
+            // flattened them, which is the exact shape §2.1.2 exists
+            // to refuse one field over.
+            AnchorCarriage::Registered(NoAnchor::NotYetMeasured) => {
+                ("unknown", NoAnchor::NotYetMeasured.why().to_string())
+            }
             AnchorCarriage::Registered(why) => ("never", why.why().to_string()),
             // Unreachable by construction and asserted so by
             // `every_code_carries_the_enclosing_anchor_or_is_registered`:
