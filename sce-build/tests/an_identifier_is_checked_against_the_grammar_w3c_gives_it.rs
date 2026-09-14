@@ -15,7 +15,7 @@
 //! `SCXMLParser`, so it fails the moment the sweep stops being reached,
 //! whatever the source still spells.
 //!
-//! # The four things it measures
+//! # The five things it measures
 //!
 //! 1. A hostile value is refused, under the code its clause owns, naming
 //!    the value and the line the author must open.
@@ -25,7 +25,12 @@
 //! 3. The spellings W3C itself writes are ACCEPTED — including the two
 //!    where the two clauses disagree, which is where a grammar derived from
 //!    one of them alone breaks the other.
-//! 4. Every standalone document in this tree still parses. The claim "this
+//! 4. A `*` outside the two positions §3.12.1 defines one in is REFUSED.
+//!    Accepting such a spelling hands every backend a descriptor the clause
+//!    gives no meaning, and each then answers for itself — which is how one
+//!    document came to take a transition on every event in C11 and on none
+//!    in the other six.
+//! 5. Every standalone document in this tree still parses. The claim "this
 //!    grammar refuses nothing here" is re-measured against the tree rather
 //!    than carried as a number in a document.
 
@@ -322,6 +327,89 @@ fn the_spellings_w3c_writes_are_accepted() {
         "the accepted-spelling table shrank to {}; a shrinking table is how \
          an over-strict grammar stops being measured",
         W3C_SPELLINGS.len(),
+    );
+}
+
+/// The other half of the pair above: a `*` written anywhere §3.12.1 does not
+/// define one.
+///
+/// The clause defines exactly two wildcard positions — a descriptor that is
+/// solely `*`, and a trailing `.*` — and `W3C_SPELLINGS` holds both accepted.
+/// Every remaining place a `*` can be written is a spelling the clause gives
+/// no meaning to, and a spelling with no definition is one each reader
+/// downstream has to invent an answer for.
+///
+/// ⭐ Why this table is not a style preference. Its first row is here because
+/// it happened: the C11 template read `_*` as a wildcard and generated a
+/// transition taken on EVERY event, while the other six channels read it as
+/// the literal token it is written as and took it on none — one document, two
+/// answers, for a spelling no text defines. That is closure-ledger row C4.
+/// The repair gave those templates one definition to read instead of each
+/// keeping its own list, but a repair downstream only holds while every
+/// reader keeps agreeing; this is what stops the question being asked at all,
+/// because a document carrying such a spelling reaches no backend.
+const UNDEFINED_WILDCARD_SPELLINGS: &[(&str, &str)] = &[
+    (
+        "_*",
+        "read as a wildcard by the C11 template and as a literal by the \
+         other six channels — closure-ledger row C4",
+    ),
+    (
+        "*foo",
+        "a leading `*`; the clause's bare wildcard is the whole descriptor",
+    ),
+    (
+        "foo*",
+        "a trailing `*` with no `.` before it, so it is not the clause's `.*`",
+    ),
+    ("fo*o", "a `*` inside a token"),
+    (
+        "foo.*.bar",
+        "a `*` in a token that is not the last, so it ends nothing",
+    ),
+];
+
+#[test]
+fn a_star_outside_the_two_positions_the_clause_defines_is_refused_at_parse() {
+    const FLOOR: usize = 5;
+
+    let mut accepted: Vec<String> = Vec::new();
+    let mut examined = 0usize;
+    for (descriptor, why) in UNDEFINED_WILDCARD_SPELLINGS {
+        let document = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="s">
+  <state id="s"><transition event="{descriptor}" target="ok"/></state>
+  <final id="ok"/>
+</scxml>
+"#
+        );
+        examined += 1;
+        match refusal_code(&document, descriptor) {
+            Some(code) if code == "\"validation/event-name-grammar\"" => {}
+            Some(code) => accepted.push(format!(
+                "  event={descriptor:?} was refused as {code}, not under the \
+                 event-name grammar ({why})"
+            )),
+            None => accepted.push(format!("  event={descriptor:?} was ACCEPTED — {why}")),
+        }
+    }
+
+    println!(
+        "asked the parser about {examined} undefined `*` spelling(s); {} were not \
+         refused at the door",
+        accepted.len()
+    );
+    assert!(
+        accepted.is_empty(),
+        "W3C SCXML §3.12.1 defines a wildcard in two positions and no other, so \
+         a `*` elsewhere carries no meaning for a backend to agree on — and \
+         these reached the model, where each backend decides for itself:\n{}",
+        accepted.join("\n"),
+    );
+    assert!(
+        examined >= FLOOR,
+        "only {examined} spelling(s) examined; floor {FLOOR}"
     );
 }
 
