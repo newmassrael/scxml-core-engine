@@ -16196,6 +16196,17 @@ mod anchor_contract_tests {
     /// what each later atomic delivers.
     fn carrying_scenarios() -> Vec<(&'static str, &'static str)> {
         vec![
+            // ⚠ `expression/empty` was tried here on 2026-09-14 and
+            // is NOT a scenario: an `<assign expr="">` renders no site
+            // for the acceptance walk to judge, so the document falls
+            // through to the no_std gate and answers with that code
+            // instead — the guard said so. `ExprError::Empty` has two
+            // producers, `ecmascript/parser.rs` and `forge/expr.rs`,
+            // and an empty attribute reaches neither from a statechart:
+            // the value is gone before a site exists. Recorded rather
+            // than retried, because the next author's instinct is the
+            // same document.
+            //
             // `expression/invalid-lvalue` — an `<assign location>` that
             // is not an assignable target. Chosen because the
             // ECMAScript acceptance walk resolves its own anchors
