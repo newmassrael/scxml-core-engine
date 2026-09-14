@@ -6,12 +6,17 @@
 //!
 //! # The failure this exists for, which was live and green
 //!
-//! The roster distinguishes three states: a code demonstrated carrying
-//! the enclosing anchor, a code that can never carry, and a code no
-//! scenario has run. The command emitted two verdicts, so all 312 of
-//! the third kind published as `never` — telling every consumer they
-//! *can never carry*, which is the stronger sentence and one nobody
-//! had evidence for.
+//! The roster distinguished three states at the time: a code
+//! demonstrated carrying the enclosing anchor, a code that can never
+//! carry, and a code no scenario has run. The command emitted two
+//! verdicts, so all 312 of the third kind published as `never` —
+//! telling every consumer they *can never carry*, which is the
+//! stronger sentence and one nobody had evidence for.
+//!
+//! ⚠ It has since grown a fourth, `pending`, and the same collapse was
+//! found live in it (2026-09-15). The count above is deliberately left
+//! in the past tense rather than updated: it describes the day of the
+//! defect. [`VERDICTS`] is the only place the current set is stated.
 //!
 //! It survived the full `sce-build` suite, clippy, `tree-hygiene` and a
 //! push. Not because those gates are weak, but because **every one of
@@ -44,6 +49,7 @@ use std::process::Command;
 
 use sce_build::forge::diagnostic::{
     anchor_carriage, AnchorCarriage, NoAnchor, Pipeline, ALL_DIAGNOSTIC_CODES,
+    PROVENANCE_ROSTER_STATUS,
 };
 
 /// The generator binary. `env!` here rather than in a helper: it
@@ -52,9 +58,71 @@ use sce_build::forge::diagnostic::{
 /// own source.
 const CODEGEN: &str = env!("CARGO_BIN_EXE_sce-codegen");
 
-/// Every verdict the command may print. Three, because the roster has
-/// three states; a fourth spelling is a wire the table did not ask for.
-const VERDICTS: &[&str] = &["carries", "never", "unknown"];
+/// Every verdict the command may print. Four, because the roster
+/// distinguishes four states; a fifth spelling is a wire the table did
+/// not ask for.
+///
+/// ⚠ `pending` is the youngest and the one that had been missing:
+/// until 2026-09-15 a code whose coordinate is merely unthreaded was
+/// published as `never`, which is a claim about the code rather than
+/// about SCE's progress on it.
+const VERDICTS: &[&str] = &["carries", "never", "unknown", "pending"];
+
+/// The roster is a registered wire surface, and the registry says the
+/// same thing about it that the producer does.
+///
+/// # Why this one needs its own guard
+///
+/// `wire_surface_stability.rs` closes the registry's loop by walking
+/// `schemas/` and `apis/` back to the declared lists, so a schema file
+/// cannot land, be consumed, and never acquire a row. The roster has no
+/// schema file — it is a TSV a subcommand prints — so that walk cannot
+/// reach it, and it was published, wired into `SCE_ERROR_CONTRACT.md`
+/// §2.1.2 as the lookup a consumer is told to run, and gated here,
+/// while remaining absent from the registry entirely. Nothing was
+/// broken; nothing could have noticed.
+///
+/// The module docs above record why the general version — a gate over
+/// every printed surface — is not buildable. That leaves per-surface
+/// anchoring as the available shape, which is what this is.
+#[test]
+fn the_registry_declares_the_rosters_status() {
+    let registry = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("sce-build has a parent dir")
+            .join("SCE_WIRE_CONTRACTS.md"),
+    )
+    .expect("SCE_WIRE_CONTRACTS.md is readable");
+
+    let row = registry
+        .lines()
+        .find(|line| line.starts_with("| Provenance roster (`sce-codegen provenance-roster`)"))
+        .unwrap_or_else(|| {
+            panic!(
+                "SCE_WIRE_CONTRACTS.md has no row for the provenance \
+                 roster. It is a surface a consumer is directed to by \
+                 SCE_ERROR_CONTRACT.md §2.1.2, so it needs a row saying \
+                 how stable it is and how a reader learns it changed — \
+                 and no reverse walk can add one for it, because it has \
+                 no schema file to be walked."
+            )
+        });
+
+    assert!(
+        row.contains(&format!("`{PROVENANCE_ROSTER_STATUS}`")),
+        "the registry's roster row does not name the status the \
+         producer declares ({PROVENANCE_ROSTER_STATUS}). \
+         SCE_WIRE_CONTRACTS.md requires one commit to move both.\nrow: \
+         {row}",
+    );
+    assert!(
+        row.contains("PROVENANCE_ROSTER_STATUS"),
+        "the registry's roster row must cite the producer const that \
+         settles its status, so a reader is sent to the one place that \
+         decides it rather than trusting the table.\nrow: {row}",
+    );
+}
 
 /// The published roster, one `(code, verdict, reason)` per line.
 fn published() -> Vec<(String, String, String)> {
@@ -87,7 +155,11 @@ fn published() -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// One line per code, and nothing but the three declared verdicts.
+/// One line per code, and nothing but the declared verdicts.
+///
+/// ⚠ The count lives in [`VERDICTS`] and is not restated here. It read
+/// "the three declared verdicts" until a fourth landed, which is the
+/// smallest possible instance of the thing this file is about.
 #[test]
 fn the_wire_prints_one_declared_verdict_for_every_code() {
     let rows = published();
@@ -150,6 +222,108 @@ fn unknown_on_the_wire_is_exactly_what_the_table_calls_unmeasured() {
          consumer it can NEVER carry, which is a claim about the code \
          made on evidence nobody has — and it is invisible to every \
          gate that asks the table what the table says.",
+    );
+}
+
+/// The command's own `--help` names exactly the verdicts it prints.
+///
+/// # A fourth copy nothing held
+///
+/// The verdict vocabulary lives in four places: the producer's match,
+/// [`VERDICTS`] here, `SCE_ERROR_CONTRACT.md` §2.1.2, and the clap doc
+/// comment that becomes `--help`. The first two are pinned to each
+/// other by the gates in this file through the published bytes. The
+/// help text was pinned by nothing, and it is not an internal comment
+/// — it is the first thing a consumer reads, ahead of the contract.
+///
+/// Measured 2026-09-15: adding `pending` to the wire left the help
+/// still saying *"Three verdicts because the roster holds three
+/// states"* and listing `<carries|never|unknown>`. Every gate on this
+/// surface stayed green, because all of them read the roster's output
+/// and none of them read what the tool says about itself.
+///
+/// Compared as a SET in both directions, so a verdict missing from the
+/// help and a verdict the help invents both fail.
+#[test]
+fn the_help_text_names_exactly_the_verdicts_the_wire_prints() {
+    let out = Command::new(CODEGEN)
+        .args(["help", "provenance-roster"])
+        .output()
+        .expect("spawn sce-codegen help");
+    let raw =
+        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    // clap wraps long help to the terminal width, so the alternation
+    // can arrive split across lines. Collapse whitespace before
+    // parsing rather than let a line break decide whether this gate
+    // sees a verdict.
+    let help = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    let open = help.find("<carries").unwrap_or_else(|| {
+        panic!(
+            "`provenance-roster --help` does not show the verdict \
+             alternation a consumer reads before anything else. It is \
+             the first description of this surface they meet; a \
+             surface that describes itself differently from what it \
+             prints has two contracts.\nhelp:\n{help}"
+        )
+    });
+    let close = help[open..]
+        .find('>')
+        .expect("the verdict alternation closes")
+        + open;
+    let listed: BTreeSet<&str> = help[open + 1..close].split('|').map(str::trim).collect();
+    let declared: BTreeSet<&str> = VERDICTS.iter().copied().collect();
+
+    assert_eq!(
+        listed, declared,
+        "`provenance-roster --help` advertises {listed:?} but the \
+         command prints {declared:?}. The help is the first account of \
+         this surface a consumer reads, so a verdict missing here is a \
+         verdict they will not branch on, and one invented here is a \
+         branch that never fires.",
+    );
+}
+
+/// ⭐ `pending` on the wire is exactly the set the table calls
+/// `CoordinateNotThreaded`.
+///
+/// The sibling above pins `unknown` ↔ `NotYetMeasured`. That pinned
+/// ONE reason and left the rest to a catch-all which published them
+/// all as `never`, so the wire asserted impossibility for a code whose
+/// coordinate is simply not threaded yet — the same collapse §6b.1
+/// removed, one reason to the left, and invisible to every gate
+/// because none of them pinned what the OTHER reasons may claim.
+///
+/// Equality in both directions, for the two different errors: a
+/// pending code published as `never` tells a consumer to stop
+/// expecting it, and a permanently-unanchorable code published as
+/// `pending` promises work nobody can do.
+#[test]
+fn pending_on_the_wire_is_exactly_what_the_table_calls_unthreaded() {
+    let wire: BTreeSet<String> = published()
+        .into_iter()
+        .filter(|(_, verdict, _)| verdict == "pending")
+        .map(|(code, _, _)| code)
+        .collect();
+
+    let table: BTreeSet<String> = ALL_DIAGNOSTIC_CODES
+        .iter()
+        .filter(|code| {
+            matches!(
+                anchor_carriage(**code, Pipeline::Statechart),
+                AnchorCarriage::Registered(NoAnchor::CoordinateNotThreaded)
+            )
+        })
+        .map(|code| code.as_str().to_string())
+        .collect();
+
+    assert_eq!(
+        wire, table,
+        "the wire's `pending` set and the table's `CoordinateNotThreaded` \
+         set disagree. A code whose producer simply never threaded a \
+         position is owed work, not an impossibility, and publishing it \
+         as `never` tells a consumer to stop expecting what SCE intends \
+         to deliver.",
     );
 }
 

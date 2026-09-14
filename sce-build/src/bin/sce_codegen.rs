@@ -1887,14 +1887,16 @@ enum Commands {
     /// registry so a build system need not parse JSON — knowledge kept
     /// only on the inside is absent from the outside.
     ///
-    /// One line per code, `<code>\t<carries|never|unknown>\t<reason>`.
+    /// One line per code, `<code>\t<carries|never|unknown|pending>\t<reason>`.
     ///
-    /// Three verdicts because the roster holds three states. `never`
-    /// is a claim about the code — nothing enclosing it could ever be
-    /// anchored. `unknown` is a claim about US: no scenario has run
-    /// that code, so the field's emptiness records that nobody looked.
-    /// Collapsing the second into the first would publish the stronger
-    /// sentence on evidence nobody has.
+    /// Four verdicts because the roster holds four states. `never` is
+    /// the only claim about the CODE — nothing enclosing it could ever
+    /// be anchored. The other two refusals are claims about US:
+    /// `unknown` says no scenario has run that code, so the field's
+    /// emptiness records that nobody looked; `pending` says a run did
+    /// exercise it and the cause is a position its producer does not
+    /// yet thread, which is owed work. Collapsing either into `never`
+    /// publishes the stronger sentence on evidence nobody has.
     ProvenanceRoster,
     /// Print the conformance fixture name list from a manifest. Build
     /// systems consume this so they don't need a native JSON parser
@@ -7630,10 +7632,28 @@ fn cmd_provenance_roster() {
             // ignorance from impossibility internally and the wire
             // flattened them, which is the exact shape §2.1.2 exists
             // to refuse one field over.
-            AnchorCarriage::Registered(NoAnchor::NotYetMeasured) => {
-                ("unknown", NoAnchor::NotYetMeasured.why().to_string())
+            // ⚠ Exhaustive over `NoAnchor`, with no `_` arm and no
+            // binding that swallows the rest. That is the whole
+            // mechanism, and it is the same one `anchor_carriage`
+            // relies on one layer down. This match read
+            // `Registered(why) => ("never", …)` until 2026-09-15: a
+            // catch-all that published EVERY reason but one as
+            // impossibility, so a reason meaning "owed" went out as
+            // "can never carry" and a reason added later would do the
+            // same silently. A wire verdict is a claim about the
+            // code; defaulting to the strongest one is how §6b.1's
+            // defect happened, and a catch-all is what made it
+            // possible to happen twice.
+            AnchorCarriage::Registered(why) => {
+                let verdict = match why {
+                    NoAnchor::NotYetMeasured => "unknown",
+                    NoAnchor::CoordinateNotThreaded => "pending",
+                    NoAnchor::TheAnchorIsTheSubject
+                    | NoAnchor::NoAuthoredArtefact
+                    | NoAnchor::RaisedBeforeAnyResolvingStage => "never",
+                };
+                (verdict, why.why().to_string())
             }
-            AnchorCarriage::Registered(why) => ("never", why.why().to_string()),
             // Unreachable by construction and asserted so by
             // `every_code_carries_the_enclosing_anchor_or_is_registered`:
             // a statechart carries provenance, so this case cannot
