@@ -344,9 +344,13 @@ pub(crate) fn what_the_action_does(action: &crate::model::Action) -> String {
         parts.push(format!("param({})", pair.join(" ")));
     }
     // An `<if>`'s own `cond` is in the guard column; its `<elseif>`
-    // conditions decide which nested row runs and have no column.
-    for branch in &action.elseif_branches {
-        parts.push(format!("elseif({})", branch.cond));
+    // conditions decide which nested row runs and have no column. They
+    // come from `Action::nested_blocks`, which carries the cond guarding
+    // each block — a block with none is not an `<elseif>`.
+    for block in action.nested_blocks() {
+        if let Some(cond) = block.cond {
+            parts.push(format!("elseif({cond})"));
+        }
     }
     parts.join(" ")
 }

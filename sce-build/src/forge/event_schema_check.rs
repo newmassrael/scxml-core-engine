@@ -1581,41 +1581,20 @@ fn walk_actions(
             statechart_name,
             diag_label,
         )?;
-        // Composite-action bodies. The shapes are mutually exclusive
-        // by action_type (`<if>` populates then/elseif/else, `<foreach>`
-        // populates the `actions` field) but the model serialises them
-        // as parallel `Vec<Action>` fields, so we walk each
-        // unconditionally — empty vecs cost nothing.
-        walk_actions(
-            &action.then_actions,
-            imported_schemas,
-            imported_enums,
-            statechart_name,
-            diag_label,
-        )?;
-        for branch in &action.elseif_branches {
+        // Composite-action bodies, as `Action::nested_blocks` defines
+        // them. It lists every block unconditionally — the shapes are
+        // mutually exclusive by `action_type`, and an empty vec costs
+        // nothing, while a list keyed on the type would be a second
+        // place to forget one.
+        for block in action.nested_blocks() {
             walk_actions(
-                &branch.actions,
+                block.actions,
                 imported_schemas,
                 imported_enums,
                 statechart_name,
                 diag_label,
             )?;
         }
-        walk_actions(
-            &action.else_actions,
-            imported_schemas,
-            imported_enums,
-            statechart_name,
-            diag_label,
-        )?;
-        walk_actions(
-            &action.actions,
-            imported_schemas,
-            imported_enums,
-            statechart_name,
-            diag_label,
-        )?;
     }
     Ok(())
 }
