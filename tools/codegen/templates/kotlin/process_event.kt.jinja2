@@ -303,8 +303,14 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% if ns.sealed %}
 {# Unreachable: an unguarded wildcard above matches every event a call can
    carry, so no transition written after it can ever be selected. #}
-{% elif trans.event == '*' or trans.event == '.*' %}
+{% elif trans.matches_any_event %}
 {# --- Bare wildcard, in document order (W3C SCXML 3.13) --- #}
+{# W3C SCXML 3.12.1: which spellings match every event is decided by
+   analyzer.rs::stamp_wildcard_descriptors from event_descriptor.rs, not
+   here. This branch listed its own — `*` and `.*` — and the C11 template
+   listed a different one, which is what a question a template cannot ask
+   the crate costs: two lists, and C11's had grown a third spelling that
+   event_descriptor.rs refuses. #}
 {% if trans.history_target is defined %}
 {% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
 {% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}

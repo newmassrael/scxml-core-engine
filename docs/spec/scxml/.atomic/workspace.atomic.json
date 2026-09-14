@@ -996,6 +996,10 @@
           "file": "sce-build/src/event_descriptor.rs",
           "symbol": "malformed_token",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
