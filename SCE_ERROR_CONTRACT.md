@@ -767,12 +767,14 @@ references against a real document and drift silently.
 | `validation/enum-variant-duplicate-name` | `validation` | no |  |
 | `validation/enum-variant-duplicate-value` | `validation` | no |  |
 | `validation/enum-variant-value-overflows-underlying` | `validation` | no |  |
+| `validation/event-name-grammar` | `validation` | no | W3C SCXML §3.12.1 |
 | `validation/event-payload-field-unknown` | `validation` | `replace_one_of` |  |
 | `validation/event-schema-on-builtin-event` | `validation` | no |  |
 | `validation/incompatible-attributes` | `validation` | no |  |
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
 | `validation/invalid-reference` | `validation` | `replace_one_of` |  |
+| `validation/malformed-identifier` | `validation` | no | W3C SCXML §3.3.1 |
 | `validation/mesh-rpc-duplicate-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-missing-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-reserved-param` | `validation` | no | SCE Mesh §9.5 |

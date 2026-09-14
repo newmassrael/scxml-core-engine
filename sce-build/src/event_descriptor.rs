@@ -131,6 +131,70 @@ pub fn literal_event(token: &str) -> Option<&str> {
     }
 }
 
+/// Whether `token` is one token of an event name — the unit the clause's
+/// "series of alphanumeric characters segmented into tokens" is made of.
+///
+/// The accepted character set is **wider than the clause reads literally**,
+/// and both widenings are measurements rather than preferences:
+///
+/// - `-` is accepted. W3C's own conformance documents 364 and 576 raise
+///   `In-s11p112`, so the literal alphanumeric reading rejects the
+///   specification's own tests.
+/// - A leading digit is accepted. `alphanumeric` says so, and §3.12.1's
+///   calculator example writes `<transition event="DIGIT.0">`, whose second
+///   token is a bare digit. This is where the token grammar parts company
+///   with [`crate::scxml_identifier::is_ncname`]: an XML Name may not begin
+///   with a digit, an event token may.
+///
+/// What it refuses is everything that is neither: `*` inside a token, `/`,
+/// `:`, quotes, backslashes, whitespace and control characters. Two of those
+/// are narrower than W3C, and the reason is that SCE lowers an event name to
+/// a code identifier in six languages — see
+/// [`crate::scxml_identifier`], which states the narrowing and what it costs.
+pub fn is_event_token(token: &str) -> bool {
+    let mut chars = token.chars();
+    match chars.next() {
+        None => false,
+        Some(first) if !(first.is_ascii_alphanumeric() || first == '_') => false,
+        Some(_) => chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+    }
+}
+
+/// Whether `name` is a legal event name — what `<raise event>` and
+/// `<send event>` carry.
+///
+/// A name, not a descriptor: it names one event rather than matching a set,
+/// so none of the wildcard spellings below are legal here.
+pub fn is_event_name(name: &str) -> bool {
+    !name.is_empty() && name.split('.').all(is_event_token)
+}
+
+/// The first piece of `descriptor` that is not a legal token, or `None` when
+/// the whole descriptor is well-formed.
+///
+/// One descriptor, as written in a `event` attribute — the caller splits the
+/// attribute on whitespace first. Every spelling the clause blesses is
+/// well-formed, and this function is deliberately the same reduction
+/// [`EventDescriptor::parse`] performs rather than a second reading of it:
+/// `*` is universal, a trailing `.*` matches zero or more tokens, and a
+/// trailing `.` is the equivalent spelling of the same prefix. `.*` and `.`
+/// reduce to the empty prefix, which is [`EventDescriptor::Any`], so they are
+/// well-formed here for the same reason they match everything there.
+pub fn malformed_token(descriptor: &str) -> Option<&str> {
+    if descriptor == "*" {
+        return None;
+    }
+    let without_wildcard = descriptor.strip_suffix(".*").unwrap_or(descriptor);
+    let prefix = without_wildcard
+        .strip_suffix('.')
+        .unwrap_or(without_wildcard);
+    if prefix.is_empty() {
+        // `.*`, `.` and `` — the empty token prefix.
+        return None;
+    }
+    prefix.split('.').find(|token| !is_event_token(token))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

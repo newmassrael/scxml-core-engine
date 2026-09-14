@@ -981,6 +981,21 @@
         {
           "file": "sce-build/src/lib.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/event_descriptor.rs",
+          "symbol": "is_event_token",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/event_descriptor.rs",
+          "symbol": "malformed_token",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2878,6 +2893,15 @@
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseStateNode",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_identifier.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

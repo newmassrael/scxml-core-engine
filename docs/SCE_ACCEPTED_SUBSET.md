@@ -63,24 +63,51 @@ The accepted surface comprises:
 - **Communication**: `_ioprocessors`, `_sessionid`, `_name`,
   `_event` (excluding the exclusions listed in §3).
 
-⚠⚠ **Open — identifier-bearing attributes are not checked against the
-grammar W3C gives them.** W3C SCXML types a state's `id` as `ID`
+**Identifier-bearing attributes are checked against the grammar W3C
+gives them, at parse.** W3C SCXML types a state's `id` as `ID`
 (§3.3.1, §3.4.1, §3.7.1 — *"A valid id as defined in [XML Schema]"*)
 and describes an event name as alphanumeric tokens separated by `.`
-(§3.12.1). SCE enforces neither: `schemas/sce-forge.xsd` is `xs:any
-lax` for W3C structural elements, and no parse-time check stands in
-for it. Measured 2026-09-13, a document with `<state id="s0*/X">` and
-`<transition event="go*/Y" target="done*/Z">` generates without a
-diagnostic, and the ids become code identifiers — `…_STATE_S0*/X` in
-C, `S0*/X = 1` in Python — so the emitted source does not compile.
+(§3.12.1). `schemas/sce-forge.xsd` is `xs:any lax` for W3C structural
+elements and cannot enforce either, so `scxml_identifier::reject_malformed`
+does: one sweep of the post-expansion document from
+`SCXMLParser::parse_impl`, driven by a table of every attribute W3C
+types `ID`, `IDREF(S)` or event. Until 2026-09-14 nothing did, and a
+document with `<state id="s0*/X">` and `<transition event="go*/Y"
+target="done*/Z">` generated without a diagnostic — the ids became
+code identifiers, `…_STATE_S0*/X` in C and `S0*/X = 1` in Python, so
+the emitted source did not compile.
 
-This is not the comment-encoding problem §2.10 describes, and the
+This was never the comment-encoding problem §2.10 describes, and the
 repair is not an encoder. The comments are already safe: the
 generator encodes every value a template writes into one, ids and
 free-text fields alike. What the grammar is owed for is the CODE an id
 becomes — an identifier, and the string literals §2.10 registers as
 open — and an id that satisfies the W3C grammar cannot carry `*/`, a
-line terminator or a trailing `\` there either. Registered, not fixed.
+line terminator or a trailing `\` there either.
+
+Two grammars, because W3C gives two, and they differ at the first
+character: an XML Name may not begin with a digit and an event token
+may. Both readings were measured rather than recalled, and each
+refutes the other's over-reach — taking §3.12.1's "alphanumeric"
+literally rejects W3C's own conformance documents 364 and 576, whose
+event is `In-s11p112`, while reading it as an XML Name rejects
+§3.12.1's own calculator example, `<transition event="DIGIT.0">`. The
+wire codes are `validation/malformed-identifier` and
+`validation/event-name-grammar`, split so a consumer branching on the
+code opens the clause its document actually broke.
+
+⚠ **Where SCE is narrower than W3C, and why.** Both grammars are
+ASCII, and the event grammar refuses `:`. W3C is wider on both counts
+— an XML Name admits most of Unicode's letters, and §3.12.1 shows
+`<transition event="ccxml:connection.alerting"/>` under the words
+*"This markup is legal"*. SCE narrows because these values do not stay
+in the document: an id and an event name each become a code identifier
+in C, C++, Kotlin, Rust, Go and Python. A value the sweep admits is one
+all six can carry. Measured 2026-09-14 over the 794 SCXML documents in
+this tree, the narrowing costs nothing here — no document uses a
+Unicode or `:`-bearing identifier — but it is a boundary SCE draws and
+not one W3C drew, which is why it is written here rather than left for
+a rejected author to find.
 
 The **AOT code generator** is the default path; the Interpreter exists
 as a fallback for documents that cannot be statically generated. At
@@ -2092,7 +2119,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (358 codes)
+## Appendix — `DiagnosticCode` index (360 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -2137,6 +2164,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/invalid-attribute` | Validation |
 | `validation/unsupported-kind` | Validation |
 | `validation/duplicate-id` | Validation |
+| `validation/malformed-identifier` | Validation |
+| `validation/event-name-grammar` | Validation |
 | `validation/duplicate-context-object` | Validation |
 | `validation/reserved-context-id` | Validation |
 | `validation/empty-collection` | Validation |
