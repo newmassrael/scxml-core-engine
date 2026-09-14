@@ -3183,12 +3183,18 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
 {% macro emit_transition_match_check(trans) %}
 {% if not trans.event %}
         if (event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE)
-{% elif trans.event == '*' or trans.event == '.*' or trans.event == '_*' %}
-        {# W3C SCXML 5.9.3 wildcard: '*' is the spec form; '.*' and '_*'
-           are SCE-recognised synonyms in line with analyzer.rs (the same
-           three forms register as `has_wildcard`) and parser.rs (the
-           same three forms bypass event-name validation). They all
-           collapse to "match every non-NONE event" — eventless
+{% elif trans.matches_any_event %}
+        {# W3C SCXML 3.12.1: the descriptor matches every event — the bare
+           `*` the clause defines, or `.*`, whose token prefix is empty and
+           so is a prefix of every name. WHICH spellings those are is not
+           decided here: `matches_any_event` is stamped by
+           analyzer.rs::stamp_wildcard_descriptors from event_descriptor.rs,
+           the one definition of what a descriptor matches. This branch
+           spelled its own list instead, and the list had grown `_*` — a
+           spelling event_descriptor.rs reduces to the literal token it is
+           written as — so this backend took the transition on every event
+           where the other six took it on none.
+           It collapses to "match every non-NONE event": eventless
            transitions are dispatched separately via EVENT_NONE so the
            wildcard must NOT pick them up, otherwise check_eventless_transitions
            would loop forever. Codegen-time enumeration of all model events

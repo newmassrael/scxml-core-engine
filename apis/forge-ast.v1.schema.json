@@ -5491,6 +5491,10 @@
             "null"
           ]
         },
+        "matches_any_event": {
+          "description": "§scxml-3.12.1: whether this transition's descriptor set matches every event — the bare `*`, and `.*` whose token prefix is empty.\n\nStamped by [`crate::analyzer`] from [`crate::event_descriptor`], the one definition of what a descriptor matches. It rides on the transition because a template cannot call into this crate, and a question a template cannot ask is a question it answers itself: the C11 and Kotlin templates each string-compared `event` against their own list of wildcard spellings, which is a second definition by construction. C11's list had grown `_*` — a spelling `event_descriptor` reduces to the literal token it is written as — so one backend took the transition on every event where the other six took it on none.",
+          "type": "boolean"
+        },
         "matching_enum_values": {
           "items": {
             "type": "string"
@@ -5562,6 +5566,7 @@
         "is_cpp_condition",
         "is_kt_condition",
         "is_pure_in_predicate",
+        "matches_any_event",
         "matching_enum_values",
         "needs_string_matching",
         "target",

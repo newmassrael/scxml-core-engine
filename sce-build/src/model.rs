@@ -72,6 +72,20 @@ pub struct Transition {
     pub actions: Vec<Action>,
     pub needs_string_matching: bool,
     pub matching_enum_values: Vec<String>,
+    /// §scxml-3.12.1: whether this transition's descriptor set matches
+    /// every event — the bare `*`, and `.*` whose token prefix is empty.
+    ///
+    /// Stamped by [`crate::analyzer`] from [`crate::event_descriptor`],
+    /// the one definition of what a descriptor matches. It rides on the
+    /// transition because a template cannot call into this crate, and a
+    /// question a template cannot ask is a question it answers itself:
+    /// the C11 and Kotlin templates each string-compared `event` against
+    /// their own list of wildcard spellings, which is a second definition
+    /// by construction. C11's list had grown `_*` — a spelling
+    /// `event_descriptor` reduces to the literal token it is written as —
+    /// so one backend took the transition on every event where the other
+    /// six took it on none.
+    pub matches_any_event: bool,
     /// Original index within parent state's transition list. This index is
     /// unique only WITHIN the parent state, never machine-wide — see
     /// [`native_payload_guard`](Self::native_payload_guard) for why that

@@ -12,6 +12,7 @@ use std::path::Path;
 pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     classify_variables(model);
     analyze_model_features(model);
+    stamp_wildcard_descriptors(model);
     add_system_events(model);
     compute_external_ingress_events(model);
     compute_typed_inject_events(model);
@@ -703,16 +704,34 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
     }
 }
 
+/// §scxml-3.12.1: record, per transition, whether its descriptor set
+/// matches every event.
+///
+/// Runs before every reader of that answer — [`add_system_events`] below,
+/// and the C11 and Kotlin templates through
+/// [`Transition::matches_any_event`] — so the question is decided once, by
+/// [`crate::event_descriptor`], instead of once per reader. A reader that
+/// cannot ask answers for itself, and the two templates that did had each
+/// written a different list of wildcard spellings.
+///
+/// Per descriptor, not per attribute: `event="foo *"` carries a wildcard
+/// just as `event="*"` does. An eventless transition carries no descriptor
+/// at all, so it matches nothing here — it is dispatched on its own pass.
+fn stamp_wildcard_descriptors(model: &mut SCXMLModel) {
+    for state in model.states.values_mut() {
+        for trans in &mut state.transitions {
+            trans.matches_any_event = crate::event_descriptor::descriptors(&trans.event)
+                .any(|d| d == crate::event_descriptor::EventDescriptor::Any);
+        }
+    }
+}
+
 /// Add system-level events (wildcards, invoke events).
 fn add_system_events(model: &mut SCXMLModel) {
-    // Per descriptor, not per attribute: `event="foo *"` carries a
-    // wildcard just as `event="*"` does (§scxml-3.12.1).
-    let has_wildcard = model.states.values().any(|state| {
-        state.transitions.iter().any(|t| {
-            crate::event_descriptor::descriptors(&t.event)
-                .any(|d| d == crate::event_descriptor::EventDescriptor::Any)
-        })
-    });
+    let has_wildcard = model
+        .states
+        .values()
+        .any(|state| state.transitions.iter().any(|t| t.matches_any_event));
     if has_wildcard {
         model.events.insert("Wildcard".to_string());
     }
