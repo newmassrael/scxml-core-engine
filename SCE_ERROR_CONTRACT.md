@@ -167,11 +167,20 @@ that settles it rather than asserted flat, because a contract a reader
 cannot check is one they will trust anyway.
 
 ⚠ The roster is also the honest measure of how much of this contract
-is exercised. Measured 2026-09-14: of 360 codes, **22 are raised by a
-scenario** and the rest have never been executed — the roster learns a
-code carries by running it, never by asserting it, so a `never` row
-for an unexercised code records that nobody has looked yet, which is
-work owed rather than a property of the code.
+is exercised, and the count is deliberately not written here. The
+roster learns that a code carries by RUNNING it, so the exercised set
+moves every time a scenario lands, and a number copied into prose goes
+stale in silence. This paragraph did exactly that: it said an
+unexercised code publishes `never`, which is the reading the clause
+directly above forbids. Count the wire instead —
+
+```
+sce-codegen provenance-roster | cut -f2 | sort | uniq -c
+```
+
+— where `unknown` is the work owed. That tally is a statement about
+how much of this contract anyone has looked at, never a property of
+the codes it counts.
 
 What computes the answer is `anchor_index::AnchorIndex`, built while
 the document is parsed and carried on the model. It is keyed by
