@@ -412,9 +412,9 @@ fn repo_root() -> PathBuf {
 /// already wrong by 51 documents: it catches a directory literally named
 /// `build` and misses every other spelling of build output, so 47 synthesized
 /// `<invoke>` documents under `backends/go/tests/generated/`, 2 under
-/// `backends/python/tests/generated/` and 2 under a gitignored `claudedocs/`
-/// were being judged as though the repository had authored them — 786 walked
-/// against 735 committed.
+/// `backends/python/tests/generated/` and 2 under a gitignored working-docs
+/// directory were being judged as though the repository had authored them —
+/// 786 walked against 735 committed.
 ///
 /// That is not a tidiness point. Those documents are the GENERATOR'S OWN
 /// OUTPUT, so the sweep was asking whether SCE's codegen emits identifiers
