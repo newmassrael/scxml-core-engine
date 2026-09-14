@@ -149,16 +149,22 @@ clause promises), a code whose subject is argv or the filesystem and
 can never carry, and a code nothing has wired yet.
 
 ```
-sce-codegen provenance-roster      # <code> <carries|never> <reason>
+sce-codegen provenance-roster   # <code> <carries|never|unknown> <reason>
 ```
 
 publishes that table, one line per code. **Read absence as this clause
 says for any code the roster reports as `carries`**; for a code it
 reports as `never`, the reason column says why the field could not
 have been filled, and absence records that rather than an unanchored
-document. The guarantee is stated with the lookup that settles it
-rather than asserted flat, because a contract a reader cannot check is
-one they will trust anyway.
+document.
+
+⚠ `unknown` is a third verdict and it is a claim about SCE, not about
+the code: no scenario has exercised it, so nothing is known either
+way. Do not read `unknown` as `never` — that would be the stronger
+sentence on evidence nobody has, and it is the reason this column has
+three values rather than two. The guarantee is stated with the lookup
+that settles it rather than asserted flat, because a contract a reader
+cannot check is one they will trust anyway.
 
 ⚠ The roster is also the honest measure of how much of this contract
 is exercised. Measured 2026-09-14: of 360 codes, **22 are raised by a
