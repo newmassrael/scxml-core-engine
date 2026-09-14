@@ -236,30 +236,12 @@ fn delay_of(action: &crate::model::Action) -> String {
     }
 }
 
-/// What an action does, in the attribute names its author wrote.
+/// What a state IS, for the reason `what_the_action_does` exists.
 ///
-/// ⭐ One function, because two readers need the same answer: this table,
-/// and the acceptance report's per-requirement fragment (RFC §7a), which
-/// has to move under every mutation of what a requirement depends on. A
-/// second rendering there would be free to print less, and the two would
-/// then disagree about what one node does.
-///
-/// The cell used to be the action's kind alone — `send`, `cancel` — and
-/// that hid exactly what a timer is made of: the event a `<send>` raises
-/// and the `sendid` a `<cancel>` names. Rename either and the transition
-/// waiting for the timer never fires, while the table stayed
-/// byte-identical. `an_attribute_that_changes_an_action_changes_its_row`
-/// mutates every attribute inside executable content and requires this
-/// cell to move whenever the parsed action does.
-///
-/// Every field is printed as `name=value` in the SCXML attribute's own
-/// spelling, empty ones omitted, in a fixed order. Three are left to the
-/// columns that already carry them rather than printed twice: `target`
-/// (`to`), `delay` / `delayexpr` (`after`) and `cond` (`guard`).
-///
-/// ⚠ Nested actions are not rendered here — each has a row of its own,
-/// and its `node_path` says which branch or body it sits in.
-/// What a state IS, for the reason its sibling above exists.
+/// ⚠ Named, not placed. This line said "its sibling ABOVE" while that
+/// sibling sat below, because the two functions were reordered and a
+/// positional reference cannot be reordered with them. A name survives
+/// the move; a direction is wrong the moment anything shifts.
 ///
 /// A state's row carried its NAME and nothing else, so every structural
 /// attribute an author writes was off the page: which child a compound
@@ -296,6 +278,31 @@ pub(crate) fn what_the_state_is(state: &crate::model::State) -> String {
     parts.join(" ")
 }
 
+/// What an action does, in the attribute names its author wrote.
+///
+/// ⭐ One rendering, because two readers need the same answer: this table,
+/// and the acceptance report's per-requirement fragment (RFC §7a), which
+/// has to move under every mutation of what a requirement depends on. The
+/// fragment is a SELECTION of these rows rather than a second rendering —
+/// `acceptance_report::render` prints the rows its `node_path`s name — so
+/// a renderer added there would be free to print less, and the two would
+/// then disagree about what one node does.
+///
+/// The cell used to be the action's kind alone — `send`, `cancel` — and
+/// that hid exactly what a timer is made of: the event a `<send>` raises
+/// and the `sendid` a `<cancel>` names. Rename either and the transition
+/// waiting for the timer never fires, while the table stayed
+/// byte-identical. `an_attribute_that_changes_an_action_changes_its_row`
+/// mutates every attribute inside executable content and requires this
+/// cell to move whenever the parsed action does.
+///
+/// Every field is printed as `name=value` in the SCXML attribute's own
+/// spelling, empty ones omitted, in a fixed order. Three are left to the
+/// columns that already carry them rather than printed twice: `target`
+/// (`to`), `delay` / `delayexpr` (`after`) and `cond` (`guard`).
+///
+/// ⚠ Nested actions are not rendered here — each has a row of its own,
+/// and its `node_path` says which branch or body it sits in.
 pub(crate) fn what_the_action_does(action: &crate::model::Action) -> String {
     let mut parts = vec![action.action_type.clone()];
     let fields: [(&str, &str); 19] = [
