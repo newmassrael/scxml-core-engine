@@ -19,6 +19,18 @@
 //! what it answers and agree with themselves. A gate that reads the
 //! table twice cannot see the wire drop a distinction between them.
 //!
+//! ⚠ A gate over ALL printed surfaces was considered and is NOT
+//! buildable today, which is worth saying so nobody spends a round
+//! finding out again. It would need to derive which subcommands print
+//! something a consumer parses, and that is not a scan: of the 21
+//! `cmd_*` handlers only TWO contain a `print!` in their own body,
+//! while the binary holds 36 print sites — the rest emit through
+//! helpers. A predicate keyed on print macros would call ten real
+//! surfaces non-surfaces, and a hand-listed set checked against
+//! nothing independent is the exclusion list this repository has been
+//! burned by. The twelve are gated one at a time until something in
+//! the tree can name them.
+//!
 //! So this target spawns the binary and compares what came out of it
 //! against what the table says — the only arrangement in which
 //! flattening is visible. `SCE_ERROR_CONTRACT.md` §2.1.2 is the clause
