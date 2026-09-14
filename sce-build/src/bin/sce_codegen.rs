@@ -1874,6 +1874,21 @@ enum Commands {
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
+    /// Print, for every diagnostic code, whether a record of that code
+    /// carries the `spec_provenance` of the anchor enclosing it.
+    ///
+    /// `SCE_ERROR_CONTRACT.md` §2.1.2 promises that an empty
+    /// `spec_provenance` means exactly one thing — nothing enclosing
+    /// the location was anchored. That promise was checkable only from
+    /// inside: the table separating "cannot carry" from "not wired
+    /// yet" was a compile-time constant, so on the wire an absent
+    /// field was indistinguishable across three cases. This publishes
+    /// the table, the way `list-fixtures` publishes the fixture
+    /// registry so a build system need not parse JSON — knowledge kept
+    /// only on the inside is absent from the outside.
+    ///
+    /// One line per code, `<code>\t<carries|never>\t<reason>`.
+    ProvenanceRoster,
     /// Print the conformance fixture name list from a manifest. Build
     /// systems consume this so they don't need a native JSON parser
     /// (CMake, Gradle, plain Bash) to enumerate fixtures.
@@ -2329,6 +2344,7 @@ fn main() {
             &catalog,
             harness.as_deref(),
         ),
+        Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
         Commands::Verify {
             out_dir,
@@ -7578,6 +7594,41 @@ fn cmd_generate_conformance(
 }
 
 // ── Subcommand: expand ─────────────────────────────────────────
+
+/// Publish the anchor roster, one line per code.
+///
+/// `<code>\t<carries|never>\t<reason>` — tab-separated for the same
+/// reason `list-fixtures` emits bare names: a consumer with no JSON
+/// parser (a shell, a build system) can read it, and a consumer that
+/// wants structure can split on the tab.
+///
+/// The verdict is asked on the STATECHART pipeline, because that is
+/// the only kind that carries `sce:provenance` at all and so the only
+/// one where the question has two possible answers. A Forge document
+/// holds no anchors, so every code's empty field there is already the
+/// true answer rather than a pending one — asking per code would
+/// publish 360 identical rows that decided nothing.
+fn cmd_provenance_roster() {
+    use sce_build::forge::diagnostic::{
+        anchor_carriage, AnchorCarriage, Pipeline, ALL_DIAGNOSTIC_CODES,
+    };
+    for &code in ALL_DIAGNOSTIC_CODES {
+        let (verdict, reason) = match anchor_carriage(code, Pipeline::Statechart) {
+            AnchorCarriage::Carries => ("carries", String::new()),
+            AnchorCarriage::Registered(why) => ("never", why.why().to_string()),
+            // Unreachable by construction and asserted so by
+            // `every_code_carries_the_enclosing_anchor_or_is_registered`:
+            // a statechart carries provenance, so this case cannot
+            // apply to it. Printed rather than panicked so a roster
+            // reader is never left with no line for a code.
+            AnchorCarriage::SatisfiedByAnchorlessKind => (
+                "never",
+                "this document kind holds no anchors at all".to_string(),
+            ),
+        };
+        println!("{}\t{}\t{}", code.as_str(), verdict, reason);
+    }
+}
 
 fn cmd_expand(scxml_path: &str, include_dirs: &[String]) {
     let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
