@@ -456,8 +456,12 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
                     action.source_location.as_ref(),
                 ));
             }
-            for branch in &action.elseif_branches {
-                if cond_needs_engine(&branch.cond) {
+            // `Action::nested_blocks` carries each branch's own cond, so
+            // the condition that selects a block and the block itself are
+            // read from one place — a branch cond needing the engine is
+            // as much a cause as anything inside the branch.
+            for block in action.nested_blocks() {
+                if block.cond.is_some_and(cond_needs_engine) {
                     out.push(NeedsScriptEngineCause::new(
                         ScriptEngineCauseKind::ElseIfCondition {
                             state_id: state_id.to_string(),
@@ -465,15 +469,9 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
                         action.source_location.as_ref(),
                     ));
                 }
-                for nested in &branch.actions {
+                for nested in block.actions {
                     collect_action_causes(state_id, nested, out);
                 }
-            }
-            for nested in &action.then_actions {
-                collect_action_causes(state_id, nested, out);
-            }
-            for nested in &action.else_actions {
-                collect_action_causes(state_id, nested, out);
             }
         }
         "assign" => {

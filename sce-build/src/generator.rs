@@ -1682,24 +1682,15 @@ fn first_unlowerable_native_cond(model: &SCXMLModel, language: &str) -> Option<U
             if let Some((cond, owner)) = unlowerable(&action.cond, language) {
                 return Some((cond, owner, action.source_location.clone()));
             }
-            for branch in &action.elseif_branches {
+            for block in action.nested_blocks() {
                 // The owning `<if>`'s position: an `<elseif>` records
                 // none of its own, and the enclosing element is the
                 // nearest thing the document actually wrote down.
-                if let Some((cond, owner)) = unlowerable(&branch.cond, language) {
+                if let Some((cond, owner)) = block.cond.and_then(|cond| unlowerable(cond, language))
+                {
                     return Some((cond, owner, action.source_location.clone()));
                 }
-                if let Some(hit) = scan_actions(&branch.actions, language) {
-                    return Some(hit);
-                }
-            }
-            for nested in action
-                .then_actions
-                .iter()
-                .chain(action.else_actions.iter())
-                .chain(action.actions.iter())
-            {
-                if let Some(hit) = scan_actions(std::slice::from_ref(nested), language) {
+                if let Some(hit) = scan_actions(block.actions, language) {
                     return Some(hit);
                 }
             }
@@ -1825,18 +1816,8 @@ fn first_unlowerable_native_script(
             if let Some(hit) = owner(action, language) {
                 return Some(hit);
             }
-            for branch in &action.elseif_branches {
-                if let Some(hit) = scan(&branch.actions, language) {
-                    return Some(hit);
-                }
-            }
-            for nested in action
-                .then_actions
-                .iter()
-                .chain(action.else_actions.iter())
-                .chain(action.actions.iter())
-            {
-                if let Some(hit) = scan(std::slice::from_ref(nested), language) {
+            for block in action.nested_blocks() {
+                if let Some(hit) = scan(block.actions, language) {
                     return Some(hit);
                 }
             }
@@ -3106,15 +3087,11 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             }
             // Walk into <if>/<foreach> bodies so a nested unsupported
             // action (e.g. <send> inside an <if>) is rejected at the
-            // same fail-loud surface as a top-level <send>.
-            if action.action_type == "if" {
-                check_actions(&action.then_actions, context)?;
-                for branch in &action.elseif_branches {
-                    check_actions(&branch.actions, context)?;
-                }
-                check_actions(&action.else_actions, context)?;
-            } else if action.action_type == "foreach" {
-                check_actions(&action.actions, context)?;
+            // same fail-loud surface as a top-level <send>. Which bodies
+            // those are is `Action::nested_blocks`, which already lists
+            // both shapes, so no `action_type` test is needed here.
+            for block in action.nested_blocks() {
+                check_actions(block.actions, context)?;
             }
         }
         Ok(())

@@ -455,6 +455,25 @@ impl Action {
         blocks
     }
 
+    /// An `<if>` carrying one `then` block.
+    ///
+    /// ⭐ The third thing a definition of "inside an action" owes its
+    /// readers. [`Self::nested_blocks`] lets them READ the blocks and
+    /// [`Self::nested_blocks_mut`] lets them REWRITE what is already
+    /// there, but nothing let them BUILD one — so every builder spelled
+    /// `then_actions` itself, which is the same second definition the
+    /// other two exist to prevent. Further shapes (`else`, `<elseif>`,
+    /// `<foreach>`) belong here beside this one rather than at their
+    /// call sites.
+    pub fn if_then(cond: impl Into<String>, then_actions: Vec<Action>) -> Self {
+        Action {
+            action_type: "if".to_string(),
+            cond: cond.into(),
+            then_actions,
+            ..Default::default()
+        }
+    }
+
     /// [`Self::nested_blocks`], mutably, for a pass that rewrites what
     /// it finds — block annotation inheritance is one.
     pub fn nested_blocks_mut(&mut self) -> Vec<&mut Vec<Action>> {

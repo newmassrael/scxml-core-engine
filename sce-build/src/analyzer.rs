@@ -684,20 +684,16 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
                 model.needs_guard_helper = Some(true);
             }
             check_action_event_fields(action, model);
-            // Check elseif branch conditions for _event.* metadata
-            for branch in &action.elseif_branches {
-                check_event_field(&branch.cond, model);
-            }
-            for nested in &action.then_actions {
-                analyze_action(nested, model);
-            }
-            for branch in &action.elseif_branches {
-                for nested in &branch.actions {
+            // Blocks and the conditions selecting them both come from
+            // `Action::nested_blocks`: an `<elseif>` cond can carry
+            // `_event.*` metadata just as the branch body can.
+            for block in action.nested_blocks() {
+                if let Some(cond) = block.cond {
+                    check_event_field(cond, model);
+                }
+                for nested in block.actions {
                     analyze_action(nested, model);
                 }
-            }
-            for nested in &action.else_actions {
-                analyze_action(nested, model);
             }
         }
         _ => {}
@@ -1518,12 +1514,7 @@ mod tests {
             sendid: "t1".into(),
             ..Default::default()
         };
-        let if_action = Action {
-            action_type: "if".into(),
-            cond: "true".into(),
-            then_actions: vec![cancel],
-            ..Default::default()
-        };
+        let if_action = Action::if_then("true", vec![cancel]);
         let state = State {
             on_entry_blocks: vec![vec![if_action]],
             ..Default::default()

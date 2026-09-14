@@ -362,11 +362,8 @@ fn record_delayed_host_sends(model: &mut SCXMLModel) {
 fn walk_actions(actions: &[Action], visit: &mut impl FnMut(&Action)) {
     for action in actions {
         visit(action);
-        walk_actions(&action.actions, visit);
-        walk_actions(&action.then_actions, visit);
-        walk_actions(&action.else_actions, visit);
-        for branch in &action.elseif_branches {
-            walk_actions(&branch.actions, visit);
+        for block in action.nested_blocks() {
+            walk_actions(block.actions, visit);
         }
     }
 }
@@ -383,16 +380,8 @@ fn claim_action(action: &mut Action, types: &[String]) {
         action.send_type_unsupported = false;
         action.send_type_host_served = true;
     }
-    for nested in action
-        .actions
-        .iter_mut()
-        .chain(action.then_actions.iter_mut())
-        .chain(action.else_actions.iter_mut())
-    {
-        claim_action(nested, types);
-    }
-    for branch in &mut action.elseif_branches {
-        for nested in &mut branch.actions {
+    for block in action.nested_blocks_mut() {
+        for nested in block {
             claim_action(nested, types);
         }
     }
@@ -439,18 +428,15 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<HostProc
             action.source_location.as_ref(),
         ));
     }
-    // `actions` is `<foreach>`'s body; `then_actions` / `else_actions` /
-    // each `elseif_branches` entry are `<if>`'s. Chained rather than
-    // matched on `action_type` so a container added later is walked by
-    // default — the failure mode of the other spelling is silence.
-    for nested in action
-        .actions
-        .iter()
-        .chain(action.then_actions.iter())
-        .chain(action.else_actions.iter())
-        .chain(action.elseif_branches.iter().flat_map(|b| b.actions.iter()))
-    {
-        collect_action_causes(state_id, nested, out);
+    // Taken from `Action::nested_blocks` rather than matched on
+    // `action_type`, so a container added to the model is walked by
+    // default — the failure mode of the other spelling is silence. This
+    // walk used to chain the four fields by hand, which got the default
+    // right for the containers it knew and no others.
+    for block in action.nested_blocks() {
+        for nested in block.actions {
+            collect_action_causes(state_id, nested, out);
+        }
     }
 }
 
