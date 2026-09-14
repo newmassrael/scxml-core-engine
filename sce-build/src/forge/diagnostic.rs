@@ -14953,31 +14953,32 @@ pub enum AnchorCarriage {
 ///
 /// ⚠ That single reason is now known to be wrong for a large part
 /// of its own membership, and the next atomic is what splits it —
-/// see [`NoAnchor::AwaitingResolver`], which states the
+/// see [`NoAnchor::NotYetMeasured`], which states the
 /// measurement rather than leaving the bucket to imply something
 /// false about itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoAnchor {
-    /// The code has not been demonstrated carrying yet. Since
-    /// Atomic 2 the resolver exists and is wired, so this names
-    /// remaining work rather than a missing mechanism.
+    /// No scenario raises this code, so NOTHING IS KNOWN about it —
+    /// not that it cannot carry, only that nobody has looked.
     ///
-    /// ⚠ DEBT, and owed by someone. Membership here is expected to
-    /// shrink; a code that can never leave belongs in
-    /// [`NoAnchor::NoAuthoredArtefact`] instead, or the roster
-    /// reports work that will never be done as though it were
-    /// pending.
+    /// ⚠ The name is the measurement. It read `AwaitingResolver`
+    /// until 2026-09-14, which asserted a cause: that a resolver is
+    /// the missing piece. Measured by
+    /// `the_roster_knows_only_what_a_scenario_exercises`, that was
+    /// true of NONE of the membership — every code here had been
+    /// executed by nothing at all, so "awaiting a resolver" named a
+    /// diagnosis for which no evidence existed. The two codes a run
+    /// has since measured left for reasons neither the old name nor
+    /// each other shared ([`NoAnchor::NoPositionToResolveFrom`],
+    /// [`NoAnchor::RaisedBeforeAnyResolvingStage`]), which is what a
+    /// bucket asserting one cause for everything had been hiding.
     ///
-    /// ⚠⚠ Measured 2026-09-14 by
-    /// `the_roster_knows_only_what_a_scenario_exercises`: of the
-    /// 317 codes here, **0** were executed and found not to carry
-    /// — every one of them is UNMEASURED, raised by no scenario at
-    /// all. So the sentence above is true of the bucket's purpose
-    /// and false of its present membership: what these codes await
-    /// is not a resolver, it is a scenario. The roster learns by
-    /// executing, never by asserting, and 22 of 360 codes are
-    /// executed by anything.
-    AwaitingResolver,
+    /// ⚠⚠ So this is a bucket of IGNORANCE, not of debt, and a code
+    /// leaves it only by being run. It is expected to shrink, but a
+    /// code leaving may land on any reason — including one nobody has
+    /// written yet. Reading membership here as "work owed on the
+    /// resolver" is the error the rename exists to stop.
+    NotYetMeasured,
     /// The anchor itself is what the code is complaining about.
     TheAnchorIsTheSubject,
     /// The complaint's subject is argv or the filesystem, so there
@@ -14986,7 +14987,7 @@ pub enum NoAnchor {
     ///
     /// ⚠ PRINCIPLED and permanent, and that is why it is a
     /// separate reason rather than a long stay in
-    /// [`NoAnchor::AwaitingResolver`]. Nineteen codes sat in the
+    /// [`NoAnchor::NotYetMeasured`]. Nineteen codes sat in the
     /// debt bucket claiming to await a resolver they can never
     /// use, which made the debt look larger than it is and — the
     /// worse half — made a permanent exemption indistinguishable
@@ -15035,7 +15036,7 @@ impl NoAnchor {
     /// its own.
     pub fn why(self) -> &'static str {
         match self {
-            NoAnchor::AwaitingResolver => {
+            NoAnchor::NotYetMeasured => {
                 "this code has not been demonstrated carrying the \
                      enclosing anchor. Five resolution points exist as of \
                      Atomic 7 — the boundaries \
@@ -15134,7 +15135,7 @@ impl NoAnchor {
                      not a document. There is no authored artefact behind it, \
                      so there is no paragraph an anchor could name, and no \
                      resolver can ever change that. Permanent, and separated \
-                     from `AwaitingResolver` for exactly that reason: a \
+                     from `NotYetMeasured` for exactly that reason: a \
                      permanent exemption sitting in the debt bucket reports \
                      work that will never be done as though it were pending, \
                      and overstates the debt by nineteen."
@@ -15658,7 +15659,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationEventSchemaOnBuiltinEvent
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality
-            | MeshEventSchemaMismatch => Registered(NoAnchor::AwaitingResolver),
+            | MeshEventSchemaMismatch => Registered(NoAnchor::NotYetMeasured),
 
             // ── Measured, and each here for its OWN reason ───────
             // Both were in the bucket above until a scenario ran them.
@@ -15992,8 +15993,9 @@ mod anchor_contract_tests {
     /// The roster knows only what a scenario exercises, and that bound
     /// is named here rather than left to be inferred.
     ///
-    /// ⚠ `AwaitingResolver` reads *"the resolver exists and is wired,
-    /// so this names remaining work rather than a missing mechanism"*.
+    /// ⚠ The bucket read `AwaitingResolver` until this measurement
+    /// renamed it — *"the resolver exists and is wired, so this names
+    /// remaining work rather than a missing mechanism"*.
     /// For the members a scenario exercises that is true. For the rest
     /// it asserts a cause nobody measured: the roster learns a code
     /// carries by EXECUTING it, so a code no scenario raises is not
@@ -16019,7 +16021,7 @@ mod anchor_contract_tests {
         for &code in ALL_DIAGNOSTIC_CODES {
             if matches!(
                 anchor_carriage(code, Pipeline::Statechart),
-                AnchorCarriage::Registered(NoAnchor::AwaitingResolver)
+                AnchorCarriage::Registered(NoAnchor::NotYetMeasured)
             ) {
                 if exercised.contains(code.as_str()) {
                     debt_with_scenario += 1;
@@ -16031,7 +16033,7 @@ mod anchor_contract_tests {
 
         println!(
             "anchor roster: {} code(s) total, {} exercised by a scenario; \
-             of the `AwaitingResolver` debt, {debt_with_scenario} were \
+             of the `NotYetMeasured` bucket, {debt_with_scenario} were \
              executed and did not carry, {} are UNMEASURED — no scenario \
              raises them, so nothing is known about them",
             ALL_DIAGNOSTIC_CODES.len(),
@@ -16076,7 +16078,7 @@ mod anchor_contract_tests {
     /// code — it is a reading, and this asserts the arm agrees with it.
     ///
     /// Both directions, because each catches a different mistake: a
-    /// `cli/` code left in `AwaitingResolver` overstates the debt and
+    /// `cli/` code left in `NotYetMeasured` overstates the debt and
     /// promises work nobody can do, and a document-side code moved
     /// into `NoAuthoredArtefact` would grant itself a permanent
     /// exemption from a contract it could actually meet.
@@ -16415,7 +16417,7 @@ mod anchor_contract_tests {
             // and §2.2 sanctions the shape outright — the complaint
             // belongs to the document, not to a node in it.
             //
-            // Left in `AwaitingResolver` deliberately. One measured
+            // Left in `NotYetMeasured` deliberately. One measured
             // instance is not a category, and this roster's whole
             // discipline is that a reason is earned by execution; the
             // next scenarios say whether a third variant is owed.
