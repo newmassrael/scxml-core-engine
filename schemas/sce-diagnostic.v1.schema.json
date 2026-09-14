@@ -52,6 +52,8 @@
         "validation/invalid-attribute",
         "validation/unsupported-kind",
         "validation/duplicate-id",
+        "validation/malformed-identifier",
+        "validation/event-name-grammar",
         "validation/duplicate-context-object",
         "validation/reserved-context-id",
         "validation/empty-collection",

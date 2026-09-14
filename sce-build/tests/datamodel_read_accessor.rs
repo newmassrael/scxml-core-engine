@@ -317,12 +317,17 @@ fn a_json_name_that_is_not_an_identifier_gets_no_accessor() {
         ("plain", "screen_rules", true),
         ("leading underscore", "_rules", true),
         ("digits inside", "rules2", true),
-        // Legal XML ids, and all three are something else as expressions:
-        // a subtraction, a member access, and a numeric literal followed by
-        // a name.
+        // Legal XML ids, and both are something else as an expression: a
+        // subtraction and a member access.
+        //
+        // ⚠ A third row sat here, `("leading digit", "2rules", false)`, under
+        // a comment calling all three "legal XML ids". `2rules` is not one:
+        // XML's `NameStartChar` admits letters and `_` and no digit, so
+        // `xs:ID` never admitted it either. The document is now refused at
+        // parse — asserted below rather than dropped, because the case was
+        // real and only its premise was wrong.
         ("hyphen", "screen-rules", false),
         ("dot", "screen.rules", false),
-        ("leading digit", "2rules", false),
     ];
 
     for (label, id, expect_readable) in readable_and_not {
@@ -344,6 +349,24 @@ fn a_json_name_that_is_not_an_identifier_gets_no_accessor() {
              must get no reader at all rather than one that answers wrongly."
         );
     }
+
+    // The name this rule cannot be asked about, because the document holding
+    // it no longer parses. `<data id>` is an XML Schema `ID` (W3C SCXML
+    // §5.2.1) and an XML Name cannot begin with a digit, so the question
+    // "does a leading-digit name get an accessor" is answered one stage
+    // earlier — see `scxml_identifier` and
+    // `an_identifier_is_checked_against_the_grammar_w3c_gives_it`. Asserted
+    // here so this file's reader learns where the row went rather than
+    // finding a rule with a hole in it.
+    let leading_digit = SCXMLParser::new().parse_string(
+        &doc_with_data(r#"<data id="2rules" expr="[1]"/>"#),
+        "leading digit",
+    );
+    assert!(
+        leading_digit.is_err(),
+        "`<data id=\"2rules\">` parsed. It is not a valid xs:ID, so the reader \
+         rule below is being asked about a document W3C does not admit."
+    );
 
     // A name an expression cannot reach still reads through the scalar path,
     // which fetches by key. Withholding those too would be a regression

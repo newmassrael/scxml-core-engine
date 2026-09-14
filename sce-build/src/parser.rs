@@ -1416,6 +1416,18 @@ impl SCXMLParser {
         // reports no error.
         reject_unexpanded_directives(&root, diag_label)?;
 
+        // §scxml-3.3.1 + §scxml-3.12.1: check every identifier-bearing
+        // attribute against the grammar W3C gives it, while the tree is
+        // still in hand and before any of it becomes a model field.
+        //
+        // Here rather than at the twenty-odd sites below that read these
+        // attributes: a guard per site is a guard the twenty-first
+        // forgets, and one sweep is exhaustive over the document instead
+        // of over this function's call graph. It runs after
+        // `reject_unexpanded_directives` because a pre-expansion
+        // placeholder (`id="s_{$id}"`) is not an identifier yet.
+        crate::scxml_identifier::reject_malformed(&root, diag_label)?;
+
         // §scxml-3.6: Get initial attribute
         let mut initial = root.attribute("initial").unwrap_or("").to_string();
         if initial.is_empty() {

@@ -175,6 +175,13 @@ pub mod scxml_exhaustiveness;
 /// conds (`cpp:`, `kotlin:`, `rust:`) are opaque, token-prefix
 /// superset shadowing is not flagged.
 pub mod scxml_guard_analysis;
+/// The grammar W3C gives an identifier-bearing attribute (`id`,
+/// `target`, `initial`, `event`), checked at parse on the attribute
+/// itself. One sweep over the post-expansion document rather than a
+/// guard at each of the parser's reads, so an attribute a future
+/// reader picks up is already covered. Invoked from
+/// [`parser::SCXMLParser::parse_file`] and its in-memory siblings.
+pub mod scxml_identifier;
 /// Statechart graph reachability
 /// validator. BFS from the document `initial` configuration computes
 /// the design-time reach set and rejects orphan states / dead

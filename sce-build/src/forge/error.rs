@@ -413,6 +413,47 @@ pub enum ValidationError {
         id: String,
     },
 
+    /// An identifier-bearing attribute whose value is not an XML Name.
+    ///
+    /// W3C SCXML types `id` as an XML Schema `ID` and `target` / `initial`
+    /// as `IDREF(S)` (§3.3.1, §3.4.1, §3.7.1, §3.13), and the value does not
+    /// stay in the document — it becomes a code identifier in every backend
+    /// SCE emits. Raised by [`crate::scxml_identifier::reject_malformed`],
+    /// which sweeps the parsed tree; that module's header states which
+    /// attributes are covered and what SCE narrows against W3C.
+    #[error(
+        "<{element} {attr}=\"{value}\">: '{token}' is not a valid {expected} \
+         — an identifier starts with a letter or '_' and continues with \
+         letters, digits, '_' or '-', with '.' separating tokens"
+    )]
+    MalformedIdentifier {
+        element: String,
+        attr: String,
+        value: String,
+        token: String,
+        expected: &'static str,
+    },
+
+    /// An `event` attribute whose descriptor is not a legal token sequence.
+    ///
+    /// Separate from [`ValidationError::MalformedIdentifier`] because W3C
+    /// gives it a different clause (§3.12.1) and a genuinely different
+    /// grammar: an event token may begin with a digit, an XML Name may not.
+    /// A consumer branching on the wire code therefore learns which of the
+    /// two rules it broke.
+    #[error(
+        "<{element} {attr}=\"{value}\">: '{token}' is not a valid {expected} \
+         — a token starts with a letter, digit or '_' and continues with \
+         letters, digits, '_' or '-', with '.' separating tokens"
+    )]
+    EventNameGrammar {
+        element: String,
+        attr: String,
+        value: String,
+        token: String,
+        expected: &'static str,
+    },
+
     /// Duplicate `<sce:context id="...">` declaration. Orthogonal to
     /// `DuplicateId` because `<sce:context>` is a document-wide
     /// extension scope that can appear in any forge kind (a codec, a

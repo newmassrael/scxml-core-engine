@@ -517,6 +517,18 @@ pub enum DiagnosticCode {
     ValidationUnsupportedKind,
     #[serde(rename = "validation/duplicate-id")]
     ValidationDuplicateId,
+    // ── NL→IR closure ledger row C1: identifier-bearing attributes
+    //    checked against the grammar W3C gives them, at parse, on the
+    //    attribute itself. Two codes because W3C gives two grammars —
+    //    an XML Name for `id` / `target` / `initial` (§3.3.1 and
+    //    siblings) and §3.12.1's token sequence for `event`, which
+    //    differ at the first character. Splitting them is what lets a
+    //    consumer branching on the code say which rule was broken and
+    //    open the right clause. See `crate::scxml_identifier`. ──────
+    #[serde(rename = "validation/malformed-identifier")]
+    ValidationMalformedIdentifier,
+    #[serde(rename = "validation/event-name-grammar")]
+    ValidationEventNameGrammar,
     #[serde(rename = "validation/duplicate-context-object")]
     ValidationDuplicateContextObject,
     #[serde(rename = "validation/reserved-context-id")]
@@ -2850,6 +2862,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationInvalidAttribute,
         ValidationUnsupportedKind,
         ValidationDuplicateId,
+        ValidationMalformedIdentifier,
+        ValidationEventNameGrammar,
         ValidationDuplicateContextObject,
         ValidationReservedContextId,
         ValidationEmptyCollection,
@@ -3446,6 +3460,18 @@ impl DiagnosticCode {
             // TypeError, and the appendix is what makes ECMAScript's
             // answers this datamodel's.
             ExpressionLiteralNotCallable => Some("W3C SCXML §B.2"),
+
+            // ── Identifier grammar (W3C SCXML). Two anchors because
+            //    W3C states the two rules in two clauses, and a reader
+            //    sent to the wrong one finds nothing. §3.3.1 is where
+            //    an `id` is typed "a valid id as defined in [XML
+            //    Schema]"; the siblings that repeat it (§3.4.1, §3.7.1,
+            //    §3.10.1, §5.2.1, §6.2.1, §6.4.1) all defer to the same
+            //    XML Schema definition, so the one anchor answers for
+            //    every row of `scxml_identifier::IDENTIFIER_ATTRIBUTES`
+            //    that carries a name. ────────────────────────────────
+            ValidationMalformedIdentifier => Some("W3C SCXML §3.3.1"),
+            ValidationEventNameGrammar => Some("W3C SCXML §3.12.1"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4056,6 +4082,8 @@ impl DiagnosticCode {
             ValidationInvalidAttribute => "validation/invalid-attribute",
             ValidationUnsupportedKind => "validation/unsupported-kind",
             ValidationDuplicateId => "validation/duplicate-id",
+            ValidationMalformedIdentifier => "validation/malformed-identifier",
+            ValidationEventNameGrammar => "validation/event-name-grammar",
             ValidationDuplicateContextObject => "validation/duplicate-context-object",
             ValidationReservedContextId => "validation/reserved-context-id",
             ValidationEmptyCollection => "validation/empty-collection",
@@ -5098,6 +5126,39 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 id: id.clone(),
             }),
             key_fragments: vec![kind.to_string(), what.clone(), id.clone()],
+        },
+        // Both identifier-grammar codes populate `expected` and no `fix`.
+        // There is no closed set of legal replacements for a name — the
+        // author picks one — so §3.2's `ExpectedIsMetadata` shape applies:
+        // the production the parser wanted, carried as metadata, with the
+        // rejected value in `actual` for the consumer to locate and edit.
+        ValidationError::MalformedIdentifier {
+            element,
+            attr,
+            value,
+            token,
+            expected,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMalformedIdentifier,
+            stage: Stage::Validation,
+            expected: Some(vec![(*expected).to_string()]),
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), attr.clone(), token.clone()],
+        },
+        ValidationError::EventNameGrammar {
+            element,
+            attr,
+            value,
+            token,
+            expected,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationEventNameGrammar,
+            stage: Stage::Validation,
+            expected: Some(vec![(*expected).to_string()]),
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), attr.clone(), token.clone()],
         },
         ValidationError::DuplicateRequirementId { element, id } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDuplicateRequirementId,
@@ -8965,6 +9026,33 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:dd04a37de468ffb4","code":"validation/invalid-attribute","stage":"validation","message":"sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)","actual":"blob","fix":{"kind":"replace_one_of","candidates":["u8","u16","u32"]}}"#,
+            ),
+            (
+                // The document §1 of the accepted subset measures: an
+                // `id` carrying a comment terminator and a path
+                // separator, which used to generate `…_STATE_S0*/X`.
+                "forge/malformed-identifier",
+                ValidationError::MalformedIdentifier {
+                    element: "state".into(),
+                    attr: "id".into(),
+                    value: "s0*/X".into(),
+                    token: "s0*/X".into(),
+                    expected: "xs:ID",
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d2bd5ac2faf16216","code":"validation/malformed-identifier","stage":"validation","spec":"W3C SCXML §3.3.1","message":"<state id=\"s0*/X\">: 's0*/X' is not a valid xs:ID — an identifier starts with a letter or '_' and continues with letters, digits, '_' or '-', with '.' separating tokens","expected":["xs:ID"],"actual":"s0*/X"}"#,
+            ),
+            (
+                "forge/event-name-grammar",
+                ValidationError::EventNameGrammar {
+                    element: "transition".into(),
+                    attr: "event".into(),
+                    value: "go*/Y".into(),
+                    token: "go*/Y".into(),
+                    expected: "event descriptor",
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2ca78e103b7c0bd0","code":"validation/event-name-grammar","stage":"validation","spec":"W3C SCXML §3.12.1","message":"<transition event=\"go*/Y\">: 'go*/Y' is not a valid event descriptor — a token starts with a letter, digit or '_' and continues with letters, digits, '_' or '-', with '.' separating tokens","expected":["event descriptor"],"actual":"go*/Y"}"#,
             ),
             (
                 "forge/invalid-reference",
@@ -13509,6 +13597,14 @@ mod tests {
             // this node actually came from, and SCE never reads spec
             // documents (RFC §4.3), so it cannot offer a candidate.
             | ValidationProvenanceMalformed
+            // The two identifier-grammar codes: `expected` is the
+            // production W3C gives the position (`xs:ID`, `event
+            // descriptor`). No candidate set exists — a name is the
+            // author's word for the thing, and inventing one would put
+            // SCE's spelling into their document — so `fix` is absent
+            // and the grammar rides `expected` as metadata.
+            | ValidationMalformedIdentifier
+            | ValidationEventNameGrammar
             | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
@@ -14382,6 +14478,7 @@ mod tests {
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationUnsupportedKind | ValidationDuplicateId
+                | ValidationMalformedIdentifier | ValidationEventNameGrammar
                 | ValidationDuplicateContextObject | ValidationReservedContextId
                 | ValidationEmptyCollection
                 | ValidationCountMismatch | ValidationIncompatibleAttributes
@@ -14701,9 +14798,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            358,
+            360,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 358 distinct variants to match the DiagnosticCode \
+             expected 360 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15126,6 +15223,15 @@ mod tests {
             | ValidationInvalidAttribute
             | ValidationUnsupportedKind
             | ValidationDuplicateId
+            // Raised in `parse_impl`, before `anchor_index` is built —
+            // the sweep runs on the roxmltree tree so it can name the
+            // attribute's own column, and the index that answers "which
+            // anchor encloses this position" does not exist yet. Sits
+            // here rather than in `Carries` because the roster learns a
+            // code carries by executing it, never by reasoning that a
+            // neighbour does.
+            | ValidationMalformedIdentifier
+            | ValidationEventNameGrammar
             | ValidationDuplicateContextObject
             | ValidationReservedContextId
             | ValidationEmptyCollection
