@@ -14936,6 +14936,16 @@ mod tests {
         /// [`NoAnchor::NoAuthoredArtefact`] instead, or the roster
         /// reports work that will never be done as though it were
         /// pending.
+        ///
+        /// ⚠⚠ Measured 2026-09-14 by
+        /// `the_roster_knows_only_what_a_scenario_exercises`: of the
+        /// 317 codes here, **0** were executed and found not to carry
+        /// — every one of them is UNMEASURED, raised by no scenario at
+        /// all. So the sentence above is true of the bucket's purpose
+        /// and false of its present membership: what these codes await
+        /// is not a resolver, it is a scenario. The roster learns by
+        /// executing, never by asserting, and 22 of 360 codes are
+        /// executed by anything.
         AwaitingResolver,
         /// The anchor itself is what the code is complaining about.
         TheAnchorIsTheSubject,
@@ -15864,6 +15874,80 @@ mod tests {
             "the invariant examined {examined} anchored records, which \
              is too few to mean anything — the corpus stopped producing \
              located diagnostics inside anchored regions",
+        );
+    }
+
+    /// The roster knows only what a scenario exercises, and that bound
+    /// is named here rather than left to be inferred.
+    ///
+    /// ⚠ `AwaitingResolver` reads *"the resolver exists and is wired,
+    /// so this names remaining work rather than a missing mechanism"*.
+    /// For the members a scenario exercises that is true. For the rest
+    /// it asserts a cause nobody measured: the roster learns a code
+    /// carries by EXECUTING it, so a code no scenario raises is not
+    /// awaiting a resolver — nothing is known about it at all, and the
+    /// missing piece is a scenario.
+    ///
+    /// This does not move the classification, because it cannot:
+    /// [`anchor_carriage`] is a compile-time match and the corpus is
+    /// test-only, and coupling the two would make production code
+    /// depend on a test fixture. What it does instead is make the
+    /// bound VISIBLE and stop it shrinking silently — the failure this
+    /// whole item exists to refuse is not a wrong answer, it is no
+    /// answer given quietly.
+    #[test]
+    fn the_roster_knows_only_what_a_scenario_exercises() {
+        let exercised: std::collections::BTreeSet<&'static str> = carrying_scenarios()
+            .into_iter()
+            .map(|(code, _)| code)
+            .collect();
+
+        let mut debt_with_scenario = 0usize;
+        let mut debt_unmeasured: Vec<&'static str> = Vec::new();
+        for &code in ALL_DIAGNOSTIC_CODES {
+            if matches!(
+                anchor_carriage(code, Pipeline::Statechart),
+                AnchorCarriage::Registered(NoAnchor::AwaitingResolver)
+            ) {
+                if exercised.contains(code.as_str()) {
+                    debt_with_scenario += 1;
+                } else {
+                    debt_unmeasured.push(code.as_str());
+                }
+            }
+        }
+
+        println!(
+            "anchor roster: {} code(s) total, {} exercised by a scenario; \
+             of the `AwaitingResolver` debt, {debt_with_scenario} were \
+             executed and did not carry, {} are UNMEASURED — no scenario \
+             raises them, so nothing is known about them",
+            ALL_DIAGNOSTIC_CODES.len(),
+            exercised.len(),
+            debt_unmeasured.len(),
+        );
+
+        // A floor on the corpus, not on the debt. The debt is meant to
+        // fall; what must not fall is how much of it anyone has looked
+        // at, and a corpus that shrank would make the roster quieter
+        // rather than truer.
+        assert!(
+            exercised.len() >= 21,
+            "the scenario corpus has shrunk to {} — the roster learns only \
+             by executing, so a smaller corpus means less is known while \
+             the registration text goes on claiming a resolver is the \
+             missing piece",
+            exercised.len(),
+        );
+
+        // Non-vacuity in the other direction: if this ever reaches zero
+        // the unmeasured majority is gone and this test should be
+        // retired with the residue it tracks, not left passing.
+        assert!(
+            !debt_unmeasured.is_empty(),
+            "no registered code is unmeasured any more — every code a \
+             scenario does not raise has left the debt bucket. Retire \
+             this test along with the residue it was written to name.",
         );
     }
 
