@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: nl-ir-closure.yml
+#
 # The NL->IR closure ledger, measured against the tree.
 #
 # `docs/SCE_NL_IR_CLOSURE.md` names what remains on SCE's side of the

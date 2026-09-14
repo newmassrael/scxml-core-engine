@@ -251,7 +251,7 @@ COST_MEASURED: dict[str, str] = {
     # Timed on the day it was written, five consecutive runs: 176 170 170 158
     # 159 ms. `cost_s` is 0 because every one of them rounds there, and the
     # spread is 18ms — narrow enough to say this is the gate's own cost and
-    # not the machine's, which mattered because two other agents' loops were
+    # not the machine's, which mattered because two other sessions' loops were
     # running at the time and this tree's costs are not trustworthy to within
     # a factor of two under that load. Nothing in it builds: it is grep over
     # source (binaries and build trees pruned) plus one short Python pass
@@ -382,7 +382,7 @@ GATES: dict[str, dict] = {
     # and a `paths:` list narrowed to what anyone remembers misses the one
     # nobody thought of. Affordable — 0.17s of grep plus one short Python
     # pass, measured five times (176 170 170 158 159 ms) on a machine running
-    # two other agents' loops.
+    # two other sessions' loops.
     "nl-ir-closure": {
         "workflows": ["nl-ir-closure.yml"],
         "runner_workflow": True,
@@ -1250,6 +1250,30 @@ INERT = [
     # above refuses. It is to give the documents that drive no gate their own
     # named entries, one at a time, each a claim somebody checked.
     "docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md",
+    # The NL->IR closure ledger, and the same shape as the entry above: read
+    # by a gate, and inert for the reason at the top of this list. Both
+    # halves were checked on 2026-09-14 rather than assumed, because the
+    # claim is only true while both hold:
+    #   python3 tools/git-hooks/gate_registry.py --changed README.md --explain
+    #     -> `nl-ir-closure` is selected for a path that is already INERT,
+    #        so it is a Rule 3 gate and runs for every change.
+    #   .github/workflows/nl-ir-closure.yml declares no `paths:` filter,
+    #        so CI offers it every push.
+    # Editing the ledger therefore cannot escape the gate that measures it.
+    #
+    # ⚠ What this entry does NOT do is narrow `nl-ir-closure` itself. That
+    # gate must stay Rule 3: it measures fourteen rows against source spread
+    # over `sce-build/src/`, the C templates, `tests/`, `resources/` and the
+    # visualizer, so a change that CLOSES a row without touching the ledger
+    # is exactly the case that makes the ledger a stale denominator. A
+    # `local` selector naming the ledger would miss every one of them.
+    #
+    # Before this entry the path was unclassified, so editing it took the
+    # Rule 1 branch: 12 local gates and 15 lanes printed under `--ci-unowed`,
+    # none of which any change to a markdown ledger can affect. That is the
+    # cost the comment above prices for the other `docs/` documents, paid on
+    # the one file this repository's closure work edits every round.
+    "docs/SCE_NL_IR_CLOSURE.md",
     "LICENSE*",
     # Local tooling. The one gate that reads these, `roadmap_marker_gate`,
     # reaches every change through `tree-hygiene`, and this file's own
