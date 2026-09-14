@@ -16222,6 +16222,39 @@ mod anchor_contract_tests {
             // instance, and the roster's rule is that a reason is
             // earned by measurement rather than by argument.
             //
+            // `validation/duplicate-id` — two `<invoke>` with one id.
+            //
+            // Added to TEST A PREDICTION rather than to demonstrate
+            // carriage: it is raised mid-parse, and `AnchorIndex` is
+            // built from the roxmltree root only after the model is
+            // otherwise complete, so a parse that REJECTS never
+            // reaches the line that builds it. The prediction is that
+            // this code executes and does not carry. If it carries,
+            // the model of parse-time raises is wrong and the roster
+            // says so — which is the only reason to write a scenario
+            // whose answer one thinks one already knows.
+            //
+            // ⭐ MEASURED, and the prediction held: it executes and
+            // does not carry. The sharp part is WHY, because it is not
+            // the reason the other measured non-carrier has. This
+            // record HAS a position — the raise computes one with
+            // `text_pos_at` — so positionlessness is not the cause.
+            // The cause is that a parse error returns straight out of
+            // `parse_string`, and every stage that resolves an anchor
+            // runs after it. Two measured non-carriers, two different
+            // reasons, neither of them "awaiting a resolver".
+            (
+                "validation/duplicate-id",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript"
+                         sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                     <state id="s0">
+                       <invoke id="inv" type="scxml" src="child.scxml"/>
+                       <invoke id="inv" type="scxml" src="child.scxml"/>
+                     </state>
+                   </scxml>"#,
+            ),
             // `expression/parse-mismatch` — an unclosed group. Raised
             // by the parser's `expect`, which is the only thing that
             // reports "wanted this token, got that one"; `ecmascript/`
