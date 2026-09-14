@@ -15994,6 +15994,212 @@ mod anchor_contract_tests {
         );
     }
 
+    /// A record's anchors must be the ones its OWN coordinate names.
+    ///
+    /// The sibling above asks whether the stage asked at all, and
+    /// non-emptiness is the right predicate for that question. It
+    /// cannot see a different failure: a record whose LOCATION and
+    /// whose ANCHORS disagree. A stage that resolves from one position
+    /// and publishes another sends the reader to a paragraph its own
+    /// coordinate does not reach — and every anchored record it emits
+    /// is non-empty while it does so, so the sibling stays green.
+    ///
+    /// # Why equality is the predicate
+    ///
+    /// An anchored node IS a region, so for any position inside it the
+    /// innermost enclosing region's anchors and that node's own
+    /// anchors are the same list. The hand-threading regime therefore
+    /// needs no exemption here: where it runs on a document that
+    /// parsed, it threads the anchors of the node it located on, which
+    /// is what the lookup answers. Anything other than equality is a
+    /// record citing a paragraph its coordinate does not reach.
+    ///
+    /// ⚠ What this CANNOT see is a record located too COARSELY —
+    /// pointing at the ancestor when the fault is in the child. There
+    /// its coordinate and its anchors agree, so equality is silent.
+    /// Catching that needs to know where the complaint SHOULD point,
+    /// which is fixture knowledge rather than a corpus property, and
+    /// [`a_diagnostic_carries_the_innermost_anchor_not_its_ancestors`]
+    /// is where it is stated.
+    #[test]
+    fn a_records_anchors_are_the_ones_its_own_location_names() {
+        let label = "anchor_contract";
+        let mut examined = 0usize;
+        let mut examined_where_it_could_differ = 0usize;
+
+        for (code, scxml) in carrying_scenarios() {
+            let Ok(model) = crate::parser::SCXMLParser::new().parse_string(scxml, label) else {
+                // No parse, no index — outside the quantifier, for the
+                // reason the sibling states.
+                continue;
+            };
+            // A document with one anchored region answers the same
+            // list for every position inside it, so a record there
+            // cannot make the two sides of this comparison disagree.
+            // Counted so the floor below can refuse a corpus that has
+            // quietly lost the only documents this gate can measure.
+            let could_differ = model.anchor_index.len() >= 2;
+            for diagnostic in run_scenario(scxml) {
+                let Some(location) = diagnostic.location.as_ref() else {
+                    continue;
+                };
+                let at = crate::forge::error::SourceLocation {
+                    file: location.file.clone(),
+                    line: location.line,
+                    col: location.col,
+                };
+                let named = model.anchor_index.enclosing(&at);
+                if named.is_empty() {
+                    continue;
+                }
+                examined += 1;
+                if could_differ {
+                    examined_where_it_could_differ += 1;
+                }
+                assert_eq!(
+                    diagnostic.spec_provenance.as_slice(),
+                    named,
+                    "`{}` (scenario `{code}`) publishes the location \
+                     {}:{:?} and the anchors {:?}, but the innermost \
+                     anchored region enclosing that position declares \
+                     {:?}. The two disagree, so a reader who opens the \
+                     cited paragraph is reading about somewhere else. \
+                     Resolve from the coordinate the record publishes, \
+                     or publish the coordinate it resolved from.",
+                    diagnostic.code.as_str(),
+                    location.file,
+                    location.line,
+                    diagnostic.spec_provenance,
+                    named,
+                );
+            }
+        }
+
+        // The same floor as the sibling and for the same reason: an
+        // empty sweep prints the green of a clean one.
+        assert!(
+            examined >= 15,
+            "the correspondence examined {examined} anchored records, \
+             which is too few to mean anything",
+        );
+        // ⭐ The floor that makes the assertion above evidence rather
+        // than arithmetic. Measured 2026-09-15, BEFORE `NESTED_ANCHORS`
+        // joined the corpus: all 23 scenario documents declared
+        // exactly one anchor, so every comparison this gate made was
+        // between the only answer available and itself. It would have
+        // passed against a resolver that ignored position entirely.
+        assert!(
+            examined_where_it_could_differ >= 1,
+            "every record examined came from a document with a single \
+             anchored region, where the innermost enclosing anchor and \
+             every other candidate are the same list. The comparison \
+             above cannot fail under that corpus, so it measured \
+             nothing — restore a scenario that NESTS anchors (see \
+             `NESTED_ANCHORS`) rather than relaxing this floor",
+        );
+    }
+
+    /// ⭐ The word §3 chose is **innermost**, and until this landed the
+    /// corpus could not tell it from *any*.
+    ///
+    /// Measured 2026-09-15, before [`NESTED_ANCHORS`] existed: all 23
+    /// documents in [`carrying_scenarios`] declared exactly ONE
+    /// anchor. For a single-anchor document the innermost enclosing
+    /// region, the outermost, and "whichever one was found first" are
+    /// the same list — so every end-to-end gate on this axis was being
+    /// satisfied by an answer that never had to choose.
+    /// `anchor_index`'s `the_innermost_of_two_nested_anchors_wins`
+    /// pins that the LOOKUP picks the innermost; nothing pinned that
+    /// what reaches the wire is what the lookup would have answered.
+    /// Two halves, each measured, with no gate joining them.
+    ///
+    /// This is the case RFC §3 argues from, one level deeper than the
+    /// golden Atomic 4 asked for: the ancestor is anchored AND so is
+    /// the child the complaint is about. The honest answer is the
+    /// child's paragraph. An implementation that resolved from the
+    /// node it happened to be holding, or that located the complaint
+    /// on the enclosing `<state>`, would carry the ancestor's anchor,
+    /// be non-empty, agree with its own published coordinate, and pass
+    /// every other gate in this module.
+    #[test]
+    fn a_diagnostic_carries_the_innermost_anchor_not_its_ancestors() {
+        let model = crate::parser::SCXMLParser::new()
+            .parse_string(NESTED_ANCHORS, "anchor_contract")
+            .expect("the nested fixture parses");
+        assert_eq!(
+            model.anchor_index.len(),
+            2,
+            "the fixture must anchor two NESTED regions — with one, \
+             the innermost answer cannot be told from any other, which \
+             is the blind spot this test exists to close",
+        );
+
+        let diagnostics = run_scenario(NESTED_ANCHORS);
+        let guard: Vec<&Diagnostic> = diagnostics
+            .iter()
+            .filter(|d| d.code.as_str() == "scxml/always-false-guard")
+            .collect();
+        assert!(
+            !guard.is_empty(),
+            "the fixture stopped raising the code it is built on, so it \
+             measures nothing; it produced {:?}",
+            diagnostics
+                .iter()
+                .map(|d| d.code.as_str())
+                .collect::<Vec<_>>(),
+        );
+
+        for diagnostic in guard {
+            let carried: Vec<&str> = diagnostic
+                .spec_provenance
+                .iter()
+                .map(|p| p.doc_id.as_str())
+                .collect();
+            assert_eq!(
+                carried,
+                vec![INNER],
+                "the always-false guard is on a `<transition>` anchored \
+                 at {INNER}, sitting inside a `<state>` anchored at \
+                 {OUTER}. It reached the wire carrying {carried:?}. \
+                 Carrying {OUTER} is the failure §3 names: the reader is \
+                 sent to the ancestor's paragraph for a fault the \
+                 document anchored to its own.",
+            );
+        }
+    }
+
+    /// The ancestor's document — the answer that would be wrong.
+    const OUTER: &str = "OEM-DIAG-SPEC";
+    /// The `<transition>`'s own document — the honest answer.
+    const INNER: &str = "OEM-TIMING-REQ";
+
+    /// The `scxml/always-false-guard` scenario with ONE attribute
+    /// added: the transition the lint is about carries its own anchor,
+    /// inside a `<state>` that carries a different one.
+    ///
+    /// It is a `const` rather than an inline literal because two
+    /// things need the same document and they must not drift apart.
+    /// [`a_diagnostic_carries_the_innermost_anchor_not_its_ancestors`]
+    /// names which anchor must win; [`carrying_scenarios`] puts the
+    /// document into the corpus walk, and that half is not decoration.
+    /// Without a document whose innermost and outermost answers
+    /// DIFFER, [`a_records_anchors_are_the_ones_its_own_location_names`]
+    /// compares two things that cannot disagree — every anchored
+    /// record in a single-anchor document carries the only anchor
+    /// there is — so it would be a gate whose subject is absent from
+    /// its own corpus.
+    const NESTED_ANCHORS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" initial="a"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <state id="a">
+                         <transition event="go" cond="false" target="a"
+                                     sce:provenance="OEM-TIMING-REQ@B#7.1"/>
+                       </state>
+                     </state>
+                   </scxml>"#;
+
     /// The roster knows only what a scenario exercises, and that bound
     /// is named here rather than left to be inferred.
     ///
@@ -16636,6 +16842,14 @@ mod anchor_contract_tests {
                      </state>
                    </scxml>"#,
             ),
+            // The same code again, on the one document in this corpus
+            // that NESTS anchors. It is here for the corpus walks
+            // rather than for the roster — the roster already counts
+            // this code from the entry above — and it is what stops
+            // `a_records_anchors_are_the_ones_its_own_location_names`
+            // from comparing two answers that cannot differ. See
+            // [`NESTED_ANCHORS`].
+            ("scxml/always-false-guard", NESTED_ANCHORS),
             // `scxml/shadowed-transition` — the second `go` is dead
             // because the first is unconditional, and the second is
             // what the record points at.
