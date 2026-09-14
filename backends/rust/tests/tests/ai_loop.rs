@@ -13,7 +13,7 @@
 // exit set swallowed the parallel root) was invisible to every W3C fixture
 // because they are all one region deep. This document is three.
 //
-// No sprag, no session, no pane: every effect the host would perform is
+// No multiplexer, no session, no pane: every effect the host would perform is
 // replaced by the event that effect would have produced, so what is under
 // test is the machine's topology rather than any driver's plumbing.
 //

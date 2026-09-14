@@ -36,7 +36,7 @@ edit("tools/codegen/templates/rust/actions/assign.rs.jinja2",
      """        log::error!("Assign failed for '{{ loc }}': {}", e);""")
 PY
 
-# The same defect at a `<data>` init site. PINION-PR86 counted 30 of the 42
+# The same defect at a `<data>` init site. The field report counted 30 of the 42
 # errors here, so a fix that reached `<assign>` and missed this template
 # would still leave a consumer unable to build.
 mutation_case "a datamodel init error path names log directly again" <<'PY'

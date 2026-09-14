@@ -16,7 +16,7 @@
 // `log` resolves in the *calling* crate, so a consumer compiling a machine
 // with any non-`null` datamodel got a wall of `E0433: unresolved module or
 // unlinked crate `log`` from code they never wrote — reported from the
-// field as PINION-PR86 (42 errors on one 14-state machine).
+// field by a downstream consumer (42 errors on one 14-state machine).
 //
 // Nothing upstream failed, because the two crates that compile generated
 // Rust in this repo — `sce-rust-tests` and the `c6` bounded-collection

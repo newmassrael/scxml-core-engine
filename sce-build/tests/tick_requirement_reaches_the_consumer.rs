@@ -6,7 +6,7 @@
 //
 // A CLI caller reads `needs_event_scheduler` off the generate manifest. A
 // `build.rs` caller reads nothing: `sce_build::compile_scxml` returns `()`, so
-// the two independent downstream consumers of that route (pinion, sprag) had no
+// the two independent downstream consumers of that route had no
 // route at all to the requirement — and a machine driven with `step` alone
 // delivers no delayed event, raises no error and logs no warning.
 //

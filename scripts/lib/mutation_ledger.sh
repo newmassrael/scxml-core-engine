@@ -42,7 +42,8 @@
 # `$HOME/.local/share`, spelled out, and NOT `$XDG_DATA_HOME`. That was the
 # first shape of this rule and it was wrong in the precise way the whole file
 # is about: measured 2026-08-26, the loop harness that drives these rounds
-# exports `XDG_DATA_HOME=$HOME/.local/share/sprag-loop/data` into its panes,
+# exports an `XDG_DATA_HOME` of its own into its panes — a per-harness
+# directory under `$HOME/.local/share` —
 # so the first round written through this library landed under the harness's
 # own per-run directory instead of beside the corpus — a path that moves with
 # whoever is running, which is a session id by another name.

@@ -1215,8 +1215,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
 
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
-    # `data` field zeroed, so this edge — the one `watching-zenoh` uses on an
-    # MCU and the one `examples/ai_loop` answers with — was measured by nothing
+    # `data` field zeroed, so this edge — the one a downstream MCU consumer
+    # uses and the one `examples/ai_loop` answers with — was measured by nothing
     # on any channel. It is a separate path from `<send><content>`, which the
     # W3C suite does cover, and this backend lowers the two differently.
     sce_generate_static_integration_c_test(event_data_arrives_as_sent "${SCE_C_INTEGRATION_GENERATED_DIR}")

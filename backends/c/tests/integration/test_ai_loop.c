@@ -19,7 +19,7 @@
 // pairing is why every `static int <name>(void)` below is a scenario and
 // nothing else in this file has that shape.
 //
-// No sprag, no session, no pane: every effect the host would perform is
+// No multiplexer, no session, no pane: every effect the host would perform is
 // replaced by the event that effect would have produced, so what is under test
 // is the machine's topology rather than any driver's plumbing.
 //

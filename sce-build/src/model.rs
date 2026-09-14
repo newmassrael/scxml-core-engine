@@ -1806,7 +1806,7 @@ pub struct SCXMLModel {
     /// it serves, beyond the two §scxml-C-1 / §scxml-C-2 names.
     ///
     /// A build input rather than a document fact — the same SCXML
-    /// compiled for a host that serves `x-sprag-host` and for one that
+    /// compiled for a host that serves `x-example-host` and for one that
     /// does not is two different lowerings, and this is what separates
     /// them. Carried on the model rather than in a per-backend options
     /// struct so every generator reads the same declaration; templates

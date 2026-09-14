@@ -15,7 +15,7 @@ document is three. ``sce-build/tests/ai_loop_channel_parity.rs`` holds every
 registered channel to the same scenario set by name, so a scenario added here
 without its siblings fails there — which is the moment it is cheapest to fix.
 
-No sprag, no session, no pane: every effect the host would perform is replaced by
+No multiplexer, no session, no pane: every effect the host would perform is replaced by
 the event that effect would have produced, so what is under test is the machine's
 topology rather than any driver's plumbing.
 

@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn a_type_outside_the_set_is_not_supported() {
-        assert!(!is_supported_send_type("x-sprag-host"));
+        assert!(!is_supported_send_type("x-example-host"));
         // Near-misses, because a substring or prefix comparison would
         // accept these and no fixture in the corpus would notice.
         assert!(!is_supported_send_type("http://www.w3.org/TR/scxml/#"));
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn an_unsupported_send_type_is_reported_with_its_state_and_uri() {
         let model = parse(&doc(
-            r#"<state id="s"><onentry><send type="x-sprag-host" event="e"/></onentry></state>"#,
+            r#"<state id="s"><onentry><send type="x-example-host" event="e"/></onentry></state>"#,
         ));
         let causes = analyze(&model);
         assert_eq!(causes.len(), 1, "{causes:?}");
@@ -538,7 +538,7 @@ mod tests {
             causes[0].kind,
             HostProcessorCauseKind::SendType {
                 state_id: "s".to_string(),
-                processor_type: "x-sprag-host".to_string(),
+                processor_type: "x-example-host".to_string(),
             }
         );
         assert!(needs_host_processor(&model));
@@ -547,7 +547,7 @@ mod tests {
     #[test]
     fn an_unsupported_invoke_type_is_reported_with_its_invoke_id() {
         let model = parse(&doc(
-            r#"<state id="s"><invoke id="probe" type="x-sprag-host"/></state>"#,
+            r#"<state id="s"><invoke id="probe" type="x-example-host"/></state>"#,
         ));
         let causes = analyze(&model);
         assert_eq!(causes.len(), 1, "{causes:?}");
@@ -556,7 +556,7 @@ mod tests {
             HostProcessorCauseKind::InvokeType {
                 state_id: "s".to_string(),
                 invoke_id: "probe".to_string(),
-                processor_type: "x-sprag-host".to_string(),
+                processor_type: "x-example-host".to_string(),
             }
         );
     }
@@ -617,7 +617,7 @@ mod tests {
         let model = parse(&doc(r#"<state id="s"><onentry>
                  <send event="default"/>
                  <send type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor" event="named"/>
-                 <send type="x-sprag-host" event="refused"/>
+                 <send type="x-example-host" event="refused"/>
                </onentry></state>"#));
         let flags: Vec<bool> = model.states["s"].on_entry_blocks[0]
             .iter()
@@ -669,11 +669,11 @@ mod tests {
     #[test]
     fn a_declaration_moves_a_send_from_refused_to_host_served() {
         let mut model = parse(&doc(
-            r#"<state id="s"><onentry><send type="x-sprag-host" event="e"/></onentry></state>"#,
+            r#"<state id="s"><onentry><send type="x-example-host" event="e"/></onentry></state>"#,
         ));
         assert!(needs_host_processor(&model));
 
-        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()]);
 
         let action = &model.states["s"].on_entry_blocks[0][0];
         assert!(!action.send_type_unsupported, "still marked refused");
@@ -692,10 +692,10 @@ mod tests {
     fn the_two_send_verdicts_are_mutually_exclusive() {
         let mut model = parse(&doc(r#"<state id="s"><onentry>
                  <send event="plain"/>
-                 <send type="x-sprag-host" event="served"/>
+                 <send type="x-example-host" event="served"/>
                  <send type="x-other-host" event="refused"/>
                </onentry></state>"#));
-        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()]);
         let verdicts: Vec<(bool, bool)> = model.states["s"].on_entry_blocks[0]
             .iter()
             .map(|a| (a.send_type_unsupported, a.send_type_host_served))
@@ -709,9 +709,9 @@ mod tests {
     #[test]
     fn a_declaration_claims_only_the_type_it_names() {
         let mut model = parse(&doc(
-            r#"<state id="s"><onentry><send type="x-sprag-host-2" event="e"/></onentry></state>"#,
+            r#"<state id="s"><onentry><send type="x-example-host-2" event="e"/></onentry></state>"#,
         ));
-        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()]);
         let action = &model.states["s"].on_entry_blocks[0][0];
         assert!(action.send_type_unsupported, "a neighbour type was claimed");
         assert!(!action.send_type_host_served);
@@ -731,9 +731,9 @@ mod tests {
     #[test]
     fn an_invoker_declaration_claims_only_the_type_it_names() {
         let mut model = parse(&doc(
-            r#"<state id="s"><invoke id="probe" type="x-sprag-host-2"/></state>"#,
+            r#"<state id="s"><invoke id="probe" type="x-example-host-2"/></state>"#,
         ));
-        declare_host_surfaces(&mut model, &[], &["x-sprag-host".to_string()]);
+        declare_host_surfaces(&mut model, &[], &["x-example-host".to_string()]);
 
         let Invoke::Unsupported(info) = &model.states["s"].invokes[0] else {
             panic!("the fixture's <invoke> stopped being classified Unsupported");
@@ -755,9 +755,9 @@ mod tests {
     #[test]
     fn an_invoker_declaration_claims_the_type_it_does_name() {
         let mut model = parse(&doc(
-            r#"<state id="s"><invoke id="probe" type="x-sprag-host"/></state>"#,
+            r#"<state id="s"><invoke id="probe" type="x-example-host"/></state>"#,
         ));
-        declare_host_surfaces(&mut model, &[], &["x-sprag-host".to_string()]);
+        declare_host_surfaces(&mut model, &[], &["x-example-host".to_string()]);
 
         let Invoke::Unsupported(info) = &model.states["s"].invokes[0] else {
             panic!("the fixture's <invoke> stopped being classified Unsupported");
@@ -775,9 +775,9 @@ mod tests {
     #[test]
     fn a_declaration_reaches_nested_executable_content() {
         let mut model = parse(&doc(r#"<state id="s"><onentry>
-                 <if cond="true"><send type="x-sprag-host" event="a"/></if>
+                 <if cond="true"><send type="x-example-host" event="a"/></if>
                </onentry></state>"#));
-        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()]);
         assert!(
             model.host_processor_causes.is_empty(),
             "a nested send was left refused: {:?}",
@@ -791,9 +791,9 @@ mod tests {
     #[test]
     fn a_send_declaration_does_not_claim_an_invoke() {
         let mut model = parse(&doc(
-            r#"<state id="s"><invoke id="probe" type="x-sprag-host"/></state>"#,
+            r#"<state id="s"><invoke id="probe" type="x-example-host"/></state>"#,
         ));
-        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()]);
         assert_eq!(
             model.host_processor_causes.len(),
             1,
@@ -807,7 +807,7 @@ mod tests {
     #[test]
     fn an_empty_declaration_changes_nothing() {
         let mut model = parse(&doc(
-            r#"<state id="s"><onentry><send type="x-sprag-host" event="e"/></onentry></state>"#,
+            r#"<state id="s"><onentry><send type="x-example-host" event="e"/></onentry></state>"#,
         ));
         let before = analyze(&model);
         declare_host_processors(&mut model, &[]);

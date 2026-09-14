@@ -204,8 +204,8 @@
            script engine so source was "the round-trip-free equivalent".
            The reasoning held for the sender and not for the field: the
            parent read it with `load`, and the same `data[]` field is what
-           an EMBEDDER writes — `examples/ai_loop` every turn,
-           `watching-zenoh` from an MCU — so the receiving side was running
+           an EMBEDDER writes — `examples/ai_loop` every turn, a downstream
+           MCU consumer from the wire — so the receiving side was running
            text that need not have come from this engine at all. §B-2-8-1
            gives that field three readings and none of them is Lua.
 

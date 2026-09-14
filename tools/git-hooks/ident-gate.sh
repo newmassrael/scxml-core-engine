@@ -21,12 +21,15 @@
 # host keeps unreachable objects and went on serving them by SHA. The
 # repository had to be deleted and recreated, and its CI history went with it.
 #
-# Checkable from here rather than taken on trust:
+# Checkable rather than taken on trust — ask the host when that repository was
+# created:
 #
-#   gh repo view newmassrael/watching-zenoh --json createdAt
+#   gh repo view <owner>/<repo> --json createdAt
 #
 # answers a creation date MONTHS NEWER than that repository's own first commit,
-# which is the signature of exactly that repair.
+# which is the signature of exactly that repair. The repository is named by
+# role rather than by name here, for the reason the rest of this tree is: a
+# consumer project's identity is not this repository's to publish.
 #
 # ## Why a config would not have caught it
 #
