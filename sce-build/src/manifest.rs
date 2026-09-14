@@ -586,7 +586,7 @@ mod tests {
         let causes = vec![
             HostProcessorCauseRecord {
                 kind: "send-type",
-                processor_type: "x-sprag-host".to_string(),
+                processor_type: "x-example-host".to_string(),
                 state: Some("sending".to_string()),
                 invoke: None,
                 location: Some(crate::forge::error::SourceLocation {
@@ -597,7 +597,7 @@ mod tests {
             },
             HostProcessorCauseRecord {
                 kind: "invoke-type",
-                processor_type: "x-sprag-host".to_string(),
+                processor_type: "x-example-host".to_string(),
                 state: Some("invoking".to_string()),
                 invoke: Some("_invoke_0".to_string()),
                 location: None,
@@ -630,7 +630,7 @@ mod tests {
         // would still pass.
         assert!(line.contains("\"host_processor_causes\""), "{line}");
         assert!(
-            line.contains("\"processor_type\":\"x-sprag-host\""),
+            line.contains("\"processor_type\":\"x-example-host\""),
             "{line}"
         );
         assert!(line.contains("\"needs_host_processor\":true"), "{line}");
@@ -743,7 +743,7 @@ mod tests {
     /// state that sends.
     #[test]
     fn declared_host_processors_reach_the_wire() {
-        let declared = vec!["x-sprag-host".to_string()];
+        let declared = vec!["x-example-host".to_string()];
         let m = Manifest {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
@@ -771,11 +771,11 @@ mod tests {
         let line = m.to_line();
         assert_valid(&line);
         assert!(
-            line.contains("\"host_processor_types\":[\"x-sprag-host\"]"),
+            line.contains("\"host_processor_types\":[\"x-example-host\"]"),
             "{line}"
         );
         assert!(
-            line.contains("\"host_invoker_types\":[\"x-sprag-host\"]"),
+            line.contains("\"host_invoker_types\":[\"x-example-host\"]"),
             "{line}"
         );
     }

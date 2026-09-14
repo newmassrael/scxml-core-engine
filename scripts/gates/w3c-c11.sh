@@ -7,7 +7,7 @@
 # The C11 (MCU backend) conformance surface: 204 W3C cases plus integration
 # and unit fixtures, registered under the `c11` ctest label.
 #
-# This backend is what `watching-zenoh` ships on an MCU, and until its CI lane
+# This backend is what a downstream MCU consumer ships, and until its CI lane
 # existed nothing verified it but whoever happened to run ctest. The lane
 # closed that; this gate closes the other half, because a lane still reports
 # after the push rather than before it.

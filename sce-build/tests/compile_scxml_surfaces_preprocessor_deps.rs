@@ -14,8 +14,8 @@
 // output. Without this guard, a future refactor that drops the
 // `parser.preprocessor_deps().to_vec()` capture inside `compile_model`
 // would silently regress the `<sce:use>` / `<xi:include>` rebuild
-// behaviour the original report (pinion build.rs `Carry: vendor/sce
-// RFC` workaround) flagged.
+// behaviour the original report flagged — a downstream `build.rs` carrying
+// a `Carry: vendor/sce RFC` workaround.
 
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for, generator::Language};
 use std::fs;

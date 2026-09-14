@@ -11,8 +11,8 @@
 // document (`<send><content>`, `<param>`, `<donedata>`), which this backend
 // lowers on a separate path from the one an embedder calls.
 //
-// It is the edge an embedder actually uses. `watching-zenoh` ships this
-// backend on an MCU and hands it payloads from the wire; `examples/ai_loop`
+// It is the edge an embedder actually uses. A downstream MCU consumer ships
+// this backend and hands it payloads from the wire; `examples/ai_loop`
 // answers its machine with `{"done":true}` and selects on `_event.data.done`.
 //
 // Fixture: integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml

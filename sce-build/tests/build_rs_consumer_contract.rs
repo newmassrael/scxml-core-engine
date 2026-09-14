@@ -9,8 +9,8 @@
 // attributes and an inner doc comment, both of which rustc refuses in
 // `include!`'s expansion position. Nothing in this repository consumed
 // the function, so nothing here ever met that — the only consumers are
-// downstream, and two independent ones (`pinion-core/build.rs`,
-// `sprag-plugin/build.rs`) reached the same workaround byte-for-byte:
+// downstream, and two independent ones — each a `build.rs` in a different
+// downstream project — reached the same workaround byte-for-byte:
 // filter out every line starting `#![` or `//!`, then blanket the
 // module with `#![allow(warnings, clippy::all, …)]` of their own.
 //

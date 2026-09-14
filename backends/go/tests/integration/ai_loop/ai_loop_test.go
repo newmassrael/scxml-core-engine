@@ -19,7 +19,7 @@
 // scenario set by name, so a scenario added here without its siblings fails
 // there — which is the moment it is cheapest to fix.
 //
-// No sprag, no session, no pane: every effect the host would perform is
+// No multiplexer, no session, no pane: every effect the host would perform is
 // replaced by the event that effect would have produced, so what is under test
 // is the machine's topology rather than any driver's plumbing.
 //

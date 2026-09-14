@@ -2013,7 +2013,7 @@
             },
             "host_processor_types": {
               "default": [],
-              "description": "Event I/O Processor `type` values this build's host has declared it serves, beyond the two §scxml-C-1 / §scxml-C-2 names.\n\nA build input rather than a document fact — the same SCXML compiled for a host that serves `x-sprag-host` and for one that does not is two different lowerings, and this is what separates them. Carried on the model rather than in a per-backend options struct so every generator reads the same declaration; templates see the *decision* on each `<send>` ([`Action::send_type_host_served`]) rather than re-deriving it from this list.",
+              "description": "Event I/O Processor `type` values this build's host has declared it serves, beyond the two §scxml-C-1 / §scxml-C-2 names.\n\nA build input rather than a document fact — the same SCXML compiled for a host that serves `x-example-host` and for one that does not is two different lowerings, and this is what separates them. Carried on the model rather than in a per-backend options struct so every generator reads the same declaration; templates see the *decision* on each `<send>` ([`Action::send_type_host_served`]) rather than re-deriving it from this list.",
               "items": {
                 "type": "string"
               },

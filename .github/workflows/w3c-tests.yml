@@ -877,7 +877,7 @@ jobs:
   # suite either — deliberately, and its comment says so — so the entire
   # C11 surface was verified by whoever happened to run `ctest` locally.
   # "C11 W3C 204/204" was a local measurement that no push re-confirmed,
-  # while `watching-zenoh` ships C11 on an MCU.
+  # while a downstream MCU consumer ships C11.
   #
   # The lane is cheap. Measured on a clean tree: configure 4.5s, codegen
   # for 271 translation units plus 215 executables 9s, the 218 tests 4s.

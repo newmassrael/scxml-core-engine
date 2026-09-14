@@ -4441,7 +4441,7 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
        It used to be `snprintf("_event.data = (%s)", evt->data)` followed by an
        unchecked `luaL_dostring`, and that spelling had three separate faults,
        all of them silent. A payload an EMBEDDER hands in — the case
-       `watching-zenoh` has on an MCU and `examples/ai_loop` has every turn —
+       a downstream MCU consumer has and `examples/ai_loop` has every turn —
        is normally JSON, and JSON is not a Lua expression: `{"a":1}` parses as
        a Lua ARRAY of "a" and 1, and `{"a": "b"}` does not parse at all, after
        which `_event.data` silently kept the PREVIOUS event's value. Measured

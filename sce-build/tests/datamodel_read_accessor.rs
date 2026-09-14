@@ -8,8 +8,8 @@
 // no way to read it. A consumer could not ask a machine what its own budget
 // was; the only readable copy was the script engine's, reached with an engine
 // handle, a session id and the variable's name spelled as a string. That is
-// the gap sprag reported and worked around in
-// `crates/sprag-plugin/src/ai_loop.rs`.
+// the gap a downstream consumer reported and worked around in a plugin of
+// its own.
 //
 // The field was worse than useless, and this file's first test is why. A
 // `<data>` is typed only when it carries an initialiser

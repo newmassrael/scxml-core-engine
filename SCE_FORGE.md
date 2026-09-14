@@ -1781,7 +1781,7 @@ The measure is: **one SCXML source generates correct, compilable code for all ta
 
 ## 10. Kind Catalog Admission Test
 
-As external consumers request new ForgeKind variants, the catalog's coherence depends on disciplined admission. This section formalizes the three-axis test that a candidate ForgeKind must pass before lifting into the catalog. The test was extracted from the 2026-05-15 pinion-gui GPU pipeline codegen request, which failed all three axes.
+As external consumers request new ForgeKind variants, the catalog's coherence depends on disciplined admission. This section formalizes the three-axis test that a candidate ForgeKind must pass before lifting into the catalog. The test was extracted from the 2026-05-15 GPU pipeline codegen request from a downstream GUI consumer, which failed all three axes.
 
 A candidate kind is admitted **only when all three axes hold**. Failure on any single axis is rejection — the rule is 3-of-3, not 2-of-3.
 
@@ -1830,7 +1830,7 @@ Reference domains (non-exhaustive): embedded telemetry, network protocols, game 
 | GPU pipeline | 1.5 domains | graphics + (some) GPGPU compute — vertical, not cross-domain |
 | Vulkan-specific descriptor heap | 1 domain | graphics-only; not generalizable |
 
-### Application: 2026-05-15 pinion-gui GPU pipeline request
+### Application: 2026-05-15 GPU pipeline request from a downstream GUI consumer
 
 The request was: "add a ForgeKind variant for GPU pipeline (Vulkan/Metal/DX12/WebGPU 4-backend native emit)".
 
@@ -1842,7 +1842,7 @@ Result:
 | Futamura projection compatibility | FAIL | Per-frame draw call sequence is runtime-data-bound (scene composition, frustum culling, LOD, batching, resource state) — not codegen-able |
 | Cross-domain reuse | FAIL | ~1.5 domains (graphics + partial GPGPU); does not reach the 3-domain threshold |
 
-Failed 3-of-3 axes; rejected. Counter-proposal: pinion uses existing kinds (`codec` for UBO/vertex/PSO layout, `buffer-pool` for GPU resource pools, `worker` for render thread) and pinion's own thin RHI (`pinion-render-rhi`) handles the per-frame dispatch and driver call sequence. Approved by pinion's Round 11 (`consumer_pinion_gui.md` memory entry).
+Failed 3-of-3 axes; rejected. Counter-proposal: that consumer uses existing kinds (`codec` for UBO/vertex/PSO layout, `buffer-pool` for GPU resource pools, `worker` for render thread) and that consumer's own thin RHI layer handles the per-frame dispatch and driver call sequence. Approved on the consumer's side, in a record held outside this repository.
 
 ### When admission is borderline
 
@@ -1855,6 +1855,6 @@ The default is **reject and document the gating condition**, not "provisionally 
 
 ### Related
 
-- `consumer_pinion_gui.md` (memory) — 2026-05-15 audit trail of the first admission test application.
+- The 2026-05-15 audit trail of the first admission-test application is held outside this repository, with the consumer it concerns.
 - `feedback_extend_forge_before_new_framework.md` (memory) — prior rule: exhaust existing kinds before proposing new kinds; complementary to this admission test.
 - `feedback_no_carveouts.md` (memory) — discipline against provisional / consumer-specific carve-outs.

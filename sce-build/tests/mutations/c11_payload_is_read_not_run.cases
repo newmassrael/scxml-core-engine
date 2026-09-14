@@ -9,7 +9,7 @@
 # a reader that used to rewrite its argument into Lua source and `load` it, so
 # `2 + 3` "parsed" to 5 and a payload that was a CALL ran — at the receiving
 # boundary, on text an embedder wrote (`examples/ai_loop` answers its machine
-# every turn; `watching-zenoh` hands in an MCU's wire payload).
+# every turn; a downstream MCU consumer hands in a wire payload).
 #
 # ⚠ The shared reader itself is NOT mutated from here, measured rather than
 # assumed: this backend's generated sources come from a codegen binary that
