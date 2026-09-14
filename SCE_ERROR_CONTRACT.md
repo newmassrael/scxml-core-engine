@@ -139,24 +139,33 @@ consumer may read absence as *nothing enclosing this location is
 anchored to a specification*, and act on it, without knowing which
 stage produced the record or how SCE is structured internally.
 
-⚠ **Not yet true for a consumer, and measured 2026-09-14.** The
-sentence above is the contract's intent and the maintainer can check
-it, because the table that separates *cannot carry* from *not yet
-wired* is a compile-time roster in Rust source. A consumer reads
-NDJSON and cannot see that table, so on the wire an absent field is
-still indistinguishable across three cases: no enclosing anchor (what
-this clause promises), a code whose subject is argv or the filesystem
-and so can never carry, and a code nothing has wired yet. Of 360
-codes, 22 are exercised by a scenario and **317 have never been
-executed at all** — for those, absence records that nobody has looked,
-not that nothing was anchored.
+⚠ **Which codes it holds for is a lookup, not an assumption.** An
+absent field is only self-describing for a code that carries at all,
+and until 2026-09-14 nothing let a consumer tell the difference: the
+table separating *cannot carry* from *not yet wired* was a
+compile-time constant in Rust source, so on the wire absence was
+indistinguishable across three cases — no enclosing anchor (what this
+clause promises), a code whose subject is argv or the filesystem and
+can never carry, and a code nothing has wired yet.
 
-⇒ What closes this is publishing the roster, so a consumer can ask of
-a code whether it carries at all rather than inferring it from an
-empty field. Until then, read absence as this clause says **only for a
-code the roster reports as carrying**; the guarantee is stated here
-with its bound rather than asserted flat, because a contract a reader
-cannot check is one they will trust anyway.
+```
+sce-codegen provenance-roster      # <code> <carries|never> <reason>
+```
+
+publishes that table, one line per code. **Read absence as this clause
+says for any code the roster reports as `carries`**; for a code it
+reports as `never`, the reason column says why the field could not
+have been filled, and absence records that rather than an unanchored
+document. The guarantee is stated with the lookup that settles it
+rather than asserted flat, because a contract a reader cannot check is
+one they will trust anyway.
+
+⚠ The roster is also the honest measure of how much of this contract
+is exercised. Measured 2026-09-14: of 360 codes, **22 are raised by a
+scenario** and the rest have never been executed — the roster learns a
+code carries by running it, never by asserting it, so a `never` row
+for an unexercised code records that nobody has looked yet, which is
+work owed rather than a property of the code.
 
 What computes the answer is `anchor_index::AnchorIndex`, built while
 the document is parsed and carried on the model. It is keyed by
