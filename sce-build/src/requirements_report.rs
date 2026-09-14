@@ -419,8 +419,14 @@ fn push_actions<'a>(
                 site,
             },
         });
-        for (segment, block) in action.nested_blocks() {
-            push_actions(out, state, site, &format!("{node_path}.{segment}"), block);
+        for block in action.nested_blocks() {
+            push_actions(
+                out,
+                state,
+                site,
+                &format!("{node_path}.{}", block.path),
+                block.actions,
+            );
         }
     }
 }
