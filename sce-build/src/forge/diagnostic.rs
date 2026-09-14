@@ -16209,6 +16209,25 @@ mod anchor_contract_tests {
             // document sails on to the no_std gate, which refuses
             // every script-bearing document and answers with its own
             // code instead. The guard said so in as many words.
+            //
+            // ⚠ Measured, and it does NOT carry — the first member of
+            // the debt bucket whose registration is earned rather than
+            // assumed. The reason is a third one, distinct from both
+            // the enum names: the record reaches the wire through
+            // `Located::new(err, label, None, None)` — a file with no
+            // line. `SCE_ERROR_CONTRACT.md` §2.1.2 keys the anchor
+            // index by POSITION, so a coordinate with no line is
+            // inside no span and no anchor can enclose it. That is not
+            // a resolver's to fix and not a coordinate anyone dropped:
+            // 11 sites construct a positionless `Located`, `ForgeError`
+            // carries no position of its own for a wrapper to discard,
+            // and §2.2 sanctions the shape outright — the complaint
+            // belongs to the document, not to a node in it.
+            //
+            // Left in `AwaitingResolver` deliberately. One measured
+            // instance is not a category, and this roster's whole
+            // discipline is that a reason is earned by execution; the
+            // next scenarios say whether a third variant is owed.
             (
                 "scxml/top-level-script-unloaded",
                 r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
