@@ -14997,6 +14997,36 @@ pub enum NoAnchor {
     /// arm below is checked against that derivation in both
     /// directions, so the list cannot drift from what it claims.
     NoAuthoredArtefact,
+    /// The record reaches the wire with a file and no line, so there
+    /// is no coordinate for the anchor index to work from.
+    ///
+    /// `SCE_ERROR_CONTRACT.md` §2.1.2 keys the index by POSITION — an
+    /// anchored region is a span of the author's document — so a
+    /// location with no line lies inside no span and nothing encloses
+    /// it. Eleven sites construct such a `Located`, and `ForgeError`
+    /// carries no position of its own for a wrapper to have
+    /// discarded, so this is what the producer HAS rather than
+    /// something anyone dropped.
+    ///
+    /// ⚠ Earned by a run, not by argument: the top-level-script code
+    /// is here because a scenario executed it and the field came back
+    /// empty.
+    NoPositionToResolveFrom,
+    /// The record is raised mid-parse, and every stage that resolves
+    /// an anchor runs after parsing returns.
+    ///
+    /// Distinct from the reason above, and the distinction is
+    /// MEASURED rather than supposed: this record HAS a position —
+    /// its raise computes one — and still cannot carry, because a
+    /// parse error returns straight out of the parser and reaches no
+    /// resolving boundary. The index is built from the document root
+    /// only once the model is otherwise complete, so a parse that
+    /// rejects never reaches the line that builds it.
+    ///
+    /// ⚠ Earned by a run: the duplicate-id code is here because a
+    /// scenario executed it and the field came back empty despite the
+    /// record having a coordinate.
+    RaisedBeforeAnyResolvingStage,
 }
 
 impl NoAnchor {
@@ -15108,6 +15138,23 @@ impl NoAnchor {
                      permanent exemption sitting in the debt bucket reports \
                      work that will never be done as though it were pending, \
                      and overstates the debt by nineteen."
+            }
+            NoAnchor::NoPositionToResolveFrom => {
+                "this record reaches the wire with a file and no line. The \
+                 anchor index is keyed by position, because an anchored \
+                 region is a span of the author's document — so a location \
+                 with no line lies inside no span and nothing can enclose \
+                 it. Not a resolver's to fix and not a coordinate anyone \
+                 dropped: the producer never had one."
+            }
+            NoAnchor::RaisedBeforeAnyResolvingStage => {
+                "this record is raised while the document is still being \
+                 parsed, and every stage that resolves an anchor runs after \
+                 parsing returns. It HAS a position — that is what separates \
+                 it from the reason above — but a parse error returns \
+                 straight out of the parser, so no boundary ever looks the \
+                 anchor up. The index itself is built only once the model is \
+                 otherwise complete."
             }
         }
     }
@@ -15312,7 +15359,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationUnsupportedKind
-            | ValidationDuplicateId
             // Raised in `parse_impl`, before `anchor_index` is built —
             // the sweep runs on the roxmltree tree so it can name the
             // attribute's own column, and the index that answers "which
@@ -15357,7 +15403,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | AlgorithmCallArgCountMismatch
             | AlgorithmAppendTargetNotBuffer
             | AlgorithmAppendTypeMismatch
-            | ScxmlTopLevelScriptUnloaded
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlOnSampleInvalidParent
@@ -15614,6 +15659,16 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality
             | MeshEventSchemaMismatch => Registered(NoAnchor::AwaitingResolver),
+
+            // ── Measured, and each here for its OWN reason ───────
+            // Both were in the bucket above until a scenario ran them.
+            // They are separated because the runs disagreed about
+            // WHY: one record has no position at all, the other has
+            // one and still cannot be resolved. A single bucket said
+            // "awaiting a resolver" for both, which was true of
+            // neither.
+            ScxmlTopLevelScriptUnloaded => Registered(NoAnchor::NoPositionToResolveFrom),
+            ValidationDuplicateId => Registered(NoAnchor::RaisedBeforeAnyResolvingStage),
 
             // ── No authored artefact — permanent ─────────────────
             // The subject is argv or the filesystem. Listed rather
