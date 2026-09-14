@@ -15247,7 +15247,15 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ExpressionUnsupportedBuiltin
             | ExpressionNamespaceNotCallable
             | ExpressionNamespaceNotAValue
-            | ExpressionUnexpectedToken => Carries,
+            | ExpressionUnexpectedToken
+            // Moved out of the debt bucket 2026-09-14, by a scenario
+            // rather than by argument: the staleness check refused the
+            // old registration the moment `<assign location="'x'">`
+            // demonstrated the code carrying. That is the roster
+            // working in the direction it was built for — a
+            // registration is a claim, and a claim a run contradicts
+            // is not an exemption.
+            | ExpressionInvalidLvalue => Carries,
 
             // Generation — Item 8 Atomic 7, the last stage that holds
             // the model and the fourth resolution point.
@@ -15361,7 +15369,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ExpressionLiteralNotCallable
             | ExpressionStrictEquality
             | ExpressionParseMismatch
-            | ExpressionInvalidLvalue
             | ExpressionTypeCoercion
             | ExpressionGoTernaryUnsupported
             | ImportFileNotFound
@@ -16189,6 +16196,25 @@ mod anchor_contract_tests {
     /// what each later atomic delivers.
     fn carrying_scenarios() -> Vec<(&'static str, &'static str)> {
         vec![
+            // `expression/invalid-lvalue` — an `<assign location>` that
+            // is not an assignable target. Chosen because the
+            // ECMAScript acceptance walk resolves its own anchors
+            // (Atomic 5), so unlike the script case below this one can
+            // answer "carries" rather than only earning a
+            // registration.
+            (
+                "expression/invalid-lvalue",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="s0" datamodel="ecmascript"
+                         sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                     <state id="s0">
+                       <onentry>
+                         <assign location="'not an lvalue'" expr="1"/>
+                       </onentry>
+                     </state>
+                   </scxml>"#,
+            ),
             // `scxml/top-level-script-unloaded` — §scxml-5.8. The
             // anchor is on `<scxml>` and the complaint is about a
             // `<script>` inside it, so this is the enclosing case the
