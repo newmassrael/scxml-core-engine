@@ -71,7 +71,9 @@
 //! by a compiler reading generated source.
 //!
 //! Measured 2026-09-14 over the 735 SCXML documents this repository COMMITS
-//! — `git ls-files '*.scxml'`, the enumeration the corpus test uses — across
+//! — the tracked-file enumeration `scxml_documents` performs in
+//! `tests/an_identifier_is_checked_against_the_grammar_w3c_gives_it.rs`,
+//! which is the file that spells the command — across
 //! every row of [`IDENTIFIER_ATTRIBUTES`]: the narrowing costs nothing here —
 //! zero documents use a Unicode or `:`-bearing identifier — but it is a
 //! boundary SCE draws and not one W3C drew, which is why it is written down
@@ -86,6 +88,14 @@
 //! comes to hand, and the two walks do not agree — a `find` over this tree
 //! answers a different number on every machine, because it counts whatever
 //! the last build wrote.
+//!
+//! ⚠ The enumeration is NAMED here and spelled only in that test, and the
+//! asymmetry is required rather than stylistic:
+//! `workflow_trigger_coverage::no_library_this_suite_links_reads_past_a_filter_unattributed`
+//! refuses a tree-wide read signature appearing in a LIBRARY source, because
+//! a test that calls into one inherits its input set while the detector
+//! follows only the module tree a test declares. Writing the command back
+//! into this paragraph reddens that gate — measured 2026-09-14, by doing it.
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 

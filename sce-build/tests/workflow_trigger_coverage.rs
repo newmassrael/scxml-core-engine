@@ -55,6 +55,15 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // `paths:` filter written over today's tree would enumerate the answers
     // it already has and by construction miss the arrival.
     "a_standard_named_in_code_is_one_sce_implements",
+    // Sweeps every committed `*.scxml` and checks each identifier-bearing
+    // attribute against the grammar W3C gives it, so a document added
+    // anywhere changes what it reads. The case it exists for is a hostile
+    // `id` or `event` arriving in a document — and the directory holding
+    // that document does not have to be one any lane's `paths:` filter
+    // names today, so a filter written over the fixture trees as they stand
+    // enumerates the documents already known to pass and by construction
+    // cannot start on the arrival it was built to refuse.
+    "an_identifier_is_checked_against_the_grammar_w3c_gives_it",
     // Sweeps every tracked file under `scripts/` for a second spelling of the
     // parallel-jobs rule, so a script added anywhere under that tree changes
     // what it reads — and a NEW script carrying its own copy is the case the
