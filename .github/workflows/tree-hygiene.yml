@@ -67,9 +67,15 @@ on:
 # JOB. Its row is what decides this literal, and that circle is why the drift
 # lasted four days: while the lane is superseded, the check that would move
 # the row is the thing being superseded.
+#
+# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15, along with every other lane
+# that declared `false`. The circle the paragraph above describes is broken from
+# the other side now: the policy no longer derives this flag from a median, so
+# this lane being superseded cannot hold its own row hostage. See
+# `cpp-suite.yml` for the queue measurement that prompted the decision.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   hygiene:

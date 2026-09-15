@@ -1,0 +1,85 @@
+name: Supersede Stale Queue
+
+# Cancel queued runs for commits `main` has already moved past.
+#
+# `ci_supersession_policy.rs` settles which lanes may be superseded BY A LATER
+# RUN, and for the slow ones the answer is no: `cancel-in-progress: true` on a
+# lane that needs longer than the 17.6-minute median gap between pushes makes it
+# report only when a person stops typing. Nothing here touches that decision —
+# this cancels runs that are QUEUED FOR A COMMIT THAT IS NO LONGER `main`, which
+# no policy wants and which nothing in this repository was doing.
+#
+# `mutation-rounds.yml` states the hole in its own words: its per-commit group is
+# the stronger guarantee, and the cost is that "nothing cancels them and nothing
+# runs them" — measured there at 14 of 25 runs never started, the oldest queued
+# 5.7 hours. Re-measured 2026-09-15 across the four repositories sharing this
+# account's hosted pool: 9 superseded runs holding it, the oldest 8.4 hours,
+# while nothing at all was executing.
+#
+# ⚠ THE SAFETY IS THE FILTER, AND IT IS NARROW ON PURPOSE:
+#   - `status=queued` only. A run that has started is never touched, which is
+#     exactly what the supersession policy protects.
+#   - `head_sha != <current main>` only. The newest commit's runs always survive,
+#     so this can never be the reason a verdict goes missing.
+#   - `event=push` and `head_branch=main` only. A pull request's runs are left
+#     alone: there a force-push destroys the commit being judged, and that lane
+#     already supersedes correctly through its shared group.
+#
+# ⚠⚠ It cannot use `gh run cancel` blindly: a run whose conclusion is already
+# `cancelled` answers 409, and a 409 here is success, not failure.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Only one janitor at a time, and a newer one is worth more than an older one:
+# it knows a newer `main`. This is the one lane where `true` is unambiguous,
+# because the run it kills has nothing to report.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  supersede:
+    name: Cancel runs queued for a superseded commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel queued runs whose commit main has moved past
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          KEEP: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          echo "keeping runs for $KEEP"
+
+          # One page is enough: a backlog deeper than 100 queued runs is a
+          # different problem, and the next push runs this again.
+          gh api "/repos/$REPO/actions/runs?status=queued&per_page=100" \
+            --jq '.workflow_runs[]
+                  | select(.head_sha != env.KEEP)
+                  | select(.event == "push")
+                  | select(.head_branch == "main")
+                  | "\(.id)\t\(.head_sha[0:8])\t\(.name)"' > stale.tsv || {
+            echo "could not list runs"; exit 1; }
+
+          count=$(wc -l < stale.tsv)
+          echo "superseded and queued: $count"
+          [ "$count" -eq 0 ] && exit 0
+
+          rc=0
+          while IFS=$'\t' read -r id sha name; do
+            if gh api -X POST "/repos/$REPO/actions/runs/$id/cancel" >/dev/null 2>&1; then
+              echo "  cancelled $sha  $name"
+            else
+              # 409 means it finished or was already cancelled between the list
+              # and the call — a race this job loses harmlessly, not an error.
+              echo "  skipped   $sha  $name (already gone)"
+            fi
+          done < stale.tsv
+          exit $rc

@@ -49,9 +49,16 @@ on:
 # Held by `sce-build/tests/ci_supersession_policy.rs`, which classifies EVERY
 # workflow in this directory and reds one nobody classified; the derivation and
 # the command that re-takes the measurement live there.
+#
+# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15, along with every other lane
+# that declared `false`. The argument above still holds on its own terms; what
+# changed is that the shared hosted pool stopped executing anything for 165
+# minutes with 36 runs queued, and a lane that waits eight hours has as little to
+# report as one that was cancelled. See `cpp-suite.yml` for the full reasoning
+# and the cost; `ci_supersession_policy.rs` now requires `true` everywhere.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   # ============================================================
