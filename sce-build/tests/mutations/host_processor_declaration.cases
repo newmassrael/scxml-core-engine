@@ -114,14 +114,16 @@ PY
 # ── …or reaches only the sends that are easy to find ────────────────
 
 mutation_case "the declaration does not reach nested executable content" <<'PY'
+# The anchor is the descent, not the fields. The first spelling quoted a
+# hand-chained field list that `Action::nested_blocks_mut` replaced, so it
+# matched nothing and the case reported SURVIVED without ever editing the
+# tree. `claim_action(nested, types)` occurs once in the file, which is what
+# makes this name one site without quoting a shape a refactor may move.
 edit("sce-build/src/host_processor_analyzer.rs",
-     """    for nested in action
-        .actions
-        .iter_mut()
-        .chain(action.then_actions.iter_mut())
-        .chain(action.else_actions.iter_mut())
-    {
-        claim_action(nested, types);
+     """    for block in action.nested_blocks_mut() {
+        for nested in block {
+            claim_action(nested, types);
+        }
     }""",
      "")
 PY
