@@ -25,10 +25,38 @@ Adding, removing or rewording a key is a person's edit.
 ## ⚠ What this register does NOT answer
 
 It answers *is this proposal in the population*, and nothing else. It does not
-know which keys are already finished, so a proposal re-naming completed work is
-admitted. That is deliberate for now: deriving doneness would either need the
-loop to mark this file (forbidden above) or a per-key predicate against the tree,
-which is worth building only once a key is re-proposed in practice.
+know which keys below are already finished, so a proposal re-naming completed
+work is admitted. That is still true of the keys in this file.
+
+## ⭐ The population has a SECOND half, and this file is not it
+
+`sce_admits.sh` also admits the **open rows of `docs/SCE_NL_IR_CLOSURE.md`**,
+read at call time. Those fourteen rows were measured off the tree rather than
+taken from the RFC, so most of them never had a key here — and a loop that
+proposed one was refused. Measured 2026-09-15: run 378 closed `no_successor` and
+run 383 spent 193 iterations holding a checkpoint nothing would admit, because
+five of the nine rows then open had no key in this file.
+
+⛔ **The rows were NOT copied into the key list below, and must not be.** Two
+definitions of one population plus a mapping to keep between them is the drift
+generator this repository keeps meeting; the ledger stays the single list and
+this script reads it.
+
+⭐ That half also pays the hole stated above, for its own rows. This file said
+the repair would need *"a per-key predicate against the tree, which is worth
+building only once a key is re-proposed in practice"* — and that predicate
+exists: `scripts/gates/nl-ir-closure.sh` measures every row against the tree, in
+both directions, and the ledger's `Status` column is held to it. So a row that
+closes stops being admissible on its own, with nobody striking it out.
+
+⚠ The two halves fail differently on purpose. This file being unreadable is
+fatal — it is the primary population. The ledger being unreadable is not: the
+script says so on stderr and answers from this file alone, because refusing
+every proposal over one missing population would be the worse failure.
+
+⚠⚠ Adding a row to that ledger is the same class of edit as adding a key here:
+a person's. The loop may change a row's `Status`, and only to what the gate
+measures — a `Status` the tree contradicts is red in either direction.
 
 ## Keys
 
