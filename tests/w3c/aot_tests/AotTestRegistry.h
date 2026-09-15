@@ -109,7 +109,6 @@ private:
  * @code
  * struct Test144 : public AotTestBase {
  *     static constexpr int TEST_ID = 144;
- *     static constexpr const char* DESCRIPTION = "Event queue ordering";
  *     // ... implement interface
  * };
  * REGISTER_AOT_TEST(Test144);

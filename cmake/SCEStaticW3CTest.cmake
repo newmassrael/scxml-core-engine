@@ -31,10 +31,13 @@ include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/SCEFindCodegen.cmake)
 message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 
-# sce_generate_aot_test_header: Generate AOT test header (TestXXX.h) from metadata.txt
+# sce_generate_aot_test_header: Generate AOT test header (TestXXX.h) from a template
 #
-# Single Source of Truth: metadata.txt description is used for both Interpreter and AOT
-# Eliminates description duplication between metadata.txt and TestXXX.h
+# metadata.txt is the one source of a test's description, for the Interpreter
+# and the AOT runner alike: AotTestBase::getDescription() reads it at run time.
+# The generated header therefore keeps no copy of that text — a copy written
+# here would be frozen at generation and drift from the file it was taken from.
+# Only the specnum is substituted, into the header's @brief.
 #
 function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
     # Set TEST_NUMBER for template substitution (@TEST_NUMBER@ in .in files)
@@ -71,19 +74,6 @@ function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
         return()
     endif()
 
-    # Extract description from metadata.txt
-    execute_process(
-        COMMAND "${SCE_CODEGEN}" read-metadata "${METADATA_FILE}"
-        OUTPUT_VARIABLE TEST_DESCRIPTION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE READ_METADATA_RESULT
-    )
-
-    if(NOT READ_METADATA_RESULT EQUAL 0)
-        message(WARNING "Failed to read metadata for test ${TEST_NUM} - Skipping AOT header generation")
-        return()
-    endif()
-
     # Extract specnum from metadata.txt
     execute_process(
         COMMAND grep "^specnum:" "${METADATA_FILE}"
@@ -99,7 +89,7 @@ function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
         @ONLY
     )
 
-    message(STATUS "Generated AOT test header: Test${TEST_NUM}.h (description from metadata.txt)")
+    message(STATUS "Generated AOT test header: Test${TEST_NUM}.h")
 endfunction()
 
 # sce_generate_static_w3c_test: Generate C++ code for a single W3C test

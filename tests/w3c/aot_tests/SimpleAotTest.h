@@ -24,7 +24,6 @@ namespace SCE::W3C::AotTests {
  * @code
  * #include "test144_sm.h"
  * struct Test144 : public SimpleAotTest<Test144, 144> {
- *     static constexpr const char* DESCRIPTION = "Event queue ordering";
  *     using SM = SCE::Generated::test144::test144;
  * };
  * REGISTER_AOT_TEST(Test144);

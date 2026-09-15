@@ -25,7 +25,6 @@ namespace SCE::W3C::AotTests {
  * @code
  * #include "test175_sm.h"
  * struct Test175 : public ScheduledAotTest<Test175, 175> {
- *     static constexpr const char* DESCRIPTION = "Send delayexpr";
  *     using SM = SCE::Generated::test175::test175;
  * };
  * REGISTER_AOT_TEST(Test175);

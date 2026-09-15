@@ -37,7 +37,6 @@ namespace SCE::W3C::AotTests {
  *
  * Example usage:
  * struct Test520 : public HttpAotTest<Test520, 520> {
- *     static constexpr const char *DESCRIPTION = "BasicHTTP content element";
  *     using SM = SCE::Generated::test520::test520;
  * };
  */
