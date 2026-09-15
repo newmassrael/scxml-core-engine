@@ -30,6 +30,10 @@ pub mod analyzer;
 /// Built by the parser, carried on [`model::SCXMLModel`], read by the
 /// stages that raise diagnostics.
 pub mod anchor_index;
+/// What a diagram must be told to draw the annotation family, carrying
+/// the acceptance report's own closure rather than a second derivation
+/// of it — NL→IR closure ledger row G2.
+pub mod annotation_overlay;
 pub mod cli_error;
 pub mod cli_language;
 /// Text placed inside a comment in generated source — the one encoding

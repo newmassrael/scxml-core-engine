@@ -1776,6 +1776,24 @@ enum Commands {
         /// Forge document path (`sce:kind` other than `statechart`)
         document: String,
     },
+    /// Emit what a diagram must be told to draw the annotation family —
+    /// NL→IR closure ledger row G2. One JSON object on stdout.
+    ///
+    /// `nodes` is every node the shared walk yields with the requirement
+    /// ids it claims — empty where nothing claims it, which is the
+    /// element a reviewer is looking for. `fragments` is, per
+    /// requirement, the dependency closure its evidence rests on.
+    ///
+    /// ⚠ The closure is the acceptance report's own, not a second
+    /// derivation: it CONTAINS nodes that carry no `sce:req` (the arming
+    /// `<send>`, the `<cancel>` naming it, the target's entry actions).
+    /// A consumer that re-picked nodes by `sce:req` would draw a
+    /// different answer and nothing would catch it, because a rendered
+    /// diagram is not bytes a test can diff.
+    AnnotationOverlay {
+        /// SCXML file path
+        scxml: String,
+    },
     /// Render the acceptance report a person reviews in one sitting —
     /// Requirement-closure RFC §7a.
     ///
@@ -2432,6 +2450,7 @@ fn main() {
         }
         Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
         Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
+        Commands::AnnotationOverlay { scxml } => cmd_annotation_overlay(&scxml, error_format),
         Commands::AcceptanceReport {
             scxml,
             manifest,
@@ -7433,6 +7452,28 @@ fn cmd_transition_table(scxml: &str, error_format: ErrorFormat) {
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
     out_stream(|w| sce_build::transition_table::emit_transition_table_ndjson(&model, w));
+}
+
+// ── Subcommand: annotation-overlay ─────────────────────────────
+//
+// Same architecture as `transition-table`, and for a sharper version of
+// the same reason: what the DIAGRAM shows and what the acceptance report
+// derives must not drift, and a diagram is the one artefact no test can
+// compare byte for byte. So the closure is computed here, by the report's
+// own function, and handed over as data.
+
+/// Emit the annotation overlay as one JSON object.
+fn cmd_annotation_overlay(scxml: &str, error_format: ErrorFormat) {
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    let overlay = sce_build::annotation_overlay::overlay(&model);
+    out_stream(|w| {
+        let line = serde_json::to_string(&overlay)
+            .expect("AnnotationOverlay serialises; every field is owned or 'static");
+        writeln!(w, "{line}")
+    });
 }
 
 // ── Subcommand: review-table ───────────────────────────────────

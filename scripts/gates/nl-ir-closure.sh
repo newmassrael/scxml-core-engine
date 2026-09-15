@@ -165,9 +165,138 @@ row_G1() {
     sce_grep -qE '\bvariant\b' sce-build/src/acceptance_report.rs 2>/dev/null
 }
 
-# G2 — the visualizer renders an annotation family.
+# G2 — the visualizer renders the annotation family, drawing the SAME
+# dependency closure the acceptance report derives.
+#
+# ASKED, not named — and this row is where naming was most dangerous. The
+# predicate was one grep for `sce:req|sce:provenance|sce:unresolved` under
+# `web/visualizer/`, which a COMMENT mentioning the attribute closes. It
+# had already produced one false green from a build artifact (the compiled
+# parser's string table), which is why `sce_grep` prunes `wasm/` at all.
+# Row G3 then showed the other face of a name predicate — the artefact
+# built, shipping and measured `open`, because the file was spelled
+# differently than the glob guessed.
+#
+# ⛔ The row's real content is the half a grep cannot see. A requirement's
+# evidence is NOT the elements carrying its id: measured over this gate's
+# own probe, REQ-A's fragment reaches the arming `<send>` and the
+# `<cancel>` naming it, and NEITHER carries `sce:req`. A browser that
+# picked elements by attribute would draw a picture disagreeing with the
+# table the machine measures, and nothing would catch it, because a
+# rendered diagram is not bytes a test can diff. That is why the closure
+# is produced by the acceptance report's own function and shipped as data.
+#
+# So this runs both ends:
+#
+#   the producer   `sce-codegen annotation-overlay` emits the overlay:
+#                  every node with what it claims (empty where nothing
+#                  does), and per requirement the closure its evidence
+#                  rests on — INCLUDING nodes carrying no id.
+#
+#   the consumer   the browser module is loaded under node and asked to
+#                  stamp a graph. It must mark from what it was GIVEN: a
+#                  claimed edge claimed, an unclaimed state unclaimed. A
+#                  module that stamped everything alike fails both ways.
+#
+# ⚠ The control is the load-bearing half, as in G3 and G4: the producer
+# must ACCEPT the probe first, and a failure there stops the gate rather
+# than reporting the row — every check below is vacuous without it.
+G2_PROBE='<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="null" name="g2_probe">
+  <state id="idle">
+    <onentry>
+      <send event="tick" delay="3s" id="armTimer"/>
+    </onentry>
+    <transition event="tick" target="done" sce:req="REQ-A"/>
+  </state>
+  <state id="done">
+    <onentry>
+      <cancel sendid="armTimer"/>
+    </onentry>
+  </state>
+</scxml>'
+
+# Ask the browser module what it does with an overlay it is handed.
+#
+# Written here rather than kept under `web/` so the fixture a check is
+# judged against cannot be edited into agreement with a module that
+# stopped applying it — the discipline row G4's manifests already follow.
+g2_consumer_probe() {
+    cat <<'PROBE'
+const fs = require('fs');
+const { AnnotationOverlay } = require(process.argv[3]);
+const overlay = new AnnotationOverlay(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')));
+
+function fail(why) { console.error(why); process.exit(1); }
+
+// The unclaimed element is the reviewer's finding, so it must survive
+// into the overlay rather than being filtered out as uninteresting.
+if (overlay.unclaimedPaths().length === 0) {
+    fail('the overlay carries no unclaimed element');
+}
+
+// THE DISCRIMINATOR. A node in REQ-A's fragment that carries no REQ-A.
+// A consumer deriving by attribute cannot produce one.
+const supporting = overlay
+    .fragmentPaths('REQ-A')
+    .filter((p) => overlay.isSupportingNode(p, 'REQ-A'));
+if (supporting.length === 0) {
+    fail('REQ-A fragment reaches no node that carries no id: this is the id set, not the closure');
+}
+
+// The consumer stamps from what it was given, in BOTH directions.
+const states = [{ id: 'idle' }, { id: 'done' }];
+const transitions = [{ source: 'idle' }];
+overlay.applyTo(states, transitions);
+if (transitions[0].annotationClass !== 'sce-claimed') {
+    fail('a transition the overlay says claims REQ-A was not marked claimed');
+}
+if (states[1].annotationClass !== 'sce-unclaimed') {
+    fail('a state the overlay says claims nothing was not marked unclaimed');
+}
+// Control on the control: a module marking everything claimed would pass
+// the line above only by accident, so the other polarity is asserted too.
+if (states[0].annotationClass !== 'sce-unclaimed') {
+    fail('every element was marked claimed, so the marking says nothing');
+}
+PROBE
+}
+
 row_G2() {
-    sce_grep -qE 'sce:req|sce:provenance|sce:unresolved' web/visualizer/ 2>/dev/null
+    local bin dir overlay_json
+    bin="$(sce_gate_codegen)" || sce_gate_cannot_run \
+        "row G2 is measured by running the overlay producer, and sce-codegen could not be provided"
+
+    # Absent entirely is this row REOPENING, not a broken gate.
+    "$bin" annotation-overlay --help >/dev/null 2>&1 || return 1
+
+    command -v node >/dev/null 2>&1 \
+        || sce_gate_cannot_run "row G2 loads the browser module under node, and node was not found"
+
+    dir="$(mktemp -d)"
+    sce_gate_on_exit "rm -rf '$dir'"
+    printf '%s\n' "$G2_PROBE" >"$dir/probe.scxml"
+    overlay_json="$dir/overlay.json"
+
+    # The control, and the only outcome here that stops the gate.
+    "$bin" annotation-overlay "$dir/probe.scxml" >"$overlay_json" 2>/dev/null || sce_gate_fail \
+        "row G2's control was refused: the overlay producer rejected a document this gate wrote.
+  Either the probe in $0 owes an update, or the producer now refuses what it should accept. Until
+  that is settled the checks below say nothing, so no verdict is given for the row."
+
+    # The browser module must exist and be loadable as a module.
+    [[ -f web/visualizer/annotation-overlay.js ]] || return 1
+
+    g2_consumer_probe \
+        | node - "$overlay_json" "$PWD/web/visualizer/annotation-overlay.js" >/dev/null 2>&1 \
+        || return 1
+
+    # And the diagram must actually carry it: the renderer stamps the
+    # class and the ids onto the drawn element. Asked of the renderer
+    # rather than of any file, so a module nothing renders from is open.
+    sce_grep -q 'annotationClass' web/visualizer/visualizer/renderer.js 2>/dev/null || return 1
+    sce_grep -q 'data-sce-req' web/visualizer/visualizer/renderer.js 2>/dev/null || return 1
 }
 
 # G3 — a review artefact with the requirement column for a non-statechart kind.

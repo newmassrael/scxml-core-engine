@@ -60,6 +60,35 @@ pub fn compile_scxml_lang(
     serde_json::to_string(&files).map_err(|e| JsValue::from_str(&format!("JSON error: {e}")))
 }
 
+/// What the diagram must be told to draw the annotation family — NL→IR
+/// closure ledger row G2.
+///
+/// Returns the JSON of [`sce_build::annotation_overlay::AnnotationOverlay`]:
+/// every node with the requirement ids it claims (empty where nothing
+/// claims it), and per requirement the dependency closure its evidence
+/// rests on.
+///
+/// ⭐ Exported for the reason this crate exists at all. Its header records
+/// the browser once generating from a different template set than the
+/// native binary, because the list lived here instead of in the library;
+/// the same shape is waiting here in a worse form. A requirement's
+/// evidence is NOT the nodes carrying its id — measured over the real
+/// pair, 21 of 65 dependency pairs lie on nodes that carry none — so a
+/// browser that picked nodes by `sce:req` would draw a different answer
+/// from the acceptance report's, and a rendered diagram is not bytes a
+/// test can diff. The closure therefore crosses this boundary as DATA,
+/// derived by the report's own function, and this function owns no part
+/// of deriving it.
+#[wasm_bindgen]
+pub fn annotation_overlay(scxml_content: &str, scxml_name: &str) -> Result<String, JsValue> {
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_string(scxml_content, scxml_name)
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+    let overlay = sce_build::annotation_overlay::overlay(&model);
+    serde_json::to_string(&overlay).map_err(|e| JsValue::from_str(&format!("JSON error: {e}")))
+}
+
 /// Extract the state machine name from SCXML content.
 #[wasm_bindgen]
 pub fn get_machine_name(scxml_content: &str) -> Result<String, JsValue> {
