@@ -34,19 +34,9 @@ public:
         return TEST_ID;
     }
 
-    const char *getDescription() const override {
-        if (cachedDescription_.empty()) {
-            cachedDescription_ = AotTestBase::loadMetadataDescription(TEST_ID);
-        }
-        return cachedDescription_.c_str();
-    }
-
     const char *getTestType() const override {
         return "document_rejected";
     }
-
-private:
-    mutable std::string cachedDescription_;
 };
 
 }  // namespace SCE::W3C::AotTests
