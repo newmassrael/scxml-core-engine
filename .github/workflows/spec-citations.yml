@@ -153,7 +153,7 @@ env:
   # R1339/R1340 repair an ops census row and a gate claim, R1342 makes `mn`
   # refuse what the hosted clippy refuses. Bumped after those four validators
   # ran green on every enrolled workspace with the pin enforced, in a CLEAN
-  # worktree: a gitignored generated `.rs` under claudedocs/ trips the R783
+  # worktree: a generated `.rs` this repository does not track trips the R783
   # coverage axis locally and nowhere else, so a dirty-tree red there is about
   # this machine and not about the pin.
   MNEMOSYNE_REV: 84dcad2c92d18f361b0467b75676e9b36f0e1b3a
