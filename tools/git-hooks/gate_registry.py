@@ -248,15 +248,16 @@ COST_MEASURED: dict[str, str] = {
     "forge-go": "2026-09-02",
     "http-endpoint-ssot": "2026-09-02",
     "license-ssot": "2026-09-02",
-    # Timed on the day it was written, five consecutive runs: 176 170 170 158
-    # 159 ms. `cost_s` is 0 because every one of them rounds there, and the
-    # spread is 18ms — narrow enough to say this is the gate's own cost and
-    # not the machine's, which mattered because two other sessions' loops were
-    # running at the time and this tree's costs are not trustworthy to within
-    # a factor of two under that load. Nothing in it builds: it is grep over
-    # source (binaries and build trees pruned) plus one short Python pass
-    # over the AOT headers.
-    "nl-ir-closure": "2026-09-14",
+    # Re-timed 2026-09-15, when row S3 began asking the AOT registrar by
+    # compiling a probe against it: `scripts/gate --measure nl-ir-closure`
+    # read 1.198s, and five direct runs of the script read 1188 1223 1244
+    # 1186 1309 ms, against 158-176 ms on the day it was written. The
+    # difference is those two syntax-only compiles; the rest is still grep
+    # over source (binaries and build trees pruned) plus one short Python
+    # pass over the AOT headers. Load average was 1.3 with other sessions'
+    # loops running, and this tree's costs are not trustworthy to within a
+    # factor of two under that load.
+    "nl-ir-closure": "2026-09-15",
     # `nostd-mcu` was re-timed on 2026-09-02 and LEFT `PACE_NORMALISED`: the
     # first entry to do so. Nine consecutive runs read
     #
@@ -380,13 +381,13 @@ GATES: dict[str, dict] = {
     # Catch-all trigger, for the endpoint-SSOT lane's reason: a row can close
     # in a template, a header, a CMake list, a Rust module or the visualizer,
     # and a `paths:` list narrowed to what anyone remembers misses the one
-    # nobody thought of. Affordable — 0.17s of grep plus one short Python
-    # pass, measured five times (176 170 170 158 159 ms) on a machine running
-    # two other sessions' loops.
+    # nobody thought of. Affordable — 1.2s: grep, one short Python pass, and
+    # the two syntax-only compiles row S3 asks the AOT registrar with. The
+    # runs behind that number are in the measurement-date map.
     "nl-ir-closure": {
         "workflows": ["nl-ir-closure.yml"],
         "runner_workflow": True,
-        "cost_s": 0,
+        "cost_s": 1.2,
         "summary": "the NL→IR closure ledger vs the tree it describes",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can

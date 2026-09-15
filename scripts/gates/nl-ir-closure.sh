@@ -185,11 +185,37 @@ row_S2() {
         | grep -q '\.\.Default::default()'
 }
 
-# S3 — the dead constant is gone from every site that carries it.
+# S3 — the dead constant is gone from every site that carried it, and
+# registration refuses it.
+#
+# The AOT tree is swept for a DECLARATION, not for the word. The guard the row
+# asks for has to name the member it refuses, so a sweep for the bare word
+# reads that guard as the defect and leaves the row unreachable by the repair
+# its own condition demands. A member declared or initialised is the word
+# followed by `=`, `;`, `{` or `[` with no `::` before it; the guard's
+# `TestClass::DESCRIPTION` is not one, and neither is prose that mentions it.
+#
+# The guard is ASKED, not named. A probe test type is compiled against the
+# registrar twice: plain, which must compile — otherwise the second refusal
+# says nothing about the member — and carrying the member, which must not. A
+# guard found by grepping for `static_assert` would pass for one that refuses
+# nothing.
+S3_DECLARATION='(^|[^:[:alnum:]_])DESCRIPTION[[:space:]]*[=;{[]'
+
+s3_probe() {
+    printf '#include "AotTestRegistry.h"\nnamespace SCE::W3C::AotTests {\nstruct Probe : AotTestBase {\n    static constexpr int TEST_ID = 1;\n    %s\n    bool run() override { return true; }\n    int getTestId() const override { return TEST_ID; }\n};\ninline static AotTestRegistrar<Probe> registrar_Probe;\n}\n' "$1" \
+        | "${CXX:-c++}" -std=c++20 -fsyntax-only -x c++ -I tests/w3c/aot_tests - >/dev/null 2>&1
+}
+
 row_S3() {
-    ! sce_grep -qF 'DESCRIPTION' tests/w3c/aot_tests/ 2>/dev/null || return 1
+    ! sce_grep -qE "$S3_DECLARATION" tests/w3c/aot_tests/ 2>/dev/null || return 1
     ! sce_grep -qF 'DESCRIPTION' cmake/SCEStaticW3CTest.cmake 2>/dev/null || return 1
-    ! grep -qF 'DESCRIPTION' CLAUDE.md 2>/dev/null
+    ! grep -qF 'DESCRIPTION' CLAUDE.md 2>/dev/null || return 1
+    command -v "${CXX:-c++}" >/dev/null 2>&1 \
+        || sce_gate_cannot_run "row S3 is measured by compiling a probe, and no C++ compiler was found (\$CXX or c++)"
+    s3_probe '' \
+        || sce_gate_fail "row S3's control probe no longer compiles against tests/w3c/aot_tests/AotTestRegistry.h, so a refused member would prove nothing: bring s3_probe in $0 back in line with AotTestBase"
+    ! s3_probe 'static constexpr const char *DESCRIPTION = "restated";'
 }
 
 # S4 — no header's target claim contradicts the fixture's own specnum.
