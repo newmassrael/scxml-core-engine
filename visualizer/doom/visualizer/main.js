@@ -361,6 +361,7 @@ async function initVisualizer(scxmlContent) {
         }
 
         const structure = runner.getSCXMLStructure();
+
         logger.debug(`  State machine initialized: ${structure.states.length} states, ${structure.transitions ? structure.transitions.length : 0} transitions`);
         logger.debug('[DEBUG] Structure object:', structure);
 
@@ -390,6 +391,26 @@ async function initVisualizer(scxmlContent) {
                 }
             });
         }
+
+        // NL-IR closure ledger row G2: which element a requirement claims,
+        // and which nothing claims.
+        //
+        // The overlay ARRIVES from the codegen WASM, which calls the
+        // acceptance report's own closure. It is deliberately not derived
+        // from the structure above: a requirement's evidence is not the
+        // elements carrying its id — the `<send>` that arms a timer and
+        // the `<cancel>` naming it carry none — so a walk here would draw
+        // a different answer from the table the machine measures, and a
+        // rendered diagram is not bytes a test can diff.
+        //
+        // One call, because the decision inside it (style only when there
+        // is data) is exercised by the closure gate's probe; leaving it
+        // spelled out here would put it where nothing can run it.
+        await attachAnnotationOverlay(
+            structure,
+            scxmlContent,
+            document.getElementById(containerIdToUse)
+        );
 
         // Create parent visualizer
         const visualizer = new SCXMLVisualizer(containerIdToUse, structure);

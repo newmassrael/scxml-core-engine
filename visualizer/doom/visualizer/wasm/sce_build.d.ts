@@ -2,6 +2,29 @@
 /* eslint-disable */
 
 /**
+ * What the diagram must be told to draw the annotation family — NL→IR
+ * closure ledger row G2.
+ *
+ * Returns the JSON of [`sce_build::annotation_overlay::AnnotationOverlay`]:
+ * every node with the requirement ids it claims (empty where nothing
+ * claims it), and per requirement the dependency closure its evidence
+ * rests on.
+ *
+ * ⭐ Exported for the reason this crate exists at all. Its header records
+ * the browser once generating from a different template set than the
+ * native binary, because the list lived here instead of in the library;
+ * the same shape is waiting here in a worse form. A requirement's
+ * evidence is NOT the nodes carrying its id — measured over the real
+ * pair, 21 of 65 dependency pairs lie on nodes that carry none — so a
+ * browser that picked nodes by `sce:req` would draw a different answer
+ * from the acceptance report's, and a rendered diagram is not bytes a
+ * test can diff. The closure therefore crosses this boundary as DATA,
+ * derived by the report's own function, and this function owns no part
+ * of deriving it.
+ */
+export function annotation_overlay(scxml_content: string, scxml_name: string): string;
+
+/**
  * Compile SCXML to generated code for any supported language.
  *
  * Returns a JSON string: `[["filename", "code"], ...]`
@@ -29,6 +52,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly annotation_overlay: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly compile_scxml_lang: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly get_machine_name: (a: number, b: number) => [number, number, number, number];
     readonly supported_languages: () => [number, number];

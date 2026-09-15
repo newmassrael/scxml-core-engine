@@ -1,6 +1,53 @@
 /* @ts-self-types="./sce_build.d.ts" */
 
 /**
+ * What the diagram must be told to draw the annotation family — NL→IR
+ * closure ledger row G2.
+ *
+ * Returns the JSON of [`sce_build::annotation_overlay::AnnotationOverlay`]:
+ * every node with the requirement ids it claims (empty where nothing
+ * claims it), and per requirement the dependency closure its evidence
+ * rests on.
+ *
+ * ⭐ Exported for the reason this crate exists at all. Its header records
+ * the browser once generating from a different template set than the
+ * native binary, because the list lived here instead of in the library;
+ * the same shape is waiting here in a worse form. A requirement's
+ * evidence is NOT the nodes carrying its id — measured over the real
+ * pair, 21 of 65 dependency pairs lie on nodes that carry none — so a
+ * browser that picked nodes by `sce:req` would draw a different answer
+ * from the acceptance report's, and a rendered diagram is not bytes a
+ * test can diff. The closure therefore crosses this boundary as DATA,
+ * derived by the report's own function, and this function owns no part
+ * of deriving it.
+ * @param {string} scxml_content
+ * @param {string} scxml_name
+ * @returns {string}
+ */
+export function annotation_overlay(scxml_content, scxml_name) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(scxml_content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(scxml_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.annotation_overlay(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
  * Compile SCXML to generated code for any supported language.
  *
  * Returns a JSON string: `[["filename", "code"], ...]`

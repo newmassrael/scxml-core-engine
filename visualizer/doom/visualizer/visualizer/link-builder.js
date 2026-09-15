@@ -49,9 +49,22 @@ class LinkBuilder {
             }
         });
 
-        // Transition links
+        // Transition links.
+        //
+        // Row G2: a transition is named by its source state and its
+        // position within that state — the coordinates the overlay
+        // publishes beside SCE's own node path, so nothing here parses
+        // one. Counted per source as the list is walked, which is the
+        // same order the parser assigned the indices in.
+        const seenPerSource = new Map();
         this.visualizer.transitions.forEach(transition => {
+            const source = transition.source;
+            const index = seenPerSource.get(source) ?? 0;
+            seenPerSource.set(source, index + 1);
+            const overlay = this.visualizer.annotationOverlay;
+            const annotation = overlay ? overlay.annotationForTransition(source, index) : {};
             links.push({
+                ...annotation,
                 id: transition.id,
                 source: transition.source,
                 target: transition.target,

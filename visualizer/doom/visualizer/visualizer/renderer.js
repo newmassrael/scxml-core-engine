@@ -466,10 +466,19 @@ class Renderer {
                 if (self.activeStates && self.activeStates.has(d.id)) {
                     classes += ' active';
                 }
-                
+
+                // NL-IR closure ledger row G2: which element a requirement
+                // claims, and which is unclaimed. The node builder looked
+                // this up in the overlay, which carries the closure the
+                // acceptance report derived — nothing is computed here.
+                classes += annotationClassFor(d);
+
                 return classes;
             })
             .attr('data-state-id', d => d.id)
+            // The ids themselves, so the claim is readable off the element
+            // and not only inferable from its colour.
+            .attr('data-sce-req', d => requirementIdsFor(d))
             .attr('transform', d => `translate(${d.x},${d.y})`)
             .call(d3.drag()
                 .on('start', function(event, d) {
@@ -1114,8 +1123,11 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 if (d.isInternal || d.type === 'internal') {
                     classes += ' transition-internal';
                 }
+                // Row G2 — see the state node's class builder above.
+                classes += annotationClassFor(d);
                 return classes;
             })
+            .attr('data-sce-req', d => requirementIdsFor(d))
             .attr('data-transition-id', d => d.transitionId || null)
             .attr('d', d => this.visualizer.getLinkPath(d))
             .style('marker-end', d => {
