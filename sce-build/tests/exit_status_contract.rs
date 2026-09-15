@@ -308,6 +308,15 @@ impl Fixtures {
         )
         .expect("write dangling.scxml");
         std::fs::write(dir.join("bad.json"), "not json at all\n").expect("write bad.json");
+        // A manifest that loads, so the sidecar that follows it is what the
+        // acceptance report refuses. Copied from the committed pair rather
+        // than written here, for the reason the guard fixture below gives:
+        // a hand-written copy drifts from what the loader demands.
+        let manifest_src = repo_root().join(
+            "sce-build/tests/fixtures/requirement_closure/iso13400_2_nl_socket_handling.manifest.json",
+        );
+        std::fs::copy(&manifest_src, dir.join("closure.manifest.json"))
+            .unwrap_or_else(|e| panic!("copy {}: {e}", manifest_src.display()));
         // One line, no newline anywhere — the shape whose `expand`
         // output stays entirely inside stdout's line buffer. Every
         // other document flushes on its own newlines, so a write that
@@ -644,6 +653,41 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
     add(
         "cli/manifest-not-a-directory",
         vec![s("manifest"), fx.path("nope")],
+        None,
+    );
+    // The requirement-closure loaders, one probe per door. Each used to
+    // print the loader's sentence and exit 1 on its own, so a probe on one
+    // door says nothing about the next.
+    add(
+        "cli/closure-input-unusable-requirements-manifest",
+        vec![
+            s("requirements"),
+            fx.path("valid.scxml"),
+            s("--manifest"),
+            fx.path("bad.json"),
+        ],
+        None,
+    );
+    add(
+        "cli/closure-input-unusable-report-manifest",
+        vec![
+            s("acceptance-report"),
+            fx.path("valid.scxml"),
+            s("--manifest"),
+            fx.path("bad.json"),
+        ],
+        None,
+    );
+    add(
+        "cli/closure-input-unusable-report-sidecar",
+        vec![
+            s("acceptance-report"),
+            fx.path("valid.scxml"),
+            s("--manifest"),
+            fx.path("closure.manifest.json"),
+            s("--sidecar"),
+            fx.path("bad.json"),
+        ],
         None,
     );
     add(

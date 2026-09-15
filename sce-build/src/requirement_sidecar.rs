@@ -145,6 +145,20 @@ impl std::fmt::Display for SidecarError {
 
 impl std::error::Error for SidecarError {}
 
+impl SidecarError {
+    /// Which refusal this is, in words that do not carry the path — see
+    /// [`crate::requirement_manifest::ManifestError::kind`] for why.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            SidecarError::Read { .. } => "read",
+            SidecarError::Parse { .. } => "parse",
+            SidecarError::Empty { .. } => "empty",
+            SidecarError::DifferentDocument { .. } => "different-document",
+            SidecarError::DifferentRevision { .. } => "different-revision",
+        }
+    }
+}
+
 /// A gap between a usable sidecar and its manifest. Neither half is
 /// fatal, and both must reach the page rather than being dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]

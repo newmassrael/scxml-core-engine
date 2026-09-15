@@ -250,6 +250,7 @@
         "cli/generator-source-unverifiable",
         "cli/usage",
         "cli/query-no-match",
+        "cli/closure-input-unusable",
         "mesh/deploy-read",
         "mesh/deploy-parse",
         "mesh/deploy-unsupported-version",
