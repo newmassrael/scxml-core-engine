@@ -440,20 +440,24 @@ fn committed_sourcemaps_match_regeneration() {
 /// rest can only carry a comment:
 ///   `// SCE-MAP: file.scxml:12`  ·  `#line 12 "file.scxml"`  ·
 ///   `//line file.scxml:12`
+///
+/// The comment form is read by `forge::sourcemap::read_marker`, the one
+/// rule production reads markers with, so this gate cannot read a marker
+/// differently from the walker that runs after every generate. The two
+/// directives keep their own parse: their grammar belongs to the C and Go
+/// toolchains, not to SCE.
 fn marker_lines(text: &str) -> std::collections::BTreeSet<u32> {
     let mut out = std::collections::BTreeSet::new();
     for line in text.lines() {
+        if let Some(marker) = sce_build::forge::sourcemap::read_marker(line) {
+            let marker = marker.unwrap_or_else(|unreadable| panic!("{unreadable}: {line}"));
+            out.insert(marker.scxml_line);
+            continue;
+        }
         let line = line.trim();
-        if let Some(rest) = line.split("SCE-MAP: ").nth(1).or_else(|| {
-            line.strip_prefix("//line ")
-                .filter(|_| !line.contains("SCE-MAP"))
-        }) {
-            // `<file>:<line>[ :: <state>] :: <artifact>` — take the
-            // number right after the last colon of the file:line pair.
-            let head = rest.split_whitespace().next().unwrap_or("");
-            if let Some((_, tail)) = head.rsplit_once(':') {
-                let start = tail.split('-').next().unwrap_or("");
-                if let Ok(n) = start.trim_end_matches('"').parse::<u32>() {
+        if let Some(rest) = line.strip_prefix("//line ") {
+            if let Some((_, n)) = rest.trim().rsplit_once(':') {
+                if let Ok(n) = n.parse::<u32>() {
                     out.insert(n);
                 }
             }

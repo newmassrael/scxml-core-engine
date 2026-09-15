@@ -1325,14 +1325,23 @@ argument. `escape_cpp_format` is the stronger filter for the sites
 that still splice, and the door defers to it where a template applies
 it. Registered, not fixed.
 
-⚠ **Open — sourcemap readers do not decode.** `SCE-MAP:` markers and
-Go `//line` directives are comments, so the path they carry is
-encoded like any other comment value. No tracked path holds a
-character the encoder changes, so no emitted marker moved, but a
-reader that parses these lines back reads the encoded form. The same
-path is also written into string literals (`#line N "…"`,
-`#[doc = "…"]`), which the door above now escapes — so what is left
-open here is the READER, not the writing. Registered, not fixed.
+**Sourcemap markers are read back through the grammar that wrote
+them.** A `SCE-MAP:` marker is a comment, so the path and attribution
+it carries are encoded like any other comment value, and
+`forge::sourcemap::read_marker` — the reader the ownership walker runs
+after every generate — decodes each field with `comment_text::decode`
+and refuses a field the encoder did not write. A marker spelled in
+Rust rather than rendered from a template, such as a rejected
+document's stub, is written by `forge::sourcemap::marker_payload`
+through the same encoder. A Go `//line` directive is the exception,
+because its reader is the Go toolchain, which decodes nothing:
+`template_lexing` classifies it as a directive rather than a comment,
+and the door passes a value in one through untouched and refuses the
+line break that would end it. The C-family `#line N "…"` and Rust
+`#[doc = "…"]` forms are string literals, escaped at the literal door.
+`sce-build/tests/sourcemap_ownership_walker.rs` generates a document
+whose name the encoder changes through all six backends and reads
+every marker and directive back.
 
 **`sce:provenance`** — spec-document anchors.
 

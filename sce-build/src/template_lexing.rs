@@ -16,14 +16,19 @@
 //! copy next to a production copy would be two answers to where a comment
 //! ends — the arrangement this repository's Zero Duplication rule forbids.
 //!
-//! # Every character gets one of five classes
+//! # Every character gets one of six classes
 //!
 //! [`Class`] rather than a blanked string, because readers want different
 //! things from the same walk: the encoder needs to know which class a tag sits
 //! in, a gate looking for names in running code blanks comments and keeps
 //! literals, and a gate comparing two renderings blanks both.
 //!
-//! A string literal is two of those five. Whether the literal processes escape
+//! A comment is two of them. Whether the toolchain reads the comment decides
+//! what a value written into it must be — encoded, for [`Class::Comment`];
+//! kept exactly as written, for [`Class::Directive`], whose text Go's compiler
+//! reads byte for byte.
+//!
+//! A string literal is three of them. Whether the literal processes escape
 //! sequences decides what a value written into it must be — escaped, for
 //! [`Class::Literal`]; left exactly as it is, for [`Class::RawLiteral`], where
 //! escaping corrupts instead of protecting — so the walk answers it rather
@@ -129,6 +134,13 @@ pub enum Class {
     /// literal to a reader deciding what a value written into it must be
     /// escaped for — which is why it is neither of its neighbours.
     DocLiteral,
+    /// A comment the toolchain reads as an instruction: Go's `//line`. Prose
+    /// to a reader looking for names in running code, and verbatim text to the
+    /// compiler, which processes no escape inside it — so a value encoded for
+    /// a comment is corrupted there rather than protected, and the directive
+    /// names a file that does not exist. What a value written into one needs
+    /// instead is [`crate::comment_text::directive_guard`].
+    Directive,
 }
 
 /// The class of every character of a source file, one entry per `char`.
@@ -514,6 +526,22 @@ fn blank(chars: &[char], classes: &[Class]) -> Vec<char> {
 /// A language's comment and string delimiters.
 struct Rules {
     line: &'static [&'static str],
+    /// Line comments the toolchain reads as an instruction, spelled with their
+    /// opener — Go's `//line ` — recognised where only whitespace precedes
+    /// them on their line.
+    ///
+    /// ⚠ Go itself demands column 1. A template's indentation is not its
+    /// output's: whitespace control and the call site decide the rendered
+    /// column, so the stricter reading would answer a question about the
+    /// template's layout rather than about what it emits. The looser one costs
+    /// nothing, because what [`Class::Directive`] selects is also correct in a
+    /// plain Go line comment, whose only hazard is the line break the
+    /// directive's guard refuses.
+    ///
+    /// Go's block form, `/*line …*/`, is not modelled: a value in it would
+    /// also have to keep out `*/`, and no template writes one —
+    /// `a_value_written_into_a_comment_is_encoded` refuses the first that does.
+    line_directives: &'static [&'static str],
     block: &'static [(&'static str, &'static str)],
     /// Whether a block comment may contain another.
     nests: bool,
@@ -626,6 +654,7 @@ impl Rules {
     fn c_family() -> Self {
         Rules {
             line: &["//"],
+            line_directives: &[],
             block: &[("/*", "*/")],
             nests: false,
             strings: C_FAMILY_STRINGS,
@@ -639,6 +668,7 @@ impl Rules {
     fn go() -> Self {
         Rules {
             line: &["//"],
+            line_directives: &["//line "],
             block: &[("/*", "*/")],
             nests: false,
             strings: GO_STRINGS,
@@ -656,6 +686,7 @@ impl Rules {
         // as it does in every Kotlin literal.
         Rules {
             line: &["//"],
+            line_directives: &[],
             block: &[("/*", "*/")],
             nests: true,
             strings: KOTLIN_STRINGS,
@@ -669,6 +700,7 @@ impl Rules {
     fn python() -> Self {
         Rules {
             line: &["#"],
+            line_directives: &[],
             block: &[],
             nests: false,
             strings: PYTHON_STRINGS,
@@ -684,6 +716,7 @@ impl Rules {
     fn rust() -> Self {
         Rules {
             line: &["//"],
+            line_directives: &[],
             block: &[("/*", "*/")],
             nests: true,
             strings: RUST_STRINGS,
@@ -699,6 +732,7 @@ impl Rules {
     fn template_prose() -> Self {
         Rules {
             line: &[],
+            line_directives: &[],
             block: &[("{#", "#}")],
             nests: false,
             strings: &[],
@@ -776,7 +810,17 @@ fn classify_chars(s: &[char], rules: &Rules) -> Vec<Class> {
                 }
                 i = end_of_opaque(s, i, rules).unwrap_or(i + 1);
             }
-            mark(&mut class, start, i, Class::Comment);
+            let directive = rules
+                .line_directives
+                .iter()
+                .any(|d| starts_with(s, start, d))
+                && begins_a_line(s, start);
+            let kind = if directive {
+                Class::Directive
+            } else {
+                Class::Comment
+            };
+            mark(&mut class, start, i, kind);
             continue;
         }
         if let Some((open, close)) = rules.block.iter().find(|(o, _)| starts_with(s, i, o)) {
@@ -1024,6 +1068,31 @@ mod tests {
         assert_eq!(doc, vec![("{{ v }}".to_string(), Class::DocLiteral)]);
         let mid = contexts("x = \"\"\"{{ v }}\"\"\"\n", Syntax::Python);
         assert_eq!(mid, vec![("{{ v }}".to_string(), Class::Literal)]);
+    }
+
+    /// A Go `//line` that begins a line is a directive; the same words after
+    /// code, spelled `// line`, or read in a language with no such directive
+    /// are a comment.
+    ///
+    /// The two need opposite treatment from a value written into them: a
+    /// comment's is encoded, and a directive's reaches the compiler byte for
+    /// byte, where an encoded file name names a file that does not exist.
+    #[test]
+    fn a_go_line_directive_is_not_a_comment() {
+        let t = "//line {{ f }}:{{ n }}\n\t//line {{ g }}:1\nx := 1 //line {{ h }}:1\n// line {{ i }}\n";
+        assert_eq!(
+            contexts(t, Syntax::Go),
+            vec![
+                ("{{ f }}".to_string(), Class::Directive),
+                ("{{ n }}".to_string(), Class::Directive),
+                ("{{ g }}".to_string(), Class::Directive),
+                ("{{ h }}".to_string(), Class::Comment),
+                ("{{ i }}".to_string(), Class::Comment),
+            ]
+        );
+        assert!(contexts(t, Syntax::CFamily)
+            .iter()
+            .all(|(_, c)| *c == Class::Comment));
     }
 
     #[test]

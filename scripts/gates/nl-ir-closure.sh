@@ -106,11 +106,36 @@ row_C2() {
 #
 # Tests and the macro's own explanatory comment do not count: the defect is
 # that a reader parsing markers back reads the encoded form, and only a
-# reader closes it.
+# reader closes it. So the call is looked for in code: not on a comment line,
+# whose prose can name the decoder while nothing calls it, and not inside a
+# `#[cfg(test)]` MODULE, where this tree keeps a file's unit tests.
+#
+# ⚠ The module, not the attribute. The first version of this predicate
+# stopped reading at a file's first `#[cfg(test)]`, and `forge/sourcemap.rs`
+# puts one on a `use` thirty lines before its reader — so the tree read open
+# with the caller present. The row's controls caught it.
 row_C3() {
-    sce_grep -l 'comment_text::decode' sce-build/src/ tools/ 2>/dev/null \
-        | grep -vE '(/tests?/|_test\.|\.jinja2$)' \
-        | grep -q .
+    local file
+    while IFS= read -r file; do
+        [[ "$file" =~ (/tests?/|_test\.|\.jinja2$) ]] && continue
+        awk '
+            function test_module(s) {
+                return s ~ /^[[:space:]]*(pub[^[:space:]]*[[:space:]]+)?mod[[:space:]]/
+            }
+            pending && test_module($0) { exit }
+            /^[[:space:]]*#\[cfg\(test\)\]/ {
+                rest = $0
+                sub(/^[[:space:]]*#\[cfg\(test\)\]/, "", rest)
+                if (test_module(rest)) exit
+                pending = rest ~ /^[[:space:]]*$/
+                next
+            }
+            !/^[[:space:]]*(#\[.*\])?[[:space:]]*$/ { pending = 0 }
+            /^[[:space:]]*(\/\/|\/\*|\*)/ { next }
+            /comment_text::decode/ { found = 1; exit }
+            END { exit !found }' "$file" && return 0
+    done < <(sce_grep -l 'comment_text::decode' sce-build/src/ tools/ 2>/dev/null)
+    return 1
 }
 
 # C4 — the C11 template no longer reads `_*` as a wildcard.

@@ -140,13 +140,13 @@ pub fn classes(source: &str, lang: Lang) -> Option<Vec<Class>> {
 }
 
 /// The source with every comment blanked and literals kept. Line numbering is
-/// preserved in every arm, and length in every arm but Rust's. A docstring
-/// counts as a comment here.
+/// preserved in every arm, and length in every arm but Rust's. A docstring and
+/// a toolchain directive count as comments here.
 pub fn comments_blanked(source: &str, lang: Lang) -> String {
     match classes(source, lang) {
         None => code_only(source),
         Some(classes) => blank(source, &classes, |c| {
-            matches!(c, Class::Comment | Class::DocLiteral)
+            matches!(c, Class::Comment | Class::DocLiteral | Class::Directive)
         }),
     }
 }

@@ -87,45 +87,40 @@ struct Marker {
 
 /// Parse every `SCE-MAP:` marker in `text`.
 ///
+/// Through `forge::sourcemap::read_marker`, the one rule production reads
+/// markers with, so a field written through the comment encoder is judged
+/// as the value it encodes rather than as its escaped spelling. The Rust
+/// `#[doc = "SCE-MAP: …"]` attribute is not read: it is a string literal
+/// the marker macro fills from the same values as the `// SCE-MAP:` line
+/// beside it, so joining that line judges the same attribution.
+///
 /// Returns `Err` listing the markers that carry no ` :: ` attribution
-/// suffix, because that is the failure this gate exists to name.
+/// suffix, or that do not read back, because those are the failures this
+/// gate exists to name.
 fn parse_markers(origin: &str, text: &str) -> Result<Vec<Marker>, Vec<String>> {
     let mut found = Vec::new();
     let mut unattributed = Vec::new();
 
     for (idx, line) in text.lines().enumerate() {
-        let Some(rest) = line.split_once("SCE-MAP:").map(|(_, r)| r) else {
-            continue;
+        let marker = match sce_build::forge::sourcemap::read_marker(line) {
+            None => continue,
+            Some(Ok(marker)) => marker,
+            Some(Err(unreadable)) => {
+                unattributed.push(format!("{origin}:{}: {unreadable}", idx + 1));
+                continue;
+            }
         };
-        // The Rust `#[doc = "..."]` form closes with `"]`; the plain
-        // comment forms run to end-of-line. Trim both.
-        let payload = rest
-            .trim()
-            .trim_end_matches("\"]")
-            .trim_end_matches('"')
-            .trim();
-
-        // `<file>:<line>` then optional ` :: state :: artifact`.
-        let mut segments = payload.split(" :: ");
-        let locator = segments.next().unwrap_or_default().trim();
-        let attribution: Vec<&str> = segments.map(str::trim).collect();
-
-        let Some((file, line_part)) = locator.rsplit_once(':') else {
-            continue; // not a locator-shaped marker (prose mentions)
-        };
-        let Ok(scxml_line) = line_part.trim().parse::<u32>() else {
-            continue;
-        };
+        let (file, scxml_line) = (marker.scxml_file, marker.scxml_line);
 
         // Artifact is always the last field; the state segment is
         // present only for state-scoped symbols.
-        let (state, artifact) = match attribution.as_slice() {
+        let (state, artifact) = match marker.attribution.as_slice() {
             [] => {
                 unattributed.push(format!("{origin}:{}: {}", idx + 1, line.trim()));
                 continue;
             }
-            [artifact] => (String::new(), (*artifact).to_string()),
-            [state, artifact] => ((*state).to_string(), (*artifact).to_string()),
+            [artifact] => (String::new(), artifact.clone()),
+            [state, artifact] => (state.clone(), artifact.clone()),
             more => {
                 unattributed.push(format!(
                     "{origin}:{}: marker carries {} attribution fields, expected 1 or 2",
