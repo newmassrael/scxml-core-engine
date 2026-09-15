@@ -1811,6 +1811,27 @@ enum Commands {
         #[arg(long)]
         out: String,
     },
+    /// Judge the claims that point OUT of a document — Requirement-closure
+    /// RFC §5.2e/§5.2f.
+    ///
+    /// A `delegated` requirement names another document, and a decomposed
+    /// one names its children. Neither can be judged from inside the
+    /// manifest making the claim, so this takes a SET and follows each
+    /// claim to its end: a destination that never took the requirement, a
+    /// cycle in which every link resolves and nothing is implemented, and
+    /// a child that does not exist are all refused.
+    ///
+    /// Exits 0 only when every claim lands inside the set given. A claim
+    /// leaving that set is a hole in the closure, not a pass — the set on
+    /// the command line is what the caller is asserting is complete, so
+    /// the repair is to name the missing manifest.
+    RequirementClosure {
+        /// A requirement manifest joining the set. Repeatable, mirroring
+        /// `orchestrate`'s `--scxml`/`--forge`, which is how a cross-doc
+        /// registry is already spelled here.
+        #[arg(long = "manifest", value_name = "PATH", required = true)]
+        manifest: Vec<String>,
+    },
     /// Re-check an acceptance record against the tree.
     ///
     /// Exits 0 when it still holds, and with `cli/acceptance-lapsed`
@@ -2415,6 +2436,7 @@ fn main() {
             variant,
             root,
         } => cmd_acceptance_check(&record, &variant, &root),
+        Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
         Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
         Commands::GenerateConformance {
             language,
@@ -7494,6 +7516,58 @@ fn cmd_acceptance_check(record: &str, variant: &str, root: &str) {
             lapses: lapses.iter().map(ToString::to_string).collect(),
         });
     }
+}
+
+/// Judge every claim pointing out of a document — Requirement-closure
+/// RFC §5.2e/§5.2f.
+fn cmd_requirement_closure(manifests: &[String]) {
+    // Each manifest through the shared loader first, so a broken one
+    // reports the loader's own refusal naming the file. Building the set
+    // from an unusable manifest would report "the closure does not close"
+    // about a document that never loaded.
+    let loaded: Vec<_> = manifests
+        .iter()
+        .map(|path| load_requirement_manifest(path))
+        .collect();
+
+    let set = sce_build::requirement_set::RequirementSet::new(loaded).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            // The duplicate is a property of the set, not of one file, and
+            // naming either member would point a reader at the innocent
+            // one half the time. The whole invocation is the input here.
+            path: manifests.join(", "),
+            what: "requirement manifest set",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+
+    let report = set.report();
+    let unresolved: Vec<String> = report
+        .verdicts
+        .iter()
+        .filter(|v| {
+            !matches!(
+                v.arrival,
+                sce_build::requirement_set::Arrival::Arrived { .. }
+            )
+        })
+        .map(ToString::to_string)
+        .collect();
+    if !unresolved.is_empty() {
+        cli_exit(CliError::RequirementClosureBroken { claims: unresolved });
+    }
+
+    // Silent on success, for the reason `acceptance-check` gives: this is
+    // meant to run on every commit, and a line each time trains its reader
+    // to skip it. ⚠ The count goes to stderr rather than stdout so a
+    // caller piping the verdict is not handed prose; it is here at all
+    // because "0 defects" and "0 questions" look identical otherwise.
+    eprintln!(
+        "requirement-closure: {} claim(s) across {} manifest(s) all land",
+        report.answered(),
+        set.len()
+    );
 }
 
 /// Load a requirement manifest, or end the run with a record saying why.

@@ -292,6 +292,17 @@ pub enum CliError {
     /// the same on every checkout.
     #[error("{record}: the acceptance no longer holds: {}", lapses.join("; "))]
     AcceptanceLapsed { record: String, lapses: Vec<String> },
+
+    /// A requirement claim pointing out of its document does not land
+    /// within the manifests this run was given.
+    ///
+    /// Requirement-closure RFC §5.2e. One record carries every unresolved
+    /// claim, so a reader learns the whole of the hole at once. `claims`
+    /// are the set's own sentences, which name documents and requirement
+    /// ids — never filesystem paths, so the same broken closure is the
+    /// same diagnostic wherever the manifests are checked out.
+    #[error("the requirement closure does not close: {}", claims.join("; "))]
+    RequirementClosureBroken { claims: Vec<String> },
 }
 
 impl CliError {
@@ -527,6 +538,16 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliAcceptanceLapsed,
                 lapses.clone(),
                 Some(lapses.join("; ")),
+                None,
+            ),
+            // The claims key the record and nothing else does: they name
+            // documents and requirement ids, which are the same words on
+            // every checkout, so one broken closure is one diagnostic
+            // however the manifests were reached on the command line.
+            CliError::RequirementClosureBroken { claims } => (
+                DiagnosticCode::CliRequirementClosureBroken,
+                claims.clone(),
+                Some(claims.join("; ")),
                 None,
             ),
         };

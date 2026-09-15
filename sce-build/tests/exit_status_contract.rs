@@ -50,7 +50,7 @@ const MIN_TABLE_ROWS: usize = 14;
 /// Raised with the list rather than left where it was: at 24 against 35
 /// probes the floor would not have noticed eleven of them disappearing,
 /// which is the one thing it is here to notice.
-const MIN_PROBES: usize = 35;
+const MIN_PROBES: usize = 36;
 
 /// Rows of §6 this file does not exercise, each with the reason.
 ///
@@ -321,6 +321,34 @@ impl Fixtures {
         );
         std::fs::copy(&manifest_src, dir.join("closure.manifest.json"))
             .unwrap_or_else(|e| panic!("copy {}: {e}", manifest_src.display()));
+        // A two-manifest set whose delegation names an id the destination
+        // does not carry, for the closure probe. Written here rather than
+        // copied, because the committed manifest carries no disposition at
+        // all — there is nothing in this tree that delegates, which is a
+        // fact about the tree and not a gap this fixture should paper over.
+        let manifest_json = |doc: &str, reqs: &str| {
+            format!(
+                r#"{{"doc_id": "{doc}", "rev": "1",
+                     "extraction": {{"ids": "native", "trace": "none",
+                       "modality_convention": "english-modal-verbs",
+                       "method": "hand"}},
+                     "requirements": [{reqs}]}}"#
+            )
+        };
+        std::fs::write(
+            dir.join("upper.manifest.json"),
+            manifest_json(
+                "upper",
+                r#"{"id": "U-1", "disposition": {"kind": "delegated",
+                    "to_doc": "lower", "to_id": "L-404"}}"#,
+            ),
+        )
+        .expect("write upper.manifest.json");
+        std::fs::write(
+            dir.join("lower.manifest.json"),
+            manifest_json("lower", r#"{"id": "L-1"}"#),
+        )
+        .expect("write lower.manifest.json");
         // An acceptance record whose design then moved, for the lapse probe.
         // Taken over a copy of `valid.scxml` so the other probes' document
         // is untouched, and taken through the binary so the fixture is what
@@ -717,6 +745,17 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
             s("base"),
             s("--root"),
             fx.path(""),
+        ],
+        None,
+    );
+    add(
+        "cli/requirement-closure-broken",
+        vec![
+            s("requirement-closure"),
+            s("--manifest"),
+            fx.path("upper.manifest.json"),
+            s("--manifest"),
+            fx.path("lower.manifest.json"),
         ],
         None,
     );
