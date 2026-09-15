@@ -1211,6 +1211,23 @@ UNMIRRORED_WORKFLOWS: dict[str, str] = {
     # `rustdoc-links` had and the reason these claims are now checked.
     "fmt-check.yml": "commit-hook: cargo fmt --all -- --check",
     "clang-format-check.yml": "commit-hook: scripts/check_clang_format.sh",
+    # ⚠ This one has NO verdict to reproduce, which is a different reason from
+    # the two above and the reason this register takes prose rather than only
+    # a `commit-hook:` key. It judges nothing about the tree: it reads GitHub's
+    # own run queue and cancels runs queued for a commit `main` has moved past.
+    # A local mirror would have to have a queue to read, and a developer's
+    # machine has none — a gate for it could only ever pass vacuously, which is
+    # the shape this file refuses everywhere else.
+    #
+    # What DOES hold it is `ci_supersession_policy.rs`, which classifies every
+    # workflow in the directory including this one, and which runs locally. The
+    # thing that could rot here is the janitor's own filter, and that is a
+    # question about GitHub's API rather than about this repository.
+    "supersede-stale-queue.yml": (
+        "no tree verdict: it reads the hosted run queue, which a local "
+        "checkout does not have. Its row in `ci_supersession_policy.rs` is "
+        "what a developer reaches before pushing."
+    ),
 }
 
 
