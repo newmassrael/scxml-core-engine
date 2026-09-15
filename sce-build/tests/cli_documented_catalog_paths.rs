@@ -197,6 +197,28 @@ const PROBES: &[Probe] = &[
         path: "tests/w3c/conformance/fixtures.json",
         args: &["list-fixtures", "--catalog", "w3c", "--manifest", "{path}"],
     },
+    // `check-aot-briefs` documents the W3C registry for `--manifest` and
+    // shipped without a row here, which is this test working as its
+    // header describes — a new flag naming a catalog path "appears in
+    // the discovered set, finds no probe, and fails here". It was missed
+    // for five rounds only because no hosted run judged them.
+    //
+    // ⚠ `--header-dir` is not optional and is not a catalog path: the
+    // subcommand reads one header per registered fixture, so a probe
+    // that omitted it would exercise argument parsing and never reach
+    // the registry the row exists to check.
+    Probe {
+        subcommand: "check-aot-briefs",
+        flag: "--manifest",
+        path: "tests/w3c/conformance/fixtures.json",
+        args: &[
+            "check-aot-briefs",
+            "--manifest",
+            "{path}",
+            "--header-dir",
+            "tests/w3c/aot_tests",
+        ],
+    },
 ];
 
 #[test]
