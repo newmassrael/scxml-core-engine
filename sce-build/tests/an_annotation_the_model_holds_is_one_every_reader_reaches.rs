@@ -66,6 +66,7 @@ const DOC: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
     <data id="items" expr="[1, 2]"/>
     <data id="n" expr="0"/>
   </datamodel>
+  <script sce:req="R_GLOBAL_SCRIPT" sce:unresolved="U_GLOBAL_SCRIPT">var boot = 1;</script>
   <state id="armed" sce:req="R_STATE" sce:unresolved="U_STATE">
     <onentry sce:req="R_BLOCK">
       <raise event="entered" sce:req="R_ENTRY" sce:unresolved="U_ENTRY"/>
