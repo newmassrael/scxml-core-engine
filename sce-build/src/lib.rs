@@ -147,6 +147,9 @@ pub mod provenance;
 /// The closed requirement set a document is measured against, and the
 /// set comparison it makes possible — Requirement-closure RFC ①.
 pub mod requirement_manifest;
+/// Several manifests at once, so a claim pointing OUT of one document
+/// can be judged — Requirement-closure RFC §5.2e/§5.2f.
+pub mod requirement_set;
 /// The verbatim sentences a manifest deliberately does not carry, read
 /// from a file that is never committed — Requirement-closure RFC §7a.
 pub mod requirement_sidecar;

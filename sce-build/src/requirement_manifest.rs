@@ -268,6 +268,20 @@ pub struct RequirementEntry {
     /// and therefore a variant — see [`Position`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<Position>,
+    /// The requirements this one is split into — RFC §5.2f.
+    ///
+    /// A requirement met partly here and partly elsewhere is not one
+    /// disposition: it is a parent whose children carry their own. The
+    /// parent names them, in the direction `delegated` already points,
+    /// so that a parent can name a child in a document that has never
+    /// heard of it. Empty means undecomposed, which is what every
+    /// manifest written before this field said and still says.
+    ///
+    /// ⚠ Naming a child does not check that it exists — a manifest
+    /// cannot see another document. [`crate::requirement_set`] holds
+    /// several at once and is what judges these.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decomposes_into: Vec<crate::requirement_set::RequirementRef>,
 }
 
 impl RequirementEntry {
@@ -1200,11 +1214,13 @@ pub enum Outcome {
     ///
     /// One of the two is wrong. Either the annotation was invented, or
     /// the disposition is stale, or the requirement is met partly here
-    /// and partly elsewhere. The last is decomposition, which the
-    /// manifest cannot express yet (RFC §5.2f); naming the disagreement
-    /// helps a reader more than a bucket that hides it. The row carries
-    /// both claims, the disposition and the citing nodes, so the reader
-    /// can tell which.
+    /// and partly elsewhere. The last is decomposition, which
+    /// [`RequirementEntry::decomposes_into`] expresses (RFC §5.2f) — so
+    /// this outcome now means the author had that spelling available and
+    /// did not use it, which is a sharper thing to tell a reader than
+    /// the absence it used to report. Naming the disagreement helps more
+    /// than a bucket that hides it: the row carries both claims, the
+    /// disposition and the citing nodes, so the reader can tell which.
     Contradicted,
 }
 

@@ -252,6 +252,7 @@
         "cli/query-no-match",
         "cli/closure-input-unusable",
         "cli/acceptance-lapsed",
+        "cli/requirement-closure-broken",
         "mesh/deploy-read",
         "mesh/deploy-parse",
         "mesh/deploy-unsupported-version",

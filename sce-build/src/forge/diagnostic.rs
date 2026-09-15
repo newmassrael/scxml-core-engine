@@ -2140,6 +2140,17 @@ pub enum DiagnosticCode {
     /// can see lapse is a golden file.
     #[serde(rename = "cli/acceptance-lapsed")]
     CliAcceptanceLapsed,
+    /// A requirement claim pointing out of its document does not land
+    /// within the set given — Requirement-closure RFC §5.2e/§5.2f.
+    ///
+    /// Covers a `delegated` destination that never took the requirement, a
+    /// delegation cycle in which every link resolves and the requirement is
+    /// met nowhere, and a decomposition naming a child that does not exist.
+    /// A destination outside the set is reported here too: the run was
+    /// asked whether the closure closes, and a claim it could not follow is
+    /// a hole in that closure rather than a pass.
+    #[serde(rename = "cli/requirement-closure-broken")]
+    CliRequirementClosureBroken,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -3176,6 +3187,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliQueryNoMatch,
         CliClosureInputUnusable,
         CliAcceptanceLapsed,
+        CliRequirementClosureBroken,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -3995,6 +4007,7 @@ impl DiagnosticCode {
             | CliQueryNoMatch
             | CliClosureInputUnusable
             | CliAcceptanceLapsed
+            | CliRequirementClosureBroken
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4384,6 +4397,7 @@ impl DiagnosticCode {
             CliQueryNoMatch => "cli/query-no-match",
             CliClosureInputUnusable => "cli/closure-input-unusable",
             CliAcceptanceLapsed => "cli/acceptance-lapsed",
+            CliRequirementClosureBroken => "cli/requirement-closure-broken",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -13254,6 +13268,21 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:d06121782c34018d","code":"cli/acceptance-lapsed","stage":"cli","message":"acceptance/base.json: the acceptance no longer holds: design/frag.xml: changed since it was accepted","actual":"design/frag.xml: changed since it was accepted"}"#,
             ),
+            // ── A requirement closure with a hole in it ──
+            //    Keyed on the claims alone. They are spelled in document
+            //    and requirement ids, which no checkout renames, so the
+            //    record does not move with where the manifests were read
+            //    from — the property `cli/query-no-match` keeps by leaving
+            //    `searched` out of its id.
+            (
+                "cli/requirement-closure-broken",
+                CliError::RequirementClosureBroken {
+                    claims: vec![
+                        "U-1@upper: does not arrive: lower carries no requirement L-404".into(),
+                    ],
+                },
+                r#"{"v":1,"id":"fnv1a:24668063e3f38221","code":"cli/requirement-closure-broken","stage":"cli","message":"the requirement closure does not close: U-1@upper: does not arrive: lower carries no requirement L-404","actual":"U-1@upper: does not arrive: lower carries no requirement L-404"}"#,
+            ),
         ]
     }
 
@@ -14040,6 +14069,9 @@ mod tests {
             // A lapse lists what moved; the repair is a person accepting
             // again, which no candidate list can spell.
             | CliAcceptanceLapsed
+            // The repair is an edit to a manifest, or another manifest on
+            // the command line; neither is a candidate from a known set.
+            | CliRequirementClosureBroken
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -14738,7 +14770,7 @@ mod tests {
                 | CliInvalidSuitePackage
                 | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
-                | CliAcceptanceLapsed
+                | CliAcceptanceLapsed | CliRequirementClosureBroken
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -14896,9 +14928,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            362,
+            363,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 362 distinct variants to match the DiagnosticCode \
+             expected 363 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15819,7 +15851,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliUsage
             | CliQueryNoMatch
             | CliClosureInputUnusable
-            | CliAcceptanceLapsed => Registered(NoAnchor::NoAuthoredArtefact),
+            | CliAcceptanceLapsed
+            | CliRequirementClosureBroken => Registered(NoAnchor::NoAuthoredArtefact),
         }
 }
 
@@ -16478,8 +16511,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            21,
-            "expected the 21 `cli`/`io` codes to be filed as permanent \
+            22,
+            "expected the 22 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",
