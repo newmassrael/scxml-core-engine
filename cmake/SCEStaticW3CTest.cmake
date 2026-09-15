@@ -37,7 +37,9 @@ message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 # and the AOT runner alike: AotTestBase::getDescription() reads it at run time.
 # The generated header therefore keeps no copy of that text — a copy written
 # here would be frozen at generation and drift from the file it was taken from.
-# Only the specnum is substituted, into the header's @brief.
+# Nor does it state the section the test targets: that is `specnum` in the
+# same file, and `sce-codegen check-aot-briefs` refuses a brief that states
+# one. The template substitutes the test number alone.
 #
 function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
     # Set TEST_NUMBER for template substitution (@TEST_NUMBER@ in .in files)
@@ -73,14 +75,6 @@ function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
         message(WARNING "Template file not found: ${TEMPLATE_FILE} - Skipping AOT header generation for test ${TEST_NUM}")
         return()
     endif()
-
-    # Extract specnum from metadata.txt
-    execute_process(
-        COMMAND grep "^specnum:" "${METADATA_FILE}"
-        COMMAND sed "s/specnum: *//"
-        OUTPUT_VARIABLE SPECNUM
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
 
     # Generate TestXXX.h from template
     configure_file(

@@ -625,6 +625,22 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
         vec![s("read-metadata"), fx.path("nope.txt")],
         None,
     );
+    // The committed registry against a directory holding none of its
+    // headers: every registered fixture is refused for want of one.
+    add(
+        "cli/check-aot-briefs-missing-headers",
+        vec![
+            s("check-aot-briefs"),
+            s("--manifest"),
+            s(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../tests/w3c/conformance/fixtures.json"
+            )),
+            s("--header-dir"),
+            fx.path("gen"),
+        ],
+        None,
+    );
     add(
         "cli/manifest-not-a-directory",
         vec![s("manifest"), fx.path("nope")],

@@ -6,10 +6,13 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML @SPECNUM@: conformance test @TEST_NUMBER@
+ * @brief W3C conformance test @TEST_NUMBER@
  *
- * The description is resources/@TEST_NUMBER@/metadata.txt, which
- * AotTestBase::getDescription() reads at run time; this header keeps no copy.
+ * The section it targets is `specnum` in resources/@TEST_NUMBER@/metadata.txt,
+ * and its description is that file's `description`, which
+ * AotTestBase::getDescription() reads at run time. This header restates
+ * neither; `sce-codegen check-aot-briefs` refuses a brief that states the
+ * section.
  */
 struct Test@TEST_NUMBER@ : public SimpleAotTest<Test@TEST_NUMBER@, @TEST_NUMBER@> {
     using SM = SCE::Generated::test@TEST_NUMBER@::test@TEST_NUMBER@;

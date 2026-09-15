@@ -2042,6 +2042,34 @@ target_include_directories(w3c_test_cli
 
 add_dependencies(w3c_test_cli sce_runtime)
 
+# The brief of an AOT test header states no spec section.
+#
+# The section a fixture targets has one home, `specnum` in
+# resources/<id>/metadata.txt, and a brief restating it is a second answer:
+# measured 2026-09-15, 175 of 202 briefs stated one and 82 contradicted
+# `specnum`. `sce-codegen check-aot-briefs` reads the brief paragraph only, so
+# the citations in a header's body — the other sections a test touches — are
+# left alone. It is a build step rather than a configure step so that editing
+# a header re-runs it, and w3c_test_cli depends on it, so a brief stating a
+# section fails the build that compiles that header.
+set(W3C_AOT_HEADERS "")
+foreach(TEST_NUM ${W3C_AOT_TESTS})
+    list(APPEND W3C_AOT_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/aot_tests/Test${TEST_NUM}.h")
+endforeach()
+set(W3C_AOT_BRIEF_STAMP "${CMAKE_CURRENT_BINARY_DIR}/w3c/aot_briefs.checked")
+add_custom_command(
+    OUTPUT "${W3C_AOT_BRIEF_STAMP}"
+    COMMAND "${SCE_CODEGEN}" check-aot-briefs
+            --manifest "${W3C_REGISTRY}"
+            --header-dir "${CMAKE_CURRENT_SOURCE_DIR}/w3c/aot_tests"
+    COMMAND "${CMAKE_COMMAND}" -E touch "${W3C_AOT_BRIEF_STAMP}"
+    DEPENDS "${W3C_REGISTRY}" "${SCE_CODEGEN}" ${W3C_AOT_HEADERS}
+    COMMENT "Checking that no AOT test header brief states its fixture's spec section"
+    VERBATIM
+)
+add_custom_target(w3c_aot_brief_check DEPENDS "${W3C_AOT_BRIEF_STAMP}")
+add_dependencies(w3c_test_cli w3c_aot_brief_check)
+
 # ============================================================================
 # Comprehensive Interactive Debugging Verification Test
 # ============================================================================
