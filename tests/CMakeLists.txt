@@ -974,6 +974,8 @@ add_executable(integration_tests
     integration/ErrorCascadeIsBoundedAotTest.cpp
     integration/EventDescriptorSpellingsAgreeTest.cpp
     integration/EventDescriptorSpellingsAgreeAotTest.cpp
+    integration/WildcardInDocumentOrderTest.cpp
+    integration/WildcardInDocumentOrderAotTest.cpp
     integration/EventlessMacrostepIsBoundedTest.cpp
     integration/EventlessMacrostepIsBoundedAotTest.cpp
     integration/InternalChainIsBoundedTest.cpp
@@ -1441,6 +1443,12 @@ sce_generate_static_integration_test(late_tick_honours_cancel ${STATIC_INTEGRATI
 # write it as a catch-all to fail, which an engine matching nothing on `.*`
 # passes by never taking the transition it must not take.
 sce_generate_static_integration_test(event_descriptor_spellings_agree ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.12.1 + 3.13: a wildcard matches every event and changes nothing
+# else — its `cond` still decides whether it is enabled, and an internal one
+# targeting a descendant of its compound source still does not exit that
+# source. No W3C document writes a wildcard with either.
+sce_generate_static_integration_test(wildcard_in_document_order ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.7: a `<final>` nested inside a compound state completes that
 # state, not the session — Appendix D `enterStates` ends the session only when

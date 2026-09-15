@@ -5451,6 +5451,18 @@
           "file": "sce-build/tests/b9_drift_detection.rs",
           "symbol": "generate_headered_rust",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_wildcard_in_document_order.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_wildcard_in_document_order_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_wildcard_in_document_order_kotlin.sh",
+          "kind": "references"
         }
       ]
     },

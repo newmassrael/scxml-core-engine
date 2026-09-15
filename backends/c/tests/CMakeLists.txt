@@ -983,6 +983,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.12.1 + 3.13: a wildcard matches every event and changes
+    # nothing else — its `cond` still decides whether it is enabled, and an
+    # internal one targeting a descendant of its compound source still does not
+    # exit that source. No W3C document writes a wildcard with either.
+    sce_generate_static_integration_c_test(wildcard_in_document_order "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_wildcard_in_document_order
+        integration/test_wildcard_in_document_order.c
+        ${INTEGRATION_C_TEST_wildcard_in_document_order_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_wildcard_in_document_order PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_wildcard_in_document_order PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_wildcard_in_document_order PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_wildcard_in_document_order
+        COMMAND sce_c_integration_wildcard_in_document_order
+    )
+    set_tests_properties(c11_integration_wildcard_in_document_order PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.7: a <final> nested inside a compound state completes that
     # state, not the session — Appendix D enterStates ends the session only when
     # the final's parent is the <scxml> element. The fixture rests in the nested
