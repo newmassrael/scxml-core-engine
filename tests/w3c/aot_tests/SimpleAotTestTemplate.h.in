@@ -5,16 +5,13 @@
 
 namespace SCE::W3C::AotTests {
 
-// clang-format off
 /**
- * @brief W3C SCXML @SPECNUM@: @TEST_DESCRIPTION@
+ * @brief W3C SCXML @SPECNUM@: conformance test @TEST_NUMBER@
+ *
+ * The description is resources/@TEST_NUMBER@/metadata.txt, which
+ * AotTestBase::getDescription() reads at run time; this header keeps no copy.
  */
-// clang-format on
-
 struct Test@TEST_NUMBER@ : public SimpleAotTest<Test@TEST_NUMBER@, @TEST_NUMBER@> {
-    // clang-format off
-    static constexpr const char *DESCRIPTION = "W3C SCXML @SPECNUM@: @TEST_DESCRIPTION@";
-    // clang-format on
     using SM = SCE::Generated::test@TEST_NUMBER@::test@TEST_NUMBER@;
 };
 

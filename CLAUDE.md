@@ -98,7 +98,6 @@ namespace SCE::W3C::AotTests {
 
 /// W3C SCXML X.Y.Z: Feature description
 struct TestXXX : public SimpleAotTest<TestXXX, XXX> {
-    static constexpr const char *DESCRIPTION = "Feature name (W3C X.Y.Z AOT)";
     using SM = SCE::Generated::testXXX::testXXX;
 };
 
@@ -117,7 +116,6 @@ namespace SCE::W3C::AotTests {
 
 /// W3C SCXML C.2: BasicHTTP feature description
 struct TestXXX : public HttpAotTest<TestXXX, XXX> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP feature (W3C C.2 AOT)";
     using SM = SCE::Generated::testXXX::testXXX;
 };
 
