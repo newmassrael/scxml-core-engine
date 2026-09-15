@@ -7345,27 +7345,54 @@ fn cmd_acceptance_report(
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
 
-    let manifest = sce_build::requirement_manifest::RequirementManifest::load(Path::new(manifest))
-        .unwrap_or_else(|e| {
-            eprintln!("sce-codegen: {e}");
-            std::process::exit(1);
-        });
+    let manifest = load_requirement_manifest(manifest);
 
     // A sidecar that was asked for and cannot be used is fatal. Falling
     // back to a report without sentences would answer a weaker question
     // than the one asked while looking exactly like the answer.
-    let sidecar = sidecar.map(|path| {
-        sce_build::requirement_sidecar::RequirementSidecar::load(Path::new(path), &manifest)
-            .unwrap_or_else(|e| {
-                eprintln!("sce-codegen: {e}");
-                std::process::exit(1);
-            })
-    });
+    let sidecar = sidecar.map(|path| load_requirement_sidecar(path, &manifest));
 
     print!(
         "{}",
         sce_build::acceptance_report::render(&model, &manifest, sidecar.as_ref())
     );
+}
+
+/// Load a requirement manifest, or end the run with a record saying why.
+///
+/// One loader for every subcommand that reads a manifest, so a manifest
+/// that does not load reaches the caller the same way whichever door it
+/// came through. The doors used to print the loader's sentence and exit
+/// 1 each on their own, which is how all of them came to break
+/// `SCE_ERROR_CONTRACT.md` §6 together.
+fn load_requirement_manifest(path: &str) -> sce_build::requirement_manifest::RequirementManifest {
+    sce_build::requirement_manifest::RequirementManifest::load(Path::new(path)).unwrap_or_else(
+        |e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: path.to_string(),
+                what: "requirement manifest",
+                kind: e.kind(),
+                detail: e.to_string(),
+            })
+        },
+    )
+}
+
+/// Load the sidecar for `manifest`, or end the run with a record saying
+/// why. See [`load_requirement_manifest`].
+fn load_requirement_sidecar(
+    path: &str,
+    manifest: &sce_build::requirement_manifest::RequirementManifest,
+) -> sce_build::requirement_sidecar::RequirementSidecar {
+    sce_build::requirement_sidecar::RequirementSidecar::load(Path::new(path), manifest)
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: path.to_string(),
+                what: "requirement sidecar",
+                kind: e.kind(),
+                detail: e.to_string(),
+            })
+        })
 }
 
 fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorFormat) {
@@ -7382,12 +7409,7 @@ fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorForm
     // Falling back to the annotation-only report would answer a
     // different question than the one asked, print a clean-looking
     // result, and never mention that the denominator was dropped.
-    let loaded =
-        sce_build::requirement_manifest::RequirementManifest::load(Path::new(manifest_path))
-            .unwrap_or_else(|e| {
-                eprintln!("sce-codegen: {e}");
-                std::process::exit(1);
-            });
+    let loaded = load_requirement_manifest(manifest_path);
     let classification = sce_build::requirement_manifest::classify(&model, &loaded);
     out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));
 }

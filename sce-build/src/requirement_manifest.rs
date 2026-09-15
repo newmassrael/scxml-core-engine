@@ -1039,6 +1039,25 @@ impl std::fmt::Display for ManifestError {
 
 impl std::error::Error for ManifestError {}
 
+impl ManifestError {
+    /// Which refusal this is, in words that do not carry the path.
+    ///
+    /// The sentence [`Display`](std::fmt::Display) writes names the file,
+    /// so a diagnostic keyed on it would change identity with the
+    /// directory a manifest was checked out into. This is the part of the
+    /// refusal that belongs to the manifest.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ManifestError::Read { .. } => "read",
+            ManifestError::Parse { .. } => "parse",
+            ManifestError::DuplicateId { .. } => "duplicate-id",
+            ManifestError::Empty { .. } => "empty",
+            ManifestError::Prose { .. } => "prose",
+            ManifestError::DispositionWithoutEvidence { .. } => "disposition-without-evidence",
+        }
+    }
+}
+
 impl RequirementManifest {
     /// Load and validate a manifest.
     ///

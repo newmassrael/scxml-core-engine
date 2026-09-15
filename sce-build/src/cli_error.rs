@@ -264,6 +264,23 @@ pub enum CliError {
         query: String,
         searched: String,
     },
+
+    /// A file a requirement-closure subcommand reads — the manifest, its
+    /// sidecar, an acceptance record — cannot be used.
+    ///
+    /// These subcommands used to print the loader's sentence and exit 1,
+    /// the status `SCE_ERROR_CONTRACT.md` §6 reserves for a query that
+    /// matched nothing, with no record at all. `what` names which input it
+    /// was and `kind` which refusal, both free of the path; `detail` is the
+    /// loader's own sentence, kept verbatim because it already names the
+    /// field or entry at fault.
+    #[error("{detail}")]
+    ClosureInputUnusable {
+        path: String,
+        what: &'static str,
+        kind: &'static str,
+        detail: String,
+    },
 }
 
 impl CliError {
@@ -477,6 +494,18 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliQueryNoMatch,
                 vec![(*tool).to_string(), query.clone()],
                 Some(query.clone()),
+                None,
+            ),
+            // Which input and which refusal key the record; the path does
+            // not, and neither does the loader's sentence, which embeds it.
+            // The same broken manifest checked out at another path is the
+            // same diagnostic.
+            CliError::ClosureInputUnusable {
+                path, what, kind, ..
+            } => (
+                DiagnosticCode::CliClosureInputUnusable,
+                vec![(*what).to_string(), (*kind).to_string()],
+                Some(path.clone()),
                 None,
             ),
         };

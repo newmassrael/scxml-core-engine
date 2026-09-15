@@ -2120,6 +2120,17 @@ pub enum DiagnosticCode {
     /// without a JSON parser, and §6 registers that status.
     #[serde(rename = "cli/query-no-match")]
     CliQueryNoMatch,
+    /// A file a requirement-closure subcommand reads — the manifest, its
+    /// sidecar, an acceptance record — cannot be used.
+    ///
+    /// Exists because those subcommands printed the loader's sentence and
+    /// exited 1: a status [§6](SCE_ERROR_CONTRACT.md) reserves for a query
+    /// that matched nothing, carrying no record at all. A caller could not
+    /// tell "the manifest does not load" from "there was nothing to
+    /// report", which for a coverage gate is the difference between a
+    /// broken denominator and a clean result.
+    #[serde(rename = "cli/closure-input-unusable")]
+    CliClosureInputUnusable,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -3154,6 +3165,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliGeneratorSourceUnverifiable,
         CliUsage,
         CliQueryNoMatch,
+        CliClosureInputUnusable,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -3971,6 +3983,7 @@ impl DiagnosticCode {
             | CliGeneratorSourceUnverifiable
             | CliUsage
             | CliQueryNoMatch
+            | CliClosureInputUnusable
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4358,6 +4371,7 @@ impl DiagnosticCode {
             CliGeneratorSourceUnverifiable => "cli/generator-source-unverifiable",
             CliUsage => "cli/usage",
             CliQueryNoMatch => "cli/query-no-match",
+            CliClosureInputUnusable => "cli/closure-input-unusable",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -13199,6 +13213,20 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:6b1e65365d0453bb","code":"cli/query-no-match","stage":"cli","message":"addr2sce: symbol 'probe__s0__on_entry' matched nothing in out/sce_sourcemap.json","actual":"symbol 'probe__s0__on_entry'"}"#,
             ),
+            // ── A requirement-closure input that cannot be used ──
+            //    Keyed on which input and which refusal, never on the path:
+            //    `actual` carries the path, and the message is the loader's
+            //    own sentence, which names it.
+            (
+                "cli/closure-input-unusable",
+                CliError::ClosureInputUnusable {
+                    path: "spec/manifest.json".into(),
+                    what: "requirement manifest",
+                    kind: "empty",
+                    detail: "requirement manifest spec/manifest.json lists no requirements".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:fbb19f3b789dcca3","code":"cli/closure-input-unusable","stage":"cli","message":"requirement manifest spec/manifest.json lists no requirements","actual":"spec/manifest.json"}"#,
+            ),
         ]
     }
 
@@ -13979,6 +14007,9 @@ mod tests {
             // Nothing was expected and nothing is offered: the query was
             // legal and the artifact simply holds no answer.
             | CliQueryNoMatch
+            // The loader's refusal names one fact about one file, and the
+            // repair is a different file — there is no candidate to offer.
+            | CliClosureInputUnusable
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -14676,7 +14707,7 @@ mod tests {
                 | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
                 | CliInvalidSuitePackage
                 | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
-                | CliUsage | CliQueryNoMatch
+                | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -14834,9 +14865,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            360,
+            361,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 360 distinct variants to match the DiagnosticCode \
+             expected 361 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15755,7 +15786,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliGeneratorSourceDrift
             | CliGeneratorSourceUnverifiable
             | CliUsage
-            | CliQueryNoMatch => Registered(NoAnchor::NoAuthoredArtefact),
+            | CliQueryNoMatch
+            | CliClosureInputUnusable => Registered(NoAnchor::NoAuthoredArtefact),
         }
 }
 
@@ -16414,8 +16446,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            19,
-            "expected the 19 `cli`/`io` codes to be filed as permanent \
+            20,
+            "expected the 20 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",

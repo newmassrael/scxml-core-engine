@@ -875,6 +875,7 @@ references against a real document and drift silently.
 
 | Code | Stage | Fix? | Spec |
 |---|---|---|---|
+| `cli/closure-input-unusable` | `cli` | no |  |
 | `cli/create-output-dir` | `cli` | no |  |
 | `cli/format-style-not-found` | `cli` | no |  |
 | `cli/generator-source-drift` | `cli` | no |  |
