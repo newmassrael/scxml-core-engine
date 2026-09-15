@@ -52,6 +52,7 @@ fn published() -> String {
         .arg(dir.join("doip_nl_connection_states.scxml"))
         .arg("--manifest")
         .arg(dir.join("iso13400_2_nl_socket_handling.manifest.json"))
+        .args(["--variant", "base"])
         .output()
         .expect("spawn sce-codegen");
     assert!(
@@ -81,7 +82,7 @@ fn the_wire_publishes_exactly_what_the_renderer_produced() {
         .expect("the committed fixture parses");
     let manifest = sce_build::requirement_manifest::RequirementManifest::load(&manifest_path)
         .expect("the committed manifest loads");
-    let rendered = sce_build::acceptance_report::render(&model, &manifest, None);
+    let rendered = sce_build::acceptance_report::render(&model, &manifest, None, "base");
 
     assert_eq!(
         published().trim_end(),

@@ -218,10 +218,16 @@ pub fn fragment(model: &SCXMLModel, id: &str) -> Vec<Dependency> {
 /// else's document. It says so on its own face, because the only way
 /// the manifest/sidecar split fails is a helpful person checking the
 /// rendered page into the repository.
+///
+/// `variant` is printed under the title because an acceptance is of one
+/// variant (Requirement-closure RFC §5.2d): a page that did not say which
+/// could be signed for the base build and read as covering every build
+/// composed on top of it.
 pub fn render(
     model: &SCXMLModel,
     manifest: &RequirementManifest,
     sidecar: Option<&RequirementSidecar>,
+    variant: &str,
 ) -> String {
     let classification = classify(model, manifest);
     let table = transition_table(model);
@@ -235,6 +241,7 @@ pub fn render(
         "ACCEPTANCE REPORT  {}@{}  <->  {}\n",
         manifest.doc_id, manifest.rev, model.name
     ));
+    out.push_str(&format!("variant: {variant}\n"));
     if sidecar.is_some() {
         out.push_str(
             "⚠ carries verbatim text from the source document. A local artefact \

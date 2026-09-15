@@ -609,6 +609,14 @@ name = "cli_acceptance_report_wire"
 path = "tests/cli_acceptance_report_wire.rs"
 required-features = ["cli"]
 
+# `accept` and `acceptance-check`, through the binary: the record the
+# subcommand writes against the one the library takes, and a lapse against
+# the exit status a gate branches on.
+[[test]]
+name = "cli_acceptance_record_wire"
+path = "tests/cli_acceptance_record_wire.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "cli_lint_parity"
 path = "tests/cli_lint_parity.rs"

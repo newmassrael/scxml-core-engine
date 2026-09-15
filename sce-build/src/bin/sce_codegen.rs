@@ -1770,6 +1770,12 @@ enum Commands {
         /// Closed requirement set this document is measured against.
         #[arg(long)]
         manifest: String,
+        /// The variant this page is accepted for, printed on it.
+        ///
+        /// An acceptance of one variant says nothing about another, so the
+        /// page a person signs has to say which one it shows.
+        #[arg(long)]
+        variant: String,
         /// Verbatim sentences, keyed by requirement id.
         ///
         /// Never committed: it holds the source document's own text,
@@ -1778,6 +1784,46 @@ enum Commands {
         /// the rendered page as a local artefact.
         #[arg(long)]
         sidecar: Option<String>,
+    },
+    /// Pin what a person accepted — Requirement-closure RFC §8.3.
+    ///
+    /// Writes an acceptance record: the manifest's revision and bytes, the
+    /// variant, and every file the parse read, each by sha256, named
+    /// relative to `--root`. `acceptance-check` re-checks it.
+    Accept {
+        /// SCXML file path — the entry document of the accepted design
+        scxml: String,
+        /// Closed requirement set the acceptance was measured against.
+        #[arg(long)]
+        manifest: String,
+        /// The variant the acceptance is for. Compared verbatim.
+        #[arg(long)]
+        variant: String,
+        /// Root every pinned path is recorded relative to.
+        ///
+        /// Required rather than defaulted: a record names its files
+        /// relative to one root, and a default taken from wherever the
+        /// command happened to run would pin different paths from every
+        /// directory.
+        #[arg(long)]
+        root: String,
+        /// Where to write the record.
+        #[arg(long)]
+        out: String,
+    },
+    /// Re-check an acceptance record against the tree.
+    ///
+    /// Exits 0 when it still holds, and with `cli/acceptance-lapsed`
+    /// naming what moved when it does not.
+    AcceptanceCheck {
+        /// Acceptance record written by `accept`
+        record: String,
+        /// The variant being asked about.
+        #[arg(long)]
+        variant: String,
+        /// Root the record's paths are read against.
+        #[arg(long)]
+        root: String,
     },
     Requirements {
         /// SCXML file path
@@ -2348,8 +2394,27 @@ fn main() {
         Commands::AcceptanceReport {
             scxml,
             manifest,
+            variant,
             sidecar,
-        } => cmd_acceptance_report(&scxml, &manifest, sidecar.as_deref(), error_format),
+        } => cmd_acceptance_report(
+            &scxml,
+            &manifest,
+            &variant,
+            sidecar.as_deref(),
+            error_format,
+        ),
+        Commands::Accept {
+            scxml,
+            manifest,
+            variant,
+            root,
+            out,
+        } => cmd_accept(&scxml, &manifest, &variant, &root, &out, error_format),
+        Commands::AcceptanceCheck {
+            record,
+            variant,
+            root,
+        } => cmd_acceptance_check(&record, &variant, &root),
         Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
         Commands::GenerateConformance {
             language,
@@ -7337,6 +7402,7 @@ fn cmd_transition_table(scxml: &str, error_format: ErrorFormat) {
 fn cmd_acceptance_report(
     scxml: &str,
     manifest: &str,
+    variant: &str,
     sidecar: Option<&str>,
     error_format: ErrorFormat,
 ) {
@@ -7354,8 +7420,80 @@ fn cmd_acceptance_report(
 
     print!(
         "{}",
-        sce_build::acceptance_report::render(&model, &manifest, sidecar.as_ref())
+        sce_build::acceptance_report::render(&model, &manifest, sidecar.as_ref(), variant)
     );
+}
+
+/// Pin what a person accepted — Requirement-closure RFC §8.3.
+fn cmd_accept(
+    scxml: &str,
+    manifest: &str,
+    variant: &str,
+    root: &str,
+    out: &str,
+    error_format: ErrorFormat,
+) {
+    // Each input is refused through its own door first, so a document that
+    // does not parse reports its `xml/*` code and a manifest that does not
+    // load reports the loader's refusal. Taking the record would refuse both
+    // as one opaque failure to pin a design, which tells the caller which
+    // command failed and nothing about why.
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    if let Err(e) = parser.parse_file(scxml) {
+        error_format.emit_and_exit(&e, "SCXML parse error: ");
+    }
+    let _ = load_requirement_manifest(manifest);
+
+    let record = sce_build::acceptance_record::AcceptanceRecord::take(
+        Path::new(root),
+        Path::new(scxml),
+        Path::new(manifest),
+        variant,
+    )
+    .unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: scxml.to_string(),
+            what: "acceptance record",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+    fs::write(out, record.to_json()).unwrap_or_else(|source| {
+        cli_exit(CliError::WriteOutput {
+            path: out.to_string(),
+            source,
+        })
+    });
+}
+
+/// Re-check an acceptance record against the tree — Requirement-closure
+/// RFC §8.3.
+fn cmd_acceptance_check(record: &str, variant: &str, root: &str) {
+    let unusable = |kind: &'static str, detail: String| -> ! {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: record.to_string(),
+            what: "acceptance record",
+            kind,
+            detail,
+        })
+    };
+    let text =
+        fs::read_to_string(record).unwrap_or_else(|e| unusable("read", format!("{record}: {e}")));
+    let loaded = sce_build::acceptance_record::AcceptanceRecord::from_json(&text)
+        .unwrap_or_else(|e| unusable(e.kind(), e.to_string()));
+    let lapses = loaded
+        .recheck(Path::new(root), variant)
+        .unwrap_or_else(|e| unusable(e.kind(), e.to_string()));
+
+    // Silence when it still holds, for the reason `verify-generator` gives:
+    // this runs on every commit, and a line each time trains its reader to
+    // skip it.
+    if !lapses.is_empty() {
+        cli_exit(CliError::AcceptanceLapsed {
+            record: record.to_string(),
+            lapses: lapses.iter().map(ToString::to_string).collect(),
+        });
+    }
 }
 
 /// Load a requirement manifest, or end the run with a record saying why.

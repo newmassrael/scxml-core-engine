@@ -241,7 +241,7 @@ fn breaking_any_element_a_requirement_depends_on_moves_its_block() {
 
     let manifest = load_manifest();
     let base = base_model();
-    let report = render(&base, &manifest, None);
+    let report = render(&base, &manifest, None, "base");
 
     let breaks = [
         Break::TransitionEvent,
@@ -277,7 +277,7 @@ fn breaking_any_element_a_requirement_depends_on_moves_its_block() {
                 resolved_any = true;
                 examined += 1;
 
-                let after_report = render(&mutant, &manifest, None);
+                let after_report = render(&mutant, &manifest, None, "base");
                 let after = block_of(&after_report, &entry.id);
                 if after == before {
                     unmoved.push(format!(

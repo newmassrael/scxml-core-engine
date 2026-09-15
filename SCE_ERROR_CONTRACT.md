@@ -875,6 +875,7 @@ references against a real document and drift silently.
 
 | Code | Stage | Fix? | Spec |
 |---|---|---|---|
+| `cli/acceptance-lapsed` | `cli` | no |  |
 | `cli/closure-input-unusable` | `cli` | no |  |
 | `cli/create-output-dir` | `cli` | no |  |
 | `cli/format-style-not-found` | `cli` | no |  |

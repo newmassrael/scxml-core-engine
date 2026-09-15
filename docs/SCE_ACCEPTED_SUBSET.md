@@ -2185,7 +2185,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (361 codes)
+## Appendix — `DiagnosticCode` index (362 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -2566,6 +2566,7 @@ or SCE-internal issues.
 | `mesh/codegen-template-read` | Mesh Codegen | Mesh template asset read |
 | `mesh/codegen-template-render` | Mesh Codegen | Mesh template rendering failure |
 | `mesh/io` | Mesh Io | Generic mesh codegen filesystem failure |
+| `cli/acceptance-lapsed` | Cli | `sce-codegen acceptance-check` found that the manifest, the variant or a file the design was read from moved since the acceptance record was taken; not preventable by authoring SCXML (a person accepts again with `sce-codegen accept`, or reverts what moved) |
 | `forge/source-hash-mismatch` | Cli | `sce-codegen verify` detected drift between an emitted file's embedded §6.2.6 header hash and the recomputed value over current source + template state; not preventable by authoring SCXML (regenerate via `sce-codegen` to repair) |
 | `forge/source-hash-input-uncovered` | Cli | the §6.2.6 `source-hash` about to be embedded in generated output would not describe the input that produced it — the collected set is empty (the header would carry the empty-input digest) or, where the root was inferred from the input's own location, omits that input; an invocation-layout failure, not an authoring one (re-point `--input-root` at a directory containing the input) |
 | `forge/source-hash-walk-unbounded` | Cli | the §6.2.6 source set could not be enumerated within the walk's descent ceiling — a directory symlink naming a sibling contributes under every name that reaches it, so nested levels of such links name a path count exponential in the depth; refused rather than truncated, since a digest folded over the prefix the walk reached describes a subset of the input and is unauditable in the same way the empty-input digest is. An invocation-layout failure, not an authoring one (re-point `--input-root` below the aliasing, or remove it) |
