@@ -2152,6 +2152,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "cli/requirement-closure-broken")]
     CliRequirementClosureBroken,
 
+    /// A review table was asked for of a kind SCE declares no
+    /// annotation site for. Reported rather than answered with an empty
+    /// table, so a question SCE cannot ask is never rendered as a clean
+    /// review — the same reason a delegation whose destination is
+    /// outside the set is reported rather than passed.
+    #[serde(rename = "cli/review-table-unavailable")]
+    CliReviewTableUnavailable,
+
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
     #[serde(rename = "mesh/deploy-read")]
@@ -3188,6 +3196,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliClosureInputUnusable,
         CliAcceptanceLapsed,
         CliRequirementClosureBroken,
+        CliReviewTableUnavailable,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -4008,6 +4017,7 @@ impl DiagnosticCode {
             | CliClosureInputUnusable
             | CliAcceptanceLapsed
             | CliRequirementClosureBroken
+            | CliReviewTableUnavailable
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4398,6 +4408,7 @@ impl DiagnosticCode {
             CliClosureInputUnusable => "cli/closure-input-unusable",
             CliAcceptanceLapsed => "cli/acceptance-lapsed",
             CliRequirementClosureBroken => "cli/requirement-closure-broken",
+            CliReviewTableUnavailable => "cli/review-table-unavailable",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -13283,6 +13294,18 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:24668063e3f38221","code":"cli/requirement-closure-broken","stage":"cli","message":"the requirement closure does not close: U-1@upper: does not arrive: lower carries no requirement L-404","actual":"U-1@upper: does not arrive: lower carries no requirement L-404"}"#,
             ),
+            // Keyed on the KIND alone, not the path. The same kind is
+            // unreviewable in every document written in it, so two files
+            // of one kind are one finding about SCE rather than two
+            // findings about the files — the same reason the entry above
+            // keys on claims rather than on manifest paths.
+            (
+                "cli/review-table-unavailable",
+                CliError::ReviewTableUnavailable {
+                    kind: "condition".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:aef233a4ab1f387c","code":"cli/review-table-unavailable","stage":"cli","message":"condition: no review table — SCE reads sce:req on no node of this kind","actual":"condition"}"#,
+            ),
         ]
     }
 
@@ -14072,6 +14095,10 @@ mod tests {
             // The repair is an edit to a manifest, or another manifest on
             // the command line; neither is a candidate from a known set.
             | CliRequirementClosureBroken
+            // The repair is to give the kind an annotation site in the
+            // grammar, which is an SCE edit rather than a choice among
+            // names a fix could offer.
+            | CliReviewTableUnavailable
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -14771,6 +14798,7 @@ mod tests {
                 | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
                 | CliAcceptanceLapsed | CliRequirementClosureBroken
+                | CliReviewTableUnavailable
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -14928,9 +14956,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            363,
+            364,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 363 distinct variants to match the DiagnosticCode \
+             expected 364 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15852,7 +15880,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliQueryNoMatch
             | CliClosureInputUnusable
             | CliAcceptanceLapsed
-            | CliRequirementClosureBroken => Registered(NoAnchor::NoAuthoredArtefact),
+            | CliRequirementClosureBroken
+            | CliReviewTableUnavailable => Registered(NoAnchor::NoAuthoredArtefact),
         }
 }
 
@@ -16511,8 +16540,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            22,
-            "expected the 22 `cli`/`io` codes to be filed as permanent \
+            23,
+            "expected the 23 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",

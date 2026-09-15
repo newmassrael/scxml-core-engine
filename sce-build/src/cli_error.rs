@@ -303,6 +303,25 @@ pub enum CliError {
     /// same diagnostic wherever the manifests are checked out.
     #[error("the requirement closure does not close: {}", claims.join("; "))]
     RequirementClosureBroken { claims: Vec<String> },
+
+    /// A review table was asked for of a kind SCE reads no requirement
+    /// annotation in.
+    ///
+    /// ⚠ READS, not "the grammar refuses". A `sce:req` on a
+    /// W3C-namespace element of a forge document is accepted by
+    /// `sce-forge.xsd` and dropped unread — a separate defect, row S2's
+    /// class — so a message claiming refusal would tell an author their
+    /// claim was rejected when it was swallowed.
+    ///
+    /// NL→IR closure ledger row G3. ⚠ Deliberately NOT an empty table:
+    /// the rows of a document whose nodes cannot carry `sce:req` and the
+    /// rows of a fully reviewed document with nothing to report are both
+    /// zero rows, and a reviewer reading the second when it is the first
+    /// has been told a clean result about a question nobody can ask.
+    /// `kind` is `sce:kind` as authored, so the sentence names what the
+    /// reader asked about rather than the file they asked it of.
+    #[error("{kind}: no review table — SCE reads sce:req on no node of this kind")]
+    ReviewTableUnavailable { kind: String },
 }
 
 impl CliError {
@@ -548,6 +567,16 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliRequirementClosureBroken,
                 claims.clone(),
                 Some(claims.join("; ")),
+                None,
+            ),
+            // The kind keys the record, not the path: the same kind is
+            // unreviewable in every document written in it, so two files
+            // of one kind are one finding about SCE rather than two
+            // findings about the files.
+            CliError::ReviewTableUnavailable { kind } => (
+                DiagnosticCode::CliReviewTableUnavailable,
+                vec![kind.clone()],
+                Some(kind.clone()),
                 None,
             ),
         };

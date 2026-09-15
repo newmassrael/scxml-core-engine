@@ -8667,7 +8667,19 @@ fn parse_sce_entries(
                     },
                 ));
             }
-            entries.push(LookupEntry { key, value });
+            // Row G3: the row's own requirement claim, read through the
+            // one reader both families share so the duplicate rule and
+            // the token split cannot differ between them.
+            let requirements = crate::parser::collect_sce_req(
+                &child,
+                || format!("<sce:entry key=\"{key}\">"),
+                doc_name,
+            )?;
+            entries.push(LookupEntry {
+                key,
+                value,
+                requirements,
+            });
         }
     }
     Ok(entries)

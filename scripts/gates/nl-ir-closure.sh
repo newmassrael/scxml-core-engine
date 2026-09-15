@@ -171,10 +171,87 @@ row_G2() {
 }
 
 # G3 — a review artefact with the requirement column for a non-statechart kind.
+#
+# ASKED, not named — row G4's discipline, and this row is why it is worth
+# stating twice. The predicate here was a filename glob
+# (`*_review_table.rs`) with a prose grep behind it, and measured 2026-09-15
+# it was wrong in BOTH directions at once: an empty file with that name
+# would have closed the row, and the working artefact that actually landed
+# did not match the glob, so the row read `open` with the thing it asks for
+# built, tested and shipping. A name predicate does not merely pass things
+# it should not; it also fails the thing it was written to find.
+#
+# So the artefact is RUN, over documents this gate writes:
+#
+#   the column      a mapping row claiming a requirement prints it in
+#                   `source`, and the rows claiming nothing print
+#                   `(none)` — the block that makes the table a trace
+#                   table rather than a list of annotations.
+#
+#   the refusal     a kind SCE declares no annotation site for is
+#                   REFUSED, not handed an empty table. Zero rows has two
+#                   causes and they must not collapse: rendering "nobody
+#                   can annotate this kind" as "reviewed, nothing to
+#                   report" is the vacuous green this row would otherwise
+#                   be closed by.
+#
+# ⚠ The control is the load-bearing half, for G4's reason: an artefact
+# that refused every document would satisfy the refusal check above, so
+# the lookup must be ACCEPTED first and a failure there stops the gate
+# instead of reporting the row.
+G3_LOOKUP='<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="g3_probe_lookup">
+  <datamodel>
+    <data id="raw" sce:type="uint8" sce:direction="in"/>
+    <data id="out" sce:type="string" sce:direction="out"/>
+    <data id="mapping" sce:default="NEUTRAL">
+      <sce:entry key="0" value="PARK"/>
+      <sce:entry key="1" value="DRIVE" sce:req="REQ-G3"/>
+    </data>
+  </datamodel>
+</scxml>'
+
+# A kind the grammar gives no place to put a claim.
+G3_CONDITION='<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="condition" name="g3_probe_condition">
+  <datamodel>
+    <data id="rpm" sce:type="uint32" sce:direction="in"/>
+    <data id="result" sce:type="bool" sce:direction="out" expr="rpm &gt;= 10"/>
+  </datamodel>
+</scxml>'
+
 row_G3() {
-    ls sce-build/src/*_review_table.rs sce-build/src/forge/*_review_table.rs \
-        >/dev/null 2>&1 && return 0
-    sce_grep -qE 'review artefact for the .* kind|kind_review_table' sce-build/src/ 2>/dev/null
+    local bin dir table
+    bin="$(sce_gate_codegen)" || sce_gate_cannot_run \
+        "row G3 is measured by running the review artefact, and sce-codegen could not be provided"
+
+    # Absent entirely is this row REOPENING, not a broken gate.
+    "$bin" review-table --help >/dev/null 2>&1 || return 1
+
+    dir="$(mktemp -d)"
+    sce_gate_on_exit "rm -rf '$dir'"
+    printf '%s\n' "$G3_LOOKUP" >"$dir/lookup.scxml"
+    printf '%s\n' "$G3_CONDITION" >"$dir/condition.scxml"
+
+    # The control, and the only outcome here that stops the gate.
+    table="$("$bin" review-table "$dir/lookup.scxml" 2>/dev/null)" || sce_gate_fail \
+        "row G3's control was refused: a lookup this gate wrote produced no review table.
+  Either the forge grammar moved and the probe in $0 owes an update, or the artefact now
+  refuses what it should accept. Until that is settled the refusal below says nothing, so
+  no verdict is given for the row."
+
+    # The requirement column carries the claim.
+    grep -qF '"source":"REQ-G3"' <<<"$table" || return 1
+    # And the rows claiming nothing collect, rather than being dropped —
+    # an artefact that printed only annotated rows would pass the line
+    # above while losing the reading the table exists for.
+    grep -qF '"source":"(none)"' <<<"$table" || return 1
+
+    # A kind with no annotation site is refused AND prints no rows.
+    "$bin" review-table "$dir/condition.scxml" >"$dir/cond.out" 2>/dev/null && return 1
+    [[ ! -s "$dir/cond.out" ]] || return 1
 }
 
 # G4 — decomposition, and a delegation checked against its destination.

@@ -677,7 +677,14 @@ fn inherit_req(block_req: &[crate::provenance::RequirementId], block: &mut [crat
 /// so callers can build the author-facing description (e.g.
 /// `<state id="armed">`) without paying for the format on the
 /// happy path.
-fn collect_sce_req(
+///
+/// ⭐ `pub(crate)` because the forge kinds claim requirements through
+/// this same attribute (NL→IR closure ledger row G3). A second reader
+/// on the forge side would be a second place for the duplicate rule
+/// and the token split to live, and they would drift — the shared-helper
+/// rule ARCHITECTURE.md states, applied to an annotation rather than to
+/// an engine.
+pub(crate) fn collect_sce_req(
     node: &roxmltree::Node,
     element_label_fn: impl FnOnce() -> String,
     source_name: &str,
@@ -1976,7 +1983,23 @@ impl SCXMLParser {
                                 )
                             })?
                             .to_string();
-                        entries.push(LookupEntry { key, value });
+                        // Row G3, and through the same reader as the
+                        // standalone lookup document: `<sce:entry>` has
+                        // two authoring sites — inline in a statechart's
+                        // datamodel and as its own document — and a row
+                        // that claimed a requirement in one spelling and
+                        // not the other would make the review artefact
+                        // depend on where the table was written.
+                        let requirements = collect_sce_req(
+                            &child,
+                            || format!("<sce:entry> in inline lookup '{id}'"),
+                            source_name,
+                        )?;
+                        entries.push(LookupEntry {
+                            key,
+                            value,
+                            requirements,
+                        });
                     }
                 }
                 if entries.is_empty() {

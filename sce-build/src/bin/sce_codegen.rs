@@ -1757,6 +1757,25 @@ enum Commands {
         /// SCXML file path
         scxml: String,
     },
+    /// Emit the review table of a NON-statechart forge kind as NDJSON —
+    /// one record per node that can carry `sce:req`, with the `source`
+    /// column. NL→IR closure ledger row G3.
+    ///
+    /// The statechart family's artefact is `transition-table`; this is
+    /// the same object for the other kinds, read the same two ways.
+    /// Sort by `source` and every `(none)` row collects into one block,
+    /// which is behaviour the specification never asked for; compare
+    /// `source` against a manifest and a requirement with no row is
+    /// `missing`.
+    ///
+    /// ⚠ Exits with `cli/review-table-unavailable` for a kind SCE
+    /// declares no annotation site for. That is NOT an empty table: a
+    /// document nobody can annotate would otherwise render exactly like
+    /// a reviewed one with nothing to report.
+    ReviewTable {
+        /// Forge document path (`sce:kind` other than `statechart`)
+        document: String,
+    },
     /// Render the acceptance report a person reviews in one sitting —
     /// Requirement-closure RFC §7a.
     ///
@@ -2412,6 +2431,7 @@ fn main() {
             cmd_requirements(&scxml, manifest.as_deref(), error_format)
         }
         Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
+        Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
         Commands::AcceptanceReport {
             scxml,
             manifest,
@@ -7413,6 +7433,79 @@ fn cmd_transition_table(scxml: &str, error_format: ErrorFormat) {
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
     out_stream(|w| sce_build::transition_table::emit_transition_table_ndjson(&model, w));
+}
+
+// ── Subcommand: review-table ───────────────────────────────────
+//
+// The statechart family's `transition-table`, for the other kinds.
+// Parses through the production forge parser for that command's reason:
+// what the table shows and what the build compiles must not drift.
+
+/// Emit the review table of a non-statechart forge document.
+fn cmd_review_table(document: &str, error_format: ErrorFormat) {
+    let path = std::path::Path::new(document);
+    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: document.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+
+    // Through the preprocessor first, for the reason the AST export
+    // gives: a table built from the unexpanded text would describe a
+    // document the author never wrote, because every node a `<sce:use>`
+    // carries would simply be absent from it.
+    let content =
+        match sce_build::parser::expand_preprocessors(&content, document, path.parent(), &[]) {
+            Ok((expanded, _map, _deps)) => expanded,
+            Err(e) => error_format.emit_forge_and_exit(&e),
+        };
+
+    // The label every other forge caller builds: the stem identifies the
+    // document, the basename is what a diagnostic shows, so a table and a
+    // codegen run name the same document the same way.
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or(stem);
+    let label = sce_build::DocumentLabel {
+        identifier: stem,
+        diagnostic_label: basename,
+    };
+
+    let parsed = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
+        Ok(Some(p)) => p,
+        // A statechart reaches the shared kind/pipeline refusal rather
+        // than an empty table. It is the one kind that already HAS a
+        // review artefact — `transition-table`, with the columns this
+        // one deliberately does not carry — so the answer here is "wrong
+        // command", not "nothing to review".
+        Ok(None) => error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
+            sce_build::forge::error::ValidationError::WrongPipeline {
+                kind: sce_build::forge::model::ForgeKind::Statechart,
+                pipeline: sce_build::Pipeline::Forge,
+            }
+            .into(),
+            document,
+            None,
+            None,
+        )),
+        Err(e) => error_format.emit_forge_and_exit(&e),
+    };
+
+    match sce_build::forge::review_table::review_table(&parsed.document) {
+        Ok(rows) => {
+            out_stream(|w| sce_build::forge::review_table::emit_review_table_ndjson(&rows, w))
+        }
+        // ⚠ Not an empty table. See `CliError::ReviewTableUnavailable`.
+        Err(no_table) => cli_exit(CliError::ReviewTableUnavailable {
+            kind: no_table.kind.to_string(),
+        }),
+    }
 }
 
 /// Render RFC §7a's acceptance report.
