@@ -3256,6 +3256,10 @@ pub fn register_template(
     // there the rewritten header would have failed to render with an unknown
     // filter.
     env.add_filter(crate::comment_text::FILTER, crate::comment_text::filter);
+    env.add_filter(
+        crate::comment_text::DIRECTIVE_GUARD,
+        crate::comment_text::directive_guard,
+    );
     let syntax = Syntax::of_template(&name, backend);
     // Same door, second class of place. A value landing in a COMMENT is
     // encoded for the comment; a value landing in a STRING LITERAL is escaped

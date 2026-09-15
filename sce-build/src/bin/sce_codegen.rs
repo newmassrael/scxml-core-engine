@@ -3891,6 +3891,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown.scxml");
+        // Through the comment encoder, as a template's marker is, so the
+        // walker reads it back as the document's own name.
+        let marker = sce_build::forge::sourcemap::marker_payload(scxml_basename, 1, &[]);
 
         // Each backend names its stub files and their contents; the
         // write, the manifest bookkeeping, and the sourcemap emit are
@@ -3903,7 +3906,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             Language::Cpp => {
                 let header = format!(
                     "// W3C SCXML 5.8: Document rejected\n\
-                     // SCE-MAP: {scxml_basename}:1\n\
+                     // {marker}\n\
                      #pragma once\n\
                      #define SCE_DOCUMENT_REJECTED 1\n\
                      namespace SCE::Generated::{name} {{\n\
@@ -3925,7 +3928,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 format!("{input_stem}_sm.rs"),
                 format!(
                     "// W3C SCXML 5.8: Document rejected\n\
-                     // SCE-MAP: {scxml_basename}:1\n\
+                     // {marker}\n\
                      // This state machine was rejected at parse time.\n"
                 ),
             )],
@@ -3933,7 +3936,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 format!("{input_stem}Sm.kt"),
                 format!(
                     "// W3C SCXML 5.8: Document rejected\n\
-                     // SCE-MAP: {scxml_basename}:1\n\
+                     // {marker}\n\
                      package com.sce.generated.{name}\n",
                     name = input_stem
                 ),
@@ -3942,7 +3945,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 format!("{input_stem}_sm.go"),
                 format!(
                     "// W3C SCXML 5.8: Document rejected\n\
-                     // SCE-MAP: {scxml_basename}:1\n\
+                     // {marker}\n\
                      package {name}\n",
                     name = input_stem
                 ),
@@ -3951,7 +3954,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 format!("{input_stem}_sm.py"),
                 format!(
                     "# W3C SCXML 5.8: Document rejected\n\
-                     # SCE-MAP: {scxml_basename}:1\n"
+                     # {marker}\n"
                 ),
             )],
             Language::C11 => {
@@ -3968,7 +3971,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 let guard = filters::to_snake_case(input_stem.to_string()).to_uppercase();
                 let header = format!(
                     "/* W3C SCXML 5.8: Document rejected */\n\
-                     // SCE-MAP: {scxml_basename}:1\n\
+                     // {marker}\n\
                      #ifndef SCE_GEN_{guard}_SM_H\n\
                      #define SCE_GEN_{guard}_SM_H\n\
                      #define SCE_DOCUMENT_REJECTED 1\n\
@@ -3979,7 +3982,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 );
                 let body = format!(
                     "/* W3C SCXML 5.8: Document rejected */\n\
-                     // SCE-MAP: {scxml_basename}:1\n\
+                     // {marker}\n\
                      #include \"{input_stem}_sm.h\"\n\
                      const int sce_document_rejected_{stem} = 1;\n",
                     input_stem = input_stem,
@@ -6169,10 +6172,12 @@ impl W3cBackend for RustBackend {
         };
         let policy_ctor = policy_ctor.replace("{POLICY_BINDING}", policy_binding);
         let pass_variant = to_pascal_case(pass_state);
+        let marker =
+            sce_build::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
 
         format!(
             "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
-             // SCE-MAP: {input_stem}.scxml:1\n\
+             // {marker}\n\
              use std::time::Duration;\n\
              \n\
              #[test]\n\
@@ -6243,7 +6248,14 @@ impl W3cBackend for RustBackend {
         let first_id = &generated_ids[0];
         let mut mod_lines = vec![
             "// GENERATED -- DO NOT EDIT (sce-codegen)".to_string(),
-            format!("// SCE-MAP: test{first_id}.scxml:1"),
+            format!(
+                "// {}",
+                sce_build::forge::sourcemap::marker_payload(
+                    &format!("test{first_id}.scxml"),
+                    1,
+                    &[]
+                )
+            ),
             format!(
                 "//! Generated W3C SCXML conformance test state machines ({} tests).\n",
                 generated_ids.len()
@@ -6441,9 +6453,11 @@ impl W3cBackend for GoBackend {
             ""
         };
 
+        let marker =
+            sce_build::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
         format!(
             "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
-             // SCE-MAP: {input_stem}.scxml:1\n\
+             // {marker}\n\
              // W3C SCXML {specnum}: {description}\n\
              package test{test_id}\n\
              \n\
@@ -6721,9 +6735,11 @@ impl W3cBackend for KotlinBackend {
         let root = self.suite.kotlin_package_root();
         let parent_package = format!("test{test_id}");
         let child_class = to_pascal_case(child_name);
+        let marker =
+            sce_build::forge::sourcemap::marker_payload(&format!("{child_name}.scxml"), 1, &[]);
         let stub = format!(
             "// GENERATED STUB -- child codegen failed (no-op)\n\
-             // SCE-MAP: {child_name}.scxml:1\n\
+             // {marker}\n\
              package {root}.generated.{parent_package}\n\n\
              import com.sce.runtime.*\n\n\
              sealed interface {child_class}State : State {{\n\
@@ -6786,10 +6802,12 @@ impl W3cBackend for KotlinBackend {
         // input, the literal here fixed the emitted tree to this
         // repository's package names.
         let root = self.suite.kotlin_package_root();
+        let marker =
+            sce_build::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
 
         format!(
             "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
-             // SCE-MAP: {input_stem}.scxml:1\n\
+             // {marker}\n\
              package {root}.w3c\n\
              \n\
              import {root}.generated.{sm_package}.{sm_class}Event\n\
@@ -7125,10 +7143,12 @@ impl W3cBackend for PythonBackend {
         } else {
             ""
         };
+        let marker =
+            sce_build::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
         format!(
             "# GENERATED -- DO NOT EDIT (sce-codegen)\n\
              # W3C SCXML {specnum}: {description}\n\
-             # SCE-MAP: {input_stem}.scxml:1\n\
+             # {marker}\n\
              \"\"\"pytest wrapper for W3C SCXML test {test_id} (Python AOT).\n\n\
              Imports the sibling `{input_stem}_sm.py` generated by\n\
              `sce-codegen generate-w3c --language python`, instantiates\n\

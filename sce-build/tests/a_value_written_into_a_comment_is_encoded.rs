@@ -82,10 +82,11 @@ const PER_BACKEND_MACROS: &[PerBackendMacro] = &[
     PerBackendMacro {
         path: "tools/codegen/templates/_macros/sce_map_marker.jinja2",
         held_by: "writes a literal delimiter in each backend's branch, so the engine \
-                  encodes it under the backend that renders that branch. Open, and \
-                  registered in docs/SCE_ACCEPTED_SUBSET.md: the sourcemap readers that \
-                  parse these lines back do not decode, and the same path also lands in \
-                  string literals (`#line`, `#[doc]`)",
+                  encodes it under the backend that renders that branch, and guards \
+                  rather than encodes the value of Go's `//line`, which the lexer reads \
+                  as a directive. forge::sourcemap::read_marker decodes what the comment \
+                  form carries; sourcemap_ownership_walker.rs generates a document whose \
+                  name the encoder changes and reads every marker and directive back",
     },
 ];
 
@@ -285,6 +286,51 @@ fn the_engine_finds_the_comments_the_templates_hold() {
     );
 }
 
+/// The value a Go template writes into a `//line` directive, counted once per
+/// registration of the marker macro's Go branch, which writes the file and the
+/// line.
+const DIRECTIVE_FLOOR: usize = 2;
+
+/// The engine finds Go's `//line` directives, and no template writes the one
+/// form of the directive the lexer does not model.
+///
+/// A lexer that stopped telling a directive from a comment would route its
+/// value back through `comment_text` — the corruption `Class::Directive` exists
+/// to prevent — and the census above would not notice, because the same sites
+/// would simply be counted as comments again.
+#[test]
+fn the_engine_finds_the_directives_the_templates_hold() {
+    let root = repo_root();
+    let mut directives = 0usize;
+    let mut block_form = BTreeSet::new();
+    for ((path, syntax), _) in registrations(&root) {
+        if syntax != Syntax::Go {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read template");
+        directives += interpolations(&source, syntax)
+            .iter()
+            .filter(|site| site.context == Class::Directive)
+            .count();
+        if source.contains("/*line ") {
+            block_form.insert(relative(&root, &path));
+        }
+    }
+    println!("values the engine guards inside Go directives: {directives}");
+    assert!(
+        directives >= DIRECTIVE_FLOOR,
+        "the engine found {directives} value(s) inside Go `//line` directives, floor \
+         {DIRECTIVE_FLOOR}. A lexer that reads a directive as a comment encodes its \
+         file name, and Go then reports a file that does not exist."
+    );
+    assert!(
+        block_form.is_empty(),
+        "Go templates writing the `/*line …*/` directive form, which the lexer does not \
+         model and would encode as a comment:\n  {}",
+        block_form.into_iter().collect::<Vec<_>>().join("\n  ")
+    );
+}
+
 /// No template encodes a value for a place the value is not in.
 #[test]
 fn no_template_encodes_for_a_place_its_value_is_not_in() {
@@ -446,6 +492,18 @@ fn the_rules_are_exercised_in_both_directions() {
             what: "a Go raw string is a literal",
             source: "s := `{{ x | comment_text }}`\n",
             expected: &[EncoderOutsideComment],
+        },
+        Case {
+            syntax: Syntax::Go,
+            what: "a Go line directive is not a comment, so the comment encoder corrupts it",
+            source: "//line {{ f | comment_text }}:{{ n }}\n",
+            expected: &[EncoderOutsideComment],
+        },
+        Case {
+            syntax: Syntax::Go,
+            what: "a plain value in a Go line directive is the engine's to guard",
+            source: "//line {{ f }}:{{ n }}\n",
+            expected: &[],
         },
         Case {
             syntax: Syntax::Python,

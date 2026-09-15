@@ -441,12 +441,112 @@ pub fn check_source_hash_matches(
     Ok(())
 }
 
+/// The `SCE-MAP:` payload a comment carries, in the grammar [`read_marker`]
+/// reads back — `SCE-MAP: <scxml_file>:<line>[ :: <field>]*` — with every value
+/// written through [`crate::comment_text::encode`].
+///
+/// For source a template does not render. A template's marker passes that
+/// encoder at the registration door; a marker spelled in Rust passed none, so a
+/// document name the encoder changes reached the file raw, and a raw backslash
+/// is not encoder output — the reader refuses the marker rather than guess.
+/// The caller writes the comment opener, which is the backend's.
+pub fn marker_payload(scxml_file: &str, scxml_line: u32, attribution: &[&str]) -> String {
+    let mut payload = format!(
+        "SCE-MAP: {}:{scxml_line}",
+        crate::comment_text::encode(scxml_file)
+    );
+    for field in attribution {
+        payload.push_str(" :: ");
+        payload.push_str(&crate::comment_text::encode(field));
+    }
+    payload
+}
+
+/// One in-source `SCE-MAP:` marker, read back and decoded.
+///
+/// The comment form a template writes into emitted source:
+/// `// SCE-MAP: <scxml_file>:<line>[ :: <state>] :: <artifact>` (`#` in
+/// Python). Spec lines 3117 / 3153 / 3158 fix the shape: the artifact is
+/// always the last ` :: ` field, the state field precedes it only for a
+/// state-scoped symbol, and a C, C++ or Go module banner carries none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceMarker {
+    /// The SCXML document the marker attributes to.
+    pub scxml_file: String,
+    /// The line in that document.
+    pub scxml_line: u32,
+    /// The ` :: ` fields after the locator, decoded, in order.
+    pub attribution: Vec<String>,
+}
+
+/// A marker field the comment encoder did not write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnreadableMarker {
+    /// The field as it appears in the source.
+    pub field: String,
+}
+
+impl std::fmt::Display for UnreadableMarker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SCE-MAP field `{}` is not comment_text encoder output",
+            self.field
+        )
+    }
+}
+
+/// Read back the `SCE-MAP:` marker `line` carries.
+///
+/// `None` when it carries none: prose that mentions the word, a `#line` or
+/// `//line` directive (their syntax belongs to the C and Go toolchains),
+/// and the Rust `#[doc = "SCE-MAP: …"]` attribute, which is a string
+/// literal escaped by [`crate::literal_text`] rather than a comment, and
+/// whose sibling `// SCE-MAP:` line carries the same marker.
+///
+/// Every field is decoded with [`crate::comment_text::decode`]. A value a
+/// template writes into a comment passes through that encoder at the one
+/// door every template is registered through, so a reader splitting the
+/// raw text would hand back `back\x5Cslash.scxml` for a document named
+/// `back\slash.scxml`. A field that does not decode was not written by the
+/// encoder, and reads as `Err` rather than as a different name.
+pub fn read_marker(line: &str) -> Option<Result<SourceMarker, UnreadableMarker>> {
+    let trimmed = line.trim_start();
+    let body = trimmed
+        .strip_prefix("//")
+        .or_else(|| trimmed.strip_prefix('#'))?;
+    let payload = body.trim_start().strip_prefix("SCE-MAP:")?.trim();
+    let mut fields = payload.split(" :: ").map(str::trim);
+    let (file, line_number) = fields.next()?.rsplit_once(':')?;
+    let scxml_line = line_number.parse::<u32>().ok()?;
+    let decode = |field: &str| {
+        crate::comment_text::decode(field).ok_or_else(|| UnreadableMarker {
+            field: field.to_string(),
+        })
+    };
+    let scxml_file = match decode(file) {
+        Ok(file) => file,
+        Err(unreadable) => return Some(Err(unreadable)),
+    };
+    let attribution = match fields.map(decode).collect::<Result<Vec<_>, _>>() {
+        Ok(attribution) => attribution,
+        Err(unreadable) => return Some(Err(unreadable)),
+    };
+    Some(Ok(SourceMarker {
+        scxml_file,
+        scxml_line,
+        attribution,
+    }))
+}
+
 /// Walks `out_dir` recursively and verifies that every SCE-emitted
 /// file (identified by a parseable §synth-6.2.6 drift header — see
-/// `ARCHITECTURE.md` "Traceability Ownership Boundary") contains at
-/// least one `SCE-MAP:` marker line. Returns on the first violation
-/// so the diagnostic surfaces a single concrete file rather than a
-/// batch report.
+/// `ARCHITECTURE.md` "Traceability Ownership Boundary") carries at
+/// least one `SCE-MAP:` marker that [`read_marker`] reads back. The
+/// substring alone is not enough: it passes a payload the comment
+/// encoder never wrote, which no consumer of the listing can decode.
+/// Returns on the first violation so the diagnostic surfaces a single
+/// concrete file rather than a batch report.
 ///
 /// Files without a drift header are silently skipped per the
 /// boundary contract: external meta-generator output (protoc,
@@ -495,7 +595,11 @@ pub fn validate_emitted_files_have_markers(
             // design — skip silently.
             continue;
         }
-        if !content.contains("SCE-MAP:") {
+        if !content
+            .lines()
+            .filter_map(read_marker)
+            .any(|marker| marker.is_ok())
+        {
             let file_str = file.display().to_string();
             return Err(crate::forge::error::Located::new(
                 crate::forge::error::ValidationError::TraceabilityMetaGeneratedSourceLineMarkerMissing {
@@ -768,5 +872,63 @@ mod tests {
         assert_eq!(s.scxml_file, "f.scxml");
         assert_eq!(s.line_range, [7, 7]);
         assert_eq!(s.kind, "state");
+    }
+
+    /// A marker [`marker_payload`] writes reads back as the values it was
+    /// given, in every field and under both comment openers — the writer and
+    /// the reader are one grammar, and a template's marker passes the same
+    /// encoder at the registration door.
+    #[test]
+    fn a_marker_reads_back_the_values_the_encoder_wrote() {
+        let file = "back\\slash.scxml";
+        let state = "s\\1";
+        for opener in ["//", "#"] {
+            let line = format!(
+                "    {opener} {}",
+                marker_payload(file, 12, &[state, "_state_body"])
+            );
+            assert!(
+                line.contains("\\x5C"),
+                "the probe must carry an encoded field, or reading it back proves nothing: {line}",
+            );
+            let marker = read_marker(&line)
+                .expect("a comment-form marker line")
+                .expect("an encoder-written marker reads back");
+            assert_eq!(marker.scxml_file, file, "{line}");
+            assert_eq!(marker.scxml_line, 12, "{line}");
+            assert_eq!(
+                marker.attribution,
+                vec![state.to_string(), "_state_body".to_string()],
+                "{line}",
+            );
+        }
+    }
+
+    /// A field the encoder did not write is refused, not read as a
+    /// different name.
+    #[test]
+    fn a_field_the_encoder_did_not_write_is_unreadable() {
+        let unreadable = read_marker("// SCE-MAP: back\\qslash.scxml:12 :: _machine")
+            .expect("a comment-form marker line")
+            .expect_err("`\\q` is not an escape the encoder writes");
+        assert_eq!(unreadable.field, "back\\qslash.scxml");
+    }
+
+    /// The control for both cases above: what is not a comment-form marker
+    /// carries none, so neither a refusal nor a read-back above is the
+    /// reader answering every line alike.
+    #[test]
+    fn a_line_without_a_comment_form_marker_carries_none() {
+        for line in [
+            "#[doc = \"SCE-MAP: test144.scxml:6 :: _machine\"]",
+            "#![doc = \"SCE-MAP: test144.scxml:6 :: _machine\"]",
+            "//line test144.scxml:6",
+            "#line 6 \"test144.scxml\"",
+            "//! header and `SCE-MAP:` markers; only this `mod.rs` is hand-authored,",
+            "// SCE-MAP: looks-like-one-but-isn't",
+            "pub fn x() {}",
+        ] {
+            assert_eq!(read_marker(line), None, "{line}");
+        }
     }
 }

@@ -81,6 +81,20 @@
 //!   applied at the same door by [`crate::literal_text`]. The two passes
 //!   compose because the classes do not overlap: a character is in a comment
 //!   or in a literal, never both.
+//!
+//! # A comment the toolchain reads is not prose
+//!
+//! Go's `//line file:N` is a comment to the lexer and an instruction to the
+//! compiler, which carries the file name byte for byte into every panic and
+//! every diagnostic. Encoding a value there corrupts it. Measured 2026-09-15:
+//! a document named `back\slash.scxml` generated `//line back\x5Cslash.scxml:2`,
+//! naming a file that does not exist, while the C++ `#line 2
+//! "back\\slash.scxml"` of the same document — a string literal, escaped at
+//! the literal door — named the right one. [`crate::template_lexing`]
+//! therefore classifies such a comment as [`Class::Directive`], and the
+//! rewrite routes a value in one through [`directive_guard`] instead, which
+//! passes it through untouched and refuses the line break that would end the
+//! directive.
 
 use std::borrow::Cow;
 
@@ -92,16 +106,22 @@ use crate::template_lexing::{
 pub const FILTER: &str = "comment_text";
 
 /// `template` with every value it writes into a comment of `syntax` routed
-/// through [`filter`]. Borrowed and unchanged when there is none.
+/// through [`filter`], and every value it writes into a toolchain directive
+/// through [`directive_guard`]. Borrowed and unchanged when there is none.
 ///
 /// No newline is added and each tag keeps its whitespace control, so the
 /// rendered layout is the template's and a template error still names the
 /// line its author wrote.
 pub fn encode_template_comments(template: &str, syntax: Syntax) -> Cow<'_, str> {
-    let sites: Vec<Interpolation> = interpolations(template, syntax)
+    let sites: Vec<(Interpolation, &'static str)> = interpolations(template, syntax)
         .into_iter()
-        .filter(|site| {
-            site.context == Class::Comment && !applies_last_to_the_whole_value(&site.tag, FILTER)
+        .filter_map(|site| {
+            let filter = match site.context {
+                Class::Comment => FILTER,
+                Class::Directive => DIRECTIVE_GUARD,
+                _ => return None,
+            };
+            (!applies_last_to_the_whole_value(&site.tag, filter)).then_some((site, filter))
         })
         .collect();
     if sites.is_empty() {
@@ -110,9 +130,9 @@ pub fn encode_template_comments(template: &str, syntax: Syntax) -> Cow<'_, str> 
     let chars: Vec<char> = template.chars().collect();
     let mut out = String::with_capacity(template.len() + sites.len() * (FILTER.len() + 6));
     let mut at = 0usize;
-    for site in &sites {
+    for (site, filter) in &sites {
         out.extend(&chars[at..site.start]);
-        out.push_str(&crate::template_lexing::routed_through(&site.tag, FILTER));
+        out.push_str(&crate::template_lexing::routed_through(&site.tag, filter));
         at = site.end;
     }
     out.extend(&chars[at..]);
@@ -171,6 +191,36 @@ pub fn decode(encoded: &str) -> Option<String> {
 /// The template filter: `{{ value | comment_text }}`.
 pub fn filter(value: String) -> String {
     encode(&value).into_owned()
+}
+
+/// The name [`directive_guard`] is registered under, and the one the rewrite
+/// writes at a directive site.
+pub const DIRECTIVE_GUARD: &str = "directive_text";
+
+/// Refuse a value that carries a line break; pass every other value through
+/// untouched.
+///
+/// For a [`Class::Directive`]: a comment the toolchain reads rather than a
+/// person. Go reads the file name of a `//line` directive byte for byte, so
+/// the grammar above would corrupt it — `back\slash.scxml` would reach every
+/// panic and every compiler diagnostic as `back\x5Cslash.scxml`, a file that
+/// does not exist. Untouched is correct for every other character: a line
+/// comment has no delimiter to close and Go splices no lines. A line break is
+/// the one character that ends the directive, and nothing inside it can
+/// escape one, so the only answer left is to say so, at the document that
+/// carries it.
+pub fn directive_guard(value: String) -> Result<String, minijinja::Error> {
+    if value.contains(['\n', '\r']) {
+        return Err(minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            format!(
+                "a value written into a toolchain directive contains a line break, \
+                 which ends the directive, and a directive admits no escape for it: \
+                 {value:?}"
+            ),
+        ));
+    }
+    Ok(value)
 }
 
 fn needs_encoding(text: &str) -> bool {
@@ -332,5 +382,31 @@ mod tests {
             .render(minijinja::context! { e => "a*/int b;/*", flag => false })
             .expect("renders");
         assert_eq!(out, "/* expr=\"a*\\x2Fint b;/\\x2A\" */\n/* [] */");
+    }
+
+    /// A value in a Go `//line` directive reaches the compiler as written,
+    /// while the same value in the comment beside it is still encoded — the
+    /// control that shows the directive was told apart, rather than every
+    /// comment left alone. A line break, which no directive can hold, is
+    /// refused.
+    #[test]
+    fn a_registered_template_writes_a_directive_value_verbatim() {
+        let mut env = minijinja::Environment::new();
+        crate::generator::register_template(
+            &mut env,
+            "probe.go.jinja2".to_string(),
+            "//line {{ f }}:{{ n }}\n// {{ f }}\n",
+            crate::generator::Language::Go,
+        )
+        .expect("the rewritten template parses");
+        let template = env.get_template("probe.go.jinja2").expect("registered");
+        let out = template
+            .render(minijinja::context! { f => "back\\slash.scxml", n => 7 })
+            .expect("renders");
+        assert_eq!(out, "//line back\\slash.scxml:7\n// back\\x5Cslash.scxml");
+        let refused = template
+            .render(minijinja::context! { f => "one\ntwo.scxml", n => 7 })
+            .expect_err("a line break cannot sit inside a directive");
+        assert!(format!("{refused:#}").contains("line break"), "{refused:#}");
     }
 }
