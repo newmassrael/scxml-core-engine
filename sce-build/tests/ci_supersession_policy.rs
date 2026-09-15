@@ -31,7 +31,27 @@
 //! person stops typing is not measuring the tree, and a lane cancelled three
 //! times in four reads exactly like a lane that passes."*
 //!
-//! [`must_not_supersede`] still identifies those lanes; it no longer decides
+//! ⭐ **And the cost is narrower than "a lost verdict", which is worth stating
+//! because the wider phrasing argues against supersession more than the facts
+//! do.** Hosted CI checks out a sha and judges the TREE at it, not the diff, so
+//! a green run on a later sha subsumes the runs cancelled behind it: what is
+//! lost is not verification of what is on `main` now, but ATTRIBUTION — which
+//! commit broke a thing, once something is broken. Supersession is safe for
+//! exactly that reason, and it charges exactly that price: a red costs more to
+//! bisect. (Sharpened by the `watching-zenoh` session, 2026-09-15, which
+//! measured the same stalled pool from its own repository.)
+//!
+//! ⚠⚠ **Subsumption holds for a lane whose answer is about a BRANCH, and NOT
+//! for one whose answer is about a COMMIT.** This repository already carries
+//! both kinds and says so in the workflows themselves: `mutation-rounds.yml`
+//! keys its group on `github.sha` because "selection is by change set, and
+//! nothing re-selects them afterwards" — no later run re-takes what its
+//! cancelled run would have judged, so for that lane a cancellation really does
+//! destroy a verdict rather than move it. That lane keeps its per-commit group,
+//! and `supersede-stale-queue.yml` is what stops the backlog it accumulates
+//! instead.
+//!
+//! [`must_not_supersede`] still identifies the slow lanes; it no longer decides
 //! anything, and the case asserts both populations stay non-empty so the price
 //! this decision pays keeps a number attached to it.
 //!
