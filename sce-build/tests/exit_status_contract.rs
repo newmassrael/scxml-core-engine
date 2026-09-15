@@ -46,7 +46,11 @@ use std::process::{Command, Stdio};
 const MIN_TABLE_ROWS: usize = 14;
 
 /// Lower bound on invocations actually executed.
-const MIN_PROBES: usize = 24;
+///
+/// Raised with the list rather than left where it was: at 24 against 35
+/// probes the floor would not have noticed eleven of them disappearing,
+/// which is the one thing it is here to notice.
+const MIN_PROBES: usize = 35;
 
 /// Rows of §6 this file does not exercise, each with the reason.
 ///
@@ -317,6 +321,32 @@ impl Fixtures {
         );
         std::fs::copy(&manifest_src, dir.join("closure.manifest.json"))
             .unwrap_or_else(|e| panic!("copy {}: {e}", manifest_src.display()));
+        // An acceptance record whose design then moved, for the lapse probe.
+        // Taken over a copy of `valid.scxml` so the other probes' document
+        // is untouched, and taken through the binary so the fixture is what
+        // `accept` really writes rather than a record shaped by hand.
+        std::fs::copy(dir.join("valid.scxml"), dir.join("accepted.scxml"))
+            .expect("copy accepted.scxml");
+        let taken = Command::new(sce_codegen_bin())
+            .arg("accept")
+            .arg(dir.join("accepted.scxml"))
+            .arg("--manifest")
+            .arg(dir.join("closure.manifest.json"))
+            .args(["--variant", "base", "--root"])
+            .arg(&dir)
+            .arg("--out")
+            .arg(dir.join("accepted.record.json"))
+            .current_dir(repo_root())
+            .output()
+            .expect("take the acceptance record fixture");
+        assert!(
+            taken.status.success(),
+            "fixture acceptance failed:\n{}",
+            String::from_utf8_lossy(&taken.stderr)
+        );
+        let accepted = std::fs::read_to_string(dir.join("accepted.scxml")).expect("read");
+        std::fs::write(dir.join("accepted.scxml"), accepted + "<!-- moved -->\n")
+            .expect("move accepted.scxml");
         // One line, no newline anywhere — the shape whose `expand`
         // output stays entirely inside stdout's line buffer. Every
         // other document flushes on its own newlines, so a write that
@@ -675,6 +705,30 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
             fx.path("valid.scxml"),
             s("--manifest"),
             fx.path("bad.json"),
+        ],
+        None,
+    );
+    add(
+        "cli/acceptance-lapsed",
+        vec![
+            s("acceptance-check"),
+            fx.path("accepted.record.json"),
+            s("--variant"),
+            s("base"),
+            s("--root"),
+            fx.path(""),
+        ],
+        None,
+    );
+    add(
+        "cli/closure-input-unusable-record",
+        vec![
+            s("acceptance-check"),
+            fx.path("bad.json"),
+            s("--variant"),
+            s("base"),
+            s("--root"),
+            fx.path(""),
         ],
         None,
     );

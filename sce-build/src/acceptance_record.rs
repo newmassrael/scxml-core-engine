@@ -242,6 +242,23 @@ impl fmt::Display for RecordError {
 
 impl std::error::Error for RecordError {}
 
+impl RecordError {
+    /// Which refusal this is, in words that do not carry a path — see
+    /// [`crate::requirement_manifest::ManifestError::kind`] for why. A
+    /// manifest that would not load keeps the manifest's own kind, so the
+    /// same broken manifest is one diagnostic whichever door read it.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            RecordError::Read { .. } => "read",
+            RecordError::Parse { .. } => "document-unparseable",
+            RecordError::Manifest(inner) => inner.kind(),
+            RecordError::OutsideRoot { .. } => "outside-root",
+            RecordError::Variant { .. } => "variant",
+            RecordError::Format { .. } => "format",
+        }
+    }
+}
+
 impl AcceptanceRecord {
     /// Pin the design at `document`, measured against `manifest`, as the
     /// acceptance of `variant`.

@@ -281,6 +281,17 @@ pub enum CliError {
         kind: &'static str,
         detail: String,
     },
+
+    /// An acceptance record no longer holds: the manifest, the variant or a
+    /// file the design was read from moved since a person accepted it.
+    ///
+    /// Requirement-closure RFC §8.3. The check ran and its answer is that a
+    /// person must accept again. One record carries every lapse, so a reader
+    /// learns the whole of what moved at once; `lapses` are the library's
+    /// sentences, which name paths relative to the record's root and so read
+    /// the same on every checkout.
+    #[error("{record}: the acceptance no longer holds: {}", lapses.join("; "))]
+    AcceptanceLapsed { record: String, lapses: Vec<String> },
 }
 
 impl CliError {
@@ -506,6 +517,16 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliClosureInputUnusable,
                 vec![(*what).to_string(), (*kind).to_string()],
                 Some(path.clone()),
+                None,
+            ),
+            // The lapses key the record and the record's own path does not:
+            // each lapse names paths relative to the root it was checked
+            // against, so the same lapse is the same diagnostic on every
+            // checkout, and two different lapses are two.
+            CliError::AcceptanceLapsed { lapses, .. } => (
+                DiagnosticCode::CliAcceptanceLapsed,
+                lapses.clone(),
+                Some(lapses.join("; ")),
                 None,
             ),
         };

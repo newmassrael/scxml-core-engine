@@ -2131,6 +2131,15 @@ pub enum DiagnosticCode {
     /// broken denominator and a clean result.
     #[serde(rename = "cli/closure-input-unusable")]
     CliClosureInputUnusable,
+    /// An acceptance record no longer holds — Requirement-closure RFC §8.3.
+    ///
+    /// Not a malformed invocation and not a broken input: the check ran and
+    /// found that the manifest, the variant or a file the design was read
+    /// from moved since a person accepted it. Without the status a gate
+    /// would have to parse the answer out of prose, and an acceptance nobody
+    /// can see lapse is a golden file.
+    #[serde(rename = "cli/acceptance-lapsed")]
+    CliAcceptanceLapsed,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -3166,6 +3175,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliUsage,
         CliQueryNoMatch,
         CliClosureInputUnusable,
+        CliAcceptanceLapsed,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -3984,6 +3994,7 @@ impl DiagnosticCode {
             | CliUsage
             | CliQueryNoMatch
             | CliClosureInputUnusable
+            | CliAcceptanceLapsed
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4372,6 +4383,7 @@ impl DiagnosticCode {
             CliUsage => "cli/usage",
             CliQueryNoMatch => "cli/query-no-match",
             CliClosureInputUnusable => "cli/closure-input-unusable",
+            CliAcceptanceLapsed => "cli/acceptance-lapsed",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -13227,6 +13239,21 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:fbb19f3b789dcca3","code":"cli/closure-input-unusable","stage":"cli","message":"requirement manifest spec/manifest.json lists no requirements","actual":"spec/manifest.json"}"#,
             ),
+            // ── An acceptance that no longer holds ──
+            //    The lapses are the key and the `actual`; the record's own
+            //    path rides the message only, the way `cli/query-no-match`
+            //    carries `searched`. A lapse names paths relative to the
+            //    root it was checked against, so the same lapse is the same
+            //    `id` on every checkout, while the record is reached by
+            //    whatever path the caller typed.
+            (
+                "cli/acceptance-lapsed",
+                CliError::AcceptanceLapsed {
+                    record: "acceptance/base.json".into(),
+                    lapses: vec!["design/frag.xml: changed since it was accepted".into()],
+                },
+                r#"{"v":1,"id":"fnv1a:d06121782c34018d","code":"cli/acceptance-lapsed","stage":"cli","message":"acceptance/base.json: the acceptance no longer holds: design/frag.xml: changed since it was accepted","actual":"design/frag.xml: changed since it was accepted"}"#,
+            ),
         ]
     }
 
@@ -14010,6 +14037,9 @@ mod tests {
             // The loader's refusal names one fact about one file, and the
             // repair is a different file — there is no candidate to offer.
             | CliClosureInputUnusable
+            // A lapse lists what moved; the repair is a person accepting
+            // again, which no candidate list can spell.
+            | CliAcceptanceLapsed
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -14708,6 +14738,7 @@ mod tests {
                 | CliInvalidSuitePackage
                 | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
+                | CliAcceptanceLapsed
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -14865,9 +14896,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            361,
+            362,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 361 distinct variants to match the DiagnosticCode \
+             expected 362 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15787,7 +15818,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliGeneratorSourceUnverifiable
             | CliUsage
             | CliQueryNoMatch
-            | CliClosureInputUnusable => Registered(NoAnchor::NoAuthoredArtefact),
+            | CliClosureInputUnusable
+            | CliAcceptanceLapsed => Registered(NoAnchor::NoAuthoredArtefact),
         }
 }
 
@@ -16446,8 +16478,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            20,
-            "expected the 20 `cli`/`io` codes to be filed as permanent \
+            21,
+            "expected the 21 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",
