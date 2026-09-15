@@ -16,6 +16,10 @@
 //   // main.rs
 //   include!(concat!(env!("OUT_DIR"), "/traffic_light_sm.rs"));
 
+/// What a person accepted — a manifest revision, a variant and every file
+/// the design was read from — pinned so its authority can lapse.
+/// Requirement-closure RFC §8.3.
+pub mod acceptance_record;
 /// What a requirement's evidence depends on, as a closure over the IR
 /// rather than the nodes carrying its id — Requirement-closure RFC §7a.
 pub mod acceptance_report;
