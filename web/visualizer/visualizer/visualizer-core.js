@@ -108,6 +108,11 @@ class SCXMLVisualizer {
         this.initialState = scxmlStructure.initial || '';
         this.activeStates = new Set();
 
+        // NL-IR closure ledger row G2. Null when the codegen WASM could
+        // not be reached, which the node and link builders read as "no
+        // annotation data" and leave every element unmarked.
+        this.annotationOverlay = scxmlStructure.annotationOverlay || null;
+
         // §scxml-D-removeConflictingTransitions: Conflict resolution visualization data
         this.enabledTransitions = [];   // All transitions enabled before conflict resolution
         this.optimalTransitions = [];   // Transitions selected after conflict resolution
