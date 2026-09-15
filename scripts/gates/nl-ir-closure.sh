@@ -179,11 +179,103 @@ row_G3() {
 
 # G4 — decomposition, and a delegation checked against its destination.
 #
-# The manifest's own words are the tell for the first half: it currently
-# says decomposition is a thing it "cannot express yet".
+# ASKED, not named — the discipline row S3 already follows, and the reason
+# is not style. This row was measured for one round by two greps over
+# `requirement_manifest.rs`: the absence of the phrase "cannot express yet"
+# and the presence of the word `decomposes_into`. Neither reads the arrival
+# check at all, and the row's `Closed when` has TWO clauses. Measured
+# 2026-09-15: with `requirement_set.rs` and its test deleted from a
+# worktree — a tree that does not compile — the old predicate still
+# answered CLOSED. A predicate that cannot see the half its row is
+# sharpest about is a false green waiting for someone to delete the half.
+#
+# So the check is RUN, over manifests this gate writes, and both clauses
+# are put to it:
+#
+#   decomposition   a parent naming a child that exists is accepted; one
+#                   naming a child that does not is refused. The control
+#                   alone proves the field is EXPRESSED — the manifest
+#                   loader is `deny_unknown_fields`, so a `decomposes_into`
+#                   the type does not carry is a manifest that will not
+#                   load — and the mutant proves it is JUDGED.
+#
+#   delegation      a delegation whose destination carries the id is
+#                   accepted; one whose destination does not is refused.
+#
+# ⚠ THE CONTROL IS THE LOAD-BEARING HALF. A check that refused everything
+# would pass a mutants-only predicate, and so would a binary whose
+# subcommand had merely been renamed. So an arriving delegation must be
+# ACCEPTED first, and the failure of that control stops the gate rather
+# than reporting the row — a refusal proves nothing about the tree when
+# the acceptance beside it did not happen.
+#
+# ⚠ The binary is resolved through the shared locator, which REBUILDS one
+# built from other sources. Asking a stale binary would answer about a
+# tree that no longer exists, which is the precise failure this row was
+# written to stop being possible.
+G4_EXTRACTION='"extraction":{"ids":"native","trace":"none","modality_convention":"english-modal-verbs","method":"ai-pass-1"}'
+
+# A manifest holding $2 as its requirement list, spelled as the loader
+# takes it. Written here rather than kept under `tests/` so that the
+# fixture a mutant is judged against cannot be edited into agreement with
+# a check that stopped refusing.
+g4_manifest() {
+    printf '{"doc_id":"%s","rev":"D1",%s,"requirements":[%s]}\n' "$1" "$G4_EXTRACTION" "$2"
+}
+
+# Does every cross-document claim in this set land? Silent either way; the
+# verdict is the exit status.
+g4_closure() {
+    "$1" requirement-closure --manifest "$2" --manifest "$3" >/dev/null 2>&1
+}
+
 row_G4() {
-    ! grep -qE 'cannot express (it )?yet' sce-build/src/requirement_manifest.rs 2>/dev/null || return 1
-    sce_grep -qE 'parent_id|decomposes_into|child_ids' sce-build/src/requirement_manifest.rs 2>/dev/null
+    local bin dir
+    bin="$(sce_gate_codegen)" || sce_gate_cannot_run \
+        "row G4 is measured by running the cross-document check, and sce-codegen could not be provided"
+
+    # Absent entirely is this row REOPENING — the check left the tree — and
+    # not a gate that has broken, so it is answered `open` and the sweep
+    # carries on to the other rows.
+    "$bin" requirement-closure --help >/dev/null 2>&1 || return 1
+
+    dir="$(mktemp -d)"
+    sce_gate_on_exit "rm -rf '$dir'"
+
+    g4_manifest LOWER '{"id":"L-1"}' >"$dir/lower.json"
+    g4_manifest UPPER \
+        '{"id":"U-1","disposition":{"kind":"delegated","to_doc":"LOWER","to_id":"L-1"}}' \
+        >"$dir/arrives.json"
+    g4_manifest UPPER \
+        '{"id":"U-1","disposition":{"kind":"delegated","to_doc":"LOWER","to_id":"L-9"}}' \
+        >"$dir/lost.json"
+    # Partly HERE and partly ELSEWHERE, which is the shape the row names: one
+    # child in the parent's own document, one in the other. The mutant moves
+    # only the second, so what it isolates is the cross-document half.
+    g4_manifest UPPER \
+        '{"id":"U-2","decomposes_into":[{"doc":"UPPER","id":"U-3"},{"doc":"LOWER","id":"L-1"}]},{"id":"U-3"}' \
+        >"$dir/split.json"
+    g4_manifest UPPER \
+        '{"id":"U-2","decomposes_into":[{"doc":"UPPER","id":"U-3"},{"doc":"LOWER","id":"L-9"}]},{"id":"U-3"}' \
+        >"$dir/split_lost.json"
+
+    # The control, and the only outcome here that stops the gate: a
+    # delegation that arrives carries no decomposition and must be
+    # accepted. If it is not, this gate is measuring its own fixtures
+    # against a loader that has moved, and every refusal below would be
+    # reported as a closed row for a reason that has nothing to do with G4.
+    g4_closure "$bin" "$dir/arrives.json" "$dir/lower.json" || sce_gate_fail \
+        "row G4's control was refused: an arriving delegation over two manifests this gate
+  wrote is no longer accepted by \`requirement-closure\`. Either the manifest format moved
+  and the fixtures in $0 owe an update, or the check now refuses what it should pass. Until
+  that is settled a refusal below says nothing, so no verdict is given for the row."
+
+    # Decomposition — expressed (the control loads at all) and judged.
+    g4_closure "$bin" "$dir/split.json" "$dir/lower.json" || return 1
+    ! g4_closure "$bin" "$dir/split_lost.json" "$dir/lower.json" || return 1
+
+    # Delegation — checked against the document it names.
+    ! g4_closure "$bin" "$dir/lost.json" "$dir/lower.json" || return 1
 }
 
 # S1 — only the model and the parser name the nested block fields.
