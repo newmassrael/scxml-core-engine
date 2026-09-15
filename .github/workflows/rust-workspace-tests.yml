@@ -144,9 +144,14 @@ on:
 # unclassified-forces-FULL fail-safe, see the note in the filter above — also
 # in `tree-hygiene.sh`, whose workflow declares no filter and so starts for
 # every workflow edit.
+#
+# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15, along with every other lane
+# that declared `false`. See `cpp-suite.yml` for the queue measurement and the
+# cost; `ci_supersession_policy.rs` now requires `true` everywhere, so a revert
+# is red rather than invisible.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   test:

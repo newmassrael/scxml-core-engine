@@ -177,9 +177,23 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15. The prose above argues for
+# `false` and its argument still holds on its own terms — this lane cannot finish
+# between two pushes, so a superseding run can be superseded in its turn. What
+# changed is the binding constraint: the account's four repositories were putting
+# 20-27 runs an hour into a shared hosted pool that executed nothing for 165
+# minutes, with 36 runs waiting and the oldest at 8.4 hours. Under a queue that
+# deep a lane that is never cancelled does not answer either — it simply waits,
+# and its verdict is as absent as a cancelled one. Cancelling frees the slot for
+# the newest commit, which is the only one anybody is asking about.
+#
+# The cost is stated rather than hidden: while pushes come faster than this lane
+# runs, it reports only when they stop. `ci_supersession_policy.rs` no longer
+# derives the flag from a median; it now requires `true` everywhere, so a quiet
+# revert to `false` is red rather than invisible.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   cpp-suite:

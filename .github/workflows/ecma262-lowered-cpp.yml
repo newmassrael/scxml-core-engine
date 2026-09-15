@@ -85,9 +85,14 @@ on:
 # whatever the tree now holds. `mutation-rounds.yml` keys on `github.sha`
 # because its answer is about a COMMIT: selection is by change set, and nothing
 # re-selects it.
+#
+# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15, along with every other lane
+# that declared `false`. The paragraph above notes that `false` already lets a
+# newly queued run cancel a PENDING one — the decision extends that to a run in
+# flight. See `cpp-suite.yml` for the queue measurement and the cost.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   ecma262-lowered-cpp:

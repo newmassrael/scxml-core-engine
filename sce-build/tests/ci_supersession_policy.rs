@@ -1,16 +1,39 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! A lane that cannot finish between two pushes must not be superseded by one.
+//! Every lane supersedes, and this counts what that costs.
 //!
-//! `cancel-in-progress: true` is the right default for a lane that answers in
-//! a minute: the run it kills is re-taken by the run that killed it, seconds
-//! later. It is the wrong setting for a lane that needs longer than the gap
-//! between pushes, because then the superseding run is killed in its turn and
-//! the lane reports only when the person stops pushing. `cpp-suite.yml` names
-//! the shape: *"a lane whose verdict depends on when a person stops typing is
-//! not measuring the tree, and a lane cancelled three times in four reads
-//! exactly like a lane that passes."*
+//! ⛔ **REVERSED 2026-09-15 by owner decision.** This file used to derive the
+//! flag from a median: a lane slower than the gap between pushes had to declare
+//! `cancel-in-progress: false` or key its group on `github.sha`. It now requires
+//! `true` from every lane, and the assertion runs in that direction so a quiet
+//! revert is red.
+//!
+//! **What changed is the binding constraint, not the old argument.** The old one
+//! still holds on its own terms and is kept below, because a reason deleted is a
+//! reason that cannot be re-weighed. What it assumed was a runner pool that
+//! starts a job when one is queued. Measured 2026-09-15 across the four
+//! repositories sharing this account's hosted pool: **0 jobs executing, 36
+//! queued, the oldest 8.4 hours, nothing having run for 165 minutes**, against
+//! 20-27 runs an hour being created. Under a queue that deep, `false` protects a
+//! run that never started — `w3c-tests.yml`'s own row had already recorded the
+//! symptom, *"not the setting failing to protect a run in flight; it is no run
+//! ever reaching flight"* — while the queue it preserves is what keeps the
+//! newest commit from being reached at all.
+//!
+//! **The cost is real and is counted rather than argued away.** The old
+//! reasoning, kept verbatim: `cancel-in-progress: true` is the right default for
+//! a lane that answers in a minute, because the run it kills is re-taken by the
+//! run that killed it seconds later; it is the wrong setting for a lane that
+//! needs longer than the gap between pushes, because then the superseding run is
+//! killed in its turn and the lane reports only when the person stops pushing.
+//! `cpp-suite.yml` names the shape: *"a lane whose verdict depends on when a
+//! person stops typing is not measuring the tree, and a lane cancelled three
+//! times in four reads exactly like a lane that passes."*
+//!
+//! [`must_not_supersede`] still identifies those lanes; it no longer decides
+//! anything, and the case asserts both populations stay non-empty so the price
+//! this decision pays keeps a number attached to it.
 //!
 //! ## The threshold is measured, not chosen
 //!
@@ -340,6 +363,18 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // `false` protects the run that started, and under a saturated runner pool
     // there is none to protect.
     ("w3c-tests.yml", 70.0, 14, 9, 2),
+    // NEW 2026-09-15, and the row is a declaration rather than a measurement:
+    // the lane has never run, so `successes` is 0 and the median is the one it
+    // is DESIGNED to have. It is `gh api` and a loop over at most 100 ids, with
+    // no checkout and no build — seconds, not minutes — and it is the janitor
+    // for the backlog `mutation-rounds.yml` records (14 of 25 never started,
+    // oldest queued 5.7 hours) and that nothing in this repository was clearing.
+    //
+    // ⚠ Re-measure it once it has a window. A zero-success row cannot be
+    // contradicted by its own lane, which is exactly the shape this file
+    // distrusts elsewhere, so it is written down here as owed rather than left
+    // to look like a reading.
+    ("supersede-stale-queue.yml", 0.5, 0, 0, 0),
 ];
 
 fn repo_root() -> PathBuf {
@@ -457,6 +492,13 @@ fn read_workflow(name: &str) -> String {
 }
 
 /// Whether this lane is long enough that supersession loses its verdict.
+///
+/// ⛔ **No longer decides the flag — kept because it still names a real cost.**
+/// Owner's decision 2026-09-15 is that every lane supersedes, so the flag is a
+/// constant and this predicate only classifies which lanes PAY for it. The
+/// assertion below quotes that population rather than acting on it: a cost
+/// nothing counts is one nobody can re-weigh, and this is the number to read if
+/// the decision is ever revisited.
 fn must_not_supersede(median_minutes: f64) -> bool {
     median_minutes > MEDIAN_PUSH_GAP_MINUTES
 }
@@ -596,65 +638,69 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
              workflow disagree; re-read whichever was taken longer ago."
         );
 
+        // EVERY lane supersedes. Owner's decision 2026-09-15, and the
+        // requirement runs in the direction the decision points: a lane that
+        // declares `false` is red, which is the half a workflow edit could
+        // otherwise make invisible.
+        assert!(
+            declared,
+            "{file} declares `cancel-in-progress: false`. Every lane in this \
+             repository supersedes (owner's decision 2026-09-15): the account's \
+             four repositories put 20-27 runs an hour into one hosted pool that \
+             executed nothing for 165 minutes with 36 runs queued and the oldest \
+             at 8.4 hours, and under a queue that deep a lane that is never \
+             cancelled does not answer either -- it waits, and an absent verdict \
+             is absent either way. This lane's own row reads {median} min \
+             median, {cancelled} cancellation(s), {successes} success(es), \
+             {unfinished} that never finished. Set `cancel-in-progress: true`. \
+             If this lane genuinely must not be interrupted -- it publishes, or \
+             it writes something a half-run leaves broken -- that is a case for \
+             a person, not for this flag: say so here and change this assertion \
+             with it."
+        );
+
         if must_not_supersede(median) {
             long += 1;
-            let per_commit = group_is_per_commit(&workflow);
-            if per_commit {
+            if group_is_per_commit(&workflow) {
                 long_by_key += 1;
-            } else if !declared {
+            } else {
                 long_by_false += 1;
             }
-            assert!(
-                !declared || per_commit,
-                "{file} runs {median} min on a branch pushed every \
-                 {MEDIAN_PUSH_GAP_MINUTES} min, so a push that arrives while it \
-                 is running kills a verdict that will not be re-taken before the \
-                 next one arrives -- and it still declares \
-                 `cancel-in-progress: true` under a group that is shared across \
-                 commits. Measured: {cancelled} cancellation(s) and {unfinished} \
-                 run(s) that never finished, median over {successes} successes. \
-                 Set `cancel-in-progress: false`, or key the group on \
-                 `github.sha` so a later push lands in a different group, or \
-                 re-measure and move the row."
-            );
         } else {
             short += 1;
-            assert!(
-                declared,
-                "{file} runs {median} min, comfortably inside the \
-                 {MEDIAN_PUSH_GAP_MINUTES} min push gap, so a superseded run is \
-                 re-taken by the run that superseded it -- and it declares \
-                 `cancel-in-progress: false`, which queues runs nothing needed \
-                 queued. If the lane has grown, re-measure it and update its row \
-                 in `LANES`; the table is what decides this, not the file."
-            );
         }
     }
 
-    // Both populations have to be non-empty or one of the two branches above
-    // was never taken and this case measured half of what it claims.
+    // ⚠ THE COST, COUNTED RATHER THAN ARGUED. These lanes cannot finish between
+    // two pushes, so while pushes come faster than they run they report only
+    // when pushing stops. That is what the decision bought, and the number is
+    // kept visible so it can be re-weighed rather than rediscovered.
+    //
+    // Both populations stay non-empty for the reason they always did: if every
+    // lane fell on one side, the split below would be describing a table that
+    // no longer has two kinds of row in it.
     assert!(
         long >= 1,
-        "no lane in `LANES` is slower than the push gap, so the assertion this \
-         file exists for was never evaluated"
+        "no lane in `LANES` is slower than the push gap, so the cost this \
+         decision accepted is no longer being counted -- either the lanes got \
+         faster (re-measure and say so) or the table lost its rows"
     );
     assert!(
         short >= 1,
         "every lane in `LANES` is slower than the push gap, so the short-lane \
-         assertion was never evaluated"
+         population is empty and the split below says nothing"
     );
 
-    // The per-commit arm is a way of PASSING the long-lane assertion, so a
-    // reader that answered `true` for every file would satisfy it everywhere
-    // and this case would assert nothing about `cancel-in-progress` at all.
-    // Requiring one long lane to pass on the flag keeps that arm evaluated.
+    // The per-commit lanes pay a different price: nothing supersedes them and
+    // nothing clears them, so they pile up instead. `mutation-rounds.yml`
+    // measured 14 of 25 never started, the oldest queued 5.7 hours.
+    // `supersede-stale-queue.yml` is what answers that, and this keeps the
+    // population it answers for from silently emptying.
     assert!(
-        long_by_false >= 1,
-        "every long lane in `LANES` passes by having a per-commit concurrency \
-         key ({long_by_key} of them), so the `cancel-in-progress: false` \
-         requirement was never evaluated. Either the group reader has started \
-         answering yes for everything, or the last lane relying on the flag \
-         has gone -- both make this case vacuous."
+        long_by_key + long_by_false == long,
+        "a long lane was counted in neither arm -- the group reader stopped \
+         answering for {} of {long} lane(s)",
+        long - long_by_key - long_by_false
     );
 }
 
