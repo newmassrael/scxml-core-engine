@@ -226,6 +226,40 @@ is different: a bare `.*` compiles to Kotlin's `else` arm and to C11's
 `event != EVENT_NONE`, so on those two channels no matcher is consulted and
 the case cannot fail. It measures `.*` on the four matcher channels only.
 
+`wildcard_in_document_order` owns what a matching wildcard still has to
+respect. W3C SCXML 3.12.1 lets `*` match every event and changes nothing else,
+so 3.13's `cond` still decides whether the transition is enabled, and a
+`type="internal"` transition whose target is a proper descendant of its
+compound source still does not exit that source. The Kotlin generator used to
+hoist a bare wildcard out of its state's transitions into a hand-written `else`
+branch, and that branch carried no condition and spelled
+`TransitionResult.External` instead of calling `render_result`, which is what
+reads `is_true_internal`. Both left with the hoisting in `6d42d6735a`, and
+neither had a witness: measured 2026-09-15, no W3C document and no fixture here
+writes a wildcard with a `cond` or with `type="internal"`.
+`event_descriptor_spellings_agree` owns which spellings match; this fixture
+owns what a match leaves in place.
+
+Four cases, each with its own failure final. A guarded wildcard with its guard
+false must leave the event to its ancestor's transition; the same wildcard with
+its guard true must fire, which is the control — a repair that never fires a
+guarded wildcard passes the first case and fails this one. An internal wildcard,
+guarded and then unguarded, must run its source's `<onentry>` once. The two
+internal cases are separate because a generator that keeps document order emits
+a guarded wildcard in place and an unguarded one as the branch that ends the
+list, and each is a place to render the result by hand.
+
+Measured 2026-09-15 by reverting each repair in
+`tools/codegen/templates/kotlin/process_event.kt.jinja2` and regenerating this
+stem's Kotlin tree. Sealing a guarded wildcard as `else` without its condition
+lands the Kotlin driver in `failGuardIgnored`; a hand-written
+`TransitionResult.External` in place of `render_result` lands it in
+`failSealedInternalReentered` from the sealing branch and in
+`failGuardedInternalReentered` from the guarded one. Each revert fails its own
+case and no other. They are recorded here rather than as a `scripts/mutate`
+casefile because that harness runs cargo and ctest, and the Kotlin witness runs
+under Gradle.
+
 `parallel_regions_take_own_transitions` covers W3C SCXML 3.4: when one event
 enables a transition in more than one region of a `<parallel>`, every such
 region takes its own in the same microstep. The fixture is asymmetric on

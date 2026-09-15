@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.12.1 + 3.13: a wildcard transition is selected where it was
+     written, with its own condition and its own type.
+
+     A transition whose event descriptor is `*` matches every event, and that is
+     ALL it changes. W3C SCXML 3.13 still asks whether its `cond` evaluates to
+     true before the transition is enabled, and a `type="internal"` transition
+     whose targets are all proper descendants of its compound source still does
+     not exit that source. Nothing about the descriptor licenses dropping either.
+
+     Why this fixture exists. The Kotlin code generator used to pre-scan a bare
+     wildcard out of its state's transition list and emit it as the `when`
+     block's `else` branch, and that hoisted branch was written by hand: it
+     carried no condition, so a guarded wildcard fired with its guard false, and
+     it spelled `TransitionResult.External(...)` instead of calling the shared
+     result renderer, so an internal wildcard exited and re-entered its source.
+     Both defects left with the hoisting on 2026-09-13, and neither had a witness:
+     no W3C document and no fixture under `integration_resources/` writes a
+     wildcard with a `cond` or with `type="internal"` (measured 2026-09-15).
+     `event_descriptor_spellings_agree` owns which spellings match; this fixture
+     owns what a matching wildcard still has to respect.
+
+     Four cases, in the order the machine walks them:
+
+       guardClosed      guard false  the wildcard is NOT enabled, so the
+                                     ancestor's `probe` transition is
+       guardOpen        guard true   the wildcard IS enabled, and the ancestor's
+                                     `probe` transition is not reached
+       guardedInternal  internal, guarded    the source's <onentry> runs once
+       sealedInternal   internal, unguarded  the source's <onentry> runs once
+
+     `guardOpen` is the control for `guardClosed`: an engine that repaired the
+     first case by never firing a guarded wildcard at all would pass it and fail
+     here. The two internal cases are separate because a guarded wildcard and an
+     unguarded one are two branches in every generator that orders them — the
+     unguarded one ends the list, since nothing written after it is reachable.
+
+     Each case has its OWN failure final, so a driver that asserts the machine
+     rests in `pass` names the case that disagreed in its own failure message.
+     An internal wildcard that was not taken at all parks the machine in its
+     `*From` leaf, which every driver reports as not having reached a final.
+
+     Deliberately single-axis: no <invoke>, no <parallel>, no delay, no <final>
+     inside a compound state (whose done.state event a wildcard would catch).
+     Every event is raised internally, so no channel needs a host to drive it.
+     The datamodel is ECMAScript only because a guard and a counter need one.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="guardClosed"
+       name="wildcard_in_document_order">
+
+    <datamodel>
+        <data id="armed" expr="false"/>
+        <data id="guardedEntries" expr="0"/>
+        <data id="sealedEntries" expr="0"/>
+    </datamodel>
+
+    <state id="guardClosed" initial="guardClosedLeaf">
+        <onentry>
+            <raise event="probe"/>
+        </onentry>
+        <transition event="probe" target="guardOpen">
+            <assign location="armed" expr="true"/>
+        </transition>
+        <state id="guardClosedLeaf">
+            <transition event="*" cond="armed" target="failGuardIgnored"/>
+        </state>
+    </state>
+
+    <state id="guardOpen" initial="guardOpenLeaf">
+        <onentry>
+            <raise event="probe"/>
+        </onentry>
+        <transition event="probe" target="failGuardNeverFired"/>
+        <state id="guardOpenLeaf">
+            <transition event="*" cond="armed" target="guardedInternal"/>
+        </state>
+    </state>
+
+    <state id="guardedInternal" initial="guardedFrom">
+        <onentry>
+            <assign location="guardedEntries" expr="guardedEntries + 1"/>
+            <raise event="hop"/>
+        </onentry>
+        <transition event="*" type="internal" cond="armed" target="guardedTo"/>
+        <state id="guardedFrom"/>
+        <state id="guardedTo">
+            <transition cond="guardedEntries == 1" target="sealedInternal"/>
+            <transition target="failGuardedInternalReentered"/>
+        </state>
+    </state>
+
+    <state id="sealedInternal" initial="sealedFrom">
+        <onentry>
+            <assign location="sealedEntries" expr="sealedEntries + 1"/>
+            <raise event="hop"/>
+        </onentry>
+        <transition event="*" type="internal" target="sealedTo"/>
+        <state id="sealedFrom"/>
+        <state id="sealedTo">
+            <transition cond="sealedEntries == 1" target="pass"/>
+            <transition target="failSealedInternalReentered"/>
+        </state>
+    </state>
+
+    <final id="pass"/>
+    <final id="failGuardIgnored"/>
+    <final id="failGuardNeverFired"/>
+    <final id="failGuardedInternalReentered"/>
+    <final id="failSealedInternalReentered"/>
+</scxml>
