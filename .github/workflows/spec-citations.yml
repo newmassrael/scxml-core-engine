@@ -129,7 +129,23 @@ env:
   # reports those three backends UNREACHED. Bumped after re-running
   # validate-workspace / -code-refs / -verifies-linkage / -content-drift on every
   # enrolled workspace with the pin enforced.
-  MNEMOSYNE_REV: df1f17ceaa18263e29d8213b306dc06a8f70d56f
+  # R1338-R1342 is this pin, and only R1341 reaches a consumer: every
+  # validate-workspace run now prints an `inventory axes` line, and where a
+  # row's disposition is `delegated` it names the rows it did NOT check —
+  # `to_doc`/`to_id` name a requirement in another document and a store holds
+  # no cross-workspace reference, so such a row is recorded, not verified. An
+  # empty axis and an unchecked one are now different sentences, and the
+  # unchecked one used to read as clean. Measured here: all five enrolled
+  # workspaces carry 0 inventory entries, so the axis is empty and nothing is
+  # unchecked — it asks nothing of us today and starts saying so the day a row
+  # delegates. The rest is upstream's own house: R1338 drops unused imports,
+  # R1339/R1340 repair an ops census row and a gate claim, R1342 makes `mn`
+  # refuse what the hosted clippy refuses. Bumped after those four validators
+  # ran green on every enrolled workspace with the pin enforced, in a CLEAN
+  # worktree: a gitignored generated `.rs` under claudedocs/ trips the R783
+  # coverage axis locally and nowhere else, so a dirty-tree red there is about
+  # this machine and not about the pin.
+  MNEMOSYNE_REV: 84dcad2c92d18f361b0467b75676e9b36f0e1b3a
 
 jobs:
   citations:
