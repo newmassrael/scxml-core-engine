@@ -257,6 +257,13 @@ COST_MEASURED: dict[str, str] = {
     # pass over the AOT headers. Load average was 1.3 with other sessions'
     # loops running, and this tree's costs are not trustworthy to within a
     # factor of two under that load.
+    #
+    # Re-timed again the same day, when row G4 began asking `sce-codegen
+    # requirement-closure` the way S3 asks the registrar: 1.332 1.311 1.330s
+    # with the binary current, so the three process starts cost about 0.13s
+    # and the declared figure moved 1.2 -> 1.3. The run that found the binary
+    # stale read 12.946s, 11.53s of it the rebuild — recorded here so the next
+    # reader of a 13s reading knows which of the two they took.
     "nl-ir-closure": "2026-09-15",
     # `nostd-mcu` was re-timed on 2026-09-02 and LEFT `PACE_NORMALISED`: the
     # first entry to do so. Nine consecutive runs read
@@ -381,13 +388,24 @@ GATES: dict[str, dict] = {
     # Catch-all trigger, for the endpoint-SSOT lane's reason: a row can close
     # in a template, a header, a CMake list, a Rust module or the visualizer,
     # and a `paths:` list narrowed to what anyone remembers misses the one
-    # nobody thought of. Affordable — 1.2s: grep, one short Python pass, and
-    # the two syntax-only compiles row S3 asks the AOT registrar with. The
+    # nobody thought of. Affordable — grep, one short Python pass, the two
+    # syntax-only compiles row S3 asks the AOT registrar with, and three runs
+    # of `sce-codegen requirement-closure` over manifests row G4 writes. The
     # runs behind that number are in the measurement-date map.
+    #
+    # ⚠ WARM, and for row G4 warm now means more than a filled page cache: the
+    # binary must be current. The shared locator rebuilds one built from other
+    # sources — deliberately, because asking a stale binary answers about a
+    # tree that no longer exists — so a push whose own change touched
+    # `sce-build/src/` pays that build here if nothing else has paid it yet.
+    # Measured 2026-09-15: 1.33 1.31 1.33s with the binary current, and 12.9s
+    # on the run that rebuilt it. The warm figure is the one declared, on the
+    # basis this table's header already gives: a push happens on a tree the
+    # developer has just built, and a cold build is paid once.
     "nl-ir-closure": {
         "workflows": ["nl-ir-closure.yml"],
         "runner_workflow": True,
-        "cost_s": 1.2,
+        "cost_s": 1.3,
         "summary": "the NL→IR closure ledger vs the tree it describes",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can

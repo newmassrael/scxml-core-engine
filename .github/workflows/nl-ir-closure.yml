@@ -27,11 +27,19 @@ name: NL-IR Closure Ledger
 # endpoint-SSOT lane's is. A row can close in almost any file — a template, a
 # header, a CMake list, a Rust module, the visualizer — and narrowing to the
 # paths anyone happens to remember misses exactly the one nobody thought of.
-# Affordable because the gate is grep, one short Python pass, and two
-# syntax-only compiles of a probe against the AOT registrar that row S3 is
-# measured by: 1.2s from `scripts/gate --measure` on 2026-09-15, on a machine
-# running other sessions' loops. The compiles use the runner image's own C++
-# compiler; without one the gate exits 3 (cannot run), not 1.
+# Affordable because the gate is grep, one short Python pass, two syntax-only
+# compiles of a probe against the AOT registrar that row S3 is measured by, and
+# three runs of `sce-codegen requirement-closure` over manifests row G4 writes:
+# 1.3s from `scripts/gate --measure` on 2026-09-15, on a machine running other
+# sessions' loops. The compiles use the runner image's own C++ compiler;
+# without one the gate exits 3 (cannot run), not 1.
+#
+# The sce-codegen build below is what keeps that 1.3s true here. Row G4 asks
+# the binary rather than grepping for it, and the shared locator would build
+# one inside the gate if the job had not — correct, but it would put a Rust
+# build inside a step whose name says it measures a ledger. Eight other
+# workflows already carry this step ahead of the gate they run; this is the
+# ninth, and it is spelled the same way so the next fix lands for all of them.
 
 on:
   push:
@@ -52,6 +60,32 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v6
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-nl-ir-closure-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-nl-ir-closure-
+
+    # Row G4 runs the cross-document requirement check rather than grepping
+    # for it. Debug profile, resolved through the shared locator, which is
+    # where the build-layout detail lives — naming target/debug here would put
+    # it back into every workflow.
+    - name: Build sce-codegen
+      run: |
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Measure every ledger row against the tree
       # Prints the per-row verdict and the `closure:` line, and fails only when

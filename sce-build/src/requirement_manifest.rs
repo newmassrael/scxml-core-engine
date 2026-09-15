@@ -525,17 +525,24 @@ impl Extraction {
 /// silence. Exempting the field would be the per-field defect the sweep
 /// exists to remove.
 ///
-/// ⚠⚠⚠ **What is NOT checked: that a delegation ARRIVED.** Naming
-/// `to_doc` and `to_id` says a delegation was intended. Only the
-/// target's own manifest can say it carries the requirement — RFC
-/// §5.2e's second clause, inter-document traceability — and this crate
-/// is handed one manifest at a time. A two-manifest check was drafted
-/// and removed before landing, because it answered the wrong question:
-/// given one target, it reported every delegation to any OTHER document
-/// as broken, and a middle-layer document delegates to several at once.
-/// It also left "arrived" undefined for a target entry that is itself
-/// `out_of_scope` or delegated onward. Both are decisions for a real
-/// second manifest to force, not for a fixture to guess.
+/// ⚠⚠⚠ **What is not checked HERE: that a delegation ARRIVED.** Naming
+/// `to_doc` and `to_id` says a delegation was intended, and no manifest
+/// can say more: only the target's own manifest knows whether it carries
+/// the requirement — RFC §5.2e's second clause, inter-document
+/// traceability — and this type is handed one document at a time. So
+/// what these two fields buy on their own is a stamp that is not EMPTY,
+/// which is a different thing from a stamp that is not WRONG.
+///
+/// The second half is [`crate::requirement_set`], which holds several
+/// manifests at once and follows each delegation to its end. Read it
+/// before reasoning about what a `delegated` entry means: arrival is
+/// three-valued there rather than a boolean, because a destination the
+/// set was not given is a question it cannot answer and must not pass.
+/// The two questions that sank an earlier one-target draft — a
+/// delegation to some OTHER document being indistinguishable from a
+/// broken one, and "arrived" being undefined when the target is itself
+/// `out_of_scope` or delegated onward — are answered in that module's
+/// header, by construction rather than by policy.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Disposition {
