@@ -269,7 +269,7 @@
                             _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
                             _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
                         } else {
-                            SCE_LOG_ERROR("mesh-rpc invoke {{ invoke_info.invoke_id }} param '{{ param.name | escape_cpp }}' expr evaluation failed: {{ param.expr | escape_cpp }}");
+                            SCE_LOG_ERROR("mesh-rpc invoke {{ invoke_info.invoke_id }} param '{{ param.name | escape_cpp }}' expr evaluation failed: {}", "{{ param.expr | escape_cpp }}");
                             _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("");
                         }
                     }

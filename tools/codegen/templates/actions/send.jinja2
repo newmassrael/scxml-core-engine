@@ -18,7 +18,7 @@
    at three different depths. #}
 {% macro param_eval_failed(param, indent) %}
 {{ indent }}// W3C SCXML 5.7.1: report the failure and omit the name and value.
-{{ indent }}SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
+{{ indent }}SCE_LOG_ERROR("Failed to evaluate param expr: {}", "{{ param.expr | escape_cpp }}");
 {{ indent }}engine.raise(typename Engine::EventWithMetadata(
 {{ indent }}    Event::Error_execution,
 {{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));

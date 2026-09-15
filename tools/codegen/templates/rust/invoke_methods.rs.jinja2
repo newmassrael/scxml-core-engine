@@ -257,7 +257,7 @@
                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                 match se.evaluate_expression(&sid, "{{ invoke_info.srcexpr | to_lua_expr | escape_rust }}") {
                     Ok(sce_rust_runtime::ScriptValue::Null) | Err(_) => {
-                        ::sce_rust_runtime::sce_log_error!("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr }}' evaluation failed");
+                        ::sce_rust_runtime::sce_log_error!("Hybrid invoke: srcexpr '{}' evaluation failed", "{{ invoke_info.srcexpr | escape_rust }}");
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
@@ -277,7 +277,7 @@
                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                 match se.evaluate_expression(&sid, "{{ invoke_info.contentexpr | to_lua_expr | escape_rust }}") {
                     Ok(sce_rust_runtime::ScriptValue::Null) | Ok(sce_rust_runtime::ScriptValue::Int(_)) | Err(_) => {
-                        ::sce_rust_runtime::sce_log_error!("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr }}' evaluation failed");
+                        ::sce_rust_runtime::sce_log_error!("Hybrid invoke: contentexpr '{}' evaluation failed", "{{ invoke_info.contentexpr | escape_rust }}");
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
