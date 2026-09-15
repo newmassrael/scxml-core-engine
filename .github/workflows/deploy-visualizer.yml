@@ -111,10 +111,27 @@ jobs:
     # contain, so every browser generation failed while every native
     # build passed. Building it here makes the deployed generator a
     # function of the commit being deployed.
+    #
+    # ⚠ PINNED, not `latest`, and the reason is a silent fallback measured
+    # 2026-09-15. The action resolves `latest` with an unauthenticated call
+    # to the GitHub releases API and falls back without a warning when the
+    # reply has no tag:
+    #
+    #     return Promise.resolve(JSON.parse(body).tag_name || 'v0.9.1')
+    #
+    # A rate-limited reply has no tag, so a shared runner can be handed a
+    # wasm-pack from 2019. That is what turned this lane red at c8f2355055:
+    # the previous green installed v0.15.0, the red one v0.9.1, and v0.9.1
+    # cannot parse `license.workspace = true` in `sce-build-wasm/Cargo.toml`
+    # ("invalid type: map, expected a string for key `package.license`"),
+    # which had been there since 2026-08-03 without incident. Nothing in the
+    # tree changed; the tool did. A pinned tag skips the lookup, so there is
+    # no reply to go missing. v0.15.0 is the version the last green run
+    # actually installed, so the pin changes nothing but the nondeterminism.
     - name: Install wasm-pack
       uses: jetli/wasm-pack-action@v0.4.0
       with:
-        version: 'latest'
+        version: 'v0.15.0'
 
     - name: Setup Emscripten (emsdk)
       run: |

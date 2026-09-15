@@ -43,10 +43,17 @@ mutation_targets sce-build/tests/ci_supersession_policy.rs
 # in the workflow file, which the test opens by path.
 mutation_runtime_targets .github/workflows/tree-hygiene.yml
 
-mutation_case "the lane that outgrew the push gap may cancel its own run again" <<'PY'
+# ⚠ RE-AIMED 2026-09-15, same subject, opposite direction. This case used to
+# flip `false` to `true` and require red, because the policy then demanded
+# `false` of a lane slower than the push gap. The owner reversed that policy —
+# every lane now supersedes — so the literal it anchored on is gone and the
+# mutation matched nothing, which `scripts/mutate` rightly called INCONCLUSIVE.
+# The subject is unchanged: a workflow edit quietly moving this lane's
+# supersession flag must be caught. Only the illegal value changed sides.
+mutation_case "the lane slips back to a flag the policy no longer allows" <<'PY'
 edit(".github/workflows/tree-hygiene.yml",
-     "  cancel-in-progress: false",
-     "  cancel-in-progress: true")
+     "  cancel-in-progress: true",
+     "  cancel-in-progress: false")
 PY
 
 mutation_case "the reader cannot tell a declared true from a declared false" <<'PY'
@@ -55,11 +62,24 @@ edit("sce-build/tests/ci_supersession_policy.rs",
      '"true" => Some(false),')
 PY
 
-# The next two come in a pair on purpose. A long lane passes the rule on
+# The next two come in a pair on purpose, and the reason they must stay a pair
+# changed on 2026-09-15 without the pair changing.
+#
+# They were written for a disjunction: a long lane passed the rule on
 # `cancel-in-progress: false` OR on a per-commit concurrency group, and a
-# disjunction has two ways to rot: the second arm can stop recognising the
-# mechanism it is for, or it can start recognising it everywhere and swallow
-# the first arm whole. One case each, from the two sides.
+# disjunction rots two ways — the second arm stops recognising its mechanism,
+# or starts recognising it everywhere and swallows the first arm whole. The
+# owner then reversed the policy so every lane supersedes, and that disjunction
+# is gone.
+#
+# `group_is_per_commit` is still load-bearing, as the permissive arm of two
+# other guards: the backlog invariant, and the rule that a lane selecting by
+# change set must key per commit. A reader answering "per-commit" for every
+# file satisfies both everywhere. Measured in run 34974405809: once the flag
+# stopped depending on it, the second case below SURVIVED 0/6, because nothing
+# left could tell "every group is per-commit" from the truth. What catches it
+# now is a population floor in `ci_supersession_policy.rs` — the per-commit
+# lanes must be neither none nor all. One case each side, still.
 
 mutation_case "a per-commit group is read as an ordinary shared one" <<'PY'
 edit("sce-build/tests/ci_supersession_policy.rs",

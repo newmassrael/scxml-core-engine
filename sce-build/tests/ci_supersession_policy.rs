@@ -795,6 +795,29 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
          when this was written -- either it stopped, or the needles in \
          `selects_by_change_set` no longer match how selection is spelled."
     );
+
+    // ⚠ The control for `group_is_per_commit`, from BOTH sides. Every use of it
+    // above is the permissive arm of a disjunction — the backlog invariant and
+    // the change-set guard both pass when it says yes — so a reader that
+    // answered yes for every file would satisfy them everywhere and no lane
+    // could ever go red. Measured 2026-09-15: after the policy stopped using it
+    // to decide the flag, the mutation `g.contains("github.")` SURVIVED 0/6,
+    // because nothing left in this case could tell "every group is per-commit"
+    // from the truth. The population has to be neither empty nor everything.
+    let per_commit_lanes = LANES
+        .iter()
+        .filter(|(f, ..)| group_is_per_commit(&read_workflow(f)))
+        .count();
+    assert!(
+        per_commit_lanes >= 1 && per_commit_lanes < LANES.len(),
+        "{per_commit_lanes} of {} lane(s) read as keying their concurrency group \
+         per commit. `mutation-rounds.yml` does and most lanes do not, so the \
+         answer must be neither none nor all -- one of those means \
+         `group_is_per_commit` stopped recognising `github.sha`, the other that \
+         it recognises every group, and either one silences the two guards that \
+         rest on it.",
+        LANES.len()
+    );
 }
 
 // ## The prose copies of these two numbers
