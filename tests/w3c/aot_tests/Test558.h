@@ -34,7 +34,6 @@ namespace SCE::W3C::AotTests {
  * - String literal comparison in guard conditions
  */
 struct Test558 : public SimpleAotTest<Test558, 558> {
-    static constexpr const char *DESCRIPTION = "ECMAScript whitespace normalization (W3C B.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test558::test558;
 };
 

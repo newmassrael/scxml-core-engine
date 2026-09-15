@@ -14,7 +14,6 @@ namespace SCE::W3C::AotTests {
  * Requires event scheduler polling for delayed send processing.
  */
 struct Test186 : public ScheduledAotTest<Test186, 186> {
-    static constexpr const char *DESCRIPTION = "Delayed send with params (W3C SCXML 6.2/5.10 AOT)";
     using SM = SCE::Generated::test186::test186;
 };
 

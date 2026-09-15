@@ -62,7 +62,6 @@ namespace SCE::W3C::AotTests {
  * - Any unexpected event arrives (wildcard * transitions to fail)
  */
 struct Test377 : public SimpleAotTest<Test377, 377> {
-    static constexpr const char *DESCRIPTION = "Multiple onexit handlers in document order (W3C 3.8 AOT Pure Static)";
     using SM = SCE::Generated::test377::test377;
 };
 

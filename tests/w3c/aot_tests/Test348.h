@@ -15,7 +15,6 @@ namespace SCE::W3C::AotTests {
  * as-is when dispatching the event to the target.
  */
 struct Test348 : public SimpleAotTest<Test348, 348> {
-    static constexpr const char *DESCRIPTION = "Send event parameter sets event name (W3C 6.2 AOT)";
     using SM = SCE::Generated::test348::test348;
 };
 

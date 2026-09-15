@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML B.2: ECMAScript Data Model - Array type semantics
  */
 struct Test446 : public SimpleAotTest<Test446, 446> {
-    static constexpr const char *DESCRIPTION = "External file loading with src attribute (W3C 5.2.2 AOT)";
     using SM = SCE::Generated::test446::test446;
 };
 

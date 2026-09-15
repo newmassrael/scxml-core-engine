@@ -25,7 +25,6 @@ namespace SCE::W3C::AotTests {
  * and performs real HTTP POST. HttpAotTest provides HTTP server infrastructure.
  */
 struct Test510 : public HttpAotTest<Test510, 510> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP external queue (W3C C.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test510::test510;
 };
 

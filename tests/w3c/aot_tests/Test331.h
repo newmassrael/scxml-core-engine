@@ -16,7 +16,6 @@ namespace SCE::W3C::AotTests {
  * - "external" for events sent via <send>
  */
 struct Test331 : public SimpleAotTest<Test331, 331> {
-    static constexpr const char *DESCRIPTION = "Event type classification (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test331::test331;
 };
 

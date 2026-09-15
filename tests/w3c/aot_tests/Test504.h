@@ -30,7 +30,6 @@ namespace SCE::W3C::AotTests {
  * runtime ECMAScript expression evaluation via JSEngine for variable tracking.
  */
 struct Test504 : public SimpleAotTest<Test504, 504> {
-    static constexpr const char *DESCRIPTION = "External transition exit sets LCCA (W3C 3.13 AOT Static Hybrid)";
     using SM = SCE::Generated::test504::test504;
 };
 

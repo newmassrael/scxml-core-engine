@@ -19,7 +19,6 @@ namespace SCE::W3C::AotTests {
  * Attempts to modify them should not change their values.
  */
 struct Test324 : public SimpleAotTest<Test324, 324> {
-    static constexpr const char *DESCRIPTION = "_name immutability (W3C B.2.2 AOT)";
     using SM = SCE::Generated::test324::test324;
 };
 

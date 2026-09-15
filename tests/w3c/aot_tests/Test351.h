@@ -19,7 +19,6 @@ namespace SCE::W3C::AotTests {
  * - Conditional transitions on sendid values work correctly
  */
 struct Test351 : public SimpleAotTest<Test351, 351> {
-    static constexpr const char *DESCRIPTION = "_event.sendid field validation (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test351::test351;
 };
 

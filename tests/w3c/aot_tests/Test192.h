@@ -30,8 +30,6 @@ namespace SCE::W3C::AotTests {
  * - All-or-Nothing: Pure Static AOT (no JSEngine, no Interpreter mixing)
  */
 struct Test192 : public ScheduledAotTest<Test192, 192> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML C.1: #_<invokeid> target sends events to child session's external queue";
     using SM = SCE::Generated::test192::test192;
 
     std::chrono::seconds getTimeout() const override {

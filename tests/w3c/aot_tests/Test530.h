@@ -56,7 +56,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML B.2: ECMAScript datamodel for expression evaluation
  */
 struct Test530 : public SimpleAotTest<Test530, 530> {
-    static constexpr const char *DESCRIPTION = "Hybrid invoke contentexpr evaluation (W3C 6.4 AOT Hybrid Strategy)";
     using SM = SCE::Generated::test530::test530;
 };
 

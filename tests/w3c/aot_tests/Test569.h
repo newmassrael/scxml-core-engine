@@ -36,7 +36,6 @@ namespace SCE::W3C::AotTests {
  * - System variable access in ECMAScript datamodel (W3C SCXML Appendix B.2)
  */
 struct Test569 : public SimpleAotTest<Test569, 569> {
-    static constexpr const char *DESCRIPTION = "SCXML I/O processor location (W3C 5.8 AOT Static Hybrid)";
     using SM = SCE::Generated::test569::test569;
 };
 

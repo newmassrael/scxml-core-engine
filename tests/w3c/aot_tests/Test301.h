@@ -13,7 +13,6 @@ SCE_REJECTED_DOCUMENT_TEST(301)
 namespace SCE::W3C::AotTests {
 
 struct Test301 : public SimpleAotTest<Test301, 301> {
-    static constexpr const char *DESCRIPTION = "Script element document rejection (W3C 5.8 AOT)";
     using SM = SCE::Generated::test301::test301;
 };
 

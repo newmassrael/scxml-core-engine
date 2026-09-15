@@ -22,7 +22,6 @@ namespace SCE::W3C::AotTests {
  * - Closed World static invoke (compile-time child SCXML, no external dependencies)
  */
 struct Test338 : public SimpleAotTest<Test338, 338> {
-    static constexpr const char *DESCRIPTION = "Static invoke inline content (W3C 6.4 AOT)";
     using SM = SCE::Generated::test338::test338;
 };
 

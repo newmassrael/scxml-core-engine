@@ -77,7 +77,6 @@ namespace SCE::W3C::AotTests {
  * Code simplicity: Generated code has zero runtime dependencies on JSEngine.
  */
 struct Test531 : public HttpAotTest<Test531, 531> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP _scxmleventname param event name (W3C C.2 AOT Static)";
     using SM = SCE::Generated::test531::test531;
 };
 

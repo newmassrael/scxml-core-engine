@@ -21,7 +21,6 @@ namespace SCE::W3C::AotTests {
  * - Condition to verify Var1 === Var2 (both contain the same send ID)
  */
 struct Test332 : public SimpleAotTest<Test332, 332> {
-    static constexpr const char *DESCRIPTION = "_event.sendid in error events (W3C 5.10.1, 6.2.4 AOT)";
     using SM = SCE::Generated::test332::test332;
 };
 

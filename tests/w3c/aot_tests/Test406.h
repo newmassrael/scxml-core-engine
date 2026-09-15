@@ -17,7 +17,6 @@ namespace SCE::W3C::AotTests {
  * event1 (transition) → event2 (parallel onentry) → event3 (region1 onentry) → event4 (region2 onentry).
  */
 struct Test406 : public SimpleAotTest<Test406, 406> {
-    static constexpr const char *DESCRIPTION = "State entry order with parallel regions (W3C 3.3 AOT)";
     using SM = SCE::Generated::test406::test406;
 };
 

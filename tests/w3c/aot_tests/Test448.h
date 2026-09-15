@@ -25,7 +25,6 @@ namespace SCE::W3C::AotTests {
  *   another parallel sibling (s01p2)
  */
 struct Test448 : public SimpleAotTest<Test448, 448> {
-    static constexpr const char *DESCRIPTION = "ECMAScript single global scope (W3C B.2 AOT)";
     using SM = SCE::Generated::test448::test448;
 };
 

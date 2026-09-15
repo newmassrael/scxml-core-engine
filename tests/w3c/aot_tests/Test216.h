@@ -36,7 +36,6 @@ namespace SCE::W3C::AotTests {
  * - 5.9.2 (Assign): Runtime variable assignment before invoke
  */
 struct Test216 : public ScheduledAotTest<Test216, 216> {
-    static constexpr const char *DESCRIPTION = "srcexpr runtime evaluation (W3C 6.4 AOT Static Hybrid)";
     using SM = SCE::Generated::test216::test216;
 };
 

@@ -51,7 +51,6 @@ namespace SCE::W3C::AotTests {
  * infrastructure (not implementing the processor itself).
  */
 struct Test513 : public HttpAotTest<Test513, 513> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP success response (W3C C.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test513::test513;
 };
 

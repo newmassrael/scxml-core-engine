@@ -51,7 +51,6 @@ namespace SCE::W3C::AotTests {
  * - DatamodelHelper: Initializes child datamodel with parent-provided values
  */
 struct Test244 : public SimpleAotTest<Test244, 244> {
-    static constexpr const char *DESCRIPTION = "Invoke namelist datamodel passing (W3C 6.3.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test244::test244;
 };
 

@@ -22,7 +22,6 @@ namespace SCE::W3C::AotTests {
  * it must halt execution and may not process any further events."
  */
 struct Test415 : public SimpleAotTest<Test415, 415> {
-    static constexpr const char *DESCRIPTION = "Top-level final state halts execution (W3C 3.7.1 AOT)";
     using SM = SCE::Generated::test415::test415;
 
     // Policy-based design: Override success state for manual test

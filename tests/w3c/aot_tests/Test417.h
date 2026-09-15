@@ -30,7 +30,6 @@ namespace SCE::W3C::AotTests {
  * - 3.8.1: Final state handling within parallel regions
  */
 struct Test417 : public SimpleAotTest<Test417, 417> {
-    static constexpr const char *DESCRIPTION = "Parallel done.state event (W3C 3.7.1 AOT)";
     using SM = SCE::Generated::test417::test417;
 };
 

@@ -24,7 +24,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 6.2: Delayed send requires event scheduler polling (ScheduledAotTest)
  */
 struct Test237 : public ScheduledAotTest<Test237, 237> {
-    static constexpr const char *DESCRIPTION = "invoke cancellation (W3C 6.4 AOT Pure Static)";
     using SM = SCE::Generated::test237::test237;
 };
 

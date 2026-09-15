@@ -28,7 +28,6 @@ namespace SCE::W3C::AotTests {
  * runtime ECMAScript expression evaluation via JSEngine.
  */
 struct Test488 : public SimpleAotTest<Test488, 488> {
-    static constexpr const char *DESCRIPTION = "donedata param error handling (W3C 5.7 AOT)";
     using SM = SCE::Generated::test488::test488;
 };
 

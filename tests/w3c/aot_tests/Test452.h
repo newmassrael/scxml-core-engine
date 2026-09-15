@@ -41,7 +41,6 @@ namespace SCE::W3C::AotTests {
  * - Script content loaded into JSEngine session context
  */
 struct Test452 : public SimpleAotTest<Test452, 452> {
-    static constexpr const char *DESCRIPTION = "Datamodel substructure assignment (W3C 5.3/5.4 AOT)";
     using SM = SCE::Generated::test452::test452;
 };
 

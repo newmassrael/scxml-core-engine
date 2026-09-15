@@ -17,7 +17,6 @@ namespace SCE::W3C::AotTests {
  * For internal events, this field has no value."
  */
 struct Test337 : public SimpleAotTest<Test337, 337> {
-    static constexpr const char *DESCRIPTION = "Internal event origintype blank (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test337::test337;
 };
 

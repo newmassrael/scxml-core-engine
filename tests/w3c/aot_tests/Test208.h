@@ -14,8 +14,6 @@ namespace SCE::W3C::AotTests {
  * Requires event scheduler polling for delayed send processing.
  */
 struct Test208 : public ScheduledAotTest<Test208, 208> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.3: The Processor SHOULD make its best attempt to cancel all delayed events with the specified id.";
     using SM = SCE::Generated::test208::test208;
 
     // W3C SCXML 6.3: 1.5s delayed send + cancel requires margin under full suite load

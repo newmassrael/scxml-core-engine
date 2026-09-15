@@ -38,7 +38,6 @@ namespace SCE::W3C::AotTests {
  * - <send> with <content> element (W3C SCXML 6.2)
  */
 struct Test578 : public SimpleAotTest<Test578, 578> {
-    static constexpr const char *DESCRIPTION = "ECMAScript _event.data JSON object (W3C 5.9/5.10 AOT Static Hybrid)";
     using SM = SCE::Generated::test578::test578;
 };
 

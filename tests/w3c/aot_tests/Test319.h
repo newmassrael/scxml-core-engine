@@ -19,7 +19,6 @@ namespace SCE::W3C::AotTests {
  * event being processed. It is undefined before the first event.
  */
 struct Test319 : public SimpleAotTest<Test319, 319> {
-    static constexpr const char *DESCRIPTION = "_event not bound before first event (W3C B.1 AOT)";
     using SM = SCE::Generated::test319::test319;
 };
 

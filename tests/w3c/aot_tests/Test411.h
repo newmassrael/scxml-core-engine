@@ -24,7 +24,6 @@ namespace SCE::W3C::AotTests {
  * Requires event scheduler polling for delayed send (1s timeout).
  */
 struct Test411 : public ScheduledAotTest<Test411, 411> {
-    static constexpr const char *DESCRIPTION = "State addition to active states during entry (W3C 3.12.1 AOT)";
     using SM = SCE::Generated::test411::test411;
 };
 

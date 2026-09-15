@@ -19,7 +19,6 @@ namespace SCE::W3C::AotTests {
  * expected processor URI.
  */
 struct Test352 : public SimpleAotTest<Test352, 352> {
-    static constexpr const char *DESCRIPTION = "Event origintype field (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test352::test352;
 };
 

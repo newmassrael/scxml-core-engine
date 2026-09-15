@@ -48,7 +48,6 @@ namespace SCE::W3C::AotTests {
  * - Pure Static: All invoke parameters are static literals (no runtime evaluation)
  */
 struct Test554 : public ScheduledAotTest<Test554, 554> {
-    static constexpr const char *DESCRIPTION = "Invoke namelist error handling (W3C 6.4 & B.1 AOT Pure Static)";
     using SM = SCE::Generated::test554::test554;
 };
 

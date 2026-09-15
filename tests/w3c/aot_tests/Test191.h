@@ -44,7 +44,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 6.2.5: Delayed send for timeout handling
  */
 struct Test191 : public ScheduledAotTest<Test191, 191> {
-    static constexpr const char *DESCRIPTION = "Inline content invoke with #_parent (W3C 6.4.1 AOT Pure Static)";
     using SM = SCE::Generated::test191::test191;
 };
 

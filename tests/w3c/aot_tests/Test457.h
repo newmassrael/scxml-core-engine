@@ -41,7 +41,6 @@ namespace SCE::W3C::AotTests {
  * 4. Any validation failure in s2 → fail state
  */
 struct Test457 : public SimpleAotTest<Test457, 457> {
-    static constexpr const char *DESCRIPTION = "foreach error handling (W3C 5.4/D.3.1 AOT)";
     using SM = SCE::Generated::test457::test457;
 };
 

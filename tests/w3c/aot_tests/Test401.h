@@ -22,7 +22,6 @@ namespace SCE::W3C::AotTests {
  * Failure: Transition to "fail" via foo event (incorrect queue priority)
  */
 struct Test401 : public SimpleAotTest<Test401, 401> {
-    static constexpr const char *DESCRIPTION = "Internal event queue priority (W3C 3.12.1 AOT)";
     using SM = SCE::Generated::test401::test401;
 };
 

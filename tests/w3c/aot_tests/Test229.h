@@ -39,7 +39,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 5.8: target="#_parent" (send to parent state machine)
  */
 struct Test229 : public ScheduledAotTest<Test229, 229> {
-    static constexpr const char *DESCRIPTION = "autoforward with inline content (W3C 6.4.6 AOT Pure Static)";
     using SM = SCE::Generated::test229::test229;
 };
 

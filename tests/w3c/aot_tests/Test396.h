@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * should be taken per document order selection rules.
  */
 struct Test396 : public SimpleAotTest<Test396, 396> {
-    static constexpr const char *DESCRIPTION = "Event name matching (W3C 3.12.1 AOT)";
     using SM = SCE::Generated::test396::test396;
 };
 

@@ -26,7 +26,6 @@ namespace SCE::W3C::AotTests {
  * - Test 337: Validates _event.origintype field classification
  */
 struct Test336 : public SimpleAotTest<Test336, 336> {
-    static constexpr const char *DESCRIPTION = "_event.origin bidirectional communication (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test336::test336;
 };
 

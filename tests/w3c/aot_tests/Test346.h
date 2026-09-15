@@ -15,7 +15,6 @@ namespace SCE::W3C::AotTests {
  * Uses Static Hybrid approach with JSEngine for system variable protection.
  */
 struct Test346 : public SimpleAotTest<Test346, 346> {
-    static constexpr const char *DESCRIPTION = "System variable protection (W3C 5.9.1 AOT)";
     using SM = SCE::Generated::test346::test346;
 };
 

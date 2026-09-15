@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * the assignment succeeded by checking Var1 == 1.
  */
 struct Test287 : public SimpleAotTest<Test287, 287> {
-    static constexpr const char *DESCRIPTION = "Valid assignment to valid location (W3C 5.4 AOT)";
     using SM = SCE::Generated::test287::test287;
 };
 

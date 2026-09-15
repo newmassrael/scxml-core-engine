@@ -21,7 +21,6 @@ namespace SCE::W3C::AotTests {
  * - Transition to pass state
  */
 struct Test311 : public SimpleAotTest<Test311, 311> {
-    static constexpr const char *DESCRIPTION = "error.execution for invalid assign location (W3C 5.9.2 AOT)";
     using SM = SCE::Generated::test311::test311;
 };
 

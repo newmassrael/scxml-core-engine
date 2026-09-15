@@ -61,8 +61,6 @@ namespace SCE::W3C::AotTests {
  * entered. DataModelInitHelper evaluates expr attributes in JSEngine context.
  */
 struct Test550 : public SimpleAotTest<Test550, 550> {
-    static constexpr const char *DESCRIPTION =
-        "Early binding with expr attribute for data variable (W3C 5.2.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test550::test550;
 };
 

@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * the next state (s1), even after a new event "bar" is raised.
  */
 struct Test318 : public SimpleAotTest<Test318, 318> {
-    static constexpr const char *DESCRIPTION = "_event variable binding (W3C 5.10 AOT)";
     using SM = SCE::Generated::test318::test318;
 };
 

@@ -27,7 +27,6 @@ namespace SCE::W3C::AotTests {
  * runtime ECMAScript expression evaluation via JSEngine for targetexpr.
  */
 struct Test496 : public SimpleAotTest<Test496, 496> {
-    static constexpr const char *DESCRIPTION = "error.communication for unreachable target (W3C C.1 AOT Static Hybrid)";
     using SM = SCE::Generated::test496::test496;
 };
 

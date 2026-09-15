@@ -15,8 +15,6 @@ namespace SCE::W3C::AotTests {
  * Requires event scheduler polling.
  */
 struct Test175 : public ScheduledAotTest<Test175, 175> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.2: delayexpr evaluates current datamodel value at send execution time";
     using SM = SCE::Generated::test175::test175;
 };
 

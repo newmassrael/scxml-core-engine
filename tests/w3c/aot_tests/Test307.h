@@ -33,7 +33,6 @@ namespace SCE::W3C::AotTests {
  *       to confirm consistent behavior between both variable access cases
  */
 struct Test307 : public SimpleAotTest<Test307, 307> {
-    static constexpr const char *DESCRIPTION = "Late binding variable access (W3C 5.2.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test307::test307;
 
     // Manual test: final state is "final", not "pass"

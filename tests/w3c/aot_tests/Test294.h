@@ -33,7 +33,6 @@ namespace SCE::W3C::AotTests {
  * - B.2.1: _event.data field access in ECMAScript datamodel
  */
 struct Test294 : public SimpleAotTest<Test294, 294> {
-    static constexpr const char *DESCRIPTION = "donedata with param and content (W3C 5.7.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test294::test294;
 };
 

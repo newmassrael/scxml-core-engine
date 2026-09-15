@@ -17,7 +17,6 @@ namespace SCE::W3C::AotTests {
  * have value s01, and its initial state s011 should be entered.
  */
 struct Test388 : public SimpleAotTest<Test388, 388> {
-    static constexpr const char *DESCRIPTION = "History states work correctly (W3C 3.11 AOT)";
     using SM = SCE::Generated::test388::test388;
 };
 

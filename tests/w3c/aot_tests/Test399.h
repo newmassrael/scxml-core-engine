@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * - Universal wildcard (* matches any event)
  */
 struct Test399 : public SimpleAotTest<Test399, 399> {
-    static constexpr const char *DESCRIPTION = "Event name matching with prefix and wildcard (W3C 5.9.3 AOT)";
     using SM = SCE::Generated::test399::test399;
 };
 

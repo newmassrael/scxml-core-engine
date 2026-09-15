@@ -19,7 +19,6 @@ namespace SCE::W3C::AotTests {
  * Validates: Static In() predicate implementation without ECMAScript engine
  */
 struct Test436 : public SimpleAotTest<Test436, 436> {
-    static constexpr const char *DESCRIPTION = "In() predicate in null data model (W3C 5.9.2 AOT)";
     using SM = SCE::Generated::test436::test436;
 };
 

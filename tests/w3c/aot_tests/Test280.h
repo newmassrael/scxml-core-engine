@@ -17,7 +17,6 @@ namespace SCE::W3C::AotTests {
  * not accessible from state s0.
  */
 struct Test280 : public SimpleAotTest<Test280, 280> {
-    static constexpr const char *DESCRIPTION = "Late binding variable initialization (W3C 5.3 AOT)";
     using SM = SCE::Generated::test280::test280;
 };
 

@@ -52,8 +52,6 @@ namespace SCE::W3C::AotTests {
  * The child uses Static Hybrid approach (static structure + JSEngine for Var1==1 evaluation).
  */
 struct Test243 : public ScheduledAotTest<Test243, 243> {
-    static constexpr const char *DESCRIPTION =
-        "invoke inline content + param with child→parent events (W3C 6.4 AOT Pure Static)";
     using SM = SCE::Generated::test243::test243;
 };
 

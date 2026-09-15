@@ -15,8 +15,6 @@ namespace SCE::W3C::AotTests {
  * 'type' attribute.
  */
 struct Test220 : public SimpleAotTest<Test220, 220> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.4: Platforms MUST support http://www.w3.org/TR/scxml/, as a value for the 'type' attribute";
     using SM = SCE::Generated::test220::test220;
 };
 

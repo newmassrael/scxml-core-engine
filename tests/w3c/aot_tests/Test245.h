@@ -55,7 +55,6 @@ namespace SCE::W3C::AotTests {
  * - DatamodelHelper: Initializes child datamodel (does NOT inject undeclared variables)
  */
 struct Test245 : public SimpleAotTest<Test245, 245> {
-    static constexpr const char *DESCRIPTION = "Invoke namelist non-existent var (W3C 6.3.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test245::test245;
 };
 

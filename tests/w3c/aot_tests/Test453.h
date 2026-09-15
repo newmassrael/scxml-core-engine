@@ -39,7 +39,6 @@ namespace SCE::W3C::AotTests {
  * - Function stored as JSEngine value, callable across state machine execution
  */
 struct Test453 : public SimpleAotTest<Test453, 453> {
-    static constexpr const char *DESCRIPTION = "ECMAScript function expression evaluation (W3C B.2/3.12.1 AOT)";
     using SM = SCE::Generated::test453::test453;
 };
 

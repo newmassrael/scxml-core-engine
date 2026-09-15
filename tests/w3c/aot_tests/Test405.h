@@ -16,7 +16,6 @@ namespace SCE::W3C::AotTests {
  * all actions execute in document order (event1→event2→event3→event4).
  */
 struct Test405 : public SimpleAotTest<Test405, 405> {
-    static constexpr const char *DESCRIPTION = "Transition executable content ordering (W3C 3.9 AOT)";
     using SM = SCE::Generated::test405::test405;
 };
 

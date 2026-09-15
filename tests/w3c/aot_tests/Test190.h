@@ -40,7 +40,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 5.2: ECMAScript datamodel with _sessionid system variable
  */
 struct Test190 : public SimpleAotTest<Test190, 190> {
-    static constexpr const char *DESCRIPTION = "W3C SCXML C.1: External queue via #_scxml_sessionid target";
     using SM = SCE::Generated::test190::test190;
 };
 

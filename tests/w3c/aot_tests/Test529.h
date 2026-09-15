@@ -46,7 +46,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 3.12.1: Conditional transitions with _event.data access
  */
 struct Test529 : public SimpleAotTest<Test529, 529> {
-    static constexpr const char *DESCRIPTION = "Donedata content integer literal (W3C 5.5 AOT Static Hybrid)";
     using SM = SCE::Generated::test529::test529;
 };
 

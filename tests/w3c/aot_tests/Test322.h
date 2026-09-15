@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * modified by the state machine. Any attempt to change its value should be ignored.
  */
 struct Test322 : public SimpleAotTest<Test322, 322> {
-    static constexpr const char *DESCRIPTION = "_sessionid immutability (W3C B.2.1 AOT)";
     using SM = SCE::Generated::test322::test322;
 };
 

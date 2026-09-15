@@ -16,7 +16,6 @@ namespace SCE::W3C::AotTests {
  * state resolution when no explicit initial is specified.
  */
 struct Test350 : public SimpleAotTest<Test350, 350> {
-    static constexpr const char *DESCRIPTION = "Default initial state (W3C 3.6 AOT)";
     using SM = SCE::Generated::test350::test350;
 };
 

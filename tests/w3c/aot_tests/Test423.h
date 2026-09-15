@@ -23,7 +23,6 @@ namespace SCE::W3C::AotTests {
  * Uses ScheduledAotTest for 1-second delay event polling (W3C SCXML 6.2)
  */
 struct Test423 : public ScheduledAotTest<Test423, 423> {
-    static constexpr const char *DESCRIPTION = "External event queue processing (W3C 5.9.2 AOT)";
     using SM = SCE::Generated::test423::test423;
 };
 

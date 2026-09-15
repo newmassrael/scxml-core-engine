@@ -12,8 +12,6 @@ namespace SCE::W3C::AotTests {
  * @brief Foreach error handling (AOT JSEngine)
  */
 struct Test152 : public SimpleAotTest<Test152, 152> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 4.6: foreach error handling - illegal array/item raises error.execution";
     using SM = SCE::Generated::test152::test152;
 };
 

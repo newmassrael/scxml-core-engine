@@ -22,7 +22,6 @@ namespace SCE::W3C::AotTests {
  * HttpAotTest providing real HTTP server infrastructure.
  */
 struct Test509 : public HttpAotTest<Test509, 509> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP POST method (W3C C.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test509::test509;
 };
 

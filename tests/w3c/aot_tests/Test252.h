@@ -60,7 +60,6 @@ namespace SCE::W3C::AotTests {
  * Expected Result: Pass (timeout occurs without receiving cancelled child events)
  */
 struct Test252 : public ScheduledAotTest<Test252, 252> {
-    static constexpr const char *DESCRIPTION = "Invoke cancellation ignores child events (W3C 6.4 AOT Pure Static)";
     using SM = SCE::Generated::test252::test252;
 };
 

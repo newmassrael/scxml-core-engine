@@ -32,7 +32,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 6.2: Delayed send with timeout
  */
 struct Test239 : public ScheduledAotTest<Test239, 239> {
-    static constexpr const char *DESCRIPTION = "invoke src + content (W3C 6.4 AOT Pure Static)";
     using SM = SCE::Generated::test239::test239;
 };
 

@@ -26,7 +26,6 @@ namespace SCE::W3C::AotTests {
  * compliance with W3C SCXML Event I/O Processor specifications.
  */
 struct Test495 : public SimpleAotTest<Test495, 495> {
-    static constexpr const char *DESCRIPTION = "SCXML Event I/O Processor queue handling (W3C 6.2 AOT)";
     using SM = SCE::Generated::test495::test495;
 };
 

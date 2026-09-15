@@ -15,7 +15,6 @@ namespace SCE::W3C::AotTests {
  * processing subsequent executable content (raise foo should not execute).
  */
 struct Test313 : public SimpleAotTest<Test313, 313> {
-    static constexpr const char *DESCRIPTION = "Assign illegal expression error.execution (W3C 5.9.2 AOT)";
     using SM = SCE::Generated::test313::test313;
 };
 

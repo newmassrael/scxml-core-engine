@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * Expected: Var2==3 (exactly 3 iterations, despite array growing to [1,2,3,4,4,4])
  */
 struct Test460 : public SimpleAotTest<Test460, 460> {
-    static constexpr const char *DESCRIPTION = "Foreach shallow copy (W3C 4.6 AOT)";
     using SM = SCE::Generated::test460::test460;
 };
 

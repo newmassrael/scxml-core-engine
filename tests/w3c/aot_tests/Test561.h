@@ -44,7 +44,6 @@ namespace SCE::W3C::AotTests {
  * - Enables full W3C SCXML B.2 ECMAScript datamodel compliance
  */
 struct Test561 : public SimpleAotTest<Test561, 561> {
-    static constexpr const char *DESCRIPTION = "ECMAScript XML DOM event data (W3C 5.9.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test561::test561;
 };
 

@@ -37,8 +37,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML Perfect Compliance: Fully implements W3C SCXML 5.9.2 specification
  */
 struct Test506 : public SimpleAotTest<Test506, 506> {
-    static constexpr const char *DESCRIPTION =
-        "Internal transition non-descendant target behaves as external (W3C 5.9.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test506::test506;
 };
 

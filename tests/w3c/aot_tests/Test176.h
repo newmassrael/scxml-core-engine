@@ -12,7 +12,6 @@ namespace SCE::W3C::AotTests {
  * @brief Send param uses current datamodel value (AOT)
  */
 struct Test176 : public SimpleAotTest<Test176, 176> {
-    static constexpr const char *DESCRIPTION = "Send param uses current datamodel value (AOT)";
     using SM = SCE::Generated::test176::test176;
 };
 

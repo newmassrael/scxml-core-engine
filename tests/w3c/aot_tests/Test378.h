@@ -89,8 +89,6 @@ namespace SCE::W3C::AotTests {
  * - error.execution propagated incorrectly (should not stop second handler)
  */
 struct Test378 : public SimpleAotTest<Test378, 378> {
-    static constexpr const char *DESCRIPTION =
-        "Independent onexit handler execution with error.execution (W3C 3.8/3.9 AOT Static Hybrid)";
     using SM = SCE::Generated::test378::test378;
 };
 

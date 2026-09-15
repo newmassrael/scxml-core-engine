@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 6.2: Async event processing via runUntilCompletion()
  */
 struct Test250 : public ScheduledAotTest<Test250, 250> {
-    static constexpr const char *DESCRIPTION = "W3C SCXML 6.3: Event cancellation (Static Hybrid AOT)";
     using SM = SCE::Generated::test250::test250;
 
     // Manual test: success is reaching Final state (no Pass/Fail distinction)

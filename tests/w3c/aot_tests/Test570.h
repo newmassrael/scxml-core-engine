@@ -40,8 +40,6 @@ namespace SCE::W3C::AotTests {
  * - Assignment actions (W3C SCXML 5.4)
  */
 struct Test570 : public SimpleAotTest<Test570, 570> {
-    static constexpr const char *DESCRIPTION =
-        "Parallel state completion with done.state.id (W3C 3.12.1 AOT Static Hybrid)";
     using SM = SCE::Generated::test570::test570;
 };
 

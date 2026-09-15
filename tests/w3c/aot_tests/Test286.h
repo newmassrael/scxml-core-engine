@@ -20,7 +20,6 @@ namespace SCE::W3C::AotTests {
  * 'error.execution' in the internal event queue."
  */
 struct Test286 : public SimpleAotTest<Test286, 286> {
-    static constexpr const char *DESCRIPTION = "Invalid assignment location error handling (W3C 5.3 AOT)";
     using SM = SCE::Generated::test286::test286;
 };
 

@@ -23,7 +23,6 @@ namespace SCE::W3C::AotTests {
  * Uses static code generation for both parent and child state machines.
  */
 struct Test347 : public SimpleAotTest<Test347, 347> {
-    static constexpr const char *DESCRIPTION = "SCXML Event I/O processor communication (W3C 6.4 AOT)";
     using SM = SCE::Generated::test347::test347;
 };
 

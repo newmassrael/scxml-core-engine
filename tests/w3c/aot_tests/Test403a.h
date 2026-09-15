@@ -25,7 +25,6 @@ namespace SCE::W3C::AotTests {
  * Expected: Only highest-priority non-conflicting transitions execute.
  */
 struct Test403a : public SimpleAotTest<Test403a, 403> {
-    static constexpr const char *DESCRIPTION = "Optimal enabled transition set (W3C 3.13 basic AOT)";
     using SM = SCE::Generated::test403a::test403a;
 };
 
