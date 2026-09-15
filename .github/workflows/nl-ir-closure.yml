@@ -27,9 +27,11 @@ name: NL-IR Closure Ledger
 # endpoint-SSOT lane's is. A row can close in almost any file — a template, a
 # header, a CMake list, a Rust module, the visualizer — and narrowing to the
 # paths anyone happens to remember misses exactly the one nobody thought of.
-# Affordable because the gate is grep and one short Python pass: 0.17s measured
-# over this tree across five consecutive runs (176 170 170 158 159 ms), on a
-# machine that was running two other sessions' loops at the time.
+# Affordable because the gate is grep, one short Python pass, and two
+# syntax-only compiles of a probe against the AOT registrar that row S3 is
+# measured by: 1.2s from `scripts/gate --measure` on 2026-09-15, on a machine
+# running other sessions' loops. The compiles use the runner image's own C++
+# compiler; without one the gate exits 3 (cannot run), not 1.
 
 on:
   push:
