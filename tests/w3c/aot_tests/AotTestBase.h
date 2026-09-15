@@ -94,10 +94,20 @@ public:
     virtual int getTestId() const = 0;
 
     /**
-     * @brief Get test description
-     * @return Human-readable test description
+     * @brief Get test description, read from metadata.txt
+     * @return "W3C SCXML X.Y: description text", cached after the first read
+     *
+     * Deliberately not virtual. metadata.txt is the one source of a test's
+     * description and every test reaches it through getTestId(). A test that
+     * could override this would restate that text in its own header, where it
+     * drifts from the file it copies and is read by nothing that reports.
      */
-    virtual const char *getDescription() const = 0;
+    const char *getDescription() const {
+        if (cachedDescription_.empty()) {
+            cachedDescription_ = loadMetadataDescription(getTestId());
+        }
+        return cachedDescription_.c_str();
+    }
 
     /**
      * @brief Get timeout duration for this test
@@ -122,6 +132,9 @@ public:
     virtual const char *getTestType() const {
         return "pure_static";  // Default for most tests
     }
+
+private:
+    mutable std::string cachedDescription_;
 };
 
 }  // namespace SCE::W3C::AotTests

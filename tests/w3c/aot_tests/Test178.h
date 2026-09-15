@@ -15,7 +15,6 @@ namespace SCE::W3C::AotTests {
  */
 struct Test178 : public AotTestBase {
     static constexpr int TEST_ID = 178;
-    static constexpr const char *DESCRIPTION = "W3C SCXML 6.2: param preserves duplicate keys with multiple values";
 
     bool run() override {
         SCE::Generated::test178::test178 sm;
@@ -26,10 +25,6 @@ struct Test178 : public AotTestBase {
 
     int getTestId() const override {
         return TEST_ID;
-    }
-
-    const char *getDescription() const override {
-        return DESCRIPTION;
     }
 };
 

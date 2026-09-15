@@ -26,7 +26,6 @@ namespace SCE::W3C::AotTests {
  */
 struct Test329 : public AotTestBase {
     static constexpr int TEST_ID = 329;
-    static constexpr const char *DESCRIPTION = "System variables immutability (W3C 5.10 AOT)";
     using SM = SCE::Generated::test329::test329;
 
     bool run() override {
@@ -58,10 +57,6 @@ struct Test329 : public AotTestBase {
 
     int getTestId() const override {
         return TEST_ID;
-    }
-
-    const char *getDescription() const override {
-        return DESCRIPTION;
     }
 };
 
