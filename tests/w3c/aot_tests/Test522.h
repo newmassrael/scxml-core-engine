@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor location field
+ * @brief BasicHTTP Event I/O Processor location field
  *
  * Tests that the BasicHTTP Event I/O Processor can send messages to external
  * HTTP targets using the processor's location field (target URL).

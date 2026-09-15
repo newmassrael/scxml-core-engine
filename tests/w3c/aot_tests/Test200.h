@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief SCXML event processor support (W3C 6.2 AOT)
+ * @brief SCXML event processor support (AOT)
  */
 struct Test200 : public SimpleAotTest<Test200, 200> {
     using SM = SCE::Generated::test200::test200;

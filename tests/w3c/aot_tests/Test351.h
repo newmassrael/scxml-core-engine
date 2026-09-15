@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: Event sendid field validation
+ * @brief Event sendid field validation
  *
  * Tests that _event.sendid is set to the send element's id attribute when present,
  * and blank otherwise. Validates proper event metadata propagation in the AOT engine.

@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: The sending SCXML Interpreter MUST not alter the content of the send
+ * @brief The sending SCXML Interpreter MUST not alter the content of the send
  *
  * Verifies that param data sent via send element is not modified during transmission.
  * Test sends event with param aParam=1, then validates that _event.data.aParam == 1

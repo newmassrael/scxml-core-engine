@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.2/5.9: ECMAScript datamodel variable creation and condition evaluation
+ * @brief ECMAScript datamodel variable creation and condition evaluation
  *
  * Tests that <data> elements create ECMAScript variables accessible in condition expressions.
  * Validates pre-increment operator (++var1) side effects and equality evaluation (==2).

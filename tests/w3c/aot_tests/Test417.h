@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.7.1: done.state Event for Parallel States
+ * @brief done.state Event for Parallel States
  *
  * Tests that done.state.id event is generated when all children of a
  * parallel element enter final states. The parallel state s1p1 has two

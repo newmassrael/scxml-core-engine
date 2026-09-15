@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: Event ordering - childToParent before done.invoke
+ * @brief Event ordering - childToParent before done.invoke
  *
  * Tests that child's onexit actions (sending childToParent) execute before
  * done.invoke event is delivered to parent. Verifies proper event ordering

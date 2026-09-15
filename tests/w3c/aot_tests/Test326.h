@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2.3: _ioprocessors system variable immutability
+ * @brief _ioprocessors system variable immutability
  *
  * Tests that the _ioprocessors system variable:
  * 1. Is bound at session start

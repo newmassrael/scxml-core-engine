@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor _scxmleventname parameter transmission
+ * @brief BasicHTTP Event I/O Processor _scxmleventname parameter transmission
  *
  * Tests that SCXML Processor's BasicHTTP Event I/O Processor correctly sends
  * the event name as the _scxmleventname parameter in HTTP POST requests.

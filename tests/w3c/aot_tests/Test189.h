@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.1: Internal queue priority via target="#_internal"
+ * @brief Internal queue priority via target="#_internal"
  *
  * Tests that events sent with target="#_internal" are placed on the internal event queue,
  * which has higher priority than the external event queue during event processing.

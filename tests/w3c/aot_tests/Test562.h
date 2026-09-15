@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: ECMAScript datamodel content space normalization
+ * @brief ECMAScript datamodel content space normalization
  *
  * Verifies that when an event contains text content with extra whitespace in the
  * ECMAScript datamodel, the processor creates a space-normalized string in _event.data.

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Eventless Transition Precedence
+ * @brief Eventless Transition Precedence
  *
  * Tests that eventless transitions have priority over event-driven transitions.
  * The state s1 entry action raises both internal and external events, but an

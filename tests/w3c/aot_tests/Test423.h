@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: External event queue processing with internal event priority
+ * @brief External event queue processing with internal event priority
  *
  * Validates that:
  * 1. Internal events (raise) take priority over external events (send)

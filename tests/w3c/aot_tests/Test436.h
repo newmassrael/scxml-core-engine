@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: In() predicate evaluation in null data model
+ * @brief In() predicate evaluation in null data model
  *
  * Tests that the In() predicate correctly evaluates state membership
  * within a null data model and parallel state configuration.

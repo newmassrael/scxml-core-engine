@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.5: Donedata content expr evaluation
+ * @brief Donedata content expr evaluation
  *
  * Tests that the 'expr' attribute on <content> element within <donedata>
  * correctly evaluates ECMAScript expressions and passes the result as

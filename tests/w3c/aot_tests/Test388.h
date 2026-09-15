@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.11: History states work correctly (deep/shallow)
+ * @brief History states work correctly (deep/shallow)
  *
  * Tests that history states work correctly. The counter Var1 counts how many times
  * we have entered s0. The initial state is s012. We then transition to s1, which

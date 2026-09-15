@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.1: System variable _event initially unbound
+ * @brief System variable _event initially unbound
  *
  * Tests that the _event system variable is not bound before any event
  * has been raised. The test checks this condition in the initial state's

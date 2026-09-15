@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3: Event cancellation (manual test)
+ * @brief Event cancellation (manual test)
  *
  * Manual test verifying that cancelled events are not delivered.
  * Sends delayed event with 2s delay, then cancels it immediately.

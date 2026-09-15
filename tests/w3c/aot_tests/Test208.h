@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3: The Processor SHOULD make its best attempt to cancel all delayed events with the specified id.
+ * @brief The Processor SHOULD make its best attempt to cancel all delayed events with the specified id.
  *
  * Requires event scheduler polling for delayed send processing.
  */

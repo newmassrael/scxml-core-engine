@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: Static invoke with inline content child SCXML
+ * @brief Static invoke with inline content child SCXML
  *
  * Tests that invokeid is correctly set in events received from an invoked child process
  * when the child SCXML is defined inline using <invoke><content><scxml>...</scxml></content></invoke>.

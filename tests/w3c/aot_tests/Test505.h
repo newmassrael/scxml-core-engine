@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Internal transition does not exit source state
+ * @brief Internal transition does not exit source state
  *
  * Validates that an internal transition (type="internal") does not exit its
  * source state when the source state is compound and all target states are

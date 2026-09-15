@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: Internal events have blank origintype field
+ * @brief Internal events have blank origintype field
  *
  * Tests that events raised via <raise> have no origintype value,
  * distinguishing them from external events (which have "http://www.w3.org/TR/scxml/#SCXMLEventProcessor").

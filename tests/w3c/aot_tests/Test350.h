@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.6: Default initial state (first child in document order)
+ * @brief Default initial state (first child in document order)
  *
  * Tests that when the <scxml> element has no initial attribute, the state machine
  * correctly defaults to the first child state in document order, as required by

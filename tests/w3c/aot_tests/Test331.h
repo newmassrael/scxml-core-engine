@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: Event type classification
+ * @brief Event type classification
  *
  * Validates that _event.type is correctly set for:
  * - "internal" for events raised by <raise>

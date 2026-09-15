@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.12.1: Internal event queue priority over external events
+ * @brief Internal event queue priority over external events
  *
  * Tests that error events raised by the processor are placed in the internal
  * event queue and processed with higher priority than external events.

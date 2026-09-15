@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2.1: System variable _name binding on startup
+ * @brief System variable _name binding on startup
  *
  * Tests that the _name system variable is bound to the state machine name
  * at initialization time and accessible in datamodel expressions. The test

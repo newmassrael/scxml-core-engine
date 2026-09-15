@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3.2: Invoke inline content + namelist datamodel value passing
+ * @brief Invoke inline content + namelist datamodel value passing
  *
  * Tests that datamodel values can be specified via namelist attribute in invoke.
  * Parent state machine has Var1=1, invoked child state machine has Var1=0.

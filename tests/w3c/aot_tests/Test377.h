@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.8: Multiple onexit handlers execution in document order
+ * @brief Multiple onexit handlers execution in document order
  *
  * Test Description:
  * - Verifies that multiple onexit handlers are executed in document order

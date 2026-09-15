@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3.1: Invoke with idlocation attribute
+ * @brief Invoke with idlocation attribute
  *
  * Tests that the automatically generated invoke ID follows the "stateid.platformid.index" format
  * and is correctly stored in the idlocation variable. The .index suffix ensures uniqueness when

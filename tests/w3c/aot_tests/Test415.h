@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.7.1: Top-level final state halts execution
+ * @brief Top-level final state halts execution
  *
  * This manual test verifies that entering a top-level final state
  * immediately halts the state machine before processing any raised events.

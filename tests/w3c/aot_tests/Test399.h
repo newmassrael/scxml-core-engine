@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.3: Event name matching algorithm
+ * @brief Event name matching algorithm
  *
  * Tests correct event name matching including:
  * - Multiple event descriptors in transition (space-separated)

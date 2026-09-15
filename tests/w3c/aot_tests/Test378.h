@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.8/3.9: Independent onexit handler execution with error.execution
+ * @brief Independent onexit handler execution with error.execution
  *
  * Test Description:
  * - Verifies that each onexit handler is executed as an independent block

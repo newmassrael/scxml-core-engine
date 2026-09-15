@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 4.6: Foreach element shallow copy semantics
+ * @brief Foreach element shallow copy semantics
  *
  * Tests that <foreach> creates a shallow copy of the array, so modifying
  * the array during iteration does not change the iteration count.

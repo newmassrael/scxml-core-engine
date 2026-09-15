@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2.2: System variable _name immutability
+ * @brief System variable _name immutability
  *
  * Tests that the _name system variable cannot be reassigned after initialization.
  * The test verifies that _name remains bound to "machineName" throughout the session,

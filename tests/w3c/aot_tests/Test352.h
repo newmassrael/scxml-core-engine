@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: Event origintype field validation
+ * @brief Event origintype field validation
  *
  * Tests that _event.origintype is correctly set to
  * 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' when events are

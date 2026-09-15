@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor POST Method
+ * @brief BasicHTTP Event I/O Processor POST Method
  *
  * Tests that SCXML Processor accepts messages at the access URI as HTTP POST requests.
  *

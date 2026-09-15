@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: External transition exit sets (LCCA)
+ * @brief External transition exit sets (LCCA)
  *
  * Validates that an external transition exits all active states that are
  * proper descendants of the Least Common Compound Ancestor (LCCA) of the

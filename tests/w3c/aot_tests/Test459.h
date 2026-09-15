@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.4: foreach iteration order and index validation
+ * @brief foreach iteration order and index validation
  *
  * Tests that foreach iterates over arrays in correct order (ascending index 0→1→2).
  * Validates that:

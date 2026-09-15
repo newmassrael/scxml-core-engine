@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.12.1: Event name matching and document order transition selection
+ * @brief Event name matching and document order transition selection
  *
  * Verifies that the SCXML processor uses the event name value from _event.name
  * to match against transition 'event' attributes. When multiple transitions match

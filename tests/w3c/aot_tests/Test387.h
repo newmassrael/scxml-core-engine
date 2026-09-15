@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.11: History States with Default Transitions
+ * @brief History States with Default Transitions
  *
  * Tests that default history state mechanisms work correctly:
  * - Shallow history with default transition to direct child state

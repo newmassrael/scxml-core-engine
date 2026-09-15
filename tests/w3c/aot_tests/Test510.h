@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor External Queue
+ * @brief BasicHTTP Event I/O Processor External Queue
  *
  * Tests that Basic HTTP messages are placed in the external event queue (not internal queue).
  * W3C SCXML C.1 specifies that internal queue has higher priority than external queue.

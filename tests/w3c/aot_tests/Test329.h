@@ -12,7 +12,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: System variables immutability
+ * @brief System variables immutability
  *
  * Tests that system variables (_sessionid, _event, _name, _ioprocessors)
  * are immutable and cannot be modified via assign operations.

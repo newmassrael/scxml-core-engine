@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: _event variable binding and persistence
+ * @brief _event variable binding and persistence
  *
  * Tests that the SCXML Processor binds the _event variable when an event
  * is pulled off the internal or external event queue to be processed, and

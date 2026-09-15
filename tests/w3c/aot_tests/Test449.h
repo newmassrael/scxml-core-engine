@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2: ECMAScript boolean conversion for string literals
+ * @brief ECMAScript boolean conversion for string literals
  *
  * Tests that ECMAScript non-empty string literals are converted to true
  * in boolean context (conditional expressions).

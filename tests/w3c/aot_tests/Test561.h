@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: ECMAScript DOM object creation for XML event data
+ * @brief ECMAScript DOM object creation for XML event data
  *
  * Verifies that when an event contains XML content in the ECMAScript datamodel,
  * the processor creates an ECMAScript DOM object in _event.data that supports

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4.1: Inline <content> invoke with #_parent target
+ * @brief Inline <content> invoke with #_parent target
  *
  * Tests that a parent SCXML session can invoke a child session using inline <content>,
  * and the child can send events to the parent using #_parent as the target.

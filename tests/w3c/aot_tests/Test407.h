@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.8: onexit handlers with datamodel variable updates
+ * @brief onexit handlers with datamodel variable updates
  *
  * Tests that onexit handlers execute properly and can update datamodel variables.
  * Validates that when exiting a state, the onexit handler executes and increments

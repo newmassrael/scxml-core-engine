@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Exit order and transition execution
+ * @brief Exit order and transition execution
  *
  * Validates that states are exited in exit order (children before parents, with
  * reverse document order used to break ties) before executing transition content.

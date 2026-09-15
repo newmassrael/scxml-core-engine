@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.12: Error events processed like any other event
+ * @brief Error events processed like any other event
  *
  * Validates that error events (specifically error.execution from invalid assignment)
  * are pulled off the internal queue in order and can be caught with event="error"

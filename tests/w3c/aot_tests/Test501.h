@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.1: SCXML Event I/O Processor location field as send target
+ * @brief SCXML Event I/O Processor location field as send target
  *
  * Validates that _ioprocessors['scxml']['location'] provides an accessible
  * address for external entities to communicate with the SCXML session, and

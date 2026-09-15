@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: Assignment error handling for illegal expressions
+ * @brief Assignment error handling for illegal expressions
  *
  * Tests that assignment with an illegal expression (undefined.invalidProperty)
  * raises an error.execution event. Verifies datamodel error handling per

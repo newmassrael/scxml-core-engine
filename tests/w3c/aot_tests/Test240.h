@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: invoke with namelist and param
+ * @brief invoke with namelist and param
  *
  * Tests that datamodel values can be specified both by 'namelist' and by '<param>'.
  * Invoked child will return success if its Var1 is set to 1, failure otherwise.

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3.1: SCXML Event I/O Processor Location Field
+ * @brief SCXML Event I/O Processor Location Field
  *
  * Tests that the location field is accessible via _ioprocessors['scxml']['location']
  * in the ECMAScript datamodel using SystemVariableHelper for initialization

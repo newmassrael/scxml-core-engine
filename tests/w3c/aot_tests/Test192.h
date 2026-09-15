@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.1: Parent-child communication via #_<invokeid> target
+ * @brief Parent-child communication via #_<invokeid> target
  *
  * This test validates the complete parent-child invoke infrastructure:
  * 1. Parent invokes child state machine via inline <content>

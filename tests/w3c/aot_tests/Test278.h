@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: Global datamodel scope
+ * @brief Global datamodel scope
  *
  * Tests that variables defined in state-level datamodel are globally accessible.
  * Variable Var1 defined in state s1's datamodel should be accessible from state s0.

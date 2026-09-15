@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: _scxmleventname Parameter Event Name Override
+ * @brief _scxmleventname Parameter Event Name Override
  *
  * Tests that when <send> has NO event attribute, the _scxmleventname parameter
  * value becomes the event name for BasicHTTP Event I/O Processor.

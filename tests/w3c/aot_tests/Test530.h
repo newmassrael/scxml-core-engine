@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: Hybrid invoke contentexpr evaluation
+ * @brief Hybrid invoke contentexpr evaluation
  *
  * Tests that <invoke><content expr="..."/> is evaluated at invoke execution time,
  * creating an Interpreter child state machine from the runtime SCXML content.

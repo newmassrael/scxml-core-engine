@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: Delayed evaluation of illegal expression in assign
+ * @brief Delayed evaluation of illegal expression in assign
  *
  * Tests that error.execution is not raised until the illegal expression
  * is actually evaluated (in state s03), not when the document is loaded.

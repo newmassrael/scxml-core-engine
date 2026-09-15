@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: Internal transition with non-descendant target behaves as external
+ * @brief Internal transition with non-descendant target behaves as external
  *
  * Validates that an internal transition (type="internal") whose target is NOT
  * a proper descendant of its source state behaves like an external transition,

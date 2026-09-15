@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: Assign with illegal expression must raise error.execution
+ * @brief Assign with illegal expression must raise error.execution
  *
  * This test verifies that when an assign element contains an illegal expression
  * (undefined.invalidProperty), the processor raises error.execution and stops

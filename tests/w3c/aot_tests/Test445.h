@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2.2: ECMAScript undefined variable behavior
+ * @brief ECMAScript undefined variable behavior
  *
  * Tests that ECMAScript variables defined by <data> elements without initialization
  * have the value undefined, following JavaScript undefined semantics.

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: _event.origin system variable
+ * @brief _event.origin system variable
  *
  * Tests that the _event.origin system variable correctly provides information
  * about the origin of the event. According to W3C SCXML 5.10.1, _event.origin

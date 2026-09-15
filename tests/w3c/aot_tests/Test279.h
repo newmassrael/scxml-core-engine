@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.2.2: Early binding variable initialization
+ * @brief Early binding variable initialization
  *
  * Tests that variables with early binding are assigned values at initialization time,
  * before the state containing them is visited.

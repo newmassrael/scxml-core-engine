@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9: Invalid cond expression raises error.execution
+ * @brief Invalid cond expression raises error.execution
  *
  * Tests that a cond expression that cannot be evaluated as a boolean value
  * causes error.execution to be raised. The test uses cond="return" which is

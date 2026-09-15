@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: Event data population with namelist, param, and content
+ * @brief Event data population with namelist, param, and content
  *
  * Tests that _event.data can be populated using three mechanisms:
  * - namelist attribute: Variables listed in namelist should appear in event.data

@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: Default send type is SCXMLEventProcessor when type/typeexpr not specified
+ * @brief Default send type is SCXMLEventProcessor when type/typeexpr not specified
  *
  * Tests that when neither 'type' nor 'typeexpr' attributes are specified in a <send> element,
  * the SCXML Processor defaults to using the SCXML Event I/O Processor

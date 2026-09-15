@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Targetless transitions do not exit/re-enter source state
+ * @brief Targetless transitions do not exit/re-enter source state
  *
  * Validates that transitions without a 'target' attribute have an empty exit set,
  * meaning they do not cause the source state to be exited and re-entered.

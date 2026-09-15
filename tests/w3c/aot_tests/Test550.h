@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.2.2: Early binding with expr attribute for data variable
+ * @brief Early binding with expr attribute for data variable
  *
  * Tests that the expr attribute can be used to assign a value to a variable with
  * early binding. Variable Var1 is initialized to value 2 from expression "2" before

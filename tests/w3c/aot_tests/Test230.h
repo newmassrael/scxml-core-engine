@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: Autoforward event field preservation
+ * @brief Autoforward event field preservation
  *
  * Manual test verifying that autoforwarded events preserve all fields
  * (_event.name, _event.type, _event.sendid, _event.origin, _event.origintype,

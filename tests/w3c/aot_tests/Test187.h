@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4.2: Delayed send cancellation on session termination
+ * @brief Delayed send cancellation on session termination
  *
  * Tests that delayed <send> events are cancelled when the sending session terminates.
  * A child SCXML session is invoked that sends a delayed event to the parent, then

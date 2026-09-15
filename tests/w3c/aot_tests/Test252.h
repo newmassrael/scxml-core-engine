@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: Invoke cancellation - events from cancelled child are ignored
+ * @brief Invoke cancellation - events from cancelled child are ignored
  *
  * Tests that events received from an invoked process are not processed once the invoke is cancelled.
  * The child process attempts to send "childToParent" event in an onexit handler.

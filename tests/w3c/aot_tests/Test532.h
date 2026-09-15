@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: HTTP Method Name Fallback for Event Naming
+ * @brief HTTP Method Name Fallback for Event Naming
  *
  * Tests that when <send> has NO event attribute and NO _scxmleventname parameter,
  * the SCXML Processor uses the HTTP method name (HTTP.POST) as the event name

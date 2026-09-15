@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief Datamodel init error.execution (W3C 5.3 AOT)
+ * @brief Datamodel init error.execution (AOT)
  */
 struct Test277 : public SimpleAotTest<Test277, 277> {
     using SM = SCE::Generated::test277::test277;

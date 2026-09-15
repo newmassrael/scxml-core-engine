@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2: ECMAScript single global scope requirement
+ * @brief ECMAScript single global scope requirement
  *
  * Tests that all ECMAScript objects are placed in a single global scope,
  * ensuring variables defined in any state's <datamodel> are accessible

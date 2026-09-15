@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: Event field binding validation
+ * @brief Event field binding validation
  *
  * Tests that required _event fields are properly bound for both:
  * - Internal events (raised via <raise>)

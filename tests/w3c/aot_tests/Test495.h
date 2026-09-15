@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: SCXML Event I/O Processor internal vs external queue handling
+ * @brief SCXML Event I/O Processor internal vs external queue handling
  *
  * Tests that the SCXML event I/O processor correctly routes events to internal and external queues.
  * Events sent to target="#_internal" should be placed in the internal queue and processed first,

@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief Invalid target raises error.execution (W3C 6.2 AOT)
+ * @brief Invalid target raises error.execution (AOT)
  */
 struct Test194 : public SimpleAotTest<Test194, 194> {
     using SM = SCE::Generated::test194::test194;

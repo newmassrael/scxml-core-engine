@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3: cancel tag - cannot cancel events in different sessions
+ * @brief cancel tag - cannot cancel events in different sessions
  *
  * This test verifies that a parent session cannot cancel delayed send events
  * that were raised in a child invoked session. The test invokes a child process

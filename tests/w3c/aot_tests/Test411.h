@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.12.1: Active State Configuration - State Addition During Entry
+ * @brief Active State Configuration - State Addition During Entry
  *
  * Tests that states are correctly added to the active states list before their onentry handlers execute.
  * When s01's onentry handler runs during state entry, s01 should already be in the active state list,
