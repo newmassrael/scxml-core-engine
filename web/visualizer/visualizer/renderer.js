@@ -468,21 +468,17 @@ class Renderer {
                 }
 
                 // NL-IR closure ledger row G2: which element a requirement
-                // claims, and which is unclaimed. `annotationClass` was
-                // stamped by AnnotationOverlay.applyTo from the closure the
-                // acceptance report derived — never computed here.
-                if (d.annotationClass) {
-                    classes += ` ${d.annotationClass}`;
-                }
+                // claims, and which is unclaimed. The node builder looked
+                // this up in the overlay, which carries the closure the
+                // acceptance report derived — nothing is computed here.
+                classes += annotationClassFor(d);
 
                 return classes;
             })
             .attr('data-state-id', d => d.id)
             // The ids themselves, so the claim is readable off the element
             // and not only inferable from its colour.
-            .attr('data-sce-req', d => (d.requirements && d.requirements.length)
-                ? d.requirements.join(' ')
-                : null)
+            .attr('data-sce-req', d => requirementIdsFor(d))
             .attr('transform', d => `translate(${d.x},${d.y})`)
             .call(d3.drag()
                 .on('start', function(event, d) {
@@ -1128,14 +1124,10 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     classes += ' transition-internal';
                 }
                 // Row G2 — see the state node's class builder above.
-                if (d.annotationClass) {
-                    classes += ` ${d.annotationClass}`;
-                }
+                classes += annotationClassFor(d);
                 return classes;
             })
-            .attr('data-sce-req', d => (d.requirements && d.requirements.length)
-                ? d.requirements.join(' ')
-                : null)
+            .attr('data-sce-req', d => requirementIdsFor(d))
             .attr('data-transition-id', d => d.transitionId || null)
             .attr('d', d => this.visualizer.getLinkPath(d))
             .style('marker-end', d => {

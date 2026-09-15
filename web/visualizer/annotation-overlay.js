@@ -108,6 +108,33 @@ class AnnotationOverlay {
         );
     }
 
+    /**
+     * What a graph element carries, given what it claims.
+     *
+     * ⭐ The ONE place the two marks are decided. The node builder, the
+     * link builder and `applyTo` all come through here, so an element
+     * cannot be marked one way when drawn as a state and another when
+     * drawn as an edge.
+     */
+    annotationFrom(requirements) {
+        return {
+            requirements,
+            annotationClass: requirements.length
+                ? SCE_ANNOTATION_CLAIMED
+                : SCE_ANNOTATION_UNCLAIMED,
+        };
+    }
+
+    /** What a state carries, for the node builder. */
+    annotationForState(stateId) {
+        return this.annotationFrom(this.requirementsForState(stateId));
+    }
+
+    /** What a transition carries, for the link builder. */
+    annotationForTransition(stateId, index) {
+        return this.annotationFrom(this.requirementsForTransition(stateId, index));
+    }
+
     /** Nodes no requirement claims — what the reviewer is looking for. */
     unclaimedPaths() {
         return this.nodes.filter((n) => n.requirements.length === 0).map((n) => n.node_path);
@@ -122,10 +149,7 @@ class AnnotationOverlay {
      */
     applyTo(states, transitions) {
         for (const state of states || []) {
-            state.requirements = this.requirementsForState(state.id);
-            state.annotationClass = state.requirements.length
-                ? SCE_ANNOTATION_CLAIMED
-                : SCE_ANNOTATION_UNCLAIMED;
+            Object.assign(state, this.annotationForState(state.id));
         }
 
         // Transitions are keyed by (source state, position in that state),
@@ -135,14 +159,41 @@ class AnnotationOverlay {
             const source = transition.source ?? transition.from;
             const index = seen.get(source) ?? 0;
             seen.set(source, index + 1);
-            transition.requirements = this.requirementsForTransition(source, index);
-            transition.annotationClass = transition.requirements.length
-                ? SCE_ANNOTATION_CLAIMED
-                : SCE_ANNOTATION_UNCLAIMED;
+            Object.assign(transition, this.annotationForTransition(source, index));
         }
         return { states, transitions };
     }
 }
+
+/**
+ * The class suffix the renderer appends to a drawn element.
+ *
+ * ⭐ A function rather than an inline `d.annotationClass` in each of the
+ * renderer's class builders, because there are several of them and the
+ * first version of this feature was closed by a gate that grepped one of
+ * them for the field name — while nothing anywhere WROTE it. One
+ * function is what a probe can call, and what a probe can call is what
+ * stops a dead read from reading as a live feature.
+ *
+ * Empty string, not `undefined`: the caller concatenates it.
+ */
+function annotationClassFor(d) {
+    return d && d.annotationClass ? ` ${d.annotationClass}` : '';
+}
+
+/**
+ * The `data-sce-req` attribute value, or `null` to omit the attribute.
+ *
+ * Null rather than an empty string, so an element claiming nothing
+ * carries no attribute at all — an empty attribute on everything would
+ * make the mark say nothing.
+ */
+function requirementIdsFor(d) {
+    return d && d.requirements && d.requirements.length ? d.requirements.join(' ') : null;
+}
+
+/** The class the page sets while the annotation family is on display. */
+const SCE_ANNOTATIONS_ON = 'sce-annotations-on';
 
 /**
  * Ask the codegen WASM for the overlay.
@@ -155,11 +206,40 @@ async function loadAnnotationOverlay(wasmModule, scxmlContent, scxmlName) {
     return new AnnotationOverlay(JSON.parse(json));
 }
 
+/**
+ * Initialise the codegen WASM and build the overlay from it.
+ *
+ * ⚠ Returns `null` rather than throwing when the module cannot be
+ * reached — a visualizer deployed without the codegen WASM must still
+ * draw the diagram. The builders treat a null overlay as "no annotation
+ * data", which leaves every element unmarked, and that is the honest
+ * rendering: an UNMARKED diagram says nothing about claims, where a
+ * diagram marking everything unclaimed would assert that nothing is
+ * claimed. Those are different statements and only one of them is true.
+ */
+async function annotationOverlayFromWasm(scxmlContent, scxmlName, wasmBase) {
+    const base = wasmBase || 'wasm/';
+    try {
+        const wasm = await import(`./${base}sce_build.js`);
+        await wasm.default(`./${base}sce_build_bg.wasm`);
+        return await loadAnnotationOverlay(wasm, scxmlContent, scxmlName);
+    } catch (error) {
+        if (typeof logger !== 'undefined' && logger.warn) {
+            logger.warn(`annotation overlay unavailable, diagram drawn unmarked: ${error}`);
+        }
+        return null;
+    }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         AnnotationOverlay,
         loadAnnotationOverlay,
+        annotationOverlayFromWasm,
+        annotationClassFor,
+        requirementIdsFor,
         SCE_ANNOTATION_CLAIMED,
         SCE_ANNOTATION_UNCLAIMED,
+        SCE_ANNOTATIONS_ON,
     };
 }

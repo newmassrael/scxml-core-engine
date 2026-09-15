@@ -10,6 +10,20 @@ class NodeBuilder {
         this.visualizer = visualizer;
     }
 
+    /**
+     * What a state carries from the annotation overlay — NL-IR closure
+     * ledger row G2.
+     *
+     * A LOOKUP into what the acceptance report derived, never a decision
+     * made here. When no overlay is loaded the fields are absent rather
+     * than defaulted, so an unannotated diagram is not silently drawn as
+     * one where nothing is claimed.
+     */
+    annotationFor(stateId) {
+        const overlay = this.visualizer.annotationOverlay;
+        return overlay ? overlay.annotationForState(stateId) : {};
+    }
+
     buildNodes() {
         const nodes = [];
 
@@ -26,6 +40,9 @@ class NodeBuilder {
 
         this.visualizer.states.forEach(state => {
             const node = {
+                // Row G2: what this element claims, and whether anything
+                // does. First, so a later field cannot quietly shadow it.
+                ...this.annotationFor(state.id),
                 id: state.id,
                 type: state.type,
                 label: state.id,

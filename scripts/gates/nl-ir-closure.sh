@@ -263,6 +263,136 @@ if (states[0].annotationClass !== 'sce-unclaimed') {
 PROBE
 }
 
+# Run the visualizer's OWN node and link builders over a structure that
+# carries an overlay, and ask what the renderer would be handed.
+#
+# `vm` rather than `require`, because these files are browser scripts that
+# declare globals instead of exporting: loading them any other way would
+# mean keeping a second copy here, and a copy is what stops being the
+# thing under test. The two globals they reach for are stubbed, and only
+# those two — a stub standing in for the builder itself would make this
+# probe agree with anything.
+g2_render_probe() {
+    cat <<'PROBE'
+const fs = require('fs');
+const vm = require('vm');
+const path = require('path');
+const overlayPath = process.argv[2];
+const root = process.argv[3];
+
+function fail(why) { console.error(why); process.exit(1); }
+
+const { AnnotationOverlay } = require(path.join(root, 'web/visualizer/annotation-overlay.js'));
+const overlay = new AnnotationOverlay(JSON.parse(fs.readFileSync(overlayPath, 'utf8')));
+
+const sandbox = {
+    console,
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
+    SCXMLVisualizer: {
+        isCompoundOrParallel: () => false,
+        findCollapsedAncestor: () => null,
+    },
+};
+vm.createContext(sandbox);
+for (const file of ['visualizer/node-builder.js', 'visualizer/link-builder.js']) {
+    vm.runInContext(fs.readFileSync(path.join(root, 'web/visualizer', file), 'utf8'), sandbox, {
+        filename: file,
+    });
+}
+
+// The structure the page hands the visualizer, for the probe document.
+const states = [
+    { id: 'idle', type: 'atomic', children: [] },
+    { id: 'done', type: 'atomic', children: [] },
+];
+const transitions = [
+    { id: 't0', source: 'idle', target: 'done', event: 'tick' },
+];
+
+const visualizer = {
+    states,
+    transitions,
+    initialState: '',
+    nodes: [],
+    debugMode: false,
+    annotationOverlay: overlay,
+};
+
+// Read back through the context: a top-level `class` is a lexical
+// binding in the context's global scope, not a property of the sandbox
+// object, so `sandbox.NodeBuilder` would be undefined and the probe
+// would fail for a reason that has nothing to do with the tree.
+const NodeBuilder = vm.runInContext('NodeBuilder', sandbox);
+const LinkBuilder = vm.runInContext('LinkBuilder', sandbox);
+
+const nodes = new NodeBuilder(visualizer).buildNodes();
+const links = new LinkBuilder(visualizer).buildLinks();
+
+const done = nodes.find((n) => n.id === 'done');
+if (!done) { fail('the node builder produced no node for a state in the structure'); }
+if (done.annotationClass !== 'sce-unclaimed') {
+    fail(`a state nothing claims reached the renderer as ${JSON.stringify(done.annotationClass)}; `
+        + 'the diagram cannot distinguish an unclaimed element');
+}
+
+const edge = links.find((l) => l.linkType === 'transition');
+if (!edge) { fail('the link builder produced no transition link'); }
+if (edge.annotationClass !== 'sce-claimed') {
+    fail(`the transition claiming REQ-A reached the renderer as ${JSON.stringify(edge.annotationClass)}`);
+}
+if (!(edge.requirements || []).includes('REQ-A')) {
+    fail(`the claimed ids did not reach the renderer: ${JSON.stringify(edge.requirements)}`);
+}
+
+// The renderer turns those fields into what the browser paints. Asked
+// through the same function the renderer calls, so a class the renderer
+// assembles differently is caught here rather than assumed.
+const { annotationClassFor, requirementIdsFor } = require(
+    path.join(root, 'web/visualizer/annotation-overlay.js')
+);
+if (!annotationClassFor(edge).includes('sce-claimed')) {
+    fail('the renderer class function drops the claimed mark');
+}
+if (!annotationClassFor(done).includes('sce-unclaimed')) {
+    fail('the renderer class function drops the unclaimed mark');
+}
+if (requirementIdsFor(edge) !== 'REQ-A') {
+    fail(`the renderer id attribute is ${JSON.stringify(requirementIdsFor(edge))}`);
+}
+// Control: an element with no annotation at all must get no attribute,
+// or every element would carry one and the mark would say nothing.
+if (requirementIdsFor({}) !== null) {
+    fail('an unannotated element was given a requirement attribute');
+}
+
+// The marks must be VISIBLE, and the stylesheet is where that is decided.
+// Checked against the module's own constants rather than against literals
+// typed here, so a rename on either side is caught instead of silently
+// leaving the diagram unstyled — which is exactly how this feature first
+// shipped: every rule sat behind a scope class nothing ever added.
+const {
+    SCE_ANNOTATION_CLAIMED,
+    SCE_ANNOTATION_UNCLAIMED,
+    SCE_ANNOTATIONS_ON,
+} = require(path.join(root, 'web/visualizer/annotation-overlay.js'));
+const css = fs.readFileSync(path.join(root, 'web/visualizer/visualizer.css'), 'utf8');
+// Per SELECTOR, not per file. "The class appears somewhere" is satisfied
+// by any one unrelated rule — measured: renaming the scope on the
+// unclaimed rules left twelve other mentions and a substring check still
+// passed. What has to be true is that each MARK is styled UNDER the
+// scope the page adds, so both names must meet in one selector.
+const selectors = css.split('}').map((block) => block.split('{')[0]);
+for (const mark of [SCE_ANNOTATION_CLAIMED, SCE_ANNOTATION_UNCLAIMED]) {
+    const scoped = selectors.some(
+        (sel) => sel.includes(`.${SCE_ANNOTATIONS_ON}`) && sel.includes(`.${mark}`)
+    );
+    if (!scoped) {
+        fail(`no selector styles .${mark} under .${SCE_ANNOTATIONS_ON}, so the mark is invisible`);
+    }
+}
+PROBE
+}
+
 row_G2() {
     local bin dir overlay_json
     bin="$(sce_gate_codegen)" || sce_gate_cannot_run \
@@ -292,11 +422,20 @@ row_G2() {
         | node - "$overlay_json" "$PWD/web/visualizer/annotation-overlay.js" >/dev/null 2>&1 \
         || return 1
 
-    # And the diagram must actually carry it: the renderer stamps the
-    # class and the ids onto the drawn element. Asked of the renderer
-    # rather than of any file, so a module nothing renders from is open.
-    sce_grep -q 'annotationClass' web/visualizer/visualizer/renderer.js 2>/dev/null || return 1
-    sce_grep -q 'data-sce-req' web/visualizer/visualizer/renderer.js 2>/dev/null || return 1
+    # And the DIAGRAM must carry it. This is the half a grep cannot do,
+    # and the half that was wrong: the first version of this row grepped
+    # `renderer.js` for `annotationClass` — which passed while the field
+    # was read by the renderer and written by nobody, so the module was
+    # dead code and the row read closed. A name check in a predicate
+    # whose own header says ASKED, NOT NAMED.
+    #
+    # So the real builders are RUN, under node, over a structure carrying
+    # an overlay, and the objects they hand the renderer are asked what
+    # they carry. A builder that drops the annotation fails here; so does
+    # a builder that invents one.
+    g2_render_probe \
+        | node - "$overlay_json" "$PWD" >/dev/null 2>&1 \
+        || return 1
 }
 
 # G3 — a review artefact with the requirement column for a non-statechart kind.
