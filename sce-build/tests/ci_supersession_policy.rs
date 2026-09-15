@@ -506,6 +506,41 @@ fn group_is_per_commit(workflow: &str) -> bool {
     top_level_concurrency_group(workflow).is_some_and(|g| g.contains("github.sha"))
 }
 
+/// Whether this lane SELECTS its work from the change set — the property that
+/// decides whether a later green subsumes a cancelled run, or replaces nothing.
+///
+/// Read off the mechanism rather than from a list, for the reason above: a
+/// named exemption escapes by being named. A lane that resolves a BASE COMMIT
+/// is answering about a COMMIT; one that checks out a sha and runs a fixed
+/// suite is answering about a BRANCH, and the newest run of it says everything
+/// the cancelled ones would have.
+///
+/// ⚠ **The base is what to look for, not the diff.** Written first as a sweep
+/// for `changed-files` / `--changed-from` / `git diff`, this found
+/// `mutation-rounds.yml` only through a line of its PROSE — the workflow does
+/// not diff anything. It passes `github.event.before` to `scripts/gate`, and
+/// the diff happens inside the gate script. So a needle list aimed at the diff
+/// reads the wrong file: the half that lives in the workflow is the base, and
+/// that is the half this can see. (The first spelling's own control caught
+/// this, which is the whole reason the control is here.)
+fn selects_by_change_set(workflow: &str) -> bool {
+    const NEEDLES: &[&str] = &[
+        // the base a lane hands to whatever selects for it
+        "event.before",
+        "base_sha",
+        "base_ref",
+        // or a lane that resolves the change set itself
+        "changed-files",
+        "tj-actions",
+        "--changed-from",
+        "CHANGED_FILES",
+    ];
+    workflow
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .any(|l| NEEDLES.iter().any(|n| l.contains(n)))
+}
+
 fn read_workflow(name: &str) -> String {
     let path = workflow_dir().join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
@@ -679,6 +714,27 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
              with it."
         );
 
+        // ⚠ The one lane shape the flip above would genuinely damage. A lane
+        // that selects from the change set is answering about a COMMIT, so no
+        // later run re-takes what a cancelled one would have judged — for it,
+        // cancelling destroys a verdict instead of moving it. Under a shared
+        // group that is exactly what `cancel-in-progress: true` now does.
+        //
+        // Measured 2026-09-15: `mutation-rounds.yml` is the only lane selecting
+        // this way and it already keys per commit, so the two readings agree
+        // today. This keeps them agreeing — the sweep is what makes the policy
+        // header's claim a property of the tree rather than a quotation from
+        // one workflow's own prose, which is all it rested on when written.
+        assert!(
+            !selects_by_change_set(&workflow) || group_is_per_commit(&workflow),
+            "{file} selects its work from the change set, so its answer is \
+             about a COMMIT and nothing re-selects it later -- but its \
+             concurrency group is shared across commits, where a later push \
+             cancels it. That destroys a verdict rather than superseding one. \
+             Key the group on `github.sha` (as `mutation-rounds.yml` does), or \
+             stop selecting by change set."
+        );
+
         if must_not_supersede(median) {
             long += 1;
             if group_is_per_commit(&workflow) {
@@ -721,6 +777,23 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
         "a long lane was counted in neither arm -- the group reader stopped \
          answering for {} of {long} lane(s)",
         long - long_by_key - long_by_false
+    );
+
+    // ⚠ The control for the change-set assertion above. A reader that answered
+    // "no" for every file would satisfy it everywhere and assert nothing, which
+    // is the vacuous green this module distrusts elsewhere. One lane in this
+    // repository does select that way, so the sweep has to find it.
+    let change_set_lanes: Vec<&str> = LANES
+        .iter()
+        .map(|(f, ..)| *f)
+        .filter(|f| selects_by_change_set(&read_workflow(f)))
+        .collect();
+    assert!(
+        !change_set_lanes.is_empty(),
+        "no lane reads as selecting by change set, so the assertion that \
+         protects those lanes was never evaluated. `mutation-rounds.yml` did \
+         when this was written -- either it stopped, or the needles in \
+         `selects_by_change_set` no longer match how selection is spelled."
     );
 }
 
