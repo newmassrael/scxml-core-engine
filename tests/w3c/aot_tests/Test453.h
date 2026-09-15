@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2/3.12.1: ECMAScript function expression evaluation
+ * @brief ECMAScript function expression evaluation
  *
  * Tests that any ECMAScript expression can be used as a value expression,
  * specifically validating function expressions assigned to datamodel variables

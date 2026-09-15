@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2.1: _sessionid system variable immutability
+ * @brief _sessionid system variable immutability
  *
  * Tests that the _sessionid system variable cannot be modified after initialization.
  * The test attempts to assign a new value to _sessionid and verifies that the original

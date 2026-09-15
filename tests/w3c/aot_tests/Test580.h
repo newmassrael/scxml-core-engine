@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.11: History state never in configuration (parallel states)
+ * @brief History state never in configuration (parallel states)
  *
  * Tests that history pseudo-states never appear as part of the active configuration.
  * Uses In() predicate within parallel state to verify history state is not active.

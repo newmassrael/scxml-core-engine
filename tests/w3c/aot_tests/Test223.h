@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: invoke idlocation attribute
+ * @brief invoke idlocation attribute
  *
  * If the 'idlocation' attribute is present, the SCXML Processor MUST generate
  * an id automatically when the invoke element is evaluated and store it in the

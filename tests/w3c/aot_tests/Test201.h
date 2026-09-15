@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor support
+ * @brief BasicHTTP Event I/O Processor support
  *
  * Tests that the processor supports the BasicHTTP event I/O processor (optional feature).
  * Platforms are not required to support BasicHTTP event I/O, this is a compliance check.

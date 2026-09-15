@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3: sendidexpr for dynamic cancel expression evaluation
+ * @brief sendidexpr for dynamic cancel expression evaluation
  *
  * This test verifies that sendidexpr attribute works correctly with cancel tag.
  * The test sends a delayed event1 with id="foo", then updates variable Var1 to "foo",

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: System variable _ioprocessors binding at startup
+ * @brief System variable _ioprocessors binding at startup
  *
  * Tests that the _ioprocessors system variable is bound and accessible at
  * initialization time. The test validates that _ioprocessors can be assigned

@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: Unsupported send type raises error.execution
+ * @brief Unsupported send type raises error.execution
  *
  * Tests that using an unsupported event I/O processor type in <send> element
  * raises error.execution event and places it on internal event queue.

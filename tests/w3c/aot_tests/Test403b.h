@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Optimal enabled transition set (parallel regions)
+ * @brief Optimal enabled transition set (parallel regions)
  *
  * Tests optimal transition set selection in parallel states where multiple
  * transitions can execute concurrently in different regions.

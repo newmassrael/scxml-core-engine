@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: In() predicate in parallel states
+ * @brief In() predicate in parallel states
  *
  * Tests that the In() predicate correctly checks state activation
  * within parallel state configurations.

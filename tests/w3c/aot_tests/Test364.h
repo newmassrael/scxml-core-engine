@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.6/3.4: Default initial states and parallel configurations
+ * @brief Default initial states and parallel configurations
  *
  * Tests that default initial states are entered when a compound state is entered:
  * 1. Initial attribute: Tests initial="s11p112 s11p122" (parallel state multi-target)

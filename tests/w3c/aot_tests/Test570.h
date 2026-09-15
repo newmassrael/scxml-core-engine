@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.12.1: Parallel state completion with done.state.id events
+ * @brief Parallel state completion with done.state.id events
  *
  * Verifies that when all children of a parallel state reach final states, the processor
  * generates a done.state.id event where id is the id of the parallel state. Tests proper

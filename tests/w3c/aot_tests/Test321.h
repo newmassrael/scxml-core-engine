@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: _sessionid system variable binding on startup
+ * @brief _sessionid system variable binding on startup
  *
  * Tests that the _sessionid system variable is properly bound when the state machine
  * is created and can be accessed in data model initialization expressions.

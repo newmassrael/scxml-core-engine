@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Optimal enabled transition set with preemption
+ * @brief Optimal enabled transition set with preemption
  *
  * Tests optimal transition set selection with transition preemption in
  * parallel states.

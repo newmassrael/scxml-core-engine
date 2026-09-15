@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 4.6: Foreach element shallow copy semantics (minimal test)
+ * @brief Foreach element shallow copy semantics (minimal test)
  *
  * Tests that <foreach> creates a shallow copy of the array for iteration.
  * The test initializes Var1=[1,2,3], then in each foreach iteration:

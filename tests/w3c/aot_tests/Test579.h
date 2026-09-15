@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.8: History default content execution order
+ * @brief History default content execution order
  *
  * Tests that default history content is executed only when no stored history exists.
  * Verifies the interaction between initial transitions, history pseudo-states, and

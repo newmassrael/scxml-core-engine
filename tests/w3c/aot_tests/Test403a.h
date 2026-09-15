@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Optimal enabled transition set selection (basic case)
+ * @brief Optimal enabled transition set selection (basic case)
  *
  * Tests that the SCXML Processor executes transitions in the optimal enabled
  * transition set, where the optimal set is the largest set of non-conflicting

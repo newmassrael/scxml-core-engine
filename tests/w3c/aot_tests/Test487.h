@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.3/5.4: Illegal assignment error.execution event
+ * @brief Illegal assignment error.execution event
  *
  * Tests that attempting to access a property on undefined raises error.execution event.
  * The test initializes with an assignment expression that tries to access

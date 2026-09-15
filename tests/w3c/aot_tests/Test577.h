@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: error.communication on BasicHTTP send with no target
+ * @brief error.communication on BasicHTTP send with no target
  *
  * Tests that a <send> with type="BasicHTTP" but no target attribute raises
  * error.communication event and adds it to the internal event queue.

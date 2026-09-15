@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4 & B.1: Invoke with invalid namelist error handling
+ * @brief Invoke with invalid namelist error handling
  *
  * Verifies that invoke element with invalid namelist parameter causes invocation
  * cancellation (error.execution event), preventing done.invoke event before timer expires.

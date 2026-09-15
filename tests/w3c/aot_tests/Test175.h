@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: Send delayexpr uses current datamodel value
+ * @brief Send delayexpr uses current datamodel value
  *
  * Tests delayed send with expression-based delay calculation.
  * Requires event scheduler polling.

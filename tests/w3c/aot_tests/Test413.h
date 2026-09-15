@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Parallel initial states with space-separated state IDs
+ * @brief Parallel initial states with space-separated state IDs
  *
  * Tests that at startup, the SCXML Processor places the state machine in the
  * configuration specified by the 'initial' attribute of the scxml element,

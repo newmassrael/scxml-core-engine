@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2: ECMAScript XML DOM assignment with inline and file content
+ * @brief ECMAScript XML DOM assignment with inline and file content
  *
  * Verifies that ECMAScript datamodel correctly assigns XML content (both inline
  * and file-loaded) as DOM structures, and that DOM API methods work correctly

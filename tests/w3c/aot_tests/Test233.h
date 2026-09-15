@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.5: finalize element execution before done.invoke event processing
+ * @brief finalize element execution before done.invoke event processing
  *
  * Tests that finalize markup runs before the done.invoke event is processed.
  * The invoked child process returns 2 in _event.data.aParam, and the finalize

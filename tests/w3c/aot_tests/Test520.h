@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: BasicHTTP content element as message body
+ * @brief BasicHTTP content element as message body
  *
  * Test that <content> gets sent as the body of the HTTP message when no event attribute is specified.
  * W3C SCXML C.2 specifies that for HTTP event processors, the event name is optional when content is provided.

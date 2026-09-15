@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: Non-invoked events have blank invokeid field
+ * @brief Non-invoked events have blank invokeid field
  *
  * Tests that events raised via <raise> have no invokeid value,
  * distinguishing them from events sent from invoked child processes.

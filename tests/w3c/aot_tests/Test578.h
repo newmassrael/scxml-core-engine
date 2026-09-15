@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9/5.10: ECMAScript _event.data JSON object creation
+ * @brief ECMAScript _event.data JSON object creation
  *
  * Tests that the processor creates an ECMAScript object _event.data when receiving
  * an event with JSON content. Verifies proper parsing of JSON content into _event

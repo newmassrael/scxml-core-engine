@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: _event.origin field must be blank for internal events
+ * @brief _event.origin field must be blank for internal events
  *
  * Validates that when an event is raised internally using <raise>, the _event.origin
  * field is left blank (empty/undefined) as required by the specification. The origin

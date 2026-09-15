@@ -11,7 +11,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: param preserves duplicate keys with multiple values
+ * @brief param preserves duplicate keys with multiple values
  */
 struct Test178 : public AotTestBase {
     static constexpr int TEST_ID = 178;

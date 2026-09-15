@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.5.1: Event queue ordering
+ * @brief Event queue ordering
  *
  * Tests that events are processed in document order.
  */

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.3: State entry order with parallel regions
+ * @brief State entry order with parallel regions
  *
  * Tests that states are entered in proper entry order (parents before children
  * with document order used to break ties) after executable content in transitions

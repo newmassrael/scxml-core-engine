@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.2: error.execution for invalid assignment location
+ * @brief error.execution for invalid assignment location
  *
  * Tests that assignment to a non-existent (empty) location yields an
  * error.execution event. The test uses <assign location="" expr="1"/>

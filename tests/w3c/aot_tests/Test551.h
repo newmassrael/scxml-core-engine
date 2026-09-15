@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.2.2: Early binding with inline content
+ * @brief Early binding with inline content
  *
  * Verifies that inline content can be used to assign a value to a variable
  * in early binding mode. The <data> element in state s1 contains an array

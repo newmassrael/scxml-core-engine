@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.12.1: Active State Configuration - State Removal During Exit
+ * @brief Active State Configuration - State Removal During Exit
  *
  * Tests that states are correctly removed from the active states list as they are exited.
  * When s01's onexit handler executes during transition, its child state s011 should no longer

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.2.2: External file loading via src attribute
+ * @brief External file loading via src attribute
  *
  * Tests that <data> elements with src attribute correctly load external file content
  * at build time for static code generation. Validates ECMAScript Array type checking

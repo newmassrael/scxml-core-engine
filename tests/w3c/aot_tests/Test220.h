@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: invoke type attribute support
+ * @brief invoke type attribute support
  *
  * Platforms MUST support http://www.w3.org/TR/scxml/, as a value for the
  * 'type' attribute.

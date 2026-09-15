@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: If 'idlocation' is present, the SCXML Processor MUST generate an id when the parent send
+ * @brief If 'idlocation' is present, the SCXML Processor MUST generate an id when the parent send
  * element is evaluated and store it in this location
  */
 struct Test183 : public SimpleAotTest<Test183, 183> {

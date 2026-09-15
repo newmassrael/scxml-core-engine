@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: invoke with inline content and param passing
+ * @brief invoke with inline content and param passing
  *
  * Tests that datamodel values can be specified by param when invoking inline content.
  * Child state machine receives param and sends success/failure events to parent.

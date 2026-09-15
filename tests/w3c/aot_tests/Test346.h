@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.9.1: System variable protection validation
+ * @brief System variable protection validation
  *
  * Tests that attempts to modify read-only system variables (_sessionid, _event,
  * _ioprocessors, _name) raise error.execution events as required by W3C SCXML spec.

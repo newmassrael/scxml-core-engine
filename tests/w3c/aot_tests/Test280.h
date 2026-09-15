@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.3: Late binding variable initialization
+ * @brief Late binding variable initialization
  *
  * Tests that variables with late binding are assigned values only when the state
  * containing them is entered, not at state machine initialization time.

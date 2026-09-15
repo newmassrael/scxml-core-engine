@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2.4/6.2.5: error.communication on invalid send target
+ * @brief error.communication on invalid send target
  *
  * Tests that the processor raises error.communication when it cannot dispatch an event.
  * Uses targetexpr="undefined" to create an invalid target, verifying proper error handling.

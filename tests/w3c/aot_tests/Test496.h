@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.1: error.communication for unreachable target
+ * @brief error.communication for unreachable target
  *
  * Tests unreachable target detection using SendHelper::isUnreachableTarget()
  * (Single Source of Truth shared between Interpreter and AOT engines).

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: SCXML Event I/O processor parent-child communication
+ * @brief SCXML Event I/O processor parent-child communication
  *
  * Tests bidirectional communication between parent and child SCXML processes using
  * the SCXML Event I/O processor (http://www.w3.org/TR/scxml/#SCXMLEventProcessor).

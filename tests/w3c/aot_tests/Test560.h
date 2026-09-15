@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10: _event.data structure with params in ECMAScript datamodel
+ * @brief _event.data structure with params in ECMAScript datamodel
  *
  * Verifies that when an event is received with key-value pairs (params) in the
  * ECMAScript datamodel, the processor creates the correct structure in _event.data

@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: invoke typeexpr attribute evaluation
+ * @brief invoke typeexpr attribute evaluation
  *
  * If the typeexpr attribute is present, the SCXML Processor MUST evaluate it
  * when the parent invoke element is evaluated and treat the result as if it

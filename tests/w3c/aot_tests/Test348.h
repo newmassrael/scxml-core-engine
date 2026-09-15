@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: Send event parameter sets event name
+ * @brief Send event parameter sets event name
  *
  * Tests that the event parameter in <send> correctly sets the name of the event
  * being sent. The event name specified in the event attribute should be used

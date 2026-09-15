@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: Static invoke with param passing
+ * @brief Static invoke with param passing
  *
  * Test that values passed in from parent process override default values
  * specified in the child. The child returns event1 if Var1 has value 1,

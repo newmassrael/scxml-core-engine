@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.3: error.execution for invalid assignment location
+ * @brief error.execution for invalid assignment location
  *
  * Tests that assignment to a non-declared variable (empty location)
  * causes error.execution to be raised. The test has two paths:

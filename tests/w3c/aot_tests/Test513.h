@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor Success Response
+ * @brief BasicHTTP Event I/O Processor Success Response
  *
  * Tests that SCXML Processor's BasicHTTP Event I/O Processor responds with
  * HTTP 200 OK when receiving well-formed events.

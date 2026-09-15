@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: eventexpr dynamic event name evaluation
+ * @brief eventexpr dynamic event name evaluation
  *
  * Tests that <send eventexpr="Var1"/> evaluates the expression at send time
  * and dispatches an event with the resulting name. The test verifies that

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: invoke with src attribute and inline content
+ * @brief invoke with src attribute and inline content
  *
  * Tests that SCXML invocation works with both external file loading (src attribute)
  * and inline content definition (<content><scxml>...</scxml></content>).

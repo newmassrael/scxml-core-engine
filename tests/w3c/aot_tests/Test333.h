@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: _event.sendid field must be blank for non-error events
+ * @brief _event.sendid field must be blank for non-error events
  *
  * Validates that when a <send> element does NOT specify an id attribute and is NOT an error event,
  * the _event.sendid field is left blank (empty/undefined) as required by the specification.

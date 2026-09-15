@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.2.2: Late Binding Variable Access Error Handling
+ * @brief Late Binding Variable Access Error Handling
  *
  * Tests late binding (binding="late") behavior when accessing undeclared variables.
  * In state s0, accesses Var1 which is not yet declared (declared later in s1).

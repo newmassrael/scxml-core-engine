@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.4: Valid assignment to valid location
+ * @brief Valid assignment to valid location
  *
  * Tests that if the location expression denotes a valid location in the datamodel
  * and the value specified by 'expr' is a legal value for that location,

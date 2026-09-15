@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: External queue priority via targetexpr with sessionid
+ * @brief External queue priority via targetexpr with sessionid
  *
  * Tests that events sent with targetexpr evaluating to #_scxml_sessionid are placed
  * on the external event queue, which has lower priority than the internal event queue.

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.8: SCXML Event I/O Processor location field verification
+ * @brief SCXML Event I/O Processor location field verification
  *
  * Verifies that the location field is accessible in the _ioprocessors system variable
  * for the SCXML Event I/O processor in ECMAScript datamodel. The test checks that

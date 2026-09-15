@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2: targetexpr evaluates current datamodel value at send execution time
+ * @brief targetexpr evaluates current datamodel value at send execution time
  */
 struct Test173 : public SimpleAotTest<Test173, 173> {
     using SM = SCE::Generated::test173::test173;

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.5: Donedata content with integer literal
+ * @brief Donedata content with integer literal
  *
  * Tests that integer literals in <donedata><content> are correctly passed
  * as _event.data to the completion event (done.state.{parentId}).

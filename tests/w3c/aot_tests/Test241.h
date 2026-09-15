@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4.3: invoke with namelist + param consistency validation
+ * @brief invoke with namelist + param consistency validation
  *
  * Tests that namelist and param behave consistently when passing datamodel values to child.
  * Invoked child will return success if its Var1 is set to 1, failure otherwise.

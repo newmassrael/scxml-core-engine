@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: _event.sendid field binding in error events
+ * @brief _event.sendid field binding in error events
  *
  * Validates that when a <send> element with an invalid target triggers an error.execution event,
  * the _event.sendid field is correctly populated with the send ID.

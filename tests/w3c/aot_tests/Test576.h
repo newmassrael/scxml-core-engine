@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Parallel initial state with space-separated state IDs
+ * @brief Parallel initial state with space-separated state IDs
  *
  * Tests that the 'initial' attribute of scxml with space-separated state IDs
  * (e.g., initial="s11p112 s11p122") correctly enters multiple deeply nested

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: Internal Event Priority Over External Events
+ * @brief Internal Event Priority Over External Events
  *
  * Tests that internal events (raised via <raise>) have priority over external
  * events (sent via <send>) in the event processing queue. The state machine

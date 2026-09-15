@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.8: Independent onentry handler execution
+ * @brief Independent onentry handler execution
  *
  * Tests that each <onentry> handler is a separate block that executes independently.
  * Even if one onentry handler throws an error (invalid send target), subsequent

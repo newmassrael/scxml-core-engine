@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: done.invoke.id event with correct invoke ID
+ * @brief done.invoke.id event with correct invoke ID
  *
  * Tests that when an invoked child terminates, the done.invoke event
  * contains the correct ID matching the invoke element's id attribute.

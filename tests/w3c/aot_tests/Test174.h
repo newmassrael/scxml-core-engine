@@ -10,7 +10,7 @@ namespace SCE::W3C::AotTests {
 
 // clang-format off
 /**
- * @brief W3C SCXML 6.2: If 'typexpr' is present, the SCXML Processor MUST evaluate it when the parent send element is evaluated and treat the result as if it had been entered as the value of 'type'.
+ * @brief If 'typexpr' is present, the SCXML Processor MUST evaluate it when the parent send element is evaluated and treat the result as if it had been entered as the value of 'type'.
  */
 // clang-format on
 

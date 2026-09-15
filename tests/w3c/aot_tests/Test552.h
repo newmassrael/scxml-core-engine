@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.2.2: External data loading via src attribute
+ * @brief External data loading via src attribute
  *
  * Verifies that <data src="file:..."> can load content from external files
  * and assign to datamodel variables. The <data> element uses src attribute

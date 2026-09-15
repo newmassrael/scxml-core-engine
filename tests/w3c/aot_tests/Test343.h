@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: error.execution event with empty event.data for invalid param
+ * @brief error.execution event with empty event.data for invalid param
  *
  * Tests that an illegal <param> element (with invalid location attribute)
  * in <donedata> produces an error.execution event with empty event.data.

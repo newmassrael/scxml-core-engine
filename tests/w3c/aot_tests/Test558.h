@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2: ECMAScript whitespace normalization for non-XML content
+ * @brief ECMAScript whitespace normalization for non-XML content
  *
  * Verifies that in the ECMAScript datamodel, when <data> child content is not XML,
  * or when XML is loaded via src=, the processor treats the value as a string and

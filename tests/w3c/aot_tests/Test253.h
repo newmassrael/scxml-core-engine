@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.1: SCXML Event I/O Processor bidirectional communication
+ * @brief SCXML Event I/O Processor bidirectional communication
  *
  * This test verifies that the SCXML Event I/O Processor works in both directions
  * for parent-child state machine communication via inline <content> invoke.

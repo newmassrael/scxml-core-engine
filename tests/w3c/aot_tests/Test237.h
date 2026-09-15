@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: invoke cancellation on state exit
+ * @brief invoke cancellation on state exit
  *
  * Tests that when a parent state exits while an invoked child is running,
  * the invocation is cancelled and no done.invoke event is received.

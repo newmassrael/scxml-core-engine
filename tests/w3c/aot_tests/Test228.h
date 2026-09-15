@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3.1: _event.invokeid contains invoke ID in done.invoke event
+ * @brief _event.invokeid contains invoke ID in done.invoke event
  *
  * Tests that when an invoked child completes, the done.invoke event's
  * _event.invokeid field contains the correct invoke ID for parent access.

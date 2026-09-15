@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.7.2: Donedata with param and content
+ * @brief Donedata with param and content
  *
  * Tests that:
  * - <param> inside <donedata> ends up in the data field of the done event (_event.data.Var1)

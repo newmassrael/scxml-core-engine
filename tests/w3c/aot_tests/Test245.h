@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.3.2: Invoke namelist with non-existent variable handling
+ * @brief Invoke namelist with non-existent variable handling
  *
  * Tests that namelist does not set variables that don't exist in the invoked child's datamodel.
  * Parent state machine has Var2=3, invoked child state machine does NOT have Var2 in datamodel.

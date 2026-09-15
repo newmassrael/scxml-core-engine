@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: invoke src + inline content consistency validation
+ * @brief invoke src + inline content consistency validation
  *
  * Tests that markup specified by 'src' and by '<content>' is treated identically.
  * Either we get done.invoke in both cases or in neither case (timeout).

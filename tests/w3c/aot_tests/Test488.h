@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.7: Error handling in <param> expressions
+ * @brief Error handling in <param> expressions
  *
  * Tests that illegal expressions in <param> produce error.execution event
  * and result in empty event.data. The test validates:

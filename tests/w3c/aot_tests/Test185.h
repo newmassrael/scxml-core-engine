@@ -9,7 +9,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief Basic delayed send (W3C SCXML 6.2 AOT)
+ * @brief Basic delayed send (AOT)
  *
  * Requires event scheduler polling for delayed send processing.
  */

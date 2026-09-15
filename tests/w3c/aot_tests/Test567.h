@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML C.2: BasicHTTP param encoding in _event.data
+ * @brief BasicHTTP param encoding in _event.data
  *
  * Verifies that when sending an event with <param> elements via BasicHTTP Event I/O Processor,
  * the processor correctly encodes parameters in the HTTP POST body and populates _event.data

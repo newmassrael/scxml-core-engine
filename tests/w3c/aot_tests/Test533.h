@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.13: Internal transition exit set for non-compound states
+ * @brief Internal transition exit set for non-compound states
  *
  * Tests that if a transition has 'type' of "internal", but its source state is
  * not a compound state, its exit set is defined as if it had 'type' of "external".

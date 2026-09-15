@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: _event.origin field bidirectional communication
+ * @brief _event.origin field bidirectional communication
  *
  * Validates that the _event.origin field contains a URL that enables sending responses
  * back to the event originator. Tests bidirectional event communication by:

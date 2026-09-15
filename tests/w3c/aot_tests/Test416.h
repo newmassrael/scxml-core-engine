@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.3.2: done.state.id event generation for compound states
+ * @brief done.state.id event generation for compound states
  *
  * Tests that when a compound state's final child state is entered,
  * the platform automatically generates a done.state.id event.

@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.3/5.4: Datamodel substructure assignment (object properties)
+ * @brief Datamodel substructure assignment (object properties)
  *
  * Tests that assignments can target substructures within the datamodel,
  * specifically validating assignment to object properties rather than

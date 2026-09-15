@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4.1: Autoforward - automatic event forwarding to invoked child
+ * @brief Autoforward - automatic event forwarding to invoked child
  *
  * Tests that autoforward="true" on <invoke> causes events received by parent
  * to be automatically forwarded to invoked child state machine.

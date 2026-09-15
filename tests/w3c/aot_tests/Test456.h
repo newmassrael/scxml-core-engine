@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML B.2/5.9: ECMAScript script element execution
+ * @brief ECMAScript script element execution
  *
  * Validates that the SCXML processor can execute arbitrary ECMAScript code
  * within <script> elements and update the data model accordingly.

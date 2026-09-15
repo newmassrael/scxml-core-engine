@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.5: Donedata content expr with error.execution
+ * @brief Donedata content expr with error.execution
  *
  * Tests that illegal ECMAScript expressions in <donedata><content expr>
  * trigger error.execution events and result in empty _event.data.

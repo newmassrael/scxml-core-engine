@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.3.2: Initial Transition Executable Content Execution Order
+ * @brief Initial Transition Executable Content Execution Order
  *
  * Tests that executable content in the <initial> transition executes after the parent state's
  * onentry handler and before the child state's onentry handler. This validates the proper timing

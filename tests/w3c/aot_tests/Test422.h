@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: Invoke Execution at Macrostep End
+ * @brief Invoke Execution at Macrostep End
  *
  * Tests that invoke elements in states that are entered but not exited during
  * a macrostep are executed at the end of that macrostep. The test validates

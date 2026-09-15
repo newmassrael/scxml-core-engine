@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.2.4 & 5.11: Send namelist error handling
+ * @brief Send namelist error handling
  *
  * Verifies that the processor does NOT dispatch an event when evaluation
  * of <send> namelist attribute fails (variable not found in datamodel).
