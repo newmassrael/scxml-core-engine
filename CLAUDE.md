@@ -96,7 +96,7 @@ Create `tests/w3c/aot_tests/TestXXX.h`:
 
 namespace SCE::W3C::AotTests {
 
-/// W3C SCXML X.Y.Z: Feature description
+/// Feature description
 struct TestXXX : public SimpleAotTest<TestXXX, XXX> {
     using SM = SCE::Generated::testXXX::testXXX;
 };
@@ -114,7 +114,7 @@ inline static AotTestRegistrar<TestXXX> registrar_TestXXX;
 
 namespace SCE::W3C::AotTests {
 
-/// W3C SCXML C.2: BasicHTTP feature description
+/// BasicHTTP feature description
 struct TestXXX : public HttpAotTest<TestXXX, XXX> {
     using SM = SCE::Generated::testXXX::testXXX;
 };
@@ -123,6 +123,12 @@ inline static AotTestRegistrar<TestXXX> registrar_TestXXX;
 
 }  // namespace SCE::W3C::AotTests
 ```
+
+⚠ The header's brief names no spec section. The section a fixture targets is
+`specnum` in `resources/XXX/metadata.txt`, and the build refuses a header whose
+`@brief` states one (`sce-codegen check-aot-briefs`, a dependency of
+`w3c_test_cli`). Cite the sections the test touches in the comment's body
+instead — those citations are expected there.
 
 ### Step 4: Verify
 

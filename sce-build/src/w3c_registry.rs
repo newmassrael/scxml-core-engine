@@ -63,11 +63,58 @@ pub const DEFAULT_HARNESS: &str = "simple";
 pub const SPEC_SECTION_STATEMENT: &str =
     r"\bW3C(\s+SCXML)?\s+([0-9]+(\.[0-9]+)*|[A-H](\.[0-9]+)+)\b|§scxml-";
 
-/// The spec-section statement a summary carries, if it carries one.
-fn stated_spec_section(summary: &str) -> Option<String> {
+/// The spec-section statement a curation note carries, if it carries one —
+/// a registry summary, or the brief of a fixture's AOT test header.
+fn stated_spec_section(note: &str) -> Option<String> {
     let pattern = regex::Regex::new(SPEC_SECTION_STATEMENT)
         .expect("SPEC_SECTION_STATEMENT is a valid regular expression");
-    pattern.find(summary).map(|m| m.as_str().to_string())
+    pattern.find(note).map(|m| m.as_str().to_string())
+}
+
+/// Repository-relative directory holding one C++ AOT test header,
+/// `Test<id>.h`, per registered fixture.
+pub const W3C_AOT_HEADER_RELATIVE_DIR: &str = "tests/w3c/aot_tests";
+
+/// The paragraph a C++ doc comment opens with `@brief`, joined into one line.
+///
+/// Doxygen's own boundary: the paragraph runs until a blank comment line,
+/// the next `@` command or the end of the comment. That boundary is what
+/// separates the brief — the one sentence saying what a test is — from the
+/// body below it, where a header cites the other sections a test touches,
+/// and where those citations are expected rather than refused.
+pub fn doc_brief(text: &str) -> Option<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let at = lines.iter().position(|line| line.contains("@brief"))?;
+    let (_, opening) = lines[at].split_once("@brief")?;
+    let mut paragraph = vec![opening.split("*/").next().unwrap_or_default().trim()];
+    if !lines[at].contains("*/") {
+        for line in &lines[at + 1..] {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("*/") {
+                break;
+            }
+            let Some(body) = trimmed
+                .strip_prefix('*')
+                .or_else(|| trimmed.strip_prefix("//"))
+            else {
+                break;
+            };
+            let body = body
+                .trim_start_matches(['/', '!'])
+                .split("*/")
+                .next()
+                .unwrap_or_default()
+                .trim();
+            if body.is_empty() || body.starts_with('@') {
+                break;
+            }
+            paragraph.push(body);
+            if line.contains("*/") {
+                break;
+            }
+        }
+    }
+    Some(paragraph.join(" "))
 }
 
 /// One registered upstream test.
@@ -126,6 +173,12 @@ pub enum W3cRegistryError {
         path: String,
         message: String,
     },
+    /// A registered fixture's AOT test header is missing, or its brief
+    /// states the spec section the fixture targets.
+    AotHeaders {
+        dir: String,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for W3cRegistryError {
@@ -151,6 +204,9 @@ impl std::fmt::Display for W3cRegistryError {
             }
             W3cRegistryError::Invalid { path, message } => {
                 write!(f, "W3C conformance registry {path}: {message}")
+            }
+            W3cRegistryError::AotHeaders { dir, message } => {
+                write!(f, "W3C AOT test headers under {dir}: {message}")
             }
         }
     }
@@ -258,6 +314,55 @@ impl W3cRegistry {
             .filter(|f| f.harness == harness)
             .map(|f| f.id.as_str())
             .collect()
+    }
+
+    /// Refuse every registered fixture whose AOT test header states, in its
+    /// brief, the spec section the fixture targets — or that has no header.
+    ///
+    /// The rule a summary is held to, for the same reason: that section has
+    /// one home, `specnum` in `resources/<id>/metadata.txt`. Headers
+    /// restated it by hand, and measured on 2026-09-15 the brief of 175 of
+    /// 202 headers stated a section while 82 of those contradicted
+    /// `specnum`. It went unnoticed the way the summaries' copy did, because
+    /// nothing read it as data.
+    ///
+    /// Only the brief is read ([`doc_brief`]). The body below it cites the
+    /// other sections a test touches, which is what those citations are
+    /// for, so a check refusing every mention would delete them. Every
+    /// offender is named in one error, so one run shows the whole repair.
+    pub fn check_aot_header_briefs(&self, header_dir: &Path) -> Result<(), W3cRegistryError> {
+        let mut offenders: Vec<String> = Vec::new();
+        for fixture in &self.fixtures {
+            let header = header_dir.join(format!("Test{}.h", fixture.id));
+            match std::fs::read_to_string(&header) {
+                Ok(text) => {
+                    if let Some(stated) = doc_brief(&text).as_deref().and_then(stated_spec_section)
+                    {
+                        offenders
+                            .push(format!("{}: the brief states `{stated}`", header.display()));
+                    }
+                }
+                Err(e) => offenders.push(format!(
+                    "{}: cannot be read ({e}), and every registered fixture needs one",
+                    header.display()
+                )),
+            }
+        }
+        if offenders.is_empty() {
+            return Ok(());
+        }
+        Err(W3cRegistryError::AotHeaders {
+            dir: header_dir.display().to_string(),
+            message: format!(
+                "{} header(s) refused. The section a fixture targets is `specnum` in \
+                 resources/<id>/metadata.txt, derived into \
+                 docs/spec/scxml/.atomic/verifies-catalog.json; a brief restating it is a \
+                 second answer to that question. Drop the section from the brief and cite \
+                 the sections the test touches in the body below it:\n  {}",
+                offenders.len(),
+                offenders.join("\n  ")
+            ),
+        })
     }
 }
 
@@ -529,5 +634,115 @@ mod tests {
             msgs.is_empty(),
             "the committed registry violates its own schema: {msgs:?}",
         );
+    }
+
+    /// A one-fixture registry (`158`) and a directory holding its header.
+    fn registry_with_header(header: Option<&str>) -> (tempfile::TempDir, W3cRegistry) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fixtures.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"harnesses":{"simple":"x"},"fixtures":[{"id":"158"}]}"#,
+        )
+        .expect("write registry");
+        if let Some(text) = header {
+            std::fs::write(dir.path().join("Test158.h"), text).expect("write header");
+        }
+        let registry = W3cRegistry::load(&path).expect("loads");
+        (dir, registry)
+    }
+
+    /// A brief stating a spec section is refused in every shape the
+    /// committed headers carried one: leading, closing a sentence, two
+    /// sections joined by a slash, lettered, and wrapped onto the brief's
+    /// second line.
+    #[test]
+    fn a_brief_stating_a_spec_section_is_refused() {
+        for (header, stated) in [
+            (
+                "/**\n * @brief W3C SCXML 3.12.1: executable content in document order\n */\n",
+                "W3C SCXML 3.12.1",
+            ),
+            (
+                "/**\n * @brief Basic delayed send (W3C SCXML 6.2 AOT)\n */\n",
+                "W3C SCXML 6.2",
+            ),
+            (
+                "/**\n * @brief W3C SCXML 3.6/3.4: default initial state\n */\n",
+                "W3C SCXML 3.6",
+            ),
+            (
+                "/**\n * @brief W3C SCXML C.2: BasicHTTP content element\n */\n",
+                "W3C SCXML C.2",
+            ),
+            (
+                "/**\n * @brief Send idlocation is stored where\n * W3C SCXML 6.2 names it\n */\n",
+                "W3C SCXML 6.2",
+            ),
+            (
+                "/// @brief W3C SCXML 5.10: system variables\n",
+                "W3C SCXML 5.10",
+            ),
+        ] {
+            let (dir, registry) = registry_with_header(Some(header));
+            let err = registry
+                .check_aot_header_briefs(dir.path())
+                .expect_err("a brief stating a spec section must be refused");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("Test158.h") && msg.contains(stated) && msg.contains("metadata.txt"),
+                "the diagnostic must name the header, what its brief states and the one \
+                 place the answer lives: {msg}",
+            );
+        }
+    }
+
+    /// The control for the case above: a section cited in the body below
+    /// the brief, or after a command that ends the brief, is what a header
+    /// is for and passes. Without it the refusal could fire on every
+    /// header, and the case above would pass for that reason alone.
+    #[test]
+    fn a_section_cited_below_the_brief_is_not_refused() {
+        for header in [
+            "/**\n * @brief W3C conformance test 158 on the W3C C++ harness\n *\n \
+             * W3C SCXML 3.12.1: executable content executes in document order.\n \
+             * W3C SCXML C.2 is not involved.\n */\n",
+            "/**\n * @brief Raise ordering\n * @see W3C SCXML 4.2\n */\n",
+            "/** @brief One-line brief */\n// W3C SCXML 6.2: cited outside the brief\n",
+        ] {
+            let (dir, registry) = registry_with_header(Some(header));
+            registry
+                .check_aot_header_briefs(dir.path())
+                .unwrap_or_else(|e| panic!("{header:?} states no section in its brief: {e}"));
+        }
+    }
+
+    #[test]
+    fn a_registered_fixture_without_a_header_is_refused() {
+        let (dir, registry) = registry_with_header(None);
+        let err = registry
+            .check_aot_header_briefs(dir.path())
+            .expect_err("a missing header must be refused, not skipped");
+        assert!(err.to_string().contains("Test158.h"), "{err}");
+    }
+
+    #[test]
+    fn a_comment_with_no_brief_has_no_brief() {
+        assert_eq!(
+            doc_brief("/**\n * Just a comment\n */\nstruct X {};\n"),
+            None
+        );
+    }
+
+    /// Every committed AOT test header passes the check the build runs.
+    ///
+    /// The build runs `check-aot-briefs` only where CMake configures the W3C
+    /// suite; this holds the committed tree to the same rule on every lane
+    /// that runs this crate's tests.
+    #[test]
+    fn every_committed_aot_header_brief_states_no_section() {
+        load_committed()
+            .check_aot_header_briefs(&repo_root().join(W3C_AOT_HEADER_RELATIVE_DIR))
+            .unwrap_or_else(|e| panic!("{e}"));
     }
 }

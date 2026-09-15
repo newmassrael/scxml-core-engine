@@ -1943,6 +1943,27 @@ enum Commands {
         harness: Option<String>,
     },
 
+    /// Refuse a W3C AOT test header whose brief states the spec section
+    /// its fixture targets.
+    ///
+    /// Reads every fixture the registry at `--manifest` registers and its
+    /// `Test<id>.h` under `--header-dir`. The section a fixture targets has
+    /// one home, `specnum` in `resources/<id>/metadata.txt`, and a brief
+    /// that restates it is a second answer — the rule `W3cRegistry::load`
+    /// already holds a summary to. Only the `@brief` paragraph is read: the
+    /// body below it is where a header cites the other sections a test
+    /// touches. `tests/CMakeLists.txt` runs this before `w3c_test_cli`, so
+    /// a brief stating a section fails the build. Prints how many headers
+    /// it read.
+    CheckAotBriefs {
+        /// Path to the W3C registry (`tests/w3c/conformance/fixtures.json`)
+        #[arg(short, long)]
+        manifest: String,
+        /// Directory holding one `Test<id>.h` per registered fixture
+        #[arg(long)]
+        header_dir: String,
+    },
+
     /// Verify generated-source drift per spec §synth-6.2.6.
     ///
     /// Scans `out_dir` for emitted files (.rs / .cpp / .h / .kt / .go /
@@ -2353,6 +2374,10 @@ fn main() {
             &catalog,
             harness.as_deref(),
         ),
+        Commands::CheckAotBriefs {
+            manifest,
+            header_dir,
+        } => cmd_check_aot_briefs(&manifest, &header_dir),
         Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
         Commands::Verify {
@@ -7994,6 +8019,33 @@ fn emit_fixture_names(names: &[&str], format: &str) {
             expected: "plain|cmake|space".into(),
         }),
     }
+}
+
+/// Refuse a registered fixture whose AOT test header's brief states the
+/// spec section the fixture targets. See `Commands::CheckAotBriefs`.
+///
+/// The count printed on success is the number of headers read, so a run
+/// that read none cannot pass for one that checked every fixture.
+fn cmd_check_aot_briefs(manifest_path: &str, header_dir: &str) {
+    let registry = sce_build::w3c_registry::W3cRegistry::load(Path::new(manifest_path))
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "w3c-registry",
+                detail: e.to_string(),
+            })
+        });
+    registry
+        .check_aot_header_briefs(Path::new(header_dir))
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "check-aot-briefs",
+                detail: e.to_string(),
+            })
+        });
+    outln!(
+        "{} AOT test header brief(s) read; none states a spec section",
+        registry.fixtures().len()
+    );
 }
 
 /// List the W3C statechart conformance registry.
