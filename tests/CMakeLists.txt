@@ -1733,7 +1733,7 @@ sce_add_state_machine(
 # `list-fixtures` hands the ids over as a CMake list, the same way every
 # forge conformance harness already consumes its own catalog, so there is
 # no JSON parsing in CMake and no second copy of the set to keep in step.
-# `sce-build/tests/w3c_registry_cmake_parity.rs` pins that what is
+# `sce-build/tests/w3c_registry_drives_cmake.rs` pins that what is
 # scheduled here is what the registry declares.
 set(W3C_REGISTRY "${CMAKE_SOURCE_DIR}/tests/w3c/conformance/fixtures.json")
 
