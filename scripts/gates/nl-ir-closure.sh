@@ -390,6 +390,36 @@ for (const mark of [SCE_ANNOTATION_CLAIMED, SCE_ANNOTATION_UNCLAIMED]) {
         fail(`no selector styles .${mark} under .${SCE_ANNOTATIONS_ON}, so the mark is invisible`);
     }
 }
+
+// The page's own wiring decision: put the overlay where the visualizer
+// looks, and switch the styling on ONLY when there is data to style.
+// Both polarities, because the dangerous half is the second — a diagram
+// marked with no overlay asserts "nothing is claimed", which is a
+// different statement from "claims are unknown", and a false one.
+const { applyOverlayToPage } = require(path.join(root, 'web/visualizer/annotation-overlay.js'));
+
+function fakeContainer() {
+    const added = [];
+    return { added, classList: { add: (c) => added.push(c) } };
+}
+
+const withData = fakeContainer();
+const structureWith = applyOverlayToPage({ name: 'd' }, overlay, withData);
+if (structureWith.annotationOverlay !== overlay) {
+    fail('the overlay did not reach the structure the visualizer reads');
+}
+if (!withData.added.includes(SCE_ANNOTATIONS_ON)) {
+    fail(`the styling scope ${SCE_ANNOTATIONS_ON} was not switched on, so nothing is painted`);
+}
+
+const withoutData = fakeContainer();
+const structureWithout = applyOverlayToPage({ name: 'd' }, null, withoutData);
+if (structureWithout.annotationOverlay !== null) {
+    fail('a missing overlay must leave the structure explicitly unannotated');
+}
+if (withoutData.added.length !== 0) {
+    fail('a diagram with no overlay was styled anyway, asserting that nothing is claimed');
+}
 PROBE
 }
 

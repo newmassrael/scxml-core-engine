@@ -196,6 +196,44 @@ function requirementIdsFor(d) {
 const SCE_ANNOTATIONS_ON = 'sce-annotations-on';
 
 /**
+ * Put the overlay where the visualizer will look, and turn the styling on
+ * only if there is something to style.
+ *
+ * ⭐ A function rather than a few lines inside the page's load path, and
+ * the reason is the defect this whole row already produced once: logic
+ * that lives where no probe can reach it gets certified by a grep. The
+ * conditional below is exactly the kind that inverts silently — mark the
+ * diagram when there is NO data and it asserts "nothing is claimed",
+ * which is a different statement from "claims are unknown" and a false
+ * one. So it is put somewhere it can be run.
+ *
+ * `container` may be null (the page may not have built it yet); a missing
+ * container must not prevent the overlay from reaching the structure.
+ */
+function applyOverlayToPage(structure, overlay, container) {
+    structure.annotationOverlay = overlay || null;
+    if (overlay && container && container.classList) {
+        container.classList.add(SCE_ANNOTATIONS_ON);
+    }
+    return structure;
+}
+
+/**
+ * The page's whole wiring, as one call: fetch the overlay and apply it.
+ *
+ * Split from [`applyOverlayToPage`] so the part carrying a decision can
+ * be exercised without a browser and without the WASM.
+ */
+async function attachAnnotationOverlay(structure, scxmlContent, container, wasmBase) {
+    const overlay = await annotationOverlayFromWasm(
+        scxmlContent,
+        structure.name || 'diagram',
+        wasmBase
+    );
+    return applyOverlayToPage(structure, overlay, container);
+}
+
+/**
  * Ask the codegen WASM for the overlay.
  *
  * The transport, and the only place this file touches the module. The
@@ -236,6 +274,8 @@ if (typeof module !== 'undefined' && module.exports) {
         AnnotationOverlay,
         loadAnnotationOverlay,
         annotationOverlayFromWasm,
+        applyOverlayToPage,
+        attachAnnotationOverlay,
         annotationClassFor,
         requirementIdsFor,
         SCE_ANNOTATION_CLAIMED,
