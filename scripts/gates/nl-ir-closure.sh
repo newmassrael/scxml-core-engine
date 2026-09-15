@@ -223,30 +223,67 @@ row_S3() {
 # `specnum` in `resources/<id>/metadata.txt` is the derived source of truth.
 # A claim that is FINER than it (6.2.2 against 6.2) is not a contradiction,
 # which is why this compares prefixes rather than strings.
+#
+# The claim is whatever the header's @brief PARAGRAPH states, not only a
+# section written first on its line: `(W3C SCXML 6.2 AOT)` closing a brief
+# and `W3C SCXML 3.6/3.4:` are claims too, and a detector anchored on
+# `@brief W3C SCXML <one token>:` read both as no claim at all. Every section
+# the brief states is judged. The body below the brief is not read — its
+# citations name the other sections a test touches, legitimately. A lettered
+# label must carry a dotted part, or `W3C C++` would read as appendix C.
+#
+# A sweep that matched no header would find no contradiction and say closed,
+# so every REGISTERED fixture must be matched to its header and a specnum
+# (a variant id such as 403a reads its stem's metadata), or the row is not
+# measured at all.
 row_S4() {
-    python3 - <<'PY'
-import glob, os, re, sys
+    local rc=0
+    python3 - <<'PY' || rc=$?
+import glob, json, os, re, sys
 spec = {}
 for md in glob.glob("resources/*/metadata.txt"):
     m = re.search(r"^\s*specnum:\s*(\S+)", open(md, encoding="utf-8",
                                                 errors="replace").read(), re.M)
     if m:
         spec[os.path.basename(os.path.dirname(md))] = m.group(1)
-claim = re.compile(r"@brief\s+W3C\s+SCXML\s+([0-9A-H](?:\.[0-9]+)*)\s*:")
-bad = 0
-for h in glob.glob("tests/w3c/aot_tests/Test*.h"):
-    tid = re.match(r"Test(\w+)\.h$", os.path.basename(h))
-    if not tid:
+token = r"(?:[0-9]+(?:\.[0-9]+)*|[A-H](?:\.[0-9]+)+)"
+statement = re.compile(r"\bW3C(?:\s+SCXML)?\s+(" + token + r"(?:\s*/\s*" + token + r")*)\b")
+def brief(lines):
+    for i, line in enumerate(lines):
+        if "@brief" not in line:
+            continue
+        paragraph = [line.split("@brief", 1)[1]]
+        for following in lines[i + 1:]:
+            text = re.sub(r"^\s*(?:\*|//+!?)\s?", "", following)
+            if (not re.match(r"^\s*(?:\*|//)", following)
+                    or following.strip().startswith("*/")
+                    or not text.strip() or text.lstrip().startswith("@")):
+                break
+            paragraph.append(text)
+        return " ".join(paragraph)
+    return ""
+ids = [f["id"] for f in json.load(open("tests/w3c/conformance/fixtures.json"))["fixtures"]]
+unmatched, bad = [], 0
+for tid in ids:
+    header = f"tests/w3c/aot_tests/Test{tid}.h"
+    truth = spec.get(tid) or spec.get(re.sub(r"[a-z]+$", "", tid))
+    if not os.path.isfile(header) or not truth:
+        unmatched.append(tid)
         continue
-    c = claim.search(open(h, encoding="utf-8", errors="replace").read())
-    truth = spec.get(tid.group(1))
-    if not c or not truth:
-        continue
-    a = c.group(1)
-    if not (a == truth or a.startswith(truth + ".") or truth.startswith(a + ".")):
-        bad += 1
+    text = brief(open(header, encoding="utf-8", errors="replace").read().split("\n"))
+    for stated in statement.finditer(text):
+        for a in re.split(r"\s*/\s*", stated.group(1)):
+            if not (a == truth or a.startswith(truth + ".") or truth.startswith(a + ".")):
+                bad += 1
+if not ids or unmatched:
+    print(f"S4 unmatched fixture(s): {unmatched or 'the registry lists none'}", file=sys.stderr)
+    sys.exit(3)
 sys.exit(1 if bad else 0)
 PY
+    if (( rc == 3 )); then
+        sce_gate_cannot_run "row S4 could not match every registered W3C fixture to its header and a specnum, so finding no contradiction would prove nothing"
+    fi
+    return "$rc"
 }
 
 # S5 — every test file the CMake lists cite exists.
