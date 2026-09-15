@@ -129,6 +129,17 @@ env:
   # reports those three backends UNREACHED. Bumped after re-running
   # validate-workspace / -code-refs / -verifies-linkage / -content-drift on every
   # enrolled workspace with the pin enforced.
+  # A gap sits between that entry and the next, and naming it is cheaper than
+  # letting the next reader trust a stale paragraph: the entry above is about
+  # `183a17a5` (R1146-R1150), while the pin this bump replaced was `df1f17ce`
+  # (R1337, 2026-09-14) — that bump appended nothing, so the block jumps from
+  # R1150 to R1338 and the older entry reads as the current state. Where it
+  # says the plugin set is tree-sitter-rust and tree-sitter-cpp only, that was
+  # true of `183a17a5` and stopped being true inside the unrecorded window:
+  # R1153 added the Go resolver, R1154 Python, R1155 Kotlin. The five
+  # `[tool] pin` comments and sce-build/tests/ledger_symbol_axis_reach.rs
+  # record that arrival already, which is why that test's UNREACHED list is
+  # empty today.
   # R1338-R1342 is this pin, and only R1341 reaches a consumer: every
   # validate-workspace run now prints an `inventory axes` line, and where a
   # row's disposition is `delegated` it names the rows it did NOT check —
