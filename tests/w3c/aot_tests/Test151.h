@@ -12,7 +12,6 @@ namespace SCE::W3C::AotTests {
  * @brief Foreach declares new variables (AOT JSEngine)
  */
 struct Test151 : public SimpleAotTest<Test151, 151> {
-    static constexpr const char *DESCRIPTION = "W3C SCXML 4.6: foreach variable declaration persistence";
     using SM = SCE::Generated::test151::test151;
 };
 

@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * should both be entered simultaneously.
  */
 struct Test413 : public SimpleAotTest<Test413, 413> {
-    static constexpr const char *DESCRIPTION = "Parallel initial states (W3C 3.13 AOT)";
     using SM = SCE::Generated::test413::test413;
 };
 

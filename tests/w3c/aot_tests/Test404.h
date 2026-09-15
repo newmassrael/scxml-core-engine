@@ -26,7 +26,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 3.13: Parallel state exit order with document order tie-breaking.
  */
 struct Test404 : public SimpleAotTest<Test404, 404> {
-    static constexpr const char *DESCRIPTION = "Parallel state exit order (W3C 3.13 AOT)";
     using SM = SCE::Generated::test404::test404;
 };
 

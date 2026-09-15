@@ -24,7 +24,6 @@ namespace SCE::W3C::AotTests {
  * id is the id of the compound state."
  */
 struct Test416 : public SimpleAotTest<Test416, 416> {
-    static constexpr const char *DESCRIPTION = "done.state.id event generation (W3C 3.3.2 AOT)";
     using SM = SCE::Generated::test416::test416;
 };
 

@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 5.9: Conditional Expressions - transition condition evaluation
  */
 struct Test445 : public SimpleAotTest<Test445, 445> {
-    static constexpr const char *DESCRIPTION = "ECMAScript undefined variables (W3C B.2.2 AOT)";
     using SM = SCE::Generated::test445::test445;
 };
 

@@ -27,7 +27,6 @@ namespace SCE::W3C::AotTests {
  * Requires event scheduler polling for delayed send (1s timeout).
  */
 struct Test409 : public ScheduledAotTest<Test409, 409> {
-    static constexpr const char *DESCRIPTION = "State removal from active states during exit (W3C 3.12.1 AOT)";
     using SM = SCE::Generated::test409::test409;
 };
 

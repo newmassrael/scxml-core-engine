@@ -20,7 +20,6 @@ namespace SCE::W3C::AotTests {
  * processor descriptors.
  */
 struct Test325 : public SimpleAotTest<Test325, 325> {
-    static constexpr const char *DESCRIPTION = "_ioprocessors binding (W3C 5.10 AOT)";
     using SM = SCE::Generated::test325::test325;
 };
 

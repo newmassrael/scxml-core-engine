@@ -122,6 +122,15 @@ private:
  * @endcode
  */
 template <typename TestClass> struct AotTestRegistrar {
+    // A test's description is resources/<id>/metadata.txt, which
+    // AotTestBase::getDescription() reads. A member restating it in the header
+    // is read by nothing and drifts from the file it copies, so registration,
+    // the one door every AOT test passes through, refuses it.
+    static_assert(
+        !requires { TestClass::DESCRIPTION; },
+        "an AOT test must not declare DESCRIPTION: its description is resources/<id>/metadata.txt, "
+        "read by AotTestBase::getDescription()");
+
     // Default constructor: use TestClass::TEST_ID (int or convertible to int)
     AotTestRegistrar() {
         AotTestRegistry::instance().registerTest(TestClass::TEST_ID, []() { return std::make_unique<TestClass>(); });

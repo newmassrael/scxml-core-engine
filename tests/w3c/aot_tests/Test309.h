@@ -14,7 +14,6 @@ namespace SCE::W3C::AotTests {
  * Auto-generated AOT test registry.
  */
 struct Test309 : public SimpleAotTest<Test309, 309> {
-    static constexpr const char *DESCRIPTION = "W3C SCXML test 309 (AOT)";
     using SM = SCE::Generated::test309::test309;
 };
 

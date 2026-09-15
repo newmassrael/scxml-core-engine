@@ -46,7 +46,6 @@ namespace SCE::W3C::AotTests {
  * - Expression evaluation: JSEngine evaluates expr and sendidexpr at runtime
  */
 struct Test210 : public ScheduledAotTest<Test210, 210> {
-    static constexpr const char *DESCRIPTION = "sendidexpr dynamic cancel (W3C 6.3 Static Hybrid)";
     using SM = SCE::Generated::test210::test210;
 };
 

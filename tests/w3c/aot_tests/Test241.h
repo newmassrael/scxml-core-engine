@@ -58,7 +58,6 @@ namespace SCE::W3C::AotTests {
  * by treating parent and child as separate scopes.
  */
 struct Test241 : public ScheduledAotTest<Test241, 241> {
-    static constexpr const char *DESCRIPTION = "invoke namelist + param consistency (W3C 6.4.3 AOT Static Hybrid)";
     using SM = SCE::Generated::test241::test241;
 };
 

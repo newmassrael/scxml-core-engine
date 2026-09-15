@@ -31,7 +31,6 @@ namespace SCE::W3C::AotTests {
  * - Ensures W3C SCXML B.2 compliance for boolean conversion
  */
 struct Test449 : public SimpleAotTest<Test449, 449> {
-    static constexpr const char *DESCRIPTION = "ECMAScript boolean conversion for string literals (W3C B.2 AOT)";
     using SM = SCE::Generated::test449::test449;
 };
 

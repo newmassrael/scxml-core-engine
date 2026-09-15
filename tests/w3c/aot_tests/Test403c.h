@@ -15,7 +15,6 @@ namespace SCE::W3C::AotTests {
  * parallel states.
  */
 struct Test403c : public SimpleAotTest<Test403c, 403> {
-    static constexpr const char *DESCRIPTION = "Optimal transition set - preemption (W3C 3.13 AOT Static Hybrid)";
     using SM = SCE::Generated::test403c::test403c;
 };
 

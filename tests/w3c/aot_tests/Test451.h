@@ -35,7 +35,6 @@ namespace SCE::W3C::AotTests {
  * - No JSEngine needed - compile-time state ID verification
  */
 struct Test451 : public SimpleAotTest<Test451, 451> {
-    static constexpr const char *DESCRIPTION = "In() predicate in parallel states (W3C 5.9.2 AOT)";
     using SM = SCE::Generated::test451::test451;
 };
 

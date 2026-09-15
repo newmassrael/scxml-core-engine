@@ -38,8 +38,6 @@ namespace SCE::W3C::AotTests {
  * - SendHelper.isInvalidTarget() detects undefined target and raises error.communication
  */
 struct Test521 : public SimpleAotTest<Test521, 521> {
-    static constexpr const char *DESCRIPTION =
-        "error.communication on invalid targetexpr (W3C 6.2.4/6.2.5 AOT Static Hybrid)";
     using SM = SCE::Generated::test521::test521;
 };
 

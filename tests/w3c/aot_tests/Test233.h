@@ -34,7 +34,6 @@ namespace SCE::W3C::AotTests {
  * 5. Parent evaluates transition: cond="Var1 == 2" → true → pass state
  */
 struct Test233 : public SimpleAotTest<Test233, 233> {
-    static constexpr const char *DESCRIPTION = "finalize before done.invoke (W3C 6.5 AOT Static Hybrid)";
     using SM = SCE::Generated::test233::test233;
 };
 

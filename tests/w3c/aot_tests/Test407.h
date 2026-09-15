@@ -25,7 +25,6 @@ namespace SCE::W3C::AotTests {
  * for proper entry/exit action execution in compound and parallel state machines.
  */
 struct Test407 : public SimpleAotTest<Test407, 407> {
-    static constexpr const char *DESCRIPTION = "onexit handlers (W3C 3.8 AOT)";
     using SM = SCE::Generated::test407::test407;
 };
 

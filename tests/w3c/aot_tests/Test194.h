@@ -12,7 +12,6 @@ namespace SCE::W3C::AotTests {
  * @brief Invalid target raises error.execution (W3C 6.2 AOT)
  */
 struct Test194 : public SimpleAotTest<Test194, 194> {
-    static constexpr const char *DESCRIPTION = "Invalid target raises error.execution (W3C 6.2 AOT)";
     using SM = SCE::Generated::test194::test194;
 };
 

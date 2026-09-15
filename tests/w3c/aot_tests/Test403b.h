@@ -15,7 +15,6 @@ namespace SCE::W3C::AotTests {
  * transitions can execute concurrently in different regions.
  */
 struct Test403b : public SimpleAotTest<Test403b, 403> {
-    static constexpr const char *DESCRIPTION = "Optimal transition set - parallel (W3C 3.13 AOT Static Hybrid)";
     using SM = SCE::Generated::test403b::test403b;
 };
 

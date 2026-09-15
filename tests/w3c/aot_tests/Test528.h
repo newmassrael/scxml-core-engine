@@ -49,7 +49,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 3.12.1: Conditional transitions with _event.data validation
  */
 struct Test528 : public SimpleAotTest<Test528, 528> {
-    static constexpr const char *DESCRIPTION = "Donedata content expr error.execution (W3C 5.5 AOT Static Hybrid)";
     using SM = SCE::Generated::test528::test528;
 };
 

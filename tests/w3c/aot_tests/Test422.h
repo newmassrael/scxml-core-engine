@@ -32,7 +32,6 @@ namespace SCE::W3C::AotTests {
  * - 3.3: Macrostep completes before invoke processing begins
  */
 struct Test422 : public ScheduledAotTest<Test422, 422> {
-    static constexpr const char *DESCRIPTION = "Invoke at macrostep end (W3C 6.4 AOT)";
     using SM = SCE::Generated::test422::test422;
 };
 

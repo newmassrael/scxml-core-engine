@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * - ECMAScript expressions in foreach body execute properly
  */
 struct Test459 : public SimpleAotTest<Test459, 459> {
-    static constexpr const char *DESCRIPTION = "foreach iteration order (W3C 5.4 AOT)";
     using SM = SCE::Generated::test459::test459;
 };
 

@@ -33,8 +33,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 6.2: <send> element with event and target attributes
  */
 struct Test189 : public SimpleAotTest<Test189, 189> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML C.1: target='#_internal' adds event to internal queue (higher priority than external queue)";
     using SM = SCE::Generated::test189::test189;
 };
 

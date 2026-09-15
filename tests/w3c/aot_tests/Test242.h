@@ -52,7 +52,6 @@ namespace SCE::W3C::AotTests {
  * Both src and inline content reference identical child state machines to verify consistency.
  */
 struct Test242 : public ScheduledAotTest<Test242, 242> {
-    static constexpr const char *DESCRIPTION = "invoke src + content consistency (W3C 6.4 AOT Pure Static)";
     using SM = SCE::Generated::test242::test242;
 };
 

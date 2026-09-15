@@ -39,9 +39,6 @@ namespace SCE::W3C::AotTests {
  * - 3.13: Wildcard event matching in transitions
  */
 struct Test199 : public SimpleAotTest<Test199, 199> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.2: If the SCXML Processor does not support the type that is specified, it MUST place the event "
-        "error.execution on the internal event queue (Pure Static AOT)";
     using SM = SCE::Generated::test199::test199;
 };
 

@@ -36,7 +36,6 @@ namespace SCE::W3C::AotTests {
  * - Send action with text content (W3C SCXML 6.2)
  */
 struct Test562 : public SimpleAotTest<Test562, 562> {
-    static constexpr const char *DESCRIPTION = "ECMAScript content space normalization (W3C 5.9.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test562::test562;
 };
 

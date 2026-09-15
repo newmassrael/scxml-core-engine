@@ -23,7 +23,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 6.3.1: "The 'invokeid' field of the event is set to the invoke id of the invocation that was finished"
  */
 struct Test228 : public ScheduledAotTest<Test228, 228> {
-    static constexpr const char *DESCRIPTION = "Invoke ID in done.invoke event (W3C 6.3.1 AOT Static Hybrid)";
     using SM = SCE::Generated::test228::test228;
 };
 

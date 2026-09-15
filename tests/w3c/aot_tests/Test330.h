@@ -23,7 +23,6 @@ namespace SCE::W3C::AotTests {
  * - s2: Verify external event fields are bound → pass
  */
 struct Test330 : public SimpleAotTest<Test330, 330> {
-    static constexpr const char *DESCRIPTION = "Event field binding (W3C 5.10 AOT)";
     using SM = SCE::Generated::test330::test330;
 };
 

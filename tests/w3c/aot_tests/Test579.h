@@ -43,8 +43,6 @@ namespace SCE::W3C::AotTests {
  * - Assignment actions (W3C SCXML 5.3)
  */
 struct Test579 : public ScheduledAotTest<Test579, 579> {
-    static constexpr const char *DESCRIPTION =
-        "History default content execution with delayed send (W3C 3.8 + 6.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test579::test579;
 };
 

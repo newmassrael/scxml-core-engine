@@ -43,7 +43,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 5.9.1: send target="#_parent" (child-to-parent communication)
  */
 struct Test240 : public ScheduledAotTest<Test240, 240> {
-    static constexpr const char *DESCRIPTION = "invoke namelist + param (W3C 6.4 AOT Static Hybrid)";
     using SM = SCE::Generated::test240::test240;
 };
 

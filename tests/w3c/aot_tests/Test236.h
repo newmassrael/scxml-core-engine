@@ -19,8 +19,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 6.2: Async event processing via runUntilCompletion()
  */
 struct Test236 : public ScheduledAotTest<Test236, 236> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.4: Event ordering childToParent before done.invoke (Static Hybrid AOT)";
     using SM = SCE::Generated::test236::test236;
 
     // W3C SCXML 6.2: Test uses 2s delayed send, so need longer timeout

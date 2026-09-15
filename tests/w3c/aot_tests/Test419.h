@@ -30,7 +30,6 @@ namespace SCE::W3C::AotTests {
  * - 3.12.1: External event queue processing occurs only after internal queue exhausted
  */
 struct Test419 : public SimpleAotTest<Test419, 419> {
-    static constexpr const char *DESCRIPTION = "Eventless transition precedence (W3C 3.13 AOT)";
     using SM = SCE::Generated::test419::test419;
 };
 

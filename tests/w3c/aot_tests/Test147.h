@@ -12,8 +12,6 @@ namespace SCE::W3C::AotTests {
  * @brief If/elseif/else conditionals with datamodel
  */
 struct Test147 : public SimpleAotTest<Test147, 147> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 4.3: if/elseif/else conditional execution (first true clause only)";
     using SM = SCE::Generated::test147::test147;
 };
 

@@ -34,7 +34,6 @@ namespace SCE::W3C::AotTests {
  * - Guard condition evaluation (3.13)
  */
 struct Test551 : public SimpleAotTest<Test551, 551> {
-    static constexpr const char *DESCRIPTION = "Early binding inline content (W3C 5.2.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test551::test551;
 };
 

@@ -17,7 +17,6 @@ namespace SCE::W3C::AotTests {
  * Requires event scheduler polling for child state machine completion.
  */
 struct Test276 : public ScheduledAotTest<Test276, 276> {
-    static constexpr const char *DESCRIPTION = "Static invoke param passing (W3C 6.4 AOT)";
     using SM = SCE::Generated::test276::test276;
 };
 

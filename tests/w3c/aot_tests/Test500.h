@@ -28,7 +28,6 @@ namespace SCE::W3C::AotTests {
  * runtime ECMAScript expression evaluation via JSEngine for system variables.
  */
 struct Test500 : public SimpleAotTest<Test500, 500> {
-    static constexpr const char *DESCRIPTION = "SCXML I/O processor location field (W3C 6.3.1 AOT Static Hybrid)";
     using SM = SCE::Generated::test500::test500;
 };
 

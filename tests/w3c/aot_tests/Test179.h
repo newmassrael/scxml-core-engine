@@ -12,7 +12,6 @@ namespace SCE::W3C::AotTests {
  * @brief Send content populates event body (AOT)
  */
 struct Test179 : public SimpleAotTest<Test179, 179> {
-    static constexpr const char *DESCRIPTION = "Send content populates event body (AOT)";
     using SM = SCE::Generated::test179::test179;
 };
 

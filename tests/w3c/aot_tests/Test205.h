@@ -16,8 +16,6 @@ namespace SCE::W3C::AotTests {
  * at the receiving state, ensuring data integrity throughout the event transmission process.
  */
 struct Test205 : public SimpleAotTest<Test205, 205> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.2: The sending SCXML Interpreter MUST not alter the content of the send";
     using SM = SCE::Generated::test205::test205;
 };
 

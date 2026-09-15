@@ -37,7 +37,6 @@ namespace SCE::W3C::AotTests {
  * - 5.10: Event data parameter access (_event.data.aParam)
  */
 struct Test234 : public SimpleAotTest<Test234, 234> {
-    static constexpr const char *DESCRIPTION = "Finalize only in invoking state (W3C 6.4.6 AOT Static Hybrid)";
     using SM = SCE::Generated::test234::test234;
 };
 

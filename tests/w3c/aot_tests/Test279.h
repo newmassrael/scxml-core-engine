@@ -16,7 +16,6 @@ namespace SCE::W3C::AotTests {
  * Variable Var1 defined in state s1's datamodel should be initialized before s0 checks it.
  */
 struct Test279 : public SimpleAotTest<Test279, 279> {
-    static constexpr const char *DESCRIPTION = "Early binding variable initialization (W3C 5.2.2 AOT)";
     using SM = SCE::Generated::test279::test279;
 };
 

@@ -33,7 +33,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 3.12: Event-based state transitions
  */
 struct Test577 : public SimpleAotTest<Test577, 577> {
-    static constexpr const char *DESCRIPTION = "error.communication on BasicHTTP send with no target (W3C C.2 AOT)";
     using SM = SCE::Generated::test577::test577;
 };
 

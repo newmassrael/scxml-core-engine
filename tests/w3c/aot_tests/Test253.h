@@ -41,8 +41,6 @@ namespace SCE::W3C::AotTests {
  * - 3.12.1: Conditional transitions with ECMAScript expressions
  */
 struct Test253 : public SimpleAotTest<Test253, 253> {
-    static constexpr const char *DESCRIPTION =
-        "SCXML Event I/O Processor bidirectional communication (W3C C.1 AOT Static Hybrid)";
     using SM = SCE::Generated::test253::test253;
 };
 

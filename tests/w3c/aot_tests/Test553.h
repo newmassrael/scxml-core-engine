@@ -49,7 +49,6 @@ namespace SCE::W3C::AotTests {
  * - Static Hybrid: Static structure + JSEngine for runtime variable checking
  */
 struct Test553 : public ScheduledAotTest<Test553, 553> {
-    static constexpr const char *DESCRIPTION = "Send namelist error handling (W3C 6.2.4 AOT Static Hybrid)";
     using SM = SCE::Generated::test553::test553;
 };
 

@@ -17,7 +17,6 @@ namespace SCE::W3C::AotTests {
  * the name of the event to be dispatched."
  */
 struct Test342 : public SimpleAotTest<Test342, 342> {
-    static constexpr const char *DESCRIPTION = "eventexpr dynamic event name (W3C 6.2 AOT)";
     using SM = SCE::Generated::test342::test342;
 };
 

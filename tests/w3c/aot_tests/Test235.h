@@ -22,7 +22,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 6.4.2: done.invoke.id event naming (event.name matches invoke id)
  */
 struct Test235 : public SimpleAotTest<Test235, 235> {
-    static constexpr const char *DESCRIPTION = "done.invoke.id event (W3C 6.4 AOT Pure Static)";
     using SM = SCE::Generated::test235::test235;
 };
 

@@ -24,7 +24,6 @@ namespace SCE::W3C::AotTests {
  * 5. s1 receives done.state.s0 with empty event.data → transitions to Pass
  */
 struct Test343 : public SimpleAotTest<Test343, 343> {
-    static constexpr const char *DESCRIPTION = "Invalid param error.execution (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test343::test343;
 };
 

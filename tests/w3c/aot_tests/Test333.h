@@ -21,7 +21,6 @@ namespace SCE::W3C::AotTests {
  * is received with an empty sendid field.
  */
 struct Test333 : public SimpleAotTest<Test333, 333> {
-    static constexpr const char *DESCRIPTION = "_event.sendid blank for non-error events (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test333::test333;
 };
 

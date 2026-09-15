@@ -35,7 +35,6 @@ namespace SCE::W3C::AotTests {
  * Failure: Reach fail or timeout (incorrect initial state selection)
  */
 struct Test364 : public SimpleAotTest<Test364, 364> {
-    static constexpr const char *DESCRIPTION = "Default initial states and parallel configurations (W3C 3.6/3.4 AOT)";
     using SM = SCE::Generated::test364::test364;
 };
 

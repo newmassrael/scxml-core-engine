@@ -60,7 +60,6 @@ namespace SCE::W3C::AotTests {
  * and shared Helper functions for namelist evaluation and POST encoding.
  */
 struct Test518 : public HttpAotTest<Test518, 518> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP namelist encoding (W3C C.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test518::test518;
 };
 

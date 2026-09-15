@@ -26,7 +26,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 3.12: Error events follow standard event processing rules.
  */
 struct Test402 : public SimpleAotTest<Test402, 402> {
-    static constexpr const char *DESCRIPTION = "Error event ordering and prefix matching (W3C 3.12 AOT)";
     using SM = SCE::Generated::test402::test402;
 };
 

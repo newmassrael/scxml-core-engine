@@ -55,7 +55,6 @@ namespace SCE::W3C::AotTests {
  * - 5.9: Transition conditions with ECMAScript expressions
  */
 struct Test376 : public SimpleAotTest<Test376, 376> {
-    static constexpr const char *DESCRIPTION = "Independent onentry handler execution (W3C 3.8 AOT Static Hybrid)";
     using SM = SCE::Generated::test376::test376;
 };
 

@@ -16,8 +16,6 @@ namespace SCE::W3C::AotTests {
  * (http://www.w3.org/TR/scxml/#SCXMLEventProcessor), verifiable through _event.origintype.
  */
 struct Test198 : public SimpleAotTest<Test198, 198> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.2: Default send type is SCXMLEventProcessor when type/typeexpr not specified";
     using SM = SCE::Generated::test198::test198;
 };
 

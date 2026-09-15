@@ -19,7 +19,6 @@ namespace SCE::W3C::AotTests {
  * state machine and is available throughout the session.
  */
 struct Test323 : public SimpleAotTest<Test323, 323> {
-    static constexpr const char *DESCRIPTION = "_name system variable (W3C B.2.1 AOT)";
     using SM = SCE::Generated::test323::test323;
 };
 

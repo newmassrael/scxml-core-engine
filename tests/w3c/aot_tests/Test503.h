@@ -30,8 +30,6 @@ namespace SCE::W3C::AotTests {
  * runtime ECMAScript expression evaluation via JSEngine for variable operations.
  */
 struct Test503 : public SimpleAotTest<Test503, 503> {
-    static constexpr const char *DESCRIPTION =
-        "Targetless transitions do not exit/re-enter (W3C 3.13 AOT Static Hybrid)";
     using SM = SCE::Generated::test503::test503;
 };
 

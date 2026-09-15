@@ -22,7 +22,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML 6.2: Async event processing via runUntilCompletion()
  */
 struct Test230 : public ScheduledAotTest<Test230, 230> {
-    static constexpr const char *DESCRIPTION = "W3C SCXML 6.4: Autoforward event fields (Static Hybrid AOT)";
     using SM = SCE::Generated::test230::test230;
 
     // Manual test: success is reaching Final state (no Pass/Fail distinction)

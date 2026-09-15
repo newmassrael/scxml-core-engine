@@ -32,7 +32,6 @@ namespace SCE::W3C::AotTests {
  * runtime ECMAScript expression evaluation via JSEngine for variable tracking.
  */
 struct Test505 : public SimpleAotTest<Test505, 505> {
-    static constexpr const char *DESCRIPTION = "Internal transition does not exit source (W3C 3.13 AOT Static Hybrid)";
     using SM = SCE::Generated::test505::test505;
 };
 

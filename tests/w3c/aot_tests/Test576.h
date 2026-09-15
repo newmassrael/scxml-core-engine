@@ -36,7 +36,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 6.2: <send> with delay attribute for timeout guard
  */
 struct Test576 : public SimpleAotTest<Test576, 576> {
-    static constexpr const char *DESCRIPTION = "Parallel initial with space-separated states (W3C 3.13 AOT)";
     using SM = SCE::Generated::test576::test576;
 };
 

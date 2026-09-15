@@ -80,7 +80,6 @@ namespace SCE::W3C::AotTests {
  * Code simplicity: Generated code has zero runtime dependencies on JSEngine.
  */
 struct Test532 : public HttpAotTest<Test532, 532> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP HTTP method name fallback (W3C C.2 AOT Static)";
     using SM = SCE::Generated::test532::test532;
 };
 

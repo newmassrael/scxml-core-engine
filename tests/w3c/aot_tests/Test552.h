@@ -34,7 +34,6 @@ namespace SCE::W3C::AotTests {
  * - Guard condition evaluation (3.13)
  */
 struct Test552 : public SimpleAotTest<Test552, 552> {
-    static constexpr const char *DESCRIPTION = "External data src attribute (W3C 5.2.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test552::test552;
 };
 

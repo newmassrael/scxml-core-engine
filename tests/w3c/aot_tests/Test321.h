@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * for the state machine session. It must be bound at state machine creation time.
  */
 struct Test321 : public SimpleAotTest<Test321, 321> {
-    static constexpr const char *DESCRIPTION = "_sessionid binding (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test321::test321;
 };
 

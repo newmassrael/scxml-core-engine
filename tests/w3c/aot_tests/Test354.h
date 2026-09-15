@@ -19,7 +19,6 @@ namespace SCE::W3C::AotTests {
  * and that the values are accessible via ECMAScript expressions like _event.data.Var1.
  */
 struct Test354 : public SimpleAotTest<Test354, 354> {
-    static constexpr const char *DESCRIPTION = "Event data with namelist/param/content (W3C 5.10 AOT)";
     using SM = SCE::Generated::test354::test354;
 };
 

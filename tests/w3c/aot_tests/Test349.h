@@ -16,7 +16,6 @@ namespace SCE::W3C::AotTests {
  * from an external source.
  */
 struct Test349 : public SimpleAotTest<Test349, 349> {
-    static constexpr const char *DESCRIPTION = "_event.origin system variable (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test349::test349;
 };
 

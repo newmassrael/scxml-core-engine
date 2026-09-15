@@ -51,7 +51,6 @@ namespace SCE::W3C::AotTests {
  * - Async event processing: HTTP request → server response → event callback → state machine tick
  */
 struct Test567 : public HttpAotTest<Test567, 567> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP param encoding (W3C C.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test567::test567;
 };
 

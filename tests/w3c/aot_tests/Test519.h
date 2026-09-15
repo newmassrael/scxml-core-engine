@@ -59,7 +59,6 @@ namespace SCE::W3C::AotTests {
  * compatible with Pure Static approach when parameter values are static literals.
  */
 struct Test519 : public HttpAotTest<Test519, 519> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP param encoding (W3C C.2 AOT Static)";
     using SM = SCE::Generated::test519::test519;
 };
 

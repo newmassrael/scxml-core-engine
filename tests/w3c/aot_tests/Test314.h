@@ -16,7 +16,6 @@ namespace SCE::W3C::AotTests {
  * the error is raised only when reaching s03.
  */
 struct Test314 : public SimpleAotTest<Test314, 314> {
-    static constexpr const char *DESCRIPTION = "Delayed assign illegal expression (W3C 5.9.2 AOT)";
     using SM = SCE::Generated::test314::test314;
 };
 

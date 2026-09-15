@@ -47,7 +47,6 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 3.12.1: Conditional transitions with ECMAScript guards
  */
 struct Test525 : public SimpleAotTest<Test525, 525> {
-    static constexpr const char *DESCRIPTION = "Foreach shallow copy minimal (W3C 4.6 AOT Static Hybrid)";
     using SM = SCE::Generated::test525::test525;
 };
 

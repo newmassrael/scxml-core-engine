@@ -50,7 +50,6 @@ namespace SCE::W3C::AotTests {
  * - File loading: test557.txt must be available in build output directory
  */
 struct Test557 : public SimpleAotTest<Test557, 557> {
-    static constexpr const char *DESCRIPTION = "ECMAScript XML DOM assignment (W3C B.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test557::test557;
 };
 

@@ -15,7 +15,6 @@ namespace SCE::W3C::AotTests {
  * The content will be sent as the HTTP POST body with empty event name.
  */
 struct Test520 : public HttpAotTest<Test520, 520> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP content element (W3C C.2 AOT Static)";
     using SM = SCE::Generated::test520::test520;
 };
 

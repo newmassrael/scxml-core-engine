@@ -44,8 +44,6 @@ namespace SCE::W3C::AotTests {
  * - Guard conditions with expressions (W3C SCXML 5.9)
  */
 struct Test580 : public ScheduledAotTest<Test580, 580> {
-    static constexpr const char *DESCRIPTION =
-        "History state never in configuration with parallel states (W3C 3.11 AOT Static Hybrid)";
     using SM = SCE::Generated::test580::test580;
 };
 

@@ -23,7 +23,6 @@ namespace SCE::W3C::AotTests {
  * is received with an empty origin field.
  */
 struct Test335 : public SimpleAotTest<Test335, 335> {
-    static constexpr const char *DESCRIPTION = "_event.origin blank for internal events (W3C 5.10 AOT)";
     using SM = SCE::Generated::test335::test335;
 };
 

@@ -62,8 +62,6 @@ namespace SCE::W3C::AotTests {
  * the source state, identical to external transition behavior.
  */
 struct Test533 : public SimpleAotTest<Test533, 533> {
-    static constexpr const char *DESCRIPTION =
-        "Internal transition exit set for non-compound states (W3C 3.13 AOT Static Hybrid)";
     using SM = SCE::Generated::test533::test533;
 };
 

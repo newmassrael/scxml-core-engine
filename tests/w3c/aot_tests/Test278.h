@@ -15,7 +15,6 @@ namespace SCE::W3C::AotTests {
  * Variable Var1 defined in state s1's datamodel should be accessible from state s0.
  */
 struct Test278 : public SimpleAotTest<Test278, 278> {
-    static constexpr const char *DESCRIPTION = "Global scope datamodel access (W3C 5.10 AOT)";
     using SM = SCE::Generated::test278::test278;
 };
 

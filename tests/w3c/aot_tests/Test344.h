@@ -27,7 +27,6 @@ namespace SCE::W3C::AotTests {
  * 5. S1 catches error.execution → transitions to pass
  */
 struct Test344 : public SimpleAotTest<Test344, 344> {
-    static constexpr const char *DESCRIPTION = "Invalid cond expression error.execution (W3C 5.9 AOT)";
     using SM = SCE::Generated::test344::test344;
 };
 

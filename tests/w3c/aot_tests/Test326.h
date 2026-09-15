@@ -22,7 +22,6 @@ namespace SCE::W3C::AotTests {
  * - s2: Verify Var2 = _ioprocessors still bound → pass
  */
 struct Test326 : public SimpleAotTest<Test326, 326> {
-    static constexpr const char *DESCRIPTION = "_ioprocessors immutability (W3C B.2.3 AOT)";
     using SM = SCE::Generated::test326::test326;
 };
 

@@ -33,7 +33,6 @@ namespace SCE::W3C::AotTests {
  * - 3.13: Events are processed in order, respecting queue priorities
  */
 struct Test421 : public SimpleAotTest<Test421, 421> {
-    static constexpr const char *DESCRIPTION = "Internal event priority (W3C 5.10.1 AOT)";
     using SM = SCE::Generated::test421::test421;
 };
 

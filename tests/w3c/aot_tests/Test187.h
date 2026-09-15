@@ -40,9 +40,6 @@ namespace SCE::W3C::AotTests {
  * - Event queue processing order (W3C SCXML 3.13)
  */
 struct Test187 : public ScheduledAotTest<Test187, 187> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.2: If the SCXML session terminates before the delay interval has elapsed, "
-        "the SCXML Processor MUST discard the message without attempting to deliver it.";
     using SM = SCE::Generated::test187::test187;
 };
 

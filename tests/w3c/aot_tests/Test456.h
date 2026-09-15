@@ -42,7 +42,6 @@ namespace SCE::W3C::AotTests {
  * 5. Transition to pass if true, fail if false
  */
 struct Test456 : public SimpleAotTest<Test456, 456> {
-    static constexpr const char *DESCRIPTION = "ECMAScript script execution (W3C B.2/5.9 AOT)";
     using SM = SCE::Generated::test456::test456;
 };
 

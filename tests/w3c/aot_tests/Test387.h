@@ -27,7 +27,6 @@ namespace SCE::W3C::AotTests {
  * - Sufficient for W3C compliance when history is not previously recorded
  */
 struct Test387 : public SimpleAotTest<Test387, 387> {
-    static constexpr const char *DESCRIPTION = "History states with default transitions (W3C 3.11 AOT)";
     using SM = SCE::Generated::test387::test387;
 };
 

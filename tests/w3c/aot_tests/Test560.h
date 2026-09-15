@@ -36,7 +36,6 @@ namespace SCE::W3C::AotTests {
  * - Guard condition accessing _event.data properties (W3C SCXML 5.9)
  */
 struct Test560 : public SimpleAotTest<Test560, 560> {
-    static constexpr const char *DESCRIPTION = "_event.data param structure (W3C 5.10 AOT Static Hybrid)";
     using SM = SCE::Generated::test560::test560;
 };
 

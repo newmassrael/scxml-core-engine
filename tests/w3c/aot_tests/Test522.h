@@ -44,7 +44,6 @@ namespace SCE::W3C::AotTests {
  * - Test 522: Uses target (static literal) → Pure Static, no JSEngine needed
  */
 struct Test522 : public HttpAotTest<Test522, 522> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP location field (W3C C.2 AOT Pure Static)";
     using SM = SCE::Generated::test522::test522;
 };
 

@@ -56,7 +56,6 @@ namespace SCE::W3C::AotTests {
  * 3. Transition guards can validate event data parameters at runtime
  */
 struct Test534 : public HttpAotTest<Test534, 534> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP _scxmleventname transmission (W3C C.2 AOT Static Hybrid)";
     using SM = SCE::Generated::test534::test534;
 };
 

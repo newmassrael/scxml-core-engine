@@ -18,7 +18,6 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML B.2: ECMAScript Data Model - variable semantics
  */
 struct Test444 : public SimpleAotTest<Test444, 444> {
-    static constexpr const char *DESCRIPTION = "ECMAScript datamodel variable in condition (W3C 5.2/5.9 AOT)";
     using SM = SCE::Generated::test444::test444;
 };
 

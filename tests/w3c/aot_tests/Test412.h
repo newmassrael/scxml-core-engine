@@ -30,7 +30,6 @@ namespace SCE::W3C::AotTests {
  * Requires event scheduler polling for delayed send (1s timeout).
  */
 struct Test412 : public ScheduledAotTest<Test412, 412> {
-    static constexpr const char *DESCRIPTION = "Initial transition executable content execution order (W3C 3.3.2 AOT)";
     using SM = SCE::Generated::test412::test412;
 };
 
