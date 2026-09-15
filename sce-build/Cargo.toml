@@ -188,6 +188,16 @@ name = "transition_table_closure"
 path = "tests/transition_table_closure.rs"
 required-features = ["cli"]
 
+# NL→IR closure ledger row G3 — the target above's sibling, for a kind
+# family that is not the statechart. Spawns sce-codegen for the same
+# reason and carries the same hazard: `review-table` is a subcommand a
+# stale binary does not have, and without this declaration the test
+# would report green against one.
+[[test]]
+name = "a_review_artefact_carries_the_requirement_column"
+path = "tests/a_review_artefact_carries_the_requirement_column.rs"
+required-features = ["cli"]
+
 # Requirement-closure RFC Atomic D — A and B over ISO 13400-2:2019
 # §12.6 rather than over fixtures their own author wrote. Spawns
 # sce-codegen for the same reason the two targets above do, and

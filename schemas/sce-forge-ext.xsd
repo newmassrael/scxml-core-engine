@@ -264,6 +264,24 @@
   <xs:attribute name="scale" type="xs:string"/>
   <xs:attribute name="offset" type="xs:string"/>
 
+  <!-- NL→IR closure ledger row G3: the requirement a node claims, as
+       whitespace-separated opaque ids. The statechart family has read
+       this attribute since the trace table existed; the forge kinds
+       could not carry it at all, so their review artefact had no
+       requirement column to print and a `delegated` or `missing`
+       verdict about a non-statechart document was unanswerable.
+
+       Opaque by design at every layer — SCE never normalises a
+       requirement id, because two spellings that normalise together
+       are two requirements to the document that issued them. The
+       shape rule that IS enforced lives in sce-build: a token
+       repeated on one node is rejected
+       (`validation/duplicate-requirement-id`), because a duplicate
+       double-counts in coverage and masks the annotation that is
+       actually absent. One reader (`collect_sce_req`) serves both
+       families so the two cannot drift. -->
+  <xs:attribute name="req" type="xs:string"/>
+
   <!-- Section 4.6: Codec — document-level default endianness -->
   <xs:attribute name="default-endian" type="sce:endianType"/>
 
@@ -508,6 +526,12 @@
     <xs:complexType>
       <xs:attribute name="key" type="xs:string" use="required"/>
       <xs:attribute name="value" type="xs:string" use="required"/>
+      <!-- Optional: the requirement(s) this row satisfies. A mapping
+           table is the shape a specification states row by row ("gear
+           3 shall select DRIVE"), so the row is where the claim
+           belongs — not the surrounding `<data>`, which would make
+           every row's verdict the same verdict. -->
+      <xs:attribute ref="sce:req"/>
     </xs:complexType>
   </xs:element>
 

@@ -647,6 +647,18 @@ pub struct TransformModel {
 pub struct LookupEntry {
     pub key: String,
     pub value: String,
+    /// Requirement ids this row claims — `sce:req` on the
+    /// `<sce:entry>`, NL→IR closure ledger row G3.
+    ///
+    /// Always serialised, even empty, for the reason
+    /// [`ParsedForge::externs`] gives: a field that disappears when
+    /// empty makes every consumer branch on presence-vs-empty before
+    /// it can ask the question it actually has. An empty list is the
+    /// answer "this row claims nothing", which is a finding rather
+    /// than an absence — it is the `(none)` block of the review
+    /// artefact, behaviour the specification never asked for.
+    #[serde(default)]
+    pub requirements: Vec<crate::provenance::RequirementId>,
 }
 
 /// Miss-handling policy for `sce:kind="lookup"`. Captured from the

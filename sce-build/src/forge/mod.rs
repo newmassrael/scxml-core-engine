@@ -34,6 +34,8 @@ pub mod provenance;
 pub mod quantity;
 pub mod quantity_check;
 pub mod quantity_codegen;
+pub mod requirement_nodes;
+pub mod review_table;
 pub mod sourcemap;
 pub mod symbol_mangling;
 pub mod target_plugin;
