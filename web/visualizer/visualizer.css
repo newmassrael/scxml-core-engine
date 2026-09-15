@@ -1950,3 +1950,57 @@ body {
     padding: 16px 20px;
     border-top: 1px solid #d0d7de;
 }
+
+/* NL-IR closure ledger row G2 — the annotation family.
+ *
+ * The reviewer's question is "which element does a requirement claim, and
+ * which does nothing claim". So the UNCLAIMED element is the one marked:
+ * a diagram that highlighted only the claimed ones would answer the easy
+ * half and leave the finding invisible, which is the same reason the
+ * transition table prints `(none)` as a word rather than an empty cell.
+ *
+ * Both marks are non-colour-only — a dashed outline and a corner tick —
+ * because a reviewer reading a printed page or with a colour vision
+ * deficiency is exactly the reviewer this diagram exists for. */
+.sce-annotations-on .node.state.sce-unclaimed rect,
+.sce-annotations-on .node.state.sce-unclaimed circle,
+.sce-annotations-on .node.state.sce-unclaimed ellipse {
+    stroke-dasharray: 4 3;
+    stroke: #bf8700;
+}
+
+.sce-annotations-on .node.state.sce-claimed rect,
+.sce-annotations-on .node.state.sce-claimed circle,
+.sce-annotations-on .node.state.sce-claimed ellipse {
+    stroke: #1a7f37;
+    stroke-width: 2.5px;
+}
+
+.sce-annotations-on path.transition.sce-unclaimed {
+    stroke-dasharray: 4 3;
+    stroke: #bf8700;
+}
+
+.sce-annotations-on path.transition.sce-claimed {
+    stroke: #1a7f37;
+}
+
+/* A requirement's fragment, while one is selected: the elements its
+ * evidence depends on, INCLUDING the ones carrying no id of their own.
+ * That second group is the whole reason the closure is shipped rather
+ * than recomputed here, so it gets its own mark rather than being folded
+ * into "claimed". */
+.sce-annotations-on .sce-in-fragment rect,
+.sce-annotations-on .sce-in-fragment circle,
+.sce-annotations-on path.transition.sce-in-fragment {
+    stroke: #0969da;
+    stroke-width: 3px;
+}
+
+.sce-annotations-on .sce-supporting rect,
+.sce-annotations-on .sce-supporting circle,
+.sce-annotations-on path.transition.sce-supporting {
+    stroke: #8250df;
+    stroke-width: 3px;
+    stroke-dasharray: 6 2;
+}
