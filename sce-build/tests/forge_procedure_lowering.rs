@@ -164,6 +164,40 @@ fn a_scalar_payload_is_refused() {
     );
 }
 
+/// A delayed `<send>` is refused with the kind that DOES carry a clock.
+///
+/// `procedure` runs to completion synchronously — `run_procedure` is a
+/// bounded loop with no suspension point on any runtime in this crate — so a
+/// delay genuinely has nowhere to go. That refusal is correct; what it used
+/// to say was not useful. An author who wrote a deadline was told to add
+/// `sce:service`, which answers a question they did not ask.
+///
+/// The assertion is on the WAY OUT, not the refusal: any message is a
+/// refusal, but only one that names `timer` tells the author where the
+/// deadline belongs.
+#[test]
+fn a_delayed_send_is_refused_by_naming_the_timer_kind() {
+    let run = generate(
+        &procedure(
+            "",
+            r#"<send id="dl" event="deadline" delay="120s"/>"#,
+            r#"<param name="n" expr="1"/>"#,
+        ),
+        "delayed-send",
+    );
+    assert_ne!(
+        run.exit,
+        Some(0),
+        "a delayed send in a procedure generated:\n{}",
+        run.emitted
+    );
+    assert!(
+        run.stderr.contains("timer"),
+        "the refusal does not name the kind that carries a clock:\n{}",
+        run.stderr
+    );
+}
+
 /// ⚠ And the refusal stays narrow. A bytes field is the documented shape and
 /// must still pass — a check that refused it would be the same defect
 /// pointing the other way.

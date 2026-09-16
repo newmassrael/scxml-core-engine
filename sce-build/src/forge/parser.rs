@@ -5215,6 +5215,31 @@ fn parse_procedure_onentry(
             if child.tag_name().name() != "send" {
                 continue;
             }
+            // ⚠ A `<send delay=…>` here is an author asking for a clock, and
+            // `procedure` has none: `run_procedure` is a bounded synchronous
+            // loop with no suspension point, on every runtime in this crate.
+            // Saying only "add sce:service" answers a question they did not
+            // ask — it names the attribute a service call needs, for a site
+            // that wanted a timer. Measured 2026-09-17 while converting a
+            // spec section with a two-minute deadline: the refusal was
+            // correct and told the author nothing about where the deadline
+            // belongs.
+            if sce_attr(&child, "service").is_none()
+                && (child.attribute("delay").is_some() || child.attribute("delayexpr").is_some())
+            {
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::IncompatibleAttributes {
+                        element: "<send> in procedure <onentry>".into(),
+                        detail: "a delayed send has no meaning in a procedure — it runs to \
+                                 completion synchronously and never waits. Put the delay in a \
+                                 sce:kind=\"timer\" document (<sce:period>, <sce:fire-event>) \
+                                 and let this procedure take a transition on the event it fires"
+                            .into(),
+                    },
+                ));
+            }
             let service = sce_attr(&child, "service").ok_or_else(|| {
                 located(
                     &child,
