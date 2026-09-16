@@ -2,7 +2,17 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 // W3C SCXML 4.3: <if>
-{% if action.is_pure_in_predicate %}
+{#
+    The native arm comes first, exactly as it does in
+    `process_transition.jinja2`. Without it a `cpp:` cond fell past every
+    arm to the constant fold below and emitted `if (false)`, which made the
+    branch body dead code and ran any `<else>` beside it unconditionally —
+    a wrong output, not a missing one, and with no diagnostic.
+#}
+{% if action.is_cpp_condition %}
+// W3C SCXML 4.2: native guard (cpp: prefix) - direct C++ evaluation
+if ({{ action.cond_cpp_transformed }}) SCE_LIKELY {
+{% elif action.is_pure_in_predicate %}
 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
 if ({{ action.cond_cpp }}) SCE_LIKELY {
 {% elif model.needs_script_engine %}
@@ -21,7 +31,7 @@ if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
     {% endwith %}
     {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if ({% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ elseif.cond | to_script_source_guard }}, engine){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %}) {
+} else if ({% if elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ elseif.cond | to_script_source_guard }}, engine){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %}) {
     {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' + elseif_action.type + '.jinja2' %}

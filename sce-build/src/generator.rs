@@ -1773,6 +1773,124 @@ fn reject_native_conditions_in_unsupported_lang(
     ))
 }
 
+/// The first `cond` that would reach a backend's constant-fold arm while
+/// not actually being constant.
+///
+/// ⚠ Every `<if>` template ends in an arm that prints the author's `cond`
+/// as a comment and emits `if (true)` / `if (false)` from
+/// `cond_constant`. That arm is correct for a cond the frontend decided
+/// (`cond="1"`), and **silently wrong for one it could not**: an
+/// unrecognised `cond` has `cond_constant == None`, which the arm renders
+/// as `false`. The branch body becomes dead code and any `<else>` beside
+/// it runs unconditionally.
+///
+/// That is exactly how `<if cond="cpp:…">` failed until the native arm
+/// was added (2026-09-16): the admission landed on `<transition>` and the
+/// second door already had a fallback, so nothing said anything. Adding
+/// the arm fixes the case; this check is what makes the NEXT one loud —
+/// a new prefix, or a new cond kind, that some template has no arm for.
+fn first_silently_folded_cond(model: &SCXMLModel) -> Option<UnlowerableCond> {
+    fn unlowered(
+        cond: &str,
+        constant: Option<bool>,
+        pure_in: bool,
+        native: bool,
+        model: &SCXMLModel,
+    ) -> bool {
+        // The arms a cond can legitimately reach, in the order the
+        // templates branch on them.
+        !cond.trim().is_empty()
+            && !native
+            && !pure_in
+            && !model.needs_script_engine
+            && constant.is_none()
+    }
+
+    fn scan_actions(
+        actions: &[crate::model::Action],
+        model: &SCXMLModel,
+    ) -> Option<UnlowerableCond> {
+        for action in actions {
+            if unlowered(
+                &action.cond,
+                action.cond_constant,
+                action.is_pure_in_predicate,
+                action.is_cpp_condition || action.is_kt_condition,
+                model,
+            ) {
+                return Some((
+                    action.cond.clone(),
+                    "<if>".to_string(),
+                    action.source_location.clone(),
+                ));
+            }
+            // Through `nested_blocks`, which is the single definition of
+            // what lies inside an action (row S1 of the NL→IR closure
+            // ledger). Reading the branch list directly here re-opened
+            // that row, and the ledger caught it before the commit.
+            for block in action.nested_blocks() {
+                if let Some(cond) = block.cond {
+                    if unlowered(
+                        cond,
+                        block.cond_constant,
+                        block.cond_is_pure_in,
+                        block.cond_is_native,
+                        model,
+                    ) {
+                        return Some((
+                            cond.to_string(),
+                            "<elseif>".to_string(),
+                            action.source_location.clone(),
+                        ));
+                    }
+                }
+                if let Some(hit) = scan_actions(block.actions, model) {
+                    return Some(hit);
+                }
+            }
+        }
+        None
+    }
+
+    let mut states: Vec<&crate::model::State> = model.states.values().collect();
+    states.sort_by_key(|s| s.document_order);
+    for state in states {
+        for transition in &state.transitions {
+            if let Some(hit) = scan_actions(&transition.actions, model) {
+                return Some(hit);
+            }
+        }
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
+            if let Some(hit) = scan_actions(block, model) {
+                return Some(hit);
+            }
+        }
+    }
+    None
+}
+
+/// Refuse a `cond` no template arm can lower, rather than folding it to
+/// `false` — see [`first_silently_folded_cond`].
+fn reject_silently_folded_conds(model: &SCXMLModel) -> Result<(), GenerateError> {
+    let Some((cond, site, at)) = first_silently_folded_cond(model) else {
+        return Ok(());
+    };
+    Err(GenerateError::unsupported_at(
+        format!(
+            "cond=\"{cond}\" on {site} in '{}' reaches no lowering arm: it is not a \
+             native guard, not an In() predicate, not a constant, and this machine \
+             declares no script engine. Emitting it would print `if (false)` and run \
+             any else-branch unconditionally, so generation stops here instead.",
+            model.name
+        ),
+        at,
+    ))
+}
+
 /// The backend that can emit `action`'s body, when the body is not
 /// ECMAScript — the [`NATIVE_COND_PREFIXES`] question for `<script>`.
 ///
@@ -2082,6 +2200,7 @@ pub fn generate_with_options(
     reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
+    reject_silently_folded_conds(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Rust)?;
     filters::register_filters(&mut env, &document_scope(model));
@@ -2172,6 +2291,7 @@ pub fn generate_with_templates(
     reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
+    reject_silently_folded_conds(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Rust)?;
     filters::register_filters(&mut env, &document_scope(model));
@@ -2374,6 +2494,7 @@ fn render_cpp(
     // lifetime the exit chain has to end.
     reject_native_conditions_in_unsupported_lang(model, "C++")?;
     reject_native_scripts_in_unsupported_lang(model, "C++")?;
+    reject_silently_folded_conds(model)?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // §scxml-5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -2538,6 +2659,7 @@ fn render_c11(
     // has no allocator.
     reject_native_conditions_in_unsupported_lang(model, "C11")?;
     reject_native_scripts_in_unsupported_lang(model, "C11")?;
+    reject_silently_folded_conds(model)?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
@@ -2686,6 +2808,7 @@ pub fn generate_kotlin_for_engine(
     // dispatch and the `<invoke>` start/cancel pair into them.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
+    reject_silently_folded_conds(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Kotlin)?;
     filters::register_kotlin_filters_for_engine(&mut env, &document_scope(model), script_engine);
@@ -2706,6 +2829,7 @@ pub fn generate_kotlin_with_templates(
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
+    reject_silently_folded_conds(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Kotlin)?;
     filters::register_kotlin_filters(&mut env, &document_scope(model));

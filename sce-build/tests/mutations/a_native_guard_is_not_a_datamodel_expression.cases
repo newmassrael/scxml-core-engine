@@ -43,7 +43,16 @@ mutation_tests -p sce-build --features cli --test datamodel_attribute_reaches_a_
 # the target declares `required-features = ["cli"]` and a run without it
 # exits 101 in zero seconds — a failure that reads like a red suite and is
 # not one.
-mutation_targets sce-build/src/parser.rs
+mutation_targets sce-build/src/parser.rs \
+    tools/codegen/templates/actions/if.jinja2 \
+    tools/codegen/templates/kotlin/actions/if.kt.jinja2
+# The two `<if>` templates are targets because the admission has two
+# halves and they fail differently. The parser half decides whether a
+# guard IS native; the template half decides whether the backend has an
+# arm for that answer. Deleting either one alone still leaves the other
+# passing — which is exactly how `<if cond="cpp:…">` lowered to
+# `if (false)` while `is_native_condition` answered correctly the whole
+# time. A target list naming only the parser cannot witness that.
 mutation_oracles sce-build/tests/datamodel_attribute_reaches_a_decision.rs \
     sce-build/tests/cli_guard_emission.rs
 
@@ -99,20 +108,52 @@ PY
 
 mutation_case "the prefix alone sets the flag, with no body to lower" <<'PY'
 edit("sce-build/src/parser.rs",
-     '        if let Some(stripped) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {',
-     '        if let Some(stripped) = cond.strip_prefix("cpp:") {')
+     '    if let Some(body) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {',
+     '    if let Some(body) = cond.strip_prefix("cpp:") {')
 PY
 
 mutation_case "a whitespace-only body still sets the flag" <<'PY'
 edit("sce-build/src/parser.rs",
-     '        if let Some(stripped) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {',
-     '        if let Some(stripped) = cond.strip_prefix("cpp:").filter(|b| !b.is_empty()) {')
+     '    if let Some(body) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {',
+     '    if let Some(body) = cond.strip_prefix("cpp:").filter(|b| !b.is_empty()) {')
 PY
 
 mutation_case "Kotlin's arm keeps the flag for a bodyless prefix" <<'PY'
 edit("sce-build/src/parser.rs",
-     '        } else if let Some(stripped) = cond.strip_prefix("kt:").filter(|b| !b.trim().is_empty()) {',
-     '        } else if let Some(stripped) = cond.strip_prefix("kt:") {')
+     '    } else if let Some(body) = cond.strip_prefix("kt:").filter(|b| !b.trim().is_empty()) {',
+     '    } else if let Some(body) = cond.strip_prefix("kt:") {')
+PY
+
+# The `<if>` door, added 2026-09-16 with the arm that lowers it.
+#
+# ⚠ These three anchors used to name `parse_transition`'s own strip site,
+# eight spaces in and binding `stripped`. Moving the decision into the
+# shared `resolve_cond` broke all three at once — an anchor that quotes
+# where code LIVES dies on the refactor that moves it, which is why the
+# ones below name the arm's effect instead.
+
+mutation_case "the <if> template loses its native arm" <<'PY'
+edit("tools/codegen/templates/actions/if.jinja2",
+     "{% if action.is_cpp_condition %}",
+     "{% if false %}")
+PY
+
+mutation_case "the <elseif> arm falls back to the constant fold" <<'PY'
+edit("tools/codegen/templates/actions/if.jinja2",
+     "{% if elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}",
+     "{% if false %}{{ elseif.cond_cpp_transformed }}")
+PY
+
+mutation_case "Kotlin's <if> loses its native arm" <<'PY'
+edit("tools/codegen/templates/kotlin/actions/if.kt.jinja2",
+     "{% if outer_if_action.is_kt_condition and outer_if_action.cond_kt %}",
+     "{% if false %}")
+PY
+
+mutation_case "the shared decision stops answering for <if>" <<'PY'
+edit("sce-build/src/parser.rs",
+     "        action.is_cpp_condition = resolved.is_cpp_condition;",
+     "        action.is_cpp_condition = false;")
 PY
 
 mutation_case "the predicate stops requiring a body" <<'PY'

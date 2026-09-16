@@ -2,10 +2,18 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# W3C SCXML 4.3: <if>/<elseif>/<else> — conditional execution
-   Three-way condition: In() predicate | safeEvaluateGuard() | static Kotlin #}
+   Four-way condition: native kt: guard | In() predicate | safeEvaluateGuard()
+   | static Kotlin.
+
+   The native arm comes first, as it does for a transition. Without it a
+   `kt:` cond fell to the constant fold at the end and became
+   `if (false)`, which made the branch body dead code and ran any `else`
+   beside it unconditionally — a wrong output with no diagnostic. #}
 {# Save outer action to avoid scoping conflict with nested action includes #}
 {% set outer_if_action = action %}
-{% if outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt %}
+{% if outer_if_action.is_kt_condition and outer_if_action.cond_kt %}
+            if ({{ outer_if_action.cond_kt }}) {
+{% elif outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt %}
             if ({{ outer_if_action.cond_kt }}) {
 {% elif model.needs_script_engine and outer_if_action.cond %}
             if (safeEvaluateGuard({{ outer_if_action.cond | to_script_source_guard }})) {
@@ -18,7 +26,9 @@
 {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% for elseif in outer_if_action.elseif_branches %}
-{% if elseif.is_pure_in_predicate and elseif.cond_kt %}
+{% if elseif.is_kt_condition and elseif.cond_kt %}
+            } else if ({{ elseif.cond_kt }}) {
+{% elif elseif.is_pure_in_predicate and elseif.cond_kt %}
             } else if ({{ elseif.cond_kt }}) {
 {% elif model.needs_script_engine and elseif.cond %}
             } else if (safeEvaluateGuard({{ elseif.cond | to_script_source_guard }})) {

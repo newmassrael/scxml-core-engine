@@ -33,6 +33,11 @@
         "cond_cpp": {
           "type": "string"
         },
+        "cond_cpp_transformed": {
+          "default": "",
+          "description": "The `cpp:` body with named contexts resolved — the same field [`Transition::cond_cpp_transformed`] carries, for the `<if>` a backend emits through the same arms.",
+          "type": "string"
+        },
         "cond_kt": {
           "type": "string"
         },
@@ -88,7 +93,16 @@
         "index": {
           "type": "string"
         },
+        "is_cpp_condition": {
+          "default": false,
+          "description": "Whether [`cond`](Self::cond) is a native guard — the same pair of flags [`Transition::is_cpp_condition`] / [`Transition::is_kt_condition`] carry.\n\n⚠ These are here because they were NOT, and the absence was silent: a `<transition cond=\"cpp:…\">` lowered to the expression while an `<if cond=\"cpp:…\">` on the same text fell through to the constant-fold arm and emitted `if (false)`. The row's body became dead code and an `<else>` beside it ran unconditionally, with no diagnostic (measured 2026-09-16 at `ec146c9f3f1e`). A guard admitted at one door and not the other is what [`crate::parser::resolve_cond`] now prevents by deciding both.",
+          "type": "boolean"
+        },
         "is_cpp_function": {
+          "default": false,
+          "type": "boolean"
+        },
+        "is_kt_condition": {
           "default": false,
           "type": "boolean"
         },
@@ -1566,8 +1580,22 @@
         "cond_cpp": {
           "type": "string"
         },
+        "cond_cpp_transformed": {
+          "default": "",
+          "description": "See [`Action::cond_cpp_transformed`].",
+          "type": "string"
+        },
         "cond_kt": {
           "type": "string"
+        },
+        "is_cpp_condition": {
+          "default": false,
+          "description": "See [`Action::is_cpp_condition`]. An `<elseif>` reaches the same arms its `<if>` does, so it needs the same answers — it lowered to `else if (false)` for the same reason and was fixed in the same pass.",
+          "type": "boolean"
+        },
+        "is_kt_condition": {
+          "default": false,
+          "type": "boolean"
         },
         "is_pure_in_predicate": {
           "type": "boolean"

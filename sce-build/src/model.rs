@@ -268,8 +268,29 @@ pub struct Action {
     pub cond_cpp: String,
 
     pub cond_kt: String,
+    /// The `cpp:` body with named contexts resolved — the same field
+    /// [`Transition::cond_cpp_transformed`] carries, for the `<if>` a
+    /// backend emits through the same arms.
+    #[serde(default)]
+    pub cond_cpp_transformed: String,
     #[serde(default)]
     pub is_pure_in_predicate: bool,
+    /// Whether [`cond`](Self::cond) is a native guard — the same pair of
+    /// flags [`Transition::is_cpp_condition`] /
+    /// [`Transition::is_kt_condition`] carry.
+    ///
+    /// ⚠ These are here because they were NOT, and the absence was
+    /// silent: a `<transition cond="cpp:…">` lowered to the expression
+    /// while an `<if cond="cpp:…">` on the same text fell through to the
+    /// constant-fold arm and emitted `if (false)`. The row's body became
+    /// dead code and an `<else>` beside it ran unconditionally, with no
+    /// diagnostic (measured 2026-09-16 at `ec146c9f3f1e`). A guard
+    /// admitted at one door and not the other is what
+    /// [`crate::parser::resolve_cond`] now prevents by deciding both.
+    #[serde(default)]
+    pub is_cpp_condition: bool,
+    #[serde(default)]
+    pub is_kt_condition: bool,
     /// The boolean [`cond`](Self::cond) has at build time — the same
     /// field [`Transition::cond_constant`] carries, for the `<if>` a
     /// backend emits through the same arms.
@@ -370,7 +391,18 @@ pub struct ElseIfBranch {
     pub cond: String,
     pub cond_cpp: String,
     pub cond_kt: String,
+    /// See [`Action::cond_cpp_transformed`].
+    #[serde(default)]
+    pub cond_cpp_transformed: String,
     pub is_pure_in_predicate: bool,
+    /// See [`Action::is_cpp_condition`]. An `<elseif>` reaches the same
+    /// arms its `<if>` does, so it needs the same answers — it lowered to
+    /// `else if (false)` for the same reason and was fixed in the same
+    /// pass.
+    #[serde(default)]
+    pub is_cpp_condition: bool,
+    #[serde(default)]
+    pub is_kt_condition: bool,
     /// The boolean [`cond`](Self::cond) has at build time — see
     /// [`Transition::cond_constant`]. An `<elseif>` reaches the same
     /// arms its `<if>` does, so it needs the same answer.
@@ -399,6 +431,19 @@ pub struct NestedBlock<'a> {
     /// selected by the action's own `cond`, `else_actions` by nothing,
     /// and `actions` is `<foreach>`'s body, so all three are `None`.
     pub cond: Option<&'a str>,
+    /// How [`cond`](Self::cond) lowers — the same three answers an
+    /// [`Action`] carries for its own condition.
+    ///
+    /// ⭐ Here for the reason [`cond`](Self::cond) itself is: a reader
+    /// that has the text but not the decision has to reach past this
+    /// definition to `elseif_branches` and read the fields, which is the
+    /// second definition the type exists to prevent. The generator's
+    /// check for a guard that reaches no lowering arm was written that
+    /// way first and re-opened row S1 of `docs/SCE_NL_IR_CLOSURE.md`
+    /// (2026-09-16) — the ledger caught it before the commit.
+    pub cond_constant: Option<bool>,
+    pub cond_is_native: bool,
+    pub cond_is_pure_in: bool,
     pub actions: &'a [Action],
 }
 
@@ -407,6 +452,9 @@ impl<'a> NestedBlock<'a> {
         NestedBlock {
             path: path.to_string(),
             cond: None,
+            cond_constant: None,
+            cond_is_native: false,
+            cond_is_pure_in: false,
             actions,
         }
     }
@@ -445,6 +493,9 @@ impl Action {
             blocks.push(NestedBlock {
                 path: format!("elseif_branches[{k}].actions"),
                 cond: Some(branch.cond.as_str()),
+                cond_constant: branch.cond_constant,
+                cond_is_native: branch.is_cpp_condition || branch.is_kt_condition,
+                cond_is_pure_in: branch.is_pure_in_predicate,
                 actions: branch.actions.as_slice(),
             });
         }

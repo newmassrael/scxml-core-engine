@@ -395,6 +395,98 @@ fn a_native_prefix_with_no_body_emits_no_empty_condition() {
     }
 }
 
+/// The document `a_native_guard_lowers_the_same_on_both_doors` probes:
+/// one native guard on a `<transition cond>` and the identical text on
+/// an `<if cond>` and an `<elseif cond>`, so the two doors can be
+/// compared inside one generated file.
+fn two_door_document(prefix: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       xmlns:cpp="urn:sce:cpp" version="1.0" name="TwoDoor"
+       datamodel="null" initial="s0">
+  <sce:context id="hw" cpp:type="Hardware" cpp:include="hardware.h"/>
+  <state id="s0">
+    <transition event="a" cond="{prefix}:hw.marker() == 41" target="s0"/>
+    <transition event="b" target="s0">
+      <if cond="{prefix}:hw.marker() == 41">
+        <log label="then"/>
+      <elseif cond="{prefix}:hw.marker() == 42"/>
+        <log label="elseif"/>
+      <else/>
+        <log label="else"/>
+      </if>
+    </transition>
+  </state>
+</scxml>
+"#
+    )
+}
+
+/// A native guard lowers to its expression wherever it is written.
+///
+/// ⚠ This is the defect's own shape. The native-guard admission landed
+/// on `<transition cond>` and not on `<if cond>`, and the second door
+/// already had a fallback arm — the constant fold — so an
+/// `<if cond="cpp:…">` became `if (false)` with no diagnostic at all.
+/// The branch body turned into dead code and the `<else>` beside it ran
+/// unconditionally, which is a WRONG output rather than a missing one.
+/// Measured 2026-09-16 at `ec146c9f3f1e`, where one document lowered the
+/// same text to `if (this->hw_->marker() == 41)` on the transition and
+/// to `if (false)` on the `<if>`.
+///
+/// The assertion is the comparison rather than a spelling: whatever the
+/// backend emits for the transition's guard, it must emit for the other
+/// two, and `false` must not appear in guard position at all.
+#[test]
+fn a_native_guard_lowers_the_same_on_both_doors() {
+    for (prefix, language) in [("cpp", "cpp"), ("kt", "kotlin")] {
+        let out = ScratchDir::new(&format!("two-door-{language}"));
+        let path = out.path().join("two_door.scxml");
+        std::fs::write(&path, two_door_document(prefix)).expect("write document");
+        let run = Command::new(sce_codegen_bin())
+            .args([
+                "generate",
+                path.to_str().unwrap(),
+                "-l",
+                language,
+                "-o",
+                out.path().to_str().unwrap(),
+                "--error-format=json",
+            ])
+            .current_dir(repo_root())
+            .output()
+            .expect("spawn sce-codegen");
+        assert_eq!(
+            run.status.code(),
+            Some(0),
+            "{language}: generation refused the two-door document:\n{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let text = out.generated_text();
+
+        // Both markers must reach guard position. `41` is written on all
+        // three doors, `42` only on the `<elseif>` — so finding `42` is
+        // what says the elseif arm was lowered rather than folded.
+        for marker in ["41", "42"] {
+            assert!(
+                text.lines()
+                    .any(|l| !is_comment(l.trim()) && l.contains(marker)),
+                "{language}: marker {marker} never reached the emitted source — \
+                 the native guard was folded away:\n{text}"
+            );
+        }
+        // The fold itself, in the shapes the two backends print it.
+        for folded in ["if (false)", "else if (false)", "if (false) {"] {
+            assert!(
+                !text.contains(folded),
+                "{language}: emitted {folded:?}, so a native guard reached the \
+                 constant-fold arm:\n{text}"
+            );
+        }
+    }
+}
+
 /// Every guard the backends emit without a data model carries a decided
 /// value.
 ///
@@ -464,6 +556,20 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
                      decided value",
                     transition.cond
                 );
+                // ⚠ The population, not the assertion, was this sweep's
+                // blind spot. It walked `<transition cond>` alone while
+                // the same constant-fold arm serves `<if>` and
+                // `<elseif>` — so the `<if cond="cpp:…">` defect passed
+                // it untouched. A guard is only as wide as what it
+                // reaches.
+                check_action_guards(&transition.actions, document, &mut guards);
+            }
+            for block in state
+                .on_entry_blocks
+                .iter()
+                .chain(state.on_exit_blocks.iter())
+            {
+                check_action_guards(block, document, &mut guards);
             }
         }
     }
@@ -480,6 +586,67 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
             guards.iter().any(|(d, c)| d == document && c == cond),
             "the sweep did not reach {document}'s cond=\"{cond}\"; it saw {guards:?}"
         );
+    }
+}
+
+/// The `<if>` / `<elseif>` half of
+/// [`every_guard_the_backends_emit_natively_has_a_value`]'s population.
+///
+/// Every claim that function makes about a `<transition cond>` holds
+/// word for word here: the emitters print `true` / `false` from
+/// `cond_constant`, so a guard reaching that arm with `None` is emitted
+/// as `false` — a silent change of meaning. Recursing through the nested
+/// blocks is what keeps a guard inside an `<if>` inside a `<foreach>` in
+/// the population too.
+fn check_action_guards(
+    actions: &[sce_build::model::Action],
+    document: &str,
+    guards: &mut Vec<(String, String)>,
+) {
+    fn undecided(cond: &str, constant: Option<bool>, pure_in: bool, native: bool) -> bool {
+        !cond.is_empty() && !pure_in && !native && constant.is_none()
+    }
+
+    for action in actions {
+        if !action.cond.is_empty()
+            && !action.is_pure_in_predicate
+            && !action.is_cpp_condition
+            && !action.is_kt_condition
+        {
+            guards.push((document.to_string(), action.cond.clone()));
+            assert!(
+                !undecided(
+                    &action.cond,
+                    action.cond_constant,
+                    action.is_pure_in_predicate,
+                    action.is_cpp_condition || action.is_kt_condition,
+                ),
+                "{document}: <if> cond=\"{}\" reaches the constant-fold arm with no \
+                 decided value",
+                action.cond
+            );
+        }
+        // Through `nested_blocks`, the single definition of what lies
+        // inside an action — the same descent the generator's own check
+        // makes, so the two cannot disagree about which conds exist.
+        for block in action.nested_blocks() {
+            if let Some(cond) = block.cond {
+                if !cond.is_empty() && !block.cond_is_pure_in && !block.cond_is_native {
+                    guards.push((document.to_string(), cond.to_string()));
+                    assert!(
+                        !undecided(
+                            cond,
+                            block.cond_constant,
+                            block.cond_is_pure_in,
+                            block.cond_is_native,
+                        ),
+                        "{document}: <elseif> cond=\"{cond}\" reaches the \
+                         constant-fold arm with no decided value"
+                    );
+                }
+            }
+            check_action_guards(block.actions, document, guards);
+        }
     }
 }
 

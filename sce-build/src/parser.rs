@@ -467,6 +467,86 @@ fn is_native_condition(cond: &str) -> bool {
         .any(|prefix| matches!(cond.strip_prefix(prefix), Some(body) if !body.trim().is_empty()))
 }
 
+/// Everything a backend needs in order to lower one `cond`, decided once.
+///
+/// ⚠ This type exists because the decision was made THREE times — in
+/// `parse_transition`, in `parse_if_action`, and again per `<elseif>` —
+/// and only the first of them knew about the native prefixes. An
+/// `<if cond="cpp:…">` therefore reached no native arm, fell through to
+/// the constant-fold arm, and emitted `if (false)`: the branch body
+/// became dead code and an `<else>` beside it ran unconditionally, with
+/// no diagnostic. Measured 2026-09-16 at `ec146c9f3f1e`, where the same
+/// text in one document lowered to `if (this->sig_->marker() == 41)` on a
+/// `<transition>` and to `if (false)` on an `<if>`.
+///
+/// ▶ The lesson the shape carries: an admission that lands on one door
+/// and not the other fails **silently** at the second, because the second
+/// door already had a fallback. Deciding once is what removes the second
+/// answer, not remembering to update both.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ResolvedCond {
+    pub cond_cpp: String,
+    pub cond_cpp_transformed: String,
+    pub cond_kt: String,
+    pub is_pure_in_predicate: bool,
+    pub is_cpp_condition: bool,
+    pub is_kt_condition: bool,
+    pub cond_constant: Option<bool>,
+}
+
+/// Decide how one `cond` lowers, for every backend, from one place.
+///
+/// The three outcomes are mutually exclusive and ordered as the backends
+/// branch on them: a native guard is target source and is pasted through
+/// (§B.1.2 withholds nothing it uses, ADR 0003); an `In()` predicate has
+/// a direct arm on every backend (§scxml-5.9.2); anything else is a data
+/// model expression, which the frontend can only answer when it is
+/// constant.
+pub(crate) fn resolve_cond(
+    cond: &str,
+    context_object_ids: &std::collections::BTreeSet<String>,
+) -> ResolvedCond {
+    let mut r = ResolvedCond::default();
+
+    // The prefix alone is not a guard: `cond="cpp:"` carries no body for
+    // the backend to lower, and the native arm pastes the stripped text
+    // straight into `if (…)`. Leaving the flag unset sends a bodyless
+    // prefix down the path any other blank `cond` takes, which is the
+    // refusal it deserves rather than `if () {` in generated source.
+    // `is_native_condition` carries the same `trim()` so the classifier
+    // and this site cannot give two answers to one question.
+    if let Some(body) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {
+        r.is_cpp_condition = true;
+        r.cond_cpp = body.to_string();
+        r.cond_cpp_transformed = if context_object_ids.is_empty() {
+            r.cond_cpp.clone()
+        } else {
+            transform_cpp_code_with_named_contexts(&r.cond_cpp, context_object_ids)
+        };
+    } else if let Some(body) = cond.strip_prefix("kt:").filter(|b| !b.trim().is_empty()) {
+        r.is_kt_condition = true;
+        r.cond_kt = if context_object_ids.is_empty() {
+            body.to_string()
+        } else {
+            transform_kt_code_with_named_contexts(body, context_object_ids)
+        };
+    } else if !cond.is_empty() && is_pure_in_predicate(cond) {
+        r.is_pure_in_predicate = true;
+        r.cond_cpp = convert_in_to_cpp(cond);
+        r.cond_kt = convert_in_to_kotlin(cond);
+    }
+
+    // Decided only for the author's own language: a `cpp:` / `kt:`
+    // condition is target source, and an `In()` predicate has an arm of
+    // its own on every backend.
+    r.cond_constant = if r.is_cpp_condition || r.is_kt_condition || r.is_pure_in_predicate {
+        None
+    } else {
+        crate::ecmascript::constant_truthiness(cond)
+    };
+    r
+}
+
 /// Does this `<script>` carry native host code rather than data model
 /// script text?
 ///
@@ -2604,67 +2684,22 @@ impl SCXMLParser {
             .unwrap_or("")
             .to_string();
 
-        let mut is_cpp_condition = false;
-        let mut is_kt_condition = false;
-        let mut is_pure_in = false;
-        let mut cond_cpp = String::new();
-        let mut cond_cpp_transformed = String::new();
-        let mut cond_kt = String::new();
-
-        // The prefix alone does not make a native guard, and this is the
-        // site that decides it: the flag below drives
-        // `process_transition.jinja2`'s native branch, which pastes the
-        // stripped body into `if (…)` with no emptiness check of its own.
-        // `cond="cpp:"` therefore emitted `if () {` — generated code that
-        // does not compile, which is a refusal arriving downstream of the
-        // document that caused it.
-        //
-        // Leaving the flag unset is the whole fix: a bodyless prefix then
-        // takes the path any other blank `cond` takes. Under `null` that
-        // is the §B.1.2 refusal; under `ecmascript` the template's own
-        // `{% if trans.cond %}` treats a blank condition as no condition,
-        // which is what a plain `cond="   "` already did. Measured
-        // 2026-09-16 on both.
-        if let Some(stripped) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {
-            is_cpp_condition = true;
-            cond_cpp = stripped.to_string();
-            cond_cpp_transformed = if !model.context_object_ids.is_empty() {
-                transform_cpp_code_with_named_contexts(&cond_cpp, &model.context_object_ids)
-            } else {
-                cond_cpp.clone()
-            };
-        } else if let Some(stripped) = cond.strip_prefix("kt:").filter(|b| !b.trim().is_empty()) {
-            is_kt_condition = true;
-            cond_kt = if !model.context_object_ids.is_empty() {
-                transform_kt_code_with_named_contexts(stripped, &model.context_object_ids)
-            } else {
-                stripped.to_string()
-            };
-        } else if !cond.is_empty() && is_pure_in_predicate(&cond) {
-            is_pure_in = true;
-            cond_cpp = convert_in_to_cpp(&cond);
-            cond_kt = convert_in_to_kotlin(&cond);
-        }
-        // Decided only for the author's own language: a `cpp:` / `kt:`
-        // condition is target source, and an `In()` predicate has an arm
-        // of its own on every backend.
-        let cond_constant = if is_cpp_condition || is_kt_condition || is_pure_in {
-            None
-        } else {
-            crate::ecmascript::constant_truthiness(&cond)
-        };
+        // One decision for every backend, shared with `<if>` / `<elseif>`
+        // — see [`resolve_cond`] for why deciding it here alone was the
+        // defect.
+        let resolved = resolve_cond(&cond, &model.context_object_ids);
 
         let mut transition = Transition {
             event: elem.attribute("event").unwrap_or("").to_string(),
             target: elem.attribute("target").unwrap_or("").to_string(),
             cond,
-            cond_cpp,
-            cond_cpp_transformed,
-            is_pure_in_predicate: is_pure_in,
-            is_cpp_condition,
-            cond_kt,
-            is_kt_condition,
-            cond_constant,
+            cond_cpp: resolved.cond_cpp,
+            cond_cpp_transformed: resolved.cond_cpp_transformed,
+            is_pure_in_predicate: resolved.is_pure_in_predicate,
+            is_cpp_condition: resolved.is_cpp_condition,
+            cond_kt: resolved.cond_kt,
+            is_kt_condition: resolved.is_kt_condition,
+            cond_constant: resolved.cond_constant,
             transition_type: elem.attribute("type").unwrap_or("external").to_string(),
             source_location: source_location_of(elem, source_name),
             ..Default::default()
@@ -2990,9 +3025,6 @@ impl SCXMLParser {
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         let cond = elem.attribute("cond").unwrap_or("").to_string();
-        let mut is_pure_in = false;
-        let mut cond_cpp = String::new();
-        let mut cond_kt = String::new();
         if !cond.is_empty() {
             // [`NeedsScriptEngineCause::IfCondition`] is derived post-parse
             // by [`crate::script_engine_analyzer`]; we only surface the
@@ -3001,22 +3033,20 @@ impl SCXMLParser {
             if has_in {
                 model.uses_in_predicate = true;
             }
-            if is_pure_in_predicate(&cond) {
-                is_pure_in = true;
-                cond_cpp = convert_in_to_cpp(&cond);
-                cond_kt = convert_in_to_kotlin(&cond);
-            }
         }
 
-        action.cond_constant = if is_pure_in {
-            None
-        } else {
-            crate::ecmascript::constant_truthiness(&cond)
-        };
+        // The same decision a `<transition cond>` gets. Before this, an
+        // `<if cond="cpp:…">` reached no native arm and lowered to
+        // `if (false)` — see [`resolve_cond`].
+        let resolved = resolve_cond(&cond, &model.context_object_ids);
+        action.cond_constant = resolved.cond_constant;
         action.cond = cond;
-        action.cond_cpp = cond_cpp;
-        action.cond_kt = cond_kt;
-        action.is_pure_in_predicate = is_pure_in;
+        action.cond_cpp = resolved.cond_cpp;
+        action.cond_kt = resolved.cond_kt;
+        action.cond_cpp_transformed = resolved.cond_cpp_transformed;
+        action.is_pure_in_predicate = resolved.is_pure_in_predicate;
+        action.is_cpp_condition = resolved.is_cpp_condition;
+        action.is_kt_condition = resolved.is_kt_condition;
 
         let mut current_branch: usize = 0; // 0 = then, 1+ = elseif, usize::MAX = else
         for child in elem.children() {
@@ -3038,28 +3068,19 @@ impl SCXMLParser {
                             model.uses_in_predicate = true;
                         }
                     }
-                    let ei_pure_in = !ei_cond.is_empty() && is_pure_in_predicate(&ei_cond);
-                    let ei_cpp = if ei_pure_in {
-                        convert_in_to_cpp(&ei_cond)
-                    } else {
-                        String::new()
-                    };
-                    let ei_kt = if ei_pure_in {
-                        convert_in_to_kotlin(&ei_cond)
-                    } else {
-                        String::new()
-                    };
-                    let ei_constant = if ei_pure_in {
-                        None
-                    } else {
-                        crate::ecmascript::constant_truthiness(&ei_cond)
-                    };
+                    // An `<elseif>` reaches the same arms its `<if>` does,
+                    // so it takes the same decision — it lowered to
+                    // `else if (false)` for the same reason.
+                    let ei = resolve_cond(&ei_cond, &model.context_object_ids);
                     action.elseif_branches.push(ElseIfBranch {
                         cond: ei_cond,
-                        cond_cpp: ei_cpp,
-                        cond_kt: ei_kt,
-                        is_pure_in_predicate: ei_pure_in,
-                        cond_constant: ei_constant,
+                        cond_cpp: ei.cond_cpp,
+                        cond_kt: ei.cond_kt,
+                        cond_cpp_transformed: ei.cond_cpp_transformed,
+                        is_pure_in_predicate: ei.is_pure_in_predicate,
+                        is_cpp_condition: ei.is_cpp_condition,
+                        is_kt_condition: ei.is_kt_condition,
+                        cond_constant: ei.cond_constant,
                         actions: Vec::new(),
                     });
                     current_branch = action.elseif_branches.len(); // 1-indexed
