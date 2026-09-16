@@ -167,4 +167,5 @@ cargo test -p sce-build --features cli,ffi \
     --test script_engine_language_parity \
     --test the_pin_is_read_from_one_place \
     --test every_annotated_document_is_accounted_for \
+    --test script_engine_census \
     || sce_gate_fail "tree-wide hygiene gates"

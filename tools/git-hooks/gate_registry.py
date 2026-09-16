@@ -1286,6 +1286,18 @@ INERT = [
     # above refuses. It is to give the documents that drive no gate their own
     # named entries, one at a time, each a claim somebody checked.
     "docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md",
+    # The script-engine census ledger, and the same shape as the entry above:
+    # read by a gate, and inert because that gate runs for every change. Both
+    # halves were checked on 2026-09-16 rather than assumed:
+    #   `scripts/gates/tree-hygiene.sh` names `--test script_engine_census`,
+    #     and `workflow_trigger_coverage` holds it to that.
+    #   `.github/workflows/tree-hygiene.yml` declares no `paths:` filter,
+    #     so CI offers it every push.
+    # Editing the ledger therefore cannot escape the test that enforces it.
+    # Without this entry the path is one directory below the `*.md` fnmatch
+    # above, so editing the ledger alone took the Rule 1 branch and bought
+    # the full run.
+    "docs/SCE_SCRIPT_ENGINE_CENSUS.md",
     # The NL->IR closure ledger, and the same shape as the entry above: read
     # by a gate, and inert for the reason at the top of this list. Both
     # halves were checked on 2026-09-14 rather than assumed, because the

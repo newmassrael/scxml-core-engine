@@ -216,6 +216,7 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // `sce-build/src/forge/` enums besides.
     "lowering_decision_ledger",
     "roadmap_marker_gate",
+    "script_engine_census",
     "scope_terminology",
     "sourced_scripts_are_tracked",
     "sourcemap_symbol_markers",
