@@ -167,7 +167,7 @@ public:
             case State::{{ s.name }}: {
                 // <donedata>
 {% for p in s.done_params %}
-                doneData_["{{ p.name }}"] = {{ p.expr }};
+                doneData_["{{ p.name }}"] = ::SCE::Forge::doneDataValue({{ p.expr }});
 {% endfor %}
                 break;
             }

@@ -33,6 +33,62 @@ use crate::forge::model::{ProcedureModel, ProcedureState, SceType};
 /// validation error at a time. Multi-violation aggregation is
 /// out-of-scope for this pass (consistent with how `parse_procedure`
 /// itself short-circuits on the first failure).
+/// Refuse a `sce:payload` that names a declared field which is not bytes.
+///
+/// A procedure's payload is a wire blob: every runtime in this crate types
+/// it as raw bytes, and `ProcedureServiceTypes.h` says why in its own words
+/// — the value comes from a codec's `encode_to_vec()`. Handing it a scalar
+/// has no meaning without an endianness and a width, which is the decision a
+/// codec exists to make.
+///
+/// ⚠ Before this, such a document generated with rc=0 and emitted
+/// `req.payload = themeFileId_;` — assigning a `uint32_t` to an
+/// `optional<vector<uint8_t>>`, which does not compile. The refusal arrived
+/// in a consumer's build log instead of on the document that caused it
+/// (measured 2026-09-17).
+///
+/// ⚠⚠ Only what can be PROVEN wrong is refused: a payload expression that
+/// is exactly the identifier of a declared input or internal whose declared
+/// type is not `bytes`. A call (`frame.encode_to_vec()`), a member access,
+/// or anything this pass cannot resolve is left alone — a checker that
+/// guessed at the rest would refuse working documents, which is the failure
+/// this one is meant to prevent, pointed the other way.
+pub fn validate_payload_is_bytes(
+    model: &crate::forge::model::ProcedureModel,
+) -> Result<(), Box<ValidationError>> {
+    use crate::forge::model::SceType;
+
+    for state in &model.states {
+        for send in &state.on_entry_sends {
+            let Some(payload) = send.payload.as_ref() else {
+                continue;
+            };
+            let name = payload.trim();
+            let declared = model
+                .inputs
+                .iter()
+                .chain(model.internals.iter())
+                .find(|f| f.id == name);
+            let Some(field) = declared else {
+                continue; // not a bare field name: nothing proven
+            };
+            if matches!(field.sce_type, SceType::Bytes) {
+                continue;
+            }
+            return Err(Box::new(ValidationError::InvalidAttribute {
+                element: format!("<send sce:service=\"{}\">", send.service),
+                attr: "sce:payload".into(),
+                value: format!("{name} (declared {:?})", field.sce_type),
+                expected: "bytes — a codec's encode_to_vec(), or a bytes field. \
+                           A scalar has no payload meaning without an endianness \
+                           and a width, which is the decision a codec makes"
+                    .into(),
+            }));
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_bytes_max_size_consistency(
     model: &ProcedureModel,
 ) -> Result<(), Box<ValidationError>> {

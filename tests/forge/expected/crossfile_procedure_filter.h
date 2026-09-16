@@ -105,7 +105,7 @@ public:
         switch (state) {
             case State::Done: {
                 // <donedata>
-                doneData_["result"] = "success";
+                doneData_["result"] = ::SCE::Forge::doneDataValue("success");
                 break;
             }
             default:

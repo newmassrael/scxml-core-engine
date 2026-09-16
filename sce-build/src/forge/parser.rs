@@ -4979,6 +4979,13 @@ fn parse_procedure(
         return Err(located_at_line(label.diagnostic_label, None, err));
     }
 
+    // A payload that is not bytes cannot be lowered by any backend — the
+    // runtimes type it as a wire blob — so it is refused here rather than
+    // emitted as source that does not compile.
+    if let Err(err) = crate::forge::validate::validate_payload_is_bytes(&model) {
+        return Err(located_at_line(label.diagnostic_label, None, err));
+    }
+
     Ok(model)
 }
 

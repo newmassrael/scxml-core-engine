@@ -16081,6 +16081,13 @@ fn render_procedure_cpp(
                 .done_params
                 .iter()
                 .map(|p| {
+                    // The expected type stays `Unknown`: `doneData_` takes a
+                    // string, but the VALUE keeps its own type and the C++
+                    // template renders it with `SCE::Forge::doneDataValue`,
+                    // the way the Rust template has always appended
+                    // `.to_string()`. Asking the transpiler for `Str` here
+                    // was tried first and changed nothing — it decides
+                    // numeric width, not string coercion.
                     let transpiled = transpile_procedure_expr(
                         &p.expr,
                         ExprTarget::Cpp,

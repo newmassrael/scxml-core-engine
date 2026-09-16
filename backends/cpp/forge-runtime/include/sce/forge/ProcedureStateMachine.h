@@ -23,6 +23,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include "sce/forge/ProcedureServiceTypes.h"
@@ -33,6 +34,37 @@ namespace SCE::Forge {
 /// iteration count so that a policy with an unreachable final state
 /// cannot spin forever.
 inline constexpr int kProcedureMaxIterations = 1000;
+
+/// A `<donedata>` value, rendered for the `map<string, string>` that every
+/// procedure runtime in this crate carries.
+///
+/// ⚠ This exists because C++ was the one backend that did not render it.
+/// Rust's template has always written `{{ expr }}.to_string()`, so
+/// `<param expr="7"/>` lowered fine there; the C++ template assigned the
+/// author's expression straight into a `std::string` and emitted
+/// `doneData_["n"] = 7;`, which does not compile. The document was accepted
+/// with rc=0 either way, so the failure arrived as broken generated source
+/// rather than as a diagnostic on the document that caused it — measured
+/// 2026-09-17 on `sce:kind="procedure"`.
+///
+/// Overloaded rather than a single template so that a type with no
+/// rendering fails at the call site with the value's own type named,
+/// instead of deep inside `std::to_string`.
+inline std::string doneDataValue(std::string v) {
+    return v;
+}
+
+inline std::string doneDataValue(const char *v) {
+    return std::string(v);
+}
+
+template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>> inline std::string doneDataValue(T v) {
+    if constexpr (std::is_same_v<T, bool>) {
+        return v ? "true" : "false";
+    } else {
+        return std::to_string(v);
+    }
+}
 
 /// Drive a Level 2 procedure policy to completion.
 ///

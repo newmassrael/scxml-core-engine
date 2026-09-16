@@ -154,12 +154,12 @@ public:
             }
             case State::Done: {
                 // <donedata>
-                doneData_["result"] = "success";
+                doneData_["result"] = ::SCE::Forge::doneDataValue("success");
                 break;
             }
             case State::Error: {
                 // <donedata>
-                doneData_["result"] = "failure";
+                doneData_["result"] = ::SCE::Forge::doneDataValue("failure");
                 break;
             }
             default:
