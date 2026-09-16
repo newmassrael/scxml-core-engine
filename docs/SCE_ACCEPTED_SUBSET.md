@@ -168,7 +168,7 @@ sub-section as `scxml/null-datamodel-forbids-construct`:
 | §B.1.4 | Value expressions — `expr=`, `srcexpr=`, `targetexpr=`, `delayexpr=`, `eventexpr=`, `typeexpr=` |
 | §B.1.5 | Scripting |
 
-Two deliberate narrowings, both extensions rather than readings:
+Three deliberate narrowings, all extensions rather than readings:
 
 - **Literal `<donedata>` / `<content>` / `<param>` are admitted.** §B.1.7
   withholds the §5 elements wholesale. SCE refuses only those that need
@@ -182,6 +182,17 @@ Two deliberate narrowings, both extensions rather than readings:
   language with no script engine involved, so §B.1.5 withholds nothing it
   uses. A `<script>` carrying data model script text — or mixing text
   with native blocks — is still refused.
+- **Native `cond="cpp:…"` / `cond="kt:…"` is admitted.** The same door as
+  the `<script>` form above, for the same reason: the prefix is stripped
+  and the body lowered into the generated language, so §B.1.2 withholds
+  nothing it uses. Until 2026-09-16 only the `<script>` half was admitted,
+  and a consumer pairing `cpp:` guards with `datamodel="null"` was refused
+  beside documents whose `<script><cpp>` passed — the asymmetry, not the
+  rule, was the defect. The prefix must be the literal start of the
+  condition, matching the sites that lower it; a leading space would be an
+  admission the backend cannot honour. ADR 0003 records the decision and
+  pairs it with `docs/SCE_SCRIPT_ENGINE_CENSUS.md`, which counts
+  native-prefix use so an escape hatch cannot quietly become the path.
 
 A nested `<scxml>` inside `<content>` declares its own data model and is
 judged as the document it is, not by its parent's declaration. `sce:`

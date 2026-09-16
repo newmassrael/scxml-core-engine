@@ -1,0 +1,106 @@
+# Mutation cases for the native-guard admission under the Null data model.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_native_guard_is_not_a_datamodel_expression.cases`.
+#
+# W3C SCXML B.1.2 withholds every boolean expression but `In(id)` from the
+# Null data model. SCE spells a native guard as `cond="cpp:…"` (or `kt:`)
+# and lowers the stripped body straight into the generated language, which
+# is not a data model expression at all — the same reason `<script><cpp>`
+# has always been admitted there. Until 2026-09-16 only the `<script>` half
+# was admitted, so a consumer pairing `cpp:` guards with `datamodel="null"`
+# was refused beside documents whose `<script><cpp>` passed. ADR 0003 took
+# the admission deliberately and paired it with a census, because an escape
+# hatch nobody counts becomes the front door.
+#
+# The exemption therefore has to hold in BOTH directions, and each is a
+# different failure:
+#
+#   * delete it and the asymmetry returns — a document the backend lowers
+#     fine is refused at the frontend;
+#   * widen it and the admission stops matching its own lowering. The sites
+#     that strip the prefix match a LITERAL start (`strip_prefix("cpp:")`
+#     here, `NATIVE_COND_PREFIXES` in the generator), so a trimmed or
+#     substring match admits text the backend cannot lower. That refusal
+#     does not disappear, it moves downstream and arrives as a compile
+#     error in generated code instead of a diagnostic on the document.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test datamodel_attribute_reaches_a_decision
+# `--features cli` is not decoration: this suite SPAWNS `sce-codegen`, so
+# the target declares `required-features = ["cli"]` and a run without it
+# exits 101 in zero seconds — a failure that reads like a red suite and is
+# not one.
+mutation_targets sce-build/src/parser.rs
+mutation_oracles sce-build/tests/datamodel_attribute_reaches_a_decision.rs
+
+# ── The admission disappears ────────────────────────────────────────
+#
+# The asymmetry the consumer reported, restored.
+
+mutation_case "a native guard is judged as a data model expression again" <<'PY'
+edit("sce-build/src/parser.rs",
+     "            if !is_null_datamodel_condition(cond) && !is_native_condition(cond) {",
+     "            if !is_null_datamodel_condition(cond) {")
+PY
+
+mutation_case "the native predicate answers no for every condition" <<'PY'
+edit("sce-build/src/parser.rs",
+     """fn is_native_condition(cond: &str) -> bool {
+    cond.starts_with("cpp:") || cond.starts_with("kt:")
+}""",
+     """fn is_native_condition(cond: &str) -> bool {
+    let _ = cond;
+    false
+}""")
+PY
+
+mutation_case "only the C++ prefix is admitted, and Kotlin's is not" <<'PY'
+edit("sce-build/src/parser.rs",
+     """fn is_native_condition(cond: &str) -> bool {
+    cond.starts_with("cpp:") || cond.starts_with("kt:")
+}""",
+     """fn is_native_condition(cond: &str) -> bool {
+    cond.starts_with("cpp:")
+}""")
+PY
+
+# ── …or stops matching what actually lowers it ──────────────────────
+#
+# The dangerous direction. Each of these still admits the documents the
+# consumer writes, so the admission LOOKS intact — what breaks is the
+# agreement between this check and the sites that strip the prefix.
+
+mutation_case "the admission trims, so a leading space is admitted" <<'PY'
+edit("sce-build/src/parser.rs",
+     """fn is_native_condition(cond: &str) -> bool {
+    cond.starts_with("cpp:") || cond.starts_with("kt:")
+}""",
+     """fn is_native_condition(cond: &str) -> bool {
+    let c = cond.trim_start();
+    c.starts_with("cpp:") || c.starts_with("kt:")
+}""")
+PY
+
+mutation_case "the admission matches the prefix anywhere in the condition" <<'PY'
+edit("sce-build/src/parser.rs",
+     """fn is_native_condition(cond: &str) -> bool {
+    cond.starts_with("cpp:") || cond.starts_with("kt:")
+}""",
+     """fn is_native_condition(cond: &str) -> bool {
+    cond.contains("cpp:") || cond.contains("kt:")
+}""")
+PY
+
+mutation_case "every condition is admitted as native" <<'PY'
+edit("sce-build/src/parser.rs",
+     """fn is_native_condition(cond: &str) -> bool {
+    cond.starts_with("cpp:") || cond.starts_with("kt:")
+}""",
+     """fn is_native_condition(cond: &str) -> bool {
+    let _ = cond;
+    true
+}""")
+PY

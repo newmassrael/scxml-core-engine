@@ -161,6 +161,52 @@ fn the_null_data_model_refuses_a_boolean_expression_that_is_not_in() {
 }
 
 #[test]
+fn the_null_data_model_admits_a_native_condition() {
+    // A native guard is not a data model expression. `cpp:` is stripped
+    // and the body lowered into the generated language — the same door
+    // `<script><cpp>` goes through, which §B.1.5 has always admitted here
+    // — so §B.1.2 withholds nothing it uses.
+    //
+    // Until 2026-09-16 only the `<script>` half was admitted, and a
+    // consumer pairing `cpp:` guards with `datamodel="null"` was refused
+    // beside documents whose `<script><cpp>` passed. The asymmetry was the
+    // defect, not the rule; ADR 0003 records the decision.
+    let (ok, out) = check(&doc(
+        r#"datamodel="null""#,
+        r#"<state id="s"><transition cond="cpp:ready() &amp;&amp; count > 0" target="done"/></state>"#,
+    ));
+    assert!(
+        ok,
+        "a native `cpp:` guard names no data model expression, so the Null \
+         data model must admit it:\n{out}"
+    );
+}
+
+#[test]
+fn the_null_data_model_admits_a_native_condition_only_at_the_literal_prefix() {
+    // The admission has to match its lowering exactly. Every site that
+    // LOWERS a native guard matches a literal prefix — `strip_prefix`
+    // in the parser, `NATIVE_COND_PREFIXES` in the generator — so a
+    // leading space is not a native condition, and admitting it here
+    // would hand the backend text it cannot lower. An admission wider
+    // than its lowering is a refusal moved downstream, where it arrives
+    // as a compile error in generated code instead of a diagnostic.
+    let (ok, out) = check(&doc(
+        r#"datamodel="null""#,
+        r#"<state id="s"><transition cond=" cpp:ready()" target="done"/></state>"#,
+    ));
+    assert!(
+        !ok,
+        "a leading space means the prefix is not the literal start, so the \
+         lowering sites would not strip it:\n{out}"
+    );
+    assert!(
+        out.contains("B.1.2"),
+        "expected the §B.1.2 rejection, got:\n{out}"
+    );
+}
+
+#[test]
 fn the_null_data_model_refuses_a_conjunction_built_around_in() {
     // The rule has to be "the condition *is* `In(id)`", not "the
     // condition *contains* one". `In('s') && n > 0` reads as an In()

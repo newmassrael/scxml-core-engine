@@ -423,6 +423,30 @@ fn is_null_datamodel_condition(cond: &str) -> bool {
     !inner.contains(['(', ')', ',']) && !inner.trim().is_empty()
 }
 
+/// Does this `cond` carry native host code rather than a data model
+/// expression?
+///
+/// SCE spells a native guard as `cond="cpp:…"` (or `kt:`) and lowers the
+/// stripped body straight into the generated language — the same door
+/// `<script><cpp>` goes through, so the sentence
+/// [`is_native_script_block`] carries applies here unchanged: such a
+/// condition names no data model expression at all, and §B.1.2 withholds
+/// nothing it uses. ADR 0003 took this deliberately and pairs it with a
+/// census, because an escape hatch nobody counts becomes the front door.
+///
+/// ⚠ Deliberately untrimmed. The sites that LOWER a native guard match a
+/// literal prefix (`strip_prefix("cpp:")` below, `NATIVE_COND_PREFIXES`
+/// in the generator), so admitting `" cpp:x"` here would pass a document
+/// the backend then cannot lower — an admission has to match its lowering
+/// exactly or it is a refusal moved downstream.
+///
+/// ⚠ `cond` only. Every native-prefix branch in this tree is a condition
+/// or a guard; no `expr=` / `location=` attribute has one. Widening this
+/// to the value-expression attributes would admit text nothing lowers.
+fn is_native_condition(cond: &str) -> bool {
+    cond.starts_with("cpp:") || cond.starts_with("kt:")
+}
+
 /// Does this `<script>` carry native host code rather than data model
 /// script text?
 ///
@@ -549,7 +573,13 @@ fn enforce_datamodel_languages(
         }
 
         if let Some(cond) = node.attribute("cond") {
-            if !is_null_datamodel_condition(cond) {
+            // A native guard is admitted for the reason `<script><cpp>` is
+            // admitted a few lines up: it is not a data model expression,
+            // so B.1.2 withholds nothing it uses. The asymmetry this closes
+            // was reported by a consumer whose documents pair `cpp:` guards
+            // with `datamodel="null"` and were refused while the `<script>`
+            // form beside them passed (ADR 0003).
+            if !is_null_datamodel_condition(cond) && !is_native_condition(cond) {
                 return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
                     construct: format!("cond=\"{cond}\""),
                     needs: "a boolean expression language beyond In()".to_string(),
@@ -5583,7 +5613,7 @@ pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
     if cond.trim().is_empty() {
         return (false, false);
     }
-    if cond.starts_with("cpp:") || cond.starts_with("kt:") {
+    if is_native_condition(cond) {
         return (false, false);
     }
     let has_in = cond.contains("In(");

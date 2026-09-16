@@ -96,6 +96,69 @@ letting it live under `null`. It is costlier for consumers (every
 document's declaration changes) and it is worth revisiting **if the
 escape-hatch column in the census grows** rather than shrinks.
 
+## What is already built, measured 2026-09-16
+
+Written down because the decision reads as "build a compiler" and that is
+not the state of the tree. Half of it exists and is in use, and a reader
+who starts from zero will re-derive the wrong cost.
+
+**Four condition classes already need no engine, and the list is closed
+rather than sampled** (`check_expression_needs`, the single classifier
+every backend's guard arm is chosen by):
+
+1. a `cpp:` / `kt:` condition — the author wrote target-language source;
+2. a pure `In(...)` predicate — answered from the active configuration;
+3. a condition the frontend folds at build time
+   (`crate::ecmascript::constant_truthiness`);
+4. **a typed `_event.data` guard under an imported EventSchema** —
+   codegen emits it as a native typed-payload guard, and
+   `generator.rs` holds that no backend can reach codegen with an
+   un-lowerable one.
+
+Class 4 is the existence proof this programme extends: a native lowering
+of an ECMAScript guard, across all six backends, already shipping.
+
+**The expression front half exists.** `sce-build/src/ecmascript/` carries
+a parser, a scope resolver, and a builtin surface that is closed and
+guarded: `INSTALLED_GLOBALS` (`Boolean`, `In`, `JSON`, `Math`, `Number`,
+`Object`, `String`, `parseFloat`, `parseInt`, plus the five system
+variables) and `LOWERED_METHODS` (fourteen names), whose membership is
+pinned to the emitter's arms by
+`ecmascript_builtin_vocabulary::every_lowered_method_has_an_emitter`. A
+free identifier is not a builtin question at all — `resolve` answers it
+from the document's own bindings.
+
+**What is missing is the back half for five of six targets.** There is
+exactly one emitter, `ecmascript/lua.rs`. So the pipeline today parses
+and checks an expression and then lowers it to *Lua source handed to a
+runtime engine* — translation is already happening; it lands in an
+interpreter rather than in the target language. The programme is
+therefore "add target emitters beside the Lua one, against a typed data
+model", not "write a compiler".
+
+**What blocks it is types, not syntax.** ECMAScript is dynamically typed;
+`x > 1` lowers to C++ only when `x`'s type is known. `<data>`
+declarations and EventSchema are where types exist today, which is
+exactly why class 4 above is the class that already works. Where a type
+is unknown the compiler must infer it, refuse, or fall back — and that
+boundary is the subset's definition, a design choice rather than a
+discovery.
+
+**Two causes are statements, not expressions.** `GlobalScript` (3
+records) and `InlineScriptAction` (7) are arbitrary ECMAScript statement
+bodies. They are the honest candidates to stay engine-bound, and the
+decision's "fallback for what cannot be decided at build time" is aimed
+at them.
+
+**And what the escape hatch actually delivers, stated so it is not
+re-derived as worse than it is:** a `cpp:` guard *is* compiled, natively,
+with no engine. It buys the engine-free half outright. What it spends is
+the portable half — the same document reaches one backend, and
+`first_unlowerable_native_cond` refuses the others by name rather than
+mis-compiling them. The consumer that raised this ADR is already
+generating and running that way; what it cannot do is take those
+documents to a second backend.
+
 ## Consequences
 
 - The census comes before the programme. Nobody knows the per-cause
