@@ -1298,6 +1298,14 @@ INERT = [
     # above, so editing the ledger alone took the Rule 1 branch and bought
     # the full run.
     "docs/SCE_SCRIPT_ENGINE_CENSUS.md",
+    # The programme the census above orders. Inert on the strongest reading
+    # of that claim: NOTHING reads this one. It is deliberately ungated —
+    # the census test ratchets the counts through the ledger above, and no
+    # gate reads the programme document itself — so "drives no path-scoped
+    # gate" is literally true here rather than true-by-Rule-3. Same fnmatch
+    # reason as the entry above: one directory below the `*.md` pattern, so
+    # without a named entry editing it alone buys the full run.
+    "docs/SCE_SCRIPT_ENGINE_PROGRAMME.md",
     # The NL->IR closure ledger, and the same shape as the entry above: read
     # by a gate, and inert for the reason at the top of this list. Both
     # halves were checked on 2026-09-14 rather than assumed, because the

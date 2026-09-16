@@ -52,14 +52,29 @@ denominator moved.
 | forge documents (root `sce:kind`) | 187 | stateless by construction -- no script engine is reachable from them, so their absence costs the census nothing |
 | `sce:template` roots | 28 | not statecharts |
 | `not-a-template` / deliberately unparseable fixtures | 2 | negative fixtures; the stage that judges them is not this one |
-| statecharts a bare parse does not resolve | 44 | **open** |
+| statecharts a bare parse does not resolve | 44 | negative fixtures, every one |
 
-⚠ **The 44 are measured, not explained.** A plausible cause -- documents
-whose resolution needs include directories or preprocessor expansion that
-a bare `parse_file` is not given -- is written here as a hypothesis and
-nothing more. It matters because a cause arriving in one of those 44 would
-not be seen by this census, so the number is carried in the open rather
-than rounded away.
+**The 44 are explained, measured 2026-09-16.** Every one is a deliberate
+negative fixture whose purpose is to be refused: 22 under
+`tests/parsing/fixtures/`, 13 under `tests/w3c_template_parity/fixtures/`,
+13 under `sce-build/tests/fixtures/`, and none outside a fixture directory.
+Their diagnostics are the errors they exist to assert -- `<xi:include>` and
+`<sce:use>` cycles, missing files, malformed templates, nesting depth
+limits, and EventSchema type mismatches and enum overflows. **No real
+statechart is silently skipped**, so this was a gap in this document, not a
+defect in the instrument's reach.
+
+⚠ **Reproducing it needs one correction, which cost a wrong claim first.**
+The probe is one `sce-codegen check` per plain statechart, and it returns
+**48** refusals, not 44. `check` is not the same predicate as the census's
+`parse_file`: it also runs the validators and the backend, so four
+documents that parse cleanly are refused later, each with `Forge codegen
+error: ...` (no state nodes, an unknown initial state, two unknown
+transition targets). 48 - 4 = 44, and that is what reconciles the probe
+with `documents-judged`. The mistake to avoid is reading a `check` refusal
+as a parse refusal -- `cmd_check`'s comment says the statechart arm reaches
+the expander THROUGH `parse_file`, which makes parsing a part of `check`,
+not the whole of it.
 
 ## Measured 2026-09-16
 
