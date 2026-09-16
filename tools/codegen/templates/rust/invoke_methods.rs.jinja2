@@ -261,7 +261,7 @@
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                            "<invoke> srcexpr '{{ invoke_info.srcexpr }}' failed to evaluate"));
+                            "<invoke> srcexpr '{{ invoke_info.srcexpr | escape_rust }}' failed to evaluate"));
 {% endif %}
                         continue;
                     }
@@ -281,7 +281,7 @@
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                            "<invoke> contentexpr '{{ invoke_info.contentexpr }}' failed to evaluate"));
+                            "<invoke> contentexpr '{{ invoke_info.contentexpr | escape_rust }}' failed to evaluate"));
 {% endif %}
                         continue;
                     }
