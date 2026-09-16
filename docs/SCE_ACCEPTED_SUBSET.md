@@ -493,6 +493,16 @@ e.g. `Transform` requires at least one input and one output field
 
 Per-kind context objects carrying stateful scratch data. Rules:
 
+- The element is matched by NAMESPACE, not by prefix: it must be
+  `context` in `http://sce.dev/ext`, which a document declares as
+  `<scxml … xmlns:sce="http://sce.dev/ext">`. Stated here because the
+  failure is silent in the worst way — a declaration under any other URI
+  is not an `sce:context` element to the parser, so a `cpp:` guard
+  naming objects reports *"references objects but no `<sce:context>`
+  declarations found"*, the identical diagnostic to declaring none at
+  all. The message cannot separate absent from present-under-the-wrong-key,
+  and a reader who trusts it goes looking for a missing element that is
+  sitting in front of them.
 - The `id` is unique across all context objects in the document
   (`validation/duplicate-context-object`).
 - The `id` does not collide with a type alias the C++ codegen emits

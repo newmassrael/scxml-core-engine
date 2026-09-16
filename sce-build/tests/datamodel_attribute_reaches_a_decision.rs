@@ -183,6 +183,26 @@ fn the_null_data_model_admits_a_native_condition() {
 }
 
 #[test]
+fn the_null_data_model_admits_a_native_kotlin_condition() {
+    // The `kt:` half of the same admission, and a separate test rather
+    // than a second assertion above because the two prefixes are two arms
+    // of one predicate: a mutation that drops an arm has to red
+    // something. With only a `cpp:` witness it did not. Measured
+    // 2026-09-16 — the case "only the C++ prefix is admitted, and
+    // Kotlin's is not" SURVIVED at 0/12 red, which is a hole in the
+    // tests rather than a mutation that needed to be stronger.
+    let (ok, out) = check(&doc(
+        r#"datamodel="null""#,
+        r#"<state id="s"><transition cond="kt:ready() &amp;&amp; count > 0" target="done"/></state>"#,
+    ));
+    assert!(
+        ok,
+        "a native `kt:` guard names no data model expression either, so \
+         the Null data model must admit it:\n{out}"
+    );
+}
+
+#[test]
 fn the_null_data_model_admits_a_native_condition_only_at_the_literal_prefix() {
     // The admission has to match its lowering exactly. Every site that
     // LOWERS a native guard matches a literal prefix — `strip_prefix`
