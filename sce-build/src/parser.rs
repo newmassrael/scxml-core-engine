@@ -444,7 +444,27 @@ fn is_null_datamodel_condition(cond: &str) -> bool {
 /// or a guard; no `expr=` / `location=` attribute has one. Widening this
 /// to the value-expression attributes would admit text nothing lowers.
 fn is_native_condition(cond: &str) -> bool {
-    cond.starts_with("cpp:") || cond.starts_with("kt:")
+    // The prefix alone is not a guard. `cond="cpp:"` and `cond="cpp:   "`
+    // carry no expression for the backend to lower, and every site that
+    // lowers one pastes the stripped body straight into an `if (…)` —
+    // which emits `if () {` and fails to compile, a refusal arriving in
+    // generated code instead of on the document that caused it.
+    //
+    // ⚠ This predicate is NOT what stops `if () {` being emitted — the
+    // flag set at the strip site in `parse_transition` is, and it carries
+    // the same `trim()` for that reason. What the body check does here is
+    // keep this answer and that one from disagreeing: `check_expression_needs`
+    // and the §B.1.2 call site both read this, and a bodyless prefix
+    // classified as native *here* while the strip site declines it there
+    // would be two answers to one question.
+    //
+    // Measured 2026-09-16: an ECMAScript document could already reach the
+    // generator with `cond="cpp:"` before the Null data model admitted
+    // native guards at all, because this classifier waved any prefixed
+    // string through on the prefix alone.
+    ["cpp:", "kt:"]
+        .iter()
+        .any(|prefix| matches!(cond.strip_prefix(prefix), Some(body) if !body.trim().is_empty()))
 }
 
 /// Does this `<script>` carry native host code rather than data model
@@ -2591,7 +2611,21 @@ impl SCXMLParser {
         let mut cond_cpp_transformed = String::new();
         let mut cond_kt = String::new();
 
-        if let Some(stripped) = cond.strip_prefix("cpp:") {
+        // The prefix alone does not make a native guard, and this is the
+        // site that decides it: the flag below drives
+        // `process_transition.jinja2`'s native branch, which pastes the
+        // stripped body into `if (…)` with no emptiness check of its own.
+        // `cond="cpp:"` therefore emitted `if () {` — generated code that
+        // does not compile, which is a refusal arriving downstream of the
+        // document that caused it.
+        //
+        // Leaving the flag unset is the whole fix: a bodyless prefix then
+        // takes the path any other blank `cond` takes. Under `null` that
+        // is the §B.1.2 refusal; under `ecmascript` the template's own
+        // `{% if trans.cond %}` treats a blank condition as no condition,
+        // which is what a plain `cond="   "` already did. Measured
+        // 2026-09-16 on both.
+        if let Some(stripped) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {
             is_cpp_condition = true;
             cond_cpp = stripped.to_string();
             cond_cpp_transformed = if !model.context_object_ids.is_empty() {
@@ -2599,7 +2633,7 @@ impl SCXMLParser {
             } else {
                 cond_cpp.clone()
             };
-        } else if let Some(stripped) = cond.strip_prefix("kt:") {
+        } else if let Some(stripped) = cond.strip_prefix("kt:").filter(|b| !b.trim().is_empty()) {
             is_kt_condition = true;
             cond_kt = if !model.context_object_ids.is_empty() {
                 transform_kt_code_with_named_contexts(stripped, &model.context_object_ids)

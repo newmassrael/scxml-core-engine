@@ -317,6 +317,84 @@ fn a_machine_with_no_data_model_names_no_engine() {
     }
 }
 
+/// A native prefix with no body is not a guard, on every backend.
+///
+/// `cond="cpp:"` carries nothing for a backend to lower, and the native
+/// arm in `process_transition.jinja2` pastes the stripped body into
+/// `if (…)` with no emptiness check of its own. Measured 2026-09-16: it
+/// emitted `if () {` — generated C++ that does not compile, which is a
+/// refusal arriving downstream of the document that caused it.
+///
+/// This is a SYNTHETIC probe on purpose.
+/// `every_guard_the_backends_emit_natively_has_a_value` below sweeps the
+/// repository's own documents, and none of them writes a bodyless
+/// prefix, so a corpus sweep is structurally blind to this. The decision
+/// lives at the strip site in `parse_transition`, which declines to set
+/// `is_cpp_condition` without a body; with that filter removed nothing
+/// in the frontend suites changes, because the Null data model's §B.1.2
+/// refusal fires through a different predicate. The emitted text is the
+/// only witness.
+#[test]
+fn a_native_prefix_with_no_body_is_not_classified_native() {
+    // Asserted on the CLASSIFICATION, not on emitted syntax, because the
+    // emitted shape is per-backend and a string match only sees the
+    // backends it happens to name. Measured 2026-09-16: an earlier
+    // version of this test looked for `if ()` — a C-family shape — and
+    // so could never fail on Kotlin, whose macro pastes `cond_kt` bare
+    // into a `when` arm and would emit `event is … && ` with nothing
+    // before the `->`. The mutation that removes the Kotlin filter
+    // SURVIVED at 0 red against that version while its C++ twin caught.
+    //
+    // The flags are what the emitters branch on, so this is the fact the
+    // templates actually consume, and it holds for every backend at once.
+    for cond in ["cpp:", "cpp:   ", "kt:", "kt:   ", "cpp:\t", "kt:\n"] {
+        let mut parser = SCXMLParser::new();
+        let model = parser
+            .parse_string(&document(cond), "guard.scxml")
+            .unwrap_or_else(|e| panic!("cond={cond:?} must still parse: {e:?}"));
+        let mut seen = 0;
+        for state in model.states.values() {
+            for transition in &state.transitions {
+                seen += 1;
+                assert!(
+                    !transition.is_cpp_condition,
+                    "cond={cond:?} was classified as a native C++ guard; the \
+                     emitter pastes the stripped body into `if (…)` and there \
+                     is no body to paste"
+                );
+                assert!(
+                    !transition.is_kt_condition,
+                    "cond={cond:?} was classified as a native Kotlin guard; \
+                     the emitter pastes `cond_kt` into a `when` arm and there \
+                     is no body to paste"
+                );
+            }
+        }
+        // Arity floor: a document that parsed to no transitions would
+        // satisfy every assertion above without measuring anything.
+        assert_eq!(seen, 1, "cond={cond:?} should yield exactly one transition");
+    }
+}
+
+#[test]
+fn a_native_prefix_with_no_body_emits_no_empty_condition() {
+    // The emission half, kept beside the classification one because the
+    // defect was in generated code: `cond="cpp:"` emitted `if () {` into
+    // C++ that does not compile. This names the C-family shape on
+    // purpose — it is the one that was seen in the wild — and the test
+    // above is what covers every backend.
+    for language in backends() {
+        for cond in ["cpp:", "cpp:   ", "kt:", "kt:   "] {
+            let generated = generate(cond, language);
+            assert!(
+                !generated.text.contains("if ()"),
+                "{language} emitted an empty condition for cond={cond:?}:\n{}",
+                generated.text
+            );
+        }
+    }
+}
+
 /// Every guard the backends emit without a data model carries a decided
 /// value.
 ///

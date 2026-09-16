@@ -28,13 +28,24 @@
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-build --features cli --test datamodel_attribute_reaches_a_decision
+mutation_tests -p sce-build --features cli --test datamodel_attribute_reaches_a_decision \
+    --test cli_guard_emission
+# Two suites because the admission and the emission are two decisions in
+# two places, and each has cases only the other cannot see. The frontend
+# suite witnesses `is_native_condition` — the §B.1.2 call site reads it,
+# so deleting an arm reds there. The emission suite witnesses the strip
+# site in `parse_transition`, which is the only thing standing between a
+# bodyless prefix and `if () {` in generated code: remove that filter and
+# every frontend test still passes, because the Null data model's refusal
+# comes through the predicate rather than through the flag. Measured
+# 2026-09-16 — three cases SURVIVED at 0/16 red for exactly that reason.
 # `--features cli` is not decoration: this suite SPAWNS `sce-codegen`, so
 # the target declares `required-features = ["cli"]` and a run without it
 # exits 101 in zero seconds — a failure that reads like a red suite and is
 # not one.
 mutation_targets sce-build/src/parser.rs
-mutation_oracles sce-build/tests/datamodel_attribute_reaches_a_decision.rs
+mutation_oracles sce-build/tests/datamodel_attribute_reaches_a_decision.rs \
+    sce-build/tests/cli_guard_emission.rs
 
 # ── The admission disappears ────────────────────────────────────────
 #
@@ -48,23 +59,17 @@ PY
 
 mutation_case "the native predicate answers no for every condition" <<'PY'
 edit("sce-build/src/parser.rs",
-     """fn is_native_condition(cond: &str) -> bool {
-    cond.starts_with("cpp:") || cond.starts_with("kt:")
-}""",
-     """fn is_native_condition(cond: &str) -> bool {
-    let _ = cond;
-    false
-}""")
+     """    ["cpp:", "kt:"]
+        .iter()
+        .any(|prefix| matches!(cond.strip_prefix(prefix), Some(body) if !body.trim().is_empty()))""",
+     """    let _ = cond;
+    false""")
 PY
 
 mutation_case "only the C++ prefix is admitted, and Kotlin's is not" <<'PY'
 edit("sce-build/src/parser.rs",
-     """fn is_native_condition(cond: &str) -> bool {
-    cond.starts_with("cpp:") || cond.starts_with("kt:")
-}""",
-     """fn is_native_condition(cond: &str) -> bool {
-    cond.starts_with("cpp:")
-}""")
+     '    ["cpp:", "kt:"]',
+     '    ["cpp:"]')
 PY
 
 # ── …or stops matching what actually lowers it ──────────────────────
@@ -75,32 +80,54 @@ PY
 
 mutation_case "the admission trims, so a leading space is admitted" <<'PY'
 edit("sce-build/src/parser.rs",
-     """fn is_native_condition(cond: &str) -> bool {
-    cond.starts_with("cpp:") || cond.starts_with("kt:")
-}""",
-     """fn is_native_condition(cond: &str) -> bool {
-    let c = cond.trim_start();
-    c.starts_with("cpp:") || c.starts_with("kt:")
-}""")
+     "        .any(|prefix| matches!(cond.strip_prefix(prefix), Some(body) if !body.trim().is_empty()))",
+     "        .any(|prefix| matches!(cond.trim_start().strip_prefix(prefix), Some(body) if !body.trim().is_empty()))")
 PY
 
 mutation_case "the admission matches the prefix anywhere in the condition" <<'PY'
 edit("sce-build/src/parser.rs",
-     """fn is_native_condition(cond: &str) -> bool {
-    cond.starts_with("cpp:") || cond.starts_with("kt:")
-}""",
-     """fn is_native_condition(cond: &str) -> bool {
-    cond.contains("cpp:") || cond.contains("kt:")
-}""")
+     "        .any(|prefix| matches!(cond.strip_prefix(prefix), Some(body) if !body.trim().is_empty()))",
+     "        .any(|prefix| cond.contains(prefix))")
+PY
+
+# ── …or stops agreeing with the site that lowers it ─────────────────
+#
+# The emitter's native branch pastes the stripped body into `if (…)` with
+# no emptiness check of its own, so the flag set at the strip site is the
+# only thing standing between `cond="cpp:"` and `if () {` in generated
+# C++. These three are the ways that guard can be undone.
+
+mutation_case "the prefix alone sets the flag, with no body to lower" <<'PY'
+edit("sce-build/src/parser.rs",
+     '        if let Some(stripped) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {',
+     '        if let Some(stripped) = cond.strip_prefix("cpp:") {')
+PY
+
+mutation_case "a whitespace-only body still sets the flag" <<'PY'
+edit("sce-build/src/parser.rs",
+     '        if let Some(stripped) = cond.strip_prefix("cpp:").filter(|b| !b.trim().is_empty()) {',
+     '        if let Some(stripped) = cond.strip_prefix("cpp:").filter(|b| !b.is_empty()) {')
+PY
+
+mutation_case "Kotlin's arm keeps the flag for a bodyless prefix" <<'PY'
+edit("sce-build/src/parser.rs",
+     '        } else if let Some(stripped) = cond.strip_prefix("kt:").filter(|b| !b.trim().is_empty()) {',
+     '        } else if let Some(stripped) = cond.strip_prefix("kt:") {')
+PY
+
+mutation_case "the predicate stops requiring a body" <<'PY'
+edit("sce-build/src/parser.rs",
+     """    ["cpp:", "kt:"]
+        .iter()
+        .any(|prefix| matches!(cond.strip_prefix(prefix), Some(body) if !body.trim().is_empty()))""",
+     """    cond.starts_with("cpp:") || cond.starts_with("kt:")""")
 PY
 
 mutation_case "every condition is admitted as native" <<'PY'
 edit("sce-build/src/parser.rs",
-     """fn is_native_condition(cond: &str) -> bool {
-    cond.starts_with("cpp:") || cond.starts_with("kt:")
-}""",
-     """fn is_native_condition(cond: &str) -> bool {
-    let _ = cond;
-    true
-}""")
+     """    ["cpp:", "kt:"]
+        .iter()
+        .any(|prefix| matches!(cond.strip_prefix(prefix), Some(body) if !body.trim().is_empty()))""",
+     """    let _ = cond;
+    true""")
 PY

@@ -203,6 +203,60 @@ fn the_null_data_model_admits_a_native_kotlin_condition() {
 }
 
 #[test]
+fn a_native_prefix_with_no_body_is_not_a_guard_under_null() {
+    // The prefix alone carries nothing to lower. Admitting it emitted
+    // `if () {` into the generated C++ — a refusal arriving as a compile
+    // error in generated code instead of a diagnostic on the document.
+    let (ok, out) = check(&doc(
+        r#"datamodel="null""#,
+        r#"<state id="s"><transition cond="cpp:" target="done"/></state>"#,
+    ));
+    assert!(!ok, "`cond=\"cpp:\"` carries no guard:\n{out}");
+    assert!(
+        out.contains("B.1.2"),
+        "with no native body to admit, the Null data model's own refusal \
+         is the right one:\n{out}"
+    );
+}
+
+#[test]
+fn a_native_prefix_with_a_blank_body_is_not_a_guard_under_null() {
+    // The `cpp:` arm's sibling case: a body that is only whitespace is no
+    // more lowerable than an absent one. Held separately from the empty
+    // case above because the two differ by a `trim()` — a check written
+    // as `!body.is_empty()` passes `cond="cpp:"` and still admits this.
+    let (ok, out) = check(&doc(
+        r#"datamodel="null""#,
+        r#"<state id="s"><transition cond="cpp:   " target="done"/></state>"#,
+    ));
+    assert!(
+        !ok,
+        "a whitespace-only native body carries no guard:\n{out}"
+    );
+    assert!(
+        out.contains("B.1.2"),
+        "with no native body to admit, the Null data model's own refusal \
+         is the right one:\n{out}"
+    );
+}
+
+#[test]
+fn a_native_prefix_with_no_body_is_not_a_guard_under_kotlin_either() {
+    // Kotlin's arm, for the reason the admission test has one: two arms
+    // of one decision, and a case that deletes either has to red
+    // something.
+    let (ok, out) = check(&doc(
+        r#"datamodel="null""#,
+        r#"<state id="s"><transition cond="kt:" target="done"/></state>"#,
+    ));
+    assert!(!ok, "`cond=\"kt:\"` carries no guard either:\n{out}");
+    assert!(
+        out.contains("B.1.2"),
+        "expected the §B.1.2 rejection, got:\n{out}"
+    );
+}
+
+#[test]
 fn the_null_data_model_admits_a_native_condition_only_at_the_literal_prefix() {
     // The admission has to match its lowering exactly. Every site that
     // LOWERS a native guard matches a literal prefix — `strip_prefix`
