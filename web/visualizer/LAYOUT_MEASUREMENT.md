@@ -31,8 +31,51 @@ measured", not "not present". The size-dependent questions are: state
 overlap, label-on-state overlap, and anything derived from a compound's
 bounds, since those follow from their children.
 
+⚠ The widening now happens BEFORE the layout (`Renderer.measureStateWidths`),
+which removes the defect but not the blind spot: the harness still supplies
+no text metrics, so it measures a drawing in which that pass found nothing.
+
+**Whether the drawn box is the reserved box.** `label-metrics.js` computes a
+label's rectangle, the layout keeps that rectangle clear, and the renderer
+draws into it. The harness reads the RESERVED rectangle at both ends — so if
+the renderer ever again sizes a label to something else, every collision
+count here stays at zero while labels pile up on screen.
+
+That is not hypothetical either. `renderer.js` measured the rendered HTML with
+`getBoundingClientRect()` and resized the container to match, and the CSS said
+`width: fit-content`. The reserved rectangle and the drawn one were two
+different things for as long as both existed; a reader reported every `check`
+label overlapping while this file's numbers read zero. Both are gone, and
+nothing here would notice their return.
+
+**The background worker.** `csp-solver.js` runs its optimisation in a Web
+Worker. The harness sets `Worker: undefined`, so the main-thread fallback runs
+and the worker path — including its error handling — is never executed. A
+defect lived there: the `onerror` handler called `terminate()` on a reference
+it had already nulled, so a worker that failed to start threw inside the
+handler meant to cope with it.
+
 **The rendering itself.** Colours, fonts, arrowheads, dash patterns, the
 annotation marks, whether a click works. None of it is geometry.
+
+## ⚠ An aggregate cannot find everything
+
+Collision counts, detached-edge counts, drawing extent — these are sums over
+the whole picture, and a defect that does not change a sum is invisible to
+every one of them.
+
+Collapsing a compound left it at its EXPANDED size, 580x835 inside a parent
+of 460x407: a white rectangle over the diagram. Nothing collided that was not
+already colliding, no edge came adrift, the extent barely moved. Every column
+read clean. What found it was asking the question directly — *is a collapsed
+box the size a collapsed box is, and does it fit inside its parent* — which is
+now asserted in `interaction.js`.
+
+⚠ The fixture mattered as much as the check. The probe collapsed `outer` and
+passed while the defect was live, because `outer` is small enough that keeping
+its expanded size broke nothing. It collapses `drive` now: inside a
+`<parallel>`, holding another compound, so a stale size escapes its own
+parent. A property nothing in the corpus can violate is not being tested.
 
 ## ⚠ Two traps that cost real time
 
@@ -77,3 +120,20 @@ better on these numbers reads better to a person has not been established,
 and until it is, these numbers rank changes rather than judge them. A
 line-proximity proxy stood in for label collisions for one round and pointed
 the opposite way from the direct measurement.
+
+## The habit this file exists to break
+
+Four times in the round that produced it, a measurement here was taken of
+something the product does not draw:
+
+| measured | what ships |
+|---|---|
+| ELK's intermediate result | the visualizer discarded it |
+| line proximity, at a 24px threshold | a reader sees label boxes |
+| `allLinks` | the renderer binds `getVisibleLinks`' copies |
+| the reserved label box | the renderer drew a different one |
+
+Each was a clean zero, and each was correct about the thing it measured.
+⭐ Before trusting a number from this harness, check that what it reads is
+what reaches the screen — the failure mode is never a wrong number, it is a
+right number about the wrong rectangle.
