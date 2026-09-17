@@ -1067,8 +1067,12 @@ GATES: dict[str, dict] = {
         # instead, which is inside this trigger; what that costs is written
         # there.
         "extra": ["web/visualizer/**"],
-        "cost_s": 6,
-        "summary": "diagram layout invariants, and drag/collapse survival",
+        # 22s measured 2026-09-18, up from 6s: the lane gained a stress half
+        # that replays 25 seeded gestures per fixture over all ten. The seed
+        # is pinned in the gate script, so the cost is stable and a red is
+        # reproducible.
+        "cost_s": 22,
+        "summary": "diagram layout invariants, and drag/collapse/stress survival",
     },
     "visualizer-wasm": {
         "workflows": ["deploy-visualizer.yml"],

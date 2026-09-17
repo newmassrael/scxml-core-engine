@@ -91,4 +91,36 @@ node web/visualizer/measure/census.js "${FIXTURES[@]}" \
 node web/visualizer/measure/interaction.js "${FIXTURES[0]}" \
     || sce_gate_fail "the drawing did not survive a drag or a collapse; its output above names which"
 
+# The stress half: the same gestures, but MANY of them, in a seeded random
+# order, over every fixture.
+#
+# ⚠ It exists because the probe above performs one drag and one collapse in a
+# fixed order, and a reader does not. Its first run found ELK routes ending 16
+# to 18px short of a state on every seed it tried — always just after a
+# collapse, which is a sequence no fixed-order probe reaches.
+#
+# ⚠⚠ The operation count is deliberately modest here. Sixty operations over
+# ten documents takes ~33s against this gate's ~6s, and a gate nobody wants to
+# wait for is one that gets skipped. `SCE_STRESS_OPS` raises it for a hunt,
+# and `SCE_STRESS_SEED` replays exactly what failed — per document, so
+# narrowing a run to one fixture reproduces the same sequence.
+# ⚠⚠⚠ The SEED IS PINNED here, and that is the important line.
+#
+# Left to itself the probe seeds from the clock, which explores more — and
+# makes a red non-reproducible. A gate that fails on a sequence the next run
+# does not generate is flaky in the way this repository has been bitten by
+# before: the second run is green, the red is filed as noise, and the defect
+# stays. Pinned, this lane is a regression fence: the same twenty-five
+# gestures per document, every run, and a red is always replayable.
+#
+# ⭐ Exploring is still worth doing — it is how the 16-to-18px routes were
+# found — but deliberately, not as a lottery inside a gate:
+#     for s in $(seq 1 20); do SCE_STRESS_SEED=$s SCE_STRESS_OPS=60 \
+#         node web/visualizer/measure/stress.js || break; done
+# A seed that finds something belongs here, as another pinned run.
+SCE_STRESS_SEED="${SCE_STRESS_SEED:-20260918}" \
+SCE_STRESS_OPS="${SCE_STRESS_OPS:-25}" \
+    node web/visualizer/measure/stress.js \
+    || sce_gate_fail "the drawing did not survive a run of random gestures; its output above names the seed to replay"
+
 printf 'visualizer-layout: OK\n'
