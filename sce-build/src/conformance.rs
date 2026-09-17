@@ -408,8 +408,12 @@ pub enum FixtureSpec {
         /// appears under the codec root. The per-backend codec
         /// sidecar (`<fixture>_test.{rs,h}`) is emitted on Rust + C11 only;
         /// Cpp/Kotlin/Go/Python have no codec sidecar template, so the
-        /// flag is forced false for them (mirrors the algorithm
-        /// `has_test_vectors` precedent). Empty in fixtures.json
+        /// flag is forced false for them. ⚠ This gate is the codec's
+        /// own and no longer mirrors the algorithm's: the algorithm
+        /// sidecar's language gate was DELETED when its closure
+        /// rotation completed, so `FixtureSpec::Algorithm`'s field of
+        /// the same name is now true on all 6 backends. Do not read
+        /// one as evidence for the other. Empty in fixtures.json
         /// (manifest-side override is rejected); computed by
         /// `read_codec_has_test_vectors` so the SCXML stays the
         /// single source of truth.
@@ -508,13 +512,33 @@ pub enum FixtureSpec {
         function: String,
         /// Derived at harness-rendering time from SCXML — true iff at
         /// least one `<sce:test-vector>` element appears under the
-        /// algorithm root. RFC §synth-5-B test-vector support (item B2) emits a
-        /// per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11
-        /// only; the conformance filter drops the fixture from
-        /// Cpp/Kotlin/Go/Python harnesses, because no sidecar format
-        /// is defined for those backends — the filter reflects which
-        /// emitters exist, not a deferral (mirrors
-        /// codec_variant_dispatch's per-language gate).
+        /// algorithm root. RFC §synth-5-B test-vector support (item B2)
+        /// emits a per-backend sidecar on ALL 6 backends —
+        /// `<snake>_test.rs` (Rust), `<snake>_test.h` (C11 + Cpp),
+        /// `<snake>_test.go` (Go), `<snake>_test.py` (Python),
+        /// `<Pascal>TestVectors.kt` (Kotlin) — so this flag is set
+        /// unconditionally, with no language gate in the filter below.
+        ///
+        /// ⚠ This doc used to say "Rust + C11 only; the filter drops the
+        /// fixture from Cpp/Kotlin/Go/Python". That was true before the
+        /// closure rotation and is FALSE now: the defensive language gate
+        /// in `render_algorithm_test_vector_sidecar` was deleted in the
+        /// final (Python) closure, and its match arms are exhaustive over
+        /// `Language`. Ask the emitter, not this comment.
+        ///
+        /// ⚠⚠ How the sidecar is RUN differs per backend, which is why a
+        /// per-report test count is not comparable across languages:
+        /// Rust / C11 / Cpp fold it into the numerical-conformance harness,
+        /// Python imports its class into the harness module, while Go
+        /// (`*_test.go` picked up by `go test`) and Kotlin (a standalone
+        /// JUnit class with its own `TEST-*.xml`) run it OUTSIDE that
+        /// harness. Measured 2026-09-18: Kotlin's
+        /// `TEST-NumericalConformanceTest.xml` reports 129 where Python's
+        /// module collects 130 — the missing one is `AlgorithmCrc16
+        /// TestVectors`, running green in its own report file. Compare
+        /// whole-suite totals (jvmTest: 4 suites, 143 tests), never one
+        /// report against another language's module.
+        ///
         /// Empty in fixtures.json (manifest-side override is rejected);
         /// computed by `has_test_vectors_in_file` so the SCXML
         /// stays the single source of truth.
