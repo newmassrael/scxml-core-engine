@@ -152,6 +152,62 @@ const d3Chain = new Proxy(function () {}, {
     };
     check(detachedCount() === 0, 'edges were already detached before any gesture');
 
+    // ⚠ What a reader sees, measured at every phase — not just the ELK
+    // artefacts this file used to count.
+    //
+    // The first version asserted only that a gesture DROPPED ELK's routes
+    // and label positions, and that no edge came adrift. It passed while
+    // every label piled back on top of its neighbours, because dropping
+    // ELK's label positions returns them to the path-midpoint fallback —
+    // the exact mechanism whose collisions this round had just reduced. A
+    // check that watches only what it changed is blind to what that change
+    // costs somewhere else.
+    const boxOf = (n) => ({
+        x1: n.x - n.width / 2, y1: n.y - n.height / 2,
+        x2: n.x + n.width / 2, y2: n.y + n.height / 2,
+    });
+    const hit = (a, b) => a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
+    const readable = () => {
+        const rects = [];
+        for (const link of links()) {
+            const box = v.layoutManager.labelBoxForLink(link);
+            if (!box) continue;
+            let pos;
+            try { pos = v.pathCalculator.getTransitionLabelPosition(link); } catch (e) { pos = null; }
+            if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
+            rects.push({
+                x1: pos.x - box.width / 2, y1: pos.y - box.height / 2,
+                x2: pos.x + box.width / 2, y2: pos.y + box.height / 2,
+            });
+        }
+        let labelLabel = 0;
+        for (let i = 0; i < rects.length; i++) {
+            for (let j = i + 1; j < rects.length; j++) if (hit(rects[i], rects[j])) labelLabel++;
+        }
+        const positioned = v.nodes.filter((n) => Number.isFinite(n.x) && Number.isFinite(n.y));
+        const desc = (n, acc = new Set()) => {
+            for (const c of n.children || []) {
+                acc.add(c);
+                const cn = v.nodes.find((x) => x.id === c);
+                if (cn) desc(cn, acc);
+            }
+            return acc;
+        };
+        let nodeNode = 0;
+        for (let i = 0; i < positioned.length; i++) {
+            for (let j = i + 1; j < positioned.length; j++) {
+                const A = positioned[i]; const B = positioned[j];
+                if (desc(A).has(B.id) || desc(B).has(A.id)) continue;
+                if (hit(boxOf(A), boxOf(B))) nodeNode++;
+            }
+        }
+        return { labels: rects.length, labelLabel, nodeNode };
+    };
+
+    const atLayout = readable();
+    console.log(`readable     : ${atLayout.labelLabel} label collisions,`
+        + ` ${atLayout.nodeNode} state overlaps (${atLayout.labels} labels)`);
+
     // ---------------------------------------------------------------- drag
     const dragged = v.nodes.find((n) => n.id === 'chosen');
     check(!!dragged, 'the probe could not find the state it drags');
@@ -165,14 +221,55 @@ const d3Chain = new Proxy(function () {}, {
     v.updateLinks(true);
     dragged.isDragging = false;
 
-    check(withSections() === 0,
-        `${withSections()} link(s) kept ELK routing across a drag; those routes describe the old positions`);
-    check(withLabels() === 0, 'ELK label positions survived a drag');
-    check(elkSized() === 0, 'a container kept its ELK size after a drag, so it no longer follows its children');
+    // What the drag-end handler does once the gesture is over: the position
+    // the reader chose becomes an input and the drawing is derived again.
+    await v.layoutManager.settleAfterGesture([dragged.id]);
+
+    // ⚠ These three used to assert the OPPOSITE — that a drag leaves no ELK
+    // routing, no ELK label positions and no ELK-sized container. That was
+    // right while a drag only ever discarded them. It is wrong now: the
+    // gesture ends by making the reader's position an input and deriving the
+    // drawing again, so the artefacts come back, freshly computed for where
+    // things actually are. An assertion kept from the previous design fails
+    // on the improvement.
+    check(withSections() > 0, 'nothing was routed after the drag settled; the layout did not re-run');
+    check(withLabels() > 0,
+        'no label was placed by the layout after the drag settled — they are back at path midpoints,'
+        + ' which is the arrangement this round was measured undoing');
+    check(elkSized() > 0, 'no container was sized by the layout after the drag settled');
     const afterDrag = detachedCount();
     check(afterDrag === 0, `${afterDrag} edge(s) detached after a drag`);
+    const dragReadable = readable();
     console.log(`after drag   : ${withSections()} routed, ${withLabels()} labels,`
         + ` ${elkSized()} sized, ${afterDrag} detached`);
+    console.log(`               ${dragReadable.labelLabel} label collisions,`
+        + ` ${dragReadable.nodeNode} state overlaps`);
+
+    // ⭐ A gesture must not make the drawing worse than it was. This is the
+    // property a reader actually has: they drag one state and the rest of
+    // the diagram does not fall apart around it.
+    //
+    // ⚠ Stated against the layout's own figure rather than against zero,
+    // because a drag legitimately moves a state into a tighter spot — what
+    // it must not do is undo the placement of everything it did not touch.
+    // ⚠ State overlap IS asserted against the pre-drag figure, because no
+    // arrangement of a diagram requires two states to share area — the
+    // layout can always separate them, pinned node or not.
+    check(dragReadable.nodeNode <= atLayout.nodeNode,
+        `a drag took state overlaps from ${atLayout.nodeNode} to ${dragReadable.nodeNode}`);
+
+    // ⚠ Label collisions are REPORTED, not asserted against the pre-drag
+    // figure, and the reason is not leniency. The reader has moved a state
+    // into a place of their choosing, and the layout is now required to
+    // respect it; if that place is tight, labels near it have nowhere to go.
+    // Demanding "never worse than before the drag" would demand that the
+    // layout undo the gesture. What IS asserted is above: the labels were
+    // placed by the layout rather than dropped to path midpoints. Measured
+    // on this fixture, wiring the settle took the figure from 10 to 3.
+    const LABEL_COLLISION_BUDGET = 6;
+    check(dragReadable.labelLabel <= LABEL_COLLISION_BUDGET,
+        `${dragReadable.labelLabel} label collisions after one drag, over a budget of `
+        + `${LABEL_COLLISION_BUDGET} — a ceiling on this fixture, not a validated threshold`);
 
     // ------------------------------------------------------------ collapse
     // Re-lay out so there is something to invalidate again.

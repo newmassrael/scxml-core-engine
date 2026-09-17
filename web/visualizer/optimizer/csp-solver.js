@@ -428,10 +428,35 @@ class CSPSolver {
                 };
 
                 worker.onerror = (error) => {
-                    console.error('[OPTIMIZE PROGRESSIVE] Worker error:', error);
-                    worker.terminate();
+                    // ⚠ The handler used to call `worker.terminate()`
+                    // unguarded and then null the reference. A worker that
+                    // fails to start raises more than one error event, so
+                    // the second pass found `worker` already null and threw
+                    // `Cannot read properties of null (reading 'terminate')`
+                    // — an exception inside the error handler, which is the
+                    // one place an exception is guaranteed to have nowhere
+                    // to go.
+                    if (!worker) {
+                        return;
+                    }
+                    const failed = worker;
                     worker = null;
-                    if (onComplete) onComplete(false);
+                    logger.error(`[OPTIMIZE PROGRESSIVE] Worker error: ${error && error.message
+                        ? error.message : error}`);
+                    try {
+                        failed.terminate();
+                    } catch (terminateError) {
+                        logger.warn(`[OPTIMIZE PROGRESSIVE] Worker would not terminate: ${terminateError}`);
+                    }
+
+                    // ⚠ And the optimisation is RETRIED on this thread
+                    // rather than abandoned. `onComplete(false)` left the
+                    // diagram with whatever routing the greedy pass had
+                    // produced, which is the fast approximation the worker
+                    // exists to improve on — so a worker that cannot start
+                    // silently downgraded every drawing. The main-thread
+                    // path already exists for exactly this.
+                    this.fallbackToMainThreadCSP(transitionLinks, nodes, draggedNodeId, onComplete);
                 };
 
                 // Convert greedy results to CSP solution format

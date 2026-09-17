@@ -1503,6 +1503,13 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
                     d.isDragging = false;
                     self.isDraggingAny = false;
+
+                    // The gesture is over, so where the reader put this state
+                    // becomes an input and the drawing is derived again.
+                    // Until this existed, a drag left every label at a path
+                    // midpoint for good: measured, one drag took the diagram
+                    // from 0 label collisions to 10.
+                    self.layoutManager.settleAfterGesture([d.id]);
                 }, 50);  // 50ms delay prevents immediate mouseenter from raising element
 
                 // Cleanup cached descendants and drag direction

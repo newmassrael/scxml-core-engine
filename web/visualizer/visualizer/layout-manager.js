@@ -5,9 +5,56 @@
  * Layout Manager - Handles ELK layout computation and application
  */
 
+/**
+ * What ELK is told when the reader has already placed something.
+ *
+ * ⚠ Every strategy here has to be set on the CHILD containers too, not only
+ * at the root. The hierarchy-aware crossing minimiser refuses a graph whose
+ * child specifies a different one — `UnsupportedGraphException: The hierarchy
+ * aware processor LAYER_SWEEP in child node ... is only allowed if the root
+ * node specifies the same hierarchical processor` — so `buildELKNode`
+ * propagates them. A partial application is not a milder version of this; it
+ * is a layout that throws.
+ */
+const INTERACTIVE_LAYOUT_OPTIONS = {
+    'elk.interactive': 'true',
+    'elk.layered.cycleBreaking.strategy': 'INTERACTIVE',
+    'elk.layered.layering.strategy': 'INTERACTIVE',
+    'elk.layered.crossingMinimization.strategy': 'INTERACTIVE',
+    'elk.layered.nodePlacement.strategy': 'INTERACTIVE',
+    'elk.layered.interactiveReferencePoint': 'CENTER'
+};
+
 class LayoutManager {
     constructor(visualizer) {
         this.visualizer = visualizer;
+    }
+
+    /** Has the reader placed anything by hand? */
+    hasPinnedNodes() {
+        return this.visualizer.nodes.some(n => n.pinned);
+    }
+
+    /**
+     * Take a gesture's result as the new arrangement and lay out again.
+     *
+     * ⭐ The whole of "a gesture is an input". During a drag the diagram
+     * follows the pointer by re-routing locally, which is a PREVIEW; this is
+     * what makes it real. Without it, measured on
+     * `ancestor_entry_is_not_default_entry`, one drag took the drawing from
+     * 0 label collisions to 10 and from 0 state overlaps to 1 — because
+     * dropping ELK's label positions returns every label to a path midpoint
+     * and nothing ever computes them again.
+     */
+    async settleAfterGesture(movedIds) {
+        for (const id of movedIds || []) {
+            const node = this.visualizer.nodes.find(n => n.id === id);
+            if (node && Number.isFinite(node.x)) {
+                node.pinned = true;
+            }
+        }
+        await this.visualizer.computeLayout();
+        this.visualizer.render();
     }
 
     /**
@@ -127,7 +174,14 @@ class LayoutManager {
                 'elk.layered.crossingMinimization.hierarchicalSweepiness': '0.1',
 
                 // W3C SCXML 3.13: Enable hierarchy handling for internal transitions (parent→child edges)
-                'elk.hierarchyHandling': 'INCLUDE_CHILDREN'
+                'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+
+                // Once the reader has placed something, the layout keeps the
+                // arrangement it is given instead of deriving a fresh one.
+                // Only then — a first layout has nothing to respect, and
+                // interactive mode on an unseeded graph produces a worse
+                // drawing than the sweep does.
+                ...(this.hasPinnedNodes() ? INTERACTIVE_LAYOUT_OPTIONS : {})
             },
             children: [],
             edges: []
@@ -158,6 +212,19 @@ class LayoutManager {
                 height: this.visualizer.getNodeHeight(node)
             };
 
+            // A position the reader chose is an INPUT, not something to be
+            // overwritten. Dragging a state and having the next layout put
+            // it back would make the gesture pointless, so the coordinate
+            // travels into ELK and `elk.interactive` tells it to respect
+            // the arrangement it is given.
+            //
+            // ⚠ ELK positions from a top-left corner; every node here
+            // carries a centre.
+            if (node.pinned && Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                elkNode.x = node.x - elkNode.width / 2;
+                elkNode.y = node.y - elkNode.height / 2;
+            }
+
             // Add children for expanded compounds
             if (SCXMLVisualizer.isCompoundOrParallel(node) && !node.collapsed) {
                 elkNode.children = [];
@@ -166,6 +233,9 @@ class LayoutManager {
                 logger.debug(`${indent}  ${node.id} has ${node.children.length} children: ${node.children.join(', ')}`);
 
                 elkNode.layoutOptions = {
+                    // See INTERACTIVE_LAYOUT_OPTIONS: the strategies must
+                    // match the root's or ELK refuses the graph outright.
+                    ...(this.hasPinnedNodes() ? INTERACTIVE_LAYOUT_OPTIONS : {}),
                     'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
                     'elk.padding': `[top=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_TOP},left=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE},bottom=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE},right=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE}]`
                 };
