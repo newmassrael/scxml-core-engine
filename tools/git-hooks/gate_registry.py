@@ -777,21 +777,24 @@ GATES: dict[str, dict] = {
     # complete. Its first run was green, so what it had not been surviving
     # was change, which is exactly what a lane is for.
     #
-    # ⚠⚠ `workflows` is empty ON PURPOSE and is not an oversight to tidy
-    # away: forge-conformance.yml has no C11 job today, so claiming one would
-    # make `--ci-owed` report a lane that cannot pay. Adding the job is the
-    # follow-up; until then this runs at push time, which is why it carries
-    # no `ci_only`.
+    # ⚠⚠ THE FOLLOW-UP LANDED THE SAME DAY. This entry said `workflows` was
+    # empty on purpose — "forge-conformance.yml has no C11 job today, so
+    # claiming one would make `--ci-owed` report a lane that cannot pay" —
+    # and carried a `no_ci_reason` naming the job as the thing that would
+    # retire it. `conformance-c` is in that workflow now, so both are gone.
+    #
+    # The history is kept rather than deleted silently because a
+    # `no_ci_reason` is a PROMISE, and this note is the only evidence it was
+    # kept. An entry that simply stopped carrying one would read the same as
+    # an entry that never made the promise at all.
+    #
+    # ⚠⚠⚠ No `ci_only`: unlike the C++ arm, this one is 17s and a push that
+    # touches `backends/c/**` or the forge fixtures still selects it. It runs
+    # in BOTH places on purpose — the push catches it before it leaves, and
+    # the job catches the pushes that bypassed the hooks.
     "forge-c": {
-        "workflows": [],
-        "no_ci_reason": "forge-conformance.yml runs five arms and has no C11 "
-                        "job, so there is no workflow to name. Push-time only "
-                        "is worse than the sibling arms and better than the "
-                        "status quo it replaces, which was NOTHING running "
-                        "this suite at all. ⚠ `--no-verify` skips it; adding "
-                        "the CI job is the follow-up that retires this "
-                        "reason, and until then a push that bypasses the "
-                        "hooks leaves the C11 arm unjudged.",
+        "workflows": ["forge-conformance.yml"],
+        "runner_workflow": True,
         "extra": ["backends/c/**"],
         "deps": ["codegen-build"],
         "cost_s": 17,

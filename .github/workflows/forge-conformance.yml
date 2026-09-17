@@ -1,13 +1,19 @@
 name: SCE Forge Numerical Conformance
 
-# Cross-language numerical conformance harness (15 fixtures x 5 languages).
+# Cross-language numerical conformance harness (15 fixtures x 6 languages).
 #
 # Architecture: build-codegen compiles sce-codegen once and publishes it as
-# an artifact; the 4 subprocess-language jobs (Python/Go/Kotlin/C++) depend
-# on it and download the binary instead of recompiling. Rust stays
+# an artifact; the 5 subprocess-language jobs (Python/Go/Kotlin/C++/C11)
+# depend on it and download the binary instead of recompiling. Rust stays
 # independent because cargo resolves `sce-build` as a build-dependency of
 # sce-forge-runtime and cannot consume a pre-built binary. See SCE_FORGE.md
 # and memory conformance_harness_architecture.md for the design.
+#
+# ⚠ The C11 arm joined on 2026-09-17 and was the last to. Its suite —
+# harness template, ten per-kind fragments and a standalone CMake project —
+# had existed under backends/c/forge-runtime/tests/conformance the whole
+# time with NOTHING invoking it, and the five sibling arms made the set look
+# complete. A suite nobody runs cannot be told from one that passes.
 
 on:
   push:
@@ -32,6 +38,7 @@ on:
       - 'backends/rust/**'
       - 'backends/go/**'
       - 'backends/python/**'
+      - 'backends/c/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -54,6 +61,7 @@ on:
       - 'backends/rust/**'
       - 'backends/go/**'
       - 'backends/python/**'
+      - 'backends/c/**'
   workflow_dispatch:
 
 # Re-measured 2026-09-02 over this lane's own last 25 runs: a 25.5 min median
@@ -494,4 +502,62 @@ jobs:
       with:
         name: forge-conformance-cpp
         path: cpp_conformance.log
+        retention-days: 14
+
+  conformance-c:
+    name: C11 Forge Conformance
+    runs-on: ubuntu-latest
+    needs: build-codegen
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      # Same set as the C++ lane: the downloaded sce-codegen links libxml2
+      # for XSD validation, and the harness is a CMake project built with
+      # Ninja.
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake ninja-build pkg-config libxml2
+
+    - name: Download sce-codegen Binary
+      uses: actions/download-artifact@v8
+      with:
+        name: sce-codegen-binary
+        path: target/debug
+
+    - name: Make sce-codegen Executable
+      run: chmod +x target/debug/sce-codegen
+
+    # Delegates to the same gate the push runs, for the reason the C++ lane
+    # states: a job that builds something other than the gate makes a local
+    # pass say nothing about this job.
+    #
+    # ⚠ This arm bakes its oracle from `fixtures.json` at CODEGEN time — C
+    # has no zero-deps JSON parser under this backend's dependency rule —
+    # while the other five read `numerical_reference.json` at RUN time. A
+    # change that edits only the reference cannot reach this job; the
+    # fragments in the other five assert the two against each other.
+    - name: Run C11 Conformance Harness
+      run: |
+        set -o pipefail
+        scripts/gate forge-c 2>&1 | tee c_conformance.log
+
+    - name: Summarize
+      if: always()
+      run: |
+        echo "## C11 Forge Conformance" >> $GITHUB_STEP_SUMMARY
+        if [ -f c_conformance.log ]; then
+          grep -E "tests passed|tests failed|Total Test time" c_conformance.log >> $GITHUB_STEP_SUMMARY || true
+        fi
+
+    - name: Upload Test Log
+      uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: forge-conformance-c
+        path: c_conformance.log
         retention-days: 14
