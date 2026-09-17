@@ -108,6 +108,11 @@ const segsOf = (pts) => pts.slice(0, -1).map((p, i) => [p, pts[i + 1]]);
  */
 const NEAR = 24;
 const RUN = 25;
+// Below this the two lines are not "close", they are on top of each other:
+// no reader can tell which arrow is which. Above it they are separate lines
+// that happen to run alongside, which is what an orthogonal router produces
+// by design.
+const STACKED_GAP = 4;
 
 function crowding(drawn) {
     const hits = [];
@@ -191,6 +196,36 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
         return pt[0] >= b.x1 - slack && pt[0] <= b.x2 + slack
             && pt[1] >= b.y1 - slack && pt[1] <= b.y2 + slack;
     };
+
+    // ⚠ How many edges ELK actually routes, asked of the product rather
+    // than restated here. A route ELK computes and the drawing discards is
+    // invisible in every other column: the fallback draws a finite, attached
+    // line, so `undrawable` and `detached` both stay clean while the layout
+    // ELK was asked for is thrown away.
+    //
+    // ⚠ Split, because one total conflates a normal case with a defect. An
+    // edge ELK never routed (a self-loop, a targetless transition, an end
+    // inside a collapsed container) has nothing to discard and must use the
+    // fallback. An edge ELK DID route and the drawing rejected is the
+    // defect, and a single "fallback" total hides it behind the first kind.
+    //
+    // ⚠⚠ THREE buckets, not two. An edge ELK never routed at all is the
+    // third, and it is the one that can hide a whole document drawing
+    // itself: `elkDropped` reads a clean zero when there was nothing to
+    // drop, which looks identical to ELK having routed everything.
+    let elkOffered = 0;
+    let elkAbsent = 0;
+    const elkDropped = [];
+    for (const link of links) {
+        const src = v.nodes.find((n) => n.id === (link.visualSource || link.source));
+        const tgt = v.nodes.find((n) => n.id === (link.visualTarget || link.target));
+        if (!src || !tgt || src.id === tgt.id) continue;   // self-loops draw their own shape
+        if (!(link.elkSections && link.elkSections.length > 0)) { elkAbsent++; continue; }
+        elkOffered++;
+        if (!v.pathCalculator.usesELKRoute(link)) {
+            elkDropped.push(`${link.source} -> ${link.target}`);
+        }
+    }
 
     for (const link of links) {
         let d;
@@ -341,6 +376,9 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
         transitions: (structure.transitions || []).length,
         arrows: links.length,
         undrawable: nan,
+        elkOffered,
+        elkAbsent,
+        elkDropped,
         detached,
         unplaced,
         idsOnSeveralArrows,
@@ -429,14 +467,31 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
 
     console.log(`\n${structures.length} document(s), ${configs.length} configuration(s)\n`);
     console.log('configuration'.padEnd(28)
-        + 'lbl-lbl  lbl-edge  lbl-node  DETACHED  node-overlap  unplaced   area');
+        + 'STACKED  alongside  lbl-lbl  lbl-edge  lbl-node  no-ELK  ELK-dropped  DETACHED  node-overlap  unplaced   area');
 
     const violations = [];
     for (const cfg of configs) {
         let bad = 0; let ll = 0; let le = 0; let ln = 0;
         let detached = 0; let overlap = 0; let unplaced = 0; let splitIds = 0;
+        let elkOffered = 0; let elkAbsent = 0; const elkDropped = [];
+        // ⚠ Computed since this census was written and printed by nothing,
+        // while "the lines bundle" was the complaint every round was chasing.
+        //
+        // ⚠⚠ Reported as two numbers, because ONE would say the wrong thing.
+        // `crowding`'s NEAR is 24px, and an orthogonal router puts parallel
+        // edges in adjacent channels about 10px apart ON PURPOSE — so a
+        // single "pairs within 24px" total counts good routing as crowding
+        // and moves the wrong way when the routing improves. Measured here:
+        // turning ELK's routes back on took that total from 17 to 18 while
+        // the drawing got better by every other column.
+        //
+        // ⭐ The discriminator is the GAP. Two lines drawn on top of each
+        // other have a gap near zero; two channels have the router's
+        // spacing. `stacked` counts the first kind and is the one that
+        // means "unreadable".
+        const stackedPairs = []; let nearby = 0;
         const areas = [];
-        for (const { structure } of structures) {
+        for (const { rel, structure } of structures) {
             try {
                 const m = await measure(makeSandbox(elkInstance), elkInstance,
                     JSON.parse(JSON.stringify(structure)), cfg.legacy, cfg.spacing);
@@ -445,6 +500,14 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
                 le += m.labelEdge;
                 ln += m.labelNode;
                 detached += m.detached;
+                elkOffered += m.elkOffered;
+                elkAbsent += m.elkAbsent;
+                for (const name of m.elkDropped) elkDropped.push(`${rel}: ${name}`);
+                nearby += m.crowded.length;
+                for (const hit of m.crowded.filter((h) => h.gap <= STACKED_GAP)) {
+                    stackedPairs.push(`${rel}: ${hit.a} over ${hit.b}`
+                        + ` (${hit.gap.toFixed(1)}px apart for ${Math.round(hit.run)}px)`);
+                }
                 splitIds += m.idsOnSeveralArrows;
                 overlap += m.nodeOverlap;
                 unplaced += m.unplaced;
@@ -455,11 +518,24 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
         }
         const total = areas.reduce((x, y) => x + y, 0);
         console.log(cfg.name.padEnd(28)
-            + String(ll).padStart(7) + String(le).padStart(10) + String(ln).padStart(10)
+            + String(stackedPairs.length).padStart(7) + String(nearby).padStart(11)
+            + String(ll).padStart(9) + String(le).padStart(10) + String(ln).padStart(10)
+            + String(elkAbsent).padStart(8)
+            + `${elkDropped.length}/${elkOffered}`.padStart(13)
             + String(detached).padStart(10) + String(overlap).padStart(14)
             + String(unplaced).padStart(10)
             + String((total / 1e6).toFixed(2) + 'M').padStart(9)
             + (bad ? `   (${bad} undrawable)` : ''));
+
+        // ⚠ A count sends a reader looking; a name tells them where. Every
+        // wrong turn this column was added for began with a number that
+        // said something was discarded and nothing that said which.
+        for (const name of elkDropped) {
+            console.log(`  ELK routed but the drawing dropped: ${name}`);
+        }
+        for (const pair of stackedPairs) {
+            console.log(`  drawn on top of each other: ${pair}`);
+        }
 
         // ⭐ The invariants, and only in the gate's mode. A sweep includes
         // the self-router control, whose failures are the reason it was
@@ -473,6 +549,24 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
         // number teaches people to work around it.
         if (!sweep) {
             if (detached) violations.push(`${detached} edge(s) do not reach the states they join`);
+            // ⚠ A route ELK computed and the drawing threw away. Every other
+            // column stays clean when this happens — the fallback draws a
+            // finite, attached line — so for a whole round the diagram was
+            // routed entirely by the fallback while the census reported a
+            // clean sheet. `ancestor_entry_is_not_default_entry` alone had
+            // four routes, four rejections, zero uses.
+            if (elkDropped.length) {
+                violations.push(`${elkDropped.length} route(s) ELK computed were discarded by the`
+                    + ' drawing, so the layout being asked for is not the one shown');
+            }
+            // ⚠ And the other half of the same defect: an edge ELK was never
+            // asked to route, or whose route was never collected. Both leave
+            // the fallback drawing an edge the layout knows nothing about,
+            // which is where all three stacked pairs lived.
+            if (elkAbsent) {
+                violations.push(`${elkAbsent} edge(s) reached the renderer with no ELK route at all,`
+                    + ' so the fallback drew them against a layout that never saw them');
+            }
             if (overlap) violations.push(`${overlap} pair(s) of unrelated states share area`);
             if (unplaced) violations.push(`${unplaced} node(s) were never given a position`);
             if (bad) violations.push(`${bad} edge(s) could not be drawn at all`);
