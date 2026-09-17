@@ -506,6 +506,20 @@ class LayoutManager {
         const commonAncestor = ancestry(targetNode.id).find(id => sourceAncestry.has(id));
         const candidates = ancestry(commonAncestor);
 
+        // ⚠ The BEST frame, not the first acceptable one.
+        //
+        // This took the first candidate whose ends landed within the reach
+        // guard's slack, and that slack is 20px — so when two candidate
+        // frames both passed it could settle on one that leaves the arrow
+        // 18px short of the state while another landed it exactly. The
+        // stress probe found that on every seed it tried, always just after
+        // a collapse, because a collapse changes which ancestors exist and
+        // therefore which frames are close enough to pass.
+        //
+        // ⭐ Still a test rather than a rule about ELK's containment: the
+        // candidates are the same, they are simply scored instead of being
+        // taken in order.
+        let best = null;
         for (const candidateId of candidates) {
             let dx = 0;
             let dy = 0;
@@ -520,12 +534,39 @@ class LayoutManager {
                 dy = container.y - (container.height || 0) / 2;
             }
             const probe = LayoutManager.translateSection(first, dx, dy);
-            if (this.visualizer.pathCalculator.elkSectionReachesItsNodes(probe, sourceNode, targetNode)) {
-                if (dx !== 0 || dy !== 0) {
-                    logger.debug(`  ${link.source} → ${link.target}: route is in '${candidateId}' frame, offset by (${dx.toFixed(1)}, ${dy.toFixed(1)})`);
-                }
-                return {dx, dy};
+            const miss = this.visualizer.pathCalculator.elkSectionMiss(probe, sourceNode, targetNode);
+            if (!Number.isFinite(miss)) {
+                continue;
             }
+            if (!best || miss < best.miss) {
+                best = {dx, dy, miss, candidateId};
+            }
+            if (miss === 0) {
+                break;      // nothing can beat landing exactly
+            }
+        }
+
+        // ⚠ What was chosen and how well it fits, recorded on the link. A
+        // route that misses by a few pixels is indistinguishable, from the
+        // outside, from one placed against a frame that was never right —
+        // and this round spent five wrong explanations on exactly that
+        // ambiguity before anything wrote the numbers down.
+        link.elkFrame = best
+            ? {of: best.candidateId, dx: Math.round(best.dx), dy: Math.round(best.dy),
+                miss: Math.round(best.miss), candidates: candidates.length,
+                layout: this._layoutSerial || 0,
+                end: [Math.round(first.endPoint.x + best.dx), Math.round(first.endPoint.y + best.dy)],
+                tgt: [Math.round(targetNode.x), Math.round(targetNode.y),
+                    Math.round(targetNode.width), Math.round(targetNode.height)]}
+            : {of: null, candidates: candidates.length};
+
+        if (best && this.visualizer.pathCalculator.elkSectionReachesItsNodes(
+            LayoutManager.translateSection(first, best.dx, best.dy), sourceNode, targetNode)) {
+            if (best.dx !== 0 || best.dy !== 0) {
+                logger.debug(`  ${link.source} → ${link.target}: route is in '${best.candidateId}' frame,`
+                    + ` offset by (${best.dx.toFixed(1)}, ${best.dy.toFixed(1)}), missing by ${best.miss.toFixed(1)}px`);
+            }
+            return {dx: best.dx, dy: best.dy};
         }
 
         logger.debug(`  ${link.source} → ${link.target}: no frame lands ELK's route on its states; falling back`);
@@ -542,6 +583,10 @@ class LayoutManager {
     }
 
     applyELKLayout(layouted) {
+        // Which layout a route came from. A route and the boxes it was
+        // measured against have to be from the SAME one, and without a
+        // serial there is no way to say whether they are.
+        this._layoutSerial = (this._layoutSerial || 0) + 1;
         logger.debug('Applying ELK layout to nodes...');
         logger.debug(`  this.visualizer.nodes count: ${this.visualizer.nodes.length}, nodes: ${this.visualizer.nodes.map(n => `${n.id}(${n.type})`).join(', ')}`);
 

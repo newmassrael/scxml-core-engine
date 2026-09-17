@@ -31,6 +31,24 @@ class PathCalculator {
     static get CROSSED_LINE_COST() { return 400; }
 
     /**
+     * How far an ELK route's end may sit from the state it joins and still
+     * count as reaching it.
+     *
+     * ⚠ Its own constant, because the thing it used to borrow —
+     * `MIN_LABEL_DISTANCE`, 20px — is about how far a LABEL keeps from a
+     * state, and the two have no reason to be the same number. A route that
+     * misses by that much has drawn a gap a reader can see.
+     *
+     * ⚠⚠ 6px, which is what `interaction.js` has always used to decide an
+     * edge is detached. The two numbers were different for as long as both
+     * existed, which meant a route the drawing accepted could be one the
+     * probe called broken — and it was, on every stress seed. A route that
+     * misses by more falls back to the orthogonal router, which attaches
+     * exactly.
+     */
+    static get REACH_SLACK() { return 6; }
+
+    /**
      * The lines this label carries, from the one place that decides them.
      *
      * Split from the markup below so the same list reaches the box
@@ -1426,15 +1444,56 @@ class PathCalculator {
             if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
                 return false;
             }
-            // Generous: the point must be on or near the box, not exactly on
-            // its border, because ELK attaches at a port inset from the edge
-            // and the renderer rounds.
-            const slack = this.MIN_LABEL_DISTANCE;
+            // Close enough to look attached, and no closer: ELK attaches at
+            // a port inset from the edge and the renderer rounds.
+            //
+            // ⚠ This used to borrow `MIN_LABEL_DISTANCE`, which is 20px and
+            // is about LABELS. A route may legitimately end a pixel or two
+            // off a border; at twenty it has drawn a visible gap between an
+            // arrow and the state it points at, and the guard was accepting
+            // those. The stress probe found 16 and 18px gaps on every seed
+            // it tried, all just after a collapse — each one a route the
+            // guard had waved through.
+            const slack = PathCalculator.REACH_SLACK;
             const halfW = (node.width || 0) / 2 + slack;
             const halfH = (node.height || 0) / 2 + slack;
             return Math.abs(point.x - node.x) <= halfW && Math.abs(point.y - node.y) <= halfH;
         };
         return near(section.startPoint, sourceNode) && near(section.endPoint, targetNode);
+    }
+
+    /**
+     * How far a route's ends miss the states they join, in pixels.
+     *
+     * ⭐ The same question [`elkSectionReachesItsNodes`] asks, answered with
+     * a number instead of a yes. The frame selector needs the number: with
+     * only a yes it took the FIRST candidate frame that passed, and
+     * "passed" means within a 20px slack — so it could settle on a frame
+     * that leaves the arrow 18px short of the state while a different
+     * candidate landed it exactly. A stress run over ten documents found
+     * that on every seed it tried, always just after a collapse.
+     *
+     * ⚠ There is still ONE rule about what reaches: the predicate above is
+     * this number compared against the slack. Two rules here would drift.
+     */
+    elkSectionMiss(section, sourceNode, targetNode) {
+        if (!section || !section.startPoint || !section.endPoint) {
+            return Infinity;
+        }
+        const missBy = (point, node) => {
+            if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+                return Infinity;
+            }
+            return Math.max(
+                Math.abs(point.x - node.x) - (node.width || 0) / 2,
+                Math.abs(point.y - node.y) - (node.height || 0) / 2,
+                0,
+            );
+        };
+        return Math.max(
+            missBy(section.startPoint, sourceNode),
+            missBy(section.endPoint, targetNode),
+        );
     }
 
     /**
