@@ -387,24 +387,43 @@
           }
         },
         {
-          "description": "Timer scheduler. Generated struct wraps N timer HAL instances and exposes `start<Timer>()` / `cancel<Timer>()` pairs. The conformance fragment creates recording mocks that implement the timer HAL interface, starts each timer, and verifies the recorded registration (type + interval_ms) against the oracle. Callback dispatch is verified by triggering the mock's stored callback and checking that the recording handler received the expected call.",
+          "description": "Periodic timer (`SCE_FORGE.md` §4.10). ONE per document — the generated class wraps a single `ITimer&` and exposes `start()`, `cancel()`, and a hook per declared lifecycle element. The conformance fragment injects a recording mock, calls `start()`, and verifies the registered period; callback dispatch is verified by triggering the mock's stored callback and checking that the recording handler received `fire<FireEvent>()`.\n\n⚠ The fields mirror `forge::model::TimerModel`, which is the document shape and the only authority on it. They were previously a `Vec<TimerFixtureEntry>` of `{timer_type, interval_ms}` records, describing the multi-timer `<data sce:timer=\"...\">` shape removed on 2026-05-12 — a fixture written against that type would have been asked for two fields no document can carry and none of the four it must.\n\n⚠⚠ No fixture selects this variant and no fragment template reads it: measured 2026-09-17, `timer` is the one kind with zero entries in `fixtures.json`, so no language arm verifies timer codegen. Retyping it does not close that gap, it only stops the type from misdirecting whoever closes it.",
           "type": "object",
           "required": [
+            "fire_event",
             "kind",
-            "timers"
+            "period_us"
           ],
           "properties": {
+            "cancel_on_state_exit": {
+              "description": "`<sce:cancel-on state-exit=\"...\"/>`, when the document declares one.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fire_event": {
+              "description": "`<sce:fire-event>` — the event fired on every expiry.",
+              "type": "string"
+            },
             "kind": {
               "type": "string",
               "enum": [
                 "timer"
               ]
             },
-            "timers": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/TimerFixtureEntry"
-              }
+            "period_us": {
+              "description": "`<sce:period>` in microseconds, as `TimerModel::period_us`.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "reset_on_event": {
+              "description": "`<sce:reset-on event=\"...\"/>`, when the document declares one.",
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },
@@ -554,32 +573,6 @@
           }
         }
       ]
-    },
-    "TimerFixtureEntry": {
-      "description": "Timer entry descriptor for conformance testing. Each entry maps to one `<data sce:timer=\"...\">` in the SCXML source. The conformance fragment creates a recording timer mock, starts the timer, and verifies the registered interval and type against the oracle.",
-      "type": "object",
-      "required": [
-        "callback",
-        "id",
-        "interval_ms",
-        "timer_type"
-      ],
-      "properties": {
-        "callback": {
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "interval_ms": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "timer_type": {
-          "type": "string"
-        }
-      }
     }
   }
 }

@@ -543,7 +543,7 @@ pub enum ValidationError {
     SingletonViolation { kind: ForgeKind, attr: String },
 
     /// At least one of the listed attributes must be present.
-    /// e.g. "Timer 'diag' must have either 'sce:event' or 'sce:on-timeout'"
+    /// e.g. "<cancel> must have at least one of: sendid, sendidexpr"
     #[error("{element} must have at least one of: {}", alternatives.join(", "))]
     RequireEither {
         element: String,

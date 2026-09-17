@@ -159,19 +159,6 @@ pub struct StructField {
     pub compare: CompareMode,
 }
 
-/// Timer entry descriptor for conformance testing. Each entry maps to one
-/// `<data sce:timer="...">` in the SCXML source. The conformance fragment
-/// creates a recording timer mock, starts the timer, and verifies the
-/// registered interval and type against the oracle.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct TimerFixtureEntry {
-    pub id: String,
-    pub timer_type: String,
-    pub interval_ms: u64,
-    pub callback: String,
-}
-
 /// One fixture entry. `name` and `ref_section` are common to every kind;
 /// kind-specific data lives in the `spec` tagged enum below. The
 /// `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat
@@ -380,14 +367,39 @@ pub enum FixtureSpec {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         has_test_vectors: bool,
     },
-    /// Timer scheduler. Generated struct wraps N timer HAL instances and
-    /// exposes `start<Timer>()` / `cancel<Timer>()` pairs. The conformance
-    /// fragment creates recording mocks that implement the timer HAL
-    /// interface, starts each timer, and verifies the recorded registration
-    /// (type + interval_ms) against the oracle. Callback dispatch is
-    /// verified by triggering the mock's stored callback and checking that
-    /// the recording handler received the expected call.
-    Timer { timers: Vec<TimerFixtureEntry> },
+    /// Periodic timer (`SCE_FORGE.md` §4.10). ONE per document — the
+    /// generated class wraps a single `ITimer&` and exposes `start()`,
+    /// `cancel()`, and a hook per declared lifecycle element. The
+    /// conformance fragment injects a recording mock, calls `start()`,
+    /// and verifies the registered period; callback dispatch is verified
+    /// by triggering the mock's stored callback and checking that the
+    /// recording handler received `fire<FireEvent>()`.
+    ///
+    /// ⚠ The fields mirror `forge::model::TimerModel`, which is the
+    /// document shape and the only authority on it. They were previously
+    /// a `Vec<TimerFixtureEntry>` of `{timer_type, interval_ms}` records,
+    /// describing the multi-timer `<data sce:timer="...">` shape removed on
+    /// 2026-05-12 — a fixture written against that type would have been
+    /// asked for two fields no document can carry and none of the four it
+    /// must.
+    ///
+    /// ⚠⚠ No fixture selects this variant and no fragment template reads
+    /// it: measured 2026-09-17, `timer` is the one kind with zero entries
+    /// in `fixtures.json`, so no language arm verifies timer codegen.
+    /// Retyping it does not close that gap, it only stops the type from
+    /// misdirecting whoever closes it.
+    Timer {
+        /// `<sce:period>` in microseconds, as `TimerModel::period_us`.
+        period_us: u64,
+        /// `<sce:fire-event>` — the event fired on every expiry.
+        fire_event: String,
+        /// `<sce:reset-on event="..."/>`, when the document declares one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reset_on_event: Option<String>,
+        /// `<sce:cancel-on state-exit="..."/>`, when the document declares one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cancel_on_state_exit: Option<String>,
+    },
     /// RFC §synth-5-A pure free function with bounded loops. Mirrors `Transform`'s
     /// `(args -> scalar output)` shape but admits `bytes` parameters because
     /// the algorithm body's `<sce:foreach>` over bytes is the canonical
@@ -889,12 +901,30 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Timer { timers, .. } => {
-                    if timers.is_empty() {
+                FixtureSpec::Timer {
+                    period_us,
+                    fire_event,
+                    ..
+                } => {
+                    // Both checks exist for one reason: the rendered body
+                    // asserts on the registered period and on the handler
+                    // call named by `fire_event`. Either one absent leaves
+                    // a test that starts a timer and claims nothing.
+                    if *period_us == 0 {
                         return Err(format!(
-                            "fixture {}: timer requires at least one `timers` \
-                             entry — an empty timer list would render an \
-                             assertion-free test body",
+                            "fixture {}: timer `period_us` must not be zero — \
+                             the fragment asserts on the period the mock \
+                             records, and zero is not a period a document \
+                             can declare",
+                            f.name
+                        ));
+                    }
+                    if fire_event.is_empty() {
+                        return Err(format!(
+                            "fixture {}: timer `fire_event` must not be empty \
+                             — it names the `fire<Event>()` call the recording \
+                             handler is checked for, so an empty one would \
+                             render an assertion-free test body",
                             f.name
                         ));
                     }

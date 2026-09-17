@@ -176,14 +176,9 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- SCE Forge Section 4.10: Timer scheduling type -->
-  <xs:simpleType name="timerType">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="periodic"/>
-      <xs:enumeration value="timeout"/>
-      <xs:enumeration value="delayed"/>
-    </xs:restriction>
-  </xs:simpleType>
+  <!-- SCE Forge Section 4.10: Timer scheduling type — removed with the
+       `<data sce:timer=…>` shape it typed; see the note further down where
+       those attributes were declared. -->
 
   <!-- SCE Forge Section 4.11: Monitor type -->
   <xs:simpleType name="monitorType">
@@ -373,13 +368,21 @@
     attributes remain schema-valid via xs:anyAttribute on the host element.
   -->
 
-  <!-- Section 4.10: Timer — on <data> elements -->
-  <xs:attribute name="timer" type="sce:timerType"/>
-  <xs:attribute name="interval" type="xs:nonNegativeInteger"/>
-  <xs:attribute name="duration" type="xs:nonNegativeInteger"/>
-  <xs:attribute name="delay" type="xs:nonNegativeInteger"/>
-  <xs:attribute name="event" type="xs:string"/>
-  <xs:attribute name="on-timeout" type="xs:string"/>
+  <!-- Section 4.10: Timer — the `<data sce:timer=…>` shape this used to
+       declare (sce:timer / interval / duration / delay / event /
+       on-timeout, and the timerType enumeration above them) was removed
+       from the implementation on 2026-05-12, when C1 replaced it with the
+       §synth-5-D shape: one named timer per document, carrying
+       <sce:period>, <sce:reset-on>, <sce:cancel-on> and <sce:fire-event>.
+       See `TimerModel` in sce-build/src/forge/model.rs, which records the
+       removal.
+
+       ⚠ The declarations outlived the shape by four months. This file is a
+       registered wire surface, so a consumer reading it to learn what is
+       valid would write `sce:timer="timeout"`, get a schema-valid document,
+       and then be refused by the generator — a surface advertised and not
+       served. Measured 2026-09-17: parser reads 0, documents using them 0,
+       references from inside this schema 0. -->
 
   <!-- Section 4.11: Observer — on <data> elements -->
   <xs:attribute name="monitor" type="sce:monitorType"/>

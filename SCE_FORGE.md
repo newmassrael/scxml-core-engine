@@ -224,7 +224,7 @@ Declared on the `<scxml>` root element. The entire file is a single kind. Produc
 <scxml sce:kind="validator">     <!-- Range/plausibility/integrity check -->
 <scxml sce:kind="filter">        <!-- Signal filtering (moving avg, debounce) -->
 <scxml sce:kind="interpolation"> <!-- 1D/2D table interpolation -->
-<scxml sce:kind="timer">         <!-- Periodic/delayed task timing -->
+<scxml sce:kind="timer">         <!-- One periodic timer (no one-shot; see 4.10) -->
 <scxml sce:kind="observer">      <!-- Threshold monitoring with hysteresis -->
 ```
 
@@ -460,10 +460,10 @@ The `sce:` namespace contains attributes from two distinct subsystems. Each attr
 | `sce:filter`, `sce:window`, `sce:alpha` | SCE Forge | Build-time (codegen) | Filter type and parameters |
 | `sce:interpolation`, `sce:out-of-bounds` | SCE Forge | Build-time (codegen) | Interpolation method |
 | `sce:axis-{id}` | SCE Forge | Build-time (codegen) | Interpolation axis points |
-| `sce:timer`, `sce:interval`, `sce:duration`, `sce:delay` | SCE Forge | Build-time (codegen) | Timer scheduling |
+| `<sce:period>`, `<sce:fire-event>` (bodies); `<sce:reset-on event>`, `<sce:cancel-on state-exit>` | SCE Forge | Build-time (codegen) | Timer schedule and lifecycle (§4.10 — elements, not attributes) |
 | `sce:monitor`, `sce:enter`, `sce:leave` | SCE Forge | Build-time (codegen) | Observer threshold |
 | `sce:event-domain` | SCE Forge | Build-time (codegen) | Observer cross-file event namespace (§4.11) |
-| `sce:on-enter`, `sce:on-leave`, `sce:on-timeout` | SCE Forge | Build-time (codegen) | Observer/timer event names |
+| `sce:on-enter`, `sce:on-leave` | SCE Forge | Build-time (codegen) | Observer threshold callback names |
 | `sce:qos` | SCE Mesh | Runtime (transport) | Delivery guarantee |
 | `sce:deadline` | SCE Mesh | Runtime (transport) | Maximum delivery latency |
 | `sce:priority` | SCE Mesh | Runtime (transport) | Scheduling priority |
@@ -1024,60 +1024,77 @@ The `linear<N>` and `bilinear<Rows, Cols>` function templates are header-only an
 
 ### 4.10 timer
 
-Periodic, delayed, and timeout task timing. Each timer is a `<data>` element with `sce:timer` attributes specifying the scheduling type and parameters.
+**One** periodic timer per document, with an optional event-driven reset and an optional state-exit cancel. The period and the fired event are element *bodies*; the two lifecycle hooks are elements with one attribute each. This kind declares no `<datamodel>` and no `<data>`.
 
-> **Naming note**: This kind is named `timer`, not `scheduler`, to avoid collision with SCE Mesh's `IScheduler` interface. `IScheduler` controls *how and when state machines process events* (tick-based vs event-driven execution model). The `timer` kind generates *periodic/delayed task timing logic* — a different abstraction level.
-
-**Timer types**: `periodic`, `timeout`, `delayed`
+> **Naming note**: This kind is named `timer`, not `scheduler`, to avoid collision with SCE Mesh's `IScheduler` interface. `IScheduler` controls *how and when state machines process events* (tick-based vs event-driven execution model). The `timer` kind generates *periodic task timing logic* — a different abstraction level.
 
 ```xml
-<scxml sce:kind="timer">
-  <datamodel>
-    <data id="testerPresent" sce:timer="periodic" sce:interval="2000"
-          sce:event="TesterPresent"/>
-    <data id="responseTimeout" sce:timer="timeout" sce:duration="5000"
-          sce:on-timeout="handleTimeout"/>
-    <data id="retryDelay" sce:timer="delayed" sce:delay="10000"
-          sce:event="retrySecurityAccess"/>
-  </datamodel>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="timer" name="TesterPresent" version="1.0">
+  <sce:period>2s</sce:period>
+  <sce:fire-event>TesterPresent</sce:fire-event>
+  <sce:reset-on event="DiagRequestSent"/>
+  <sce:cancel-on state-exit="SessionActive"/>
 </scxml>
 ```
 
-- `sce:timer` — timer type: `periodic` (repeating), `timeout` (one-shot, fires on expiry), `delayed` (one-shot, fires after delay)
-- `sce:interval`, `sce:duration`, `sce:delay` — time in milliseconds
-- `sce:event` — event name to emit when timer fires
-- `sce:on-timeout` — callback name for timeout expiry (alternative to event)
+- `<sce:period>` — **required** body text. An integer and a unit suffix, one of `us` / `ms` / `s` / `m` (`700ms`, `2s`). Stored in microseconds. A period shorter than the target machine's `scheduler.tick_period_us` is refused (`timer/period-below-tick-rate`), because the cooperative scheduler dispatches at most one timer per tick.
+- `<sce:fire-event>` — **required** body text. The event fired on every expiry.
+- `<sce:reset-on event="..."/>` — optional. Emits a hook that cancels and restarts.
+- `<sce:cancel-on state-exit="..."/>` — optional. Emits a hook that cancels.
 
-**Codegen** (C++) — follows the HAL pattern from §2.1: the generated struct receives `ITimer&` references by constructor injection, never owns the timer objects, and bridges to instance methods through static trampolines:
+⚠ **Periodic is the only schedule this kind has.** There is no one-shot, so a deadline — *"if no reply arrives within 700 ms, warn"* — needs `<sce:cancel-on>` to be expressible at all:
+
+- **With a state whose exit ends the window**, a deadline IS a `timer` document. Arm it on entry, and `<sce:cancel-on state-exit="..."/>` closes the window on the way out — whether the work finished early or the fired event itself drove the exit. The second expiry stays periodic but becomes unreachable, so exactly zero or one fire is observed.
+- **Without such a state**, it is not. A bare 700 ms `timer` fires every 700 ms forever. Express that deadline as a delayed `<send>` in a `statechart` document, which is the kind that owns an event scheduler, and `<cancel>` it when the reply arrives.
+
+⚠ The host owes the wiring either way: `start()` is the only entry that arms the timer, and the hooks below do nothing until something calls them.
+
+⚠⚠ `SCE::Forge::ITimer` below does declare `startOneShot`, and this section used to document `sce:timer="timeout"` and `sce:timer="delayed"` as one-shot types that reached it. **No template calls it and no document can select it** — measured 2026-09-17, `startOneShot` occurs in the C++ and Kotlin runtime headers and nowhere else in the tree. The attributes that section described (`sce:timer`, `sce:interval`, `sce:duration`, `sce:delay`, `sce:event`, `sce:on-timeout`) were never read by the parser and were deleted from `schemas/sce-forge-ext.xsd` on the same date; a document written to that shape is refused with `timer kind requires a <sce:period> element`.
+
+**Codegen** (C++) — follows the HAL pattern from §2.1: the generated class takes `ITimer&` by constructor injection, never owns it, and bridges back to the handler through a static trampoline. The handler is a template parameter, not a base class — duck typing, so a missing `fire...()` is a compile error at instantiation. Transcribed from the document above:
 
 ```cpp
-#include <sce/forge/timer.h>
+namespace SCE::Generated::TesterPresent {
 
-class DiagScheduler {
+constexpr std::uint64_t kPeriodUs = 2000000ULL;
+constexpr std::uint32_t kPeriodMs = 2000U;
+constexpr const char *kResetOnEvent = "DiagRequestSent";
+constexpr const char *kCancelOnStateExit = "SessionActive";
+
+template <typename Handler> class TesterPresent {
 public:
-    DiagScheduler(SCE::Forge::ITimer& testerTimer,
-                  SCE::Forge::ITimer& responseTimer)
-        : testerPresentTimer_(testerTimer),
-          responseTimeout_(responseTimer) {}
+    TesterPresent(Handler &handler, SCE::Forge::ITimer &timer) : handler_(handler), timer_(timer) {}
 
-    void start()        { testerPresentTimer_.startPeriodic(2000, &onTesterTick, this); }
-    void waitResponse() { responseTimeout_.startOneShot(5000, &onResponseTimeout, this); }
-    void onResponse()   { responseTimeout_.cancel(); }
+    /// Start the periodic timer at compile-time `kPeriodMs`.
+    void start() { timer_.startPeriodic(kPeriodMs, &onTesterPresent, this); }
+
+    /// Cancel the timer. Idempotent per `SCE::Forge::ITimer` contract.
+    void cancel() { timer_.cancel(); }
+
+    /// `<sce:reset-on event="DiagRequestSent"/>` consumer hook —
+    /// wire into the host SCXML transition body for this event.
+    void onResetDiagRequestSent() { cancel(); start(); }
+
+    /// `<sce:cancel-on state-exit="SessionActive"/>` consumer hook —
+    /// wire into the host SCXML `<onexit>` for state `SessionActive`.
+    void onCancelSessionActiveExit() { cancel(); }
 
 private:
-    SCE::Forge::ITimer& testerPresentTimer_;
-    SCE::Forge::ITimer& responseTimeout_;
+    Handler &handler_;
+    SCE::Forge::ITimer &timer_;
 
-    // Trampolines: bridge C-style callbacks back into instance methods (no std::function, no heap)
-    static void onTesterTick(void* ctx)      { static_cast<DiagScheduler*>(ctx)->emitTesterPresent(); }
-    static void onResponseTimeout(void* ctx) { static_cast<DiagScheduler*>(ctx)->handleTimeout(); }
-
-    void emitTesterPresent();   // forward-declared; implemented by user or by statechart integration layer
-    void handleTimeout();
+    static void onTesterPresent(void *ctx) {
+        static_cast<TesterPresent *>(ctx)->handler_.fireTesterPresent();
+    }
 };
+
+}  // namespace SCE::Generated::TesterPresent
 ```
 
-The corresponding interface in `sce_forge_runtime`:
+The period is a compile-time constant, so retuning it is a document edit and a regeneration, never a runtime argument. `start()` is the only entry that arms the timer, and both hooks route through `cancel()`.
+
+The corresponding interface in `sce_forge_runtime` — note that `startOneShot` is part of the runtime contract a host must implement, but no generated code calls it (see the second warning above):
 
 ```cpp
 namespace SCE::Forge {
