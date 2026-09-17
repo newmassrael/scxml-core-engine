@@ -1000,6 +1000,11 @@
         {
           "file": "sce-build/src/model.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/model/TransitionNode.cpp",
+          "symbol": "SCE::TransitionNode::TransitionNode",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -16771,6 +16776,12 @@
       "target_kind": "section",
       "target_id": "scxml-5.9.2",
       "reason": "In() is a conditional-expression predicate (§scxml-5.9.1); §scxml-5.9.2 is Location Expressions. The two cites this binding rested on named the wrong clause and now cite §scxml-5.9.1, where the C++ twin IScriptEngine.h was already bound."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "Wrong spelling: the cpp resolver reports the symbol at that line as SCE::TransitionNode::TransitionNode, namespace included. Replaced by the qualified form in the same round."
     }
   ],
   "frames": {},

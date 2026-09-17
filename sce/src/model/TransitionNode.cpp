@@ -11,7 +11,7 @@ SCE::TransitionNode::TransitionNode(const std::string &event, const std::string 
     : event_(event), target_(target), guard_(""), internal_(false), targetsDirty_(true) {
     SCE_LOG_DEBUG("Creating transition node: {} -> {}", (event.empty() ? "<no event>" : event), target);
 
-    // W3C SCXML 3.12.1: `event` holds a space-separated list of event
+    // §scxml-3.12.1: `event` holds a space-separated list of event
     // DESCRIPTORS, and a transition matches when any one of them matches.
     // So the attribute is split into descriptors here rather than stored
     // whole.
