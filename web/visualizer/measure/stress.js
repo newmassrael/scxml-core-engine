@@ -24,7 +24,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-    REPO, makeSandbox, loadEngine, structureOf, layoutDocument,
+    REPO, makeSandbox, loadEngine, structureOf, layoutDocument, LABEL_TO_LINE_LIMIT,
 } = require('./harness');
 
 const OPS = Number(process.env.SCE_STRESS_OPS || 40);
@@ -141,10 +141,9 @@ function invariants(v, label) {
     }
     if (unstaged) fail(`${label}: ${unstaged} label(s) carry no placement from the stage`);
     if (unplaced) fail(`${label}: ${unplaced} visible state(s) have no position`);
-    const OFF_LINE_LIMIT = 48;
-    if (worstOffLine > OFF_LINE_LIMIT) {
+    if (worstOffLine > LABEL_TO_LINE_LIMIT) {
         fail(`${label}: a label sits ${Math.round(worstOffLine)}px from the line it names`
-            + ` (${worstOffLineEdge}, limit ${OFF_LINE_LIMIT})`);
+            + ` (${worstOffLineEdge}, limit ${LABEL_TO_LINE_LIMIT})`);
     }
     return { links: links.length, worstOffLine: Math.round(worstOffLine) };
 }

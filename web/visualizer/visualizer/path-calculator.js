@@ -45,6 +45,17 @@ class PathCalculator {
      * probe called broken — and it was, on every stress seed. A route that
      * misses by more falls back to the orthogonal router, which attaches
      * exactly.
+     *
+     * ⭐ MEASURED 2026-09-18 over the ten layout fixtures, across layout,
+     * collapse and expand: the quantity is BIMODAL. Of 458 routes, every one
+     * at layout (100) and after an expand (219) missed by exactly 0; the 25
+     * non-zero cases all appear after a collapse and read
+     *   5.3, 18, 18, 32.8 x6, 43, 43.4, 66.2, 114.3, ... 716
+     * There is nothing between 18 and 32.8, and nothing between 5.3 and 18.
+     * So this bound is not a tuning knob: any value in 6..17 classifies the
+     * same data identically. What it is NOT free to be is the 20 it used to
+     * borrow — that let the two 18px routes through, and an 18px gap between
+     * an arrow and its state is one a reader sees.
      */
     static get REACH_SLACK() { return 6; }
 

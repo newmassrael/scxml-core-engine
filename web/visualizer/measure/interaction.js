@@ -30,7 +30,7 @@ const check = (ok, why) => { if (!ok) { console.error('FAIL: ' + why); failures+
 // and the other answered with itself, which throws as soon as the collapse
 // path puts it in a log message. One copy could measure a collapse and the
 // other could not.
-const { makeSandbox } = require('./harness');
+const { makeSandbox, LABEL_TO_LINE_LIMIT } = require('./harness');
 
 (async () => {
     const createVisualizer = require(path.join(ROOT, 'visualizer.js'));
@@ -473,7 +473,6 @@ const { makeSandbox } = require('./harness');
     // ⚠ The bound is the label's own box plus a margin, because the stage
     // deliberately places labels BESIDE their line rather than on it — a
     // label sitting on a shared trunk covers the other arrows using it.
-    const OFF_LINE_LIMIT = 40;
     console.log(`               labels sit at most ${hubReadable.worstOffLine}px from their own line`
         + ` (${hubReadable.worstOffLineEdge})`);
     // Only when it is close to the limit: the detail is for diagnosing a
@@ -492,8 +491,8 @@ const { makeSandbox } = require('./harness');
             console.log(`                path ${d.slice(0, 160)}`);
         }
     }
-    check(hubReadable.worstOffLine <= OFF_LINE_LIMIT,
-        `a label sits ${hubReadable.worstOffLine}px from the line it names (limit ${OFF_LINE_LIMIT}),`
+    check(hubReadable.worstOffLine <= LABEL_TO_LINE_LIMIT,
+        `a label sits ${hubReadable.worstOffLine}px from the line it names (limit ${LABEL_TO_LINE_LIMIT}),`
         + ' so it was placed against geometry that is no longer drawn');
 
     // ------------------------------------------------------------ collapse

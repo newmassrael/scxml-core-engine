@@ -142,7 +142,13 @@ async function layoutDocument(sandbox, elkInstance, structure) {
     return v;
 }
 
+// ⚠ Re-exported rather than re-stated. A probe that writes its own number
+// for a limit the product already names is how the same property came to
+// have two bounds, 40 and 48, neither of them chosen against the other.
+const { LABEL_TO_LINE_LIMIT } = require(path.join(ROOT, 'label-metrics.js'));
+
 module.exports = {
     ROOT, REPO, SOURCES, fakeElement, d3Chain,
     makeSandbox, loadEngine, structureOf, layoutDocument,
+    LABEL_TO_LINE_LIMIT,
 };

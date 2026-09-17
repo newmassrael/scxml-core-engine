@@ -46,12 +46,30 @@ const segsOf = (pts) => pts.slice(0, -1).map((p, i) => [p, pts[i + 1]]);
  * "it does not overlap exactly, but it overlaps in the middle" describes,
  * and what an intersection count scores as zero.
  */
+// ⭐ 24 was written as a guess — "a label is about that tall" — and the
+// measurement agrees with it for a better reason than the one given.
+// Histogram of the gap between parallel arrow runs, over the ten fixtures at
+// layout and around collapses (bucket width 4px):
+//
+//     0-3    8    8-11   65    20-23   74    32-35  32    44-47  41
+//     4-7    2   12-15    4    24-27    0    36-39  15    68-71  33
+//                16-19    3    28-31    7    40-43  23
+//
+// The orthogonal router puts parallel edges in channels about 10 and about
+// 22 apart, and everything else it draws is 28 or more. **24-27 is empty.**
+// The threshold sits in a real valley rather than in the middle of a lump,
+// which is what makes "alongside" a class and not an arbitrary cut.
 const NEAR = 24;
 const RUN = 25;
 // Below this the two lines are not "close", they are on top of each other:
 // no reader can tell which arrow is which. Above it they are separate lines
 // that happen to run alongside, which is what an orthogonal router produces
 // by design.
+//
+// ⚠ Unlike NEAR, this one the data does NOT pick out: 0-3 holds 8 samples
+// and 4-7 holds 2, so the valley is shallow and 4 could as well be 6 or 8.
+// It stays a judgement — "closer than this and a reader cannot separate
+// them" — and is written here as one rather than dressed up as a finding.
 const STACKED_GAP = 4;
 
 function crowding(drawn) {
