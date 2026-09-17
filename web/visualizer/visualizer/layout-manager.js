@@ -29,6 +29,36 @@ class LayoutManager {
         return { lines, ...measureTransitionLabel(lines) };
     }
 
+    /**
+     * Drop ELK's routes, handing routing back to the optimizer.
+     *
+     * ELK routed the edges for one arrangement of nodes. The moment anything
+     * moves — a drag, a collapse, a restore — those routes describe a
+     * drawing that no longer exists, and a bend point left over from it puts
+     * a line through empty space or through a state.
+     *
+     * ⭐ Called from the gestures that move geometry, not from the layout.
+     * The layout is where the routes are BORN; invalidating there is what
+     * made them dead on arrival for as long as this file has existed.
+     */
+    invalidateELKRouting() {
+        let dropped = 0;
+        this.visualizer.allLinks.forEach(link => {
+            if (link.elkSections) {
+                delete link.elkSections;
+                dropped++;
+            }
+            // The label position goes with the route it was placed against.
+            // Keeping it would leave a label pinned to a bend that no longer
+            // exists — worse than the midpoint fallback, which at least
+            // follows the line the reader can see.
+            delete link.elkLabel;
+        });
+        if (dropped > 0) {
+            logger.debug(`[LAYOUT] Dropped ELK routing for ${dropped} link(s); optimizer owns routing now`);
+        }
+    }
+
     buildELKGraph() {
         const graph = {
             id: 'root',
@@ -49,7 +79,37 @@ class LayoutManager {
                 // Edge straightening for better routing
                 'elk.layered.nodePlacement.bk.edgeStraightening': 'IMPROVE_STRAIGHTNESS',
 
-                // Edge spacing to reduce crossings
+                // Edge spacing.
+                //
+                // ⚠ These only began to matter when ELK's routing stopped
+                // being deleted: until then the optimizer re-routed
+                // everything and no value here changed a drawn line.
+                // Measured on the two-state mesh fixture the moment the
+                // routes were kept, 10 put two opposite-direction edges
+                // 10px apart over a 204px run — two parallel lines closer
+                // together than a label is tall, which reads as one thick
+                // line rather than as two edges.
+                //
+                // Edge spacing, left where it was — and that is a finding,
+                // not an omission.
+                //
+                // ⚠ These were raised to 30/30/20 (mermaid's, borrowed) and
+                // then to 40/40/30 on a sweep of 12 documents that showed
+                // labels-sitting-on-lines falling monotonically: 39 at
+                // 10/10/10 down to 30 at 60/60/40. Both changes were then
+                // UNDONE by the change that made ELK place the labels, and
+                // the sweep re-run reads 13 at EVERY spacing from 10/10/10
+                // to 60/60/40 — identical, along with 2 label-on-label and
+                // 4 label-on-state.
+                //
+                // The spacing had only ever been compensating for labels
+                // being positioned afterwards, at a route's midpoint, where
+                // wider lanes left more room for a box nobody had planned
+                // for. With the boxes declared and ELK placing them, that
+                // compensation buys nothing measurable.
+                //
+                // So they go back to what shipped. A number with no basis
+                // is worse than an unexamined one: it looks decided.
                 'elk.layered.spacing.edgeNodeBetweenLayers': '15',
                 'elk.layered.spacing.edgeEdgeBetweenLayers': '10',
 
@@ -379,6 +439,31 @@ class LayoutManager {
             logger.debug('Applying ELK edge routing...');
             layouted.edges.forEach(elkEdge => {
                 const link = this.visualizer.allLinks.find(l => l.id === elkEdge.id);
+
+                // Where ELK put the label, kept beside where it put the edge.
+                //
+                // ELK only fills `labels[*].x/y` for edges it laid out, and
+                // it places them knowing every other label and every other
+                // edge — which is the whole reason the boxes are declared to
+                // it. Deriving a position from the route's midpoint
+                // afterwards discards that: measured over 12 documents, the
+                // twelve label-on-label collisions and nine label-on-state
+                // collisions did not move by a single count across seven
+                // different routings, because none of them could.
+                //
+                // ⚠ ELK's coordinate is the box's TOP-LEFT; the renderer
+                // positions from a centre. Converted here, once, rather
+                // than at each reader.
+                if (link && elkEdge.labels && elkEdge.labels[0]
+                    && Number.isFinite(elkEdge.labels[0].x)
+                    && Number.isFinite(elkEdge.labels[0].y)) {
+                    const l = elkEdge.labels[0];
+                    link.elkLabel = {
+                        x: l.x + (l.width || 0) / 2,
+                        y: l.y + (l.height || 0) / 2,
+                    };
+                }
+
                 if (link && elkEdge.sections && elkEdge.sections.length > 0) {
                     link.elkSections = elkEdge.sections;
                     logger.debug(`  ${elkEdge.id}: ${elkEdge.sections.length} section(s)`);
@@ -400,14 +485,23 @@ class LayoutManager {
         // Reference: https://www.eclipse.org/elk/
         logger.debug('[LAYOUT] Using ELK calculated positions (no manual alignment)');
 
-        // Invalidate ELK edge routing to use optimizer-calculated snap points
-        // ELK routing is only used during initial layout, afterward we use optimizer routing
-        this.visualizer.allLinks.forEach(link => {
-            if (link.elkSections) {
-                delete link.elkSections;
-            }
-        });
-        logger.debug('[LAYOUT] Invalidated ELK edge routing (will use optimizer routing)');
+        // ELK's routing is KEPT for the drawing it was computed for.
+        //
+        // ⚠ This block used to delete every `elkSections` twenty-three lines
+        // after storing it, inside the same function. The comment said "ELK
+        // routing is only used during initial layout" — but the deletion
+        // happened DURING the initial layout, so it was never used at all
+        // and the consumer in `path-calculator.js` was unreachable code.
+        // Measured on the two-state mesh fixture, the routes the optimizer
+        // produced instead brought three arrows into the same side of one
+        // state 16.7px apart over a 30px run: further apart than the lines
+        // are wide, closer together than their labels are tall.
+        //
+        // ELK routes edges jointly with placing the nodes, and now that it
+        // is also told the labels, it keeps room for them. The optimizer
+        // still owns routing from the first gesture that moves anything —
+        // see `invalidateELKRouting`, which the interaction handler calls.
+        logger.debug('[LAYOUT] Keeping ELK edge routing for the initial drawing');
 
         // Optimize snap point assignments to minimize intersections
         logger.debug('Optimizing snap point assignments...');

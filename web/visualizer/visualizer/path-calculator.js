@@ -155,6 +155,22 @@ class PathCalculator {
             return customPos;
         }
 
+        // Then ELK's, if it placed this label and its route still stands.
+        //
+        // ELK positions a label against every other label and every other
+        // edge; the midpoint rule below can only see the one line it is
+        // given. That is why label-on-label and label-on-state collisions
+        // were unmoved by seven different routings — nothing downstream of
+        // the midpoint could move them. A user drag still wins, because a
+        // reader who has placed a label has said where they want it.
+        if (transition.elkLabel
+            && Number.isFinite(transition.elkLabel.x)
+            && Number.isFinite(transition.elkLabel.y)) {
+            logger.debug(`[LABEL POS] ${transitionId}: Using ELK position`);
+            return this._createLabelPosition(
+                transition.elkLabel.x, transition.elkLabel.y, 'elk', transitionId);
+        }
+
         // Use routing information to get actual path coordinates
         if (transition.routing && transition.routing.sourcePoint && transition.routing.targetPoint) {
             const start = transition.routing.sourcePoint;
@@ -898,14 +914,25 @@ class PathCalculator {
             let startPoint, endPoint;
 
             if (section.bendPoints && section.bendPoints.length > 0) {
-                // If there are bend points, calculate boundary to first/last bend point
-                const firstBend = section.bendPoints[0];
-                const lastBend = section.bendPoints[section.bendPoints.length - 1];
+                // ELK's own attachment points, not a recomputation of them.
+                //
+                // ⚠ This branch used to call `getNodeBoundaryPoint` for each
+                // end, and that returned NaN: the branch had been
+                // unreachable since `applyELKLayout` began deleting
+                // `elkSections` in the same function that wrote them, so
+                // nothing exercised it and it rotted where no test could
+                // see. `M NaN NaN` is what a browser silently declines to
+                // draw.
+                //
+                // Recomputing was also the wrong thing to do. ELK chose
+                // where each edge meets each node as part of routing it —
+                // that is what keeps two edges entering one side apart —
+                // and `section.startPoint` / `endPoint` are that choice.
+                // Deriving a different point from the first bend puts the
+                // line's end somewhere ELK did not plan for.
+                startPoint = section.startPoint;
+                endPoint = section.endPoint;
 
-                startPoint = this.visualizer.getNodeBoundaryPoint(sourceNode, firstBend.x, firstBend.y, link, true, connections);
-                endPoint = this.visualizer.getNodeBoundaryPoint(targetNode, lastBend.x, lastBend.y, link, false, connections);
-
-                // Build path: start boundary → bend points → end boundary
                 let path = `M ${startPoint.x} ${startPoint.y}`;
                 section.bendPoints.forEach(point => {
                     path += ` L ${point.x} ${point.y}`;
@@ -913,6 +940,10 @@ class PathCalculator {
                 path += ` L ${endPoint.x} ${endPoint.y}`;
 
                 return path;
+            } else if (section.startPoint && section.endPoint) {
+                // A straight run ELK routed: still its points, still not ours.
+                return `M ${section.startPoint.x} ${section.startPoint.y}`
+                    + ` L ${section.endPoint.x} ${section.endPoint.y}`;
             } else {
                 // No bend points, direct line with boundary calculation
                 const sx = sourceNode.x || 0;

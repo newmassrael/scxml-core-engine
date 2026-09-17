@@ -36,6 +36,11 @@ class InteractionHandler {
                 delete link.routing;
             });
 
+            // ELK routed for the arrangement that existed before this drag,
+            // so its bend points are now describing a drawing nobody is
+            // looking at. The optimizer takes over from here.
+            this.visualizer.layoutManager.invalidateELKRouting();
+
             // **ADAPTIVE ALGORITHM SELECTION**
             // - useGreedy=true: Fast greedy for real-time drag (1-5ms)
             // - useGreedy=false: Optimal CSP for final result (50-200ms)
@@ -378,6 +383,12 @@ class InteractionHandler {
 
         state.collapsed = !state.collapsed;
         logger.debug(`Toggled ${stateId}: ${state.collapsed ? 'collapsed' : 'expanded'}`);
+
+        // Collapsing changes which nodes exist to route between, and edges
+        // into the collapsed state get redirected to it. ELK's routes were
+        // computed against the other arrangement, so they go now rather than
+        // being reused for endpoints that have moved inside a box.
+        this.visualizer.layoutManager.invalidateELKRouting();
 
         // Update size based on collapsed state (preserve position)
         state.width = this.visualizer.getNodeWidth(state);
