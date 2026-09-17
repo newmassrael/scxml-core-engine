@@ -1,0 +1,147 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Timer kind — pre-baked oracle.
+
+   See the C++ fragment for why the oracle is a SEQUENCE OF CALLS rather than
+   a return value: the generated struct owns no state a test can read, so
+   what it asks its collaborators to do is the only observable.
+
+   C11 differences that shape this file:
+     * no JSON at runtime — the sequence is baked as a static table, the
+       same choice every other C11 fragment makes;
+     * no classes — the HAL is a vtable struct, and the mock embeds it as
+       its FIRST member so the `self` pointer the generated code hands back
+       can be cast to the mock (well defined precisely because the interface
+       leads the layout);
+     * no closures — the mock's recording buffer is file-static, which is
+       why the whole fixture lives in one function with statics rather than
+       in a lambda. #}
+
+/* Recording HAL for {{ f.name }}. `start_periodic` records the interval as a
+ * VALUE, so a unit mix-up fails on the number rather than running a thousand
+ * times too fast in silence. */
+#define {{ f.name | upper }}_MAX_OPS 8
+#define {{ f.name | upper }}_OP_LEN 48
+
+typedef struct {
+    {{ f.name }}_itimer_t base; /* MUST be first — see the header comment. */
+    char ops[{{ f.name | upper }}_MAX_OPS][{{ f.name | upper }}_OP_LEN];
+    int n;
+    {{ f.name }}_timer_cb_t cb;
+    void *cb_ctx;
+} {{ f.name }}_rec_t;
+
+static {{ f.name }}_rec_t g_{{ f.name }}_rec;
+
+static void {{ f.name }}_rec_push(const char *op) {
+    if (g_{{ f.name }}_rec.n < {{ f.name | upper }}_MAX_OPS) {
+        snprintf(g_{{ f.name }}_rec.ops[g_{{ f.name }}_rec.n],
+                 {{ f.name | upper }}_OP_LEN, "%s", op);
+    }
+    ++g_{{ f.name }}_rec.n; /* counted past the cap so an overflow is visible */
+}
+
+static void {{ f.name }}_rec_start_periodic({{ f.name }}_itimer_t *self,
+                                            uint32_t interval_ms,
+                                            {{ f.name }}_timer_cb_t cb, void *cb_ctx) {
+    char buf[{{ f.name | upper }}_OP_LEN];
+    (void)self;
+    snprintf(buf, sizeof buf, "start_periodic:%u", (unsigned)interval_ms);
+    {{ f.name }}_rec_push(buf);
+    g_{{ f.name }}_rec.cb = cb;
+    g_{{ f.name }}_rec.cb_ctx = cb_ctx;
+}
+
+static void {{ f.name }}_rec_cancel({{ f.name }}_itimer_t *self) {
+    (void)self;
+    {{ f.name }}_rec_push("cancel");
+}
+
+static void {{ f.name }}_rec_fire(void *user_data) {
+    (void)user_data;
+    {{ f.name }}_rec_push("fired:{{ f.fire_event }}");
+}
+
+static void test_{{ f.name }}(void) {
+    /* The oracle, baked. Each row is one scripted call and the ops it must
+     * produce; an empty expectation is spelled with a NULL first entry. */
+    static const struct {
+        const char *call;
+        int n;
+        const char *expect[{{ f.name | upper }}_MAX_OPS];
+    } steps[] = {
+{% for s in f.sequence %}
+        { "{{ s.call }}", {{ s.expect | length }}, { {% for e in s.expect %}"{{ e }}"{% if not loop.last %}, {% endif %}{% endfor %} } },
+{% endfor %}
+    };
+    const size_t nsteps = sizeof(steps) / sizeof(steps[0]);
+
+    if ((long long){{ f.name | upper }}_PERIOD_MS != {{ f.period_ms }}LL) {
+        fprintf(stderr, "FAIL: {{ f.name }}: PERIOD_MS = %lld, expected {{ f.period_ms }}\n",
+                (long long){{ f.name | upper }}_PERIOD_MS);
+        ++g_failures;
+    }
+    if ((long long){{ f.name | upper }}_PERIOD_US != {{ f.period_us }}LL) {
+        fprintf(stderr, "FAIL: {{ f.name }}: PERIOD_US = %lld, expected {{ f.period_us }}\n",
+                (long long){{ f.name | upper }}_PERIOD_US);
+        ++g_failures;
+    }
+
+    memset(&g_{{ f.name }}_rec, 0, sizeof g_{{ f.name }}_rec);
+    g_{{ f.name }}_rec.base.start_periodic = {{ f.name }}_rec_start_periodic;
+    g_{{ f.name }}_rec.base.cancel = {{ f.name }}_rec_cancel;
+
+    {{ f.name }}_handler_t handler;
+    handler.user_data = NULL;
+    handler.fire_{{ f.fire_event | to_snake_case }} = {{ f.name }}_rec_fire;
+
+    {{ f.name }}_t sched;
+    {{ f.name }}_init(&sched, handler, &g_{{ f.name }}_rec.base);
+
+    for (size_t i = 0; i < nsteps; ++i) {
+        g_{{ f.name }}_rec.n = 0;
+        const char *call = steps[i].call;
+
+        if (strcmp(call, "start") == 0) {
+            {{ f.name }}_start(&sched);
+        } else if (strcmp(call, "cancel") == 0) {
+            {{ f.name }}_cancel(&sched);
+        } else if (strcmp(call, "fire") == 0) {
+            /* Invoking the callback the mock stored proves the trampoline
+             * reaches the handler; calling the handler directly would prove
+             * only that the test can call it. */
+            if (g_{{ f.name }}_rec.cb == NULL) {
+                fprintf(stderr, "FAIL: {{ f.name }} step %zu: no callback registered\n", i);
+                ++g_failures;
+            } else {
+                g_{{ f.name }}_rec.cb(g_{{ f.name }}_rec.cb_ctx);
+            }
+{% if f.reset_on_event %}
+        } else if (strcmp(call, "on_reset") == 0) {
+            {{ f.name }}_on_reset_{{ f.reset_on_event | to_snake_case }}(&sched);
+{% endif %}
+{% if f.cancel_on_state_exit %}
+        } else if (strcmp(call, "on_cancel_exit") == 0) {
+            {{ f.name }}_on_cancel_{{ f.cancel_on_state_exit | to_snake_case }}_exit(&sched);
+{% endif %}
+        } else {
+            fprintf(stderr, "FAIL: {{ f.name }} step %zu: unknown call %s\n", i, call);
+            ++g_failures;
+        }
+
+        if (g_{{ f.name }}_rec.n != steps[i].n) {
+            fprintf(stderr, "FAIL: {{ f.name }} step %zu (%s): %d ops, expected %d\n",
+                    i, call, g_{{ f.name }}_rec.n, steps[i].n);
+            ++g_failures;
+            continue;
+        }
+        for (int j = 0; j < steps[i].n; ++j) {
+            if (strcmp(g_{{ f.name }}_rec.ops[j], steps[i].expect[j]) != 0) {
+                fprintf(stderr, "FAIL: {{ f.name }} step %zu (%s) op %d: '%s', expected '%s'\n",
+                        i, call, j, g_{{ f.name }}_rec.ops[j], steps[i].expect[j]);
+                ++g_failures;
+            }
+        }
+    }
+}

@@ -160,7 +160,13 @@ PUSH_BUDGET_S = 300
 # What worked was repeating the measurement until it settled and reading
 # the band, then taking the worse of the last pair. A single reading here
 # says nothing; the first three of nine were still filling caches.
-PACED_BUDGET_SHARE_CEILING = 0.287
+# 0.287 -> 0.237 on 2026-09-17. Nothing about the paced figures changed; the
+# DENOMINATOR grew, because `forge-c` added 17 measured seconds to what a push
+# can select. The share is therefore smaller for a good reason, and the rule
+# here is to follow it down rather than bank the slack: a ceiling left above
+# the real share stops being a ratchet and silently permits the next
+# unmeasured cost to be added back.
+PACED_BUDGET_SHARE_CEILING = 0.237
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -297,6 +303,12 @@ COST_MEASURED: dict[str, str] = {
     # measurement that had to be abandoned twice into one that settled on the
     # first try.
     "w3c-go": "2026-09-02",
+    # 17s on a quiet machine (load 1.33, nothing else building in this tree).
+    # Measured on the lane's first existence rather than inherited from a
+    # sibling: the C11 arm generates 12 headers and compiles one C file, so
+    # borrowing forge-cpp's 59s would have overstated it more than threefold
+    # and eaten push budget that is not being spent.
+    "forge-c": "2026-09-17",
 }
 
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
@@ -757,6 +769,33 @@ GATES: dict[str, dict] = {
                    "forge-conformance.yml runs it beside the other arms.",
         "cost_s": 59,
         "summary": "C++ forge conformance build + test",
+    },
+    # ⚠ The C11 arm existed as a complete standalone CMake project, a harness
+    # template and ten per-kind fragments, and NOTHING RAN ANY OF IT —
+    # measured 2026-09-17, there was no gate script and no job in
+    # forge-conformance.yml. The four sibling arms made the set look
+    # complete. Its first run was green, so what it had not been surviving
+    # was change, which is exactly what a lane is for.
+    #
+    # ⚠⚠ `workflows` is empty ON PURPOSE and is not an oversight to tidy
+    # away: forge-conformance.yml has no C11 job today, so claiming one would
+    # make `--ci-owed` report a lane that cannot pay. Adding the job is the
+    # follow-up; until then this runs at push time, which is why it carries
+    # no `ci_only`.
+    "forge-c": {
+        "workflows": [],
+        "no_ci_reason": "forge-conformance.yml runs five arms and has no C11 "
+                        "job, so there is no workflow to name. Push-time only "
+                        "is worse than the sibling arms and better than the "
+                        "status quo it replaces, which was NOTHING running "
+                        "this suite at all. ⚠ `--no-verify` skips it; adding "
+                        "the CI job is the follow-up that retires this "
+                        "reason, and until then a push that bypasses the "
+                        "hooks leaves the C11 arm unjudged.",
+        "extra": ["backends/c/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 17,
+        "summary": "C11 forge conformance build + test",
     },
     # Catches codegen breakage in the example documents (the namespace
     # migration that broke them shipped green otherwise) and lints every
