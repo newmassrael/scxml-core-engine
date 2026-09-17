@@ -305,7 +305,12 @@ const d3Chain = new Proxy(function () {}, {
     v.layoutManager.applyELKLayout(await elk.layout(g2));
     check(withSections() > 0, 'the second layout produced no routing to invalidate');
 
-    await v.interactionHandler.toggleCompoundState('outer');
+    // ⚠ `drive`, not `outer`. Both are compounds, but `drive` is the one
+    // whose collapse exposed the stale-size defect: it sits inside a
+    // `<parallel>` and holds another compound, so keeping its expanded size
+    // puts a box larger than its own parent on the canvas. `outer` is small
+    // enough that the same bug changed no number this file counts.
+    await v.interactionHandler.toggleCompoundState('drive');
 
     // ⚠ The expectation here changed with the design and the probe had to
     // change with it. Under the old handler a collapse PATCHED geometry, so
@@ -315,6 +320,32 @@ const d3Chain = new Proxy(function () {}, {
     // every edge reaches the states it joins.
     const afterCollapse = detachedCount();
     check(afterCollapse === 0, `${afterCollapse} edge(s) detached after collapsing a compound`);
+
+    // ⚠ A collapsed container must be the SIZE of a collapsed container.
+    //
+    // This probe collapsed `outer` and passed while the defect was live,
+    // because `outer` is small enough that keeping its expanded size broke
+    // nothing the other columns count. Collapsing `drive` left it 580x835
+    // inside a parent of 460x407 — a white rectangle over the diagram — and
+    // every number here still read clean. Checking the size directly is what
+    // the collision counts could not do for it.
+    for (const node of v.nodes) {
+        if (!node.collapsed || !Number.isFinite(node.x)) continue;
+        const expected = {
+            width: v.nodeBuilder.getNodeWidth(node),
+            height: v.nodeBuilder.getNodeHeight(node),
+        };
+        check(Math.abs(node.width - expected.width) < 1 && Math.abs(node.height - expected.height) < 1,
+            `collapsed ${node.id} is ${Math.round(node.width)}x${Math.round(node.height)},`
+            + ` not the ${expected.width}x${expected.height} a collapsed box is`);
+        const parent = v.nodes.find((p) => (p.children || []).includes(node.id));
+        if (parent && Number.isFinite(parent.width)) {
+            check(node.width <= parent.width && node.height <= parent.height,
+                `collapsed ${node.id} (${Math.round(node.width)}x${Math.round(node.height)})`
+                + ` is larger than the ${parent.id} that holds it`
+                + ` (${Math.round(parent.width)}x${Math.round(parent.height)})`);
+        }
+    }
     console.log(`after collapse: ${withSections()} routed, ${afterCollapse} detached`);
     if (afterCollapse > 0) {
         for (const link of links()) {

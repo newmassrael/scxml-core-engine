@@ -412,6 +412,21 @@ class InteractionHandler {
         // hides the children and `getNodeWidth/Height` return the collapsed
         // size, so ELK sees a leaf where the container was and routes to it.
         // Nothing here has to arrange that.
+        //
+        // ⚠ Except the stale size. `applyELKLayout` deliberately PRESERVES a
+        // collapsed node's width and height — so that a collapsed box keeps
+        // one size across layouts rather than flickering — and on the layout
+        // immediately after a collapse the stored size is the EXPANDED one.
+        // Measured on `ancestor_entry_is_not_default_entry`, collapsing
+        // `drive` left it 580x835 inside a parent of 460x407: a white
+        // rectangle covering the diagram, which is what a reader saw.
+        //
+        // Clearing them is what makes the flag the whole input. The layout
+        // then takes the size from `getNodeWidth/Height`, which read
+        // `collapsed` themselves.
+        delete state.width;
+        delete state.height;
+
         await this.visualizer.computeLayout();
         this.visualizer.render();
     }
