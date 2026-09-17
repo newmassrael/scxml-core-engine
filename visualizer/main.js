@@ -503,7 +503,39 @@ function showLoading(show) {
  */
 function showFatalError(message) {
     console.error(`[FATAL ERROR] ${message}`);
-    alert(message);
+
+    // An in-page banner, not `alert()`.
+    //
+    // A modal dialog blocks the page's event loop until it is dismissed,
+    // which for a fatal error means the reader cannot copy the text, cannot
+    // open the console to see what preceded it, and cannot look at the URL
+    // that produced it. It also cannot be styled, so a long explanation
+    // arrives as an unreadable wall.
+    const existing = document.getElementById('fatal-error-banner');
+    if (existing) {
+        existing.remove();
+    }
+
+    const banner = document.createElement('div');
+    banner.id = 'fatal-error-banner';
+    banner.className = 'fatal-error-banner';
+    banner.setAttribute('role', 'alert');
+
+    const text = document.createElement('div');
+    text.className = 'fatal-error-message';
+    // textContent, not innerHTML: the message can carry a parser error
+    // quoting the document, and a document is exactly the thing that must
+    // not be interpreted as markup on its way into the page.
+    text.textContent = message;
+
+    const dismiss = document.createElement('button');
+    dismiss.className = 'fatal-error-dismiss';
+    dismiss.textContent = 'Dismiss';
+    dismiss.addEventListener('click', () => banner.remove());
+
+    banner.appendChild(text);
+    banner.appendChild(dismiss);
+    document.body.appendChild(banner);
 }
 
 /**

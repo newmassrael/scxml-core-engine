@@ -11,6 +11,30 @@
  * - ID generation and matching consistency
  */
 
+/**
+ * Does this element stand for the given transition?
+ *
+ * An arrow may stand for several transitions — the link builder merges the
+ * ones sharing a pair of states, because thirteen arrows between two boxes
+ * are unreadable. So `data-transition-id` holds a space-separated LIST and
+ * the question is membership, not equality.
+ *
+ * ⭐ The one place that question is answered. The four call sites below used
+ * to each spell `=== transitionId`, and an equality left behind after a
+ * merge does not fail loudly: the highlight simply never appears, which
+ * reads as "that transition did not fire".
+ *
+ * `[data-transition-id~="x"]` is the selector form of the same test, used
+ * where the lookup is a query rather than a filter.
+ */
+function elementCarriesTransition(element, transitionId) {
+    if (!element || !transitionId) {
+        return false;
+    }
+    const attr = element.getAttribute('data-transition-id');
+    return !!attr && attr.split(/\s+/).includes(String(transitionId));
+}
+
 class TransitionFocusManager {
     constructor(visualizer) {
         this.visualizer = visualizer;
@@ -360,7 +384,7 @@ class TransitionFocusManager {
 
         // Try to find and focus on transition label (text) first
         if (transitionId) {
-            const labelElement = document.querySelector(`.transition-label[data-transition-id="${transitionId}"]`);
+            const labelElement = document.querySelector(`.transition-label[data-transition-id~="${transitionId}"]`);
 
             if (labelElement) {
                 const foreignObject = labelElement.closest('foreignObject');
@@ -530,7 +554,7 @@ class TransitionFocusManager {
         if (this.visualizer.transitionLabels) {
             this.visualizer.transitionLabels.each(function() {
                 const labelElement = this.querySelector('.transition-label');
-                if (labelElement && labelElement.getAttribute('data-transition-id') === transitionId) {
+                if (elementCarriesTransition(labelElement, transitionId)) {
                     d3.select(labelElement).classed('active', true);
                 }
             });
@@ -560,7 +584,7 @@ class TransitionFocusManager {
 
         // Highlight links
         const matchingLinks = this.visualizer.linkElements.filter(function() {
-            return d3.select(this).attr('data-transition-id') === transitionId;
+            return elementCarriesTransition(this, transitionId);
         });
 
         if (matchingLinks.size() > 0) {
@@ -574,7 +598,7 @@ class TransitionFocusManager {
         let foundLabel = false;
         this.visualizer.transitionLabels.each(function() {
             const labelElement = this.querySelector('.transition-label');
-            if (labelElement && labelElement.getAttribute('data-transition-id') === transitionId) {
+            if (elementCarriesTransition(labelElement, transitionId)) {
                 d3.select(labelElement).classed('highlighted', true);
                 foundLabel = true;
             }

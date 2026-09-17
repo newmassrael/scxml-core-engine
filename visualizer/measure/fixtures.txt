@@ -1,0 +1,58 @@
+# Documents the layout gate draws, and what each one is here to exercise.
+#
+# ⚠ PINNED, not derived. An earlier version swept every tracked `.scxml` and
+# took the largest, which read well — "ask the tree, do not name it" — and was
+# wrong in a way the registry's self-test named exactly: it made the gate's
+# inputs the whole repository, while the workflow that runs the gate watches
+# only `web/visualizer/**`. A commit editing a document anywhere would have
+# been told this lane judges it, and the lane would never have run. "The gate
+# was not moved to CI, it was removed."
+#
+# ⚠ The residue, stated rather than hidden: editing one of the documents below
+# does NOT re-run this gate, because they live outside the workflow's trigger.
+# What catches a layout regression is a change to the visualizer itself, which
+# is where layout regressions come from. A document that changes shape enough
+# to matter here is a reason to revisit this list.
+#
+# ⭐ So the list is chosen by SHAPE, not by size ranking. A reader adding a
+# shape the visualizer draws differently — a history state, a deep chain of
+# single children — should add a document for it, and the reason on each line
+# is what tells them whether theirs is already covered.
+
+# Nesting nine deep, seven parallel regions, cross-hierarchy edges into a
+# collapsed ancestor. Every routing defect this gate was written for lived here.
+integration_resources/ancestor_entry_is_not_default_entry/ancestor_entry_is_not_default_entry.scxml
+
+# The densest document in the tree: 30 arrows over 27 states, which is where
+# labels have the least room and crowding shows first.
+examples/ai_loop/ai_loop.scxml
+
+# The widest: 30 states, so containers grow large enough that their bounds and
+# their children's placement can disagree.
+resources/364/test364.scxml
+
+# Two parallel regions under one root, with edges leaving the parallel for
+# final states — the shape that stranded edges 20px below a container.
+tests/mesh/motor_partition.scxml
+
+# Five transitions between one pair of states, plus a self-loop: the merge's
+# worst case, and the only document here where `+N more` appears.
+tests/mesh/motor_zenoh_multi.scxml
+
+# Thirteen guarded transitions between one pair, inside an invoked child.
+integration_resources/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data.scxml
+
+# Labels carrying actions rather than bare event names, which are the tallest
+# label boxes the metrics have to reserve for.
+integration_resources/send_param_payload/send_param_payload.scxml
+
+# A parallel whose regions complete independently — containers that must stay
+# side by side rather than stacking.
+integration_resources/parallel_completion_raises_done_state/parallel_completion_raises_done_state.scxml
+
+# Wildcard and document-order transitions, whose labels are the widest single
+# lines drawn.
+integration_resources/wildcard_in_document_order/wildcard_in_document_order.scxml
+
+# History states.
+resources/387/test387.scxml

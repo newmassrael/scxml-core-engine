@@ -19,47 +19,57 @@ class PathCalculator {
         this.BOUNDARY_DIRECTION_OFFSET = 100; // Offset for boundary point direction calculation
     }
 
-    getTransitionLabelText(transition) {
-        // Generate hierarchical HTML structure for better readability
-        const parts = [];
-
-        // Eventless indicator - always show first if transition is eventless (W3C SCXML 3.12)
-        if (transition.eventless === true) {
-            parts.push(`<div class="label-eventless">⚡ eventless</div>`);
-        }
-        // Event name (W3C SCXML 3.12.1) - only for event-based transitions
-        else if (transition.event) {
-            // W3C SCXML 5.9.1: Wildcard event detection
-            if (transition.event === '*') {
-                parts.push(`<div class="label-event label-wildcard">★ * <span class="wildcard-hint">(wildcard)</span></div>`);
-            } else {
-                parts.push(`<div class="label-event">${transition.event}</div>`);
-            }
-        }
-
-        // Condition (guard) - W3C SCXML 3.12.1
-        if (transition.cond) {
-            const icon = '🔍';  // Condition icon
-            parts.push(`<div class="label-condition">${icon} [${transition.cond}]</div>`);
-        }
-
-        // Actions - W3C SCXML 3.7 (using ActionFormatter for consistency)
-        if (transition.actions && transition.actions.length > 0) {
-            transition.actions.forEach(action => {
-                // Use ActionFormatter for consistent formatting
-                const formatted = (typeof ActionFormatter !== 'undefined')
+    /**
+     * The lines this label carries, from the one place that decides them.
+     *
+     * Split from the markup below so the same list reaches the box
+     * reservation in `label-metrics.js`. A second list built here would let
+     * the drawn label and the space ELK reserved for it disagree about how
+     * many lines there are.
+     */
+    getTransitionLabelLines(transition) {
+        return buildLinkLabelLines(
+            transition,
+            (action) =>
+                (typeof ActionFormatter !== 'undefined')
                     ? ActionFormatter.formatAction(action)
-                    : { main: 'action', details: [] };
+                    : { main: 'action', details: [] },
+            // A link the reader has opened shows every alternative; the rest
+            // show the cap and a count of what is behind it.
+            transition.labelExpanded === true
+        );
+    }
 
-                // Wrap in label-action div with arrow prefix
-                parts.push(`<div class="label-action">↳ ${formatted.main}</div>`);
-            });
-        }
-
-        // Fallback for completely empty transitions (no event, no eventless flag, no condition, no actions)
-        if (parts.length === 0) {
-            parts.push(`<div class="label-always">(always)</div>`);
-        }
+    getTransitionLabelText(transition) {
+        // Generate hierarchical HTML structure for better readability.
+        // W3C SCXML 3.12 / 3.12.1 / 3.7 / 5.9.1: which lines exist is
+        // decided by getTransitionLabelLines; this only dresses them.
+        const parts = this.getTransitionLabelLines(transition).map(line => {
+            switch (line.kind) {
+                case 'eventless':
+                    return `<div class="label-eventless">${line.text}</div>`;
+                case 'event':
+                    return line.wildcard
+                        ? `<div class="label-event label-wildcard">${line.head}`
+                            + `<span class="wildcard-hint">${line.hint}</span></div>`
+                        : `<div class="label-event">${line.text}</div>`;
+                case 'condition':
+                    return `<div class="label-condition">${line.text}</div>`;
+                case 'action':
+                    return `<div class="label-action">${line.text}</div>`;
+                case 'always':
+                    return `<div class="label-always">${line.text}</div>`;
+                case 'separator':
+                    return `<div class="label-separator"></div>`;
+                case 'more':
+                    // Announces what the cap is hiding. Clickable, and the
+                    // count is of TRANSITIONS: a reader told "+9 more" must
+                    // not find eleven when they open it.
+                    return `<div class="label-more" role="button" tabindex="0">${line.text}</div>`;
+                default:
+                    throw new Error(`path-calculator: unknown label line kind ${line.kind}`);
+            }
+        });
 
         // Build label classes with color variant
         let labelClasses = 'transition-label';
@@ -67,8 +77,15 @@ class PathCalculator {
             labelClasses += ` label-color-${transition.colorIndex}`;
         }
 
-        // Add data-transition-id attribute
-        const transitionId = transition.transitionId ? `data-transition-id="${transition.transitionId}"` : '';
+        // EVERY transition this arrow stands for, space separated, so a
+        // lookup for one of them finds the merged arrow. The matchers use
+        // `~=`, which is the attribute selector for a space-separated list;
+        // an arrow standing for a single transition is the one-element case
+        // and behaves exactly as the old exact match did.
+        const ids = transition.transitionIds && transition.transitionIds.length
+            ? transition.transitionIds
+            : (transition.transitionId ? [transition.transitionId] : []);
+        const transitionId = ids.length ? `data-transition-id="${ids.join(' ')}"` : '';
 
         return `<div class="${labelClasses}" ${transitionId}>${parts.join('')}</div>`;
     }
@@ -127,6 +144,35 @@ class PathCalculator {
         return position;
     }
 
+    /**
+     * Is ELK's label coordinate in the same frame as the states it labels?
+     *
+     * The same containment hazard as [`elkSectionReachesItsNodes`]: a label
+     * on a cross-hierarchy edge can come back in an ancestor's frame, and a
+     * label read in the wrong frame lands in open space — where it is worse
+     * than the midpoint it replaced, because it names a transition nowhere
+     * near it.
+     *
+     * Asked as "does it sit within the span of the two states it belongs
+     * to, with room to spare", which a correctly-framed label always does
+     * and a mis-framed one does not.
+     */
+    elkLabelIsInFrame(link) {
+        const source = this.visualizer.nodes.find(n => n.id === (link.visualSource || link.source));
+        const target = this.visualizer.nodes.find(n => n.id === (link.visualTarget || link.target));
+        if (!source || !target
+            || !Number.isFinite(source.x) || !Number.isFinite(target.x)) {
+            return false;
+        }
+        const margin = 200;
+        const minX = Math.min(source.x - source.width / 2, target.x - target.width / 2) - margin;
+        const maxX = Math.max(source.x + source.width / 2, target.x + target.width / 2) + margin;
+        const minY = Math.min(source.y - source.height / 2, target.y - target.height / 2) - margin;
+        const maxY = Math.max(source.y + source.height / 2, target.y + target.height / 2) + margin;
+        const { x, y } = link.elkLabel;
+        return x >= minX && x <= maxX && y >= minY && y <= maxY;
+    }
+
     getTransitionLabelPosition(transition) {
         const transitionId = `${transition.source}→${transition.target}`;
         logger.debug(`[LABEL POS] Calculating position for ${transitionId}`);
@@ -136,6 +182,23 @@ class PathCalculator {
         if (customPos) {
             logger.debug(`[LABEL POS] ${transitionId}: Using custom position (${customPos.x.toFixed(1)}, ${customPos.y.toFixed(1)})`);
             return customPos;
+        }
+
+        // Then ELK's, if it placed this label and its route still stands.
+        //
+        // ELK positions a label against every other label and every other
+        // edge; the midpoint rule below can only see the one line it is
+        // given. That is why label-on-label and label-on-state collisions
+        // were unmoved by seven different routings — nothing downstream of
+        // the midpoint could move them. A user drag still wins, because a
+        // reader who has placed a label has said where they want it.
+        if (transition.elkLabel
+            && Number.isFinite(transition.elkLabel.x)
+            && Number.isFinite(transition.elkLabel.y)
+            && this.elkLabelIsInFrame(transition)) {
+            logger.debug(`[LABEL POS] ${transitionId}: Using ELK position`);
+            return this._createLabelPosition(
+                transition.elkLabel.x, transition.elkLabel.y, 'elk', transitionId);
         }
 
         // Use routing information to get actual path coordinates
@@ -850,6 +913,44 @@ class PathCalculator {
         return `M ${sx} ${sy} L ${tx} ${ty}`;
     }
 
+    /**
+     * Does this ELK route actually join the two states it belongs to?
+     *
+     * ⚠ ELK expresses an edge's coordinates relative to the node that
+     * CONTAINS the edge, and with `hierarchyHandling: INCLUDE_CHILDREN` it
+     * may hoist a cross-hierarchy edge to the root while leaving its
+     * coordinates in the frame of the lowest common ancestor. Read as
+     * absolute, such a route lands a long way from both endpoints —
+     * measured on `ancestor_entry_is_not_default_entry`, two edges inside a
+     * nested `<parallel>` drew 653-769px away from the states they connect,
+     * as lines floating in open space.
+     *
+     * ⭐ So this ASKS rather than models. Reproducing ELK's containment
+     * rules here would put a second copy of them in this file, free to
+     * disagree with the version ELK actually used; checking that the route
+     * arrives where it must cannot disagree with anything. A route that
+     * fails falls back to the orthogonal path, which is what every edge
+     * used before ELK's routing was kept at all.
+     */
+    elkSectionReachesItsNodes(section, sourceNode, targetNode) {
+        if (!section || !section.startPoint || !section.endPoint) {
+            return false;
+        }
+        const near = (point, node) => {
+            if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+                return false;
+            }
+            // Generous: the point must be on or near the box, not exactly on
+            // its border, because ELK attaches at a port inset from the edge
+            // and the renderer rounds.
+            const slack = this.MIN_LABEL_DISTANCE;
+            const halfW = (node.width || 0) / 2 + slack;
+            const halfH = (node.height || 0) / 2 + slack;
+            return Math.abs(point.x - node.x) <= halfW && Math.abs(point.y - node.y) <= halfH;
+        };
+        return near(section.startPoint, sourceNode) && near(section.endPoint, targetNode);
+    }
+
     getLinkPath(link) {
         logger.debug(`[GET LINK PATH] Called for ${link.source}→${link.target}`);
         // Get source and target nodes (use visual redirect if available)
@@ -874,21 +975,33 @@ class PathCalculator {
         }
 
         // Use ELK edge routing only if available (only during initial ELK layout)
-        if (link.elkSections && link.elkSections.length > 0) {
+        if (link.elkSections && link.elkSections.length > 0
+            && this.elkSectionReachesItsNodes(link.elkSections[0], sourceNode, targetNode)) {
             const section = link.elkSections[0];
 
             // Calculate boundary points for start and end
             let startPoint, endPoint;
 
             if (section.bendPoints && section.bendPoints.length > 0) {
-                // If there are bend points, calculate boundary to first/last bend point
-                const firstBend = section.bendPoints[0];
-                const lastBend = section.bendPoints[section.bendPoints.length - 1];
+                // ELK's own attachment points, not a recomputation of them.
+                //
+                // ⚠ This branch used to call `getNodeBoundaryPoint` for each
+                // end, and that returned NaN: the branch had been
+                // unreachable since `applyELKLayout` began deleting
+                // `elkSections` in the same function that wrote them, so
+                // nothing exercised it and it rotted where no test could
+                // see. `M NaN NaN` is what a browser silently declines to
+                // draw.
+                //
+                // Recomputing was also the wrong thing to do. ELK chose
+                // where each edge meets each node as part of routing it —
+                // that is what keeps two edges entering one side apart —
+                // and `section.startPoint` / `endPoint` are that choice.
+                // Deriving a different point from the first bend puts the
+                // line's end somewhere ELK did not plan for.
+                startPoint = section.startPoint;
+                endPoint = section.endPoint;
 
-                startPoint = this.visualizer.getNodeBoundaryPoint(sourceNode, firstBend.x, firstBend.y, link, true, connections);
-                endPoint = this.visualizer.getNodeBoundaryPoint(targetNode, lastBend.x, lastBend.y, link, false, connections);
-
-                // Build path: start boundary → bend points → end boundary
                 let path = `M ${startPoint.x} ${startPoint.y}`;
                 section.bendPoints.forEach(point => {
                     path += ` L ${point.x} ${point.y}`;
@@ -896,6 +1009,10 @@ class PathCalculator {
                 path += ` L ${endPoint.x} ${endPoint.y}`;
 
                 return path;
+            } else if (section.startPoint && section.endPoint) {
+                // A straight run ELK routed: still its points, still not ours.
+                return `M ${section.startPoint.x} ${section.startPoint.y}`
+                    + ` L ${section.endPoint.x} ${section.endPoint.y}`;
             } else {
                 // No bend points, direct line with boundary calculation
                 const sx = sourceNode.x || 0;

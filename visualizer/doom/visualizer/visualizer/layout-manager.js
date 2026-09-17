@@ -5,9 +5,157 @@
  * Layout Manager - Handles ELK layout computation and application
  */
 
+/**
+ * What ELK is told when the reader has already placed something.
+ *
+ * ⚠ Every strategy here has to be set on the CHILD containers too, not only
+ * at the root. The hierarchy-aware crossing minimiser refuses a graph whose
+ * child specifies a different one — `UnsupportedGraphException: The hierarchy
+ * aware processor LAYER_SWEEP in child node ... is only allowed if the root
+ * node specifies the same hierarchical processor` — so `buildELKNode`
+ * propagates them. A partial application is not a milder version of this; it
+ * is a layout that throws.
+ */
+const INTERACTIVE_LAYOUT_OPTIONS = {
+    'elk.interactive': 'true',
+    'elk.layered.cycleBreaking.strategy': 'INTERACTIVE',
+    'elk.layered.layering.strategy': 'INTERACTIVE',
+    'elk.layered.crossingMinimization.strategy': 'INTERACTIVE',
+    'elk.layered.nodePlacement.strategy': 'INTERACTIVE',
+    'elk.layered.interactiveReferencePoint': 'CENTER'
+};
+
 class LayoutManager {
     constructor(visualizer) {
         this.visualizer = visualizer;
+    }
+
+    /** Has the reader placed anything by hand? */
+    hasPinnedNodes() {
+        return this.visualizer.nodes.some(n => n.pinned);
+    }
+
+    /**
+     * Take a gesture's result as the new arrangement and lay out again.
+     *
+     * ⭐ The whole of "a gesture is an input". During a drag the diagram
+     * follows the pointer by re-routing locally, which is a PREVIEW; this is
+     * what makes it real. Without it, measured on
+     * `ancestor_entry_is_not_default_entry`, one drag took the drawing from
+     * 0 label collisions to 10 and from 0 state overlaps to 1 — because
+     * dropping ELK's label positions returns every label to a path midpoint
+     * and nothing ever computes them again.
+     */
+    async settleAfterGesture(movedIds) {
+        // ⭐ EVERY placed node is pinned, not only the dragged one.
+        //
+        // What a drag makes stale is the ROUTING and the LABEL POSITIONS —
+        // the lines still lead to where the state used to be. The
+        // arrangement of the states is not stale: it is what the reader is
+        // looking at, and one of them is where they just put it.
+        //
+        // ⚠ Pinning only the dragged node let ELK re-place all the others,
+        // so moving one state made the whole diagram shift a second or two
+        // later. That reads as the drawing rearranging itself rather than
+        // as a gesture completing, and it is the thing to avoid even though
+        // the result scored better: a reader cannot work with a canvas that
+        // moves when they are not moving it.
+        //
+        // With everything pinned this is a routing and labelling pass that
+        // happens to go through the layout engine, which is the only thing
+        // that can place a label knowing every other label.
+        for (const node of this.visualizer.nodes) {
+            if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                node.pinned = true;
+            }
+        }
+        for (const id of movedIds || []) {
+            const node = this.visualizer.nodes.find(n => n.id === id);
+            if (node && Number.isFinite(node.x)) {
+                node.pinned = true;
+            }
+        }
+        await this.visualizer.computeLayout();
+        this.visualizer.render();
+    }
+
+    /**
+     * The box a link's label needs, or null when the link carries none.
+     *
+     * A lookup, not a decision: the lines come from the path calculator,
+     * which is what the renderer draws from, and the box from
+     * `label-metrics.js`. Nothing about the label's content is settled here.
+     *
+     * ⚠ Null for the initial-transition pseudo-link, which is drawn without
+     * a label. Reserving a box for it would push the initial marker away
+     * from the state it points at for no visible reason.
+     */
+    labelBoxForLink(link) {
+        if (link.linkType !== 'transition' || !linkCarriesLabel(link)) {
+            return null;
+        }
+        const lines = this.visualizer.pathCalculator.getTransitionLabelLines(link);
+        return { lines, ...measureTransitionLabel(lines) };
+    }
+
+    /**
+     * Drop ELK's routes, handing routing back to the optimizer.
+     *
+     * ELK routed the edges for one arrangement of nodes. The moment anything
+     * moves — a drag, a collapse, a restore — those routes describe a
+     * drawing that no longer exists, and a bend point left over from it puts
+     * a line through empty space or through a state.
+     *
+     * ⭐ Called from the gestures that move geometry, not from the layout.
+     * The layout is where the routes are BORN; invalidating there is what
+     * made them dead on arrival for as long as this file has existed.
+     */
+    invalidateELKRouting(movedIds) {
+        // ⭐ Only the edges the movement actually invalidated.
+        //
+        // A drag moves one state. The routes and label positions ELK
+        // computed for every OTHER edge are still describing exactly the
+        // arrangement on screen, and dropping them sends those labels back
+        // to their path midpoints — measured, one drag took a clean diagram
+        // to ten label collisions, none of them near the state that moved.
+        //
+        // ⚠ Passing nothing still means everything, because a collapse
+        // changes which nodes exist at all and there is no incidence to
+        // narrow by.
+        const moved = movedIds && movedIds.length ? new Set(movedIds) : null;
+        const touches = (link) => !moved
+            || moved.has(link.source) || moved.has(link.target)
+            || moved.has(link.visualSource) || moved.has(link.visualTarget);
+
+        let dropped = 0;
+        this.visualizer.allLinks.forEach(link => {
+            if (!touches(link)) {
+                return;
+            }
+            if (link.elkSections) {
+                delete link.elkSections;
+                dropped++;
+            }
+            // The label position goes with the route it was placed against.
+            // Keeping it would leave a label pinned to a bend that no longer
+            // exists — worse than the midpoint fallback, which at least
+            // follows the line the reader can see.
+            delete link.elkLabel;
+        });
+
+        // And the containers go back to being sized from their children:
+        // once geometry moves, ELK's size is a fact about a drawing that has
+        // been replaced, and `updateCompoundBounds` is the right answer again.
+        //
+        // ⚠ Unconditionally, even for a narrowed invalidation: a moved child
+        // changes the bounds of every ancestor that holds it, and that chain
+        // is not the same set as the edges incident to it.
+        this.visualizer.nodes.forEach(node => {
+            delete node._elkSized;
+        });
+        if (dropped > 0) {
+            logger.debug(`[LAYOUT] Dropped ELK routing for ${dropped} link(s); optimizer owns routing now`);
+        }
     }
 
     buildELKGraph() {
@@ -30,7 +178,37 @@ class LayoutManager {
                 // Edge straightening for better routing
                 'elk.layered.nodePlacement.bk.edgeStraightening': 'IMPROVE_STRAIGHTNESS',
 
-                // Edge spacing to reduce crossings
+                // Edge spacing.
+                //
+                // ⚠ These only began to matter when ELK's routing stopped
+                // being deleted: until then the optimizer re-routed
+                // everything and no value here changed a drawn line.
+                // Measured on the two-state mesh fixture the moment the
+                // routes were kept, 10 put two opposite-direction edges
+                // 10px apart over a 204px run — two parallel lines closer
+                // together than a label is tall, which reads as one thick
+                // line rather than as two edges.
+                //
+                // Edge spacing, left where it was — and that is a finding,
+                // not an omission.
+                //
+                // ⚠ These were raised to 30/30/20 (mermaid's, borrowed) and
+                // then to 40/40/30 on a sweep of 12 documents that showed
+                // labels-sitting-on-lines falling monotonically: 39 at
+                // 10/10/10 down to 30 at 60/60/40. Both changes were then
+                // UNDONE by the change that made ELK place the labels, and
+                // the sweep re-run reads 13 at EVERY spacing from 10/10/10
+                // to 60/60/40 — identical, along with 2 label-on-label and
+                // 4 label-on-state.
+                //
+                // The spacing had only ever been compensating for labels
+                // being positioned afterwards, at a route's midpoint, where
+                // wider lanes left more room for a box nobody had planned
+                // for. With the boxes declared and ELK placing them, that
+                // compensation buys nothing measurable.
+                //
+                // So they go back to what shipped. A number with no basis
+                // is worse than an unexamined one: it looks decided.
                 'elk.layered.spacing.edgeNodeBetweenLayers': '15',
                 'elk.layered.spacing.edgeEdgeBetweenLayers': '10',
 
@@ -41,7 +219,14 @@ class LayoutManager {
                 'elk.layered.crossingMinimization.hierarchicalSweepiness': '0.1',
 
                 // W3C SCXML 3.13: Enable hierarchy handling for internal transitions (parent→child edges)
-                'elk.hierarchyHandling': 'INCLUDE_CHILDREN'
+                'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+
+                // Once the reader has placed something, the layout keeps the
+                // arrangement it is given instead of deriving a fresh one.
+                // Only then — a first layout has nothing to respect, and
+                // interactive mode on an unseeded graph produces a worse
+                // drawing than the sweep does.
+                ...(this.hasPinnedNodes() ? INTERACTIVE_LAYOUT_OPTIONS : {})
             },
             children: [],
             edges: []
@@ -72,6 +257,19 @@ class LayoutManager {
                 height: this.visualizer.getNodeHeight(node)
             };
 
+            // A position the reader chose is an INPUT, not something to be
+            // overwritten. Dragging a state and having the next layout put
+            // it back would make the gesture pointless, so the coordinate
+            // travels into ELK and `elk.interactive` tells it to respect
+            // the arrangement it is given.
+            //
+            // ⚠ ELK positions from a top-left corner; every node here
+            // carries a centre.
+            if (node.pinned && Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                elkNode.x = node.x - elkNode.width / 2;
+                elkNode.y = node.y - elkNode.height / 2;
+            }
+
             // Add children for expanded compounds
             if (SCXMLVisualizer.isCompoundOrParallel(node) && !node.collapsed) {
                 elkNode.children = [];
@@ -80,6 +278,9 @@ class LayoutManager {
                 logger.debug(`${indent}  ${node.id} has ${node.children.length} children: ${node.children.join(', ')}`);
 
                 elkNode.layoutOptions = {
+                    // See INTERACTIVE_LAYOUT_OPTIONS: the strategies must
+                    // match the root's or ELK refuses the graph outright.
+                    ...(this.hasPinnedNodes() ? INTERACTIVE_LAYOUT_OPTIONS : {}),
                     'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
                     'elk.padding': `[top=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_TOP},left=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE},bottom=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE},right=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE}]`
                 };
@@ -149,46 +350,89 @@ class LayoutManager {
 
         visibleLinks.forEach(link => {
             if (link.linkType === 'transition' || link.linkType === 'initial') {
-                // Only add edge if both endpoints exist in visible nodes
-                if (visibleNodeIds.has(link.source) && visibleNodeIds.has(link.target)) {
+                // The endpoints as DRAWN, which is not the same thing as the
+                // endpoints the transition names.
+                //
+                // ⚠ When a compound is collapsed, `getVisibleLinks` redirects
+                // an edge that ends inside it to the collapsed box —
+                // `visualSource` / `visualTarget`. This filter used to test
+                // the ORIGINAL ids, so every such edge failed the test and
+                // was never given to ELK at all: it was drawn by the
+                // fallback, against a box ELK had never routed to. Measured
+                // on `ancestor_entry_is_not_default_entry`, collapsing
+                // `outer` left eight edges not touching anything.
+                //
+                // Using the visual ids is also what makes "collapsed" an
+                // input to the layout rather than a correction applied after
+                // it: ELK sees a leaf node and edges arriving at it.
+                const sourceId = link.visualSource || link.source;
+                const targetId = link.visualTarget || link.target;
+
+                if (visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId)) {
                     const edge = {
                         id: link.id,
-                        sources: [link.source],
-                        targets: [link.target]
+                        sources: [sourceId],
+                        targets: [targetId]
                     };
 
-                    // Check if target is a direct child of source (parent→child edge)
-                    const sourceNode = this.visualizer.nodes.find(n => n.id === link.source);
+                    // The label is declared to ELK, not drawn over its
+                    // result. ELK keeps clear only of labels it was given,
+                    // so a transition label added afterwards lands wherever
+                    // the route happens to be — which is why the renderer
+                    // grew a drag handle for moving them by hand.
+                    //
+                    // The box comes from `label-metrics.js`, which the
+                    // renderer also sizes the container from: one number,
+                    // read twice, so the space reserved and the space used
+                    // cannot differ.
+                    const labelBox = this.labelBoxForLink(link);
+                    if (labelBox) {
+                        edge.labels = [{
+                            text: labelBox.lines.map(l => l.text).join(' '),
+                            width: labelBox.width,
+                            height: labelBox.height,
+                            layoutOptions: {
+                                'edgeLabels.inline': 'true',
+                                'edgeLabels.placement': 'CENTER'
+                            }
+                        }];
+                    }
+
+                    // ⚠ Placement asks the VISUAL endpoints too. An edge
+                    // redirected to a collapsed ancestor belongs in that
+                    // ancestor's container, not in the one holding the state
+                    // it originally named — which is now hidden.
+                    const sourceNode = this.visualizer.nodes.find(n => n.id === sourceId);
                     const isParentToChild = sourceNode &&
                                           (sourceNode.type === 'compound' || sourceNode.type === 'parallel') &&
                                           sourceNode.children &&
-                                          sourceNode.children.includes(link.target);
+                                          sourceNode.children.includes(targetId);
 
                     if (isParentToChild) {
                         // W3C SCXML 3.13: Internal transition from parent to child
                         // Place edge in parent's edges array (hierarchy-local)
-                        const parentElkNode = elkNodeMap.get(link.source);
+                        const parentElkNode = elkNodeMap.get(sourceId);
                         if (parentElkNode && parentElkNode.edges) {
                             parentElkNode.edges.push(edge);
-                            logger.debug(`  [EDGE] ${link.source} → ${link.target}: Added to parent's edges (internal transition)`);
+                            logger.debug(`  [EDGE] ${sourceId} → ${targetId}: Added to parent's edges (internal transition)`);
                         } else {
-                            logger.warn(`  [EDGE] ${link.source} → ${link.target}: Parent ELK node missing edges array`);
+                            logger.warn(`  [EDGE] ${sourceId} → ${targetId}: Parent ELK node missing edges array`);
                         }
                     } else {
                         // Regular edge between sibling nodes or cross-hierarchy
                         // Determine proper container: lowest common ancestor or root
-                        const targetParent = findParentNode(link.target);
-                        const sourceParent = findParentNode(link.source);
+                        const targetParent = findParentNode(targetId);
+                        const sourceParent = findParentNode(sourceId);
 
                         if (sourceParent && sourceParent.id === targetParent?.id) {
                             // Both nodes share same parent → add to parent's edges
                             const parentElkNode = elkNodeMap.get(sourceParent.id);
                             if (parentElkNode && parentElkNode.edges) {
                                 parentElkNode.edges.push(edge);
-                                logger.debug(`  [EDGE] ${link.source} → ${link.target}: Added to common parent ${sourceParent.id}`);
+                                logger.debug(`  [EDGE] ${sourceId} → ${targetId}: Added to common parent ${sourceParent.id}`);
                             } else {
                                 graph.edges.push(edge);
-                                logger.debug(`  [EDGE] ${link.source} → ${link.target}: Parent missing edges array, added to root`);
+                                logger.debug(`  [EDGE] ${sourceId} → ${targetId}: Parent missing edges array, added to root`);
                             }
                         } else {
                             // Cross-hierarchy or top-level edge → add to root
@@ -246,6 +490,20 @@ class LayoutManager {
                     // Do NOT overwrite with getNodeWidth/Height (breaks nesting, causes s111 to escape s11)
                     node.width = elkNode.width;
                     node.height = elkNode.height;
+
+                    // ⚠ And remember that ELK sized it, because the bounds
+                    // recalculation further down would otherwise shrink it
+                    // back to a box around its children — AFTER ELK has
+                    // routed every edge against the larger one. Measured on
+                    // `motor_partition`, that moved `root`'s lower edge up
+                    // 20px and left two edges starting 20px below a
+                    // container they no longer touch.
+                    //
+                    // The recalculation is not wrong; it is a fallback for
+                    // the case its own comment names, "ELK may not provide
+                    // coordinates for nested hierarchy". This marks the case
+                    // where it did.
+                    node._elkSized = true;
                     logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (ELK hierarchical calc), offset=(${offsetX}, ${offsetY})`);
                 } else {
                     // Atomic/final nodes: use original calculated dimensions for text content
@@ -337,6 +595,31 @@ class LayoutManager {
             logger.debug('Applying ELK edge routing...');
             layouted.edges.forEach(elkEdge => {
                 const link = this.visualizer.allLinks.find(l => l.id === elkEdge.id);
+
+                // Where ELK put the label, kept beside where it put the edge.
+                //
+                // ELK only fills `labels[*].x/y` for edges it laid out, and
+                // it places them knowing every other label and every other
+                // edge — which is the whole reason the boxes are declared to
+                // it. Deriving a position from the route's midpoint
+                // afterwards discards that: measured over 12 documents, the
+                // twelve label-on-label collisions and nine label-on-state
+                // collisions did not move by a single count across seven
+                // different routings, because none of them could.
+                //
+                // ⚠ ELK's coordinate is the box's TOP-LEFT; the renderer
+                // positions from a centre. Converted here, once, rather
+                // than at each reader.
+                if (link && elkEdge.labels && elkEdge.labels[0]
+                    && Number.isFinite(elkEdge.labels[0].x)
+                    && Number.isFinite(elkEdge.labels[0].y)) {
+                    const l = elkEdge.labels[0];
+                    link.elkLabel = {
+                        x: l.x + (l.width || 0) / 2,
+                        y: l.y + (l.height || 0) / 2,
+                    };
+                }
+
                 if (link && elkEdge.sections && elkEdge.sections.length > 0) {
                     link.elkSections = elkEdge.sections;
                     logger.debug(`  ${elkEdge.id}: ${elkEdge.sections.length} section(s)`);
@@ -358,14 +641,23 @@ class LayoutManager {
         // Reference: https://www.eclipse.org/elk/
         logger.debug('[LAYOUT] Using ELK calculated positions (no manual alignment)');
 
-        // Invalidate ELK edge routing to use optimizer-calculated snap points
-        // ELK routing is only used during initial layout, afterward we use optimizer routing
-        this.visualizer.allLinks.forEach(link => {
-            if (link.elkSections) {
-                delete link.elkSections;
-            }
-        });
-        logger.debug('[LAYOUT] Invalidated ELK edge routing (will use optimizer routing)');
+        // ELK's routing is KEPT for the drawing it was computed for.
+        //
+        // ⚠ This block used to delete every `elkSections` twenty-three lines
+        // after storing it, inside the same function. The comment said "ELK
+        // routing is only used during initial layout" — but the deletion
+        // happened DURING the initial layout, so it was never used at all
+        // and the consumer in `path-calculator.js` was unreachable code.
+        // Measured on the two-state mesh fixture, the routes the optimizer
+        // produced instead brought three arrows into the same side of one
+        // state 16.7px apart over a 30px run: further apart than the lines
+        // are wide, closer together than their labels are tall.
+        //
+        // ELK routes edges jointly with placing the nodes, and now that it
+        // is also told the labels, it keeps room for them. The optimizer
+        // still owns routing from the first gesture that moves anything —
+        // see `invalidateELKRouting`, which the interaction handler calls.
+        logger.debug('[LAYOUT] Keeping ELK edge routing for the initial drawing');
 
         // Optimize snap point assignments to minimize intersections
         logger.debug('Optimizing snap point assignments...');
@@ -407,8 +699,15 @@ class LayoutManager {
             logger.debug(`    depth=${depth}: ${node.id}`);
         });
         
-        // Update bounds in bottom-up order
+        // Update bounds in bottom-up order, except where ELK already sized
+        // the container — see `_elkSized`. Recomputing there replaces the
+        // box every edge was routed against with a tighter one, and the
+        // routes do not move with it.
         compoundsWithDepth.forEach(({ node }) => {
+            if (node._elkSized) {
+                logger.debug(`[LAYOUT] ${node.id}: keeping ELK's size, edges are routed to it`);
+                return;
+            }
             this.visualizer.updateCompoundBounds(node);
         });
 

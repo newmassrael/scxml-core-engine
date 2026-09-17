@@ -38,7 +38,39 @@ class NodeBuilder {
             });
         }
 
+        // W3C SCXML 3.6: and one inside every container that names a default
+        // child, which is the same statement one level down.
+        //
+        // ⚠ Only the document's own `initial` was ever drawn, so a reader of
+        // `ancestor_entry_is_not_default_entry` saw `idle` with no line
+        // touching it and asked whether that was right. It was: `idle` is
+        // entered because `watch` names it, and nothing in the picture said
+        // so. Three default entries were missing from that one diagram.
+        //
+        // The marker is a child OF the container, so ELK nests it and places
+        // it beside the state it points at rather than outside the box.
         this.visualizer.states.forEach(state => {
+            if (!state.initial) {
+                return;
+            }
+            const id = `__initial__${state.id}`;
+            nodes.push({
+                id,
+                type: 'initial-pseudo',
+                label: '',
+                children: [],
+                collapsed: false
+            });
+        });
+
+        this.visualizer.states.forEach(state => {
+            // The container's own marker counts as one of its children, or
+            // ELK places it at the top level and the line crosses the box it
+            // should have started inside.
+            const children = state.initial
+                ? [`__initial__${state.id}`, ...(state.children || [])]
+                : (state.children || []);
+
             const node = {
                 // Row G2: what this element claims, and whether anything
                 // does. First, so a later field cannot quietly shadow it.
@@ -46,7 +78,7 @@ class NodeBuilder {
                 id: state.id,
                 type: state.type,
                 label: state.id,
-                children: state.children || [],
+                children,
                 // W3C SCXML 3.6: Initial attribute for compound/parallel states
                 initial: state.initial || '',
                 // W3C SCXML 3.4: Parallel states expanded by default to show concurrent regions
@@ -165,6 +197,21 @@ class NodeBuilder {
         // 3. Overflow detection triggers resize if needed (line 1869)
         // 4. requestIdleCallback ensures non-blocking re-render (line 972)
         // Trade-off: One-time re-render for 100% accurate sizing
+        // A width the renderer has MEASURED beats any estimate, and it is
+        // returned here so the next layout is computed against it.
+        //
+        // ⚠ Without this, the trade-off described above does not hold. The
+        // renderer measures the real text and widens the box, but widening
+        // happens AFTER ELK has placed every node against the estimate — so
+        // the accurate size arrives into a layout that assumed a different
+        // one, and boxes grow into the gaps ELK left between them. Measured
+        // on `ancestor_entry_is_not_default_entry`, ELK left 80px between
+        // `by_default` and `chosen` and 70px between `watch` and `drive`;
+        // both pairs are drawn overlapping.
+        if (Number.isFinite(node.measuredWidth) && node.measuredWidth > 0) {
+            return Math.min(node.measuredWidth, LAYOUT_CONSTANTS.STATE_MAX_WIDTH);
+        }
+
         let maxWidth = LAYOUT_CONSTANTS.STATE_MIN_WIDTH;
 
         // State ID length consideration

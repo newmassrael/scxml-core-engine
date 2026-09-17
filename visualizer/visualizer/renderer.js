@@ -363,56 +363,25 @@ class Renderer {
                         return;
                     }
 
-                    if (self.debugMode) {
-                        logger.debug('[DRAG END COMPOUND] Starting progressive optimization...');
-                    }
-
-                    if (self.backgroundOptimization) {
-                        self.backgroundOptimization.cancel();
-                        self.backgroundOptimization = null;
-                    }
-
-                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
-                        self.allLinks,
-                        self.nodes,
-                        d.id,  // Dragged compound node ID
-                        (success) => {
-                            if (success) {
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END COMPOUND] Background CSP complete, updating visualization...`);
-                                }
-
-                                // Update link directions for all visible links
-                                self.renderer._updateVisibleLinkDirections();
-
-                                self.updateLinksOptimal();
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END COMPOUND] CSP visualization update complete`);
-                                }
-                            } else {
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END COMPOUND] Background CSP cancelled or failed, keeping greedy result`);
-                                }
-                            }
-
-                            self.backgroundOptimization = null;
-                        },
-                        (iteration, totalIterations, score) => {
-                            // Progressive update: called for each intermediate solution
-                            if (self.debugMode) {
-                                logger.debug(`[DRAG END COMPOUND] Intermediate update (${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
-                            }
-
-                            // Recalculate link directions
-                            // Get visible links (exclude hidden links in collapsed states)
-                            // Update link directions for all visible links
-                            self.renderer._updateVisibleLinkDirections();
-
-                            // Update visualization with intermediate solution
-                            self.updateLinksOptimal();
-                        },
-                        TransitionLayoutOptimizer.CSP_DEBOUNCE_MS
-                    );
+                    // ⚠ NO background re-optimisation. This is what a reader
+                    // saw as the diagram rearranging itself a second or two
+                    // after they let go of a state.
+                    //
+                    // It ran a CSP over every link, then called
+                    // `updateLinksOptimal()` — and again on each intermediate
+                    // solution, so the drawing shifted repeatedly while
+                    // nobody was touching it. What it computes is snap-point
+                    // assignments, and since the layout began keeping ELK's
+                    // routes, `getLinkPath` prefers those for every edge ELK
+                    // routed: the assignments are discarded for most links
+                    // and the visible motion buys nothing.
+                    //
+                    // The edges that DO still use them — the ones incident to
+                    // what just moved — are already re-routed synchronously
+                    // by `updateLinks()` during the drag, before the pointer
+                    // is released.
+                    self.layoutManager.invalidateELKRouting([d.id]);
+                    self.updateLinks(false);
                 }))
             .on('click', (event, d) => this.handleCompoundClick(event, d));
 
@@ -702,56 +671,13 @@ class Renderer {
                         return; // Skip optimization for clicks
                     }
 
-                    if (self.debugMode) {
-                        logger.debug(`[DRAG END] Node moved ${dragDistance.toFixed(0)}px, starting progressive optimization...`);
-                    }
-
-                    // Start progressive optimization (returns immediately with greedy result)
-                    // Pass dragged node ID for locality-aware optimization
-                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
-                        self.allLinks,
-                        self.nodes,
-                        d.id,  // Dragged node ID for distance-based prioritization
-                        (success) => {
-                            if (success) {
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END] Background CSP complete, updating visualization...`);
-                                }
-
-                                // Calculate midY for new CSP routing
-                                // Update link directions for all visible links
-                                self.renderer._updateVisibleLinkDirections();
-
-                                // Update visualization with CSP-optimized paths
-                                self.updateLinksOptimal();
-
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END] CSP visualization update complete`);
-                                }
-                            } else {
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END] Background CSP cancelled or failed, keeping greedy result`);
-                                }
-                            }
-
-                            self.backgroundOptimization = null;
-                        },
-                        (iteration, totalIterations, score) => {
-                            // Progressive update: called for each intermediate solution
-                            if (self.debugMode) {
-                                logger.debug(`[DRAG END] Intermediate update (${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
-                            }
-
-                            // Recalculate link directions
-                            // Get visible links (exclude hidden links in collapsed states)
-                            // Update link directions for all visible links
-                            self.renderer._updateVisibleLinkDirections();
-
-                            // Update visualization with intermediate solution
-                            self.updateLinksOptimal();
-                        },
-                        TransitionLayoutOptimizer.CSP_DEBOUNCE_MS
-                    );
+                    // ⚠ NO background re-optimisation — see the compound drag
+                    // end above for why. The short version: it redrew every
+                    // link a second or two after the gesture, and again for
+                    // each intermediate solution, to apply snap points that
+                    // `getLinkPath` ignores for any edge ELK routed.
+                    self.layoutManager.invalidateELKRouting([d.id]);
+                    self.updateLinks(false);
 
                     // Calculate midY for immediate greedy routing
                     // Get visible links (exclude hidden links in collapsed states)
@@ -968,6 +894,14 @@ class Renderer {
                     node.x -= newBoxCenter;
                     node.width = newWidth;
 
+                    // Remember it as a MEASUREMENT, so the layout below is
+                    // computed against the real width instead of the
+                    // estimate that produced this overflow in the first
+                    // place. Without this the next layout would place the
+                    // node at its estimated size again and the same
+                    // overflow would be rediscovered forever.
+                    node.measuredWidth = newWidth;
+
                     // Clean up temporary data
                     delete node._requiredWidth;
                     delete node._boxCenterOffset;
@@ -994,58 +928,54 @@ class Renderer {
                     });
                 }
 
-                // Trigger re-render to update all positions correctly
-                // This ensures text, snap points, and links are all recalculated
-                if (this.visualizer.debugMode) {
-                    logger.debug(`[STATE RESIZE] Triggering re-render with updated widths`);
-                }
+                // Lay out again, then draw — not draw again.
+                //
+                // ⚠ This used to call `render()` alone, and the comment
+                // above `getNodeWidth` describes that as "one-time re-render
+                // for 100% accurate sizing". The sizing is accurate; the
+                // PLACEMENT is not, because nothing re-placed anything. ELK
+                // had already positioned every node against the estimated
+                // widths, so a box that grew here grew into whatever gap ELK
+                // had left beside it — which is how two states ELK put 80px
+                // apart end up drawn overlapping.
+                //
+                // `measuredWidth` is set above, so this layout is the first
+                // one computed against real text. A second pass finds
+                // nothing to resize (`_requiredWidth > n.width` is false
+                // once the width IS the measured one), so this terminates
+                // rather than oscillating.
+                //
+                // ⚠ And it should not normally be reached at all:
+                // `measureStateWidths()` runs before the layout now, so the
+                // widths are already right when ELK places anything. What is
+                // left here is the case that pass cannot cover — a width
+                // that only becomes known while drawing, such as an action
+                // list built during render. Reaching it is visible as the
+                // diagram rearranging itself, so if that is seen, this is
+                // where it comes from and the pre-measure is what is missing
+                // a case.
+                logger.warn('[STATE RESIZE] Re-laying out after render; the pre-measure missed a width');
 
-                this.visualizer.render();
+                this.visualizer.computeLayout()
+                    .then(() => this.visualizer.render())
+                    .catch((error) => {
+                        // A failed re-layout must not leave the diagram
+                        // blank: the previous drawing is stale in its
+                        // spacing but readable, which is better than none.
+                        logger.error(`[STATE RESIZE] Re-layout failed, keeping the current drawing: ${error}`);
+                        this.visualizer.render();
+                    });
 
-                // W3C SCXML: Re-optimize snap points after resize
-                // Significant size changes may require different routing
-                if (statesToResize.length > 0 && self.layoutOptimizer) {
-                    if (this.visualizer.debugMode) {
-                        logger.debug(`[STATE RESIZE] Triggering CSP re-optimization for ${statesToResize.length} resized states`);
-                    }
-
-                    // Cancel any ongoing optimization
-                    if (self.backgroundOptimization) {
-                        self.backgroundOptimization.cancel();
-                        self.backgroundOptimization = null;
-                    }
-
-                    // Start progressive optimization with first resized state as focus
-                    const focusNodeId = statesToResize[0].id;
-                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
-                        self.allLinks,
-                        self.nodes,
-                        focusNodeId,
-                        (success) => {
-                            if (success) {
-                                if (self.debugMode) {
-                                    logger.debug(`[STATE RESIZE] CSP re-optimization complete - applying new snap points`);
-                                }
-                                // Update link directions for all visible links
-                                self.renderer._updateVisibleLinkDirections();
-
-                                // Apply optimized snap points to visualization
-                                self.updateLinksOptimal();
-
-                                if (self.debugMode) {
-                                    logger.debug(`[STATE RESIZE] Visualization update complete`);
-                                }
-                            } else {
-                                if (self.debugMode) {
-                                    logger.debug(`[STATE RESIZE] CSP cancelled or failed, keeping current result`);
-                                }
-                            }
-                            self.backgroundOptimization = null;
-                        },
-                        null, // onProgress
-                        100   // debounceMs
-                    );
-                }
+                // ⚠ NO background re-optimisation after the resize. It ran on
+                // FIRST LOAD, whenever a state turned out wider than its
+                // estimate, and redrew every link a second or two after the
+                // diagram appeared — which is what a reader reported as the
+                // drawing rearranging itself on entry.
+                //
+                // The re-layout above already derives the whole drawing from
+                // the measured widths. A CSP over snap points on top of it
+                // recomputes assignments that `getLinkPath` ignores for every
+                // edge ELK routed, and pays for them in visible motion.
             }
         };
 
@@ -1167,15 +1097,42 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         // Transition labels (event, condition, actions) using foreignObject for HTML rendering
         // Labels are draggable - custom positions persist until transition coordinates change
         this.visualizer.transitionLabels = linkGroups
-            .filter(d => d.linkType === 'transition' && (d.event || d.cond || (d.actions && d.actions.length > 0)))
+            .filter(d => d.linkType === 'transition' && linkCarriesLabel(d))
             .append('foreignObject')
             .attr('class', 'transition-label-container')
-            .attr('width', 300)  // Initial width for measurement
-            .attr('height', 200)  // Initial height for measurement
+            // The box `label-metrics.js` decided, which is also the box the
+            // layout reserved. Sized from the same answer rather than from a
+            // fixed guess, so the container cannot be smaller than the text
+            // it holds or larger than the space kept clear for it.
+            .attr('width', d => this.visualizer.layoutManager.labelBoxForLink(d).width)
+            .attr('height', d => this.visualizer.layoutManager.labelBoxForLink(d).height)
             .style('overflow', 'visible')
             .style('pointer-events', 'auto')  // Enable pointer events for dragging
             .style('cursor', 'move')  // Show move cursor on hover
             .html(d => this.visualizer.getTransitionLabelText(d))
+            // Opening a capped label.
+            //
+            // The cap exists because thirteen alternatives between one pair
+            // of states make a column taller than the states themselves. The
+            // count is only honest if it can be opened, so this is the other
+            // half of that decision, not a nicety.
+            //
+            // ⚠ `stopPropagation`, or the click reaches the drag behaviour
+            // below and the label is re-positioned instead of opened.
+            .on('click', function(event, d) {
+                const opener = event.target.closest && event.target.closest('.label-more');
+                if (!opener) {
+                    return;
+                }
+                event.stopPropagation();
+                d.labelExpanded = !d.labelExpanded;
+                // `self` is the visualizer in this scope, not the renderer.
+                const box = self.layoutManager.labelBoxForLink(d);
+                d3.select(this)
+                    .attr('width', box.width)
+                    .attr('height', box.height)
+                    .html(self.getTransitionLabelText(d));
+            })
             // Drag behavior: allows repositioning labels, auto-resets on coordinate changes
             .call(d3.drag()
                 .on('start', function(event, d) {
@@ -1276,23 +1233,31 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     });
                 }
 
-                // Force layout flush and measure actual rendered size
-                labelElement.getBoundingClientRect();  // Force reflow
-                const labelRect = labelElement.getBoundingClientRect();
-
-                const padding = 0;  // No extra padding - use CSS padding only
-
-                // Update dimensions to fit content exactly
-                const finalWidth = labelRect.width + padding;
-                const finalHeight = labelRect.height + padding;
-
-                // Update foreignObject size and center position
+                // ⚠ The RESERVED box, not a re-measurement of the rendered
+                // content.
+                //
+                // This used to read `getBoundingClientRect()` and resize the
+                // container to whatever the HTML came out as. That made sense
+                // while the container was created at a guessed 300x200 and had
+                // to shrink onto its content. It stopped making sense — and
+                // started doing harm — once `label-metrics.js` computed the box
+                // and the layout reserved exactly it: the rendered size silently
+                // replaced the reserved one, so the rectangle ELK kept clear and
+                // the rectangle on screen were two different things. Labels the
+                // layout had separated were drawn on top of each other, and the
+                // measurement reported zero collisions because it was reading
+                // the reserved box — right about a rectangle nobody drew.
+                //
+                // The header of `label-metrics.js` says producer and consumer
+                // cannot disagree, because there is one number and both read it.
+                // This line is what made that false.
+                const box = self.layoutManager.labelBoxForLink(d);
                 const pos = self.getTransitionLabelPosition(d);
                 d3.select(this)
-                    .attr('width', finalWidth)
-                    .attr('height', finalHeight)
-                    .attr('x', pos.x - finalWidth / 2)   // Center horizontally
-                    .attr('y', pos.y - finalHeight / 2);  // Center vertically
+                    .attr('width', box.width)
+                    .attr('height', box.height)
+                    .attr('x', pos.x - box.width / 2)   // Center horizontally
+                    .attr('y', pos.y - box.height / 2);  // Center vertically
             });
 
         // Collapsed compound states (rendered AFTER links/labels for proper z-order)
@@ -1446,6 +1411,26 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
                     d.isDragging = false;
                     self.isDraggingAny = false;
+
+                    // ⚠ NO re-layout here, and that is a measurement rather
+                    // than a preference.
+                    //
+                    // A settle was wired in at this point, because a drag
+                    // used to send every label back to a path midpoint — 0
+                    // collisions became 10. It worked on that number and was
+                    // wrong on screen: a second or so after dropping one
+                    // state, the whole diagram rearranged. Pinning every
+                    // node first did not help, which is the fact that
+                    // settled it — ELK's interactive mode treats given
+                    // coordinates as hints for ORDER, not as fixed
+                    // positions, and moved 18 untouched states by up to
+                    // 2327px anyway.
+                    //
+                    // The staleness a drag causes is narrow: the routes and
+                    // labels of the edges touching what moved. That is what
+                    // `invalidateELKRouting` now drops, and nothing else, so
+                    // the rest of the diagram keeps the placement the layout
+                    // gave it and holds still.
                 }, 50);  // 50ms delay prevents immediate mouseenter from raising element
 
                 // Cleanup cached descendants and drag direction
@@ -1817,6 +1802,99 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
      * @param {number} marginPercent - Margin percentage (e.g., 0.1 for 10%)
      * @returns {number} Required state width
      */
+    /**
+     * Measure every state's text and record the width it needs, BEFORE the
+     * layout runs.
+     *
+     * ## Why this is not just the resize path moved earlier
+     *
+     * The renderer has always measured text with `getBBox()` and widened a
+     * state whose action lines overflow its estimated box. That measurement
+     * arrived AFTER ELK had placed everything, so the accurate width landed
+     * in a layout computed from a guess — states grew into the gaps ELK had
+     * left between them, and two that ELK put 80px apart were drawn
+     * overlapping.
+     *
+     * Feeding the measurement back and laying out again fixed the geometry
+     * and introduced something worse to look at: the diagram visibly
+     * rearranged itself a second or two after appearing. A reader cannot
+     * tell that from a fault.
+     *
+     * ⭐ So the measurement moves in FRONT of the layout. Same numbers, same
+     * formula — `calculateRequiredWidthForCenteredBox`, called rather than
+     * copied — taken while nothing has been placed yet. One layout, and
+     * nothing to correct after it.
+     *
+     * ⚠ Needs a real text engine. Where `getBBox` is unavailable — the
+     * headless measurement harness — every width reads zero, nothing beats
+     * the estimate and the estimate stands: the drawing this produced before
+     * the method existed, not a broken one.
+     */
+    measureStateWidths() {
+        const container = this.visualizer.container;
+        if (!container || typeof document === 'undefined') {
+            return;
+        }
+
+        // An SVG of its own, out of the way and removed at the end: the real
+        // one does not exist yet when this runs.
+        const scratch = container.append('svg')
+            .attr('class', 'text-measurement-scratch')
+            .attr('width', 0)
+            .attr('height', 0)
+            .style('position', 'absolute')
+            .style('visibility', 'hidden')
+            .style('pointer-events', 'none');
+
+        const widthOf = (text, fontSize) => {
+            const node = scratch.append('text')
+                .attr('font-size', fontSize)
+                .text(text)
+                .node();
+            let width = 0;
+            try {
+                width = node && node.getBBox ? node.getBBox().width : 0;
+            } catch (error) {
+                width = 0;
+            }
+            return Number.isFinite(width) ? width : 0;
+        };
+
+        const padding = LAYOUT_CONSTANTS.ACTION_BOX_PADDING_LEFT
+            + LAYOUT_CONSTANTS.ACTION_BOX_PADDING_RIGHT;
+        const marginPercent = LAYOUT_CONSTANTS.TEXT_LEFT_MARGIN_PERCENT;
+
+        for (const node of this.visualizer.nodes) {
+            let widest = 0;
+            // The same two lists, with the same prefixes and font size, that
+            // `renderActionTexts` draws. An action measured differently from
+            // how it is drawn has not been measured.
+            for (const [prefix, actions] of [['entry', node.onentry], ['exit', node.onexit]]) {
+                for (const action of actions || []) {
+                    const formatted = action._formatted
+                        || (typeof ActionFormatter !== 'undefined'
+                            ? ActionFormatter.formatAction(action)
+                            : null);
+                    if (!formatted || !formatted.main) {
+                        continue;
+                    }
+                    widest = Math.max(widest, widthOf(`${prefix} / ${formatted.main}`, '13px'));
+                }
+            }
+
+            if (widest <= 0) {
+                continue;
+            }
+            const required = this.calculateRequiredWidthForCenteredBox(widest + padding, marginPercent);
+            const estimate = this.visualizer.nodeBuilder.getNodeWidth(node);
+            if (required > estimate) {
+                node.measuredWidth = Math.min(required, LAYOUT_CONSTANTS.STATE_MAX_WIDTH);
+            }
+        }
+
+        scratch.remove();
+    }
+
     calculateRequiredWidthForCenteredBox(boxSpan, marginPercent) {
         // For equal margins on both sides: leftMargin + boxSpan + rightMargin = width
         // Where leftMargin = rightMargin = width * marginPercent
@@ -2133,6 +2211,25 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             link.colorIndex = transitionCounter % colorCount;
             // Use shared utility function from utils.js (Single Source of Truth)
             link.transitionId = getTransitionId(link);
+
+            // Every transition this arrow stands for, in the SAME id space —
+            // `getTransitionId`, not SCE's numeric transition id.
+            //
+            // ⚠ The two are different spaces and mixing them is a silent
+            // break: focus-manager looks up what fired by
+            // `source_event_target`, so publishing SCE's numeric ids here
+            // would leave every lookup unmatched, which shows up as "the
+            // transition never highlighted" rather than as an error.
+            //
+            // ⚠⚠ `getTransitionId` is NOT unique, whatever utils.js says
+            // above it: thirteen guarded `report -> done` transitions all
+            // reduce to `report_eventless_done`. De-duplicated here because
+            // a list repeating one id thirteen times says nothing the single
+            // entry does not; the non-uniqueness itself is a separate defect
+            // and is not papered over by this merge.
+            link.transitionIds = [...new Set(
+                (link.transitions || [link]).map(getTransitionId).filter(Boolean)
+            )];
             transitionCounter++;
         });
 

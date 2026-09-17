@@ -646,7 +646,24 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     border: 1px solid rgba(0, 0, 0, 0.1);
     transition: all 0.2s ease;
-    width: fit-content;  /* Size to exact content width */
+
+    /* ⚠ Fill the reserved box, do not size to the content.
+     *
+     * `width: fit-content` let the label be whatever its text came out as,
+     * and the renderer then resized the foreignObject to match — so the box
+     * `label-metrics.js` computed and the layout kept clear was replaced by
+     * a different one at draw time, and labels the layout had separated
+     * overlapped anyway.
+     *
+     * The box is decided before the layout runs and the text fits into it,
+     * which is the whole design: one rectangle, reserved and drawn. The
+     * advance ratio in label-metrics is an upper bound over the monospace
+     * stack, so the text has room; `clip` is the honest failure if a font
+     * ever exceeds it, rather than silently spilling over a neighbour. */
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: clip;
 }
 
 .transition-label:hover {
@@ -791,6 +808,75 @@ body {
 .label-always {
     color: #9ca3af;           /* Gray for fallback case */
     font-style: italic;
+}
+
+/* A fatal error, in the page rather than in a modal dialog. Pinned to the
+ * top so it is seen without scrolling, and selectable so its text can be
+ * copied into a bug report — neither of which `alert()` allowed. */
+.fatal-error-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 18px;
+    background: #ffebe9;
+    border-bottom: 2px solid #cf222e;
+    color: #82071e;
+    font-size: 14px;
+    line-height: 1.5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.fatal-error-message {
+    flex: 1;
+    user-select: text;
+}
+
+.fatal-error-dismiss {
+    flex: none;
+    padding: 6px 14px;
+    border: 1px solid #cf222e;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #cf222e;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.fatal-error-dismiss:hover {
+    background: #cf222e;
+    color: #ffffff;
+}
+
+/* One arrow may stand for several transitions — the link builder merges the
+ * ones sharing a pair of states. These two rules are what tells a reader
+ * that, so they are not decoration: without the rule, two alternatives read
+ * as one transition of two lines; without the count, a capped label lies by
+ * omission about what it is not showing.
+ *
+ * ⚠ The heights here are mirrored by `LINE_STYLES` in label-metrics.js,
+ * which reserves the box. The pair has to be changed together. */
+.label-separator {
+    height: 1px;
+    margin: 2px 0;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.label-more {
+    color: #6b7280;
+    font-style: italic;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.label-more:hover,
+.label-more:focus {
+    color: #1f2937;
+    text-decoration: underline;
 }
 
 /* Transition label container positioning */

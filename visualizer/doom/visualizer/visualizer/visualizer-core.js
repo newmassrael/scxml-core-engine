@@ -155,7 +155,28 @@ class SCXMLVisualizer {
             logger.debug('[DEBUG] Transition details:', this.transitions);
         }
 
-        // Initialize ELK
+        // Initialize ELK.
+        //
+        // Checked rather than assumed, because the failure is total and the
+        // default message does not describe it: with the layout engine
+        // missing, `new ELK()` raises `ELK is not defined` from this
+        // constructor, main.js catches it and shows that string, and the
+        // reader is told the name of a variable. What actually happened is
+        // that the diagram engine did not load — which is a thing a person
+        // can act on.
+        //
+        // ⚠ Kept after vendoring, not before it. Vendoring removed the
+        // reason this used to fire (a third-party CDN being unreachable); it
+        // did not remove the failure, which now needs a missing or corrupt
+        // file instead. A check that only existed for the old cause would
+        // have been deleted along with it.
+        if (typeof ELK === 'undefined') {
+            throw new Error(
+                'The diagram layout engine (elkjs) did not load. '
+                + 'Expected it at vendor/elkjs/elk.bundled.js — check that the file '
+                + 'was deployed and that no network or extension blocked it.'
+            );
+        }
         this.elk = new ELK();
 
         // Initialize helper modules (must be before initGraph)
@@ -252,6 +273,11 @@ class SCXMLVisualizer {
         this.layoutOptimizer = new TransitionLayoutOptimizer(this.nodes, this.allLinks, this);
 
         // Compute layout
+        // Measure the text FIRST, so the layout is computed from what the
+        // states actually need rather than from an estimate that a later
+        // pass would have to correct — see `Renderer.measureStateWidths`.
+        this.renderer.measureStateWidths();
+
         await this.computeLayout();
 
         // Render

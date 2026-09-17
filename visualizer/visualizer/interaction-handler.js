@@ -36,6 +36,16 @@ class InteractionHandler {
                 delete link.routing;
             });
 
+            // ELK routed for the arrangement that existed before this drag,
+            // so the bend points on the edges TOUCHING what moved describe a
+            // drawing nobody is looking at. Every other edge is still
+            // correct, and saying so is what keeps its label where the
+            // layout put it.
+            const movedIds = this.visualizer.nodes
+                .filter(n => n.isDragging)
+                .map(n => n.id);
+            this.visualizer.layoutManager.invalidateELKRouting(movedIds);
+
             // **ADAPTIVE ALGORITHM SELECTION**
             // - useGreedy=true: Fast greedy for real-time drag (1-5ms)
             // - useGreedy=false: Optimal CSP for final result (50-200ms)
@@ -379,152 +389,46 @@ class InteractionHandler {
         state.collapsed = !state.collapsed;
         logger.debug(`Toggled ${stateId}: ${state.collapsed ? 'collapsed' : 'expanded'}`);
 
-        // Update size based on collapsed state (preserve position)
-        state.width = this.visualizer.getNodeWidth(state);
-        state.height = this.visualizer.getNodeHeight(state);
-        logger.debug(`Updated ${stateId} size: ${state.width}x${state.height}`);
+        // Collapsing changes which nodes exist to route between, and edges
+        // into the collapsed state get redirected to it. ELK's routes were
+        // computed against the other arrangement, so they go now rather than
+        // being reused for endpoints that have moved inside a box.
+        this.visualizer.layoutManager.invalidateELKRouting();
 
-        // Update compound bounds (both expand/collapse) and propagate to parent
-        if (!state.collapsed) {
-            logger.debug(`  → Expanded: updating compound bounds to fit children`);
-            
-            // Check if children have positions
-            const children = state.children
-                ?.map(childId => this.visualizer.nodes.find(n => n.id === childId))
-                .filter(child => child);
-            
-            const childrenWithCoords = children?.filter(child => 
-                child.x !== undefined && child.y !== undefined
-            );
-            
-            if (children && children.length > 0 && (!childrenWithCoords || childrenWithCoords.length === 0)) {
-                logger.debug(`  → Children missing coordinates, assigning default positions`);
-                // Assign default positions relative to parent
-                const padding = this.visualizer.constructor.COMPOUND_PADDING;
-                const topPadding = this.visualizer.constructor.COMPOUND_TOP_PADDING;
-                const childSpacing = 30;
-                let yOffset = state.y - state.height / 2 + topPadding;
-                
-                children.forEach((child, idx) => {
-                    child.x = state.x;
-                    child.y = yOffset;
-                    yOffset += (child.height || LAYOUT_CONSTANTS.STATE_MIN_HEIGHT) + childSpacing;
-                    logger.debug(`    → Assigned ${child.id}: (${child.x}, ${child.y})`);
-                });
-            }
-            
-            this.visualizer.updateCompoundBounds(state);
-            
-            // Push away overlapping states when expanding (direct positioning - one shot)
-            if (this.visualizer.collisionDetector) {
-                // Direct positioning: states moved immediately to boundary, not gradual push
-                // Only need 1-2 iterations (2nd for cascading collisions)
-                let iteration = 0;
-                let affectedCount = 0;
-                const MAX_ITERATIONS = 3; // 1 for main, 1-2 for cascade
-                
-                do {
-                    // Use 100% damping (1.0) for expansion to fully resolve overlaps
-                    // Drag uses 40% damping (default) for smooth following
-                    affectedCount = this.visualizer.collisionDetector.pushAwayOverlappingStates(state, 0, 0, false, 1.0);
-                    iteration++;
-                    if (this.visualizer.debugMode) {
-                        logger.debug(`  → Collision iteration ${iteration}: pushed ${affectedCount} states`);
-                    }
-                } while (affectedCount > 0 && iteration < MAX_ITERATIONS);
-                
-                if (affectedCount > 0 && this.visualizer.debugMode) {
-                    logger.warn(`  ⚠️ Still ${affectedCount} overlapping states after ${MAX_ITERATIONS} iterations`);
-                }
-                
-                // Don't call updatePushedStatesDOM() here - render() will handle it
-                // updatePushedStatesDOM() uses requestAnimationFrame which conflicts with immediate render()
-            }
-        }
-        
-        // Always update parent bounds when child size changes
-        logger.debug(`  → Updating parent compound bounds after size change`);
-        const parent = this.visualizer.nodes.find(p =>
-            this.visualizer.constructor.isCompoundOrParallel(p) &&
-            p.children &&
-            p.children.includes(stateId)
-        );
-        if (parent) {
-            logger.debug(`  → Found parent: ${parent.id}, updating bounds`);
-            this.visualizer.updateCompoundBounds(parent);
-            logger.debug(`  → Parent ${parent.id} updated to size: ${parent.width}x${parent.height}`);
-        }
+        // Whether a compound is collapsed is an INPUT to the layout, so the
+        // layout is run again against it — the geometry is not patched here
+        // to match.
+        //
+        // ⚠ Everything below this call used to do the patching: set the
+        // toggled node's size, assign default positions to children that had
+        // none, push neighbours out of the way, recompute the parent's
+        // bounds, then re-derive every route. Measured on
+        // `ancestor_entry_is_not_default_entry`, collapsing `outer` left
+        // FIVE edges not touching the states they join — and it did so
+        // before any of this round's changes, because patched geometry and
+        // the routes computed against it drift apart by construction.
+        //
+        // `buildELKGraph` already reads `collapsed`: `getVisibleNodes()`
+        // hides the children and `getNodeWidth/Height` return the collapsed
+        // size, so ELK sees a leaf where the container was and routes to it.
+        // Nothing here has to arrange that.
+        //
+        // ⚠ Except the stale size. `applyELKLayout` deliberately PRESERVES a
+        // collapsed node's width and height — so that a collapsed box keeps
+        // one size across layouts rather than flickering — and on the layout
+        // immediately after a collapse the stored size is the EXPANDED one.
+        // Measured on `ancestor_entry_is_not_default_entry`, collapsing
+        // `drive` left it 580x835 inside a parent of 460x407: a white
+        // rectangle covering the diagram, which is what a reader saw.
+        //
+        // Clearing them is what makes the flag the whole input. The layout
+        // then takes the size from `getNodeWidth/Height`, which read
+        // `collapsed` themselves.
+        delete state.width;
+        delete state.height;
 
-        // Re-render to show/hide children with new size
+        await this.visualizer.computeLayout();
         this.visualizer.render();
-
-        // Update transition paths with new snap points
-        // Clear routing to force recalculation
-        this.visualizer.allLinks.forEach(link => {
-            delete link.routing;
-        });
-
-        // Get visible nodes (collapsed ancestors hide their children)
-        const visibleNodes = this.visualizer.getVisibleNodes();
-        logger.debug(`[TOGGLE] Visible nodes after toggle: ${visibleNodes.map(n => n.id).join(', ')}`);
-
-        // Get visible links with visual redirect applied
-        const visibleLinks = this.visualizer.getVisibleLinks(this.visualizer.allLinks, visibleNodes);
-        logger.debug(`[TOGGLE] Visible links after filter: ${visibleLinks.length} links`);
-        visibleLinks.forEach(link => {
-            const vs = link.visualSource || link.source;
-            const vt = link.visualTarget || link.target;
-            if (vs !== link.source || vt !== link.target) {
-                logger.debug(`[TOGGLE] Visual redirect: ${link.source}→${link.target} becomes ${vs}→${vt}`);
-            }
-        });
-
-        // Re-optimize snap points with visibleLinks and visible nodes
-        this.visualizer.layoutOptimizer.optimizeSnapPointAssignments(visibleLinks, visibleNodes, false);
-
-        // Sync routing back to original allLinks
-        visibleLinks.forEach(vlink => {
-            if (vlink.routing && vlink.originalLink) {
-                vlink.originalLink.routing = vlink.routing;
-            }
-        });
-
-        // Re-render snap points with updated routing info
-        this.visualizer.renderSnapPoints(visibleNodes, visibleLinks);
-        logger.debug(`[TOGGLE] Re-rendered snap points after optimization`);
-
-        // Recalculate directions for visible links only
-        visibleLinks.forEach(link => {
-            const visualSourceId = link.visualSource || link.source;
-            const visualTargetId = link.visualTarget || link.target;
-            const sourceNode = visibleNodes.find(n => n.id === visualSourceId);
-            const targetNode = visibleNodes.find(n => n.id === visualTargetId);
-            if (sourceNode && targetNode) {
-                this.visualizer.calculateLinkDirections(sourceNode, targetNode, link);
-            }
-        });
-
-        // Update link visuals: rebind data with updated routing info, then update paths
-        // IMPORTANT: linkElements was created by render() with old visibleLinks
-        // We need to rebind with new visibleLinks that have updated routing
-        this.visualizer.linkElements = this.visualizer.linkElements
-            .data(visibleLinks, d => d.id);  // Rebind with new data (use id as key)
-        
-        this.visualizer.linkElements.attr('d', d => this.visualizer.getLinkPath(d));
-
-        logger.debug(`[TOGGLE] Updated ${this.visualizer.linkElements.size()} link paths`);
-
-        // Update transition labels if they exist
-        if (this.visualizer.transitionLabels) {
-            // Rebind with updated visibleLinks data
-            this.visualizer.transitionLabels = this.visualizer.transitionLabels
-                .data(visibleLinks, d => d.id);
-
-            this.visualizer.transitionLabels
-                .attr('x', d => this.visualizer.getTransitionLabelPosition(d).x)
-                .attr('y', d => this.visualizer.getTransitionLabelPosition(d).y);
-
-            logger.debug(`[TOGGLE] Updated ${this.visualizer.transitionLabels.size()} transition label positions`);
-        }
     }
+
 }
