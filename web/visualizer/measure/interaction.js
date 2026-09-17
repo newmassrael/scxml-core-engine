@@ -219,6 +219,15 @@ const d3Chain = new Proxy(function () {}, {
     const before = new Map(v.nodes
         .filter((n) => Number.isFinite(n.x))
         .map((n) => [n.id, [n.x, n.y]]));
+
+    // The path each arrow is drawn along, before anything moves. A drag is
+    // allowed to re-route what it touches; every other line on the canvas
+    // should be exactly where the reader last saw it.
+    const pathsBefore = new Map();
+    for (const link of links()) {
+        try { pathsBefore.set(link.id, v.getLinkPath(link)); } catch (e) { /* counted elsewhere */ }
+    }
+
     dragged.isDragging = true;
     dragged.x += 220;
     dragged.y += 140;
@@ -245,7 +254,33 @@ const d3Chain = new Proxy(function () {}, {
     }
     check(moved === 0,
         `${moved} state(s) the reader did not touch moved, by up to ${Math.round(worst)}px`);
-    console.log(`untouched    : ${moved} state(s) moved`);
+
+    // ⭐ And the same for the lines. During a gesture the drawing must change
+    // only where the gesture reaches — an arrow between two states the reader
+    // never touched has no reason to take a different route, and one that
+    // does is the canvas moving on its own, which is the complaint this whole
+    // sequence of rounds came from.
+    let reroutedBystanders = 0;
+    for (const link of links()) {
+        if ([link.source, link.target, link.visualSource, link.visualTarget].includes(dragged.id)) {
+            continue;
+        }
+        const was = pathsBefore.get(link.id);
+        if (was === undefined) continue;
+        let now;
+        try { now = v.getLinkPath(link); } catch (e) { now = undefined; }
+        if (now !== was) {
+            reroutedBystanders++;
+            if (reroutedBystanders <= 3) {
+                console.error(`FAIL: ${link.source}->${link.target} re-routed by a drag of ${dragged.id}`);
+            }
+        }
+    }
+    check(reroutedBystanders === 0,
+        `${reroutedBystanders} arrow(s) not touching the dragged state changed route`);
+
+    console.log(`untouched    : ${moved} state(s) moved,`
+        + ` ${reroutedBystanders} arrow(s) re-routed`);
 
     // ⭐ What the drag is allowed to invalidate: the edges that TOUCH what
     // moved, and nothing else. This has been asserted three different ways

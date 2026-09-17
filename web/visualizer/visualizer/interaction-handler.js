@@ -31,11 +31,6 @@ class InteractionHandler {
             // const mode = useGreedy ? 'GREEDY (fast)' : 'CSP (optimal)';
             // logger.debug(`[DRAG UPDATE] Re-running optimizer (${mode})...`);
 
-            // Clear all routing
-            this.visualizer.allLinks.forEach(link => {
-                delete link.routing;
-            });
-
             // ELK routed for the arrangement that existed before this drag,
             // so the bend points on the edges TOUCHING what moved describe a
             // drawing nobody is looking at. Every other edge is still
@@ -44,6 +39,24 @@ class InteractionHandler {
             const movedIds = this.visualizer.nodes
                 .filter(n => n.isDragging)
                 .map(n => n.id);
+            const moved = new Set(movedIds);
+
+            // ⚠ Clear the routing of those same edges, and no others.
+            //
+            // This used to delete `routing` from EVERY link. Measured, that
+            // changed no drawn path — an edge still holding ELK's route is
+            // drawn from it, and `getLinkPath` prefers that over the snap
+            // points — so the diagram was correct by accident, kept right by
+            // a preference in another file rather than by this one meaning
+            // it. The moment an edge falls back, the wider clear would
+            // re-route a line the reader never touched.
+            this.visualizer.allLinks.forEach(link => {
+                if (moved.has(link.source) || moved.has(link.target)
+                    || moved.has(link.visualSource) || moved.has(link.visualTarget)) {
+                    delete link.routing;
+                }
+            });
+
             this.visualizer.layoutManager.invalidateELKRouting(movedIds);
 
             // **ADAPTIVE ALGORITHM SELECTION**
