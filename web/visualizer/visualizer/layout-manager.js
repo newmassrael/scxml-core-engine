@@ -235,12 +235,29 @@ class LayoutManager {
 
         visibleLinks.forEach(link => {
             if (link.linkType === 'transition' || link.linkType === 'initial') {
-                // Only add edge if both endpoints exist in visible nodes
-                if (visibleNodeIds.has(link.source) && visibleNodeIds.has(link.target)) {
+                // The endpoints as DRAWN, which is not the same thing as the
+                // endpoints the transition names.
+                //
+                // ⚠ When a compound is collapsed, `getVisibleLinks` redirects
+                // an edge that ends inside it to the collapsed box —
+                // `visualSource` / `visualTarget`. This filter used to test
+                // the ORIGINAL ids, so every such edge failed the test and
+                // was never given to ELK at all: it was drawn by the
+                // fallback, against a box ELK had never routed to. Measured
+                // on `ancestor_entry_is_not_default_entry`, collapsing
+                // `outer` left eight edges not touching anything.
+                //
+                // Using the visual ids is also what makes "collapsed" an
+                // input to the layout rather than a correction applied after
+                // it: ELK sees a leaf node and edges arriving at it.
+                const sourceId = link.visualSource || link.source;
+                const targetId = link.visualTarget || link.target;
+
+                if (visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId)) {
                     const edge = {
                         id: link.id,
-                        sources: [link.source],
-                        targets: [link.target]
+                        sources: [sourceId],
+                        targets: [targetId]
                     };
 
                     // The label is declared to ELK, not drawn over its
@@ -266,38 +283,41 @@ class LayoutManager {
                         }];
                     }
 
-                    // Check if target is a direct child of source (parent→child edge)
-                    const sourceNode = this.visualizer.nodes.find(n => n.id === link.source);
+                    // ⚠ Placement asks the VISUAL endpoints too. An edge
+                    // redirected to a collapsed ancestor belongs in that
+                    // ancestor's container, not in the one holding the state
+                    // it originally named — which is now hidden.
+                    const sourceNode = this.visualizer.nodes.find(n => n.id === sourceId);
                     const isParentToChild = sourceNode &&
                                           (sourceNode.type === 'compound' || sourceNode.type === 'parallel') &&
                                           sourceNode.children &&
-                                          sourceNode.children.includes(link.target);
+                                          sourceNode.children.includes(targetId);
 
                     if (isParentToChild) {
                         // W3C SCXML 3.13: Internal transition from parent to child
                         // Place edge in parent's edges array (hierarchy-local)
-                        const parentElkNode = elkNodeMap.get(link.source);
+                        const parentElkNode = elkNodeMap.get(sourceId);
                         if (parentElkNode && parentElkNode.edges) {
                             parentElkNode.edges.push(edge);
-                            logger.debug(`  [EDGE] ${link.source} → ${link.target}: Added to parent's edges (internal transition)`);
+                            logger.debug(`  [EDGE] ${sourceId} → ${targetId}: Added to parent's edges (internal transition)`);
                         } else {
-                            logger.warn(`  [EDGE] ${link.source} → ${link.target}: Parent ELK node missing edges array`);
+                            logger.warn(`  [EDGE] ${sourceId} → ${targetId}: Parent ELK node missing edges array`);
                         }
                     } else {
                         // Regular edge between sibling nodes or cross-hierarchy
                         // Determine proper container: lowest common ancestor or root
-                        const targetParent = findParentNode(link.target);
-                        const sourceParent = findParentNode(link.source);
+                        const targetParent = findParentNode(targetId);
+                        const sourceParent = findParentNode(sourceId);
 
                         if (sourceParent && sourceParent.id === targetParent?.id) {
                             // Both nodes share same parent → add to parent's edges
                             const parentElkNode = elkNodeMap.get(sourceParent.id);
                             if (parentElkNode && parentElkNode.edges) {
                                 parentElkNode.edges.push(edge);
-                                logger.debug(`  [EDGE] ${link.source} → ${link.target}: Added to common parent ${sourceParent.id}`);
+                                logger.debug(`  [EDGE] ${sourceId} → ${targetId}: Added to common parent ${sourceParent.id}`);
                             } else {
                                 graph.edges.push(edge);
-                                logger.debug(`  [EDGE] ${link.source} → ${link.target}: Parent missing edges array, added to root`);
+                                logger.debug(`  [EDGE] ${sourceId} → ${targetId}: Parent missing edges array, added to root`);
                             }
                         } else {
                             // Cross-hierarchy or top-level edge → add to root
