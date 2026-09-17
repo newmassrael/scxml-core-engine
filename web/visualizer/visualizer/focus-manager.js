@@ -98,7 +98,9 @@ class TransitionFocusManager {
 
         // Set active state on matching elements
         if (transitionId) {
-            this.setActivePanel(panel, transitionId);
+            // The transition object itself, so the panel can mark the exact
+            // row when the engine reported which one fired.
+            this.setActivePanel(panel, transitionId, transition);
             this.setActiveSVG(transitionId);
         }
     }
@@ -518,7 +520,29 @@ class TransitionFocusManager {
     /**
      * Set active state on panel item
      */
-    setActivePanel(panel, transitionId) {
+    /**
+     * The panel row for the transition the engine says fired, or null.
+     *
+     * ⚠ Null is a real answer, not a failure: the runtime reports `-1` when
+     * it does not know which transition fired — a restored snapshot carries
+     * a configuration, not the step that produced it — and a caller must
+     * then fall back to marking every row the arrow id names rather than
+     * guessing one.
+     */
+    _lastFiredRow(panel, fired) {
+        if (!panel || !fired || !fired.source) {
+            return null;
+        }
+        const index = Number.isInteger(fired.sourceIndex) ? fired.sourceIndex : -1;
+        if (index < 0) {
+            return null;
+        }
+        return panel.querySelector(
+            `[data-source-state="${fired.source}"][data-source-index="${index}"]`
+        );
+    }
+
+    setActivePanel(panel, transitionId, fired) {
         if (!panel) return;
 
         // ⚠ EVERY row the id names, not the first one.
@@ -539,7 +563,17 @@ class TransitionFocusManager {
         // ⭐ So all of them are marked. The reader is told the truth —
         // "the transition that fired is one of these" — instead of a
         // confident answer that is right one time in thirteen.
-        const activeItems = panel.querySelectorAll(`[data-transition-id="${transitionId}"]`);
+        // ⭐ Exactly the one that fired, when the engine says which.
+        //
+        // `getLastTransition()` now reports `sourceIndex` — the position of
+        // the transition in its source state's list — so the guard-only
+        // variants can be told apart. Where it is absent or -1 (a restored
+        // snapshot does not carry it) the fallback below marks all the rows
+        // the arrow id names, which is the honest answer for "one of these".
+        const exact = this._lastFiredRow(panel, fired);
+        const activeItems = exact
+            ? [exact]
+            : [...panel.querySelectorAll(`[data-transition-id="${transitionId}"]`)];
         const activeItem = activeItems[0];
         activeItems.forEach(item => item.classList.add('active'));
         if (activeItem) {

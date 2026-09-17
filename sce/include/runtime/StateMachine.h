@@ -316,6 +316,21 @@ public:
     std::string getLastTransitionSource() const;
 
     /**
+     * Position of the transition that fired within its source state's
+     * transition list, or -1 when it is not known.
+     *
+     * The document order `ITransitionNode` is parsed in, so a consumer that
+     * walks `state->getTransitions()` — as the visualizer's structure
+     * builder does — indexes the same list.
+     */
+    int getLastTransitionIndex() const;
+
+private:
+    /** Position of `transition` in `stateId`'s list, or -1. */
+    int indexOfTransitionIn(const std::string &stateId, const std::shared_ptr<ITransitionNode> &transition) const;
+
+public:
+    /**
      * @brief Get target state of last executed transition
      *
      * Interactive visualizer support for transition tracking
@@ -756,6 +771,21 @@ private:
     // Last executed transition tracking (for interactive visualizer)
     std::string lastTransitionSource_{};
     std::string lastTransitionTarget_{};
+
+    // WHICH transition of that source state fired, by its position in the
+    // state's transition list — the order the document declares them in, and
+    // the order `getTransitions()` returns.
+    //
+    // ⚠ Source, target and event do not identify a transition. W3C SCXML
+    // lets several share all three and differ only by `cond`, which is the
+    // ordinary way to write a branch; measured over this repository's
+    // documents, 33 keys of the form `source_event_target` name more than
+    // one transition and one names thirteen. Without this the visualizer
+    // could say "one of these thirteen fired" and no more.
+    //
+    // -1 means "not known", which is honest for a restored snapshot: the
+    // position is not part of what a snapshot carries.
+    int lastTransitionIndex_{-1};
 
     // §scxml-D-removeConflictingTransitions: Conflict resolution transition tracking (for interactive visualizer)
     std::vector<TransitionDescriptorString>

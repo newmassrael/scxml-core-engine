@@ -1835,7 +1835,9 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
             // that will overwrite this value with the correct final transition
             lastTransitionSource_ = fromState;
             lastTransitionTarget_ = targetState;
-            SCE_LOG_DEBUG("W3C SCXML 3.13: Event transition executed: {} -> {}", fromState, targetState);
+            lastTransitionIndex_ = indexOfTransitionIn(fromState, transitionNode);
+            SCE_LOG_DEBUG("W3C SCXML 3.13: Event transition executed: {} -> {} (index {})", fromState, targetState,
+                          lastTransitionIndex_);
 
             // Enter all states in enter set (shallowest first)
             //
@@ -2033,6 +2035,36 @@ bool StateMachine::isInFinalState() const {
 
     SCE_LOG_DEBUG("StateMachine::isInFinalState: No top-level final states active");
     return false;
+}
+
+int StateMachine::getLastTransitionIndex() const {
+    return lastTransitionIndex_;
+}
+
+/**
+ * Where this transition sits in its source state's list.
+ *
+ * ⭐ By POINTER identity, not by comparing events, targets and guards. Those
+ * are exactly the fields that fail to tell two transitions apart — the whole
+ * reason this index exists — so matching on them would reproduce the defect
+ * one layer down.
+ */
+int StateMachine::indexOfTransitionIn(const std::string &stateId,
+                                      const std::shared_ptr<ITransitionNode> &transition) const {
+    if (!model_ || !transition) {
+        return -1;
+    }
+    auto state = model_->findStateById(stateId);
+    if (!state) {
+        return -1;
+    }
+    const auto &transitions = state->getTransitions();
+    for (size_t i = 0; i < transitions.size(); ++i) {
+        if (transitions[i] == transition) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
 }
 
 std::string StateMachine::getLastTransitionSource() const {
@@ -2786,6 +2818,7 @@ bool StateMachine::executeTransitionDirect(IStateNode *sourceState, std::shared_
     if (eventlessRecursionDepth_ == 0 || eventlessRecursionDepth_ > lastTransitionDepth_) {
         lastTransitionSource_ = fromState;
         lastTransitionTarget_ = targetState;
+        lastTransitionIndex_ = indexOfTransitionIn(fromState, transition);
         lastTransitionDepth_ = eventlessRecursionDepth_;
         SCE_LOG_DEBUG("W3C SCXML 3.13: Eventless transition executed (depth {}): {} -> {}", eventlessRecursionDepth_,
                       fromState, targetState);

@@ -311,7 +311,7 @@ class InteractionHandler {
             }
 
             html += `
-                <div class="transition-list-item" data-transition-id="${transitionId}" data-transition-index="${index}">
+                <div class="transition-list-item" data-transition-id="${transitionId}" data-transition-index="${index}" data-source-index="${transition.sourceIndex ?? -1}" data-source-state="${transition.source}">
                     <div class="transition-list-source-target">
                         <strong>${transition.source}</strong> → <strong>${transition.target}</strong>
                         ${badgesHtml}

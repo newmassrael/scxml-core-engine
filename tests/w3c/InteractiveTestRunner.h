@@ -563,6 +563,11 @@ private:
     int currentStep_;
     std::string lastTransitionSource_;
     std::string lastTransitionTarget_;
+
+    /// Which transition of the source state fired, by document order, or -1.
+    /// Source, target and event do not identify one: several may share all
+    /// three and differ only by their guard.
+    int lastTransitionIndex_{-1};
     std::string lastEventName_;
 
     // Track previous active states for transition source detection

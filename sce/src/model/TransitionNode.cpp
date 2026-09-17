@@ -11,8 +11,32 @@ SCE::TransitionNode::TransitionNode(const std::string &event, const std::string 
     : event_(event), target_(target), guard_(""), internal_(false), targetsDirty_(true) {
     SCE_LOG_DEBUG("Creating transition node: {} -> {}", (event.empty() ? "<no event>" : event), target);
 
+    // W3C SCXML 3.12.1: `event` holds a space-separated list of event
+    // DESCRIPTORS, and a transition matches when any one of them matches.
+    // So the attribute is split into descriptors here rather than stored
+    // whole.
+    //
+    // ⚠ It used to be pushed whole. `event="foo bar"` then made
+    // `getEvents()` return `["foo bar", "foo", "bar"]` — the parser adds the
+    // tokens afterwards — so the first entry was the attribute masquerading
+    // as a descriptor. Four places in `StateMachine.cpp` read this vector AS
+    // the descriptor list.
+    //
+    // ⚠⚠ Nothing ever matched that entry, which is why it survived: a legal
+    // SCXML event name cannot contain a space, so the bogus descriptor is
+    // unreachable by any event the engine can deliver. It was visible only
+    // where the list is READ rather than matched — the visualizer's
+    // structure, which drew `event="a b c"` and reported four descriptors.
+    //
+    // The parser calls `addEvent` for each token after construction, and
+    // `addEvent` skips duplicates, so this makes those calls no-ops rather
+    // than changing what they produce.
     if (!event.empty()) {
-        events_.push_back(event);
+        std::istringstream descriptors(event);
+        std::string descriptor;
+        while (descriptors >> descriptor) {
+            events_.push_back(descriptor);
+        }
     }
 }
 

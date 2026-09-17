@@ -146,6 +146,7 @@ bool InteractiveTestRunner::initialize() {
     // start() already ran eventless transitions - don't clear(), read from StateMachine
     lastTransitionSource_ = stateMachine_->getLastTransitionSource();
     lastTransitionTarget_ = stateMachine_->getLastTransitionTarget();
+    lastTransitionIndex_ = stateMachine_->getLastTransitionIndex();
     lastEventName_.clear();
 
     // Capture initial snapshot for true reset functionality
@@ -323,7 +324,9 @@ StepResult InteractiveTestRunner::processQueuedEventStep() {
     // ARCHITECTURE.md Zero Duplication: StateMachine tracks all transitions (including eventless)
     lastTransitionSource_ = stateMachine_->getLastTransitionSource();
     lastTransitionTarget_ = stateMachine_->getLastTransitionTarget();
-    SCE_LOG_DEBUG("Interactive visualizer read transition: {} -> {}", lastTransitionSource_, lastTransitionTarget_);
+    lastTransitionIndex_ = stateMachine_->getLastTransitionIndex();
+    SCE_LOG_DEBUG("Interactive visualizer read transition: {} -> {} (index {})", lastTransitionSource_,
+                  lastTransitionTarget_, lastTransitionIndex_);
 
     // W3C SCXML 3.13: Increment step and capture POST-transition snapshot
     // This ensures step backward returns to exact previous state (not pre-transition)
@@ -1067,6 +1070,19 @@ emscripten::val InteractiveTestRunner::getLastTransition() const {
         obj.set("target", lastTransitionTarget_);
         obj.set("event", lastEventName_);
         obj.set("id", lastTransitionSource_ + "_" + lastTransitionTarget_);
+
+        // WHICH transition of that state fired.
+        //
+        // ⚠ Source, target and event do not identify one. Several may share
+        // all three and differ only by `cond` — 33 such keys in this
+        // repository's documents, one naming thirteen — so without this a
+        // reader is told "one of these fired" and nothing more. The index is
+        // into the source state's transition list in document order, which
+        // is the list `buildStructureFromModel` walks to emit `sourceIndex`.
+        //
+        // -1 where the runtime does not know it, which a restored snapshot
+        // does not: the position is not part of what a snapshot carries.
+        obj.set("sourceIndex", lastTransitionIndex_);
     }
 
     return obj;
@@ -1847,7 +1863,13 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
 
         const auto &transitions = state->getTransitions();
         SCE_LOG_DEBUG("buildStructureFromModel: State '{}' has {} transition(s)", stateId, transitions.size());
+        // The position each transition holds in this list, which is what
+        // `getLastTransition().sourceIndex` reports for the one that fired.
+        // ⚠ Counted over the WHOLE list including any skipped below, or the
+        // two sides would index different sequences.
+        int sourceIndex = -1;
         for (const auto &transition : transitions) {
+            ++sourceIndex;
             if (!transition) {
                 continue;
             }
@@ -1869,6 +1891,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                     auto transObj = emscripten::val::object();
                     transObj.set("id", std::to_string(transitionId++));
                     transObj.set("source", stateId);
+                    transObj.set("sourceIndex", sourceIndex);
                     transObj.set("target", "");       // Empty string for targetless transitions
                     transObj.set("event", "");        // Empty string for eventless transitions
                     transObj.set("eventless", true);  // W3C SCXML 3.13: Flag for eventless transition
@@ -1890,6 +1913,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                         auto transObj = emscripten::val::object();
                         transObj.set("id", std::to_string(transitionId++));
                         transObj.set("source", stateId);
+                        transObj.set("sourceIndex", sourceIndex);
                         transObj.set("target", target);
                         transObj.set("event", "");        // Empty string for eventless transitions
                         transObj.set("eventless", true);  // W3C SCXML 3.13: Flag for eventless transition
@@ -1962,6 +1986,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                     auto transObj = emscripten::val::object();
                     transObj.set("id", std::to_string(transitionId++));
                     transObj.set("source", stateId);
+                    transObj.set("sourceIndex", sourceIndex);
                     transObj.set("target", target);
                     transObj.set("event", eventList);
                     transObj.set("events", eventsArray);
