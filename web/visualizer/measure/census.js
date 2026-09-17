@@ -248,6 +248,10 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
     // reader actually sees colliding. A proxy is what you use when the real
     // quantity is out of reach, and this one never was: the position
     // function and the box function are both right here.
+    // ⚠ The STAGE first. The drawing runs it before it writes a single
+    // label (`Renderer.updateLabels`), so reading positions without it
+    // measures the per-label seed — a position the product never draws.
+    try { v.pathCalculator.placeTransitionLabels(links); } catch (e) { /* surfaces as a column */ }
     const labelRects = [];
     for (const link of links) {
         const box = v.layoutManager.labelBoxForLink(link);

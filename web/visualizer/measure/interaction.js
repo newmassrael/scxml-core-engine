@@ -168,21 +168,55 @@ const d3Chain = new Proxy(function () {}, {
     });
     const hit = (a, b) => a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
     const readable = () => {
+        // ⚠ The STAGE first, because the drawing runs it before it writes a
+        // single label — `Renderer.updateLabels`. Reading
+        // `getTransitionLabelPosition` without it measures the per-label
+        // seed, which is a position the product never draws.
+        //
+        // ⚠⚠⚠ This does NOT run the placement stage. It reads what the
+        // product left behind, and that distinction is the whole reason
+        // this check is worth anything.
+        //
+        // The first version called `placeTransitionLabels` itself and read
+        // the result. It reported zero collisions at every phase while a
+        // browser showed ten overlapping pairs after the same gesture —
+        // because the defect was never in the stage, it was in WHEN the
+        // product ran it. A probe that performs the step it is checking can
+        // only ever confirm that the step works in isolation.
+        //
+        // ⚠ Positions survive `getVisibleLinks` returning fresh `{...link}`
+        // copies because the stage syncs them back to `originalLink`, the
+        // way `routing` always has. Without that sync this would read
+        // nothing and look like a failure of the stage rather than of the
+        // plumbing.
+        const visible = links();
         const rects = [];
-        for (const link of links()) {
+        for (const link of visible) {
             const box = v.layoutManager.labelBoxForLink(link);
             if (!box) continue;
             let pos;
             try { pos = v.pathCalculator.getTransitionLabelPosition(link); } catch (e) { pos = null; }
             if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
             rects.push({
+                id: `${link.source}->${link.target}`,
                 x1: pos.x - box.width / 2, y1: pos.y - box.height / 2,
                 x2: pos.x + box.width / 2, y2: pos.y + box.height / 2,
             });
         }
+        // ⚠ The pairs, not just how many. A count sends a reader looking;
+        // a name tells them where, and every wrong turn in this area began
+        // with a number that said something collided and nothing that said
+        // which.
         let labelLabel = 0;
+        const collisions = [];
         for (let i = 0; i < rects.length; i++) {
-            for (let j = i + 1; j < rects.length; j++) if (hit(rects[i], rects[j])) labelLabel++;
+            for (let j = i + 1; j < rects.length; j++) {
+                if (!hit(rects[i], rects[j])) continue;
+                labelLabel++;
+                collisions.push(`${rects[i].id} X ${rects[j].id}`
+                    + ` (at ${Math.round(rects[i].x1)},${Math.round(rects[i].y1)}`
+                    + ` and ${Math.round(rects[j].x1)},${Math.round(rects[j].y1)})`);
+            }
         }
         const positioned = v.nodes.filter((n) => Number.isFinite(n.x) && Number.isFinite(n.y));
         const desc = (n, acc = new Set()) => {
@@ -201,7 +235,78 @@ const d3Chain = new Proxy(function () {}, {
                 if (hit(boxOf(A), boxOf(B))) nodeNode++;
             }
         }
-        return { labels: rects.length, labelLabel, nodeNode };
+        // ⚠ How far each label's BOX is from the line it names.
+        //
+        // The property this catches: a label placed correctly against a path
+        // that has since been re-derived. In a browser that put labels up to
+        // 412px from their own arrow while every collision count read zero —
+        // the placement was right when it was made and the line moved under
+        // it afterwards, which no count of overlaps can see.
+        //
+        // ⚠⚠ It cannot catch the ORDERING that caused it: the drawing
+        // re-derives its paths when a 50ms timer clears `isDragging`, and
+        // nothing here runs timers or the real drag handlers. What it locks
+        // in is the RESULT, so a future change that leaves labels adrift in
+        // the headless path fails here instead of in somebody's browser.
+        let worstOffLine = 0;
+        let worstOffLineEdge = null;
+        for (const link of visible) {
+            const box = v.layoutManager.labelBoxForLink(link);
+            const pos = v.pathCalculator.getTransitionLabelPosition(link);
+            if (!box || !pos) continue;
+            let d;
+            try { d = v.getLinkPath(link); } catch (e) { continue; }
+            if (!d || /NaN|undefined/.test(d)) continue;
+            const nums = (d.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+            const r = {
+                x1: pos.x - box.width / 2, y1: pos.y - box.height / 2,
+                x2: pos.x + box.width / 2, y2: pos.y + box.height / 2,
+            };
+            // ⚠ To the SEGMENTS, not to the vertices.
+            //
+            // Measuring to vertices reported a label 334px from its line
+            // while the label sat 30px from the segment it was anchored to —
+            // the nearest corner of that long vertical run happened to be
+            // 354px away. Three explanations were chased for that number
+            // before the path was printed and the arithmetic done by hand.
+            // It is the fourth time this round a measurement, not the
+            // drawing, was the thing that was wrong.
+            const pts = [];
+            for (let i = 0; i + 1 < nums.length; i += 2) {
+                pts.push({ x: nums[i], y: nums[i + 1] });
+            }
+            const distToRect = (p) => {
+                const dx = Math.max(r.x1 - p.x, 0, p.x - r.x2);
+                const dy = Math.max(r.y1 - p.y, 0, p.y - r.y2);
+                return Math.hypot(dx, dy);
+            };
+            let best = Infinity;
+            for (let i = 1; i < pts.length; i++) {
+                const a = pts[i - 1]; const b = pts[i];
+                const len = Math.hypot(b.x - a.x, b.y - a.y);
+                const steps = Math.max(1, Math.ceil(len / 4));
+                for (let s = 0; s <= steps; s++) {
+                    best = Math.min(best, distToRect({
+                        x: a.x + (b.x - a.x) * s / steps,
+                        y: a.y + (b.y - a.y) * s / steps,
+                    }));
+                }
+            }
+            if (Number.isFinite(best) && best > worstOffLine) {
+                worstOffLine = best;
+                worstOffLineEdge = `${link.source}->${link.target}`;
+            }
+        }
+
+        const placements = visible
+            .filter((l) => l.labelPlacement && l.labelPlacement.reason !== 'clear')
+            .map((l) => `${l.source}->${l.target}: ${l.labelPlacement.reason},`
+                + ` ${l.labelPlacement.spots} spot(s) on its line,`
+                + ` ${l.labelPlacement.tried} tried, residual ${l.labelPlacement.residual}`);
+        return {
+            labels: rects.length, labelLabel, nodeNode, collisions, placements,
+            worstOffLine: Math.round(worstOffLine), worstOffLineEdge,
+        };
     };
 
     const atLayout = readable();
@@ -333,6 +438,118 @@ const d3Chain = new Proxy(function () {}, {
     // nothing untouched moving, bystander labels kept.
     console.log(`               (was ${atLayout.labelLabel} label collisions,`
         + ` ${atLayout.nodeNode} state overlaps before the drag)`);
+
+    // ------------------------------------------------- dragging the hub
+    // ⚠ The case the `lobby` drag above CANNOT reach, and the one a reader
+    // actually hit. `lobby` is chosen deliberately: it leaves bystanders, so
+    // the narrowing property is measurable. But that same choice means only
+    // two labels are ever re-placed, and two labels on two different lines
+    // do not collide — so "0 label collisions after a drag" was true and
+    // meant nothing.
+    //
+    // `chosen` sits on all eight edges, five of them `check` transitions
+    // leaving the same side and running down one shared trunk. Dragging it
+    // invalidates every label at once, which is exactly when a per-label
+    // rule puts five labels in one spot. Measured in a browser before the
+    // placement stage existed: two overlapping pairs, both among those five.
+    const hub = v.nodes.find((n) => n.id === 'chosen');
+    check(!!hub, 'the probe could not find the hub state it drags');
+    const labelsOnHub = links().filter((l) =>
+        [l.source, l.target, l.visualSource, l.visualTarget].includes(hub.id)
+        && v.layoutManager.labelBoxForLink(l)).length;
+    check(labelsOnHub >= 5,
+        `only ${labelsOnHub} labelled edge(s) touch the hub, so crowding cannot be measured here`);
+
+    hub.isDragging = true;
+    hub.x += 60;
+    hub.y += 90;
+    v.updateLinks(true);
+    hub.isDragging = false;
+    v.updateLinks(false);
+
+    const hubDetached = detachedCount();
+    check(hubDetached === 0, `${hubDetached} edge(s) detached after dragging the hub`);
+
+    // ⚠⚠⚠ Does asking for the same line twice give the same line?
+    //
+    // Everything downstream assumes it does: the placement stage samples a
+    // path to choose where a label goes, and the drawing asks for that path
+    // again to draw it. If the two answers differ, a label is placed against
+    // a line nobody draws — and that is indistinguishable, from the outside,
+    // from the stage choosing badly. It cost this round three wrong
+    // explanations before the question was asked directly.
+    const unstable = [];
+    for (const link of links()) {
+        let a; let b;
+        try { a = v.getLinkPath(link); b = v.getLinkPath(link); } catch (e) { continue; }
+        if (a !== b) unstable.push(`${link.source}->${link.target}`);
+    }
+    check(unstable.length === 0,
+        `${unstable.length} arrow(s) return a different path when asked twice`
+        + ` without anything moving: ${unstable.slice(0, 4).join(', ')}`);
+
+    // ⚠⚠ Did the STAGE place these, or is this reading the per-label seed?
+    // Without this the check below passes either way: the seed is ELK's
+    // position, which is uncollided on load, so a probe that never reaches
+    // the stage reports a clean sheet for the wrong reason — which is
+    // exactly what happened, for a whole round, while a browser showed ten
+    // overlapping pairs after the same gesture.
+    const labelled = links().filter((l) => v.layoutManager.labelBoxForLink(l));
+    const staged = labelled.filter((l) => l.labelAnchor && l.labelPlacement).length;
+    check(staged === labelled.length,
+        `${labelled.length - staged} of ${labelled.length} label(s) carry no placement from the`
+        + ' stage after a settled gesture, so what follows is reading the per-label seed');
+    const hubReadable = readable();
+    console.log(`after hub drag: ${hubReadable.labelLabel} label collisions,`
+        + ` ${hubReadable.nodeNode} state overlaps (${labelsOnHub} labels on the hub)`);
+    for (const pair of hubReadable.collisions) {
+        console.log(`                ${pair}`);
+    }
+    // ⚠ And what the stage says it did, which is the difference between
+    // "it could not find a clear spot" and "it never looked".
+    for (const note of hubReadable.placements) {
+        console.log(`                ${note}`);
+    }
+
+    // ⭐ Asserted, not merely reported — unlike the figures above. Those are
+    // about where the READER chose to put a state, which may legitimately be
+    // tight. This one is about labels the reader never positioned at all: a
+    // gesture hands every one of them back to the placement stage, and a
+    // stage that returns them overlapping has failed at the only job it has.
+    check(hubReadable.labelLabel === 0,
+        `${hubReadable.labelLabel} label pair(s) overlap after the hub was dragged,`
+        + ' so the placement stage did not separate labels it re-placed');
+
+    // ⭐ And attached. A label that names a transition has to be ON it; a
+    // stage free to put labels anywhere can reach zero collisions by moving
+    // them all into empty space, which is not an improvement and is what a
+    // browser showed when the placement outlived the path it was made for.
+    //
+    // ⚠ The bound is the label's own box plus a margin, because the stage
+    // deliberately places labels BESIDE their line rather than on it — a
+    // label sitting on a shared trunk covers the other arrows using it.
+    const OFF_LINE_LIMIT = 40;
+    console.log(`               labels sit at most ${hubReadable.worstOffLine}px from their own line`
+        + ` (${hubReadable.worstOffLineEdge})`);
+    // Only when it is close to the limit: the detail is for diagnosing a
+    // label that has come adrift, and printing an anchor every run buries
+    // the line that matters.
+    if (hubReadable.worstOffLine > 20) {
+        // ⚠ The anchor and the line it is an anchor ON. Printed because
+        // three explanations for this number were wrong in a row, each of
+        // them plausible and none of them checked against the actual data.
+        const worst = links().find((l) => `${l.source}->${l.target}` === hubReadable.worstOffLineEdge);
+        if (worst) {
+            let d = '';
+            try { d = v.getLinkPath(worst); } catch (e) { d = '(threw)'; }
+            console.log(`                anchor ${JSON.stringify(worst.labelAnchor)}`);
+            console.log(`                drawn at ${JSON.stringify(v.pathCalculator.getTransitionLabelPosition(worst))}`);
+            console.log(`                path ${d.slice(0, 160)}`);
+        }
+    }
+    check(hubReadable.worstOffLine <= OFF_LINE_LIMIT,
+        `a label sits ${hubReadable.worstOffLine}px from the line it names (limit ${OFF_LINE_LIMIT}),`
+        + ' so it was placed against geometry that is no longer drawn');
 
     // ------------------------------------------------------------ collapse
     // Re-lay out so there is something to invalidate again.
