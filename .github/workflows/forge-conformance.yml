@@ -39,6 +39,7 @@ on:
       - 'backends/go/**'
       - 'backends/python/**'
       - 'backends/c/**'
+      - 'backends/kotlin/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -62,6 +63,7 @@ on:
       - 'backends/go/**'
       - 'backends/python/**'
       - 'backends/c/**'
+      - 'backends/kotlin/**'
   workflow_dispatch:
 
 # Re-measured 2026-09-02 over this lane's own last 25 runs: a 25.5 min median
@@ -412,8 +414,13 @@ jobs:
           ${{ runner.os }}-gradle-forge-
           ${{ runner.os }}-gradle-
 
+    # Through the gate, like the other five arms. Calling `./gradlew` here
+    # directly is what let the local mirror go missing for this arm alone and
+    # nobody notice: two spellings of the same lane cannot be checked against
+    # each other, and `delegation` in tools/git-hooks/gate_registry.py now
+    # refuses the pair drifting apart.
     - name: Run Kotlin Conformance Harness
-      run: ./gradlew :sce-forge-runtime-kotlin:jvmTest 2>&1 | tee kotlin_conformance.log
+      run: scripts/gate forge-kotlin 2>&1 | tee kotlin_conformance.log
 
     - name: Summarize
       if: always()

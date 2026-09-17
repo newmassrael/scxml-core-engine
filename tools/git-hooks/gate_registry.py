@@ -313,6 +313,13 @@ COST_MEASURED: dict[str, str] = {
     # borrowing forge-cpp's 59s would have overstated it more than threefold
     # and eaten push budget that is not being spent.
     "forge-c": "2026-09-17",
+    # 52s, timed on the lane's first existence rather than inherited from a
+    # sibling. Two readings were taken, 52 and 1, and the 1 is DISCARDED for
+    # the reason `forge-go` above discards a lock-bound run: Gradle found every
+    # task up to date and did no work, so that reading measures the cache and
+    # not the gate. 52 is what it costs when it has something to do, which is
+    # the only time the change set selects it.
+    "forge-kotlin": "2026-09-18",
 }
 
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
@@ -803,6 +810,30 @@ GATES: dict[str, dict] = {
         "deps": ["codegen-build"],
         "cost_s": 17,
         "summary": "C11 forge conformance build + test",
+    },
+    # ⚠ The SIXTH arm, and it was the one the set was missing. Measured
+    # 2026-09-18: `forge-conformance.yml` has six jobs — rust, python, go,
+    # kotlin, cpp, c — and `scripts/gates/` mirrored five. Nothing local ran the
+    # Kotlin forge harness; `w3c-kotlin` runs a different Gradle project. So a
+    # break confined to the Kotlin forge lowering passed every local lane and
+    # went red only after the push, which is the half of `forge-c`'s story with
+    # the sides swapped: there the code existed and nothing ran it, here CI ran
+    # it and the mirror did not. Five siblings made the set look complete.
+    #
+    # ⚠⚠ `ci_only` on purpose. 52s is over what the push budget will spend on a
+    # sixth forge arm, and its five siblings already settled that argument —
+    # forge-conformance.yml runs all six in parallel jobs, so paying serially at
+    # push time buys attribution and nothing else.
+    "forge-kotlin": {
+        "workflows": ["forge-conformance.yml"],
+        "runner_workflow": True,
+        "extra": ["backends/kotlin/**"],
+        "deps": ["codegen-build"],
+        "ci_only": "52s, the Gradle jvmTest arm. Its five siblings are in CI "
+                   "for the same reason and they share one workflow, "
+                   "forge-conformance.yml.",
+        "cost_s": 52,
+        "summary": "Kotlin forge conformance (Gradle jvmTest)",
     },
     # Catches codegen breakage in the example documents (the namespace
     # migration that broke them shipped green otherwise) and lints every
