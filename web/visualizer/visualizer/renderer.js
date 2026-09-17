@@ -10,6 +10,38 @@ class Renderer {
         this.visualizer = visualizer;
     }
 
+    /**
+     * Put a transition label where it belongs, at the size reserved for it.
+     *
+     * ⭐ The ONE place a label's `x`, `y`, `width` and `height` are decided,
+     * because there are two callers and they disagreed.
+     *
+     * ⚠ Creation centred the box — `x = centre - width/2` — while the drag
+     * update assigned the centre straight to `x`. A `foreignObject`'s `x` is
+     * its LEFT edge, so every label a drag touched jumped left by half its
+     * width and up by half its height, and stayed there. A reader dragging a
+     * state saw its labels leave the lines they belong to.
+     *
+     * ⚠⚠ The box comes from `labelBoxForLink`, never from measuring what was
+     * rendered: the reserved rectangle is the one the layout kept clear, and
+     * a second opinion about its size is how the two came apart before.
+     */
+    static placeLabel(selection, link, visualizer) {
+        const box = visualizer.layoutManager.labelBoxForLink(link);
+        if (!box) {
+            return;
+        }
+        const pos = visualizer.getTransitionLabelPosition(link);
+        if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) {
+            return;
+        }
+        selection
+            .attr('width', box.width)
+            .attr('height', box.height)
+            .attr('x', pos.x - box.width / 2)
+            .attr('y', pos.y - box.height / 2);
+    }
+
     render() {
         logger.debug('[RENDER START] ========== Beginning render() ==========');
         // Store reference to visualizer instance for use in drag handlers
@@ -1251,13 +1283,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 // The header of `label-metrics.js` says producer and consumer
                 // cannot disagree, because there is one number and both read it.
                 // This line is what made that false.
-                const box = self.layoutManager.labelBoxForLink(d);
-                const pos = self.getTransitionLabelPosition(d);
-                d3.select(this)
-                    .attr('width', box.width)
-                    .attr('height', box.height)
-                    .attr('x', pos.x - box.width / 2)   // Center horizontally
-                    .attr('y', pos.y - box.height / 2);  // Center vertically
+                Renderer.placeLabel(d3.select(this), d, self);
             });
 
         // Collapsed compound states (rendered AFTER links/labels for proper z-order)

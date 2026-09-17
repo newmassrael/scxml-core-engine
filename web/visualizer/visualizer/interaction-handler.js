@@ -102,9 +102,14 @@ class InteractionHandler {
             this.visualizer.transitionLabels = this.visualizer.transitionLabels
                 .data(visibleLinks, d => d.id);
             
-            this.visualizer.transitionLabels
-                .attr('x', d => this.visualizer.getTransitionLabelPosition(d).x)
-                .attr('y', d => this.visualizer.getTransitionLabelPosition(d).y);
+            // ⚠ Through the same function that placed them, or the label
+            // moves by half its own box. `x` on a `foreignObject` is its LEFT
+            // edge; this used to assign the CENTRE to it, so a drag threw
+            // every label it touched off the line it names and left it there.
+            const visualizer = this.visualizer;
+            this.visualizer.transitionLabels.each(function (d) {
+                Renderer.placeLabel(d3.select(this), d, visualizer);
+            });
         }
 
         // Update node visuals with latest positions from this.visualizer.nodes
