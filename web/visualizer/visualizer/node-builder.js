@@ -165,6 +165,21 @@ class NodeBuilder {
         // 3. Overflow detection triggers resize if needed (line 1869)
         // 4. requestIdleCallback ensures non-blocking re-render (line 972)
         // Trade-off: One-time re-render for 100% accurate sizing
+        // A width the renderer has MEASURED beats any estimate, and it is
+        // returned here so the next layout is computed against it.
+        //
+        // ⚠ Without this, the trade-off described above does not hold. The
+        // renderer measures the real text and widens the box, but widening
+        // happens AFTER ELK has placed every node against the estimate — so
+        // the accurate size arrives into a layout that assumed a different
+        // one, and boxes grow into the gaps ELK left between them. Measured
+        // on `ancestor_entry_is_not_default_entry`, ELK left 80px between
+        // `by_default` and `chosen` and 70px between `watch` and `drive`;
+        // both pairs are drawn overlapping.
+        if (Number.isFinite(node.measuredWidth) && node.measuredWidth > 0) {
+            return Math.min(node.measuredWidth, LAYOUT_CONSTANTS.STATE_MAX_WIDTH);
+        }
+
         let maxWidth = LAYOUT_CONSTANTS.STATE_MIN_WIDTH;
 
         // State ID length consideration

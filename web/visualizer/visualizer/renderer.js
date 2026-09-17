@@ -968,6 +968,14 @@ class Renderer {
                     node.x -= newBoxCenter;
                     node.width = newWidth;
 
+                    // Remember it as a MEASUREMENT, so the layout below is
+                    // computed against the real width instead of the
+                    // estimate that produced this overflow in the first
+                    // place. Without this the next layout would place the
+                    // node at its estimated size again and the same
+                    // overflow would be rediscovered forever.
+                    node.measuredWidth = newWidth;
+
                     // Clean up temporary data
                     delete node._requiredWidth;
                     delete node._boxCenterOffset;
@@ -994,13 +1002,35 @@ class Renderer {
                     });
                 }
 
-                // Trigger re-render to update all positions correctly
-                // This ensures text, snap points, and links are all recalculated
+                // Lay out again, then draw — not draw again.
+                //
+                // ⚠ This used to call `render()` alone, and the comment
+                // above `getNodeWidth` describes that as "one-time re-render
+                // for 100% accurate sizing". The sizing is accurate; the
+                // PLACEMENT is not, because nothing re-placed anything. ELK
+                // had already positioned every node against the estimated
+                // widths, so a box that grew here grew into whatever gap ELK
+                // had left beside it — which is how two states ELK put 80px
+                // apart end up drawn overlapping.
+                //
+                // `measuredWidth` is set above, so this layout is the first
+                // one computed against real text. A second pass finds
+                // nothing to resize (`_requiredWidth > n.width` is false
+                // once the width IS the measured one), so this terminates
+                // rather than oscillating.
                 if (this.visualizer.debugMode) {
-                    logger.debug(`[STATE RESIZE] Triggering re-render with updated widths`);
+                    logger.debug('[STATE RESIZE] Re-laying out with measured widths');
                 }
 
-                this.visualizer.render();
+                this.visualizer.computeLayout()
+                    .then(() => this.visualizer.render())
+                    .catch((error) => {
+                        // A failed re-layout must not leave the diagram
+                        // blank: the previous drawing is stale in its
+                        // spacing but readable, which is better than none.
+                        logger.error(`[STATE RESIZE] Re-layout failed, keeping the current drawing: ${error}`);
+                        this.visualizer.render();
+                    });
 
                 // W3C SCXML: Re-optimize snap points after resize
                 // Significant size changes may require different routing
