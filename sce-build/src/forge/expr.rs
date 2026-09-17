@@ -143,6 +143,10 @@ pub fn transpile_typed(
     // leaving each TypedExpr's `ty` slot intact (which is exactly what the
     // `Raw` arm of `infer_types` already documents).
     infer_types(&mut ast, ctx);
+    // ⚠ Before rename, for the same reason inference runs before it: the
+    // callee is still in its user-visible form here, which is what `ctx` is
+    // keyed by and what the diagnostic must name back to the author.
+    reject_unknown_callees(&ast, ctx)?;
     if !renames.is_empty() {
         rename_identifiers(&mut ast, renames);
     }
@@ -264,6 +268,12 @@ pub(crate) fn transpile_typed_with_import_lowering(
         lower_stateful_import_calls(&mut ast, lowerings);
     }
     infer_types(&mut ast, ctx);
+    // ⚠ The C11 path lowers stateful import calls into `Raw` fragments ABOVE,
+    // so by here a lowered `smoother.update(x)` is no longer a `Member`
+    // callee. `reject_unknown_callees` reads `Raw` in callee position by the
+    // same rule as `Ident`, which is why the lowering's own product does not
+    // trip it — the lowered form is a bare name the context registered.
+    reject_unknown_callees(&ast, ctx)?;
     if !renames.is_empty() {
         rename_identifiers(&mut ast, renames);
     }
@@ -2243,6 +2253,101 @@ fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
     args.len() == 1
         && matches!(args[0].ty, InferredType::Bytes | InferredType::Str)
         && matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len")
+}
+
+/// Names a forge expression may call without the context registering them.
+///
+/// `len` is the length builtin (`is_len_builtin` types it) and `eq` the
+/// bytes-comparison builtin; both lower to each backend's native idiom. Every
+/// other callable reaches a forge expression by being REGISTERED — a stateless
+/// cross-file import, an `<sce:helper>` declaration, or a stateful import's
+/// method — so `ctx.funcs` is the rest of the vocabulary.
+const EXPR_BUILTINS: [&str; 2] = ["len", "eq"];
+
+/// Refuse a call to a name nothing provides.
+///
+/// ⚠ WHY THIS EXISTS. `infer_types` types an unresolved callee `Unknown` and
+/// the emitters then print it VERBATIM, so until this check every one of
+/// these was accepted with exit 0:
+///
+///     expr="round(v * 100.0) / 100.0"      ->  return round(v * 100.0) / 100.0;
+///     expr="totallyMadeUpFn(v)"            ->  return totallyMadeUpFn(v);
+///
+/// The first does not compile — `round` lives in `<cmath>` and the emitted
+/// header includes `<cstdint>` and `<string>` — and the second does not
+/// compile either, which is the only reason the hole was survivable. A typo
+/// in a helper's name took the same path. Measured 2026-09-17 while looking
+/// for a form for the specification's `Rounds off`, which is used 149 times
+/// and has none.
+///
+/// ⚠⚠ The check runs AFTER `infer_types` on purpose: inference is what binds
+/// each `Call` to a signature, so asking before it would refuse everything,
+/// and asking here means `ctx` already carries every import, helper and
+/// stateful method the document declared.
+/// ⚠⚠⚠ Gated on `ctx.reject_unknown_callees`, and the gate is not a
+/// convenience. A STATECHART guard may call what the host provides and is
+/// emitted verbatim by design; a FORGE KIND has no host to call. Only the
+/// per-kind builders in [`crate::forge::type_ctx`] turn this on — the first
+/// version of this check had no gate and refused three legitimate emitter
+/// behaviours that the suite asserts.
+fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprError> {
+    if !ctx.reject_unknown_callees {
+        return Ok(());
+    }
+    if let ExprKind::Call { callee, args } = &expr.kind {
+        let name = match &callee.kind {
+            ExprKind::Ident(n) | ExprKind::Raw(n) => Some(n.clone()),
+            // A stateful import's method is registered as `"{obj}.{method}"`;
+            // anything else in callee position (an index, a nested call) is
+            // not a name this check can speak about, so it is left alone.
+            ExprKind::Member { object, property } => match &object.kind {
+                ExprKind::Ident(obj) | ExprKind::Raw(obj) => Some(format!("{obj}.{property}")),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(name) = name {
+            let known = ctx.lookup_func(&name).is_some()
+                || EXPR_BUILTINS.contains(&name.as_str())
+                || is_len_builtin(callee, args);
+            if !known {
+                let mut available: Vec<String> =
+                    ctx.funcs.keys().map(|k| (*k).to_string()).collect();
+                available.extend(EXPR_BUILTINS.iter().map(|b| (*b).to_string()));
+                available.sort();
+                return Err(ExprError::UnsupportedBuiltin { name, available });
+            }
+        }
+    }
+    for child in expr_children(expr) {
+        reject_unknown_callees(child, ctx)?;
+    }
+    Ok(())
+}
+
+/// Every sub-expression of `expr`, in source order.
+fn expr_children(expr: &TypedExpr) -> Vec<&TypedExpr> {
+    match &expr.kind {
+        ExprKind::Binary { left, right, .. } => vec![left, right],
+        ExprKind::Unary { operand, .. } => vec![operand],
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => vec![condition, consequent, alternate],
+        ExprKind::Call { callee, args } => {
+            let mut v = vec![&**callee];
+            v.extend(args.iter());
+            v
+        }
+        ExprKind::Index { object, index } => vec![object, index],
+        ExprKind::Member { object, .. } => vec![&**object],
+        ExprKind::BytesView { source, len } => match len {
+            Some(l) => vec![source, l],
+            None => vec![&**source],
+        },
+        _ => Vec::new(),
+    }
 }
 
 fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {

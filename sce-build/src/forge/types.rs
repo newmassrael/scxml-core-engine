@@ -569,6 +569,23 @@ pub struct TypeCtx<'a> {
     /// [`ExprKind::BytesView`]: crate::forge::expr::ExprKind::BytesView
     /// [`infer_types`]: crate::forge::expr::infer_types
     pub project_str_args_as_bytes_view: bool,
+    /// Whether a call to a name this context does not carry is an ERROR.
+    ///
+    /// ⚠ OFF by default, and the default is the interesting half. A statechart
+    /// guard may legitimately call something the host provides —
+    /// `computeKey(seed, 0x01)`, `securityResponse.decode(_event.data)` — and
+    /// those expressions are emitted verbatim on purpose, so a check that
+    /// refused an unregistered callee everywhere would reject them. Three
+    /// tests assert exactly that passthrough and they are right to.
+    ///
+    /// A FORGE KIND is the opposite case: its expression may reach only its
+    /// own inputs, the builtins, and what its imports and `<sce:helper>`
+    /// declarations registered — there is no host to supply a `round`. So the
+    /// per-kind builders in [`crate::forge::type_ctx`] turn this on and
+    /// nothing else does. Measured 2026-09-17: without it, both
+    /// `expr="round(v)"` and `expr="totallyMadeUpFn(v)"` generated with exit 0
+    /// and emitted C++ that did not compile.
+    pub reject_unknown_callees: bool,
     /// RFC c7-wildcard W-project (§8 Smell A fix): qualified member path
     /// (`"entry.pattern"`) → its **length sibling member name**
     /// (`"pattern_len"`). Populated by the algorithm renderer from the
@@ -587,6 +604,7 @@ impl<'a> TypeCtx<'a> {
             funcs: HashMap::new(),
             array_elems: HashMap::new(),
             project_str_args_as_bytes_view: false,
+            reject_unknown_callees: false,
             member_len_fields: HashMap::new(),
         }
     }

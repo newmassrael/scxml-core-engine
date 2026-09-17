@@ -145,6 +145,13 @@ pub fn transform<'a>(m: &'a TransformModel, imports: &'a [ImportContext]) -> Typ
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
+    // ⚠ A forge kind has no host to call. Everything callable from here was
+    // registered three lines up, so a name that is not is a mistake — and
+    // before this flag existed it was an ACCEPTED mistake: `expr="round(v)"`
+    // generated with exit 0 and emitted C++ that did not compile, as did
+    // `expr="totallyMadeUpFn(v)"`. See `TypeCtx::reject_unknown_callees` for
+    // why the statechart path must keep the opposite default.
+    ctx.reject_unknown_callees = true;
     ctx
 }
 
@@ -156,6 +163,7 @@ pub fn condition<'a>(m: &'a ConditionModel, imports: &'a [ImportContext]) -> Typ
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
+    ctx.reject_unknown_callees = true;
     ctx
 }
 
@@ -167,6 +175,7 @@ pub fn validator<'a>(m: &'a ValidatorModel, imports: &'a [ImportContext]) -> Typ
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
+    ctx.reject_unknown_callees = true;
     ctx
 }
 
@@ -179,6 +188,7 @@ pub fn lookup<'a>(m: &'a LookupModel, imports: &'a [ImportContext]) -> TypeCtx<'
     );
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
+    ctx.reject_unknown_callees = true;
     ctx
 }
 
@@ -192,6 +202,7 @@ pub fn filter<'a>(m: &'a FilterModel, imports: &'a [ImportContext]) -> TypeCtx<'
     );
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
+    ctx.reject_unknown_callees = true;
     ctx
 }
 
