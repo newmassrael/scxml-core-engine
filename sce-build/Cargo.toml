@@ -715,5 +715,29 @@ name = "sourcemap_symbol_markers"
 path = "tests/sourcemap_symbol_markers.rs"
 required-features = ["cli"]
 
+# The four forge diagnostic tests spawn `sce-codegen` the same way, so they
+# need the same declaration. Auto-discovery builds them with the binary
+# absent, which dies on `NotFound` or, worse, passes against a stale binary
+# left by an earlier build.
+[[test]]
+name = "forge_codec_bytes_bitsize"
+path = "tests/forge_codec_bytes_bitsize.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "forge_condition_single_output"
+path = "tests/forge_condition_single_output.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "forge_lookup_default_variant"
+path = "tests/forge_lookup_default_variant.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "forge_unknown_callee"
+path = "tests/forge_unknown_callee.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
