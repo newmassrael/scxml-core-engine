@@ -41,10 +41,13 @@
     </style>
 
     <!-- D3.js for SVG rendering (local) -->
-    <script src="d3.v7.min.js"></script>
+    <script src="vendor/d3/d3.v7.min.js"></script>
 
     <!-- ELK.js for hierarchical layout (CDN) -->
-    <script src="https://unpkg.com/elkjs@0.9.3/lib/elk.bundled.js"></script>
+    <!-- Eclipse Layout Kernel, vendored. Every diagram's geometry comes from
+         it, so a third-party CDN being unreachable used to take the whole
+         visualizer down. EPL-2.0: see vendor/elkjs/LICENSE and README.md. -->
+    <script src="vendor/elkjs/elk.bundled.js"></script>
 </head>
 <body>
     <!-- Native Context Methods Dialog -->

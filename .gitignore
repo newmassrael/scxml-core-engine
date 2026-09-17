@@ -108,6 +108,18 @@ w3c_test_results.html
 external/
 vendor/
 
+# ...except the visualizer's, which is not a build product. Those files ARE
+# the shipped artefact: `deploy-visualizer.yml` copies the tree as checked
+# out, so an ignored directory would leave the deployed page asking for a
+# layout engine that was never uploaded.
+#
+# ⚠ This negation is also what makes `scripts/gates/web-vendor-licenses.sh`
+# able to see anything. The gate reads the directory to decide which
+# libraries must be registered; ignored files are invisible to `git
+# ls-files`, so the licence check would pass by finding nothing.
+!web/visualizer/vendor/
+!web/visualizer/vendor/**
+
 # Coverage reports
 coverage/
 *.gcov

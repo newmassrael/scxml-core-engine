@@ -248,6 +248,11 @@ COST_MEASURED: dict[str, str] = {
     "forge-go": "2026-09-02",
     "http-endpoint-ssot": "2026-09-02",
     "license-ssot": "2026-09-02",
+    # 0.01s, three direct runs reading 0.01 0.01 0.01. It stats two
+    # directories and greps one document; there is nothing in it that grows
+    # with the tree except the number of vendored libraries, of which there
+    # are two.
+    "web-vendor-licenses": "2026-09-17",
     # Re-timed 2026-09-15, when row S3 began asking the AOT registrar by
     # compiling a probe against it: `scripts/gate --measure nl-ir-closure`
     # read 1.198s, and five direct runs of the script read 1188 1223 1244
@@ -843,6 +848,33 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "cost_s": 0,
         "summary": "license SSOT vs the tree it describes",
+    },
+    # The same compliance verdict for the browser visualizer, which
+    # `license-ssot` cannot reach: it reads `third_party/`, and the
+    # visualizer's libraries live under `web/visualizer/vendor/`.
+    #
+    # That gap was not hypothetical. d3 (ISC) shipped vendored and
+    # unregistered for as long as the visualizer existed, and elkjs
+    # (EPL-2.0 — a licence that obliges a COMMERCIAL distributor to defend
+    # and indemnify every other contributor) was pulled from unpkg at
+    # runtime by one `<script src>` line. Throughout, LICENSE-THIRD-PARTY.md
+    # opened with "All dependencies are MIT licensed" and nothing in the
+    # tree could contradict it.
+    "web-vendor-licenses": {
+        "workflows": ["license-verify.yml"],
+        "runner_workflow": True,
+        # The files the gate OPENS, not only the ones it is about. It reads
+        # each vendored library's `LICENSE` and `README.md` and the registry
+        # itself, so a commit that touches only one of those — deleting a
+        # licence text, say, which is the violation — has to select this
+        # lane. `script-read-coverage` refuses the entry without them.
+        "extra": [
+            "web/visualizer/vendor/**",
+            "web/visualizer/*.html",
+            "LICENSE-THIRD-PARTY.md",
+        ],
+        "cost_s": 0,
+        "summary": "visualizer vendor libraries vs LICENSE-THIRD-PARTY.md",
     },
     # Where the W3C BasicHTTP fixture listener answers had come to be spelled in
     # five places at once — twelve C11 runners, two gate helpers, a CI job, the

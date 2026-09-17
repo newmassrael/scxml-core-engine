@@ -23,6 +23,14 @@ on:
       - 'scripts/verify_licenses.sh'
       - 'third_party/**'
       - '.github/workflows/license-verify.yml'
+      # The visualizer's own third-party libraries. They are NOT under
+      # third_party/ and never were, which is how d3 (ISC) and elkjs
+      # (EPL-2.0) came to ship while LICENSE-THIRD-PARTY.md said every
+      # dependency was MIT.
+      - 'web/visualizer/vendor/**'
+      - 'web/visualizer/*.html'
+      - 'LICENSE-THIRD-PARTY.md'
+      - 'scripts/gates/web-vendor-licenses.sh'
   pull_request:
     branches: [ main ]
     paths:
@@ -30,6 +38,10 @@ on:
       - 'scripts/verify_licenses.sh'
       - 'third_party/**'
       - '.github/workflows/license-verify.yml'
+      - 'web/visualizer/vendor/**'
+      - 'web/visualizer/*.html'
+      - 'LICENSE-THIRD-PARTY.md'
+      - 'scripts/gates/web-vendor-licenses.sh'
   workflow_dispatch:
 
 concurrency:
@@ -52,3 +64,17 @@ jobs:
       # dep-uncovered. See scripts/verify_licenses.sh header for
       # the contract each invariant pins.
       run: scripts/gate license-ssot
+
+    - name: Verify web vendor licenses
+      # The same verdict for the browser visualizer, which the gate above
+      # does not reach: it reads third_party/, and the visualizer's
+      # libraries are under web/visualizer/vendor/. Also refuses a
+      # <script src="https://..."> in the page, which ships a third
+      # party's code to every viewer while leaving the vendor directory
+      # empty — how elkjs (EPL-2.0) shipped unregistered.
+      #
+      # Runs even when the step above fails, because the two judge
+      # different trees and a reader owed both answers should not have to
+      # push twice to get them.
+      if: '!cancelled()'
+      run: scripts/gate web-vendor-licenses

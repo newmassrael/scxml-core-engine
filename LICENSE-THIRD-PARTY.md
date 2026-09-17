@@ -4,11 +4,23 @@ This document lists all third-party libraries used by SCE (SCXML Core Engine) an
 
 ## Summary
 
-**All dependencies are MIT licensed** - fully compatible with both open source and commercial use, with no LGPL or GPL dependencies.
+The engine's own dependencies are MIT licensed. The **browser visualizer**
+ships two further libraries that are not, and they are listed here with the
+rest: d3 (ISC, permissive) and elkjs (**EPL-2.0**, a weak copyleft).
+
+⚠ This summary used to read "All dependencies are MIT licensed", and that
+was not true when it was written: d3 has been vendored under ISC since the
+visualizer existed. The claim held only because this document counted the
+C++ engine's dependencies and nothing counted the web assets — see
+[Scope](#scope) below.
+
+⚠⚠ **EPL-2.0 section 4 obliges a commercial distributor**, and SCE is
+offered commercially. See the elkjs entry.
 
 ## Dependencies
 
-All libraries listed below are MIT licensed and compatible with open source and commercial use:
+Entries 1-6 are the engine's, all MIT. Entries 7-8 are the visualizer's, and
+are not MIT.
 
 ### 1. QuickJS
 
@@ -116,6 +128,81 @@ Permission is hereby granted, free of charge, to any person obtaining a copy...
 
 ---
 
+### 7. d3
+
+- **Purpose:** SVG rendering and interaction for the browser visualizer
+- **License:** ISC License (permissive, MIT-equivalent in effect)
+- **Copyright:** 2010-2023 Mike Bostock
+- **Website:** https://d3js.org/
+- **Used in:** `web/visualizer/vendor/d3/d3.v7.min.js` — the visualizer only;
+  the engine and its language runtimes do not link it
+- **Version:** 7.9.0
+- **Full text and provenance:** `web/visualizer/vendor/d3/LICENSE` and
+  `web/visualizer/vendor/d3/README.md` (version, SHA-256, upstream source)
+
+---
+
+### 8. elkjs (Eclipse Layout Kernel)
+
+- **Purpose:** Every diagram's geometry in the browser visualizer — node
+  placement, container bounds, edge routing, transition-label placement
+- **License:** **EPL-2.0** (Eclipse Public License 2.0) — **not MIT**
+- **Copyright:** 2017, 2021 Kiel University and others; the bundle also
+  carries `Copyright 2020 Google LLC` from a bundled dependency
+- **Website:** https://github.com/kieler/elkjs
+- **Used in:** `web/visualizer/vendor/elkjs/elk.bundled.js` — the visualizer
+  only; the engine and its language runtimes do not link it
+- **Version:** 0.9.3
+- **Full text and provenance:** `web/visualizer/vendor/elkjs/LICENSE` and
+  `web/visualizer/vendor/elkjs/README.md` (version, SHA-256, upstream source)
+
+**What EPL-2.0 requires of SCE.** EPL-2.0 is a *file-level* weak copyleft:
+it attaches to `elk.bundled.js` and does not reach SCE's own code, unlike
+the GPL. Redistributing it obliges two things:
+
+- **Section 3** — the file is object code (ELK's Java, compiled by GWT and
+  minified), so Source Code must be available. It is, upstream, at the link
+  above; the vendored copy is byte-for-byte unmodified, with its SHA-256
+  recorded, so upstream *is* its source. Notices "may not be removed or
+  altered" and none have been.
+- **Section 4 (Commercial Distribution)** — a contributor who "includes the
+  Program in a commercial product offering" agrees to "defend and indemnify
+  every other Contributor", and under EPL-2.0 a distributor is a
+  contributor. Claims "relating to any actual or alleged intellectual
+  property infringement" are excluded, which bounds it.
+
+⚠ **Section 4 is an open item, not a settled one.** It attaches when SCE is
+sold with the visualizer in it, not when the file is committed. Whoever owns
+the commercial licence should read section 4 before that happens. This
+document records the obligation; it does not discharge it.
+
+⚠ Vendoring did not create this. The visualizer previously loaded the same
+file from `unpkg.com` at runtime, so it already executed in every viewer's
+browser — and a commercial deployment cannot depend on a public CDN, so the
+copy reaches a customer either way. What vendoring changed is that it now
+travels with its licence and its notices.
+
+**Version note:** elkjs 0.9.3 through 0.11.0 declare `EPL-2.0`; 0.12.0
+declares `EPL-2.0 OR GPL-3.0-or-later`. SCE takes EPL-2.0. An upgrade past
+0.11.0 must restate that choice here.
+
+---
+
+## Scope
+
+⚠ **What checks this document, and what does not.**
+`scripts/gates/license-ssot.sh` (mirrored by `license-verify.yml`) guards
+`sce/sce_licenses.cmake` against the `third_party/` tree — the C++
+distribution. **It does not look at `web/`.** That is why d3 sat vendored
+and unlisted, and why this document could say "all dependencies are MIT"
+without anything contradicting it.
+
+`scripts/gates/web-vendor-licenses.sh` now covers that gap: every directory
+under `web/visualizer/vendor/` must have an entry here and a `LICENSE` file
+beside it.
+
+---
+
 ## Dependency Resolution by Platform
 
 ### All Platforms (Linux, macOS, Windows, WebAssembly)
@@ -133,6 +220,16 @@ Permission is hereby granted, free of charge, to any person obtaining a copy...
 | Dependency | License | Usage |
 |-----------|---------|-------|
 | cpp-httplib | MIT | HTTP I/O Processor |
+
+### Browser Visualizer Only
+
+Neither library is linked by the engine or by any generated code. They ship
+with `web/visualizer/` and run in the viewer's browser.
+
+| Dependency | License | Usage |
+|-----------|---------|-------|
+| d3 | ISC | SVG rendering and interaction |
+| elkjs | **EPL-2.0** | Diagram layout (see entry 8 — section 4 applies commercially) |
 
 **WebAssembly note:** cpp-httplib is excluded from WebAssembly builds (HTTP support uses browser Fetch API instead).
 
@@ -157,7 +254,10 @@ grep "CPPHTTPLIB_VERSION" /usr/include/httplib.h
 
 ## License Compatibility Matrix
 
-### SCE Dual License (LGPL-2.1/Commercial) + MIT Dependencies
+### The engine: SCE Dual License (LGPL-2.1/Commercial) + MIT Dependencies
+
+⚠ This matrix covers the six ENGINE dependencies only. It says nothing about
+the visualizer's two, which is the next table.
 
 | Your License | QuickJS | Lua 5.4 | spdlog | cpp-httplib | pugixml | nlohmann/json |
 |-------------|---------|---------|--------|-------------|---------|---------------|
@@ -170,7 +270,31 @@ grep "CPPHTTPLIB_VERSION" /usr/include/httplib.h
 **Legend:**
 - ✅ Fully compatible (all dependencies are MIT)
 
-**Key Benefit:** All third-party dependencies are MIT licensed, providing maximum flexibility for both open source and commercial use. No LGPL or GPL dependencies means no dynamic linking requirements or source disclosure obligations for dependencies.
+**Key Benefit:** Every ENGINE dependency is MIT licensed, providing maximum
+flexibility for both open source and commercial use. No LGPL or GPL
+dependencies means no dynamic linking requirements or source disclosure
+obligations for the engine's dependencies.
+
+### The visualizer: d3 (ISC) + elkjs (EPL-2.0)
+
+Shipped as `web/visualizer/`, executed in a browser. Nothing in the engine
+or in generated code links either one, so a product that embeds SCE without
+the visualizer takes on neither row.
+
+| Your License | d3 (ISC) | elkjs (EPL-2.0) |
+|-------------|----------|-----------------|
+| **MIT (Open Source)** | ✅ | ✅ keep notices, name the source |
+| **Apache 2.0** | ✅ | ✅ keep notices, name the source |
+| **GPL v2/v3** | ✅ | ⚠ EPL-2.0 and GPLv2 are not generally compatible; elkjs 0.12.0+ offers a GPL-3.0-or-later alternative for exactly this |
+| **BSD** | ✅ | ✅ keep notices, name the source |
+| **Commercial (Proprietary)** | ✅ | ⚠ **section 4 applies** — defend and indemnify other contributors, IP-infringement claims excluded |
+
+**Legend:**
+- ✅ Compatible
+- ⚠ Compatible with an obligation that has to be met, named in the cell
+
+⚠ EPL-2.0 does not make SCE's own code EPL. It is a file-level weak
+copyleft: it attaches to `elk.bundled.js` and stops there.
 
 ---
 
