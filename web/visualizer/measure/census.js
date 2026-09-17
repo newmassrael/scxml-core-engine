@@ -20,73 +20,13 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const REPO = path.resolve(__dirname, '../../..');
 
-const fakeElement = {
-    clientWidth: 1600,
-    clientHeight: 1000,
-    getBoundingClientRect: () => ({ x: 0, y: 0, width: 1600, height: 1000, top: 0, left: 0 }),
-    getBBox: () => ({ x: 0, y: 0, width: 0, height: 0 }),
-    appendChild() {}, removeChild() {}, setAttribute() {}, querySelector: () => null,
-    querySelectorAll: () => [], addEventListener() {}, style: {},
-    classList: { add() {}, remove() {}, contains: () => false },
-};
-const d3Chain = new Proxy(function () {}, {
-    get: (_t, prop) => (prop === 'node' ? () => fakeElement : d3Chain),
-    apply: () => d3Chain,
-});
+// ⚠ The harness is `harness.js` now, not a copy here. There were two
+// copies and they had already drifted: this one's `d3Chain` answered
+// `size()` with itself, which throws the moment the collapse path
+// interpolates it into a log message. A probe that cannot collapse and a
+// probe that can, from the same file, is what two copies buy.
+const { makeSandbox } = require('./harness');
 
-function makeSandbox(elkInstance) {
-    const sandbox = {
-        console: { log() {}, warn() {}, error() {}, debug() {}, info() {} },
-        logger: { debug() {}, info() {}, warn() {}, error() {} },
-        setTimeout: () => 0,
-        clearTimeout() {},
-        Worker: undefined,
-        d3: d3Chain,
-        window: { location: { search: '' }, addEventListener() {} },
-        document: {
-            addEventListener() {},
-            querySelector: () => fakeElement,
-            querySelectorAll: () => [],
-            getElementById: () => fakeElement,
-            createElement: () => fakeElement,
-            createElementNS: () => fakeElement,
-            body: fakeElement,
-        },
-        URLSearchParams: class { has() { return false; } get() { return null; } },
-        // The CSP solver times itself to decide when to stop. Without this
-        // it throws mid-optimisation, and the throw surfaces as "this
-        // document could not be measured" — which reads as a defect in the
-        // document rather than in the harness.
-        performance: { now: () => Date.now() },
-        // ⚠ The INSTANCE, built on the host. elkjs constructed inside the vm
-        // cannot reach node's module system, and does not fail when it
-        // cannot — `layout()` resolves with the graph unchanged.
-        // ⚠ Wrapped so the graph becomes a HOST object at the boundary.
-        // elkjs running on the host cannot lay out an object built inside
-        // this vm context — and it does not fail: `layout()` resolves with
-        // the input UNCHANGED, every `x` still undefined. Code inside the
-        // context calls `computeLayout()` itself, so the round trip belongs
-        // here rather than at each call site.
-        ELK: function ELKFromHost() {
-            return { layout: (g) => elkInstance.layout(JSON.parse(JSON.stringify(g))) };
-        },
-    };
-    sandbox.globalThis = sandbox;
-    vm.createContext(sandbox);
-    for (const file of [
-        'utils.js', 'edge-direction-utils.js', 'routing-state.js', 'label-metrics.js',
-        'visualizer/action-formatter.js', 'visualizer/invoke-formatter.js',
-        'visualizer/path-calculator.js', 'visualizer/node-builder.js',
-        'visualizer/link-builder.js', 'visualizer/layout-manager.js',
-        'optimizer/snap-calculator.js', 'optimizer/path-utils.js',
-        'optimizer/csp-solver.js', 'optimizer/optimizer-core.js',
-        'visualizer/focus-manager.js', 'visualizer/interaction-handler.js',
-        'visualizer/renderer.js', 'collision-detector.js', 'visualizer/visualizer-core.js',
-    ]) {
-        vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), sandbox, { filename: file });
-    }
-    return sandbox;
-}
 
 // ---------------------------------------------------------------- oracle
 

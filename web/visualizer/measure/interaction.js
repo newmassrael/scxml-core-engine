@@ -25,29 +25,12 @@ const DOC = process.argv[2]
 let failures = 0;
 const check = (ok, why) => { if (!ok) { console.error('FAIL: ' + why); failures++; } };
 
-const fakeElement = {
-    clientWidth: 1600, clientHeight: 1000,
-    getBoundingClientRect: () => ({ x: 0, y: 0, width: 1600, height: 1000, top: 0, left: 0 }),
-    getBBox: () => ({ x: 0, y: 0, width: 0, height: 0 }),
-    appendChild() {}, removeChild() {}, setAttribute() {}, querySelector: () => null,
-    querySelectorAll: () => [], addEventListener() {}, style: {},
-    classList: { add() {}, remove() {}, contains: () => false },
-};
-// ⚠ `size()` has to be a NUMBER and `node()` an element, because the code
-// interpolates them into log messages. A proxy that answers everything with
-// itself throws "Cannot convert object to primitive value" the moment one
-// reaches a template literal — and that happens on the collapse path, not
-// the layout path, which is why it only surfaced once a gesture was
-// exercised.
-const d3Chain = new Proxy(function () {}, {
-    get: (_t, p) => {
-        if (p === 'node') return () => fakeElement;
-        if (p === 'size') return () => 0;
-        if (p === Symbol.toPrimitive) return () => '[d3]';
-        return d3Chain;
-    },
-    apply: () => d3Chain,
-});
+// ⚠ The harness is `harness.js` now. This file used to carry its own copy
+// and the two drifted — the `d3Chain` here answered `size()` with a number
+// and the other answered with itself, which throws as soon as the collapse
+// path puts it in a log message. One copy could measure a collapse and the
+// other could not.
+const { makeSandbox } = require('./harness');
 
 (async () => {
     const createVisualizer = require(path.join(ROOT, 'visualizer.js'));
@@ -60,45 +43,7 @@ const d3Chain = new Proxy(function () {}, {
     runner.loadSCXML(fs.readFileSync(path.join(REPO, DOC), 'utf8'), false);
     const structure = runner.getSCXMLStructure();
 
-    const sandbox = {
-        console: { log() {}, warn() {}, error() {}, debug() {}, info() {} },
-        logger: { debug() {}, info() {}, warn() {}, error() {} },
-        setTimeout: () => 0, clearTimeout() {}, Worker: undefined, d3: d3Chain,
-        window: { location: { search: '' }, addEventListener() {} },
-        document: {
-            addEventListener() {}, querySelector: () => fakeElement, querySelectorAll: () => [],
-            getElementById: () => fakeElement, createElement: () => fakeElement,
-            createElementNS: () => fakeElement, body: fakeElement,
-        },
-        URLSearchParams: class { has() { return false; } get() { return null; } },
-        performance: { now: () => Date.now() },
-        requestAnimationFrame: () => 0,
-        requestIdleCallback: () => 0,
-        // ⚠ Wrapped, not handed over raw. Code inside the context calls
-        // `computeLayout()` itself — `toggleCompoundState` now does — and a
-        // graph built in this context is one elkjs on the host cannot lay
-        // out, returning it UNCHANGED with no error. Every internal layout
-        // would silently produce `undefined` coordinates. The round trip
-        // makes the graph a host object at the boundary, once, so no caller
-        // has to know.
-        ELK: function () {
-            return { layout: (g) => elk.layout(JSON.parse(JSON.stringify(g))) };
-        },
-    };
-    sandbox.globalThis = sandbox;
-    vm.createContext(sandbox);
-    for (const f of [
-        'utils.js', 'edge-direction-utils.js', 'routing-state.js', 'label-metrics.js',
-        'visualizer/action-formatter.js', 'visualizer/invoke-formatter.js',
-        'visualizer/path-calculator.js', 'visualizer/node-builder.js',
-        'visualizer/link-builder.js', 'visualizer/layout-manager.js',
-        'optimizer/snap-calculator.js', 'optimizer/path-utils.js', 'optimizer/csp-solver.js',
-        'optimizer/optimizer-core.js', 'visualizer/focus-manager.js',
-        'visualizer/interaction-handler.js', 'visualizer/renderer.js',
-        'collision-detector.js', 'visualizer/visualizer-core.js',
-    ]) {
-        vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
-    }
+    const sandbox = makeSandbox(elk);
 
     const SCXMLVisualizer = vm.runInContext('SCXMLVisualizer', sandbox);
     const v = new SCXMLVisualizer('probe', structure);
