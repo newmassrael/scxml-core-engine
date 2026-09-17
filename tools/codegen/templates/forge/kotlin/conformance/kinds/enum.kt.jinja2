@@ -1,0 +1,30 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Enum kind — see the C++ fragment for why the oracle compares VALUES and
+   keys on the source spelling. Kotlin renders a variant in SCREAMING_SNAKE
+   and carries the number in a `raw` property rather than as the constant
+   itself, so the comparison goes through `.raw`. #}
+        val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
+        val variants = spec["variants"]!!.jsonArray
+
+        // Count first: a vocabulary that gained or lost a variant without the
+        // manifest moving would otherwise satisfy every assertion below.
+        assertEquals(
+            {{ f.variants | length }},
+            variants.size,
+            "{{ f.name }}: oracle variant count",
+        )
+
+{% for v in f.variants %}
+        assertEquals(
+            "{{ v.name }}",
+            variants[{{ loop.index0 }}].jsonObject["name"]!!.jsonPrimitive.content,
+            "{{ f.name }} variant {{ loop.index0 }} name",
+        )
+        assertEquals(
+            variants[{{ loop.index0 }}].jsonObject["value"]!!.jsonPrimitive.long,
+            {{ f.name | to_pascal_case }}.{{ v.name | to_upper_snake_case }}.raw.toLong(),
+            "{{ f.name }}.{{ v.name }}",
+        )
+{% endfor %}

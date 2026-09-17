@@ -1,0 +1,29 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Enum kind — see the C++ fragment for why the oracle compares VALUES and
+   keys on the source spelling. Go has no scoped enum, so each constant is
+   prefixed with the type name; that prefix is this arm's convention and is
+   applied here rather than stored in the manifest. #}
+	{
+		spec := ref.enumEntry(t, "{{ f.ref_section }}", "{{ f.name }}")
+
+		// Count first: a vocabulary that gained or lost a variant without
+		// the manifest moving would otherwise satisfy every assertion below.
+		if len(spec.Variants) != {{ f.variants | length }} {
+			t.Fatalf("{{ f.name }}: oracle has %d variants, manifest has {{ f.variants | length }}",
+				len(spec.Variants))
+		}
+
+{% for v in f.variants %}
+		if spec.Variants[{{ loop.index0 }}].Name != "{{ v.name }}" {
+			t.Errorf("{{ f.name }} variant {{ loop.index0 }}: oracle names %q, manifest %q",
+				spec.Variants[{{ loop.index0 }}].Name, "{{ v.name }}")
+		}
+		if int64({{ f.name }}.{{ f.name | to_pascal_case }}{{ v.name | to_pascal_case }}) != spec.Variants[{{ loop.index0 }}].Value {
+			t.Errorf("{{ f.name }}.{{ v.name }} = %d, want %d",
+				int64({{ f.name }}.{{ f.name | to_pascal_case }}{{ v.name | to_pascal_case }}),
+				spec.Variants[{{ loop.index0 }}].Value)
+		}
+{% endfor %}
+	}

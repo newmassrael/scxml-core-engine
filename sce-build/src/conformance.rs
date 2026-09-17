@@ -159,6 +159,23 @@ pub struct StructField {
     pub compare: CompareMode,
 }
 
+/// One `<sce:variant name="..." value="..."/>` of an `sce:kind="enum"`.
+///
+/// `name` is the SOURCE spelling — the document's — and not any language's
+/// rendering of it. That is what makes one manifest serve six arms whose
+/// identifier conventions disagree, and it is the same choice the codec
+/// fixtures make for field names.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct EnumVariantFixture {
+    pub name: String,
+    /// The declared number. `i64` rather than the underlying carrier type
+    /// because the manifest describes vocabularies over several widths and
+    /// the fragments compare against the emitted constant, which the
+    /// language has already typed.
+    pub value: i64,
+}
+
 /// One fixture entry. `name` and `ref_section` are common to every kind;
 /// kind-specific data lives in the `spec` tagged enum below. The
 /// `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat
@@ -400,6 +417,22 @@ pub enum FixtureSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cancel_on_state_exit: Option<String>,
     },
+    /// A named value vocabulary (`sce:kind="enum"`).
+    ///
+    /// The one thing six languages must agree on is the NUMBER each variant
+    /// carries, because that number is on a wire. Everything else about the
+    /// emitted type differs by language and legitimately so: C++ and Rust
+    /// spell a variant `GeneralReject`, Python and Kotlin `GENERAL_REJECT`,
+    /// and Go prefixes the type name onto each constant.
+    ///
+    /// So `variants` holds the SOURCE spelling the document writes, and each
+    /// fragment applies its own case filter — the same contract the codec
+    /// fixtures use for field names, and for the same reason: a canonical
+    /// key that is not any one language's.
+    Enum {
+        /// Declared variants in document order, as `{name, value}`.
+        variants: Vec<EnumVariantFixture>,
+    },
     /// RFC §synth-5-A pure free function with bounded loops. Mirrors `Transform`'s
     /// `(args -> scalar output)` shape but admits `bytes` parameters because
     /// the algorithm body's `<sce:foreach>` over bytes is the canonical
@@ -452,6 +485,7 @@ impl FixtureSpec {
             FixtureSpec::Validator { .. } => "validator",
             FixtureSpec::Codec { .. } => "codec",
             FixtureSpec::Timer { .. } => "timer",
+            FixtureSpec::Enum { .. } => "enum",
             FixtureSpec::Algorithm { .. } => "algorithm",
         }
     }
@@ -929,6 +963,33 @@ impl Manifest {
                         ));
                     }
                 }
+                FixtureSpec::Enum { variants } => {
+                    // The rendered body is one assertion per variant, so an
+                    // empty list renders a test that compiles, runs, and
+                    // claims nothing — the vacuous shape this validator
+                    // exists to refuse.
+                    if variants.is_empty() {
+                        return Err(format!(
+                            "fixture {}: enum requires at least one `variants` \
+                             entry — the fragment asserts one value per \
+                             variant, and an empty vocabulary asserts nothing",
+                            f.name
+                        ));
+                    }
+                    // Two variants sharing a name cannot both be checked:
+                    // the second assertion would name the first's constant.
+                    let mut seen = std::collections::BTreeSet::new();
+                    for v in variants {
+                        if !seen.insert(v.name.as_str()) {
+                            return Err(format!(
+                                "fixture {}: enum variant `{}` is declared \
+                                 twice — the fragment emits one assertion per \
+                                 name, so a duplicate silently drops a check",
+                                f.name, v.name
+                            ));
+                        }
+                    }
+                }
                 FixtureSpec::Algorithm {
                     args,
                     function,
@@ -1160,6 +1221,14 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // emit through the same C11 codegen path. No catch-all arm, so
         // a future kind addition forces an explicit decision here.
         FixtureSpec::Timer { .. } => true,
+        // Enum vocabulary: `c/enum.h.jinja2` emits a plain C enum with the
+        // declared values, which is the whole surface the conformance
+        // fragments compare. ⚠ Admitted here for completeness, NOT because
+        // it is exercised: `forge-conformance.yml` has no C11 job and
+        // `scripts/gates/` has no `forge-c.sh`, so no C11 fixture of any
+        // kind is run today. That absence is a lane to build, and this arm
+        // must not be read as evidence against it.
+        FixtureSpec::Enum { .. } => true,
         // RFC §synth-7 A6: §synth-5-A algorithm kind. The C11 algorithm template
         // (`tools/codegen/templates/forge/c/algorithm.h.jinja2`) shipped
         // at A5; A6 promotes the byte-equivalence preview to a permanent

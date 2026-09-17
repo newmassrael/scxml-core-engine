@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture for `sce:kind="enum"`.
+
+  A UDS negative-response-code vocabulary: a real open-set status enum whose
+  values are fixed by a wire protocol, so a transcription error is a
+  behavioural defect rather than a cosmetic one.
+
+  What the six language arms must agree on is the VALUE each variant carries.
+  The spelling of the variant differs by language — `GeneralReject` in
+  C++/Rust/Go, `GENERAL_REJECT` in Python/Kotlin — so the oracle keys on the
+  SOURCE name the document writes and each fragment applies its own case
+  filter, exactly as the codec fixtures do with field names.
+
+  ⚠ The values are deliberately NOT consecutive and NOT starting at zero.
+  A conversion that dropped the declared values and let the language assign
+  ordinals would produce 0,1,2,3 and pass any check that only compared
+  variant COUNT or ordering; only comparing the numbers catches it.
+
+  `sce:strict-variants="false"` mirrors the protocol: an ECU may answer with
+  a code outside the declared set, so membership is not closed. The
+  underlying `uint8` still bounds the carrier.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="enum" name="enum_uds_nrc"
+       sce:underlying-type="uint8" sce:strict-variants="false">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="generalReject" value="16"/>
+      <sce:variant name="serviceNotSupported" value="17"/>
+      <sce:variant name="conditionsNotCorrect" value="34"/>
+      <sce:variant name="requestOutOfRange" value="49"/>
+      <sce:variant name="responsePending" value="120"/>
+    </data>
+  </datamodel>
+</scxml>

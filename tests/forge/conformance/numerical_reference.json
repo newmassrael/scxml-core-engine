@@ -3159,6 +3159,21 @@
       ]
     }
   },
+  "enums": {
+    "enum_uds_nrc": {
+      "fixture": "EnumUdsNrc",
+      "signature": "enum EnumUdsNrc : uint8",
+      "description": "A UDS negative-response-code vocabulary. What six languages must agree on is the NUMBER each variant carries, because that number is on a wire; the SPELLING legitimately differs (GeneralReject in C++/Rust/Go, GENERAL_REJECT in Python/Kotlin), so the key is the source name the document writes and each fragment applies its own case filter. Values are non-consecutive and do not start at zero on purpose: a conversion that dropped them and let the language assign ordinals would produce 0..4 and pass any check comparing only variant count or order.",
+      "underlying_type": "uint8",
+      "variants": [
+        { "name": "generalReject", "value": 16 },
+        { "name": "serviceNotSupported", "value": 17 },
+        { "name": "conditionsNotCorrect", "value": 34 },
+        { "name": "requestOutOfRange", "value": 49 },
+        { "name": "responsePending", "value": 120 }
+      ]
+    }
+  },
   "timers": {
     "timer_tester_present": {
       "fixture": "TimerTesterPresent",

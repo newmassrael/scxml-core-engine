@@ -89,6 +89,24 @@
         }
       }
     },
+    "EnumVariantFixture": {
+      "description": "One `<sce:variant name=\"...\" value=\"...\"/>` of an `sce:kind=\"enum\"`.\n\n`name` is the SOURCE spelling — the document's — and not any language's rendering of it. That is what makes one manifest serve six arms whose identifier conventions disagree, and it is the same choice the codec fixtures make for field names.",
+      "type": "object",
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "description": "The declared number. `i64` rather than the underlying carrier type because the manifest describes vocabularies over several widths and the fragments compare against the emitted constant, which the language has already typed.",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "Fixture": {
       "description": "One fixture entry. `name` and `ref_section` are common to every kind; kind-specific data lives in the `spec` tagged enum below. The `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat object (`{name, ref_section, kind, args, output, ...}`) so per-language Jinja2 templates can continue to read `f.args` / `f.output` / etc. without having to walk a nested `f.spec.*` path.",
       "type": "object",
@@ -424,6 +442,29 @@
                 "string",
                 "null"
               ]
+            }
+          }
+        },
+        {
+          "description": "A named value vocabulary (`sce:kind=\"enum\"`).\n\nThe one thing six languages must agree on is the NUMBER each variant carries, because that number is on a wire. Everything else about the emitted type differs by language and legitimately so: C++ and Rust spell a variant `GeneralReject`, Python and Kotlin `GENERAL_REJECT`, and Go prefixes the type name onto each constant.\n\nSo `variants` holds the SOURCE spelling the document writes, and each fragment applies its own case filter — the same contract the codec fixtures use for field names, and for the same reason: a canonical key that is not any one language's.",
+          "type": "object",
+          "required": [
+            "kind",
+            "variants"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "enum"
+              ]
+            },
+            "variants": {
+              "description": "Declared variants in document order, as `{name, value}`.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EnumVariantFixture"
+              }
             }
           }
         },

@@ -71,6 +71,7 @@ type reference struct {
 	Validators      map[string]validatorSpec   `json:"validators"`
 	Codecs          map[string]codecSpec       `json:"codecs"`
 	Timers          map[string]timerSpec            `json:"timers"`
+	Enums           map[string]enumSpec             `json:"enums"`
 	StringLookups   map[string]stringLookupSpec    `json:"string_lookups"`
 }
 
@@ -156,6 +157,16 @@ type timerSpec struct {
 type timerSeqStep struct {
 	Call   string   `json:"call"`
 	Expect []string `json:"expect"`
+}
+
+type enumSpec struct {
+	UnderlyingType string            `json:"underlying_type"`
+	Variants       []enumVariantSpec `json:"variants"`
+}
+
+type enumVariantSpec struct {
+	Name  string `json:"name"`
+	Value int64  `json:"value"`
 }
 {% if has_timer %}
 
@@ -343,6 +354,19 @@ func (r *reference) timerEntry(t *testing.T, section, fixture string) timerSpec 
 	spec, ok := r.Timers[fixture]
 	if !ok {
 		t.Fatalf("fixture %q: missing entry in timers", fixture)
+	}
+	return spec
+}
+
+// enumEntry — see filterSteps for the drift-detection contract.
+func (r *reference) enumEntry(t *testing.T, section, fixture string) enumSpec {
+	t.Helper()
+	if section != "enums" {
+		t.Fatalf("fixture %q: enum kind requires ref_section=enums, got %q", fixture, section)
+	}
+	spec, ok := r.Enums[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in enums", fixture)
 	}
 	return spec
 }

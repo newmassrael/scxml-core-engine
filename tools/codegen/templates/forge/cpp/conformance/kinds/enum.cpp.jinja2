@@ -1,0 +1,38 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Enum kind — a named value vocabulary.
+
+   The oracle compares the NUMBER each variant carries. The spelling is the
+   language's business and differs across the arms, so the manifest carries
+   the SOURCE name and this fragment applies C++'s filter to it — the same
+   contract the codec fragments use for field names.
+
+   Comparing the declared VALUE and not the ordinal is the point: a
+   conversion that dropped the values would emit 0..N-1 and satisfy any
+   check that only counted variants or compared their order. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    {
+        namespace G = SCE::Generated::{{ f.name | to_pascal_case }};
+
+        // The oracle is iterated for its COUNT as well as its values: a
+        // vocabulary that gained or lost a variant without the manifest
+        // moving would otherwise pass every per-variant assertion.
+        CHECK(spec["variants"].size() == {{ f.variants | length }},
+              "{{ f.name }}: oracle has %zu variants, manifest has {{ f.variants | length }}",
+              static_cast<std::size_t>(spec["variants"].size()));
+
+{% for v in f.variants %}
+        {
+            const auto &o = spec["variants"][{{ loop.index0 }}];
+            CHECK(o["name"].get<std::string>() == "{{ v.name }}",
+                  "{{ f.name }} variant {{ loop.index0 }}: oracle names '%s', manifest '{{ v.name }}'",
+                  o["name"].get<std::string>().c_str());
+            CHECK(static_cast<long long>(G::{{ f.name | to_pascal_case }}::{{ v.name | to_pascal_case }})
+                      == o["value"].get<long long>(),
+                  "{{ f.name }}::{{ v.name }} = %lld, expected %lld",
+                  static_cast<long long>(G::{{ f.name | to_pascal_case }}::{{ v.name | to_pascal_case }}),
+                  o["value"].get<long long>());
+        }
+{% endfor %}
+    }

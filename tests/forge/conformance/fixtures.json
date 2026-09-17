@@ -11,6 +11,7 @@
     "procedure": "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions.",
     "lookup": "Finite key→value mapping. Free function lookup_<name>(key) -> V|Option<V>. Numeric outputs use direct comparison; string outputs return language-specific enums verified via oracle string matching. Reference section: pure_functions (numeric) or string_lookups (enum).",
     "timer": "Periodic timer, ONE per document (SCE_FORGE.md 4.10). Generated class wraps a single ITimer HAL instance and exposes start() / cancel() plus a hook per declared lifecycle element. Conformance injects a recording mock, calls start(), verifies the registered period against period_us, and verifies callback dispatch by triggering the mock's stored callback and checking the recording handler received fire<FireEvent>(). Reference section: timers. The oracle is the SEQUENCE of calls the generated class makes on the injected timer plus the handler call a firing routes to, because that surface — start / cancel / onReset / onCancel-exit and a compile-time period constant — is the one all six language arms share.",
+    "enum": "Named value vocabulary. Generated as the language's own enum type with the declared values. Conformance compares the NUMBER each variant carries, because that number is on a wire; the spelling differs by language (GeneralReject in C++/Rust/Go, GENERAL_REJECT in Python/Kotlin), so the oracle keys on the source name the document writes and each fragment applies its own case filter — the same contract codec uses for field names. Reference section: enums.",
     "validator": "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators.",
     "codec": "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional). Oracle cases are `{decoded, encoded}` pairs exercising round-trip symmetry in both directions. Field layout lives in SCXML (sce:byte, sce:bit-offset, sce:bit-size, sce:default-endian); the manifest entry only mirrors field names and canonical types so fragments can iterate them. Field names use SCXML source case (camelCase) as the canonical key across oracle and manifest; each per-language fragment applies its own case filter (Rust/Python snake_case, Go PascalCase, C++/Kotlin as-is camelCase). Reference section: codecs.",
     "algorithm": "RFC §5.A pure free function with bounded loops. Free function `<name>(args) -> scalar` with optional bytes parameters lowering to the language's native byte-stream view (`sce_forge_bytes_t` on C11, `&[u8]` on Rust). Cross-(Rust, C11) byte-equivalence is the §A6 acceptance gate; A6 wires the two CRC16-CCITT-FALSE fixtures (bit-by-bit + table-fold) through the conformance harness so any future codegen drift fails ctest. Reference section: pure_functions."
@@ -1313,6 +1314,18 @@
       "ref_section": "codecs",
       "oracle_eligible": false,
       "fields": []
+    },
+    {
+      "name": "enum_uds_nrc",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "generalReject", "value": 16 },
+        { "name": "serviceNotSupported", "value": 17 },
+        { "name": "conditionsNotCorrect", "value": 34 },
+        { "name": "requestOutOfRange", "value": 49 },
+        { "name": "responsePending", "value": 120 }
+      ]
     },
     {
       "name": "timer_tester_present",
