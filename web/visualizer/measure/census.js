@@ -264,6 +264,33 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
     // ancestor of the other.
     const positioned = v.nodes.filter((n) => Number.isFinite(n.x) && Number.isFinite(n.y));
     const unplaced = v.nodes.length - positioned.length;
+    // ⚠ The arrow id COLLIDES, deliberately, and only a check keeps that a
+    // decision rather than a bug waiting to be "corrected".
+    //
+    // `getTransitionId` is `source_event_target`, and transitions differing
+    // only by their guard share it — 33 of 1557 ids across 27 documents, one
+    // of them naming thirteen. The engine cannot tell them apart either: it
+    // reports `{source, target, event}` for what fired and nothing about the
+    // guard, so narrowing the id would take highlighting from "marks all of
+    // them" to "marks none".
+    //
+    // ⭐ What must hold is that the collision lines up with the MERGE: every
+    // transition sharing an id is drawn on ONE arrow. That is what makes a
+    // colliding id the right key for a drawn element rather than a defect.
+    // If a future change splits a merged arrow without changing the id, this
+    // is what says so.
+    const getTransitionId = vm.runInContext('getTransitionId', sandbox);
+    const arrowsPerId = new Map();
+    for (const link of links) {
+        for (const member of link.transitions || [link]) {
+            const tid = getTransitionId(member);
+            if (!tid) continue;
+            if (!arrowsPerId.has(tid)) arrowsPerId.set(tid, new Set());
+            arrowsPerId.get(tid).add(link.id);
+        }
+    }
+    const idsOnSeveralArrows = [...arrowsPerId.values()].filter((s) => s.size > 1).length;
+
     const leaves = positioned.filter((n) => !(n.children && n.children.length));
 
     let labelNode = 0;
@@ -316,6 +343,7 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
         undrawable: nan,
         detached,
         unplaced,
+        idsOnSeveralArrows,
         crowded: crowding(drawn),
         nodeOverlap,
         labels: labelRects.length,
@@ -406,7 +434,7 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
     const violations = [];
     for (const cfg of configs) {
         let bad = 0; let ll = 0; let le = 0; let ln = 0;
-        let detached = 0; let overlap = 0; let unplaced = 0;
+        let detached = 0; let overlap = 0; let unplaced = 0; let splitIds = 0;
         const areas = [];
         for (const { structure } of structures) {
             try {
@@ -417,6 +445,7 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
                 le += m.labelEdge;
                 ln += m.labelNode;
                 detached += m.detached;
+                splitIds += m.idsOnSeveralArrows;
                 overlap += m.nodeOverlap;
                 unplaced += m.unplaced;
                 areas.push(m.area);
@@ -447,6 +476,10 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
             if (overlap) violations.push(`${overlap} pair(s) of unrelated states share area`);
             if (unplaced) violations.push(`${unplaced} node(s) were never given a position`);
             if (bad) violations.push(`${bad} edge(s) could not be drawn at all`);
+            if (splitIds) {
+                violations.push(`${splitIds} arrow id(s) name transitions drawn on more than one`
+                    + ' arrow, so highlighting one id cannot mark one thing');
+            }
         }
     }
 

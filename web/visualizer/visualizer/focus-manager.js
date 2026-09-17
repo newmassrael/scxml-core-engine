@@ -521,9 +521,28 @@ class TransitionFocusManager {
     setActivePanel(panel, transitionId) {
         if (!panel) return;
 
-        const activeItem = panel.querySelector(`[data-transition-id="${transitionId}"]`);
+        // ⚠ EVERY row the id names, not the first one.
+        //
+        // `getTransitionId` is `source_event_target`, and the comment above
+        // it in `utils.js` calls that unique. W3C SCXML does not: two
+        // transitions may share a source, an event and a target and differ
+        // only by their guard. Measured over the corpus, 33 of 1557 ids name
+        // more than one transition across 27 documents, and one names
+        // thirteen — `report_eventless_done`, thirteen guarded alternatives.
+        //
+        // `querySelector` returned whichever of those the document happened
+        // to list first and marked it active, which says "this one fired"
+        // about a transition nobody can know fired: the engine reports
+        // `{source, target, event}` for the transition it took and nothing
+        // that separates one guard from another.
+        //
+        // ⭐ So all of them are marked. The reader is told the truth —
+        // "the transition that fired is one of these" — instead of a
+        // confident answer that is right one time in thirteen.
+        const activeItems = panel.querySelectorAll(`[data-transition-id="${transitionId}"]`);
+        const activeItem = activeItems[0];
+        activeItems.forEach(item => item.classList.add('active'));
         if (activeItem) {
-            activeItem.classList.add('active');
 
             // Auto-scroll into view
             activeItem.scrollIntoView({
@@ -618,10 +637,12 @@ class TransitionFocusManager {
         const panel = document.getElementById('transition-list-panel');
         if (!panel) return;
 
-        const item = panel.querySelector(`[data-transition-id="${transitionId}"]`);
-        if (item) {
-            item.classList.add('panel-highlighted');
-            if (this.debugMode) logger.debug(`[FocusManager] Panel highlighted: ${transitionId}`);
+        // Every row the id names — see `setActivePanel` for why one of them
+        // is not a defensible answer.
+        const items = panel.querySelectorAll(`[data-transition-id="${transitionId}"]`);
+        items.forEach(item => item.classList.add('panel-highlighted'));
+        if (items.length && this.debugMode) {
+            logger.debug(`[FocusManager] Panel highlighted ${items.length} row(s): ${transitionId}`);
         }
     }
 
