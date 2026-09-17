@@ -358,12 +358,18 @@ pub enum Trace {
 ///
 /// ⚠⚠⚠ A correction worth keeping, because the note that stood here
 /// was wrong in a way that would have produced a wrong dictionary. It
-/// said the Korean standard "matches **zero** of these verbs". Measured
-/// across all 275 pages of `[redacted: customer standard id]`: `shall` occurs **651** times.
-/// The document is MIXED — Korean-normative for its first twenty pages,
-/// English-normative from page 21 on — so the earlier figure was true
-/// of a slice and read as true of the document. That is why a declared
+/// said a Korean-declaring standard "matches **zero** of these verbs".
+/// Measured over the whole of one, `shall` occurs in the hundreds. Such
+/// a document can be MIXED — Korean-normative in its opening sections
+/// and English-normative in its body — so the earlier figure was true of
+/// a slice and read as true of the document. That is why a declared
 /// convention adds a vocabulary instead of replacing one.
+///
+/// ⚠ The measurement is kept; WHICH document it was measured over is
+/// not, and must not be restored. Naming a customer's standard, or
+/// giving its length and internal structure, is the disclosure this
+/// file's own guard exists to prevent — and it is permanent, because a
+/// public repository is not something a later commit can un-publish.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 pub enum ModalityConvention {
     /// `shall` / `should` / `may` / `must`, read as whole words.
@@ -778,14 +784,21 @@ const NORMATIVE_MODALS: [&str; 4] = ["shall", "should", "must", "may"];
 
 /// The normative vocabulary of one convention.
 ///
-/// ⭐ Measured, not intuited. `[redacted: customer standard id]` — an OEM engineering
-/// standard, read but never copied here — writes obligation with the
-/// auxiliary `-어야/아야/여야 한다` rather than with any single verb, so
-/// the entries below are the ENDINGS and not a list of verbs. Counted
-/// over its 275 pages: `야 한다` 55, `야 함` 4, `야 하며` 1 (obligation);
-/// `서는 안` 2, `지 않아야` 1 (prohibition); `수 있다` 29 (permission);
-/// `권장` 1 (recommendation). Listing verbs instead would have matched
-/// `하여야 한다` (13) and missed `해야 한다` (20) — the commoner form.
+/// ⭐ Measured, not intuited. A Korean-normative OEM engineering
+/// standard — read but never copied here, and deliberately not named —
+/// writes obligation with the auxiliary `-어야/아야/여야 한다` rather than
+/// with any single verb, so the entries below are the ENDINGS and not a
+/// list of verbs. Counted over the whole of it: `야 한다` 55, `야 함` 4,
+/// `야 하며` 1 (obligation); `서는 안` 2, `지 않아야` 1 (prohibition);
+/// `수 있다` 29 (permission); `권장` 1 (recommendation). Listing verbs
+/// instead would have matched `하여야 한다` (13) and missed `해야 한다`
+/// (20) — the commoner form.
+///
+/// ⚠ The counts stay because they are what makes this table a
+/// measurement; the document's identity does not. `ISO 13400-2:2019`
+/// above IS named, and the difference is the whole rule: a published
+/// standard anyone can buy is not the same disclosure as a customer's
+/// internal one.
 ///
 /// ⚠ `이내에` ("within …") is deliberately absent although it occurs.
 /// It is a quantity phrase, not a modality: in "N ms 이내에 응답하여야
@@ -831,12 +844,12 @@ fn normative_markers(convention: ModalityConvention) -> &'static [&'static str] 
 /// ⭐ The declared convention ADDS a vocabulary; it never removes one.
 ///
 /// A manifest that declares Korean is still checked against the English
-/// markers, and the reason is a measurement rather than caution:
-/// `[redacted: customer standard id]` is the very document this convention was added for, and
-/// it is MIXED — its first twenty pages are Korean-normative and carry
-/// no `shall` at all, while the body from page 21 on carries 651 of
-/// them. A guard that consulted only the declared table would have gone
-/// blind to two thirds of that one document.
+/// markers, and the reason is a measurement rather than caution: the
+/// document this convention was added for is MIXED — an opening run of
+/// sections that is Korean-normative and carries no `shall` at all, then
+/// a body that carries them in the hundreds. A guard that consulted only
+/// the declared table would have gone blind to most of that one
+/// document.
 ///
 /// The direction matters more than the symmetry. This guard's failure
 /// mode is committing somebody else's copyrighted sentence into a
