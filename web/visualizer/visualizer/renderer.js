@@ -1018,9 +1018,17 @@ class Renderer {
                 // nothing to resize (`_requiredWidth > n.width` is false
                 // once the width IS the measured one), so this terminates
                 // rather than oscillating.
-                if (this.visualizer.debugMode) {
-                    logger.debug('[STATE RESIZE] Re-laying out with measured widths');
-                }
+                //
+                // ⚠ And it should not normally be reached at all:
+                // `measureStateWidths()` runs before the layout now, so the
+                // widths are already right when ELK places anything. What is
+                // left here is the case that pass cannot cover — a width
+                // that only becomes known while drawing, such as an action
+                // list built during render. Reaching it is visible as the
+                // diagram rearranging itself, so if that is seen, this is
+                // where it comes from and the pre-measure is what is missing
+                // a case.
+                logger.warn('[STATE RESIZE] Re-laying out after render; the pre-measure missed a width');
 
                 this.visualizer.computeLayout()
                     .then(() => this.visualizer.render())
@@ -1504,12 +1512,25 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     d.isDragging = false;
                     self.isDraggingAny = false;
 
-                    // The gesture is over, so where the reader put this state
-                    // becomes an input and the drawing is derived again.
-                    // Until this existed, a drag left every label at a path
-                    // midpoint for good: measured, one drag took the diagram
-                    // from 0 label collisions to 10.
-                    self.layoutManager.settleAfterGesture([d.id]);
+                    // ⚠ NO re-layout here, and that is a measurement rather
+                    // than a preference.
+                    //
+                    // A settle was wired in at this point, because a drag
+                    // used to send every label back to a path midpoint — 0
+                    // collisions became 10. It worked on that number and was
+                    // wrong on screen: a second or so after dropping one
+                    // state, the whole diagram rearranged. Pinning every
+                    // node first did not help, which is the fact that
+                    // settled it — ELK's interactive mode treats given
+                    // coordinates as hints for ORDER, not as fixed
+                    // positions, and moved 18 untouched states by up to
+                    // 2327px anyway.
+                    //
+                    // The staleness a drag causes is narrow: the routes and
+                    // labels of the edges touching what moved. That is what
+                    // `invalidateELKRouting` now drops, and nothing else, so
+                    // the rest of the diagram keeps the placement the layout
+                    // gave it and holds still.
                 }, 50);  // 50ms delay prevents immediate mouseenter from raising element
 
                 // Cleanup cached descendants and drag direction
@@ -1881,6 +1902,99 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
      * @param {number} marginPercent - Margin percentage (e.g., 0.1 for 10%)
      * @returns {number} Required state width
      */
+    /**
+     * Measure every state's text and record the width it needs, BEFORE the
+     * layout runs.
+     *
+     * ## Why this is not just the resize path moved earlier
+     *
+     * The renderer has always measured text with `getBBox()` and widened a
+     * state whose action lines overflow its estimated box. That measurement
+     * arrived AFTER ELK had placed everything, so the accurate width landed
+     * in a layout computed from a guess — states grew into the gaps ELK had
+     * left between them, and two that ELK put 80px apart were drawn
+     * overlapping.
+     *
+     * Feeding the measurement back and laying out again fixed the geometry
+     * and introduced something worse to look at: the diagram visibly
+     * rearranged itself a second or two after appearing. A reader cannot
+     * tell that from a fault.
+     *
+     * ⭐ So the measurement moves in FRONT of the layout. Same numbers, same
+     * formula — `calculateRequiredWidthForCenteredBox`, called rather than
+     * copied — taken while nothing has been placed yet. One layout, and
+     * nothing to correct after it.
+     *
+     * ⚠ Needs a real text engine. Where `getBBox` is unavailable — the
+     * headless measurement harness — every width reads zero, nothing beats
+     * the estimate and the estimate stands: the drawing this produced before
+     * the method existed, not a broken one.
+     */
+    measureStateWidths() {
+        const container = this.visualizer.container;
+        if (!container || typeof document === 'undefined') {
+            return;
+        }
+
+        // An SVG of its own, out of the way and removed at the end: the real
+        // one does not exist yet when this runs.
+        const scratch = container.append('svg')
+            .attr('class', 'text-measurement-scratch')
+            .attr('width', 0)
+            .attr('height', 0)
+            .style('position', 'absolute')
+            .style('visibility', 'hidden')
+            .style('pointer-events', 'none');
+
+        const widthOf = (text, fontSize) => {
+            const node = scratch.append('text')
+                .attr('font-size', fontSize)
+                .text(text)
+                .node();
+            let width = 0;
+            try {
+                width = node && node.getBBox ? node.getBBox().width : 0;
+            } catch (error) {
+                width = 0;
+            }
+            return Number.isFinite(width) ? width : 0;
+        };
+
+        const padding = LAYOUT_CONSTANTS.ACTION_BOX_PADDING_LEFT
+            + LAYOUT_CONSTANTS.ACTION_BOX_PADDING_RIGHT;
+        const marginPercent = LAYOUT_CONSTANTS.TEXT_LEFT_MARGIN_PERCENT;
+
+        for (const node of this.visualizer.nodes) {
+            let widest = 0;
+            // The same two lists, with the same prefixes and font size, that
+            // `renderActionTexts` draws. An action measured differently from
+            // how it is drawn has not been measured.
+            for (const [prefix, actions] of [['entry', node.onentry], ['exit', node.onexit]]) {
+                for (const action of actions || []) {
+                    const formatted = action._formatted
+                        || (typeof ActionFormatter !== 'undefined'
+                            ? ActionFormatter.formatAction(action)
+                            : null);
+                    if (!formatted || !formatted.main) {
+                        continue;
+                    }
+                    widest = Math.max(widest, widthOf(`${prefix} / ${formatted.main}`, '13px'));
+                }
+            }
+
+            if (widest <= 0) {
+                continue;
+            }
+            const required = this.calculateRequiredWidthForCenteredBox(widest + padding, marginPercent);
+            const estimate = this.visualizer.nodeBuilder.getNodeWidth(node);
+            if (required > estimate) {
+                node.measuredWidth = Math.min(required, LAYOUT_CONSTANTS.STATE_MAX_WIDTH);
+            }
+        }
+
+        scratch.remove();
+    }
+
     calculateRequiredWidthForCenteredBox(boxSpan, marginPercent) {
         // For equal margins on both sides: leftMargin + boxSpan + rightMargin = width
         // Where leftMargin = rightMargin = width * marginPercent

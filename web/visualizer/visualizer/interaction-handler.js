@@ -37,9 +37,14 @@ class InteractionHandler {
             });
 
             // ELK routed for the arrangement that existed before this drag,
-            // so its bend points are now describing a drawing nobody is
-            // looking at. The optimizer takes over from here.
-            this.visualizer.layoutManager.invalidateELKRouting();
+            // so the bend points on the edges TOUCHING what moved describe a
+            // drawing nobody is looking at. Every other edge is still
+            // correct, and saying so is what keeps its label where the
+            // layout put it.
+            const movedIds = this.visualizer.nodes
+                .filter(n => n.isDragging)
+                .map(n => n.id);
+            this.visualizer.layoutManager.invalidateELKRouting(movedIds);
 
             // **ADAPTIVE ALGORITHM SELECTION**
             // - useGreedy=true: Fast greedy for real-time drag (1-5ms)

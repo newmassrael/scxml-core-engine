@@ -47,6 +47,28 @@ class LayoutManager {
      * and nothing ever computes them again.
      */
     async settleAfterGesture(movedIds) {
+        // ⭐ EVERY placed node is pinned, not only the dragged one.
+        //
+        // What a drag makes stale is the ROUTING and the LABEL POSITIONS —
+        // the lines still lead to where the state used to be. The
+        // arrangement of the states is not stale: it is what the reader is
+        // looking at, and one of them is where they just put it.
+        //
+        // ⚠ Pinning only the dragged node let ELK re-place all the others,
+        // so moving one state made the whole diagram shift a second or two
+        // later. That reads as the drawing rearranging itself rather than
+        // as a gesture completing, and it is the thing to avoid even though
+        // the result scored better: a reader cannot work with a canvas that
+        // moves when they are not moving it.
+        //
+        // With everything pinned this is a routing and labelling pass that
+        // happens to go through the layout engine, which is the only thing
+        // that can place a label knowing every other label.
+        for (const node of this.visualizer.nodes) {
+            if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                node.pinned = true;
+            }
+        }
         for (const id of movedIds || []) {
             const node = this.visualizer.nodes.find(n => n.id === id);
             if (node && Number.isFinite(node.x)) {
@@ -88,9 +110,28 @@ class LayoutManager {
      * The layout is where the routes are BORN; invalidating there is what
      * made them dead on arrival for as long as this file has existed.
      */
-    invalidateELKRouting() {
+    invalidateELKRouting(movedIds) {
+        // ⭐ Only the edges the movement actually invalidated.
+        //
+        // A drag moves one state. The routes and label positions ELK
+        // computed for every OTHER edge are still describing exactly the
+        // arrangement on screen, and dropping them sends those labels back
+        // to their path midpoints — measured, one drag took a clean diagram
+        // to ten label collisions, none of them near the state that moved.
+        //
+        // ⚠ Passing nothing still means everything, because a collapse
+        // changes which nodes exist at all and there is no incidence to
+        // narrow by.
+        const moved = movedIds && movedIds.length ? new Set(movedIds) : null;
+        const touches = (link) => !moved
+            || moved.has(link.source) || moved.has(link.target)
+            || moved.has(link.visualSource) || moved.has(link.visualTarget);
+
         let dropped = 0;
         this.visualizer.allLinks.forEach(link => {
+            if (!touches(link)) {
+                return;
+            }
             if (link.elkSections) {
                 delete link.elkSections;
                 dropped++;
@@ -105,6 +146,10 @@ class LayoutManager {
         // And the containers go back to being sized from their children:
         // once geometry moves, ELK's size is a fact about a drawing that has
         // been replaced, and `updateCompoundBounds` is the right answer again.
+        //
+        // ⚠ Unconditionally, even for a narrowed invalidation: a moved child
+        // changes the bounds of every ancestor that holds it, and that chain
+        // is not the same set as the edges incident to it.
         this.visualizer.nodes.forEach(node => {
             delete node._elkSized;
         });

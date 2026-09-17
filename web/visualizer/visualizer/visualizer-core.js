@@ -273,6 +273,11 @@ class SCXMLVisualizer {
         this.layoutOptimizer = new TransitionLayoutOptimizer(this.nodes, this.allLinks, this);
 
         // Compute layout
+        // Measure the text FIRST, so the layout is computed from what the
+        // states actually need rather than from an estimate that a later
+        // pass would have to correct — see `Renderer.measureStateWidths`.
+        this.renderer.measureStateWidths();
+
         await this.computeLayout();
 
         // Render
