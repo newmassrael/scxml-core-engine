@@ -217,6 +217,33 @@ G2_PROBE='<?xml version="1.0" encoding="UTF-8"?>
   </state>
 </scxml>'
 
+# The document EVERY other user of the visualizer opens: no `sce:req`
+# anywhere.
+#
+# ⚠ This is the population the row's first two controls left unmeasured,
+# and it is the larger one by far. The producer emits an overlay for it
+# too — four nodes, every `requirements` empty, `fragments` empty — so a
+# page switching the styling on for a non-null overlay marks the whole
+# diagram unclaimed and asserts that nothing is claimed about a document
+# that was never under requirement review. Measured 2026-09-17 on the
+# deployed page: every state border and every transition dashed amber.
+#
+# The overlay for it is taken from the PRODUCER rather than written out
+# here, for the reason the row's header already gives — a fixture typed
+# into this file can be edited into agreement with a module that stopped
+# applying it, and a hand-made envelope disagreeing with the real one
+# would make this control measure the wrong shape.
+G2_PLAIN_PROBE='<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" initial="off" datamodel="null" name="g2_plain">
+  <state id="off">
+    <transition event="switch_on" target="on"/>
+  </state>
+  <state id="on">
+    <transition event="switch_off" target="off"/>
+  </state>
+</scxml>'
+
 # Ask the browser module what it does with an overlay it is handed.
 #
 # Written here rather than kept under `web/` so the fixture a check is
@@ -279,6 +306,7 @@ const vm = require('vm');
 const path = require('path');
 const overlayPath = process.argv[2];
 const root = process.argv[3];
+const plainOverlayPath = process.argv[4];
 
 function fail(why) { console.error(why); process.exit(1); }
 
@@ -420,11 +448,47 @@ if (structureWithout.annotationOverlay !== null) {
 if (withoutData.added.length !== 0) {
     fail('a diagram with no overlay was styled anyway, asserting that nothing is claimed');
 }
+
+// THE THIRD POLARITY, and the one a real document reaches: the overlay
+// LOADED, and the document claims nothing. Two controls above measured
+// the transport (present / absent) and agreed with each other for the
+// wrong reason, so the condition they certified was `overlay !== null`
+// while the statement being made is about the document.
+const plainOverlay = new AnnotationOverlay(JSON.parse(fs.readFileSync(plainOverlayPath, 'utf8')));
+
+// Control on the control. An EMPTY overlay claims nothing too, and would
+// satisfy every check below while measuring nothing — so the document is
+// first made to prove it produced elements to mark.
+if (plainOverlay.nodes.length === 0) {
+    fail('the plain document produced an overlay with no nodes, so "claims nothing" says nothing');
+}
+if (plainOverlay.unclaimedPaths().length !== plainOverlay.nodes.length) {
+    fail('the plain document was expected to claim nothing, and some node claims something');
+}
+
+// Both polarities of the predicate the page turns on, asked of the same
+// function the page calls.
+if (plainOverlay.hasClaims()) {
+    fail('an overlay whose every node is unclaimed reported that the document has claims');
+}
+if (!overlay.hasClaims()) {
+    fail('the overlay for a document claiming REQ-A reported no claims, so the predicate is stuck off');
+}
+
+const plainData = fakeContainer();
+const structurePlain = applyOverlayToPage({ name: 'd' }, plainOverlay, plainData);
+if (structurePlain.annotationOverlay !== plainOverlay) {
+    fail('withholding the paint must not withhold the overlay from the structure');
+}
+if (plainData.added.length !== 0) {
+    fail('a document claiming nothing was styled anyway: every element reads as a reviewer'
+        + ' finding, which asserts that nothing is claimed about a document never under review');
+}
 PROBE
 }
 
 row_G2() {
-    local bin dir overlay_json
+    local bin dir overlay_json plain_json
     bin="$(sce_gate_codegen)" || sce_gate_cannot_run \
         "row G2 is measured by running the overlay producer, and sce-codegen could not be provided"
 
@@ -437,13 +501,23 @@ row_G2() {
     dir="$(mktemp -d)"
     sce_gate_on_exit "rm -rf '$dir'"
     printf '%s\n' "$G2_PROBE" >"$dir/probe.scxml"
+    printf '%s\n' "$G2_PLAIN_PROBE" >"$dir/plain.scxml"
     overlay_json="$dir/overlay.json"
+    plain_json="$dir/plain.json"
 
     # The control, and the only outcome here that stops the gate.
     "$bin" annotation-overlay "$dir/probe.scxml" >"$overlay_json" 2>/dev/null || sce_gate_fail \
         "row G2's control was refused: the overlay producer rejected a document this gate wrote.
   Either the probe in $0 owes an update, or the producer now refuses what it should accept. Until
   that is settled the checks below say nothing, so no verdict is given for the row."
+
+    # And the same control for the document claiming nothing. A refusal
+    # here is the gate's own fixture going bad, not the row reopening, so
+    # it stops the gate for the same reason the line above does.
+    "$bin" annotation-overlay "$dir/plain.scxml" >"$plain_json" 2>/dev/null || sce_gate_fail \
+        "row G2's second control was refused: the overlay producer rejected the plain document this
+  gate wrote — one carrying no requirement at all, which is what almost every real document is.
+  Until that is settled the unclaimed-marking checks say nothing, so no verdict is given."
 
     # The browser module must exist and be loadable as a module.
     [[ -f web/visualizer/annotation-overlay.js ]] || return 1
@@ -464,7 +538,7 @@ row_G2() {
     # they carry. A builder that drops the annotation fails here; so does
     # a builder that invents one.
     g2_render_probe \
-        | node - "$overlay_json" "$PWD" >/dev/null 2>&1 \
+        | node - "$overlay_json" "$PWD" "$plain_json" >/dev/null 2>&1 \
         || return 1
 }
 

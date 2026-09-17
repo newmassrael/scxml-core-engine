@@ -141,6 +141,27 @@ class AnnotationOverlay {
     }
 
     /**
+     * Whether any node of this document claims a requirement at all.
+     *
+     * ⭐ The predicate the page's styling decision turns on, and it asks
+     * the CONTENT rather than the transport. An overlay arrives for every
+     * document, including the overwhelming majority carrying no `sce:req`
+     * — and for those every node is unclaimed, so marking them would
+     * assert "nothing is claimed here" about a document that was never
+     * under requirement review. That is the same false statement
+     * [`annotationOverlayFromWasm`] declines to make when the module is
+     * unreachable, so it is declined here too.
+     *
+     * ⚠ Asked over the nodes rather than over `fragments`, because it is
+     * the nodes' marks that get painted: this answers "is the unclaimed
+     * mark meaningful on this diagram", which is the question the caller
+     * has.
+     */
+    hasClaims() {
+        return this.nodes.some((n) => n.requirements.length > 0);
+    }
+
+    /**
      * Stamp the graph the visualizer built with what arrived.
      *
      * Mutates in place, adding `requirements` and `annotationClass` to
@@ -207,12 +228,24 @@ const SCE_ANNOTATIONS_ON = 'sce-annotations-on';
  * which is a different statement from "claims are unknown" and a false
  * one. So it is put somewhere it can be run.
  *
+ * ⚠ "Something to style" is [`AnnotationOverlay.hasClaims`], NOT a
+ * non-null overlay. The first version asked the transport, and was
+ * therefore right only for as long as the codegen WASM was missing: with
+ * the module loaded, a document carrying no `sce:req` yields an overlay
+ * whose every node is unclaimed, and the page painted every state and
+ * every transition dashed amber — the exact false assertion the paragraph
+ * above forbids, made by the guard written to prevent it.
+ *
+ * ⚠ The overlay still reaches the structure in that case. Only the paint
+ * is withheld; the data stays readable, so a document that gains its
+ * first `sce:req` needs no other change here.
+ *
  * `container` may be null (the page may not have built it yet); a missing
  * container must not prevent the overlay from reaching the structure.
  */
 function applyOverlayToPage(structure, overlay, container) {
     structure.annotationOverlay = overlay || null;
-    if (overlay && container && container.classList) {
+    if (overlay && overlay.hasClaims() && container && container.classList) {
         container.classList.add(SCE_ANNOTATIONS_ON);
     }
     return structure;
