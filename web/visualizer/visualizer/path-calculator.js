@@ -951,6 +951,51 @@ class PathCalculator {
         return near(section.startPoint, sourceNode) && near(section.endPoint, targetNode);
     }
 
+    /**
+     * Does this link draw ELK's route, or the orthogonal fallback?
+     *
+     * ⭐ One place answers, because the census asks it too. Measured before
+     * the frame correction landed, `ancestor_entry_is_not_default_entry`
+     * drew EVERY edge with the fallback — four routes computed by ELK, four
+     * rejected, zero used — and no number in the census said so, because
+     * the census restated the branch's condition instead of asking it. A
+     * copy of a condition is free to agree with the original right up until
+     * the moment it matters.
+     */
+    usesELKRoute(link, sourceNode, targetNode) {
+        if (!this.elkRouteIsApplicable(link, sourceNode, targetNode)) {
+            return false;
+        }
+        const src = sourceNode || this.visualizer.nodes.find(n => n.id === (link.visualSource || link.source));
+        const tgt = targetNode || this.visualizer.nodes.find(n => n.id === (link.visualTarget || link.target));
+        return this.elkSectionReachesItsNodes(link.elkSections[0], src, tgt);
+    }
+
+    /**
+     * Could this link draw ELK's route at all, before asking whether the
+     * route it got is usable?
+     *
+     * ⚠ The two questions are separated so a count of dropped routes means
+     * one thing. A self-loop is NOT a dropped route: a targetless or
+     * internal transition (W3C SCXML 5.9.2) is drawn by the dedicated shape
+     * in `createOrthogonalPath` — right edge out, bottom edge back — and
+     * ELK's generic loop was never going to be used for it. Counting those
+     * alongside routes the drawing threw away would leave the census with a
+     * floor it can never reach, and a number that cannot reach zero stops
+     * being read.
+     */
+    elkRouteIsApplicable(link, sourceNode, targetNode) {
+        const src = sourceNode || this.visualizer.nodes.find(n => n.id === (link.visualSource || link.source));
+        const tgt = targetNode || this.visualizer.nodes.find(n => n.id === (link.visualTarget || link.target));
+        if (!src || !tgt || src.id === tgt.id) {
+            return false;
+        }
+        if (src.isDragging || tgt.isDragging) {
+            return false;
+        }
+        return !!(link.elkSections && link.elkSections.length > 0);
+    }
+
     getLinkPath(link) {
         logger.debug(`[GET LINK PATH] Called for ${link.source}→${link.target}`);
         // Get source and target nodes (use visual redirect if available)
@@ -975,8 +1020,7 @@ class PathCalculator {
         }
 
         // Use ELK edge routing only if available (only during initial ELK layout)
-        if (link.elkSections && link.elkSections.length > 0
-            && this.elkSectionReachesItsNodes(link.elkSections[0], sourceNode, targetNode)) {
+        if (this.usesELKRoute(link, sourceNode, targetNode)) {
             const section = link.elkSections[0];
 
             // Calculate boundary points for start and end

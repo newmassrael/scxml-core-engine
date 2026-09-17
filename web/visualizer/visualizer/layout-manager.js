@@ -447,6 +447,100 @@ class LayoutManager {
         return graph;
     }
 
+    /**
+     * Put an ELK route into the frame the renderer draws in.
+     *
+     * ELK returns every edge under the root node, but a route's coordinates
+     * are relative to the node that CONTAINS the edge in the layout, and for
+     * an edge crossing a hierarchy boundary that container is an ancestor
+     * deeper than the root. Drawing those numbers as if they were absolute
+     * puts the line hundreds of pixels from the states it connects, which
+     * [`elkSectionReachesItsNodes`] then rejects — correctly, but the result
+     * was that in `ancestor_entry_is_not_default_entry` all four of ELK's
+     * routes were thrown away and every edge fell back to the orthogonal
+     * router, whose bundling is the crowding this was meant to fix.
+     *
+     * ⭐ The frame is CHOSEN BY TESTING, not derived from a model of ELK's
+     * containment rules. Each candidate origin is offered to the very same
+     * predicate that used to reject, and the first one whose translation
+     * lands both endpoints on their own states wins. A rule written here
+     * could disagree with the one ELK used; a check cannot.
+     *
+     * ⚠ The candidates are the deepest common ancestor of the two states
+     * and each of ITS ancestors, up to the root. Measured over the 180 ELK
+     * sections in `integration_resources`, 175 land at the common ancestor
+     * and 5 at an ancestor of it — so fixing on the common ancestor alone
+     * would have been wrong five times, and none of the 180 lands nowhere.
+     *
+     * Returns the sections translated into absolute coordinates, or the
+     * sections unchanged when no candidate fits, in which case the guard
+     * downstream still rejects them and the orthogonal router draws the
+     * edge, as it did before ELK's routing was kept at all.
+     */
+    drawingFrameOffset(link, sections) {
+        const first = sections && sections[0];
+        if (!first || !first.startPoint || !first.endPoint) {
+            return null;
+        }
+
+        const sourceNode = this.visualizer.nodes.find(n => n.id === (link.visualSource || link.source));
+        const targetNode = this.visualizer.nodes.find(n => n.id === (link.visualTarget || link.target));
+        if (!sourceNode || !targetNode) {
+            return null;
+        }
+
+        // Ancestors of a state, innermost first, ending at the drawing root.
+        // `findCompoundParent` answers with a node, and `null` is the root.
+        const ancestry = (nodeId) => {
+            const chain = [];
+            for (let id = nodeId; id; ) {
+                chain.push(id);
+                const parent = this.findCompoundParent(id);
+                id = parent ? parent.id : null;
+            }
+            chain.push(null);  // the root: origin (0, 0)
+            return chain;
+        };
+
+        const sourceAncestry = new Set(ancestry(sourceNode.id));
+        const commonAncestor = ancestry(targetNode.id).find(id => sourceAncestry.has(id));
+        const candidates = ancestry(commonAncestor);
+
+        for (const candidateId of candidates) {
+            let dx = 0;
+            let dy = 0;
+            if (candidateId) {
+                const container = this.visualizer.nodes.find(n => n.id === candidateId);
+                if (!container || !Number.isFinite(container.x) || !Number.isFinite(container.y)) {
+                    continue;
+                }
+                // The node model carries centres; ELK's frame origin is the
+                // container's top-left corner.
+                dx = container.x - (container.width || 0) / 2;
+                dy = container.y - (container.height || 0) / 2;
+            }
+            const probe = LayoutManager.translateSection(first, dx, dy);
+            if (this.visualizer.pathCalculator.elkSectionReachesItsNodes(probe, sourceNode, targetNode)) {
+                if (dx !== 0 || dy !== 0) {
+                    logger.debug(`  ${link.source} → ${link.target}: route is in '${candidateId}' frame, offset by (${dx.toFixed(1)}, ${dy.toFixed(1)})`);
+                }
+                return {dx, dy};
+            }
+        }
+
+        logger.debug(`  ${link.source} → ${link.target}: no frame lands ELK's route on its states; falling back`);
+        return null;
+    }
+
+    static translateSection(section, dx, dy) {
+        return {
+            ...section,
+            startPoint: {x: section.startPoint.x + dx, y: section.startPoint.y + dy},
+            endPoint: {x: section.endPoint.x + dx, y: section.endPoint.y + dy},
+            bendPoints: (section.bendPoints || []).map(p => ({x: p.x + dx, y: p.y + dy})),
+        };
+    }
+
     applyELKLayout(layouted) {
         logger.debug('Applying ELK layout to nodes...');
         logger.debug(`  this.visualizer.nodes count: ${this.visualizer.nodes.length}, nodes: ${this.visualizer.nodes.map(n => `${n.id}(${n.type})`).join(', ')}`);
@@ -591,9 +685,25 @@ class LayoutManager {
         });
 
         // Apply ELK edge routing information BEFORE modifying node positions
-        if (layouted.edges) {
-            logger.debug('Applying ELK edge routing...');
-            layouted.edges.forEach(elkEdge => {
+        //
+        // ⚠ EVERY edge in the result, not just the root's. `buildELKGraph`
+        // deliberately nests an edge under the parent that contains both its
+        // ends — that is what lets ELK keep an internal transition inside
+        // its own container — and ELK returns it where it was declared. This
+        // loop read `layouted.edges` alone, so every nested edge had a route
+        // computed and collected by nobody: measured over the ten fixtures,
+        // 31 of 100 edges reached the renderer with no ELK route at all and
+        // were drawn by the fallback. Nothing said so, because an edge with
+        // no route is not a REJECTED route: the "dropped" count read zero.
+        const elkEdges = [];
+        (function collectEdges(node) {
+            (node.edges || []).forEach(edge => elkEdges.push(edge));
+            (node.children || []).forEach(collectEdges);
+        })(layouted);
+
+        if (elkEdges.length) {
+            logger.debug(`Applying ELK edge routing (${elkEdges.length} edge(s), ${(layouted.edges || []).length} at the root)...`);
+            elkEdges.forEach(elkEdge => {
                 const link = this.visualizer.allLinks.find(l => l.id === elkEdge.id);
 
                 // Where ELK put the label, kept beside where it put the edge.
@@ -610,18 +720,28 @@ class LayoutManager {
                 // ⚠ ELK's coordinate is the box's TOP-LEFT; the renderer
                 // positions from a centre. Converted here, once, rather
                 // than at each reader.
+                //
+                // ⚠ The label is expressed in the SAME frame as its route,
+                // so it takes the same offset. Correcting one without the
+                // other would tear a cross-hierarchy label off its line.
+                const frame = (link && elkEdge.sections && elkEdge.sections.length > 0)
+                    ? this.drawingFrameOffset(link, elkEdge.sections)
+                    : null;
+
                 if (link && elkEdge.labels && elkEdge.labels[0]
                     && Number.isFinite(elkEdge.labels[0].x)
                     && Number.isFinite(elkEdge.labels[0].y)) {
                     const l = elkEdge.labels[0];
                     link.elkLabel = {
-                        x: l.x + (l.width || 0) / 2,
-                        y: l.y + (l.height || 0) / 2,
+                        x: l.x + (l.width || 0) / 2 + (frame ? frame.dx : 0),
+                        y: l.y + (l.height || 0) / 2 + (frame ? frame.dy : 0),
                     };
                 }
 
                 if (link && elkEdge.sections && elkEdge.sections.length > 0) {
-                    link.elkSections = elkEdge.sections;
+                    link.elkSections = frame
+                        ? elkEdge.sections.map(s => LayoutManager.translateSection(s, frame.dx, frame.dy))
+                        : elkEdge.sections;
                     logger.debug(`  ${elkEdge.id}: ${elkEdge.sections.length} section(s)`);
                     elkEdge.sections.forEach((section, idx) => {
                         logger.debug(`    section ${idx}: start=(${section.startPoint.x.toFixed(1)}, ${section.startPoint.y.toFixed(1)}), end=(${section.endPoint.x.toFixed(1)}, ${section.endPoint.y.toFixed(1)})`);
