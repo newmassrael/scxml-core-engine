@@ -14,6 +14,22 @@
 
 #include <cstdint>
 #include <string>
+{# `round(x)` lowers to `std::llround` and `floor(x)` to `std::floor`, both of
+   which live in <cmath>. The include is conditional rather than unconditional
+   because an unused header is noise in every generated file that does neither
+   — the same reason `algorithm.h.jinja2` gates <array>/<vector>/<span>. The
+   condition reads the emitted bodies, so it cannot drift from what the emitter
+   actually produced; a flag computed upstream could say "no" while the body
+   says `llround`.
+   ⚠ ONE CLAUSE PER LOWERED <cmath> NAME. The second name was added to
+   `real_to_int_builtin` after this condition was written for `llround` alone,
+   and a body calling `std::floor` under a one-name condition does not compile.
+   Adding a builtin that lowers to <cmath> means adding its name here. #}
+{% set body = functions | map(attribute='expr') | join(' ') %}
+{% set needs_cmath = 'llround' in body or 'std::floor' in body %}
+{% if needs_cmath %}
+#include <cmath>
+{% endif %}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: the `round(x)` builtin, and specifically what it does
+  at `.5`.
+
+  ⚠ WHY `.5` IS THE WHOLE POINT. The six backends do not agree on rounding
+  unless SCE makes them:
+
+      C/C++ `std::llround`, Rust `f64::round`, Go `math.Round`
+          half away from zero — 0.5 → 1, 2.5 → 3, −0.5 → −1
+      Python `round`, Kotlin `kotlin.math.round`
+          half to EVEN — 0.5 → 0, 2.5 → 2
+
+  Every other input agrees. A fixture that feeds 1.4 and 1.6 and calls it
+  covered would pass on all six while Python and Kotlin silently disagreed with
+  the rest on exactly the inputs a specification's rounding rule is about. So
+  the cases below carry 0.5, 2.5 and their negatives, and the expected values
+  are the half-away-from-zero ones: SCE lowers Python and Kotlin through
+  `floor(x + 0.5)` / `ceil(x - 0.5)` rather than the language builtin, and this
+  is what holds that lowering in place.
+
+  ⚠⚠ 2.5 IS NOT REDUNDANT WITH 0.5. Banker's rounding sends 0.5 → 0 (down, to
+  even) and 2.5 → 2 (down, to even), while 1.5 → 2 (up, to even) agrees with
+  half-away. A fixture carrying only 1.5 would not separate the two rules at
+  all.
+
+  The builtin exists because the surveyed source material attaches a rounding
+  notation to hundreds of computed values, and once the piecewise-interpolation
+  ones are set aside the rest are linear unit conversions of the shape
+  `raw * k + c`. The arithmetic already lowered; rounding was the missing piece.
+  `floor` is the other half of the same notation — see `transform_floor`.
+
+  `round(x, digits)` is deliberately absent: a second parameter is a different
+  signature and a different question about the boundary, and a digit count
+  composes anyway as `floor(x * 100) / 100`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="rounding">
+  <datamodel>
+    <data id="value" sce:type="float64" sce:direction="in"/>
+    <data id="rounded" sce:type="int32" sce:direction="out" expr="round(value)"/>
+  </datamodel>
+</scxml>

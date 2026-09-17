@@ -13,6 +13,16 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+{# `round(x)` lowers to C99 `llround` and `floor(x)` to C99 `floor`, both
+   declared in <math.h>. Conditional for the same reason as the C++ template:
+   an unused header in every file that does neither is noise, and the condition
+   reads the emitted bodies so it cannot drift from them.
+   ⚠ ONE CLAUSE PER LOWERED <math.h> NAME — see the C++ template. #}
+{% set body = functions | map(attribute='expr') | join(' ') %}
+{% set needs_math = 'llround' in body or 'floor(' in body %}
+{% if needs_math %}
+#include <math.h>
+{% endif %}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}

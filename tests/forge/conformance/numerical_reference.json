@@ -147,6 +147,110 @@
         }
       ]
     },
+    "transform_rounding": {
+      "fixture": "compute_rounded",
+      "signature": "(value: f64) -> i32",
+      "formula": "round half away from zero",
+      "cases": [
+        {
+          "args": [0.5],
+          "expected": 1,
+          "note": "the discriminator — half away from zero gives 1, banker's rounding gives 0"
+        },
+        {
+          "args": [-0.5],
+          "expected": -1,
+          "note": "away from zero on the negative side too"
+        },
+        {
+          "args": [2.5],
+          "expected": 3,
+          "note": "not redundant with 0.5 — banker's sends 2.5 down to 2, and 1.5 alone would not separate the rules"
+        },
+        {
+          "args": [-2.5],
+          "expected": -3,
+          "note": "the negative of the second discriminator"
+        },
+        {
+          "args": [1.5],
+          "expected": 2,
+          "note": "the case where banker's and half-away agree — present so a failure here means something other than the boundary rule"
+        },
+        {
+          "args": [1.4],
+          "expected": 1,
+          "note": "ordinary rounding down"
+        },
+        {
+          "args": [1.6],
+          "expected": 2,
+          "note": "ordinary rounding up"
+        },
+        {
+          "args": [-1.4],
+          "expected": -1,
+          "note": "negative, ordinary"
+        },
+        {
+          "args": [0.0],
+          "expected": 0,
+          "note": "zero stays zero and carries no sign"
+        }
+      ]
+    },
+    "transform_floor": {
+      "fixture": "compute_floored",
+      "signature": "(value: f64) -> i32",
+      "formula": "floor — the largest integer not greater than the input (toward -inf)",
+      "cases": [
+        {
+          "args": [2.7],
+          "expected": 2,
+          "note": "ordinary — floor and truncation agree on every non-negative input"
+        },
+        {
+          "args": [-2.7],
+          "expected": -3,
+          "note": "THE discriminator — toward -inf gives -3, truncation gives -2"
+        },
+        {
+          "args": [-0.5],
+          "expected": -1,
+          "note": "the sharpest case — toward -inf is -1, toward zero is 0, and a lowering that reached for truncation because the word says \"discard the digits\" fails here first"
+        },
+        {
+          "args": [-1.999],
+          "expected": -2,
+          "note": "just inside -2 — truncation would stop at -1"
+        },
+        {
+          "args": [-0.999],
+          "expected": -1,
+          "note": "a whole fractional step below zero floors to -1, not 0"
+        },
+        {
+          "args": [0.5],
+          "expected": 0,
+          "note": "below one on the positive side"
+        },
+        {
+          "args": [2.0],
+          "expected": 2,
+          "note": "an exact integer keeps its value"
+        },
+        {
+          "args": [-2.0],
+          "expected": -2,
+          "note": "an exact negative integer keeps its value; floor must not move it"
+        },
+        {
+          "args": [0.0],
+          "expected": 0,
+          "note": "zero stays zero and carries no sign"
+        }
+      ]
+    },
     "transform_temperature": {
       "fixture": "compute_temperature",
       "signature": "(raw: u16) -> f64",
@@ -236,6 +340,53 @@
             "low_nibble": 15
           },
           "note": "0x0F"
+        }
+      ]
+    },
+    "transform_mixed_boolean": {
+      "fixture": "compute_alerting / compute_ranged",
+      "signature": "(alarm: i32, level: i32) -> {alerting: bool, ranged: bool}",
+      "formula": "alerting = alarm == 2 || (1 <= level && level <= 4); ranged = (1 <= level && level <= 4) || alarm == 2",
+      "cases": [
+        {
+          "args": [0, 0],
+          "expected": {
+            "alerting": false,
+            "ranged": false
+          },
+          "note": "neither disjunct holds"
+        },
+        {
+          "args": [2, 0],
+          "expected": {
+            "alerting": true,
+            "ranged": true
+          },
+          "note": "only the equality disjunct holds"
+        },
+        {
+          "args": [0, 3],
+          "expected": {
+            "alerting": true,
+            "ranged": true
+          },
+          "note": "only the range conjunction holds"
+        },
+        {
+          "args": [0, 5],
+          "expected": {
+            "alerting": false,
+            "ranged": false
+          },
+          "note": "level above the range — the && must not be satisfied by its first operand alone"
+        },
+        {
+          "args": [2, 5],
+          "expected": {
+            "alerting": true,
+            "ranged": true
+          },
+          "note": "equality holds while the range does not — separates || from &&"
         }
       ]
     },

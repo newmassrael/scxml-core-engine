@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: the `floor(x)` builtin, and specifically what it does
+  to NEGATIVE numbers.
+
+  ⚠ WHY NEGATIVES ARE THE WHOLE POINT. `floor` moves toward −∞; truncation
+  discards the fractional part and moves toward ZERO. They are identical on
+  every non-negative input:
+
+      floor(2.7) = 2      trunc(2.7) = 2      agree
+      floor(-2.7) = -3    trunc(-2.7) = -2    DISAGREE
+
+  A fixture of positives alone would pass against either lowering in all six
+  backends, so the cases below are built around the negative side. `-0.5` is
+  the sharpest of them: toward −∞ it is −1, toward zero it is 0, and an error
+  that only shows up between −1 and 0 is exactly the kind a positives-only
+  fixture ships.
+
+  ⚠⚠ THIS FIXTURE ONCE HELD THE OPPOSITE ANSWERS, and that is why it exists.
+  It was first written as `transform_truncation`, lowering to each backend's
+  truncation, on the reasoning that the source notation's word means "discard
+  the digits" and discarding goes toward zero. That was a reading of a WORD.
+  The shipped implementation this generator has to agree with settles it the
+  other way — it uses floor throughout and truncation nowhere, including at
+  both of the places whose operand can actually go negative, where it writes
+  `floor(x * 100.0) / 100.0`. A word's connotation is not evidence about a
+  boundary; the code that has to match is.
+
+  ⚠⚠⚠ A DIGIT COUNT NEEDS NO SECOND SIGNATURE. `floor(x * 100) / 100` is how
+  that same implementation writes "round down to two decimals", and
+  `floor(x / step) * step` is how it quantises to a grid. Both compose from
+  this builtin plus arithmetic that already lowers, which is why `floor(x,
+  digits)` is absent: it would be a second spelling of something the vocabulary
+  can already say, and a second place for the boundary rule to drift.
+
+  ⚠ The backends already agree here — C/C++ `std::floor`, Rust `f64::floor`,
+  Go `math.Floor`, Python `math.floor`, Kotlin `kotlin.math.floor` all go
+  toward −∞, so none needs the sign branch `round` needs in Python and Kotlin.
+  That agreement is precisely what a later change could break without anything
+  else noticing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="floor">
+  <datamodel>
+    <data id="value" sce:type="float64" sce:direction="in"/>
+    <data id="floored" sce:type="int32" sce:direction="out" expr="floor(value)"/>
+  </datamodel>
+</scxml>

@@ -2016,6 +2016,14 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 // `i < len(a)` (`i: u32`) can width-coerce the always-wider
                 // host length type (`usize` / `size_t`) at emit time.
                 None if is_len_builtin(callee, args) => InferredType::UntypedInt,
+                // `round` and `floor` both yield a whole number, and the
+                // notation they lower from says so outright: with no digit
+                // comment attached, the result is an integer. `UntypedInt`
+                // rather than a fixed width for the same reason `len` uses it —
+                // the surrounding context decides how wide, so a linear unit
+                // conversion adopts its declared output width instead of
+                // forcing one.
+                None if real_to_int_builtin(callee, args).is_some() => InferredType::UntypedInt,
                 None => InferredType::Unknown,
             }
         }
@@ -2192,6 +2200,24 @@ fn child_needs_parens(
     }
 }
 
+/// `&&` nested inside `||` — parenthesise it for the C family even though
+/// precedence does not require it.
+///
+/// ⚠ Precedence-correct is not the same as compilable. `a || b && c` binds the
+/// way the document means, so `child_needs_parens` leaves it bare — and then
+/// GCC and Clang emit `-Wparentheses` ("suggest parentheses around '&&' within
+/// '||'"). A target that builds with `-Wall -Werror`, which a real downstream
+/// build does, turns that into a hard error, so the generated file does not
+/// compile at all. Found by generating a component and feeding it to such a
+/// build: an expression of the shape `a == 2 || b >= 1 && b <= 4` stopped it.
+///
+/// This is deliberately C-family only. Rust, Go, Kotlin and Python have no
+/// such diagnostic, and widening the rule would re-pin every committed tree in
+/// those languages to fix a warning they do not have.
+fn c_family_clarity_parens(child: &TypedExpr, parent_op: BinOp) -> bool {
+    matches!(parent_op, BinOp::Or) && matches!(&child.kind, ExprKind::Binary { op: BinOp::And, .. })
+}
+
 /// Wrap an emitted sub-expression in parens when it is used as the base of a
 /// postfix access (`.`, `[]`, `()`) and the underlying AST shape would
 /// otherwise bind differently than intended.
@@ -2256,6 +2282,85 @@ fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
         && matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len")
 }
 
+/// The unary builtins that consume a real number and produce an integer:
+/// `round(x)` and `floor(x)`.
+///
+/// They share every structural property — one argument, a `Float{64}`
+/// expectation pushed onto that argument so an integer sub-expression widens
+/// before the conversion, `UntypedInt` inference so the surrounding context
+/// picks the width, and a width-aware plus a width-free emitter arm in each
+/// backend. Only the native call differs. Keeping them ONE family is what
+/// stops the nine emitter arms from becoming eighteen.
+///
+/// ⚠ WHY THEY ARE BUILTINS AND NOT IMPORTS. The surveyed source of this
+/// work — an automotive cluster specification — attaches an approximation to
+/// computed values, and it has TWO halves rather than one: round, and round
+/// down. Setting aside the piecewise-interpolation cases, which
+/// `sce:kind="interpolation"` already covers, what is left is LINEAR UNIT
+/// CONVERSIONS: temperature, km↔mile, displayed speed, the odometer,
+/// state-of-charge, accumulated time. The arithmetic already lowered; the
+/// approximation was the only thing missing, so these two names unlock the
+/// largest arithmetic cluster in that material.
+///
+/// ⚠⚠ `round` IS HALF AWAY FROM ZERO, DECIDED HERE RATHER THAN INHERITED. The
+/// backends do NOT agree on what rounding does at `.5`:
+///
+///   C/C++ `std::round`, Rust `f64::round`, Go `math.Round` — half away from
+///   zero (0.5 → 1, −0.5 → −1)
+///   Python `round`, Kotlin `kotlin.math.round` — half to EVEN (0.5 → 0)
+///
+/// Taking each language's default would make Python and Kotlin disagree with
+/// the other four on exactly the `.5` inputs — a divergence invisible to any
+/// fixture that does not feed a `.5`, which is why `transform_rounding`
+/// carries them.
+///
+/// ⚠ THE JUSTIFICATION THIS COMMENT ONCE GAVE WAS WRONG, and the correction is
+/// the load-bearing part. It said the choice followed "half-up by convention".
+/// Half-up and half away from zero are the SAME for positives and DIFFER for
+/// negatives — half-up sends −2.5 to −2, half away from zero sends it to −3 —
+/// so that sentence named a rule this code does not implement, and a reader who
+/// believed it could "simplify" the Python/Kotlin lowering to `floor(x + 0.5)`
+/// unconditionally and break every negative input. Worked examples in the
+/// source material settle it the other way at every negative `.5` they cross.
+/// A word's connotation is not evidence about a boundary.
+///
+/// ⚠⚠⚠ `floor` IS TOWARD −∞, AND THAT TOO WAS MEASURED RATHER THAN READ OFF A
+/// WORD. The notation's own name reads as "round down", while the word beside
+/// it reads as "discard the digits" — and those two diverge on negatives, where
+/// discarding gives −2 for −2.7 and rounding down gives −3. The tie is broken
+/// by the shipped implementation this generator has to agree with: it uses
+/// floor throughout and truncation nowhere, including at both of the places
+/// whose operand can actually go negative. Every OTHER site operates on a
+/// non-negative quantity, so the two are indistinguishable there; the choice is
+/// still made here, because the six emitters must agree with each other
+/// whatever any one document exercises. `transform_floor` is what holds it.
+///
+/// ⚠⚠⚠⚠ NEITHER TAKES A DIGIT COUNT, because neither needs one. "Round down to
+/// two decimals" is `floor(x * 100) / 100`, and a quantise-to-a-grid is
+/// `floor(x / step) * step`; both compose from these names plus arithmetic that
+/// already lowers, and the implementation writes them exactly that way. A
+/// digit-taking overload would be a second spelling of something the vocabulary
+/// can already say, and a second place for the boundary rule to drift.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RealToInt {
+    Round,
+    Floor,
+}
+
+fn real_to_int_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> Option<RealToInt> {
+    if args.len() != 1 {
+        return None;
+    }
+    match &callee.kind {
+        ExprKind::Ident(n) | ExprKind::Raw(n) => match n.as_str() {
+            "round" => Some(RealToInt::Round),
+            "floor" => Some(RealToInt::Floor),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Names a forge expression may call without the context registering them.
 ///
 /// `len` is the length builtin (`is_len_builtin` types it) and `eq` the
@@ -2263,7 +2368,7 @@ fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
 /// other callable reaches a forge expression by being REGISTERED — a stateless
 /// cross-file import, an `<sce:helper>` declaration, or a stateful import's
 /// method — so `ctx.funcs` is the rest of the vocabulary.
-const EXPR_BUILTINS: [&str; 2] = ["len", "eq"];
+const EXPR_BUILTINS: [&str; 4] = ["len", "eq", "round", "floor"];
 
 /// Refuse a call to a name nothing provides.
 ///
@@ -2271,15 +2376,26 @@ const EXPR_BUILTINS: [&str; 2] = ["len", "eq"];
 /// the emitters then print it VERBATIM, so until this check every one of
 /// these was accepted with exit 0:
 ///
-///     expr="round(v * 100.0) / 100.0"      ->  return round(v * 100.0) / 100.0;
-///     expr="totallyMadeUpFn(v)"            ->  return totallyMadeUpFn(v);
+/// ```text
+/// expr="totallyMadeUpFn(v)"   ->  return totallyMadeUpFn(v);
+/// expr="Math.tanh(v)"         ->  return Math.tanh(v);
+/// ```
 ///
-/// The first does not compile — `round` lives in `<cmath>` and the emitted
-/// header includes `<cstdint>` and `<string>` — and the second does not
-/// compile either, which is the only reason the hole was survivable. A typo
-/// in a helper's name took the same path. Measured 2026-09-17 while looking
-/// for a form for the specification's `Rounds off`, which is used 149 times
-/// and has none.
+/// Neither compiles, which is the only reason the hole was survivable — a
+/// typo in a helper's name took the same path and was caught by the target
+/// compiler rather than by SCE. Measured 2026-09-17 while looking for a form
+/// for the specification's `Rounds off`.
+///
+/// ⚠⚠ THE FENCE IS `text` DELIBERATELY. This block was written indented, and
+/// rustdoc reads an indented block as a Rust doctest — so `cargo test -p
+/// sce-build` tried to COMPILE `expr="…"` as Rust and failed, while
+/// `cargo test --lib` (which does not run doctests) stayed green over it.
+/// Measured 2026-09-18.
+///
+/// ⚠⚠⚠ The example used to be `round(v * 100.0)`, said to be unprovided. It
+/// is provided now — see `real_to_int_builtin` — so the example moved to names
+/// that are still absent. An example of a refusal has to be a name the
+/// vocabulary really lacks, or it teaches the opposite of what it says.
 ///
 /// ⚠⚠ The check runs AFTER `infer_types` on purpose: inference is what binds
 /// each `Call` to a signature, so asking before it would refuse everything,
@@ -2331,7 +2447,15 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Exp
                     ctx.funcs.keys().map(|k| (*k).to_string()).collect();
                 available.extend(EXPR_BUILTINS.iter().map(|b| (*b).to_string()));
                 available.sort();
-                return Err(ExprError::UnsupportedBuiltin { name, available });
+                return Err(ExprError::UnsupportedBuiltin {
+                    name,
+                    // ⚠ NOT the ECMAScript datamodel. A `sce:kind` document's
+                    // `expr=` is evaluated by this layer, whose vocabulary is
+                    // `EXPR_BUILTINS` plus the document's own imported
+                    // functions — two names, not the seventeen of `Math`.
+                    vocabulary: "SCE's forge expression layer".to_string(),
+                    available,
+                });
             }
         }
     }
@@ -2374,12 +2498,16 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
             let l_raw = emit_cpp(left, expected)?;
             let r_raw = emit_cpp(right, expected)?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+            let l = if child_needs_parens(left, *op, true, ecma_precedence)
+                || c_family_clarity_parens(left, *op)
+            {
                 format!("({l_raw})")
             } else {
                 l_raw
             };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+            let r = if child_needs_parens(right, *op, false, ecma_precedence)
+                || c_family_clarity_parens(right, *op)
+            {
                 format!("({r_raw})")
             } else {
                 r_raw
@@ -2434,12 +2562,16 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_cpp(left, operand_ty)?;
             let r_raw = emit_cpp(right, operand_ty)?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+            let l = if child_needs_parens(left, *op, true, ecma_precedence)
+                || c_family_clarity_parens(left, *op)
+            {
                 format!("({l_raw})")
             } else {
                 l_raw
             };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+            let r = if child_needs_parens(right, *op, false, ecma_precedence)
+                || c_family_clarity_parens(right, *op)
+            {
                 format!("({r_raw})")
             } else {
                 r_raw
@@ -2489,6 +2621,20 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     "({}).size()",
                     emit_cpp(&args[0], InferredType::Unknown)?
                 ));
+            }
+            if let Some(op) = real_to_int_builtin(callee, args) {
+                // `std::llround` is half away from zero and returns an
+                // integer, which is what the notation asks for. `std::floor`
+                // returns an integral-VALUED double, so the cast that follows
+                // it is exact rather than a second rounding. The argument is
+                // emitted with a Float expectation so an integer-typed
+                // sub-expression widens rather than truncating before the
+                // conversion happens.
+                let inner = emit_cpp(&args[0], InferredType::Float { bits: 64 })?;
+                return Ok(match op {
+                    RealToInt::Round => format!("std::llround({inner})"),
+                    RealToInt::Floor => format!("static_cast<long long>(std::floor({inner}))"),
+                });
             }
             let mut a = Vec::with_capacity(args.len());
             for arg in args {
@@ -2580,6 +2726,30 @@ fn cpp_unary(op: UnaryOp) -> &'static str {
 //   `.toUByte()` / `.toUShort()` / `.toUInt()` / `.toULong()`.
 
 fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+    // Width-aware `round`/`floor`: same rule as Rust and Go — the declared
+    // output type decides the integer, not a constant. See
+    // `real_to_int_builtin`.
+    if let ExprKind::Call { callee, args } = &expr.kind {
+        if let Some(op) = real_to_int_builtin(callee, args) {
+            if let InferredType::Int { signed, bits } = expected {
+                let inner = emit_kotlin(&args[0], InferredType::Float { bits: 64 })?;
+                let ctor = if signed {
+                    kotlin_signed_ctor(bits)
+                } else {
+                    kotlin_unsigned_ctor(bits)
+                };
+                // ⚠ `floor` needs no sign branch the way `round` does:
+                // `kotlin.math.floor` already goes toward −∞, and it is
+                // `kotlin.math.round` alone that disagrees with the other five
+                // backends.
+                let call = match op {
+                    RealToInt::Round => kotlin_round_half_away(inner),
+                    RealToInt::Floor => format!("kotlin.math.floor({inner})"),
+                };
+                return Ok(format!("{call}.{ctor}()"));
+            }
+        }
+    }
     // Push-down: see emit_rust for rationale.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
@@ -2826,6 +2996,29 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     emit_kotlin(&args[0], InferredType::Unknown)?
                 ));
             }
+            if let Some(op) = real_to_int_builtin(callee, args) {
+                // ⚠ NOT `kotlin.math.round`, which is half to EVEN. `floor(x
+                // + 0.5)` is half away from zero for non-negative input and
+                // `ceil(x - 0.5)` for negative, so the sign is branched on
+                // rather than inherited — the other five backends round
+                // 0.5 → 1 and −0.5 → −1, and this must agree.
+                //
+                // ⚠ `kotlin.math.floor` needs no such treatment: it goes
+                // toward −∞ like every other backend's floor, so only `round`
+                // is the odd one out here.
+                //
+                // ⚠⚠ `.toLong()` here is the WIDTH-FREE fallback. When the
+                // context declares an integer width, `emit_kotlin` intercepts
+                // this call above and converts to that type instead; without
+                // that arm a `sce:type="int32"` output returned `Long` from an
+                // `Int` function, which Kotlin refuses.
+                let inner = emit_kotlin(&args[0], InferredType::Float { bits: 64 })?;
+                let call = match op {
+                    RealToInt::Round => kotlin_round_half_away(inner),
+                    RealToInt::Floor => format!("kotlin.math.floor({inner})"),
+                };
+                return Ok(format!("{call}.toLong()"));
+            }
             let mut a = Vec::with_capacity(args.len());
             for arg in args {
                 a.push(emit_kotlin(arg, InferredType::Unknown)?);
@@ -2961,6 +3154,20 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
     }
 }
 
+/// Kotlin's half-away-from-zero rounding, as a `Double`-valued expression.
+///
+/// Factored out because two call sites need the same arithmetic and only
+/// differ in what they convert the result to — the width-aware arm in
+/// `emit_kotlin` and the width-free fallback in `kotlin_emit_node`. Writing it
+/// twice is how the two would drift apart at `.5`, which is the one input that
+/// distinguishes this from the language's own `round`.
+fn kotlin_round_half_away(inner: String) -> String {
+    format!(
+        "(({inner}).let {{ v -> if (v < 0.0) kotlin.math.ceil(v - 0.5) \
+         else kotlin.math.floor(v + 0.5) }})"
+    )
+}
+
 fn kotlin_signed_ctor(bits: u8) -> &'static str {
     match bits {
         8 => "toByte",
@@ -3081,6 +3288,25 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErr
                 ));
             }
         }
+        // ⚠ THE WIDTH COMES FROM THE CONTEXT, NOT FROM A CONSTANT. The first
+        // version of `round` emitted `as i64` everywhere, and a `transform`
+        // declaring `sce:type="int32"` then returned `i64` from an `i32`
+        // function — a compile error in Rust and Go, a silent narrowing in
+        // C++. `len` already solved this by widening to the EXPECTED integer
+        // type; `round` does the same.
+        if let Some(op) = real_to_int_builtin(callee, args) {
+            if let InferredType::Int { signed, bits } = expected {
+                let inner = emit_rust(&args[0], InferredType::Float { bits: 64 })?;
+                let m = match op {
+                    RealToInt::Round => "round",
+                    RealToInt::Floor => "floor",
+                };
+                return Ok(format!(
+                    "({inner}).{m}() as {}",
+                    rust_int_type(signed, bits)
+                ));
+            }
+        }
     }
     let raw = rust_emit_node(expr)?;
     rust_coerce(raw, expr.ty, expected, expr)
@@ -3174,6 +3400,16 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     "({}).len()",
                     emit_rust(&args[0], InferredType::Unknown)?
                 ));
+            }
+            if let Some(op) = real_to_int_builtin(callee, args) {
+                // `f64::round` is already half away from zero, and `f64::floor`
+                // already goes toward −∞.
+                let inner = emit_rust(&args[0], InferredType::Float { bits: 64 })?;
+                let m = match op {
+                    RealToInt::Round => "round",
+                    RealToInt::Floor => "floor",
+                };
+                return Ok(format!("(({inner}).{m}() as i64)"));
             }
             let mut emitted_args = Vec::with_capacity(args.len());
             for a in args {
@@ -3380,6 +3616,17 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 return Ok(format!("{}(len({inner}))", go_int_type(signed, bits)));
             }
         }
+        // Same width rule as Rust above — the context decides, not a constant.
+        if let Some(op) = real_to_int_builtin(callee, args) {
+            if let InferredType::Int { signed, bits } = expected {
+                let inner = emit_go(&args[0], InferredType::Float { bits: 64 })?;
+                let f = match op {
+                    RealToInt::Round => "math.Round",
+                    RealToInt::Floor => "math.Floor",
+                };
+                return Ok(format!("{}({f}({inner}))", go_int_type(signed, bits)));
+            }
+        }
     }
     let raw = go_emit_node(expr)?;
     Ok(go_coerce(raw, expr.ty, expected, expr))
@@ -3473,6 +3720,16 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     "len({})",
                     emit_go(&args[0], InferredType::Unknown)?
                 ));
+            }
+            if let Some(op) = real_to_int_builtin(callee, args) {
+                // `math.Round` is already half away from zero, and `math.Floor`
+                // already goes toward −∞.
+                let inner = emit_go(&args[0], InferredType::Float { bits: 64 })?;
+                let f = match op {
+                    RealToInt::Round => "math.Round",
+                    RealToInt::Floor => "math.Floor",
+                };
+                return Ok(format!("int64({f}({inner}))"));
             }
             let mut a = Vec::with_capacity(args.len());
             for arg in args {
@@ -3765,6 +4022,23 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     emit_python(&args[0], InferredType::Unknown)?
                 ));
             }
+            if let Some(op) = real_to_int_builtin(callee, args) {
+                // ⚠ NOT the builtin `round`, which is banker's rounding:
+                // `round(0.5)` is 0 in Python and 1 everywhere else. `floor(x
+                // + 0.5)` / `ceil(x - 0.5)` by sign gives half away from zero,
+                // matching the other five backends.
+                //
+                // ⚠ `math.floor` needs no such rewrite — it goes toward −∞ and
+                // returns an `int`, so only `round` is the odd one out.
+                let inner = emit_python(&args[0], InferredType::Float { bits: 64 })?;
+                return Ok(match op {
+                    RealToInt::Round => format!(
+                        "int(__import__('math').floor(({inner}) + 0.5) \
+                         if ({inner}) >= 0 else __import__('math').ceil(({inner}) - 0.5))"
+                    ),
+                    RealToInt::Floor => format!("__import__('math').floor({inner})"),
+                });
+            }
             let mut a = Vec::with_capacity(args.len());
             for arg in args {
                 a.push(emit_python(arg, InferredType::Unknown)?);
@@ -3845,12 +4119,16 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
             let l_raw = emit_c(left, expected)?;
             let r_raw = emit_c(right, expected)?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+            let l = if child_needs_parens(left, *op, true, ecma_precedence)
+                || c_family_clarity_parens(left, *op)
+            {
                 format!("({l_raw})")
             } else {
                 l_raw
             };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+            let r = if child_needs_parens(right, *op, false, ecma_precedence)
+                || c_family_clarity_parens(right, *op)
+            {
                 format!("({r_raw})")
             } else {
                 r_raw
@@ -3950,12 +4228,16 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_c(left, operand_ty)?;
             let r_raw = emit_c(right, operand_ty)?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+            let l = if child_needs_parens(left, *op, true, ecma_precedence)
+                || c_family_clarity_parens(left, *op)
+            {
                 format!("({l_raw})")
             } else {
                 l_raw
             };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+            let r = if child_needs_parens(right, *op, false, ecma_precedence)
+                || c_family_clarity_parens(right, *op)
+            {
                 format!("({r_raw})")
             } else {
                 r_raw
@@ -4014,6 +4296,16 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     "({}).len",
                     emit_c(&args[0], InferredType::Unknown)?
                 ));
+            }
+            if let Some(op) = real_to_int_builtin(callee, args) {
+                // C99 `llround` is half away from zero, same as C++. C99
+                // `floor` returns an integral-VALUED double, so the cast is
+                // exact rather than a second conversion.
+                let inner = emit_c(&args[0], InferredType::Float { bits: 64 })?;
+                return Ok(match op {
+                    RealToInt::Round => format!("llround({inner})"),
+                    RealToInt::Floor => format!("(long long)floor({inner})"),
+                });
             }
             let mut a = Vec::with_capacity(args.len());
             for arg in args {
@@ -4613,6 +4905,43 @@ mod tests {
     #[test]
     fn cpp_precedence_bitwise_vs_comparison() {
         assert_eq!(tp("a & 0xFF === b", ExprTarget::Cpp), "a & 0xFF == b");
+    }
+
+    /// `&&` inside `||` must carry parens in the C family, although precedence
+    /// does not require them.
+    ///
+    /// ⚠ THE WITNESS IS A BUILD FAILURE, NOT A STYLE PREFERENCE. Emitting
+    /// `a == 2 || b >= 1 && b <= 4` is precedence-correct and GCC still refuses
+    /// it under `-Wall -Werror`:
+    ///
+    ///     error: suggest parentheses around '&&' within '||'
+    ///            [-Werror=parentheses]
+    ///
+    /// A real downstream build uses exactly those flags, so a generated file of
+    /// this shape does not compile at all. Found by converting a component and
+    /// feeding the result to that build.
+    #[test]
+    fn c_family_parenthesises_and_within_or() {
+        for target in [ExprTarget::Cpp, ExprTarget::C] {
+            assert_eq!(
+                tp("a === 2 || b >= 1 && b <= 4", target),
+                "a == 2 || (b >= 1 && b <= 4)",
+                "{target:?} left the && bare inside ||"
+            );
+            // the other operand order warns the same way
+            assert_eq!(
+                tp("b >= 1 && b <= 4 || a === 2", target),
+                "(b >= 1 && b <= 4) || a == 2",
+                "{target:?} left the leading && bare"
+            );
+        }
+        // ⚠ Not widened past the C family: no other target has this
+        // diagnostic, and adding parens there would re-pin committed trees to
+        // silence a warning that does not exist.
+        assert_eq!(
+            tp("a === 2 || b >= 1 && b <= 4", ExprTarget::Rust),
+            "a == 2 || b >= 1 && b <= 4"
+        );
     }
 
     #[test]

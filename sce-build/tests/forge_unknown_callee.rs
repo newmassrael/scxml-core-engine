@@ -100,21 +100,50 @@ fn transform_with(expr: &str) -> String {
     )
 }
 
-/// The name that started this: a maths function the expression language does
-/// not carry. The refusal must NAME it and say what is available, because
-/// "available" is the whole of the answer an author needs.
+/// A maths function the expression language does not carry. The refusal must
+/// NAME it and say what is available, because "available" is the whole of the
+/// answer an author needs.
+///
+/// ⚠ THE SUBJECT MOVED, AND THE REASON IS THE POINT. This test was written
+/// against `round(v * 100.0) / 100.0`, because `round` was the name that
+/// started the whole check. `round` is a builtin now, so the document it built
+/// GENERATES — and the assertion, being `assert_ne!(code, Some(0))`, then
+/// failed with `left: Some(0), right: Some(0)`. A test whose subject becomes
+/// supported does not weaken quietly; it goes red, which is the right way
+/// round. Its sibling in `expr.rs` had already been re-pointed for exactly
+/// this reason and this one had not, so the vocabulary grew in two places and
+/// only one of them was swept.
+///
+/// `sqrt` is the subject now. Whoever adds `sqrt` will land here next, and the
+/// fix is the same: re-point the test at a name the vocabulary still lacks,
+/// never relax the assertion.
 #[test]
-fn a_transform_calling_round_is_refused() {
-    let (code, stderr) = generate(&transform_with("round(v * 100.0) / 100.0"), "round");
-    assert_ne!(code, Some(0), "a transform calling round() generated");
+fn a_transform_calling_an_unprovided_maths_name_is_refused() {
+    let (code, stderr) = generate(&transform_with("sqrt(v) / 100.0"), "sqrt");
+    assert_ne!(code, Some(0), "a transform calling sqrt() generated");
     assert!(
-        stderr.contains("round"),
+        stderr.contains("sqrt"),
         "the refusal does not name the callee:\n{stderr}"
     );
     assert!(
         stderr.contains("len") && stderr.contains("eq"),
         "the refusal does not offer the builtins that ARE available:\n{stderr}"
     );
+}
+
+/// ⚠ And the builtins the vocabulary DOES carry must still generate, so the
+/// test above cannot be satisfied by refusing everything. `round` and `floor`
+/// are the two that arrived after this file was written; both take the shape
+/// the refused document had, which is what makes them the right control.
+#[test]
+fn the_rounding_builtins_still_generate() {
+    for (expr, label) in [
+        ("round(v * 100.0) / 100.0", "roundok"),
+        ("floor(v * 100.0) / 100.0", "floorok"),
+    ] {
+        let (code, stderr) = generate(&transform_with(expr), label);
+        assert_eq!(code, Some(0), "`{expr}` was refused:\n{stderr}");
+    }
 }
 
 /// ⚠ And a misspelt helper takes the same path. Without this the check could

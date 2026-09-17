@@ -956,6 +956,67 @@ no typed interpretation or are explicitly excluded:
   `expression/empty`, and numeric-parse failures on integer literal
   overflow, which dispatch as `validation/numeric-parse`.
 
+### §3.4.1 The forge expression vocabulary — four names
+
+A forge expression (`expr=` on an `sce:kind` document's `<data>`) may call
+exactly four names without the document registering them:
+
+| Name | What it does |
+|---|---|
+| `len(x)` | length of a `bytes` or `string` |
+| `eq(a, b)` | bytes comparison |
+| `round(x)` | nearest whole number, **half away from zero** |
+| `floor(x)` | largest whole number not greater than `x`, **toward −∞** |
+
+Everything else callable reaches a forge expression by being REGISTERED —
+a stateless cross-file import, an `<sce:helper>`, or a stateful import's
+method. A name in neither place is refused as
+`expression/unsupported-builtin`, and the message names *the forge
+expression layer* rather than the ECMAScript datamodel: they are different
+vocabularies, and `Math.round` is in the second but not the first.
+
+**`round` rounds half away from zero, and SCE enforces that rather than
+inheriting it.** The backends disagree:
+
+- C/C++ `std::llround`, Rust `f64::round`, Go `math.Round` — half away from
+  zero (`0.5 → 1`, `2.5 → 3`, `-0.5 → -1`)
+- Python `round`, Kotlin `kotlin.math.round` — **half to even**
+  (`0.5 → 0`, `2.5 → 2`)
+
+Python and Kotlin are therefore lowered through `floor(x + 0.5)` /
+`ceil(x - 0.5)` by sign instead of the language builtin. The divergence is
+visible only at `.5`, so `tests/forge/resources/transform_rounding.scxml`
+feeds `0.5`, `2.5` and their negatives — `1.5` alone would not separate the
+two rules, because that is the one boundary case where they agree.
+
+The result type is the declared output's integer type, not a fixed width:
+`<data sce:type="int32" expr="round(raw * 0.1 - 40.0)"/>` yields `int32`. The
+same holds for `floor`.
+
+**`floor` goes toward −∞, which is not what truncation does.** `floor(-2.7)`
+is `-3`; discarding the fractional part gives `-2`. They agree on every
+non-negative input, so a fixture of positives cannot tell them apart and would
+accept either lowering in all six backends —
+`tests/forge/resources/transform_floor.scxml` therefore carries `-2.7`,
+`-0.5`, `-0.999` and `-1.999`, `-0.5` being the sharpest (toward −∞ it is
+`-1`, toward zero it is `0`).
+
+⚠ Unlike `round`, the backends already agree here: C/C++ `std::floor`, Rust
+`f64::floor`, Go `math.Floor`, Python `math.floor` and Kotlin
+`kotlin.math.floor` all go toward −∞, so none of them needs the sign branch
+`round` needs in Python and Kotlin. The fixture exists anyway, and its history
+is the reason: it was first written the other way round, on the reading that
+the source notation's word means "discard the digits". The implementation this
+generator must agree with uses floor throughout and truncation nowhere. A
+word's connotation is not evidence about a boundary.
+
+⚠⚠ Neither `round(x, digits)` nor `floor(x, digits)` is provided, and neither
+is needed: "round down to two decimals" is `floor(x * 100) / 100` and a
+quantise-to-a-grid is `floor(x / step) * step`. Both compose from these names
+plus arithmetic that already lowers. A digit-taking overload would be a second
+spelling of something the vocabulary can already say, and a second place for
+the boundary rule to drift.
+
 ### §3.5 ECMAScript standard-library names the datamodel does not carry
 
 W3C SCXML Appendix B.2 names ECMAScript as a data model but does not

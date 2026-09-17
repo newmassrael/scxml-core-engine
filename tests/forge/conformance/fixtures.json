@@ -57,6 +57,32 @@
       }
     },
     {
+      "name": "transform_rounding",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "f64"
+      ],
+      "output": {
+        "function": "compute_rounded",
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "transform_floor",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "f64"
+      ],
+      "output": {
+        "function": "compute_floored",
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "transform_temperature",
       "kind": "transform",
       "ref_section": "pure_functions",
@@ -87,6 +113,29 @@
           "key": "low_nibble",
           "function": "compute_low_nibble",
           "type": "u8",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
+      "name": "transform_mixed_boolean",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "i32",
+        "i32"
+      ],
+      "compound_outputs": [
+        {
+          "key": "alerting",
+          "function": "compute_alerting",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "key": "ranged",
+          "function": "compute_ranged",
+          "type": "bool",
           "compare": "equality"
         }
       ]
