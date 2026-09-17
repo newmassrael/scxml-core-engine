@@ -47,6 +47,23 @@
 
 set -euo pipefail
 
+# ── Restricted-term gate, ahead of the bypass on purpose ──────────
+#
+# Sourced from THIS HOOK's directory, like ident-gate.sh below, so it resolves
+# the same way when the hook runs against another tree. Its term list lives
+# OUTSIDE this repository and it never prints what it matched — the reasons are
+# in restricted-term-gate.sh and they are the point of the design, not a
+# detail.
+#
+# ⚠ It runs BEFORE the SKIP_PRECOMMIT short-circuit. Every stage below refuses
+# something a later commit can fix; this one refuses something no commit can:
+# the remote is public and a push does not un-publish. A formatting emergency
+# is not a reason to turn a permanent-disclosure guard off, so this gate has
+# its own override (SCE_RESTRICTED_OVERRIDE=1) which announces itself.
+# shellcheck source=tools/git-hooks/restricted-term-gate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/restricted-term-gate.sh"
+restricted_term_gate_staged || exit 1
+
 if [[ "${SKIP_PRECOMMIT:-0}" == "1" ]]; then
     echo "pre-commit: SKIP_PRECOMMIT=1 — bypassing local fmt gate" >&2
     exit 0
