@@ -1,0 +1,119 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Timer kind — a periodic timer driven through an injected ITimer.
+
+   What is compared is not a return value but a SEQUENCE OF CALLS: the
+   generated class owns no state a test can read, so the only observable is
+   what it asks its collaborators to do. A recording mock stands in for the
+   HAL and a recording handler for the fire target, and the oracle lists the
+   operations each scripted call must produce.
+
+   That surface — start / cancel / onReset<Event> / onCancel<State>Exit and a
+   compile-time period constant — is common to all six language arms, which
+   is what lets one oracle in numerical_reference.json serve every one of
+   them. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    {
+        namespace G = SCE::Generated::{{ f.name | to_pascal_case }};
+
+        // The recording HAL. `startPeriodic` records the interval it was
+        // given, so a conversion that passed microseconds where the
+        // interface documents milliseconds fails on the VALUE rather than
+        // silently running 1000x fast.
+        struct RecordingTimer final : SCE::Forge::ITimer {
+            std::vector<std::string> ops;
+            SCE::Forge::TimerCallback cb = nullptr;
+            void *ctx = nullptr;
+
+            void startPeriodic(std::uint32_t intervalMs, SCE::Forge::TimerCallback c,
+                               void *x) override {
+                ops.push_back("start_periodic:" + std::to_string(intervalMs));
+                cb = c;
+                ctx = x;
+            }
+            void startOneShot(std::uint32_t delayMs, SCE::Forge::TimerCallback c,
+                              void *x) override {
+                // Reachable only if a future template starts emitting it.
+                // Recorded rather than ignored so that change shows up here
+                // as a diff instead of as silence.
+                ops.push_back("start_one_shot:" + std::to_string(delayMs));
+                cb = c;
+                ctx = x;
+            }
+            void cancel() override {
+                ops.push_back("cancel");
+            }
+        };
+
+        struct RecordingHandler {
+            std::vector<std::string> *ops = nullptr;
+            void fire{{ f.fire_event | to_pascal_case }}() {
+                ops->push_back("fired:{{ f.fire_event }}");
+            }
+        };
+
+        RecordingTimer hal;
+        RecordingHandler handler{&hal.ops};
+        G::{{ f.name | to_pascal_case }}<RecordingHandler> timer(handler, hal);
+
+        // The compile-time constants are part of the contract: the document
+        // said `2s` and both spellings have to agree with it.
+        CHECK(static_cast<long long>(G::kPeriodMs) == spec["period_ms"].get<long long>(),
+              "{{ f.name }}: kPeriodMs=%lld expected=%lld",
+              static_cast<long long>(G::kPeriodMs), spec["period_ms"].get<long long>());
+        CHECK(static_cast<long long>(G::kPeriodUs) == spec["period_us"].get<long long>(),
+              "{{ f.name }}: kPeriodUs=%lld expected=%lld",
+              static_cast<long long>(G::kPeriodUs), spec["period_us"].get<long long>());
+
+        int step = 0;
+        for (const auto &s : spec["sequence"]) {
+            hal.ops.clear();
+            const auto call = s["call"].get<std::string>();
+            if (call == "start") {
+                timer.start();
+            } else if (call == "cancel") {
+                timer.cancel();
+            } else if (call == "fire") {
+                // Triggering the callback the mock stored is what proves the
+                // trampoline reaches the handler; calling the handler
+                // directly would prove only that the test can call it.
+                if (hal.cb == nullptr) {
+                    std::printf("FAIL: {{ f.name }} step %d: no callback was registered\n", step);
+                    ++g_failures;
+                } else {
+                    hal.cb(hal.ctx);
+                }
+{% if f.reset_on_event %}
+            } else if (call == "on_reset") {
+                timer.onReset{{ f.reset_on_event | to_pascal_case }}();
+{% endif %}
+{% if f.cancel_on_state_exit %}
+            } else if (call == "on_cancel_exit") {
+                timer.onCancel{{ f.cancel_on_state_exit | to_pascal_case }}Exit();
+{% endif %}
+            } else {
+                std::printf("FAIL: {{ f.name }} step %d: unknown call %s\n", step, call.c_str());
+                ++g_failures;
+            }
+
+            std::vector<std::string> expected;
+            for (const auto &e : s["expect"]) {
+                expected.push_back(e.get<std::string>());
+            }
+            if (hal.ops != expected) {
+                std::printf("FAIL: {{ f.name }} step %d (%s): ops differ\n", step, call.c_str());
+                std::printf("       actual  :");
+                for (const auto &o : hal.ops) {
+                    std::printf(" %s", o.c_str());
+                }
+                std::printf("\n       expected:");
+                for (const auto &o : expected) {
+                    std::printf(" %s", o.c_str());
+                }
+                std::printf("\n");
+                ++g_failures;
+            }
+            ++step;
+        }
+    }

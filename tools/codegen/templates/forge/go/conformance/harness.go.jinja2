@@ -19,10 +19,13 @@ package conformance
 
 import (
 	"encoding/json"
+{% if has_timer %}
+	"fmt"
+{% endif %}
 	"math"
 	"os"
 	"path/filepath"
-{% if has_procedure %}
+{% if has_procedure or has_timer %}
 	"reflect"
 {% endif %}
 	"runtime"
@@ -140,21 +143,34 @@ type codecCase struct {
 	Encoded []int           `json:"encoded"`
 }
 
+// ⚠ This described the removed multi-timer `<data sce:timer=…>` shape — a
+// list of `{type, interval_ms, callback}` records. The kind now emits ONE
+// periodic timer whose observable is the sequence of calls it makes on the
+// injected HAL, so the oracle is a scripted sequence and the spec follows it.
 type timerSpec struct {
-	Timers []timerEntry `json:"timers"`
+	PeriodMs uint32          `json:"period_ms"`
+	PeriodUs uint64          `json:"period_us"`
+	Sequence []timerSeqStep  `json:"sequence"`
 }
 
-type timerEntry struct {
-	Type       string `json:"type"`
-	IntervalMs uint32 `json:"interval_ms"`
-	Callback   string `json:"callback"`
+type timerSeqStep struct {
+	Call   string   `json:"call"`
+	Expect []string `json:"expect"`
 }
 {% if has_timer %}
 
 // Recording mock implementing the timer.Timer interface. File-level
 // because Go forbids method-receiver definitions inside function
 // bodies — a method's receiver type must live at package scope.
+// ⚠ This mock was written for the multi-timer `<data sce:timer=…>` shape
+// removed on 2026-05-12: it kept only the LAST registration and its
+// `Cancel()` recorded nothing, because the old oracle asked "what type and
+// interval was registered" rather than "what sequence of calls happened".
+// The kind now emits one timer whose whole observable is that sequence — a
+// reset is a cancel THEN a start, and a mock that drops cancels cannot tell
+// that from a bare start. `ops` is the recording the oracle compares.
 type recTimer struct {
+	ops     []string
 	regType string
 	regMs   uint32
 	regCb   func()
@@ -165,9 +181,23 @@ type recTimer struct {
 // parameter types to be identical (not merely structurally equivalent
 // to the underlying type). Without the named alias the compiler reports
 // `*recTimer does not implement timer.Timer`.
-func (r *recTimer) StartPeriodic(ms uint32, cb timer.Callback) { r.regType = "periodic"; r.regMs = ms; r.regCb = cb }
-func (r *recTimer) StartOneShot(ms uint32, cb timer.Callback)  { r.regType = "one_shot"; r.regMs = ms; r.regCb = cb }
-func (r *recTimer) Cancel()                                    {}
+func (r *recTimer) StartPeriodic(ms uint32, cb timer.Callback) {
+	r.ops = append(r.ops, fmt.Sprintf("start_periodic:%d", ms))
+	r.regType = "periodic"
+	r.regMs = ms
+	r.regCb = cb
+}
+
+func (r *recTimer) StartOneShot(ms uint32, cb timer.Callback) {
+	// Recorded rather than ignored: no template emits it today, and if one
+	// starts, this surfaces as a diff instead of as silence.
+	r.ops = append(r.ops, fmt.Sprintf("start_one_shot:%d", ms))
+	r.regType = "one_shot"
+	r.regMs = ms
+	r.regCb = cb
+}
+
+func (r *recTimer) Cancel() { r.ops = append(r.ops, "cancel") }
 
 // Per-fixture handler mocks. Each generated scheduler exposes a
 // fixture-specific Handler interface whose method set differs by
@@ -175,11 +205,15 @@ func (r *recTimer) Cancel()                                    {}
 // fixtures the way recTimer is.
 {% for f in fixtures %}
 {% if f.kind == "timer" %}
-type {{ f.name | to_pascal_case }}RecHandler struct{ lastCall string }
+{# The handler appends into the SAME buffer the timer mock uses, so one
+   ordered recording covers both collaborators. `f.timers` — a list of
+   `{callback}` records — belonged to the removed multi-timer shape; the kind
+   now has one `fire_event`. #}
+type {{ f.name | to_pascal_case }}RecHandler struct{ ops *[]string }
 
-{% for t in f.timers %}
-func (h *{{ f.name | to_pascal_case }}RecHandler) {{ t.callback | to_pascal_case }}() { h.lastCall = "{{ t.callback }}" }
-{% endfor %}
+func (h *{{ f.name | to_pascal_case }}RecHandler) Fire{{ f.fire_event | to_pascal_case }}() {
+	*h.ops = append(*h.ops, "fired:{{ f.fire_event }}")
+}
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -297,9 +331,11 @@ func (r *reference) codecCases(t *testing.T, section, fixture string) []codecCas
 	return spec.Cases
 }
 
-// timerEntries — see filterSteps for the drift-detection contract. Timer
-// entries are ordered registration descriptors, not a sequence of steps.
-func (r *reference) timerEntries(t *testing.T, section, fixture string) []timerEntry {
+// timerEntry — see filterSteps for the drift-detection contract. It used to
+// return `[]timerEntry`, the ordered registration descriptors of the removed
+// multi-timer shape; the kind now emits one timer and its oracle is a
+// scripted sequence of calls, so the whole spec is what a fragment needs.
+func (r *reference) timerEntry(t *testing.T, section, fixture string) timerSpec {
 	t.Helper()
 	if section != "timers" {
 		t.Fatalf("fixture %q: timer kind requires ref_section=timers, got %q", fixture, section)
@@ -308,7 +344,7 @@ func (r *reference) timerEntries(t *testing.T, section, fixture string) []timerE
 	if !ok {
 		t.Fatalf("fixture %q: missing entry in timers", fixture)
 	}
-	return spec.Timers
+	return spec
 }
 
 // stringLookupCases looks up cases for string-output lookups from the

@@ -1,0 +1,79 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Timer kind — see the C++ fragment for why the oracle is a sequence of
+   calls: the generated class holds no state a test can read, so what it
+   asks its collaborators to do is the whole observable. #}
+{# `spec` is bound by the harness before this fragment is included — the
+   other Python fragments use it without declaring it, and re-deriving it
+   here from a `reference` name that does not exist in this scope was the
+   first version's mistake. #}
+        # The harness imports only the fixtures and stdlib, so the runtime's
+        # Timer ABC is pulled in here rather than adding a harness-wide
+        # import that every other kind would carry for nothing.
+        from sce_forge_runtime.timer import Timer as _RuntimeTimer
+
+        ops: list[str] = []
+
+        class RecTimer(_RuntimeTimer):
+            """Recording HAL. The interval is recorded as a VALUE so a
+            unit mix-up fails here instead of running a thousand times
+            too fast in silence."""
+
+            def __init__(self) -> None:
+                self.cb = None
+
+            def start_periodic(self, interval_ms: int, callback) -> None:
+                ops.append(f"start_periodic:{interval_ms}")
+                self.cb = callback
+
+            def start_one_shot(self, delay_ms: int, callback) -> None:
+                # Recorded rather than ignored: no template emits it today,
+                # and if one starts this shows up as a diff, not as silence.
+                ops.append(f"start_one_shot:{delay_ms}")
+                self.cb = callback
+
+            def cancel(self) -> None:
+                ops.append("cancel")
+
+        class RecHandler({{ f.name }}.{{ f.name | to_pascal_case }}Handler):
+            def fire_{{ f.fire_event | to_snake_case }}(self) -> None:
+                ops.append("fired:{{ f.fire_event }}")
+
+        self.assertEqual(
+            {{ f.name }}.PERIOD_MS, spec["period_ms"], "{{ f.name }}: PERIOD_MS"
+        )
+        self.assertEqual(
+            {{ f.name }}.PERIOD_US, spec["period_us"], "{{ f.name }}: PERIOD_US"
+        )
+
+        hal = RecTimer()
+        timer_obj = {{ f.name }}.{{ f.name | to_pascal_case }}(RecHandler(), hal)
+
+        for step, s in enumerate(spec["sequence"]):
+            ops.clear()
+            call = s["call"]
+            if call == "start":
+                timer_obj.start()
+            elif call == "cancel":
+                timer_obj.cancel()
+            elif call == "fire":
+                # Invoking the callback the HAL recorded is what proves the
+                # wiring reaches the handler; calling the handler directly
+                # would prove only that the test can call it.
+                self.assertIsNotNone(hal.cb, "{{ f.name }}: no callback was registered")
+                hal.cb()
+{% if f.reset_on_event %}
+            elif call == "on_reset":
+                timer_obj.on_reset_{{ f.reset_on_event | to_snake_case }}()
+{% endif %}
+{% if f.cancel_on_state_exit %}
+            elif call == "on_cancel_exit":
+                timer_obj.on_cancel_{{ f.cancel_on_state_exit | to_snake_case }}_exit()
+{% endif %}
+            else:
+                self.fail(f"{{ f.name }} step {step}: unknown call {call}")
+
+            self.assertEqual(
+                ops, s["expect"], f"{{ f.name }} step {step} ({call})"
+            )

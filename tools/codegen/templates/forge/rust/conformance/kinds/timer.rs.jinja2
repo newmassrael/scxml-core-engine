@@ -1,0 +1,119 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Timer kind — see the C++ fragment for why the oracle is a sequence of
+   calls rather than a return value: the generated struct owns no state a
+   test can read, so what it asks its collaborators to do is the only
+   observable. #}
+    {
+        let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+
+        // The recording HAL. `start_periodic` records the interval it was
+        // handed, so a unit mix-up fails on the VALUE rather than running a
+        // thousand times too fast in silence.
+        struct RecTimer {
+            ops: Vec<String>,
+            cb: Option<sce_forge_runtime::timer::TimerCallback>,
+            ctx: *mut core::ffi::c_void,
+        }
+        impl sce_forge_runtime::timer::Timer for RecTimer {
+            fn start_periodic(
+                &mut self,
+                interval_ms: u32,
+                callback: sce_forge_runtime::timer::TimerCallback,
+                ctx: *mut core::ffi::c_void,
+            ) {
+                self.ops.push(format!("start_periodic:{interval_ms}"));
+                self.cb = Some(callback);
+                self.ctx = ctx;
+            }
+            fn start_one_shot(
+                &mut self,
+                delay_ms: u32,
+                callback: sce_forge_runtime::timer::TimerCallback,
+                ctx: *mut core::ffi::c_void,
+            ) {
+                // Recorded rather than ignored: no template emits it today,
+                // and if one starts this shows up as a diff instead of as
+                // silence.
+                self.ops.push(format!("start_one_shot:{delay_ms}"));
+                self.cb = Some(callback);
+                self.ctx = ctx;
+            }
+            fn cancel(&mut self) {
+                self.ops.push("cancel".to_string());
+            }
+        }
+
+        // The handler records into its OWN buffer: the trampoline hands it a
+        // `*mut c_void` that is the handler, so it cannot also hold a
+        // borrow of the timer's buffer. The two are merged per step below.
+        struct RecHandler {
+            fired: Vec<String>,
+        }
+        impl fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Handler for RecHandler {
+            fn fire_{{ f.fire_event | to_snake_case }}(&mut self) {
+                self.fired.push("fired:{{ f.fire_event }}".to_string());
+            }
+        }
+
+        assert_eq!(
+            u64::from(fixtures::{{ f.name }}::PERIOD_MS),
+            spec["period_ms"].as_u64().unwrap(),
+            "{{ f.name }}: PERIOD_MS"
+        );
+        assert_eq!(
+            fixtures::{{ f.name }}::PERIOD_US,
+            spec["period_us"].as_u64().unwrap(),
+            "{{ f.name }}: PERIOD_US"
+        );
+
+        let mut hal = RecTimer { ops: Vec::new(), cb: None, ctx: core::ptr::null_mut() };
+        let mut handler = RecHandler { fired: Vec::new() };
+
+        for (step, s) in spec["sequence"].as_array().unwrap().iter().enumerate() {
+            hal.ops.clear();
+            handler.fired.clear();
+            let call = s["call"].as_str().unwrap();
+
+            // The borrow is re-taken per step because the generated struct
+            // holds `&mut` to both for its lifetime, and `fire` needs the
+            // callback the HAL recorded while that borrow is not live.
+            match call {
+                "fire" => {
+                    let cb = hal.cb.expect("no callback was registered");
+                    let ctx = hal.ctx;
+                    // `TimerCallback` is a SAFE `fn(*mut c_void)` — the raw
+                    // pointer is in its argument, not in its safety
+                    // contract — so calling it needs no `unsafe`. The
+                    // pointer is the handler `start()` passed in, and the
+                    // handler is still alive here by construction.
+                    cb(ctx);
+                }
+                _ => {
+                    let mut t = fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}::new(&mut handler, &mut hal);
+                    match call {
+                        "start" => t.start(),
+                        "cancel" => t.cancel(),
+{% if f.reset_on_event %}
+                        "on_reset" => t.on_reset_{{ f.reset_on_event | to_snake_case }}(),
+{% endif %}
+{% if f.cancel_on_state_exit %}
+                        "on_cancel_exit" => t.on_cancel_{{ f.cancel_on_state_exit | to_snake_case }}_exit(),
+{% endif %}
+                        other => panic!("{{ f.name }} step {step}: unknown call {other}"),
+                    }
+                }
+            }
+
+            let mut actual = hal.ops.clone();
+            actual.extend(handler.fired.iter().cloned());
+            let expected: Vec<String> = s["expect"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e.as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(actual, expected, "{{ f.name }} step {step} ({call})");
+        }
+    }

@@ -1,0 +1,71 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Timer kind — see the C++ fragment for why the oracle is a sequence of
+   calls: the generated class holds no state a test can read, so what it
+   asks its collaborators to do is the whole observable. #}
+        val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
+
+        val ops = mutableListOf<String>()
+
+        // Recording HAL. The interval is recorded as a VALUE, so a unit
+        // mix-up fails on the number instead of running a thousand times
+        // too fast in silence.
+        val hal = object : Timer {
+            var cb: (() -> Unit)? = null
+            override fun startPeriodic(intervalMs: Long, callback: () -> Unit) {
+                ops.add("start_periodic:$intervalMs")
+                cb = callback
+            }
+            override fun startOneShot(delayMs: Long, callback: () -> Unit) {
+                // Recorded rather than ignored: no template emits it today,
+                // and if one starts, this shows up as a diff, not silence.
+                ops.add("start_one_shot:$delayMs")
+                cb = callback
+            }
+            override fun cancel() {
+                ops.add("cancel")
+            }
+        }
+
+        val handler = object : {{ f.name | to_pascal_case }}Handler {
+            override fun fire{{ f.fire_event | to_pascal_case }}() {
+                ops.add("fired:{{ f.fire_event }}")
+            }
+        }
+
+        assertEquals(
+            spec["period_ms"]!!.jsonPrimitive.long,
+            PERIOD_MS,
+            "{{ f.name }}: PERIOD_MS",
+        )
+        assertEquals(
+            spec["period_us"]!!.jsonPrimitive.long,
+            PERIOD_US,
+            "{{ f.name }}: PERIOD_US",
+        )
+
+        val sched = {{ f.name | to_pascal_case }}(handler, hal)
+
+        for ((step, s) in spec["sequence"]!!.jsonArray.withIndex()) {
+            ops.clear()
+            val call = s.jsonObject["call"]!!.jsonPrimitive.content
+            when (call) {
+                "start" -> sched.start()
+                "cancel" -> sched.cancel()
+                // Invoking the callback the HAL recorded proves the wiring
+                // reaches the handler; calling the handler directly would
+                // prove only that the test can call it.
+                "fire" -> (hal.cb ?: error("{{ f.name }} step $step: no callback registered"))()
+{% if f.reset_on_event %}
+                "on_reset" -> sched.onReset{{ f.reset_on_event | to_pascal_case }}()
+{% endif %}
+{% if f.cancel_on_state_exit %}
+                "on_cancel_exit" -> sched.onCancel{{ f.cancel_on_state_exit | to_pascal_case }}Exit()
+{% endif %}
+                else -> error("{{ f.name }} step $step: unknown call $call")
+            }
+
+            val expected = s.jsonObject["expect"]!!.jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(expected, ops.toList(), "{{ f.name }} step $step ($call)")
+        }

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture for `sce:kind="timer"` — the one kind that had no
+  fixture in any of the six language arms.
+
+  A keepalive is the shape that exercises every element the kind admits: a
+  period, an event to fire, an event-driven reset, and a state-exit cancel.
+  `2s` is chosen so the millisecond and microsecond constants differ by a
+  factor a transcription error would not preserve (2000 against 2000000),
+  which is what makes a unit mix-up visible in the oracle rather than
+  arithmetically invisible.
+
+  What the conformance arms compare is the SEQUENCE OF CALLS the generated
+  class makes on the injected timer, and the handler call it routes a firing
+  to. That surface exists in all six languages (`start` / `cancel` /
+  `onReset…` / `onCancel…Exit` plus a compile-time period constant), which is
+  what makes one oracle serve all of them.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="timer" name="timer_tester_present" version="1.0">
+  <sce:period>2s</sce:period>
+  <sce:fire-event>TesterPresent</sce:fire-event>
+  <sce:reset-on event="DiagRequestSent"/>
+  <sce:cancel-on state-exit="SessionActive"/>
+</scxml>

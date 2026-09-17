@@ -3158,5 +3158,53 @@
         }
       ]
     }
+  },
+  "timers": {
+    "timer_tester_present": {
+      "fixture": "TimerTesterPresent",
+      "signature": "start() / cancel() / onReset<Event>() / onCancel<State>Exit()",
+      "description": "A keepalive: <sce:period>2s</sce:period>, fires TesterPresent, reset on DiagRequestSent, cancelled on leaving SessionActive. The oracle is the sequence of calls the generated class makes on the INJECTED timer, recorded by a mock, plus the handler call a firing is routed to. That surface is common to all six language arms, which is what lets one oracle serve them all.",
+      "period_ms": 2000,
+      "period_us": 2000000,
+      "fire_event": "TesterPresent",
+      "sequence": [
+        {
+          "call": "start",
+          "expect": [
+            "start_periodic:2000"
+          ],
+          "note": "arms at the compile-time period"
+        },
+        {
+          "call": "fire",
+          "expect": [
+            "fired:TesterPresent"
+          ],
+          "note": "the recorded callback routes to the handler"
+        },
+        {
+          "call": "on_reset",
+          "expect": [
+            "cancel",
+            "start_periodic:2000"
+          ],
+          "note": "<sce:reset-on> is cancel THEN start, in that order"
+        },
+        {
+          "call": "on_cancel_exit",
+          "expect": [
+            "cancel"
+          ],
+          "note": "<sce:cancel-on state-exit> cancels and does not re-arm"
+        },
+        {
+          "call": "cancel",
+          "expect": [
+            "cancel"
+          ],
+          "note": "idempotent per the ITimer contract"
+        }
+      ]
+    }
   }
 }

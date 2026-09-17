@@ -16,12 +16,19 @@
 // means one new kind fragment, zero edits to this scaffold.
 
 import com.sce.forge.runtime.EventQueue
+{% if has_timer %}
+import com.sce.forge.runtime.Timer
+{% endif %}
 {% for f in fixtures %}
 {% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" or f.kind == "validator" or f.kind == "codec" or f.kind == "timer" %}
 import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}
 {% endif %}
 {% if f.kind == "timer" %}
 import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}Handler
+{# The period constants are file-level `const val` in the generated module,
+   and the fragment compares both spellings against the oracle. #}
+import com.sce.generated.{{ f.name }}.PERIOD_MS
+import com.sce.generated.{{ f.name }}.PERIOD_US
 {% endif %}
 {% if f.kind == "observer" %}
 import com.sce.generated.{{ f.name }}.ForgeDomainTag as {{ f.name | to_pascal_case }}Tag

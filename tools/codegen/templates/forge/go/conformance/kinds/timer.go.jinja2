@@ -1,0 +1,62 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Timer kind — see the C++ fragment for why the oracle is a sequence of
+   calls: the generated struct holds no state a test can read, so what it
+   asks its collaborators to do is the whole observable. The recording mock
+   and handler live at package scope in harness.go.jinja2, because Go
+   forbids method receivers declared inside a function body. #}
+	{
+		spec := ref.timerEntry(t, "{{ f.ref_section }}", "{{ f.name }}")
+
+		if {{ f.name }}.PeriodMs != spec.PeriodMs {
+			t.Errorf("{{ f.name }}: PeriodMs = %d, want %d", {{ f.name }}.PeriodMs, spec.PeriodMs)
+		}
+		if {{ f.name }}.PeriodUs != spec.PeriodUs {
+			t.Errorf("{{ f.name }}: PeriodUs = %d, want %d", {{ f.name }}.PeriodUs, spec.PeriodUs)
+		}
+
+		hal := &recTimer{}
+		handler := &{{ f.name | to_pascal_case }}RecHandler{ops: &hal.ops}
+		sched := {{ f.name }}.New{{ f.name | to_pascal_case }}(handler, hal)
+
+		for step, s := range spec.Sequence {
+			hal.ops = nil
+			switch s.Call {
+			case "start":
+				sched.Start()
+			case "cancel":
+				sched.Cancel()
+			case "fire":
+				// Invoking the callback the mock stored proves the wiring
+				// reaches the handler; calling the handler directly would
+				// prove only that the test can call it.
+				if hal.regCb == nil {
+					t.Fatalf("{{ f.name }} step %d: no callback was registered", step)
+				}
+				hal.regCb()
+{% if f.reset_on_event %}
+			case "on_reset":
+				sched.OnReset{{ f.reset_on_event | to_pascal_case }}()
+{% endif %}
+{% if f.cancel_on_state_exit %}
+			case "on_cancel_exit":
+				sched.OnCancel{{ f.cancel_on_state_exit | to_pascal_case }}Exit()
+{% endif %}
+			default:
+				t.Fatalf("{{ f.name }} step %d: unknown call %s", step, s.Call)
+			}
+
+			want := s.Expect
+			if want == nil {
+				want = []string{}
+			}
+			got := hal.ops
+			if got == nil {
+				got = []string{}
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("{{ f.name }} step %d (%s): ops = %v, want %v", step, s.Call, got, want)
+			}
+		}
+	}
