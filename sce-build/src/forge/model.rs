@@ -726,12 +726,34 @@ impl LookupModel {
     }
 
     /// Collect unique output values (for enum generation), preserving insertion order.
+    ///
+    /// ⚠ The miss default is one of them. It is not an entry — that is the
+    /// whole point of a default — but every backend emits it as
+    /// `return <Enum>::<default>` on the miss arm, so a variant list built
+    /// from `entries` alone yields code that names a member the enum does
+    /// not have.
+    ///
+    /// This was invisible for as long as every fixture's default ALSO
+    /// appeared as an entry value (`lookup_gear_position` defaults to
+    /// `NEUTRAL`, which is key 2), so the missing variant was always
+    /// supplied by accident. A table whose default is a value no key maps to
+    /// — "everything listed is supported, anything else is not" — is the
+    /// ordinary shape that exposes it, and it was accepted with exit 0 and
+    /// emitted C++ that does not compile.
     pub fn unique_values(&self) -> Vec<String> {
         let mut seen = std::collections::BTreeSet::new();
         let mut values = Vec::new();
         for entry in &self.entries {
             if seen.insert(entry.value.clone()) {
                 values.push(entry.value.clone());
+            }
+        }
+        // Appended, not prepended: the entries' order is the document's and
+        // is what the emitted enum should read like. A default that is
+        // already an entry value is skipped by `seen`.
+        if let MissPolicy::Default(d) = &self.miss_policy {
+            if seen.insert(d.clone()) {
+                values.push(d.clone());
             }
         }
         values
