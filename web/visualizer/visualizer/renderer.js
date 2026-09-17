@@ -26,6 +26,49 @@ class Renderer {
      * rendered: the reserved rectangle is the one the layout kept clear, and
      * a second opinion about its size is how the two came apart before.
      */
+    /**
+     * Update every transition label: place the set, then draw it.
+     *
+     * ⭐ The ONE entry point for writing label geometry to the DOM, because
+     * there are exactly two moments that do it — a full render and a drag —
+     * and when they each decided for themselves the two disagreed.
+     *
+     * ⚠ This DRAWS; it does not decide. [`placeTransitionLabels`] decides,
+     * and it runs earlier, on the real `visibleLinks` array. It used to be
+     * called from here on `selection.data()`, which fails silently wherever
+     * d3 is stubbed — the layout gate's harness — so the stage no-opped in
+     * every headless run while the browser showed ten overlapping pairs.
+     * Placement is geometry, not drawing, and belongs on the same side of
+     * that line as routing.
+     */
+    /**
+     * The gesture is fully over: derive the drawing once more.
+     *
+     * ⚠ NOT a re-layout. Nothing is re-placed and nothing moves — see the
+     * long note in the drag-end handler for why a settle was removed. This
+     * only re-derives the LINES and their labels from the geometry that is
+     * already on screen.
+     *
+     * ⭐ It exists because clearing `isDragging` is itself a change of
+     * geometry, and that was invisible. While the flag is set,
+     * `elkRouteIsApplicable` refuses ELK's route for every edge touching the
+     * dragged state, so those edges draw the orthogonal fallback; the flag
+     * is cleared 50ms later, on a timer meant to dodge a hover race, and
+     * from that moment the same edges would draw their ELK route again. The
+     * label stage had run against the fallback path and nothing re-ran it,
+     * so labels sat up to 412px from the line they name — placed correctly,
+     * against a line that no longer existed.
+     */
+    static gestureSettled(visualizer) {
+        visualizer.updateLinks(false);
+    }
+
+    static updateLabels(selection, visualizer) {
+        selection.each(function (d) {
+            Renderer.placeLabel(d3.select(this), d, visualizer);
+        });
+    }
+
     static placeLabel(selection, link, visualizer) {
         const box = visualizer.layoutManager.labelBoxForLink(link);
         if (!box) {
@@ -61,6 +104,10 @@ class Renderer {
 
         // Assign colors to transitions for visual matching
         this.assignTransitionColors(visibleLinks);
+
+        // Stage 3: place every label, knowing the rest. Before anything is
+        // drawn, and on the real array rather than a d3 selection.
+        this.visualizer.pathCalculator.placeTransitionLabels(visibleLinks, false);
 
         if (this.visualizer.debugMode) {
             logger.debug(`[RENDER] visibleNodes: ${visibleNodes.map(n => n.id).join(', ')}`);
@@ -310,6 +357,7 @@ class Renderer {
                     setTimeout(() => {
                         d.isDragging = false;
                         self.isDraggingAny = false;
+                        Renderer.gestureSettled(self);
                     }, 50);  // 50ms delay prevents immediate mouseenter from raising element
 
                     // Cleanup cached descendants and drag direction
@@ -627,6 +675,7 @@ class Renderer {
                     setTimeout(() => {
                         d.isDragging = false;
                         self.isDraggingAny = false;
+                        Renderer.gestureSettled(self);
                     }, 50);  // 50ms delay prevents immediate mouseenter from raising element
 
                     // Cleanup drag direction
@@ -1283,8 +1332,16 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 // The header of `label-metrics.js` says producer and consumer
                 // cannot disagree, because there is one number and both read it.
                 // This line is what made that false.
-                Renderer.placeLabel(d3.select(this), d, self);
+                //
+                // ⚠ Placement is NOT done here any more. A label placed
+                // inside `each` is placed knowing only itself, which is the
+                // defect the stage exists to remove — see
+                // `Renderer.updateLabels`, called once over the whole
+                // selection immediately below.
             });
+
+        // Draw them where the stage decided, above.
+        Renderer.updateLabels(this.visualizer.transitionLabels, this.visualizer);
 
         // Collapsed compound states (rendered AFTER links/labels for proper z-order)
         const collapsedCompounds = visibleNodes.filter(d =>
@@ -1457,6 +1514,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     // `invalidateELKRouting` now drops, and nothing else, so
                     // the rest of the diagram keeps the placement the layout
                     // gave it and holds still.
+                    Renderer.gestureSettled(self);
                 }, 50);  // 50ms delay prevents immediate mouseenter from raising element
 
                 // Cleanup cached descendants and drag direction

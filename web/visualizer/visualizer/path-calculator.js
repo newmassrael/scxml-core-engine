@@ -20,6 +20,17 @@ class PathCalculator {
     }
 
     /**
+     * What one arrow covered by a label costs the placement stage, in the
+     * same units as overlap area.
+     *
+     * ⚠ A weight, and an unvalidated one. It is set so that covering a
+     * single arrow outranks a small overlap with another label but not a
+     * large one, which is a judgement about what a reader minds more, not a
+     * measurement. It is named rather than inlined so it can be argued with.
+     */
+    static get CROSSED_LINE_COST() { return 400; }
+
+    /**
      * The lines this label carries, from the one place that decides them.
      *
      * Split from the markup below so the same list reaches the box
@@ -173,7 +184,77 @@ class PathCalculator {
         return x >= minX && x <= maxX && y >= minY && y <= maxY;
     }
 
+    /**
+     * Where a label goes, answered for the drawing as a whole.
+     *
+     * ⭐ This READS the decision [`placeTransitionLabels`] made; it does not
+     * make one. Label placement is a STAGE, and a stage has one output that
+     * every reader shares. `seedTransitionLabelPosition` below is the
+     * starting guess that stage refines — kept reachable here so a label
+     * still lands somewhere sensible if the stage has not run yet, and so a
+     * label follows its line while the reader is still dragging.
+     *
+     * ⚠ It used to be the other way round: this function COMPUTED, per
+     * label, from one line. That is why five transitions leaving one state
+     * put five labels in one place — each was placed correctly with respect
+     * to its own line, and nothing looked at the other four.
+     */
     getTransitionLabelPosition(transition) {
+        const custom = this.visualizer.getCustomLabelPosition(transition);
+        if (custom) {
+            return custom;
+        }
+        if (transition.labelAnchor) {
+            const pos = this.anchorToPoint(transition, transition.labelAnchor);
+            if (pos) {
+                return pos;
+            }
+        }
+        return this.seedTransitionLabelPosition(transition);
+    }
+
+    /**
+     * Turn a place ON THE LINE into a place on the canvas, using the line as
+     * it is drawn right now.
+     *
+     * ⭐ This is why the stage stores an anchor rather than a coordinate. A
+     * coordinate is a fact about geometry at the moment it was computed, and
+     * the geometry moves afterwards for reasons the stage cannot see — the
+     * drag-end timer clearing `isDragging` makes every edge touching the
+     * dragged state eligible for its ELK route again, and the lines change
+     * shape 50ms after the last placement pass. Labels placed as coordinates
+     * were left up to 469px from the arrows they name, each of them correct
+     * about a line that no longer existed.
+     *
+     * An anchor cannot go stale that way: it says "two fifths along, on the
+     * left", and whatever the line does, the label is still there.
+     */
+    anchorToPoint(link, anchor) {
+        if (!anchor || !Number.isFinite(anchor.t)) {
+            return null;
+        }
+        let d;
+        try { d = this.getLinkPath(link); } catch (e) { return null; }
+        if (!d || /NaN|undefined/.test(d)) {
+            return null;
+        }
+        const pts = PathCalculator.pathPolyline(d);
+        if (pts.length < 2) {
+            return null;
+        }
+        const total = PathCalculator.polylineLength(pts);
+        const p = PathCalculator.pointAlong(pts, anchor.t);
+        if (!p) {
+            return null;
+        }
+        const dir = PathCalculator.directionAt(pts, total * anchor.t);
+        return {
+            x: p.x + (-dir.y) * (anchor.side || 0) * (anchor.gap || 0),
+            y: p.y + dir.x * (anchor.side || 0) * (anchor.gap || 0),
+        };
+    }
+
+    seedTransitionLabelPosition(transition) {
         const transitionId = `${transition.source}→${transition.target}`;
         logger.debug(`[LABEL POS] Calculating position for ${transitionId}`);
 
@@ -290,6 +371,411 @@ class PathCalculator {
         const labelX = this._calculateMidpoint(sourceNode.x, targetNode.x);
         const labelY = this._calculateMidpoint(sourceNode.y, targetNode.y, -this.LABEL_OFFSET_VERTICAL);
         return this._createLabelPosition(labelX, labelY, 'Fallback midpoint', transitionId);
+    }
+
+    // ---------------------------------------------------------------- stage
+
+    /**
+     * THE label placement stage: place every label, once, knowing the rest.
+     *
+     * ⭐ This exists because label placement had TWO implementations that
+     * could not agree. On load ELK placed each label against every other
+     * label and every other edge; after a gesture ELK's placement was thrown
+     * out with its route, and what took over was a per-label midpoint rule
+     * that can see exactly one line. So the drawing was readable until the
+     * reader touched it, and then five `check` labels leaving one state
+     * stacked into one spot — each of them correct about its own line.
+     *
+     * A stage has one output. Every reader goes through
+     * [`getTransitionLabelPosition`], which returns what this wrote.
+     *
+     * ⚠ Two things are never moved, and both are decisions somebody already
+     * made: a label the reader dragged by hand, and — while a drag is in
+     * progress — every label, because a label that jumps to a new spot on
+     * each pointer move is worse than one that is merely crowded. Under the
+     * pointer, labels FOLLOW their lines; when the pointer is released, this
+     * runs and places them.
+     *
+     * ⚠⚠ Edge label placement is NP-hard (Kakoulis and Tollis), and the
+     * published overlap-removal work names our exact case as the one it does
+     * not finish: labels on several edges between the same pair of nodes.
+     * So this is a heuristic and says so. What makes it the right KIND of
+     * heuristic is that it is global and deterministic — the same geometry
+     * places labels the same way, and a label is only ever moved along the
+     * line it names, so it never stops pointing at its own transition.
+     */
+    placeTransitionLabels(links, live = false) {
+        const transitions = (links || []).filter(l => l && l.linkType === 'transition');
+        if (!transitions.length) {
+            return;
+        }
+
+        // Under the pointer, follow the line. See the note above.
+        //
+        // ⚠ The caller says whether this is a live frame; this does NOT ask
+        // `isDragging`. It did, and the labels were never placed at all: the
+        // drag-end handler clears `isDragging` inside a `setTimeout` — to
+        // dodge a hover race that has nothing to do with labels — so at the
+        // moment the gesture settles and the drawing is derived again, the
+        // flag still says a drag is in progress. Every run took this branch,
+        // dropped the positions, and nothing ran afterwards to replace them.
+        // Measured in a browser: five labels stacked into one spot, ten
+        // overlapping pairs, while the headless probe read zero.
+        if (live) {
+            // ⭐ Nothing to drop. An anchor says "two fifths along, on the
+            // left", so a label follows its line for free while the reader
+            // drags — and re-running the avoidance search on every pointer
+            // move would make labels jump about, which is worse than being
+            // briefly crowded. The search runs when the gesture settles.
+            return;
+        }
+
+        // Deterministic order, so the same drawing places the same way.
+        const ordered = [...transitions].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
+        // Every drawn line, once, so a candidate can be asked whether it
+        // covers somebody else's arrow. Built here rather than per candidate
+        // because `getLinkPath` is not free and the geometry does not move
+        // while this runs.
+        this._drawnSegments = [];
+        for (const link of ordered) {
+            let d;
+            try { d = this.getLinkPath(link); } catch (e) { continue; }
+            if (!d || /NaN|undefined/.test(d)) continue;
+            const pts = PathCalculator.pathPolyline(d);
+            const segs = [];
+            for (let i = 1; i < pts.length; i++) {
+                segs.push({ a: pts[i - 1], b: pts[i] });
+            }
+            if (segs.length) this._drawnSegments.push({ id: link.id, segs });
+        }
+
+        const taken = [];
+        for (const node of this.visualizer.nodes) {
+            if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) continue;
+            if (node.children && node.children.length) continue;   // a container is not an obstacle
+            taken.push({
+                x1: node.x - node.width / 2, y1: node.y - node.height / 2,
+                x2: node.x + node.width / 2, y2: node.y + node.height / 2,
+            });
+        }
+
+        // A label the reader placed is fixed, and claims its area first.
+        const pinned = [];
+        const free = [];
+        for (const link of ordered) {
+            (this.visualizer.getCustomLabelPosition(link) ? pinned : free).push(link);
+        }
+        for (const link of pinned) {
+            // A pinned label has no anchor: the reader chose a place on the
+            // canvas, not a place on the line, and `getTransitionLabelPosition`
+            // returns their choice before it looks at anchors at all.
+            link.labelAnchor = null;
+            const rect = this._labelRect(link, this.visualizer.getCustomLabelPosition(link));
+            if (rect) taken.push(rect);
+        }
+
+        for (const link of free) {
+            const chosen = this._chooseLabelSpot(link, taken);
+            link.labelAnchor = chosen.pos.anchor || null;
+            if (chosen.rect) taken.push(chosen.rect);
+        }
+
+        PathCalculator.syncLabelsToOriginals(transitions);
+        this._drawnSegments = null;
+    }
+
+    /**
+     * Carry the stage's decision back to the links it was computed for.
+     *
+     * ⚠ `getVisibleLinks` says "always recalculate" and returns a fresh
+     * `{...link}` COPY on every call, so a decision written on one call's
+     * copies is invisible to the next. `routing` has been synced back for
+     * this reason since before this stage existed; label anchors need the
+     * same treatment, and without it the placement is silently discarded
+     * between the pass that computes it and the pass that draws it.
+     *
+     * ⭐ It also makes the decision inspectable. A copy nobody outside the
+     * function can reach is a decision nobody can check, and twice in one
+     * round a measurement read a second set of copies and reported that a
+     * fix had done nothing.
+     */
+    static syncLabelsToOriginals(links) {
+        for (const link of links) {
+            if (!link.originalLink) continue;
+            if (link.labelAnchor) {
+                link.originalLink.labelAnchor = link.labelAnchor;
+            } else {
+                delete link.originalLink.labelAnchor;
+            }
+            if (link.labelPlacement) {
+                link.originalLink.labelPlacement = link.labelPlacement;
+            } else {
+                delete link.originalLink.labelPlacement;
+            }
+        }
+    }
+
+    /** The reserved box for `link`, centred on `pos`. */
+    _labelRect(link, pos) {
+        const box = this.visualizer.layoutManager.labelBoxForLink(link);
+        if (!box || !pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) {
+            return null;
+        }
+        return {
+            x1: pos.x - box.width / 2, y1: pos.y - box.height / 2,
+            x2: pos.x + box.width / 2, y2: pos.y + box.height / 2,
+        };
+    }
+
+    /**
+     * The first spot along this link's own line that hits nothing, or the
+     * least-bad one if every spot hits something.
+     *
+     * ⚠ Candidates come from the path the renderer will DRAW, parsed from
+     * the same string, rather than from the routing that produced it. There
+     * are two producers of routes and the point of this stage is not to
+     * acquire a third opinion about where the line went.
+     */
+    _chooseLabelSpot(link, taken) {
+        const seed = this.seedTransitionLabelPosition(link);
+        const spots = this._spotsAlongPath(link);
+
+        // ⚠ Spots on the drawn line FIRST, and the seed only when the line
+        // yields none. The seed was tried first at one point and it is the
+        // wrong thing to prefer: it is ELK's label position, which is only
+        // meaningful while ELK's route is the route being drawn. After a
+        // gesture the line has been re-routed and that position has not
+        // moved, so a collision-free seed is collision-free out in open
+        // space — measured in a browser at 100 to 341 units from the line
+        // the label names. Zero overlaps and every label adrift is not an
+        // improvement on some overlaps and every label attached.
+        //
+        // ⭐ Nothing is lost by demoting it. ELK's placement was valuable
+        // because it avoided the other labels; this stage does that itself
+        // now, and does it against the geometry actually on screen.
+        const candidates = spots.length ? spots : [{ x: seed.x, y: seed.y, anchor: null }];
+
+        // ⚠ The stage says why, the way `_createLabelPosition` does. A
+        // placement that reports only a coordinate cannot be told apart
+        // from one that never ran, and for one round it was not: the
+        // numbers sat still and the reason was invisible.
+        let best = null;
+        let tried = 0;
+        for (const pos of candidates) {
+            const rect = this._labelRect(link, pos);
+            if (!rect) continue;
+            tried++;
+            const cost = taken.reduce((sum, t) => sum + PathCalculator.overlapArea(rect, t), 0)
+                + this._linesCrossing(rect, link) * PathCalculator.CROSSED_LINE_COST;
+            if (cost === 0) {
+                link.labelPlacement = { reason: 'clear', tried, spots: spots.length, residual: 0 };
+                return { pos, rect };
+            }
+            if (!best || cost < best.cost) {
+                best = { pos, rect, cost };
+            }
+        }
+        if (best) {
+            link.labelPlacement = {
+                reason: 'least-bad', tried, spots: spots.length, residual: Math.round(best.cost),
+            };
+            return best;
+        }
+        link.labelPlacement = { reason: 'no-box', tried, spots: spots.length, residual: null };
+        return { pos: seed, rect: this._labelRect(link, seed) };
+    }
+
+    /**
+     * Points along the drawn path, nearest the middle first.
+     *
+     * ⚠ Stepped by LENGTH, not by fraction of the path. Fractions were the
+     * first attempt and they do not separate anything: a tenth of a path is
+     * a few pixels on a short edge and hundreds on a long one, so five
+     * labels leaving one state moved 12 and 20 pixels apart while their
+     * boxes were over a hundred wide, and all three pairs still overlapped.
+     * A step in pixels is a step a label box can be compared against.
+     *
+     * ⭐ Nearest-first is what keeps the result sane without a rule about
+     * direction: the search takes the closest spot to the middle that is
+     * clear, so a label on a vertical trunk slides up or down and one on a
+     * horizontal run slides sideways, with nothing here having to know
+     * which it is on.
+     */
+    _spotsAlongPath(link) {
+        let d;
+        try { d = this.getLinkPath(link); } catch (e) { return []; }
+        if (!d || /NaN|undefined/.test(d)) {
+            return [];
+        }
+        const pts = PathCalculator.pathPolyline(d);
+        if (pts.length < 2) {
+            return [];
+        }
+        const STEP = 8;
+        const MAX_SPOTS = 120;
+        const total = PathCalculator.polylineLength(pts);
+        if (!(total > 0)) {
+            return [];
+        }
+
+        // ⚠ BESIDE the line, not on it. Putting the label centre on the path
+        // attached it perfectly and made it unreadable: on a trunk shared by
+        // five transitions a label sitting on the line covers the other four,
+        // and the census went from 2 label-on-edge overlaps to 21. A label
+        // belongs next to its line — which is what the offsets the old
+        // per-label rule used were for, and what ELK does.
+        const box = this.visualizer.layoutManager.labelBoxForLink(link);
+        const gap = box ? (box.height / 2 + this.MIN_LABEL_DISTANCE / 2) : this.LABEL_OFFSET_VERTICAL;
+
+        const half = Math.min(Math.floor(total / (2 * STEP)), MAX_SPOTS / 2);
+        const spots = [];
+        for (let k = 0; k <= half; k++) {
+            for (const along of (k === 0 ? [0] : [-1, 1])) {
+                const at = total / 2 + along * k * STEP;
+                if (at < 0 || at > total) continue;
+                const t = at / total;
+                const p = PathCalculator.pointAlong(pts, t);
+                if (!p) continue;
+                const dir = PathCalculator.directionAt(pts, at);
+                // Perpendicular to the local direction, both sides, nearer
+                // side first so the choice stays deterministic.
+                //
+                // ⚠ Each candidate carries the ANCHOR it came from, not just
+                // the point. The anchor is what gets stored, so the label
+                // stays on the line when the line is re-derived.
+                for (const side of [1, -1]) {
+                    spots.push({
+                        x: p.x + (-dir.y) * side * gap,
+                        y: p.y + dir.x * side * gap,
+                        anchor: { t, side, gap },
+                    });
+                }
+            }
+        }
+        return spots;
+    }
+
+    /** Unit direction of the polyline at arc length `at`. */
+    static directionAt(pts, at) {
+        let acc = 0;
+        for (let i = 1; i < pts.length; i++) {
+            const dx = pts[i].x - pts[i - 1].x;
+            const dy = pts[i].y - pts[i - 1].y;
+            const len = Math.hypot(dx, dy);
+            if (len === 0) continue;
+            if (acc + len >= at || i === pts.length - 1) {
+                return { x: dx / len, y: dy / len };
+            }
+            acc += len;
+        }
+        return { x: 1, y: 0 };
+    }
+
+    /**
+     * How many OTHER transitions' lines pass through this rectangle.
+     *
+     * ⚠ Counted because the obstacle set without it is wrong in the case
+     * that matters: labels and states alone leave a label free to sit on
+     * top of the four other arrows sharing its trunk, which is precisely
+     * where five transitions out of one state put them.
+     */
+    _linesCrossing(rect, link) {
+        const segs = this._drawnSegments;
+        if (!segs) {
+            return 0;
+        }
+        let n = 0;
+        for (const entry of segs) {
+            if (entry.id === link.id) continue;
+            for (const s of entry.segs) {
+                if (PathCalculator.segmentHitsRect(s, rect)) { n++; break; }
+            }
+        }
+        return n;
+    }
+
+    static segmentHitsRect(s, r) {
+        // Trivial accept: an endpoint inside.
+        const inside = (p) => p.x >= r.x1 && p.x <= r.x2 && p.y >= r.y1 && p.y <= r.y2;
+        if (inside(s.a) || inside(s.b)) {
+            return true;
+        }
+        // Liang-Barsky clip of the segment against the rectangle.
+        let t0 = 0;
+        let t1 = 1;
+        const dx = s.b.x - s.a.x;
+        const dy = s.b.y - s.a.y;
+        const tests = [
+            { p: -dx, q: s.a.x - r.x1 },
+            { p: dx, q: r.x2 - s.a.x },
+            { p: -dy, q: s.a.y - r.y1 },
+            { p: dy, q: r.y2 - s.a.y },
+        ];
+        for (const { p, q } of tests) {
+            if (p === 0) {
+                if (q < 0) return false;
+                continue;
+            }
+            const t = q / p;
+            if (p < 0) {
+                if (t > t1) return false;
+                if (t > t0) t0 = t;
+            } else {
+                if (t < t0) return false;
+                if (t < t1) t1 = t;
+            }
+        }
+        return true;
+    }
+
+    static polylineLength(pts) {
+        let total = 0;
+        for (let i = 1; i < pts.length; i++) {
+            total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        }
+        return total;
+    }
+
+    static pathPolyline(d) {
+        const n = (d.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+        const pts = [];
+        for (let i = 0; i + 1 < n.length; i += 2) {
+            pts.push({ x: n[i], y: n[i + 1] });
+        }
+        return pts;
+    }
+
+    /** The point `t` of the way along a polyline, by length. */
+    static pointAlong(pts, t) {
+        let total = 0;
+        const runs = [];
+        for (let i = 1; i < pts.length; i++) {
+            const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+            runs.push(len);
+            total += len;
+        }
+        if (!(total > 0)) {
+            return pts[0] ? { x: pts[0].x, y: pts[0].y } : null;
+        }
+        let want = total * t;
+        for (let i = 0; i < runs.length; i++) {
+            if (want <= runs[i] || i === runs.length - 1) {
+                const f = runs[i] > 0 ? want / runs[i] : 0;
+                return {
+                    x: pts[i].x + (pts[i + 1].x - pts[i].x) * f,
+                    y: pts[i].y + (pts[i + 1].y - pts[i].y) * f,
+                };
+            }
+            want -= runs[i];
+        }
+        return null;
+    }
+
+    static overlapArea(a, b) {
+        const w = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1);
+        const h = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1);
+        return (w > 0 && h > 0) ? w * h : 0;
     }
 
     getNodeSide(node, toX, toY) {

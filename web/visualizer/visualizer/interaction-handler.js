@@ -96,6 +96,18 @@ class InteractionHandler {
         }
         this.visualizer.linkElements.attr('d', d => this.visualizer.getLinkPath(d));
 
+        // Stage 3, on the real array and before any label is drawn.
+        //
+        // ⚠⚠⚠ `useGreedy` is what says whether the pointer is still down. A
+        // greedy pass is a live drag frame; the optimal pass is the one the
+        // drag-end handler runs once the gesture is over. That distinction
+        // already existed here and is reliable — unlike `isDragging`, which
+        // the drag-end handler clears inside a `setTimeout` to dodge a hover
+        // race. Gating on `isDragging` meant the settle pass still looked
+        // like a live frame, so the positions were dropped and never
+        // replaced: ten overlapping pairs in a browser, zero in the probe.
+        this.visualizer.pathCalculator.placeTransitionLabels(visibleLinks, useGreedy);
+
         // Update transition labels if they exist
         if (this.visualizer.transitionLabels) {
             // Rebind with updated visibleLinks data
@@ -106,10 +118,11 @@ class InteractionHandler {
             // moves by half its own box. `x` on a `foreignObject` is its LEFT
             // edge; this used to assign the CENTRE to it, so a drag threw
             // every label it touched off the line it names and left it there.
-            const visualizer = this.visualizer;
-            this.visualizer.transitionLabels.each(function (d) {
-                Renderer.placeLabel(d3.select(this), d, visualizer);
-            });
+            //
+            // ⚠⚠ And through the STAGE, not one label at a time. This ran
+            // the per-label rule while the full render ran ELK's placement,
+            // so the drawing was readable until the reader touched it.
+            Renderer.updateLabels(this.visualizer.transitionLabels, this.visualizer);
         }
 
         // Update node visuals with latest positions from this.visualizer.nodes
