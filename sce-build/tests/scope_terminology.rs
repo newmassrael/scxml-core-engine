@@ -115,6 +115,18 @@ const EXEMPT_PREFIXES: &[(&str, &str)] = &[
          this example claims nothing about that.",
     ),
     (
+        "web/visualizer/vendor/",
+        "third-party source SCE ships but did not write. A vendored \
+         directory is the one place where the term cannot be SCE \
+         describing itself, because none of the prose in it is SCE's — \
+         the exemption follows from what `vendor/` MEANS, not from what \
+         happens to sit there today. It also cannot be cleaned: the \
+         bundle is preserved byte-for-byte under EPL-2.0 section 3, and \
+         the vendor README pins its SHA-256, so an edit that renamed a \
+         word would break the integrity check that proves the shipped \
+         file is the upstream one.",
+    ),
+    (
         ".claude/sce_loop.scxml",
         "the same distinction as `examples/ai_loop/`, in the file that \
          actually runs it: this state machine SUPERVISES an agent \
