@@ -166,7 +166,13 @@ fn every_lowered_method_is_actually_lowered() {
 fn every_unimplemented_method_is_refused_with_its_alternatives() {
     for &method in UNIMPLEMENTED_METHODS {
         match lower_method(method) {
-            Err(ExprError::UnsupportedBuiltin { name, available }) => {
+            // `vocabulary` says WHICH list refused the name — the ECMAScript
+            // datamodel here, the forge expression layer elsewhere. This test
+            // is about the datamodel's names and their candidates, so it is
+            // matched away rather than asserted on.
+            Err(ExprError::UnsupportedBuiltin {
+                name, available, ..
+            }) => {
                 assert_eq!(name, format!(".{method}()"));
                 assert_eq!(
                     available.len(),
@@ -243,7 +249,13 @@ fn every_unimplemented_dom_method_is_refused_against_the_dom_surface() {
     let dom_candidates: BTreeSet<String> = DOM_METHODS.iter().map(|m| format!(".{m}()")).collect();
     for &method in DOM_UNIMPLEMENTED_METHODS {
         match lower_method(method) {
-            Err(ExprError::UnsupportedBuiltin { name, available }) => {
+            // `vocabulary` says WHICH list refused the name — the ECMAScript
+            // datamodel here, the forge expression layer elsewhere. This test
+            // is about the datamodel's names and their candidates, so it is
+            // matched away rather than asserted on.
+            Err(ExprError::UnsupportedBuiltin {
+                name, available, ..
+            }) => {
                 assert_eq!(name, format!(".{method}()"));
                 let offered: BTreeSet<String> = available.into_iter().collect();
                 assert_eq!(
@@ -360,7 +372,13 @@ fn a_member_outside_an_installed_namespace_is_refused() {
         ("Math.tanh(x)", "Math.tanh"),
     ] {
         match to_lua_value(source, &probes()) {
-            Err(ExprError::UnsupportedBuiltin { name, available }) => {
+            // `vocabulary` says WHICH list refused the name — the ECMAScript
+            // datamodel here, the forge expression layer elsewhere. This test
+            // is about the datamodel's names and their candidates, so it is
+            // matched away rather than asserted on.
+            Err(ExprError::UnsupportedBuiltin {
+                name, available, ..
+            }) => {
                 assert_eq!(name, expected_name);
                 assert!(
                     available.iter().all(|c| c.starts_with(&format!(

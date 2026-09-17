@@ -8013,7 +8013,14 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
         // stays absent: non-overlap gives the candidates one home, and
         // this producer's home is `fix` (`non_overlap_class` places the
         // code in `FixCarriesCandidates`).
-        ExprError::UnsupportedBuiltin { name, available } => DiagnosticPayload {
+        // ⚠ `vocabulary` is deliberately NOT surfaced as a wire field. It
+        // only changes the English prose of `message`, which §2 of
+        // SCE_ERROR_CONTRACT.md says is not machine-parsed and not part of
+        // `id`; consumers dispatch on `code`, and the code is the same error
+        // whichever vocabulary refused the name.
+        ExprError::UnsupportedBuiltin {
+            name, available, ..
+        } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionUnsupportedBuiltin,
             stage: Stage::Expression,
             expected: None,
@@ -10382,6 +10389,13 @@ mod tests {
                 "forge/expression-unsupported-builtin",
                 ExprError::UnsupportedBuiltin {
                     name: ".map()".into(),
+                    // ⚠ This golden pins the ECMAScript wording, which is what
+                    // makes it the witness that adding `vocabulary` did not
+                    // move that path — only the forge path, which now names
+                    // itself. The `id` below is unchanged too: §7 of
+                    // SCE_ERROR_CONTRACT.md hashes code/stage/file/key
+                    // fragments, never the message.
+                    vocabulary: crate::ecmascript::builtins::ECMASCRIPT_VOCABULARY.into(),
                     available: vec![".join()".into(), ".push()".into()],
                 }
                 .into(),

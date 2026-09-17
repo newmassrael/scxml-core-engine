@@ -201,7 +201,10 @@ fn a_math_constant_called_as_a_method_is_refused_by_the_property_rule() {
 #[test]
 fn an_unknown_math_call_is_offered_only_the_callable_members() {
     match refusal("Math.tanh(1)") {
-        ExprError::UnsupportedBuiltin { name, available } => {
+        // `vocabulary` names the refusing list; irrelevant to this test.
+        ExprError::UnsupportedBuiltin {
+            name, available, ..
+        } => {
             assert_eq!(name, "Math.tanh");
             let offered: BTreeSet<String> = available.into_iter().collect();
             let callable: BTreeSet<String> =
@@ -220,7 +223,10 @@ fn an_unknown_math_call_is_offered_only_the_callable_members() {
 #[test]
 fn an_unknown_math_read_is_offered_both_halves() {
     match refusal("Math.TAU") {
-        ExprError::UnsupportedBuiltin { name, available } => {
+        // `vocabulary` names the refusing list; irrelevant to this test.
+        ExprError::UnsupportedBuiltin {
+            name, available, ..
+        } => {
             assert_eq!(name, "Math.TAU");
             assert!(
                 available.contains(&"Math.PI".to_string())
@@ -406,7 +412,10 @@ fn the_read_refusal_offers_the_constants_the_call_refusal_withholds() {
 fn an_unknown_member_is_refused_when_it_is_read_on_every_namespace() {
     for source in ["Math.tanh", "JSON.serialize", "Object.freeze"] {
         match refusal(source) {
-            ExprError::UnsupportedBuiltin { name, available } => {
+            // `vocabulary` names the refusing list; irrelevant to this test.
+            ExprError::UnsupportedBuiltin {
+                name, available, ..
+            } => {
                 assert_eq!(name, source, "the record names the member reached for");
                 assert!(
                     !available.is_empty(),

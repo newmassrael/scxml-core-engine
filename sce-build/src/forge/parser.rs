@@ -3889,9 +3889,17 @@ fn validate_codec_tail_is_last(
 /// together. Give a bytes field `sce:bit-size="24"` and the two meet: the
 /// emitted C++ reads
 ///
-///     std::vector<uint8_t> dataRecord = static_cast<uint32_t>(...);
+/// ```text
+/// std::vector<uint8_t> dataRecord = static_cast<uint32_t>(...);
+/// ```
 ///
-/// which is accepted with exit 0 and does not compile. That is a refusal
+/// which is accepted with exit 0 and does not compile.
+///
+/// ⚠ The fence is `text` because rustdoc reads an INDENTED block as a Rust
+/// doctest and tried to compile this C++ as Rust — `cargo test -p sce-build`
+/// was red on it while `cargo test --lib`, which does not run doctests,
+/// stayed green. Found 2026-09-18 alongside the same mistake in
+/// `forge::expr::reject_unknown_callees`. That is a refusal
 /// arriving in a consumer's build log instead of on the document that
 /// caused it — the shape this check exists to close.
 ///

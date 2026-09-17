@@ -122,9 +122,12 @@ fn every_uninstalled_global_is_refused_by_name() {
     let scope = DocumentScope::installed();
     for &name in UNINSTALLED_GLOBALS {
         match to_lua_value(name, &scope) {
+            // `vocabulary` names the list that refused it; this test is about
+            // the datamodel's own globals, so it is matched away.
             Err(ExprError::UnsupportedBuiltin {
                 name: got,
                 available,
+                ..
             }) => {
                 assert_eq!(got, name);
                 assert!(

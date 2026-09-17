@@ -84,6 +84,17 @@ pub const OBJECT_MEMBERS: &[&str] = &["keys"];
 /// `pow` becomes Lua's `^` and `round` becomes `_scxml_round`; the rest
 /// are `math.<same name>`, which is why membership is decided here and
 /// the emitter only spells out the two exceptions.
+/// What this module calls itself in a refusal.
+///
+/// ⚠ It is a constant so that the four refusals raised here cannot drift
+/// apart from one another, and so that the OTHER vocabulary that raises the
+/// same error — the forge expression layer, whose `expr=` carries `len` and
+/// `eq` and not `Math` — is forced to name itself instead of inheriting this
+/// one. It used to be baked into the message template, which meant a
+/// `transform` reaching for `Math.round` was told it is "not provided by
+/// SCE's ECMAScript datamodel" — a list that has `round` in it.
+pub const ECMASCRIPT_VOCABULARY: &str = "SCE's ECMAScript datamodel";
+
 pub const MATH_FUNCTIONS: &[&str] = &[
     "abs", "acos", "asin", "atan", "ceil", "cos", "exp", "floor", "log", "max", "min", "pow",
     "random", "round", "sin", "sqrt", "tan",
@@ -526,6 +537,7 @@ pub fn unsupported_global(name: &str) -> Option<crate::forge::error::ExprError> 
     }
     Some(crate::forge::error::ExprError::UnsupportedBuiltin {
         name: name.to_string(),
+        vocabulary: ECMASCRIPT_VOCABULARY.to_string(),
         // The system variables are filtered out: `_event` is not a
         // substitute for `Date`, it is a different kind of name, and a
         // candidate list a consumer cannot choose from is noise.
@@ -621,6 +633,7 @@ pub fn unsupported_member(
     }
     Some(crate::forge::error::ExprError::UnsupportedBuiltin {
         name: format!("{}.{member}", namespace.name()),
+        vocabulary: ECMASCRIPT_VOCABULARY.to_string(),
         // The candidates are the callable members alone: this record
         // stands where a call was written, and offering `Math.PI` as a
         // replacement for `Math.tanh` would repair one refusal into
@@ -658,6 +671,7 @@ pub fn unknown_member(
     available.sort();
     Some(crate::forge::error::ExprError::UnsupportedBuiltin {
         name: format!("{}.{member}", namespace.name()),
+        vocabulary: ECMASCRIPT_VOCABULARY.to_string(),
         available,
     })
 }
@@ -809,6 +823,7 @@ pub fn unsupported_method(method: &str) -> Option<crate::forge::error::ExprError
     available.sort();
     Some(crate::forge::error::ExprError::UnsupportedBuiltin {
         name: format!(".{method}()"),
+        vocabulary: ECMASCRIPT_VOCABULARY.to_string(),
         available,
     })
 }

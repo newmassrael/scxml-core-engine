@@ -3831,11 +3831,26 @@ pub enum ExprError {
     /// the vocabulary that *is* available is the whole of the answer and
     /// rides in `available`. See [`crate::ecmascript::builtins`] for
     /// which names are decided and why the rest stay open.
-    #[error("{name} is not provided by SCE's ECMAScript datamodel. Available: {}", .available.join(", "))]
+    #[error("{name} is not provided by {vocabulary}. Available: {}", .available.join(", "))]
     UnsupportedBuiltin {
         /// The name as the author reached for it, qualified by its owner
         /// where there is one: `JSON.serialize`, `.map()`.
         name: String,
+        /// ⚠ WHICH vocabulary refused it — and this field exists because
+        /// naming the wrong one is worse than naming none.
+        ///
+        /// Two different vocabularies raise this error. The ECMAScript
+        /// datamodel carries `Math.round`, `Math.atan` and fourteen more
+        /// (`crate::ecmascript::builtins::MATH_FUNCTIONS`); the forge
+        /// expression layer carries exactly `len` and `eq`. The message
+        /// used to name the ECMAScript datamodel unconditionally, so a
+        /// `transform` that reached for `Math.round` was told it is *"not
+        /// provided by SCE's ECMAScript datamodel"* — which is false, and
+        /// sends the reader to a list that has the name in it.
+        ///
+        /// Measured 2026-09-18 while converting a real specification
+        /// formula (`ATAN((x - 128)/100)*180/pi`).
+        vocabulary: String,
         /// What this datamodel does carry in that position — the closed
         /// candidate set, so the diagnostic can offer it as a
         /// `Fix::ReplaceOneOf` rather than sending the author to the
