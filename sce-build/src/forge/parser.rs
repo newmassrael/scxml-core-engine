@@ -1299,6 +1299,7 @@ fn parse_codec(
     // field may follow it. Reject the contradictory layout at parse time
     // rather than emitting a codec that silently fails to decode.
     validate_codec_tail_is_last(&fields, label, &datamodel)?;
+    validate_codec_bytes_is_variable(&fields, label, &datamodel)?;
 
     // RFC §synth-5-B bounded embed — `<sce:embed sce:length-from="<id>"/>` must
     // reference a sibling field declared earlier in the same codec
@@ -3846,6 +3847,57 @@ fn validate_codec_tail_is_last(
                 },
             ));
         }
+    }
+    Ok(())
+}
+
+/// A `bytes` field carries a LENGTH, never a bit count.
+///
+/// `sce:type="bytes"` lowers to a byte container on every backend
+/// (`std::vector<uint8_t>` / `Vec<u8>` / `uint8_t[CAP]`), and the decode
+/// path for a FIXED bit-size assembles an integer by shifting bytes
+/// together. Give a bytes field `sce:bit-size="24"` and the two meet: the
+/// emitted C++ reads
+///
+///     std::vector<uint8_t> dataRecord = static_cast<uint32_t>(...);
+///
+/// which is accepted with exit 0 and does not compile. That is a refusal
+/// arriving in a consumer's build log instead of on the document that
+/// caused it — the shape this check exists to close.
+///
+/// ⚠ The mistake is natural rather than exotic: a UDS frame table reads
+/// `| 4-6 | Data Record | Format: ASCII (3Byte) |`, and three bytes is
+/// twenty-four bits. `sce:bit-size="length-ref"` (with a sibling length
+/// field) or `"tail"` is how a byte run is spelled here; a run whose length
+/// is fixed by the frame is `length-ref` against a constant-valued sibling,
+/// or a sequence of `uint8` fields when the bytes are individually named.
+fn validate_codec_bytes_is_variable(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    for field in fields {
+        if !matches!(field.sce_type, SceType::Bytes) {
+            continue;
+        }
+        if field.is_variable_length() {
+            continue;
+        }
+        return Err(located(
+            datamodel,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: format!("field '{}' in codec '{}'", field.id, label.identifier),
+                attr: "sce:bit-size".into(),
+                value: format!("{:?}", field.bit_size),
+                expected: "a bytes field is a RUN of bytes, so its size is a length and not \
+                           a bit count: use sce:bit-size=\"length-ref\" with \
+                           sce:length-field=\"<sibling>\", or \"tail\" when it runs to the \
+                           end of the frame. A fixed bit-size makes the decoder assemble an \
+                           integer, which cannot be stored in a byte container"
+                    .into(),
+            },
+        ));
     }
     Ok(())
 }
