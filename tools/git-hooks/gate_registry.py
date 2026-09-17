@@ -259,6 +259,10 @@ COST_MEASURED: dict[str, str] = {
     # with the tree except the number of vendored libraries, of which there
     # are two.
     "web-vendor-licenses": "2026-09-17",
+    # 5.5s, three runs reading 5507 5593 5581 ms. Almost all of it is loading
+    # the engine WASM once and laying out 13 documents; it grows with the
+    # fixture count, which the gate derives rather than fixes.
+    "visualizer-layout": "2026-09-17",
     # Re-timed 2026-09-15, when row S3 began asking the AOT registrar by
     # compiling a probe against it: `scripts/gate --measure nl-ir-closure`
     # read 1.198s, and five direct runs of the script read 1188 1223 1244
@@ -1005,6 +1009,36 @@ GATES: dict[str, dict] = {
     # A deploy workflow whose three build steps are verdicts. Its trigger
     # already includes `sce-build/**`, so a Rust change every other gate passes
     # could still turn it red — after the push.
+    # The diagram's geometry, judged without a browser. Every defect it was
+    # written for was invisible to every other lane: ELK's routes deleted 23
+    # lines after being stored, a container shrunk after its edges were routed
+    # to it, a cross-hierarchy route read in the wrong coordinate frame, a
+    # collapse leaving eight edges touching nothing. None of them broke a
+    # build, and a rendered diagram is not bytes another test can diff.
+    #
+    # ⚠ `ci_only`, and not because it is slow — it is seconds. It needs the
+    # visualizer WASM, which `visualizer-wasm` builds in the same workflow and
+    # which a push does not build.
+    "visualizer-layout": {
+        "workflows": ["deploy-visualizer.yml"],
+        "runner_workflow": True,
+        "ci_only": "needs the engine WASM that visualizer-wasm builds in the "
+                   "same workflow; a push builds no WASM, so the measurement "
+                   "would have nothing to turn a document into a structure "
+                   "with.",
+        # ⚠ `web/visualizer/**` and no wider, which took two attempts to get
+        # right. The gate first swept every tracked `.scxml`; declaring that
+        # honestly meant `**/*.scxml`, and `ci-only-coverage` then refused the
+        # entry with the sentence worth keeping: "The gate was not moved to
+        # CI, it was removed" — deploy-visualizer.yml does not run for an
+        # arbitrary document, so the lane would have been advertised and never
+        # run. The fixtures are pinned in `web/visualizer/measure/fixtures.txt`
+        # instead, which is inside this trigger; what that costs is written
+        # there.
+        "extra": ["web/visualizer/**"],
+        "cost_s": 6,
+        "summary": "diagram layout invariants, and drag/collapse survival",
+    },
     "visualizer-wasm": {
         "workflows": ["deploy-visualizer.yml"],
         "runner_workflow": True,
