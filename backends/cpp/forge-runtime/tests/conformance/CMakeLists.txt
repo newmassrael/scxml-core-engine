@@ -225,21 +225,34 @@ target_compile_definitions(numerical_conformance_test PRIVATE
 )
 
 target_compile_options(numerical_conformance_test PRIVATE
-    -Wall -Wextra -Wpedantic
-    # Promote three codegen-quality classes from warnings to errors so
-    # template drift cannot ship silently broken generated headers:
-    #   • narrowing — multi-byte BE/LE field unpack expressions must
-    #     wrap in static_cast<carrier_t>(...) (streaming_fixed_field_body
-    #     in sce-build/src/forge/generator.rs).
-    #   • unused-parameter — throwing default-impl lambdas in procedure
-    #     templates must use unnamed params (gcc does not honour
-    #     Rust-style underscore-prefix suppression here).
-    #   • type-limits — validator range checks must elide
-    #     `unsigned < 0` and `T > T_MAX` via `is_unsigned` /
-    #     `is_max_at_type_max` flags from range_rules data model.
-    -Werror=narrowing
-    -Werror=unused-parameter
-    -Werror=type-limits
+    # ⚠ BLANKET -Werror, not a hand-listed set of classes.
+    #
+    # This used to promote exactly three classes — narrowing,
+    # unused-parameter, type-limits — chosen because each had caught a real
+    # codegen defect. The reasoning was sound and the shape was not: a
+    # hand-enumerated list silently admits every class nobody has been bitten
+    # by yet.
+    #
+    # `-Wparentheses` was one of those. The C++ emitter left `&&` bare inside
+    # `||` (precedence-correct, so `child_needs_parens` saw no need), this
+    # target warned and passed, and the header only failed when a real
+    # component was generated and fed to a downstream product build that does
+    # use `-Wall -Werror`:
+    #
+    #     error: suggest parentheses around '&&' within '||'
+    #            [-Werror=parentheses]
+    #
+    # The C backend has always used blanket `-Wall -Wextra -Werror -Wpedantic`
+    # (backends/c/tests/CMakeLists.txt); C++ was the asymmetric one.
+    #
+    # ⚠⚠ The flip was MEASURED, not assumed: all 162 generated fixture headers
+    # were compiled standalone under `-std=gnu++20 -Wall -Wextra -Wpedantic
+    # -Werror`, and ZERO tripped a warning class. The five that failed did so
+    # on include context this standalone harness does not provide (cross-file
+    # imports, the interpreter's core/ headers), not on diagnostics. The flip
+    # therefore costs nothing and closes the class rather than one member of
+    # it.
+    -Wall -Wextra -Wpedantic -Werror
 )
 
 enable_testing()
