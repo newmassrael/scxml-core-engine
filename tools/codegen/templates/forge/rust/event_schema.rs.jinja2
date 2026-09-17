@@ -15,7 +15,10 @@ use crate::{{ use_path }};
 
 {{ event_schema_payload_derives_attr }}
 pub struct {{ payload_struct_name }} {
+{# ⚠ `rs_field_name`, not `id`: this crate denies `non_snake_case`, and a
+   camelCase document emitted a struct that did not compile. Every sibling
+   kind already snake_cases for Rust — see `render_event_schema`. #}
 {% for f in fields %}
-    pub {{ f.id }}: {{ f.rs_type }},
+    pub {{ f.rs_field_name }}: {{ f.rs_type }},
 {% endfor %}
 }

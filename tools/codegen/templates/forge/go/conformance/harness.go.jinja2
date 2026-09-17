@@ -72,6 +72,7 @@ type reference struct {
 	Codecs          map[string]codecSpec       `json:"codecs"`
 	Timers          map[string]timerSpec            `json:"timers"`
 	Enums           map[string]enumSpec             `json:"enums"`
+	EventSchemas    map[string]eventSchemaSpec      `json:"event_schemas"`
 	StringLookups   map[string]stringLookupSpec    `json:"string_lookups"`
 }
 
@@ -165,6 +166,18 @@ type enumSpec struct {
 }
 
 type enumVariantSpec struct {
+	Name  string `json:"name"`
+	Value int64  `json:"value"`
+}
+
+// eventSchemaSpec — a payload SHAPE. The kind emits a struct and no
+// behaviour, so the oracle carries the field list rather than cases.
+type eventSchemaSpec struct {
+	EventName string                 `json:"event_name"`
+	Fields    []eventSchemaFieldSpec `json:"fields"`
+}
+
+type eventSchemaFieldSpec struct {
 	Name  string `json:"name"`
 	Value int64  `json:"value"`
 }
@@ -367,6 +380,19 @@ func (r *reference) enumEntry(t *testing.T, section, fixture string) enumSpec {
 	spec, ok := r.Enums[fixture]
 	if !ok {
 		t.Fatalf("fixture %q: missing entry in enums", fixture)
+	}
+	return spec
+}
+
+// eventSchemaEntry — see filterSteps for the drift-detection contract.
+func (r *reference) eventSchemaEntry(t *testing.T, section, fixture string) eventSchemaSpec {
+	t.Helper()
+	if section != "event_schemas" {
+		t.Fatalf("fixture %q: event-schema kind requires ref_section=event_schemas, got %q", fixture, section)
+	}
+	spec, ok := r.EventSchemas[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in event_schemas", fixture)
 	}
 	return spec
 }

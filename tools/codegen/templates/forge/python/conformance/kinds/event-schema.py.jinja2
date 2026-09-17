@@ -1,0 +1,40 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Event-schema kind — see the C++ fragment for why this is a SHAPE claim.
+
+   ⚠ Python is the arm that makes the width question concrete: the dataclass
+   types every field `int`, so this arm cannot observe a declared width at
+   all. That is precisely why the manifest's values are in range everywhere —
+   a fixture that asserted wrapping would pass in four arms and fail here for
+   a difference the kind does not promise to remove.
+
+   `spec` is bound by the harness. #}
+        fields = spec["fields"]
+
+        # Count first: a payload that gained or lost a field without the
+        # manifest moving would otherwise satisfy every assertion below.
+        self.assertEqual(
+            len(fields), {{ f.fields | length }}, "{{ f.name }}: oracle field count"
+        )
+
+        # Positional construction, so a reordered dataclass puts each value in
+        # the wrong field and the read-backs below disagree.
+        payload = {{ f.name }}.{{ f.name | to_pascal_case }}Payload(
+{% for field in f.fields %}
+            {{ field.value }},
+{% endfor %}
+        )
+
+{% for field in f.fields %}
+        self.assertEqual(
+            fields[{{ loop.index0 }}]["name"],
+            "{{ field.name }}",
+            "{{ f.name }} field {{ loop.index0 }} name",
+        )
+        self.assertEqual(
+            int(payload.{{ field.name }}),
+            fields[{{ loop.index0 }}]["value"],
+            "{{ f.name }}.{{ field.name }}",
+        )
+{% endfor %}

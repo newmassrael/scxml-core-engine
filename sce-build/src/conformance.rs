@@ -176,6 +176,38 @@ pub struct EnumVariantFixture {
     pub value: i64,
 }
 
+/// One payload field of an `sce:kind="event-schema"`.
+///
+/// ⚠ WHAT THIS FIXTURE CAN AND CANNOT ASSERT. An event schema emits a payload
+/// STRUCT and nothing else — no computation, and in C++/Rust no event-name
+/// constant either. So the cross-language claim is about SHAPE: the six arms
+/// agree on the field names, their order, and that a value written to a field
+/// reads back unchanged.
+///
+/// ⚠⚠ IT IS DELIBERATELY NOT A WIDTH CLAIM. The same `uint8` field lands as
+/// `uint8_t` in C++, `u8` in Rust and a plain `int` in Python's dataclass, so
+/// a boundary value would wrap in three arms and not in the others — the
+/// fixture would fail for a difference the kind does not promise to remove.
+/// `value` is therefore chosen in range for EVERY arm, which keeps the
+/// round-trip a statement about the schema rather than about integer models.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct EventSchemaFieldFixture {
+    /// The SOURCE spelling, as with enum variants and codec fields: one
+    /// manifest serves six arms whose identifier conventions disagree, and
+    /// each fragment applies its own case filter.
+    pub name: String,
+    /// A value in range for every arm's rendering of the declared type.
+    pub value: i64,
+    /// The `sce:type` the document declares, verbatim (`uint16`, `int32`, …).
+    ///
+    /// ⚠ Carried for CONSTRUCTION, not as a width claim. Kotlin needs
+    /// `(200).toUByte()` where Python needs `200`, so a typed arm cannot
+    /// build the payload without knowing what the field was declared as. The
+    /// assertion still compares values, not widths — see the type's header.
+    pub sce_type: String,
+}
+
 /// One fixture entry. `name` and `ref_section` are common to every kind;
 /// kind-specific data lives in the `spec` tagged enum below. The
 /// `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat
@@ -433,6 +465,29 @@ pub enum FixtureSpec {
         /// Declared variants in document order, as `{name, value}`.
         variants: Vec<EnumVariantFixture>,
     },
+    /// An `sce:kind="event-schema"` payload. The kind emits a struct and no
+    /// behaviour, so this fixture states the SHAPE the six arms must agree on
+    /// — see [`EventSchemaFieldFixture`] for what that does and does not
+    /// include, and why a width claim is not part of it.
+    ///
+    /// ⚠ `event_name` is carried even though C++ and Rust emit no constant
+    /// for it: it is what the document declares the struct to be the payload
+    /// OF, and a manifest that dropped it would describe a nameless record.
+    /// The fragments that can reach it assert it; the others assert the
+    /// fields, which is the part every arm emits.
+    // ⚠ RENAMED, because `rename_all = "snake_case"` turns `EventSchema` into
+    // `eventschema` and the DOCUMENT's attribute is `event-schema`. Leaving
+    // the derived tag would make the manifest spell the kind one way and
+    // every `.scxml`, `ForgeKind::from_attr` and `kind_str()` spell it
+    // another — the exact hyphen this survey has already been wrong about
+    // once, in the other direction.
+    #[serde(rename = "event-schema")]
+    EventSchema {
+        /// The document's `sce:event-name`.
+        event_name: String,
+        /// Payload fields in document order.
+        fields: Vec<EventSchemaFieldFixture>,
+    },
     /// RFC §synth-5-A pure free function with bounded loops. Mirrors `Transform`'s
     /// `(args -> scalar output)` shape but admits `bytes` parameters because
     /// the algorithm body's `<sce:foreach>` over bytes is the canonical
@@ -486,6 +541,12 @@ impl FixtureSpec {
             FixtureSpec::Codec { .. } => "codec",
             FixtureSpec::Timer { .. } => "timer",
             FixtureSpec::Enum { .. } => "enum",
+            // ⚠ HYPHENATED. `ForgeKind::from_attr` is keyed by the attribute
+            // the document writes, and this kind's is `event-schema`. This
+            // survey has already been wrong about that spelling once, in the
+            // other direction — reporting the kind as having no templates
+            // after searching for `eventschema`.
+            FixtureSpec::EventSchema { .. } => "event-schema",
             FixtureSpec::Algorithm { .. } => "algorithm",
         }
     }
@@ -990,6 +1051,43 @@ impl Manifest {
                         }
                     }
                 }
+                FixtureSpec::EventSchema { event_name, fields } => {
+                    // Same vacuity shape as `enum`: the body is one assertion
+                    // per field, so an empty payload renders a test that
+                    // constructs a struct and claims nothing about it.
+                    if fields.is_empty() {
+                        return Err(format!(
+                            "fixture {}: event-schema requires at least one \
+                             `fields` entry — the fragment asserts one \
+                             round-trip per field, and an empty payload \
+                             asserts nothing",
+                            f.name
+                        ));
+                    }
+                    if event_name.is_empty() {
+                        return Err(format!(
+                            "fixture {}: event-schema `event_name` must not be \
+                             empty — it is what the payload is the payload OF, \
+                             and a fixture without it describes a nameless \
+                             record",
+                            f.name
+                        ));
+                    }
+                    // A duplicate field name would have the second assertion
+                    // name the first field, dropping a check in silence.
+                    let mut seen = std::collections::BTreeSet::new();
+                    for field in fields {
+                        if !seen.insert(field.name.as_str()) {
+                            return Err(format!(
+                                "fixture {}: event-schema field `{}` is \
+                                 declared twice — the fragment emits one \
+                                 assertion per name, so a duplicate silently \
+                                 drops a check",
+                                f.name, field.name
+                            ));
+                        }
+                    }
+                }
                 FixtureSpec::Algorithm {
                     args,
                     function,
@@ -1223,12 +1321,21 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         FixtureSpec::Timer { .. } => true,
         // Enum vocabulary: `c/enum.h.jinja2` emits a plain C enum with the
         // declared values, which is the whole surface the conformance
-        // fragments compare. ⚠ Admitted here for completeness, NOT because
-        // it is exercised: `forge-conformance.yml` has no C11 job and
-        // `scripts/gates/` has no `forge-c.sh`, so no C11 fixture of any
-        // kind is run today. That absence is a lane to build, and this arm
-        // must not be read as evidence against it.
+        // fragments compare.
+        //
+        // ⚠ This arm used to say it was "admitted for completeness, NOT
+        // because it is exercised — forge-conformance.yml has no C11 job and
+        // scripts/gates/ has no forge-c.sh, so no C11 fixture of any kind is
+        // run today", and called that absence a lane to build. The lane was
+        // built on 2026-09-17: `scripts/gates/forge-c.sh` runs the suite and
+        // `conformance-c` runs it in CI. The note is kept because a reader
+        // who remembers the old one needs to see that it was retired rather
+        // than quietly edited away.
         FixtureSpec::Enum { .. } => true,
+        // Event-schema payload: `c/event_schema.h.jinja2` emits a plain C
+        // struct with the declared fields, which is the whole surface the
+        // fragments compare. Nothing to bake — the kind carries no behaviour.
+        FixtureSpec::EventSchema { .. } => true,
         // RFC §synth-7 A6: §synth-5-A algorithm kind. The C11 algorithm template
         // (`tools/codegen/templates/forge/c/algorithm.h.jinja2`) shipped
         // at A5; A6 promotes the byte-equivalence preview to a permanent
@@ -2348,22 +2455,36 @@ mod tests {
             };
 
             // Check that the entry has at least one test case.
-            // Most kinds use "cases" or "sequence"; Timer kind uses "timers".
-            let has_cases = entry
-                .get("cases")
-                .and_then(|c| c.as_array())
-                .is_some_and(|a| !a.is_empty());
-            let has_sequence = entry
-                .get("sequence")
-                .and_then(|s| s.as_array())
-                .is_some_and(|a| !a.is_empty());
-            let has_timers = entry
-                .get("timers")
-                .and_then(|t| t.as_array())
-                .is_some_and(|a| !a.is_empty());
-            if !has_cases && !has_sequence && !has_timers {
+            //
+            // The key that carries it depends on what the kind IS. A kind
+            // with behaviour states inputs and expected outputs (`cases`), a
+            // stateful one an ordered `sequence`, the timer kind its
+            // `timers`. A DECLARATIVE kind — `enum`, `event-schema` — has no
+            // inputs at all: what it declares IS the test data, so its list
+            // is `variants` or `fields`.
+            //
+            // ⚠ THIS LIST WAS SHORT BY TWO AND THE CONSEQUENCE WAS A RED
+            // NOBODY READ. The `enum` fixture landed on 2026-09-17 and left
+            // this check failing — `enum_uds_nrc: oracle entry has no
+            // 'cases', 'sequence', or 'timers' test data` — because the round
+            // that added it ran the five conformance ARMS, saw them green,
+            // and never ran the manifest validator that owns this assertion.
+            // Measuring one axis and reporting the other is the failure, not
+            // the missing key.
+            const CASE_KEYS: [&str; 5] = ["cases", "sequence", "timers", "variants", "fields"];
+            let has_test_data = CASE_KEYS.iter().any(|k| {
+                entry
+                    .get(*k)
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|a| !a.is_empty())
+            });
+            if !has_test_data {
                 failures.push(format!(
-                    "{fixture_name}: oracle entry has no 'cases', 'sequence', or 'timers' test data"
+                    "{fixture_name}: oracle entry has none of {} — every fixture must \
+                     carry its own test data, and which key holds it depends on whether \
+                     the kind has behaviour (cases/sequence/timers) or only declares \
+                     something (variants/fields)",
+                    CASE_KEYS.join(", ")
                 ));
             }
         }

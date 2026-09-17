@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture for `sce:kind="event-schema"`.
+
+  A sensor-sample event: an identifier, a reading, and a status byte. Three
+  fields rather than one because the claim this fixture makes is about ORDER
+  and COUNT as much as about names, and neither is observable with a single
+  field — `event_schema_ast_export_min` already covers the one-field shape for
+  the AST-export drift guard, and it could not tell a reordering from a
+  faithful emit.
+
+  ⚠ WHAT THE SIX ARMS MUST AGREE ON. This kind emits a payload struct and no
+  behaviour: no computation, and in C++/Rust no event-name constant either. So
+  the conformance claim is SHAPE — the field names, their order, and that a
+  value written to a field reads back unchanged.
+
+  ⚠⚠ AND NOT WIDTH. The same `uint8` lands as `uint8_t` in C++, `u8` in Rust
+  and a plain `int` in Python's dataclass. A boundary value (255, 256) would
+  wrap in some arms and not others, and the fixture would then fail for a
+  difference this kind never promised to remove. Every value in the manifest
+  is in range for every arm, which keeps the round-trip a statement about the
+  schema rather than about six integer models.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_schema_sensor_sample"
+       sce:event-name="sensor.sample">
+  <datamodel>
+    <data id="sensorId" sce:type="uint16" sce:direction="in"/>
+    <data id="reading" sce:type="int32" sce:direction="in"/>
+    <data id="status" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

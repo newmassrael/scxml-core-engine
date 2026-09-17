@@ -1335,6 +1335,17 @@
       "fire_event": "TesterPresent",
       "reset_on_event": "DiagRequestSent",
       "cancel_on_state_exit": "SessionActive"
+    },
+    {
+      "name": "event_schema_sensor_sample",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "sensor.sample",
+      "fields": [
+        { "name": "sensorId", "value": 4660, "sce_type": "uint16" },
+        { "name": "reading", "value": -12345, "sce_type": "int32" },
+        { "name": "status", "value": 200, "sce_type": "uint8" }
+      ]
     }
   ]
 }

@@ -107,6 +107,30 @@
         }
       }
     },
+    "EventSchemaFieldFixture": {
+      "description": "One payload field of an `sce:kind=\"event-schema\"`.\n\n⚠ WHAT THIS FIXTURE CAN AND CANNOT ASSERT. An event schema emits a payload STRUCT and nothing else — no computation, and in C++/Rust no event-name constant either. So the cross-language claim is about SHAPE: the six arms agree on the field names, their order, and that a value written to a field reads back unchanged.\n\n⚠⚠ IT IS DELIBERATELY NOT A WIDTH CLAIM. The same `uint8` field lands as `uint8_t` in C++, `u8` in Rust and a plain `int` in Python's dataclass, so a boundary value would wrap in three arms and not in the others — the fixture would fail for a difference the kind does not promise to remove. `value` is therefore chosen in range for EVERY arm, which keeps the round-trip a statement about the schema rather than about integer models.",
+      "type": "object",
+      "required": [
+        "name",
+        "sce_type",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "description": "The SOURCE spelling, as with enum variants and codec fields: one manifest serves six arms whose identifier conventions disagree, and each fragment applies its own case filter.",
+          "type": "string"
+        },
+        "sce_type": {
+          "description": "The `sce:type` the document declares, verbatim (`uint16`, `int32`, …).\n\n⚠ Carried for CONSTRUCTION, not as a width claim. Kotlin needs `(200).toUByte()` where Python needs `200`, so a typed arm cannot build the payload without knowing what the field was declared as. The assertion still compares values, not widths — see the type's header.",
+          "type": "string"
+        },
+        "value": {
+          "description": "A value in range for every arm's rendering of the declared type.",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "Fixture": {
       "description": "One fixture entry. `name` and `ref_section` are common to every kind; kind-specific data lives in the `spec` tagged enum below. The `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat object (`{name, ref_section, kind, args, output, ...}`) so per-language Jinja2 templates can continue to read `f.args` / `f.output` / etc. without having to walk a nested `f.spec.*` path.",
       "type": "object",
@@ -465,6 +489,34 @@
               "items": {
                 "$ref": "#/definitions/EnumVariantFixture"
               }
+            }
+          }
+        },
+        {
+          "description": "An `sce:kind=\"event-schema\"` payload. The kind emits a struct and no behaviour, so this fixture states the SHAPE the six arms must agree on — see [`EventSchemaFieldFixture`] for what that does and does not include, and why a width claim is not part of it.\n\n⚠ `event_name` is carried even though C++ and Rust emit no constant for it: it is what the document declares the struct to be the payload OF, and a manifest that dropped it would describe a nameless record. The fragments that can reach it assert it; the others assert the fields, which is the part every arm emits.",
+          "type": "object",
+          "required": [
+            "event_name",
+            "fields",
+            "kind"
+          ],
+          "properties": {
+            "event_name": {
+              "description": "The document's `sce:event-name`.",
+              "type": "string"
+            },
+            "fields": {
+              "description": "Payload fields in document order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EventSchemaFieldFixture"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "event-schema"
+              ]
             }
           }
         },

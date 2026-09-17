@@ -1482,14 +1482,25 @@ fn render_event_schema(
     // backend-specific template key (`cpp_type` / `rs_type` / …)
     // because every backend's payload struct emits one field with the
     // resolved type and the field id. Field id stays verbatim for
-    // cpp/rust/kotlin/python/c11; Go promotes to PascalCase via
-    // `go_field_name` so the struct field is exported.
+    // cpp/kotlin/python/c11; Go promotes to PascalCase via `go_field_name`
+    // so the struct field is exported, and Rust goes to snake_case via
+    // `rs_field_name`.
+    //
+    // ⚠ RUST USED TO STAY VERBATIM TOO, and that was wrong. Every sibling
+    // kind snake_cases for Rust — a codec field `sensorId` emits
+    // `pub sensor_id: u8` — and this crate's Rust build denies
+    // `non_snake_case`, so a camelCase event-schema document emitted a struct
+    // that DID NOT COMPILE: `structure field 'sensorId' should have a snake
+    // case name`. The existing fixture never showed it because its one field
+    // was already `payload_byte`. Found 2026-09-17 by a conformance fixture
+    // with camelCase fields, which is what such a fixture is for.
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
         .map(|f| {
             let resolved = l.resolved_type(&f.sce_type, imports);
             let go_field_name = filters::to_pascal_case(f.id.clone());
+            let rs_field_name = filters::to_snake_case(f.id.clone());
             serde_json::json!({
                 "id": f.id,
                 "cpp_type": resolved,
@@ -1499,6 +1510,7 @@ fn render_event_schema(
                 "py_type": resolved,
                 "c_type": resolved,
                 "go_field_name": go_field_name,
+                "rs_field_name": rs_field_name,
             })
         })
         .collect();

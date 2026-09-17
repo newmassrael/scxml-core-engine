@@ -1,0 +1,57 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Event-schema kind — see the C++ fragment for why this is a SHAPE claim and
+   deliberately not a width claim.
+
+   Kotlin keeps the document's field spelling but types an unsigned field
+   `UShort` / `UByte`, so the read-back converts through `.toLong()`. The
+   manifest's values are in range for every arm, so no conversion here can
+   wrap. #}
+        val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
+        val fields = spec["fields"]!!.jsonArray
+
+        // Count first: a payload that gained or lost a field without the
+        // manifest moving would otherwise satisfy every assertion below.
+        assertEquals(
+            {{ f.fields | length }},
+            fields.size,
+            "{{ f.name }}: oracle field count",
+        )
+
+        // Positional construction, so a reordered data class puts each value
+        // in the wrong field and the read-backs below disagree.
+        val payload = {{ f.name | to_pascal_case }}Payload(
+{% for field in f.fields %}
+{%- if field.sce_type == "uint8" %}
+            ({{ field.value }}).toUByte(),
+{%- elif field.sce_type == "uint16" %}
+            ({{ field.value }}).toUShort(),
+{%- elif field.sce_type == "uint32" %}
+            ({{ field.value }}).toUInt(),
+{%- elif field.sce_type == "uint64" %}
+            ({{ field.value }}).toULong(),
+{%- elif field.sce_type == "int8" %}
+            ({{ field.value }}).toByte(),
+{%- elif field.sce_type == "int16" %}
+            ({{ field.value }}).toShort(),
+{%- elif field.sce_type == "int64" %}
+            ({{ field.value }}).toLong(),
+{%- else %}
+            {{ field.value }},
+{%- endif %}
+{% endfor %}
+        )
+
+{% for field in f.fields %}
+        assertEquals(
+            "{{ field.name }}",
+            fields[{{ loop.index0 }}].jsonObject["name"]!!.jsonPrimitive.content,
+            "{{ f.name }} field {{ loop.index0 }} name",
+        )
+        assertEquals(
+            fields[{{ loop.index0 }}].jsonObject["value"]!!.jsonPrimitive.long,
+            payload.{{ field.name }}.toLong(),
+            "{{ f.name }}.{{ field.name }}",
+        )
+{% endfor %}

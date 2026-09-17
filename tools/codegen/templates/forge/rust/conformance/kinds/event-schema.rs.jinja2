@@ -1,0 +1,44 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Event-schema kind — see the C++ fragment for why this is a SHAPE claim and
+   deliberately not a width claim. Rust keeps the document's field spelling,
+   so no case filter applies here. #}
+    {
+        let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+        let fields = spec["fields"].as_array().expect("fields array");
+
+        // Count first: a payload that gained or lost a field without the
+        // manifest moving would otherwise satisfy every assertion below.
+        assert_eq!(
+            fields.len(),
+            {{ f.fields | length }},
+            "{{ f.name }}: oracle field count"
+        );
+
+        // Positional construction, so a reordered struct puts each value in
+        // the wrong field and the read-backs below disagree.
+        {# ⚠ Rust renders the payload's fields in snake_case — the manifest
+           keeps the document's spelling and this arm applies the filter, the
+           same contract codec uses. The oracle's NAME assertions below still
+           compare the source spelling, which is the point of keeping one
+           canonical key for six arms. #}
+        let payload = fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Payload {
+{% for field in f.fields %}
+            {{ field.name | to_snake_case }}: {{ field.value }} as _,
+{% endfor %}
+        };
+
+{% for field in f.fields %}
+        assert_eq!(
+            fields[{{ loop.index0 }}]["name"].as_str().unwrap(),
+            "{{ field.name }}",
+            "{{ f.name }} field {{ loop.index0 }} name"
+        );
+        assert_eq!(
+            payload.{{ field.name | to_snake_case }} as i64,
+            fields[{{ loop.index0 }}]["value"].as_i64().unwrap(),
+            "{{ f.name }}.{{ field.name }}"
+        );
+{% endfor %}
+    }

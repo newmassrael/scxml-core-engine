@@ -3221,5 +3221,18 @@
         }
       ]
     }
+  },
+  "event_schemas": {
+    "event_schema_sensor_sample": {
+      "fixture": "EventSchemaSensorSample",
+      "signature": "struct EventSchemaSensorSamplePayload { uint16 sensorId; int32 reading; uint8 status; }",
+      "description": "An event schema emits a payload STRUCT and no behaviour, so what six languages must agree on is the SHAPE: the field names, their ORDER, and that a value written to a field reads back unchanged. It is deliberately NOT a width claim — the same uint8 is uint8_t in C++, u8 in Rust and a plain int in Python's dataclass, so a boundary value would wrap in some arms and not others and the fixture would fail for a difference this kind never promised to remove. Every value here is in range for every arm. Three fields rather than one because ORDER and COUNT are not observable with a single field; `reading` is negative on purpose, so a signed field rendered unsigned cannot pass.",
+      "event_name": "sensor.sample",
+      "fields": [
+        { "name": "sensorId", "value": 4660, "sce_type": "uint16" },
+        { "name": "reading", "value": -12345, "sce_type": "int32" },
+        { "name": "status", "value": 200, "sce_type": "uint8" }
+      ]
+    }
   }
 }

@@ -33,6 +33,11 @@ import com.sce.generated.{{ f.name }}.PERIOD_US
 {% if f.kind == "observer" %}
 import com.sce.generated.{{ f.name }}.ForgeDomainTag as {{ f.name | to_pascal_case }}Tag
 {% endif %}
+{# An event schema's type is the PAYLOAD, not a class named for the fixture,
+   so it needs its own import rather than a slot in the list above. #}
+{% if f.kind == "event-schema" %}
+import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}Payload
+{% endif %}
 {% if f.kind == "transform" %}
 {% if f.output %}
 import com.sce.generated.{{ f.name }}.{{ f.output.function | to_camel_case }}

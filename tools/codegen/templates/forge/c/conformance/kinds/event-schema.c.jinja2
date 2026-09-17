@@ -1,0 +1,58 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Event-schema kind — a payload SHAPE; pre-baked oracle.
+
+   See the C++ fragment for why this is a shape claim and deliberately not a
+   width claim.
+
+   ⚠ THE SAME ASYMMETRY AS EVERY OTHER C11 FRAGMENT. The other five arms READ
+   `numerical_reference.json` at run time; this one BAKES from `fixtures.json`
+   at codegen time, because C11 has no zero-deps JSON parser under this
+   backend's dependency rule. So a mutation that edits only the reference
+   cannot reach this file — proving this arm means moving the MANIFEST. Drift
+   between the two sources is still caught, by the other five: their fragments
+   assert the oracle's field NAME equals the manifest's at each index, which
+   is a comparison this arm structurally cannot make.
+
+   ⚠⚠ Assertions are `fprintf(stderr, …) + ++g_failures`, the form every C11
+   fragment uses. The first version of this file called `CHECK(...)`, which is
+   the C++ harness's macro and does not exist here — `-Werror=implicit-
+   function-declaration` caught it, which is the compiler doing what the
+   suite's own conventions could not. #}
+static void test_{{ f.name }}(void) {
+    /* Designated initialisers, so a field that disappeared from the struct
+       fails to COMPILE rather than passing quietly, and a reordered struct
+       still binds each value to its own field — the order claim is carried
+       by the five arms that can compare against the oracle's field list. */
+    {{ f.name | to_pascal_case }}Payload_t payload = {
+{% for field in f.fields %}
+        .{{ field.name }} = {{ field.value }}{{ "," if not loop.last }}
+{% endfor %}
+    };
+
+    static const struct {
+        const char *name;
+        long long expected;
+    } fields[] = {
+{% for field in f.fields %}
+        { "{{ field.name }}", {{ field.value }}LL }{{ "," if not loop.last }}
+{% endfor %}
+    };
+
+    const long long actual[] = {
+{% for field in f.fields %}
+        (long long)payload.{{ field.name }}{{ "," if not loop.last }}
+{% endfor %}
+    };
+    const size_t n = sizeof(fields) / sizeof(fields[0]);
+
+    for (size_t i = 0; i < n; ++i) {
+        if (actual[i] != fields[i].expected) {
+            fprintf(stderr,
+                    "FAIL: {{ f.name }}.%s = %lld, expected %lld\n",
+                    fields[i].name, actual[i], fields[i].expected);
+            ++g_failures;
+        }
+    }
+}
