@@ -793,6 +793,48 @@ body {
     font-style: italic;
 }
 
+/* A fatal error, in the page rather than in a modal dialog. Pinned to the
+ * top so it is seen without scrolling, and selectable so its text can be
+ * copied into a bug report — neither of which `alert()` allowed. */
+.fatal-error-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 18px;
+    background: #ffebe9;
+    border-bottom: 2px solid #cf222e;
+    color: #82071e;
+    font-size: 14px;
+    line-height: 1.5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.fatal-error-message {
+    flex: 1;
+    user-select: text;
+}
+
+.fatal-error-dismiss {
+    flex: none;
+    padding: 6px 14px;
+    border: 1px solid #cf222e;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #cf222e;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.fatal-error-dismiss:hover {
+    background: #cf222e;
+    color: #ffffff;
+}
+
 /* One arrow may stand for several transitions — the link builder merges the
  * ones sharing a pair of states. These two rules are what tells a reader
  * that, so they are not decoration: without the rule, two alternatives read
