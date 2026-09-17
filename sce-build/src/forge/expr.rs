@@ -268,11 +268,12 @@ pub(crate) fn transpile_typed_with_import_lowering(
         lower_stateful_import_calls(&mut ast, lowerings);
     }
     infer_types(&mut ast, ctx);
-    // ⚠ The C11 path lowers stateful import calls into `Raw` fragments ABOVE,
-    // so by here a lowered `smoother.update(x)` is no longer a `Member`
-    // callee. `reject_unknown_callees` reads `Raw` in callee position by the
-    // same rule as `Ident`, which is why the lowering's own product does not
-    // trip it — the lowered form is a bare name the context registered.
+    // ⚠ The C11 path lowers stateful import calls ABOVE, so by here a
+    // `smoother.update(x)` has become the `Raw` C symbol
+    // `filter_low_pass_update(...)`. The check ignores `Raw` callees for that
+    // reason — they are this pipeline's product, not an author's name, and
+    // they are not in `ctx.funcs` under any spelling. A user's name is still
+    // an `Ident` at this point, so the check keeps its subject either way.
     reject_unknown_callees(&ast, ctx)?;
     if !renames.is_empty() {
         rename_identifiers(&mut ast, renames);
@@ -2296,12 +2297,27 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Exp
     }
     if let ExprKind::Call { callee, args } = &expr.kind {
         let name = match &callee.kind {
-            ExprKind::Ident(n) | ExprKind::Raw(n) => Some(n.clone()),
+            // ⚠ `Ident` ONLY, never `Raw`. A `Raw` callee is not something an
+            // author wrote — it is this pipeline's own product, emitted by
+            // `lower_stateful_import_calls` (C11 rewrites `smoother.update(x)`
+            // into the C symbol `filter_low_pass_update(...)`) and by
+            // `rename_identifiers`. Those names are not in `ctx.funcs` and
+            // never will be: the context is keyed by the USER-VISIBLE name,
+            // which is exactly what this check has to speak about.
+            //
+            // ⚠⚠ The first version read `Raw` too, with a comment asserting
+            // that a lowered call "is a bare name the context registered".
+            // That was wrong and the C11 arm said so —
+            // `filter_low_pass_update is not provided by SCE's ECMAScript
+            // datamodel. Available: eq, len, smoother.update` — refusing a
+            // document the other five arms accept. The registered key was
+            // `smoother.update`; the lowered symbol is a different string.
+            ExprKind::Ident(n) => Some(n.clone()),
             // A stateful import's method is registered as `"{obj}.{method}"`;
             // anything else in callee position (an index, a nested call) is
             // not a name this check can speak about, so it is left alone.
             ExprKind::Member { object, property } => match &object.kind {
-                ExprKind::Ident(obj) | ExprKind::Raw(obj) => Some(format!("{obj}.{property}")),
+                ExprKind::Ident(obj) => Some(format!("{obj}.{property}")),
                 _ => None,
             },
             _ => None,
