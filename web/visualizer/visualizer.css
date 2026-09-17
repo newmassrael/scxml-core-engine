@@ -793,6 +793,33 @@ body {
     font-style: italic;
 }
 
+/* One arrow may stand for several transitions — the link builder merges the
+ * ones sharing a pair of states. These two rules are what tells a reader
+ * that, so they are not decoration: without the rule, two alternatives read
+ * as one transition of two lines; without the count, a capped label lies by
+ * omission about what it is not showing.
+ *
+ * ⚠ The heights here are mirrored by `LINE_STYLES` in label-metrics.js,
+ * which reserves the box. The pair has to be changed together. */
+.label-separator {
+    height: 1px;
+    margin: 2px 0;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.label-more {
+    color: #6b7280;
+    font-style: italic;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.label-more:hover,
+.label-more:focus {
+    color: #1f2937;
+    text-decoration: underline;
+}
+
 /* Transition label container positioning */
 .transition-label-container {
     pointer-events: none;  /* Allow click-through to underlying states */

@@ -1167,15 +1167,42 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         // Transition labels (event, condition, actions) using foreignObject for HTML rendering
         // Labels are draggable - custom positions persist until transition coordinates change
         this.visualizer.transitionLabels = linkGroups
-            .filter(d => d.linkType === 'transition' && (d.event || d.cond || (d.actions && d.actions.length > 0)))
+            .filter(d => d.linkType === 'transition' && linkCarriesLabel(d))
             .append('foreignObject')
             .attr('class', 'transition-label-container')
-            .attr('width', 300)  // Initial width for measurement
-            .attr('height', 200)  // Initial height for measurement
+            // The box `label-metrics.js` decided, which is also the box the
+            // layout reserved. Sized from the same answer rather than from a
+            // fixed guess, so the container cannot be smaller than the text
+            // it holds or larger than the space kept clear for it.
+            .attr('width', d => this.visualizer.layoutManager.labelBoxForLink(d).width)
+            .attr('height', d => this.visualizer.layoutManager.labelBoxForLink(d).height)
             .style('overflow', 'visible')
             .style('pointer-events', 'auto')  // Enable pointer events for dragging
             .style('cursor', 'move')  // Show move cursor on hover
             .html(d => this.visualizer.getTransitionLabelText(d))
+            // Opening a capped label.
+            //
+            // The cap exists because thirteen alternatives between one pair
+            // of states make a column taller than the states themselves. The
+            // count is only honest if it can be opened, so this is the other
+            // half of that decision, not a nicety.
+            //
+            // ⚠ `stopPropagation`, or the click reaches the drag behaviour
+            // below and the label is re-positioned instead of opened.
+            .on('click', function(event, d) {
+                const opener = event.target.closest && event.target.closest('.label-more');
+                if (!opener) {
+                    return;
+                }
+                event.stopPropagation();
+                d.labelExpanded = !d.labelExpanded;
+                // `self` is the visualizer in this scope, not the renderer.
+                const box = self.layoutManager.labelBoxForLink(d);
+                d3.select(this)
+                    .attr('width', box.width)
+                    .attr('height', box.height)
+                    .html(self.getTransitionLabelText(d));
+            })
             // Drag behavior: allows repositioning labels, auto-resets on coordinate changes
             .call(d3.drag()
                 .on('start', function(event, d) {
@@ -2133,6 +2160,25 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             link.colorIndex = transitionCounter % colorCount;
             // Use shared utility function from utils.js (Single Source of Truth)
             link.transitionId = getTransitionId(link);
+
+            // Every transition this arrow stands for, in the SAME id space —
+            // `getTransitionId`, not SCE's numeric transition id.
+            //
+            // ⚠ The two are different spaces and mixing them is a silent
+            // break: focus-manager looks up what fired by
+            // `source_event_target`, so publishing SCE's numeric ids here
+            // would leave every lookup unmatched, which shows up as "the
+            // transition never highlighted" rather than as an error.
+            //
+            // ⚠⚠ `getTransitionId` is NOT unique, whatever utils.js says
+            // above it: thirteen guarded `report -> done` transitions all
+            // reduce to `report_eventless_done`. De-duplicated here because
+            // a list repeating one id thirteen times says nothing the single
+            // entry does not; the non-uniqueness itself is a separate defect
+            // and is not papered over by this merge.
+            link.transitionIds = [...new Set(
+                (link.transitions || [link]).map(getTransitionId).filter(Boolean)
+            )];
             transitionCounter++;
         });
 

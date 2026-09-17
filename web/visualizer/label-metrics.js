@@ -78,7 +78,26 @@ const LINE_STYLES = {
     condition: { font: 11, indent: 0, extraY: 1 + 1, marginBottom: 1 },
     action: { font: 11, indent: 10, extraY: 0, marginBottom: 1 },
     always: { font: 11, indent: 0, extraY: 0, marginBottom: 0 },
+    more: { font: 11, indent: 0, extraY: 0, marginBottom: 0 },
+    // A rule, not a line of text: no glyphs, so no font size — its height
+    // is the rule plus the air around it, stated directly.
+    separator: { font: 0, indent: 0, extraY: 5, marginBottom: 1 },
 };
+
+/**
+ * How many lines a merged label shows before it says how many it is hiding.
+ *
+ * ⚠ A judgement, and the one place it is written down. Measured over the
+ * corpus, 8.6% of (source, target) pairs carry more than one transition and
+ * the worst carries thirteen — all thirteen guarded, all `report -> done`.
+ * Drawn as thirteen arrows that is unreadable; drawn as one arrow with a
+ * thirteen-entry label it is a column taller than the states it connects.
+ *
+ * So the label is capped and the remainder is COUNTED rather than dropped:
+ * a reader must be able to see that there is more, or the diagram lies by
+ * omission. What is hidden stays on the link for the expansion to show.
+ */
+const MAX_LABEL_TRANSITIONS = 2;
 
 /**
  * How many monospace cells a code point occupies.
@@ -180,6 +199,69 @@ function buildTransitionLabelLines(transition, formatAction) {
 }
 
 /**
+ * The lines a LINK carries, where a link may stand for several transitions.
+ *
+ * ## Why one arrow holds several transitions
+ *
+ * Two states joined by thirteen transitions were drawn as thirteen arrows
+ * with thirteen labels in the same corridor, which no layout engine can
+ * help with: ELK routes what it is given, faithfully. The statechart
+ * convention — smcat, PlantUML, a whiteboard — is one arrow whose label
+ * lists the alternatives, and that is what the link builder now produces.
+ *
+ * ## Truncation happens at a transition boundary, never inside one
+ *
+ * ⚠ Cutting mid-transition would show an event whose guard is below the
+ * fold, and a guard is the reason a transition does or does not fire. A
+ * reader seeing `tick` without `[ready]` has been told something false.
+ * So whole transitions are kept, and the rest is counted.
+ *
+ * `expandAll` renders every member, for the expanded state the renderer
+ * switches to. The box is measured from whatever this returned, so an
+ * expanded label reserves an expanded box.
+ */
+function buildLinkLabelLines(link, formatAction, expandAll) {
+    const members = (link.transitions && link.transitions.length)
+        ? link.transitions
+        : [link];
+
+    const shown = expandAll ? members : members.slice(0, MAX_LABEL_TRANSITIONS);
+    const lines = [];
+
+    shown.forEach((transition, index) => {
+        if (index > 0) {
+            // A rule between alternatives: without it two events read as one
+            // transition with a second line rather than as two transitions.
+            lines.push({ kind: 'separator', text: '', member: index });
+        }
+        for (const line of buildTransitionLabelLines(transition, formatAction)) {
+            lines.push({ ...line, member: index });
+        }
+    });
+
+    const hidden = members.length - shown.length;
+    if (expandAll && members.length > MAX_LABEL_TRANSITIONS) {
+        // ⚠ An opened label keeps a control, or it cannot be closed again:
+        // the opener is the `+N more` line, and an expanded label has none.
+        // Measured as a line like any other, so the box that holds it is
+        // reserved for it.
+        lines.push({ kind: 'more', text: '− less', hidden: 0, expanded: true });
+    } else if (hidden > 0) {
+        lines.push({
+            kind: 'more',
+            text: `+${hidden} more`,
+            hidden,
+            // ⚠ Carried so a reader of the line knows the count is of
+            // transitions, not of lines — they differ whenever a hidden
+            // transition has a guard or actions.
+            hiddenTransitions: hidden,
+        });
+    }
+
+    return lines;
+}
+
+/**
  * The box the label needs, in CSS pixels.
  *
  * The number ELK is given and the number the renderer sizes the container
@@ -220,6 +302,31 @@ function transitionLabelBox(transition, formatAction) {
     return { lines, ...measureTransitionLabel(lines) };
 }
 
+/**
+ * Does this link get a label drawn at all?
+ *
+ * ⭐ Asked by the RENDERER, which decides whether to append the element,
+ * and by the LAYOUT, which decides whether to reserve a box for it. The two
+ * disagreeing is a silent defect in either direction: space held for a
+ * label nobody draws pushes states apart for nothing, and a label drawn
+ * into space nobody held is the collision this whole change is about.
+ *
+ * ⚠ Mirrors the renderer's original predicate, `eventless` deliberately NOT
+ * among the terms: a bare eventless transition has never carried a label
+ * here, and turning that on is a visible change to every document full of
+ * them, not a side effect of merging.
+ */
+function linkCarriesLabel(link) {
+    const members = (link.transitions && link.transitions.length) ? link.transitions : [link];
+    return members.some((t) => t.event || t.cond || (t.actions && t.actions.length > 0));
+}
+
+/** Lines and box for a link, which may stand for several transitions. */
+function linkLabelBox(link, formatAction, expandAll) {
+    const lines = buildLinkLabelLines(link, formatAction, expandAll);
+    return { lines, ...measureTransitionLabel(lines) };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         ADVANCE_RATIO,
@@ -228,10 +335,14 @@ if (typeof module !== 'undefined' && module.exports) {
         LABEL_PADDING_Y,
         LABEL_BORDER,
         LINE_STYLES,
+        MAX_LABEL_TRANSITIONS,
         cellsForCodePoint,
         textWidth,
         buildTransitionLabelLines,
+        buildLinkLabelLines,
+        linkCarriesLabel,
         measureTransitionLabel,
         transitionLabelBox,
+        linkLabelBox,
     };
 }

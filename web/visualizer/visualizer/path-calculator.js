@@ -28,10 +28,15 @@ class PathCalculator {
      * many lines there are.
      */
     getTransitionLabelLines(transition) {
-        return buildTransitionLabelLines(transition, (action) =>
-            (typeof ActionFormatter !== 'undefined')
-                ? ActionFormatter.formatAction(action)
-                : { main: 'action', details: [] }
+        return buildLinkLabelLines(
+            transition,
+            (action) =>
+                (typeof ActionFormatter !== 'undefined')
+                    ? ActionFormatter.formatAction(action)
+                    : { main: 'action', details: [] },
+            // A link the reader has opened shows every alternative; the rest
+            // show the cap and a count of what is behind it.
+            transition.labelExpanded === true
         );
     }
 
@@ -54,6 +59,13 @@ class PathCalculator {
                     return `<div class="label-action">${line.text}</div>`;
                 case 'always':
                     return `<div class="label-always">${line.text}</div>`;
+                case 'separator':
+                    return `<div class="label-separator"></div>`;
+                case 'more':
+                    // Announces what the cap is hiding. Clickable, and the
+                    // count is of TRANSITIONS: a reader told "+9 more" must
+                    // not find eleven when they open it.
+                    return `<div class="label-more" role="button" tabindex="0">${line.text}</div>`;
                 default:
                     throw new Error(`path-calculator: unknown label line kind ${line.kind}`);
             }
@@ -65,8 +77,15 @@ class PathCalculator {
             labelClasses += ` label-color-${transition.colorIndex}`;
         }
 
-        // Add data-transition-id attribute
-        const transitionId = transition.transitionId ? `data-transition-id="${transition.transitionId}"` : '';
+        // EVERY transition this arrow stands for, space separated, so a
+        // lookup for one of them finds the merged arrow. The matchers use
+        // `~=`, which is the attribute selector for a space-separated list;
+        // an arrow standing for a single transition is the one-element case
+        // and behaves exactly as the old exact match did.
+        const ids = transition.transitionIds && transition.transitionIds.length
+            ? transition.transitionIds
+            : (transition.transitionId ? [transition.transitionId] : []);
+        const transitionId = ids.length ? `data-transition-id="${ids.join(' ')}"` : '';
 
         return `<div class="${labelClasses}" ${transitionId}>${parts.join('')}</div>`;
     }

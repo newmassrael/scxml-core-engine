@@ -22,7 +22,7 @@ class LayoutManager {
      * from the state it points at for no visible reason.
      */
     labelBoxForLink(link) {
-        if (link.linkType !== 'transition') {
+        if (link.linkType !== 'transition' || !linkCarriesLabel(link)) {
             return null;
         }
         const lines = this.visualizer.pathCalculator.getTransitionLabelLines(link);
