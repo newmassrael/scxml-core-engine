@@ -19,47 +19,45 @@ class PathCalculator {
         this.BOUNDARY_DIRECTION_OFFSET = 100; // Offset for boundary point direction calculation
     }
 
+    /**
+     * The lines this label carries, from the one place that decides them.
+     *
+     * Split from the markup below so the same list reaches the box
+     * reservation in `label-metrics.js`. A second list built here would let
+     * the drawn label and the space ELK reserved for it disagree about how
+     * many lines there are.
+     */
+    getTransitionLabelLines(transition) {
+        return buildTransitionLabelLines(transition, (action) =>
+            (typeof ActionFormatter !== 'undefined')
+                ? ActionFormatter.formatAction(action)
+                : { main: 'action', details: [] }
+        );
+    }
+
     getTransitionLabelText(transition) {
-        // Generate hierarchical HTML structure for better readability
-        const parts = [];
-
-        // Eventless indicator - always show first if transition is eventless (W3C SCXML 3.12)
-        if (transition.eventless === true) {
-            parts.push(`<div class="label-eventless">⚡ eventless</div>`);
-        }
-        // Event name (W3C SCXML 3.12.1) - only for event-based transitions
-        else if (transition.event) {
-            // W3C SCXML 5.9.1: Wildcard event detection
-            if (transition.event === '*') {
-                parts.push(`<div class="label-event label-wildcard">★ * <span class="wildcard-hint">(wildcard)</span></div>`);
-            } else {
-                parts.push(`<div class="label-event">${transition.event}</div>`);
+        // Generate hierarchical HTML structure for better readability.
+        // W3C SCXML 3.12 / 3.12.1 / 3.7 / 5.9.1: which lines exist is
+        // decided by getTransitionLabelLines; this only dresses them.
+        const parts = this.getTransitionLabelLines(transition).map(line => {
+            switch (line.kind) {
+                case 'eventless':
+                    return `<div class="label-eventless">${line.text}</div>`;
+                case 'event':
+                    return line.wildcard
+                        ? `<div class="label-event label-wildcard">${line.head}`
+                            + `<span class="wildcard-hint">${line.hint}</span></div>`
+                        : `<div class="label-event">${line.text}</div>`;
+                case 'condition':
+                    return `<div class="label-condition">${line.text}</div>`;
+                case 'action':
+                    return `<div class="label-action">${line.text}</div>`;
+                case 'always':
+                    return `<div class="label-always">${line.text}</div>`;
+                default:
+                    throw new Error(`path-calculator: unknown label line kind ${line.kind}`);
             }
-        }
-
-        // Condition (guard) - W3C SCXML 3.12.1
-        if (transition.cond) {
-            const icon = '🔍';  // Condition icon
-            parts.push(`<div class="label-condition">${icon} [${transition.cond}]</div>`);
-        }
-
-        // Actions - W3C SCXML 3.7 (using ActionFormatter for consistency)
-        if (transition.actions && transition.actions.length > 0) {
-            transition.actions.forEach(action => {
-                // Use ActionFormatter for consistent formatting
-                const formatted = (typeof ActionFormatter !== 'undefined')
-                    ? ActionFormatter.formatAction(action)
-                    : { main: 'action', details: [] };
-
-                // Wrap in label-action div with arrow prefix
-                parts.push(`<div class="label-action">↳ ${formatted.main}</div>`);
-            });
-        }
-
-        // Fallback for completely empty transitions (no event, no eventless flag, no condition, no actions)
-        if (parts.length === 0) {
-            parts.push(`<div class="label-always">(always)</div>`);
-        }
+        });
 
         // Build label classes with color variant
         let labelClasses = 'transition-label';

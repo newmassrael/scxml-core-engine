@@ -10,6 +10,25 @@ class LayoutManager {
         this.visualizer = visualizer;
     }
 
+    /**
+     * The box a link's label needs, or null when the link carries none.
+     *
+     * A lookup, not a decision: the lines come from the path calculator,
+     * which is what the renderer draws from, and the box from
+     * `label-metrics.js`. Nothing about the label's content is settled here.
+     *
+     * ⚠ Null for the initial-transition pseudo-link, which is drawn without
+     * a label. Reserving a box for it would push the initial marker away
+     * from the state it points at for no visible reason.
+     */
+    labelBoxForLink(link) {
+        if (link.linkType !== 'transition') {
+            return null;
+        }
+        const lines = this.visualizer.pathCalculator.getTransitionLabelLines(link);
+        return { lines, ...measureTransitionLabel(lines) };
+    }
+
     buildELKGraph() {
         const graph = {
             id: 'root',
@@ -156,6 +175,29 @@ class LayoutManager {
                         sources: [link.source],
                         targets: [link.target]
                     };
+
+                    // The label is declared to ELK, not drawn over its
+                    // result. ELK keeps clear only of labels it was given,
+                    // so a transition label added afterwards lands wherever
+                    // the route happens to be — which is why the renderer
+                    // grew a drag handle for moving them by hand.
+                    //
+                    // The box comes from `label-metrics.js`, which the
+                    // renderer also sizes the container from: one number,
+                    // read twice, so the space reserved and the space used
+                    // cannot differ.
+                    const labelBox = this.labelBoxForLink(link);
+                    if (labelBox) {
+                        edge.labels = [{
+                            text: labelBox.lines.map(l => l.text).join(' '),
+                            width: labelBox.width,
+                            height: labelBox.height,
+                            layoutOptions: {
+                                'edgeLabels.inline': 'true',
+                                'edgeLabels.placement': 'CENTER'
+                            }
+                        }];
+                    }
 
                     // Check if target is a direct child of source (parent→child edge)
                     const sourceNode = this.visualizer.nodes.find(n => n.id === link.source);

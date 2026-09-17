@@ -286,6 +286,10 @@
     <script src="constraint-solver.js"></script>
     <script src="collision-detector.js"></script>
 
+    <!-- What a transition label says and how big its box is. Loaded before
+         the layout and the renderer, which both read the same answer. -->
+    <script src="label-metrics.js"></script>
+
     <!-- Transition Layout Optimizer Modules -->
     <script src="optimizer/snap-calculator.js"></script>
     <script src="optimizer/path-utils.js"></script>
