@@ -1079,12 +1079,42 @@ fn parse_condition(
 
     let mut inputs = Vec::new();
     let mut expr = String::new();
+    let mut out_field: Option<String> = None;
 
     for data in data_children(&datamodel) {
         let field = parse_forge_field(&data, label.diagnostic_label)?;
         match field.direction {
             Direction::In => inputs.push(field),
             Direction::Out => {
+                // A condition answers ONE question. `ConditionModel` holds a
+                // single `expr` and the emitted function returns a single
+                // bool, so a second output used to overwrite the first and
+                // leave no trace: the document declared `supported` and
+                // `decided`, the generator exited 0, and the emitted function
+                // was named for the document while computing the LAST
+                // expression. Nothing was wrong with the C++ — it answered a
+                // different question than the document asked, which no
+                // compiler can notice.
+                if let Some(first) = &out_field {
+                    return Err(located(
+                        &data,
+                        label.diagnostic_label,
+                        ValidationError::IncompatibleAttributes {
+                            element: format!("condition '{}'", label.identifier),
+                            detail: format!(
+                                "a condition yields exactly one value, and '{first}' already \
+                                 declares it — so '{}' cannot also be an output. Until this \
+                                 check existed the second output silently replaced the first \
+                                 and the document generated cleanly, naming the function for \
+                                 the first while computing the second. Give each output its \
+                                 own condition document, or use sce:kind=\"transform\", which \
+                                 emits one function per output",
+                                field.id
+                            ),
+                        },
+                    ));
+                }
+                out_field = Some(field.id.clone());
                 if let Some(e) = &field.expr {
                     expr = e.clone();
                 } else {
