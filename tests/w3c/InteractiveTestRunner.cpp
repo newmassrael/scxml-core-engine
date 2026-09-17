@@ -27,6 +27,9 @@
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
 
+// Splitting a transition's `event` attribute into its descriptors.
+#include <sstream>
+
 #include <set>
 #include <unordered_set>
 
@@ -1906,52 +1909,76 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                     }
                 }
             } else {
-                // Create one transition object per event-target combination
-                for (const auto &event : events) {
-                    // W3C SCXML 5.9.2: Handle targetless transitions (no target attribute)
-                    if (targets.empty()) {
-                        auto transObj = emscripten::val::object();
-                        transObj.set("id", std::to_string(transitionId++));
-                        transObj.set("source", stateId);
-                        transObj.set("target", "");  // Empty string for targetless transitions
-                        transObj.set("event", event);
-                        transObj.set("eventless", false);  // W3C SCXML 3.13: Not eventless
-                        // W3C SCXML 3.13: Internal transition flag
-                        transObj.set("isInternal", transition->isInternal());
-                        transObj.set("type", transition->isInternal() ? "internal" : "external");
-                        if (!guard.empty()) {
-                            transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
-                        }
-                        if (actionsArray["length"].as<int>() > 0) {
-                            transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
-                        }
-
-                        SCE_LOG_DEBUG("  → Adding targetless transition: {} (self) event='{}' (id={})", stateId, event,
-                                      transitionId - 1);
-                        transitionsArray.call<void>("push", transObj);
-                    } else {
-                        for (const auto &target : targets) {
-                            auto transObj = emscripten::val::object();
-                            transObj.set("id", std::to_string(transitionId++));
-                            transObj.set("source", stateId);
-                            transObj.set("target", target);
-                            transObj.set("event", event);
-                            transObj.set("eventless", false);  // W3C SCXML 3.13: Not eventless
-                            // W3C SCXML 3.13: Internal transition flag
-                            transObj.set("isInternal", transition->isInternal());
-                            transObj.set("type", transition->isInternal() ? "internal" : "external");
-                            if (!guard.empty()) {
-                                transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
-                            }
-                            if (actionsArray["length"].as<int>() > 0) {
-                                transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
-                            }
-
-                            SCE_LOG_DEBUG("  → Adding event transition: {} → {} event='{}' (id={})", stateId, target,
-                                          event, transitionId - 1);
-                            transitionsArray.call<void>("push", transObj);
-                        }
+                // W3C SCXML 3.12.1: an `event` attribute holding several
+                // descriptors is ONE transition that matches any of them —
+                // "a transition matches an event if at least one of its
+                // event descriptors matches".
+                //
+                // ⚠ This used to emit one transition object per descriptor,
+                // so `event="a b c"` reached the diagram as three arrows
+                // sharing a guard and an action list. That is a different
+                // statement from what the document makes: three transitions
+                // may be selected independently and may carry different
+                // guards, and the actions were duplicated onto each, so the
+                // same `<send>` was drawn three times. Measured over the
+                // corpus, four transitions in two documents are affected.
+                //
+                // The descriptors travel joined, as the attribute spells
+                // them, plus `events` for consumers that need them apart —
+                // the event buttons, and matching against the single
+                // descriptor the engine reports for what actually fired.
+                // ⚠ The `event` ATTRIBUTE, split here, rather than
+                // `getEvents()`.
+                //
+                // `getEvents()` is not a list of descriptors:
+                // `TransitionNode`'s constructor pushes the raw attribute
+                // into it and the parser then adds each token, so
+                // `event="foo bar"` yields `["foo bar", "foo", "bar"]`. The
+                // first entry is the attribute masquerading as a descriptor.
+                // It is inert at runtime — a legal SCXML event name has no
+                // space, so nothing ever matches it — but joining that list
+                // produced `"foo bar foo bar"` on the first attempt here.
+                //
+                // ⚠⚠ The model defect is NOT fixed here. `StateMachine.cpp`
+                // reads `getEvents()` as the descriptor list in four places,
+                // so correcting it is a runtime change owing its own round
+                // and its own tests. This reads what the document says
+                // instead of what the model remembers.
+                const std::string eventList = transition->getEvent();
+                auto eventsArray = emscripten::val::array();
+                {
+                    std::istringstream descriptors(eventList);
+                    std::string descriptor;
+                    while (descriptors >> descriptor) {
+                        eventsArray.call<void>("push", descriptor);
                     }
+                }
+
+                // W3C SCXML 5.9.2: a targetless transition stays in its
+                // source state; it is still one transition.
+                const std::vector<std::string> drawnTargets =
+                    targets.empty() ? std::vector<std::string>{std::string()} : targets;
+                for (const auto &target : drawnTargets) {
+                    auto transObj = emscripten::val::object();
+                    transObj.set("id", std::to_string(transitionId++));
+                    transObj.set("source", stateId);
+                    transObj.set("target", target);
+                    transObj.set("event", eventList);
+                    transObj.set("events", eventsArray);
+                    transObj.set("eventless", false);  // W3C SCXML 3.13: Not eventless
+                    // W3C SCXML 3.13: Internal transition flag
+                    transObj.set("isInternal", transition->isInternal());
+                    transObj.set("type", transition->isInternal() ? "internal" : "external");
+                    if (!guard.empty()) {
+                        transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
+                    }
+                    if (actionsArray["length"].as<int>() > 0) {
+                        transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
+                    }
+
+                    SCE_LOG_DEBUG("  → Adding event transition: {} → {} event='{}' (id={})", stateId,
+                                  target.empty() ? "(self)" : target, eventList, transitionId - 1);
+                    transitionsArray.call<void>("push", transObj);
                 }
             }
         }

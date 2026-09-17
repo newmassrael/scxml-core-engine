@@ -343,10 +343,27 @@ class UIUpdater {
             // W3C SCXML 3.7: Find transition actions from structure (getLastTransition doesn't include actions)
             // Use currentMachine.structure.transitions to support both parent and child SCXMLs
             const transitions = this.controller.currentMachine?.structure?.transitions || [];
+            // ⚠ The engine reports the ONE descriptor that fired; a
+            // transition may list several (W3C SCXML 3.12.1, `event="a b c"`).
+            // Comparing the strings whole misses the transition whenever it
+            // lists more than one, and the reader is then shown a transition
+            // with no actions rather than the actions that ran.
+            const matchesEvent = (t) => {
+                if (!t.event && !lastTransition.event) {
+                    return true;
+                }
+                if (!t.event || !lastTransition.event) {
+                    return false;
+                }
+                const descriptors = Array.isArray(t.events) && t.events.length
+                    ? t.events
+                    : String(t.event).trim().split(/\s+/);
+                return descriptors.includes(lastTransition.event);
+            };
             const matchingTransition = transitions.find(t =>
                 t.source === lastTransition.source &&
                 t.target === lastTransition.target &&
-                (t.event === lastTransition.event || (!t.event && !lastTransition.event))
+                matchesEvent(t)
             );
 
             const logEntry = document.createElement('div');
