@@ -363,56 +363,25 @@ class Renderer {
                         return;
                     }
 
-                    if (self.debugMode) {
-                        logger.debug('[DRAG END COMPOUND] Starting progressive optimization...');
-                    }
-
-                    if (self.backgroundOptimization) {
-                        self.backgroundOptimization.cancel();
-                        self.backgroundOptimization = null;
-                    }
-
-                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
-                        self.allLinks,
-                        self.nodes,
-                        d.id,  // Dragged compound node ID
-                        (success) => {
-                            if (success) {
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END COMPOUND] Background CSP complete, updating visualization...`);
-                                }
-
-                                // Update link directions for all visible links
-                                self.renderer._updateVisibleLinkDirections();
-
-                                self.updateLinksOptimal();
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END COMPOUND] CSP visualization update complete`);
-                                }
-                            } else {
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END COMPOUND] Background CSP cancelled or failed, keeping greedy result`);
-                                }
-                            }
-
-                            self.backgroundOptimization = null;
-                        },
-                        (iteration, totalIterations, score) => {
-                            // Progressive update: called for each intermediate solution
-                            if (self.debugMode) {
-                                logger.debug(`[DRAG END COMPOUND] Intermediate update (${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
-                            }
-
-                            // Recalculate link directions
-                            // Get visible links (exclude hidden links in collapsed states)
-                            // Update link directions for all visible links
-                            self.renderer._updateVisibleLinkDirections();
-
-                            // Update visualization with intermediate solution
-                            self.updateLinksOptimal();
-                        },
-                        TransitionLayoutOptimizer.CSP_DEBOUNCE_MS
-                    );
+                    // ⚠ NO background re-optimisation. This is what a reader
+                    // saw as the diagram rearranging itself a second or two
+                    // after they let go of a state.
+                    //
+                    // It ran a CSP over every link, then called
+                    // `updateLinksOptimal()` — and again on each intermediate
+                    // solution, so the drawing shifted repeatedly while
+                    // nobody was touching it. What it computes is snap-point
+                    // assignments, and since the layout began keeping ELK's
+                    // routes, `getLinkPath` prefers those for every edge ELK
+                    // routed: the assignments are discarded for most links
+                    // and the visible motion buys nothing.
+                    //
+                    // The edges that DO still use them — the ones incident to
+                    // what just moved — are already re-routed synchronously
+                    // by `updateLinks()` during the drag, before the pointer
+                    // is released.
+                    self.layoutManager.invalidateELKRouting([d.id]);
+                    self.updateLinks(false);
                 }))
             .on('click', (event, d) => this.handleCompoundClick(event, d));
 
@@ -702,56 +671,13 @@ class Renderer {
                         return; // Skip optimization for clicks
                     }
 
-                    if (self.debugMode) {
-                        logger.debug(`[DRAG END] Node moved ${dragDistance.toFixed(0)}px, starting progressive optimization...`);
-                    }
-
-                    // Start progressive optimization (returns immediately with greedy result)
-                    // Pass dragged node ID for locality-aware optimization
-                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
-                        self.allLinks,
-                        self.nodes,
-                        d.id,  // Dragged node ID for distance-based prioritization
-                        (success) => {
-                            if (success) {
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END] Background CSP complete, updating visualization...`);
-                                }
-
-                                // Calculate midY for new CSP routing
-                                // Update link directions for all visible links
-                                self.renderer._updateVisibleLinkDirections();
-
-                                // Update visualization with CSP-optimized paths
-                                self.updateLinksOptimal();
-
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END] CSP visualization update complete`);
-                                }
-                            } else {
-                                if (self.debugMode) {
-                                    logger.debug(`[DRAG END] Background CSP cancelled or failed, keeping greedy result`);
-                                }
-                            }
-
-                            self.backgroundOptimization = null;
-                        },
-                        (iteration, totalIterations, score) => {
-                            // Progressive update: called for each intermediate solution
-                            if (self.debugMode) {
-                                logger.debug(`[DRAG END] Intermediate update (${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
-                            }
-
-                            // Recalculate link directions
-                            // Get visible links (exclude hidden links in collapsed states)
-                            // Update link directions for all visible links
-                            self.renderer._updateVisibleLinkDirections();
-
-                            // Update visualization with intermediate solution
-                            self.updateLinksOptimal();
-                        },
-                        TransitionLayoutOptimizer.CSP_DEBOUNCE_MS
-                    );
+                    // ⚠ NO background re-optimisation — see the compound drag
+                    // end above for why. The short version: it redrew every
+                    // link a second or two after the gesture, and again for
+                    // each intermediate solution, to apply snap points that
+                    // `getLinkPath` ignores for any edge ELK routed.
+                    self.layoutManager.invalidateELKRouting([d.id]);
+                    self.updateLinks(false);
 
                     // Calculate midY for immediate greedy routing
                     // Get visible links (exclude hidden links in collapsed states)
@@ -1040,50 +966,16 @@ class Renderer {
                         this.visualizer.render();
                     });
 
-                // W3C SCXML: Re-optimize snap points after resize
-                // Significant size changes may require different routing
-                if (statesToResize.length > 0 && self.layoutOptimizer) {
-                    if (this.visualizer.debugMode) {
-                        logger.debug(`[STATE RESIZE] Triggering CSP re-optimization for ${statesToResize.length} resized states`);
-                    }
-
-                    // Cancel any ongoing optimization
-                    if (self.backgroundOptimization) {
-                        self.backgroundOptimization.cancel();
-                        self.backgroundOptimization = null;
-                    }
-
-                    // Start progressive optimization with first resized state as focus
-                    const focusNodeId = statesToResize[0].id;
-                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
-                        self.allLinks,
-                        self.nodes,
-                        focusNodeId,
-                        (success) => {
-                            if (success) {
-                                if (self.debugMode) {
-                                    logger.debug(`[STATE RESIZE] CSP re-optimization complete - applying new snap points`);
-                                }
-                                // Update link directions for all visible links
-                                self.renderer._updateVisibleLinkDirections();
-
-                                // Apply optimized snap points to visualization
-                                self.updateLinksOptimal();
-
-                                if (self.debugMode) {
-                                    logger.debug(`[STATE RESIZE] Visualization update complete`);
-                                }
-                            } else {
-                                if (self.debugMode) {
-                                    logger.debug(`[STATE RESIZE] CSP cancelled or failed, keeping current result`);
-                                }
-                            }
-                            self.backgroundOptimization = null;
-                        },
-                        null, // onProgress
-                        100   // debounceMs
-                    );
-                }
+                // ⚠ NO background re-optimisation after the resize. It ran on
+                // FIRST LOAD, whenever a state turned out wider than its
+                // estimate, and redrew every link a second or two after the
+                // diagram appeared — which is what a reader reported as the
+                // drawing rearranging itself on entry.
+                //
+                // The re-layout above already derives the whole drawing from
+                // the measured widths. A CSP over snap points on top of it
+                // recomputes assignments that `getLinkPath` ignores for every
+                // edge ELK routed, and pays for them in visible motion.
             }
         };
 
