@@ -1233,23 +1233,31 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     });
                 }
 
-                // Force layout flush and measure actual rendered size
-                labelElement.getBoundingClientRect();  // Force reflow
-                const labelRect = labelElement.getBoundingClientRect();
-
-                const padding = 0;  // No extra padding - use CSS padding only
-
-                // Update dimensions to fit content exactly
-                const finalWidth = labelRect.width + padding;
-                const finalHeight = labelRect.height + padding;
-
-                // Update foreignObject size and center position
+                // ⚠ The RESERVED box, not a re-measurement of the rendered
+                // content.
+                //
+                // This used to read `getBoundingClientRect()` and resize the
+                // container to whatever the HTML came out as. That made sense
+                // while the container was created at a guessed 300x200 and had
+                // to shrink onto its content. It stopped making sense — and
+                // started doing harm — once `label-metrics.js` computed the box
+                // and the layout reserved exactly it: the rendered size silently
+                // replaced the reserved one, so the rectangle ELK kept clear and
+                // the rectangle on screen were two different things. Labels the
+                // layout had separated were drawn on top of each other, and the
+                // measurement reported zero collisions because it was reading
+                // the reserved box — right about a rectangle nobody drew.
+                //
+                // The header of `label-metrics.js` says producer and consumer
+                // cannot disagree, because there is one number and both read it.
+                // This line is what made that false.
+                const box = self.layoutManager.labelBoxForLink(d);
                 const pos = self.getTransitionLabelPosition(d);
                 d3.select(this)
-                    .attr('width', finalWidth)
-                    .attr('height', finalHeight)
-                    .attr('x', pos.x - finalWidth / 2)   // Center horizontally
-                    .attr('y', pos.y - finalHeight / 2);  // Center vertically
+                    .attr('width', box.width)
+                    .attr('height', box.height)
+                    .attr('x', pos.x - box.width / 2)   // Center horizontally
+                    .attr('y', pos.y - box.height / 2);  // Center vertically
             });
 
         // Collapsed compound states (rendered AFTER links/labels for proper z-order)
