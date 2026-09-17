@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: transform kind — `&&` nested inside `||`.
+
+  ⚠ WHY THIS FIXTURE EXISTS. The C++ emitter left the inner `&&` bare:
+
+      return alarm == 2 || level >= 1 && level <= 4;
+
+  which is precedence-correct, so the paren logic saw no reason to wrap it.
+  GCC and Clang disagree — `-Wparentheses` asks for the parentheses — and a
+  product that builds with `-Wall -Werror` therefore cannot compile the
+  generated header at all. The defect reached a real build before anything in
+  this tree noticed.
+
+  ⚠⚠ THE CORPUS, NOT THE FLAGS, WAS THE HOLE. The C++ conformance target used
+  to promote three hand-picked warning classes to errors, and `-Wparentheses`
+  was not among them — but even blanket `-Werror` would not have caught this,
+  because **no fixture mixed the two boolean operators in one expression**.
+  Measured when this file was written: of the fixture documents, one used
+  `||` and three used `&&`, and zero used both together. A diagnostic can only
+  fire on code that gets generated.
+
+  So this fixture's job is to make the shape exist. Its numbers are ordinary;
+  what matters is that `||` has an `&&` as a child, in both operand
+  positions, so every backend emits the construct its compiler judges.
+
+  The shape is taken from a real component: an alarm sounds when a status
+  equals a specific code, OR when a level sits inside a range.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="mixed_boolean">
+  <datamodel>
+    <data id="alarm" sce:type="int32" sce:direction="in"/>
+    <data id="level" sce:type="int32" sce:direction="in"/>
+
+    <!-- `&&` as the RIGHT child of `||` -->
+    <data id="alerting" sce:type="bool" sce:direction="out"
+          expr="alarm === 2 || (level &gt;= 1 &amp;&amp; level &lt;= 4)"/>
+
+    <!-- `&&` as the LEFT child of `||` — gcc warns on this order too, so
+         both are exercised rather than assuming symmetry. -->
+    <data id="ranged" sce:type="bool" sce:direction="out"
+          expr="(level &gt;= 1 &amp;&amp; level &lt;= 4) || alarm === 2"/>
+  </datamodel>
+</scxml>

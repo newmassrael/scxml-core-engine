@@ -8,14 +8,22 @@ static void test_{{ f.name }}(void) {
 {% for arg_ty in f.args %}
         {{ arg_ty | c_type }} arg{{ loop.index0 }};
 {% endfor %}
+{# ⚠ Honour `compare` — see the C++ fragment. C had the same implicit
+   int→double conversion, so an `equality`/`i32` fixture passed here through a
+   tolerance check it never asked for. #}
+{% if f.output.compare == "tolerance" %}
         double expected;
+{% else %}
+        {{ f.output["type"] | c_type }} expected;
+{% endif %}
     } cases[] = {
 {% for c in f.cases %}
-        { {% for arg_ty in f.args %}{{ c.args[loop.index0] | c_literal(arg_ty) }}{% if not loop.last %}, {% endif %}{% endfor %}, {{ c.expected | c_literal("f64") }} },
+        { {% for arg_ty in f.args %}{{ c.args[loop.index0] | c_literal(arg_ty) }}{% if not loop.last %}, {% endif %}{% endfor %}, {{ c.expected | c_literal(f.output.compare == "tolerance" and "f64" or f.output["type"]) }} },
 {% endfor %}
     };
     const size_t n = sizeof(cases) / sizeof(cases[0]);
     for (size_t i = 0; i < n; ++i) {
+{% if f.output.compare == "tolerance" %}
         double actual = {{ f.output.function }}({% for arg_ty in f.args %}cases[i].arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
         if (!close_enough(actual, cases[i].expected, FLOAT_TOL)) {
             fprintf(stderr,
@@ -23,6 +31,15 @@ static void test_{{ f.name }}(void) {
                 i, actual, cases[i].expected);
             ++g_failures;
         }
+{% else %}
+        {{ f.output["type"] | c_type }} actual = {{ f.output.function }}({% for arg_ty in f.args %}cases[i].arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        if (actual != cases[i].expected) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: actual=%lld expected=%lld\n",
+                i, (long long)actual, (long long)cases[i].expected);
+            ++g_failures;
+        }
+{% endif %}
     }
 }
 {% else %}

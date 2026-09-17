@@ -3,15 +3,31 @@
 
 {# Transform kind — pure free function(s), single or compound output. #}
 {% if f.output %}
+{# `tol` only exists for the tolerance comparison — Rust's `unused_variables`
+   is denied in this harness, so binding it for an equality fixture fails the
+   build. The compound arm below already gates it the same way. #}
+{% if f.output.compare == "tolerance" %}
     let tol = tolerance(&reference);
+{% endif %}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     for case in spec["cases"].as_array().expect("cases must be array") {
 {% for arg_ty in f.args %}
         let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
 {% endfor %}
+{# ⚠ Honour `compare`, as the compound arm below already does. Every
+   single-output transform was `tolerance`/`f64` until `transform_rounding`
+   arrived with `equality`/`i32`; a float comparison of an exact integer is a
+   WEAKER assertion than the manifest asked for, and in Rust it does not even
+   compile — there is no implicit int→float conversion to hide behind. #}
+{% if f.output.compare == "tolerance" %}
         let expected = case["expected"].as_f64().expect("expected is number");
         let actual = fixtures::{{ f.name }}::{{ f.output.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
         assert_close(actual, expected, tol, "{{ f.name }}");
+{% else %}
+        let expected = {{ "case[\"expected\"]" | rust_unmarshal(f.output["type"]) }};
+        let actual = fixtures::{{ f.name }}::{{ f.output.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        assert_eq!(actual, expected, "{{ f.name }}");
+{% endif %}
     }
 {% else %}
 {% set ns = namespace(needs_tol=false) %}

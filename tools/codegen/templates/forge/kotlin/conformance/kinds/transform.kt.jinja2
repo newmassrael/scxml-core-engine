@@ -9,9 +9,18 @@
             val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
 {% endfor %}
 {% if f.output %}
+{# ⚠ Honour `compare`, as the compound arm below already does — see the Rust
+   fragment for why the single-output arm got away with assuming floats until
+   `transform_rounding`. Kotlin has no implicit Int→Double widening either. #}
+{% if f.output.compare == "tolerance" %}
             val expected = case.jsonObject["expected"]!!.jsonPrimitive.double
             val actual = {{ f.output.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
             assertClose(actual, expected, "{{ f.name }}")
+{% else %}
+            val expected = {{ "case.jsonObject[\"expected\"]!!" | kt_unmarshal(f.output["type"]) }}
+            val actual = {{ f.output.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            assertEquals(expected, actual, "{{ f.name }}")
+{% endif %}
 {% else %}
             val expected = case.jsonObject["expected"]!!.jsonObject
 {% for co in f.compound_outputs %}

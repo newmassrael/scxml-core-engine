@@ -9,10 +9,26 @@
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
 {% endfor %}
 {% if f.output %}
-		var expected float64
+{# ⚠ The single-output arm used to hardcode `float64` + `assertClose`, while
+   the compound arm below already honoured `compare`. Every single-output
+   transform in the catalog happened to be `tolerance`/`f64`, so the
+   assumption held until `transform_rounding` arrived with `equality`/`i32`
+   and the generated test would not compile:
+
+       cannot use actual (variable of type int32) as float64 value
+       in argument to assertClose
+
+   The two arms now ask the manifest the same question. #}
+		var expected {{ f.output["type"] | go_type }}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
 		actual := {{ f.name }}.{{ f.output.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if f.output.compare == "tolerance" %}
 		assertClose(t, actual, expected, ref.FloatTolerance, "{{ f.name }}")
+{% else %}
+		if actual != expected {
+			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
+		}
+{% endif %}
 {% else %}
 		var expected struct {
 {% for co in f.compound_outputs %}
