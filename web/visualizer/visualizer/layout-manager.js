@@ -54,6 +54,13 @@ class LayoutManager {
             // follows the line the reader can see.
             delete link.elkLabel;
         });
+
+        // And the containers go back to being sized from their children:
+        // once geometry moves, ELK's size is a fact about a drawing that has
+        // been replaced, and `updateCompoundBounds` is the right answer again.
+        this.visualizer.nodes.forEach(node => {
+            delete node._elkSized;
+        });
         if (dropped > 0) {
             logger.debug(`[LAYOUT] Dropped ELK routing for ${dropped} link(s); optimizer owns routing now`);
         }
@@ -348,6 +355,20 @@ class LayoutManager {
                     // Do NOT overwrite with getNodeWidth/Height (breaks nesting, causes s111 to escape s11)
                     node.width = elkNode.width;
                     node.height = elkNode.height;
+
+                    // ⚠ And remember that ELK sized it, because the bounds
+                    // recalculation further down would otherwise shrink it
+                    // back to a box around its children — AFTER ELK has
+                    // routed every edge against the larger one. Measured on
+                    // `motor_partition`, that moved `root`'s lower edge up
+                    // 20px and left two edges starting 20px below a
+                    // container they no longer touch.
+                    //
+                    // The recalculation is not wrong; it is a fallback for
+                    // the case its own comment names, "ELK may not provide
+                    // coordinates for nested hierarchy". This marks the case
+                    // where it did.
+                    node._elkSized = true;
                     logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (ELK hierarchical calc), offset=(${offsetX}, ${offsetY})`);
                 } else {
                     // Atomic/final nodes: use original calculated dimensions for text content
@@ -543,8 +564,15 @@ class LayoutManager {
             logger.debug(`    depth=${depth}: ${node.id}`);
         });
         
-        // Update bounds in bottom-up order
+        // Update bounds in bottom-up order, except where ELK already sized
+        // the container — see `_elkSized`. Recomputing there replaces the
+        // box every edge was routed against with a tighter one, and the
+        // routes do not move with it.
         compoundsWithDepth.forEach(({ node }) => {
+            if (node._elkSized) {
+                logger.debug(`[LAYOUT] ${node.id}: keeping ELK's size, edges are routed to it`);
+                return;
+            }
             this.visualizer.updateCompoundBounds(node);
         });
 

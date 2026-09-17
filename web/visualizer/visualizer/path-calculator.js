@@ -144,6 +144,35 @@ class PathCalculator {
         return position;
     }
 
+    /**
+     * Is ELK's label coordinate in the same frame as the states it labels?
+     *
+     * The same containment hazard as [`elkSectionReachesItsNodes`]: a label
+     * on a cross-hierarchy edge can come back in an ancestor's frame, and a
+     * label read in the wrong frame lands in open space — where it is worse
+     * than the midpoint it replaced, because it names a transition nowhere
+     * near it.
+     *
+     * Asked as "does it sit within the span of the two states it belongs
+     * to, with room to spare", which a correctly-framed label always does
+     * and a mis-framed one does not.
+     */
+    elkLabelIsInFrame(link) {
+        const source = this.visualizer.nodes.find(n => n.id === (link.visualSource || link.source));
+        const target = this.visualizer.nodes.find(n => n.id === (link.visualTarget || link.target));
+        if (!source || !target
+            || !Number.isFinite(source.x) || !Number.isFinite(target.x)) {
+            return false;
+        }
+        const margin = 200;
+        const minX = Math.min(source.x - source.width / 2, target.x - target.width / 2) - margin;
+        const maxX = Math.max(source.x + source.width / 2, target.x + target.width / 2) + margin;
+        const minY = Math.min(source.y - source.height / 2, target.y - target.height / 2) - margin;
+        const maxY = Math.max(source.y + source.height / 2, target.y + target.height / 2) + margin;
+        const { x, y } = link.elkLabel;
+        return x >= minX && x <= maxX && y >= minY && y <= maxY;
+    }
+
     getTransitionLabelPosition(transition) {
         const transitionId = `${transition.source}→${transition.target}`;
         logger.debug(`[LABEL POS] Calculating position for ${transitionId}`);
@@ -165,7 +194,8 @@ class PathCalculator {
         // reader who has placed a label has said where they want it.
         if (transition.elkLabel
             && Number.isFinite(transition.elkLabel.x)
-            && Number.isFinite(transition.elkLabel.y)) {
+            && Number.isFinite(transition.elkLabel.y)
+            && this.elkLabelIsInFrame(transition)) {
             logger.debug(`[LABEL POS] ${transitionId}: Using ELK position`);
             return this._createLabelPosition(
                 transition.elkLabel.x, transition.elkLabel.y, 'elk', transitionId);
@@ -883,6 +913,44 @@ class PathCalculator {
         return `M ${sx} ${sy} L ${tx} ${ty}`;
     }
 
+    /**
+     * Does this ELK route actually join the two states it belongs to?
+     *
+     * ⚠ ELK expresses an edge's coordinates relative to the node that
+     * CONTAINS the edge, and with `hierarchyHandling: INCLUDE_CHILDREN` it
+     * may hoist a cross-hierarchy edge to the root while leaving its
+     * coordinates in the frame of the lowest common ancestor. Read as
+     * absolute, such a route lands a long way from both endpoints —
+     * measured on `ancestor_entry_is_not_default_entry`, two edges inside a
+     * nested `<parallel>` drew 653-769px away from the states they connect,
+     * as lines floating in open space.
+     *
+     * ⭐ So this ASKS rather than models. Reproducing ELK's containment
+     * rules here would put a second copy of them in this file, free to
+     * disagree with the version ELK actually used; checking that the route
+     * arrives where it must cannot disagree with anything. A route that
+     * fails falls back to the orthogonal path, which is what every edge
+     * used before ELK's routing was kept at all.
+     */
+    elkSectionReachesItsNodes(section, sourceNode, targetNode) {
+        if (!section || !section.startPoint || !section.endPoint) {
+            return false;
+        }
+        const near = (point, node) => {
+            if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+                return false;
+            }
+            // Generous: the point must be on or near the box, not exactly on
+            // its border, because ELK attaches at a port inset from the edge
+            // and the renderer rounds.
+            const slack = this.MIN_LABEL_DISTANCE;
+            const halfW = (node.width || 0) / 2 + slack;
+            const halfH = (node.height || 0) / 2 + slack;
+            return Math.abs(point.x - node.x) <= halfW && Math.abs(point.y - node.y) <= halfH;
+        };
+        return near(section.startPoint, sourceNode) && near(section.endPoint, targetNode);
+    }
+
     getLinkPath(link) {
         logger.debug(`[GET LINK PATH] Called for ${link.source}→${link.target}`);
         // Get source and target nodes (use visual redirect if available)
@@ -907,7 +975,8 @@ class PathCalculator {
         }
 
         // Use ELK edge routing only if available (only during initial ELK layout)
-        if (link.elkSections && link.elkSections.length > 0) {
+        if (link.elkSections && link.elkSections.length > 0
+            && this.elkSectionReachesItsNodes(link.elkSections[0], sourceNode, targetNode)) {
             const section = link.elkSections[0];
 
             // Calculate boundary points for start and end
