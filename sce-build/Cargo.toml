@@ -739,5 +739,13 @@ name = "forge_unknown_callee"
 path = "tests/forge_unknown_callee.rs"
 required-features = ["cli"]
 
+# Spawns `sce-codegen`, so it declares the feature that builds the binary.
+# A target that spawns and does not declare this is not skipped — it fails
+# to link, which is how the four targets before it were found.
+[[test]]
+name = "forge_unresolved"
+path = "tests/forge_unresolved.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

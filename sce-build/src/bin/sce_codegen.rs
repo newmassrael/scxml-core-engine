@@ -3373,6 +3373,23 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 };
 
+            // `--strict-unresolved` reaches the forge pipeline too. It did
+            // not until 2026-09-18: a forge document carrying
+            // `sce:unresolved` generated with exit 0, so an author who
+            // marked a value they did not know was told nothing and the
+            // build shipped the guess. Runs before any backend, for the
+            // same reason as the statechart arm below — the refusal should
+            // reach a CI gate as `validation/unresolved-placeholder`, not
+            // as a puzzle in the generated code.
+            if strict_unresolved {
+                if let Err(e) = sce_build::unresolved_check::check_strict_unresolved_forge(
+                    &scxml_content,
+                    doc_label.diagnostic_label,
+                ) {
+                    error_format.emit_forge_and_exit(&e);
+                }
+            }
+
             for lang in &langs {
                 let forge_opts = sce_build::ForgeCompileOptions {
                     go_module_prefix: go_module_prefix.clone(),
@@ -3800,6 +3817,22 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     }
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 };
+
+            // `--strict-unresolved` on the GENERATE route. The check also
+            // sits in `cmd_check`'s forge arm; both are needed and neither
+            // is redundant — a build that never runs `check` would
+            // otherwise ship a document whose author wrote down that they
+            // did not know a value. Placed before `--emit-ast` so a
+            // refused document exports no AST either: an AST of a document
+            // the build rejected is an artifact nothing should read.
+            if strict_unresolved {
+                if let Err(e) = sce_build::unresolved_check::check_strict_unresolved_forge(
+                    &scxml_content,
+                    doc_label.diagnostic_label,
+                ) {
+                    error_format.emit_forge_and_exit(&e);
+                }
+            }
 
             if let Some(ast_path) = emit_ast_path {
                 let path = std::path::Path::new(ast_path);
@@ -7768,6 +7801,37 @@ fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorForm
 // detected marker.
 
 fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
+    // ⚠ A forge document is READ HERE TOO, and did not used to be.
+    // Measured 2026-09-18: this command answered a `sce:kind="transform"`
+    // file with "transform kind cannot be processed by the SCXML
+    // pipeline" and exit 3. The one command whose whole job is to list
+    // what an author could not resolve refused the kinds most likely to
+    // carry such a marker, so the answer a consumer got was an error
+    // rather than a list — and an empty list and an error read the same
+    // way to anything that only checks for output.
+    let content = match std::fs::read_to_string(scxml) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("cannot read {scxml}: {e}");
+            std::process::exit(1);
+        }
+    };
+    match sce_build::forge::parser::detect_kind(&content) {
+        Ok(Some(kind)) if kind != sce_build::forge::model::ForgeKind::Statechart => {
+            out_stream(|w| {
+                match sce_build::unresolved_check::emit_unresolved_ndjson_forge(&content, scxml, w)
+                {
+                    Ok(()) => Ok(()),
+                    Err(e) => error_format.emit_forge_and_exit(&e),
+                }
+            });
+            return;
+        }
+        // A statechart, or a document whose kind could not be detected —
+        // the SCXML parser below is the authority on both, and its
+        // diagnostic is better than one invented here.
+        _ => {}
+    }
     let mut parser = sce_build::parser::SCXMLParser::new();
     let model = parser
         .parse_file(scxml)

@@ -703,7 +703,13 @@ fn enforce_datamodel_languages(
 /// at most one. The parser silently
 /// collects; `--strict-unresolved` lifts to a build-failing error
 /// via [`crate::provenance::check_strict_unresolved`].
-fn collect_sce_unresolved(
+/// ⚠ `pub(crate)` so the forge pipeline reads markers with THIS reader
+/// rather than a second one. Measured 2026-09-18: a forge document could
+/// carry `sce:unresolved` and `--strict-unresolved` generated it with
+/// exit 0 — the marker was accepted by the XML and understood by nothing.
+/// A second reader would have been a second place for the two forms
+/// (attribute and child element) to drift apart.
+pub(crate) fn collect_sce_unresolved(
     node: &roxmltree::Node,
     source_name: &str,
 ) -> Vec<crate::provenance::UnresolvedMarker> {

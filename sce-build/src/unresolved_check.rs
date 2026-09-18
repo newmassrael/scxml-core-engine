@@ -208,6 +208,115 @@ fn write_marker<W: Write + ?Sized>(
     writeln!(writer, "{line}")
 }
 
+// ── The same two surfaces, for a forge-kind document ────────────────
+//
+// ⚠ WHY THIS EXISTS AT ALL. Measured 2026-09-18: a `sce:kind="transform"`
+// document carrying `sce:unresolved` on a `<data>` node generated with
+// `--strict-unresolved` and exit 0, and `sce-codegen unresolved` refused
+// the file outright ("transform kind cannot be processed by the SCXML
+// pipeline"). The marker was accepted by the XML and understood by
+// nothing — the worst shape a safety mechanism can take, because the
+// author who writes "I do not know this value" is told nothing and the
+// build ships the guess. Every surface above served statecharts only.
+//
+// ⚠⚠ WHY THE XML AND NOT THE MODEL. The statechart side stores markers
+// in `SCXMLModel` and walks it. The forge side has seventeen kinds, each
+// with its own model and its own field containers, so the equivalent
+// walk would be a seventeen-arm match that a new kind silently falls out
+// of — the exact staleness this tree has been bitten by elsewhere. The
+// markers live in the XML in one shape for every kind, so reading them
+// there cannot go stale, and a kind added tomorrow is covered the day it
+// parses.
+//
+// ⚠⚠⚠ THE RESIDUE, STATED RATHER THAN HIDDEN: because the marker is not
+// lifted into the forge model, it does not appear in `--emit-ast` and a
+// consumer reading the AST cannot see it. That is a real gap for the
+// round-trip law a pseudocode surface would need, and it is a larger
+// change (seventeen models) than the defect above justified on its own.
+// It is recorded here rather than left for someone to discover.
+
+/// Every `<sce:unresolved>` marker anywhere in a forge document, in
+/// document order, paired with the element that owns it.
+fn forge_markers(
+    content: &str,
+    source_name: &str,
+) -> Result<Vec<(String, UnresolvedMarker)>, Located<ForgeError>> {
+    // The same error the forge parser raises for malformed XML. In
+    // practice unreachable from `generate` — the caller parsed this very
+    // content a moment ago — but returning `Ok(vec![])` here would report
+    // "no unresolved markers" for a document nobody could read, which is
+    // the shape this whole module exists to refuse.
+    let doc = roxmltree::Document::parse(content).map_err(|e| {
+        Located::new(
+            crate::forge::error::XmlError::Parse(e.to_string()).into(),
+            source_name.to_string(),
+            None,
+            None,
+        )
+    })?;
+    let mut out = Vec::new();
+    for node in doc.descendants().filter(|n| n.is_element()) {
+        for marker in crate::parser::collect_sce_unresolved(&node, source_name) {
+            // `<data id="x">` reads better in a refusal than `data`,
+            // and the id is what the author named the thing.
+            let label = match node.attribute("id") {
+                Some(id) => format!("<{} id=\"{}\">", node.tag_name().name(), id),
+                None => format!("<{}>", node.tag_name().name()),
+            };
+            out.push((label, marker));
+        }
+    }
+    Ok(out)
+}
+
+/// `--strict-unresolved` for a forge document: refuse the build when any
+/// marker is present, keyed at the first one in document order.
+pub fn check_strict_unresolved_forge(
+    content: &str,
+    source_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    let markers = forge_markers(content, source_name)?;
+    match markers.into_iter().next() {
+        None => Ok(()),
+        Some((element, marker)) => {
+            let location = marker.location.clone().unwrap_or(SourceLocation {
+                file: source_name.to_string(),
+                line: None,
+                col: None,
+            });
+            Err(Located::new(
+                ValidationError::UnresolvedPlaceholder {
+                    element,
+                    id: marker.id.clone(),
+                    reason: marker.reason.clone(),
+                }
+                .into(),
+                location.file,
+                location.line,
+                location.col,
+            ))
+        }
+    }
+}
+
+/// `sce-codegen unresolved` for a forge document — one NDJSON record per
+/// marker, the same record shape the statechart path emits so a consumer
+/// does not branch on the kind it was handed.
+pub fn emit_unresolved_ndjson_forge<W: Write + ?Sized>(
+    content: &str,
+    source_name: &str,
+    writer: &mut W,
+) -> Result<(), Located<ForgeError>> {
+    for (element, marker) in forge_markers(content, source_name)? {
+        // `node_type` is "forge" for every kind rather than the kind's own
+        // name: a consumer routes on `code` and reads `node_path`, and a
+        // per-kind spelling here would be a second place the seventeen
+        // kinds have to stay listed.
+        let _ = write_marker(writer, &element, "forge", None, &marker);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
