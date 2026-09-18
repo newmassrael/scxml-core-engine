@@ -1,6 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: cross-file composition — filter importing transform -->
-<!-- Filter's raw input is pre-processed through a transform before smoothing. -->
+<!-- SCE Forge conformance: cross-file composition — filter importing transform.
+
+     What this fixture actually proves: a `filter` document may carry an
+     `<sce:import>` of a `transform` document, and the pair parses,
+     resolves and generates. That is the import edge, and it is real.
+
+     ⚠ WHAT IT USED TO CLAIM, AND DID NOT DO. The line here read
+     "Filter's raw input is pre-processed through a transform before
+     smoothing", and the output field carried
+     `sce:pre-transform="tempConvert(rawSensor)"` to say so. Measured
+     2026-09-18: NOTHING IN THE TREE READS `pre-transform`, in any
+     spelling. The filter smoothed `rawSensor` directly and the fixture
+     passed, so the attribute was a sentence the document told a reader
+     and the machine never heard.
+
+     It survived because the forge parser looks attributes up by name and
+     therefore cannot see one it does not look for — an unknown `sce:*`
+     attribute was silently dropped rather than refused. The attribute is
+     removed here rather than implemented: a composition nobody asked for
+     is a feature, and the honest repair for a claim the code does not
+     make is to stop making the claim.
+-->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="filter" version="1.0">
@@ -9,7 +29,6 @@
   <datamodel>
     <data id="rawSensor" sce:type="uint16" sce:direction="in"/>
     <data id="smoothed" sce:type="float64" sce:direction="out"
-          sce:filter="moving-average" sce:window="5"
-          sce:pre-transform="tempConvert(rawSensor)"/>
+          sce:filter="moving-average" sce:window="5"/>
   </datamodel>
 </scxml>

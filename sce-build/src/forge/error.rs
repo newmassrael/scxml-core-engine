@@ -400,6 +400,28 @@ pub enum ValidationError {
         expected: String,
     },
 
+    /// An attribute in the SCE namespace that nothing in the parser
+    /// reads.
+    ///
+    /// ⚠ WHY THIS IS A REFUSAL AND NOT A WARNING. The forge parser looks
+    /// attributes up BY NAME, so an attribute it does not look for is not
+    /// merely unused — it is invisible. Measured 2026-09-18:
+    /// `sce:totallyMadeUpAttribute` generated with exit 0, and so did a
+    /// conformance fixture carrying `sce:pre-transform="…"` that nothing
+    /// has ever read, while its own comment told the reader the transform
+    /// was applied. A typo behaves the same way: `sce:directon="out"`
+    /// leaves the field at its default and says nothing. The author's
+    /// sentence and the machine's behaviour part company silently, which
+    /// is the one failure mode a generator must not have.
+    #[error("{element}: unknown attribute sce:{attr} (known: {})", .known.join(", "))]
+    UnknownSceAttribute {
+        element: String,
+        attr: String,
+        /// Suggestions — the known names closest to what was written, so
+        /// the refusal answers "then what should I have typed".
+        known: Vec<String>,
+    },
+
     /// The sce:kind value is not recognised or supported.
     #[error("unsupported sce:kind value: '{0}'")]
     UnsupportedKind(String),

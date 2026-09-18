@@ -505,6 +505,25 @@ Field cardinality and direction constraints are enforced per-kind —
 e.g. `Transform` requires at least one input and one output field
 (`validation/empty-collection`, `validation/invalid-direction`).
 
+**An `sce:` attribute this tree does not read is refused**, as
+`validation/unknown-sce-attribute`, with the nearest known names as
+the fix. The parser looks attributes up by name, so one it does not
+look for is not unused — it is invisible, and the author's sentence
+and the machine's behaviour part company in silence. Measured
+2026-09-18: `sce:totallyMadeUpAttribute` generated with exit 0, and a
+conformance fixture had carried `sce:pre-transform="…"` — announced in
+its own comment as pre-processing the filter's input — while nothing
+read it and the filter smoothed the raw input. A misspelling is the
+same failure with a likelier cause: `sce:directon="out"` left the
+field at its default and said nothing.
+
+⚠ It is a NAME check, not a placement check: a known name on an
+element that does not accept it still passes. ⚠⚠ It covers the forge
+kinds only. Statecharts carry a different `sce:` vocabulary
+(`sce:req` on states and transitions, the datamodel families) which
+has not been measured the same way, and running one list over both
+would refuse valid documents.
+
 ### §2.3 Context objects — `<sce:context>`
 
 Per-kind context objects carrying stateful scratch data. Rules:
@@ -2326,6 +2345,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/missing-element` | Validation |
 | `validation/missing-attribute` | Validation |
 | `validation/invalid-attribute` | Validation |
+| `validation/unknown-sce-attribute` | Validation |
 | `validation/unsupported-kind` | Validation |
 | `validation/duplicate-id` | Validation |
 | `validation/malformed-identifier` | Validation |

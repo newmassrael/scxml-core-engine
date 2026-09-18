@@ -538,6 +538,13 @@ pub enum DiagnosticCode {
     ValidationMissingAttribute,
     #[serde(rename = "validation/invalid-attribute")]
     ValidationInvalidAttribute,
+    /// An SCE-namespace attribute the parser does not read. Distinct from
+    /// `invalid-attribute`, which is a known name carrying a value outside
+    /// its set: here the NAME is the thing nothing knows, so a consumer
+    /// routing on this code is looking at a typo or at a marker the build
+    /// would otherwise have dropped in silence.
+    #[serde(rename = "validation/unknown-sce-attribute")]
+    ValidationUnknownSceAttribute,
     #[serde(rename = "validation/unsupported-kind")]
     ValidationUnsupportedKind,
     #[serde(rename = "validation/duplicate-id")]
@@ -2929,6 +2936,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMissingElement,
         ValidationMissingAttribute,
         ValidationInvalidAttribute,
+        ValidationUnknownSceAttribute,
         ValidationUnsupportedKind,
         ValidationDuplicateId,
         ValidationMalformedIdentifier,
@@ -3459,6 +3467,9 @@ impl DiagnosticCode {
 
             // ── Forge kind system (SCE_FORGE.md) ─────────────────
             ValidationUnsupportedKind => Some("SCE Forge §3.2"),
+            // The vocabulary an `sce:` attribute may come from is the
+            // accepted-subset document's business, same as the kinds.
+            ValidationUnknownSceAttribute => Some("SCE Accepted Subset §2.2"),
             ValidationInvalidDirection => Some("SCE Forge §3.3"),
             ValidationWrongPipeline => Some("SCE Forge §4"),
 
@@ -4157,6 +4168,7 @@ impl DiagnosticCode {
             ValidationMissingElement => "validation/missing-element",
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
+            ValidationUnknownSceAttribute => "validation/unknown-sce-attribute",
             ValidationUnsupportedKind => "validation/unsupported-kind",
             ValidationDuplicateId => "validation/duplicate-id",
             ValidationMalformedIdentifier => "validation/malformed-identifier",
@@ -5160,6 +5172,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: Some(Fix::AddAttribute {
                 element: element.clone(),
                 attr: attr.clone(),
+            }),
+            key_fragments: vec![element.clone(), attr.clone()],
+        },
+        ValidationError::UnknownSceAttribute {
+            element,
+            attr,
+            known,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationUnknownSceAttribute,
+            stage: Stage::Validation,
+            // The name is what is wrong, so `actual` carries the name and
+            // the repair is "one of these instead". Same split as
+            // `InvalidAttribute` below, one level up: there the value was
+            // wrong, here the attribute is.
+            expected: None,
+            actual: Some(format!("sce:{attr}")),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: known.clone(),
             }),
             key_fragments: vec![element.clone(), attr.clone()],
         },
@@ -9118,6 +9148,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:dd04a37de468ffb4","code":"validation/invalid-attribute","stage":"validation","message":"sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)","actual":"blob","fix":{"kind":"replace_one_of","candidates":["u8","u16","u32"]}}"#,
+            ),
+            (
+                // A misspelling, which is the likely cause: the NAME is
+                // what nothing knows, where `invalid-attribute` above is
+                // a known name carrying a value outside its set.
+                "forge/unknown-sce-attribute",
+                ValidationError::UnknownSceAttribute {
+                    element: "<data>".into(),
+                    attr: "directon".into(),
+                    known: vec!["direction".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5951c84e07165387","code":"validation/unknown-sce-attribute","stage":"validation","spec":"SCE Accepted Subset §2.2","message":"<data>: unknown attribute sce:directon (known: direction)","actual":"sce:directon","fix":{"kind":"replace_one_of","candidates":["direction"]}}"#,
             ),
             (
                 // The document §1 of the accepted subset measures: an
@@ -13526,6 +13569,7 @@ mod tests {
         match code {
             // ── Fix carries a closed candidate / attr list ─────
             ValidationInvalidAttribute
+            | ValidationUnknownSceAttribute
             | ValidationInvalidReference
             | ValidationRequireEither
             | ValidationUnsupportedKind
@@ -14647,6 +14691,7 @@ mod tests {
                 | XmlPreprocessorNotRun
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
+                | ValidationUnknownSceAttribute
                 | ValidationUnsupportedKind | ValidationDuplicateId
                 | ValidationMalformedIdentifier | ValidationEventNameGrammar
                 | ValidationDuplicateContextObject | ValidationReservedContextId
@@ -14970,9 +15015,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            364,
+            365,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 364 distinct variants to match the DiagnosticCode \
+             expected 365 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15553,6 +15598,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
+            // Same bucket and the same reason as the sweep described
+            // below: the unknown-attribute check runs over the
+            // roxmltree tree so it can name the attribute's own
+            // position, which is before the anchor index exists.
+            | ValidationUnknownSceAttribute
             | ValidationUnsupportedKind
             // Raised in `parse_impl`, before `anchor_index` is built —
             // the sweep runs on the roxmltree tree so it can name the

@@ -50,6 +50,7 @@
         "validation/missing-element",
         "validation/missing-attribute",
         "validation/invalid-attribute",
+        "validation/unknown-sce-attribute",
         "validation/unsupported-kind",
         "validation/duplicate-id",
         "validation/malformed-identifier",

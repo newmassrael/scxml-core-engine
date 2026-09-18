@@ -169,6 +169,19 @@ pub fn parse_forge_with_imports_and_plugin(
     // pipeline, whose `parse_file` runs the expander itself.
     crate::parser::reject_unexpanded_directives(&root, diag)?;
 
+    // Placed here for the same reason as the line above: every forge
+    // parse funnels through this function, so one call covers every
+    // caller — the CLI's generate and check routes, the document-set
+    // route, and whatever calls it next. A check wired at the call sites
+    // instead is one a new call site can be written without.
+    //
+    // ⚠ AFTER the statechart early-return, because statecharts carry a
+    // different `sce:` vocabulary (`sce:req` on states and transitions,
+    // the datamodel families) that this list does not describe. Running
+    // it on them would refuse valid documents; the two vocabularies want
+    // two lists, and only one of them has been measured.
+    reject_unknown_sce_attrs(content, diag)?;
+
     let imports = parse_imports(&root, diag)?;
     let mut externs = parse_externs(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;
@@ -8729,6 +8742,166 @@ pub fn parse_imports_only(
 fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
     node.attribute((SCE_NAMESPACE, local_name))
         .map(|s| s.to_string())
+}
+
+/// Every SCE-namespace attribute name this tree reads.
+///
+/// ⚠ WHY A LIST EXISTS AT ALL. This parser looks attributes up BY NAME
+/// (`sce_attr` above), so an attribute nobody looks for is not unused —
+/// it is INVISIBLE. Measured 2026-09-18, before this list:
+/// `sce:totallyMadeUpAttribute` generated with exit 0, and the
+/// conformance fixture `crossfile_filter_transform.scxml` carried
+/// `sce:pre-transform="tempConvert(rawSensor)"` — with a comment telling
+/// the reader the transform was applied — while nothing read it and the
+/// filter smoothed the raw input. A misspelling behaves identically:
+/// `sce:directon="out"` leaves the field at its default in silence.
+///
+/// ⚠⚠ HOW IT WAS BUILT, AND HOW TO REBUILD IT. Measured, not recalled:
+/// the union of (a) every name the sources look up, across `sce_attr`
+/// and the namespace-tuple form, and (b) every name that appears on a
+/// real element of a committed `.scxml`. (b) is parsed, never grepped —
+/// a first attempt regexed the text and counted `sce:terminate-on` out
+/// of a fixture's COMMENT, which is not markup and is not read by
+/// anything. The union errs wide on purpose: too narrow refuses a valid
+/// document, too wide only weakens the check.
+///
+/// ⚠⚠⚠ THIS IS A NAME CHECK, NOT A PLACEMENT CHECK. It answers "is this
+/// a name the tree knows", not "is this name legal on this element". A
+/// valid name on the wrong element still passes here. Saying so is the
+/// point: the gap is stated rather than left for a reader to assume
+/// otherwise.
+const KNOWN_SCE_ATTRS: &[&str] = &[
+    "addr",
+    "alpha",
+    "bit-offset",
+    "bit-size",
+    "byte",
+    "capacity",
+    "compute-at",
+    "default",
+    "default-endian",
+    "direction",
+    "dma-burst-align",
+    "endian",
+    "enter",
+    "event-domain",
+    "event-name",
+    "exhaustive",
+    "filter",
+    "input",
+    "interpolation",
+    "kind",
+    "leave",
+    "length",
+    "length-arith",
+    "length-field",
+    "length-from",
+    "max-delta",
+    "max-iter",
+    "max-size",
+    "monitor",
+    "offset",
+    "on-enter",
+    "on-leave",
+    "on-miss",
+    "out-of-bounds",
+    "payload",
+    "plausibility",
+    "present-if",
+    "provenance",
+    "quantity",
+    "range-max",
+    "range-min",
+    "req",
+    "response-max-size",
+    "returns-max-size",
+    "sample-interval",
+    "scale",
+    "service",
+    "strict-variants",
+    "subfunc",
+    "type",
+    "underlying-type",
+    "unhandled",
+    "unit",
+    "unresolved",
+    "unresolved-candidates",
+    "unresolved-reason",
+    "window",
+];
+
+/// Names whose SUFFIX the author chooses, so no literal list can hold
+/// them. `sce:axis-<input id>` names an interpolation breakpoint vector
+/// after the input it indexes, and the parser builds the lookup key with
+/// `format!("axis-{}", inp.id)` — a document with an input called
+/// `pressure` writes `sce:axis-pressure`, which no fixed list anticipates.
+const KNOWN_SCE_ATTR_PREFIXES: &[&str] = &["axis-"];
+
+/// Edit distance, capped: used only to turn a refusal into a suggestion.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut cur = vec![0usize; b.len() + 1];
+    for (i, ca) in a.iter().enumerate() {
+        cur[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[b.len()]
+}
+
+/// Refuse any SCE-namespace attribute the tree does not read.
+///
+/// One walk over the parsed document rather than a check at each of the
+/// sixty-odd read sites. The read sites would be the stricter design —
+/// they know which names belong on which element — but they also go
+/// stale one kind at a time, and this check must not be the thing that
+/// silently stops covering a kind added tomorrow.
+pub fn reject_unknown_sce_attrs(content: &str, doc_name: &str) -> Result<(), Located<ForgeError>> {
+    let doc = roxmltree::Document::parse(content)
+        .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), doc_name, None, None))?;
+    for node in doc.descendants().filter(|n| n.is_element()) {
+        for attr in node.attributes() {
+            if attr.namespace() != Some(SCE_NAMESPACE) {
+                continue;
+            }
+            let name = attr.name();
+            if KNOWN_SCE_ATTRS.contains(&name)
+                || KNOWN_SCE_ATTR_PREFIXES.iter().any(|p| name.starts_with(p))
+            {
+                continue;
+            }
+            // Suggestions, nearest first — a refusal that lists all
+            // fifty-odd names answers nothing.
+            let mut near: Vec<(usize, &str)> = KNOWN_SCE_ATTRS
+                .iter()
+                .map(|k| (edit_distance(name, k), *k))
+                .filter(|(d, _)| *d <= 3)
+                .collect();
+            near.sort();
+            let known: Vec<String> = near
+                .into_iter()
+                .take(4)
+                .map(|(_, k)| k.to_string())
+                .collect();
+            let pos = doc.text_pos_at(node.range().start);
+            return Err(Located::new(
+                ValidationError::UnknownSceAttribute {
+                    element: format!("<{}>", node.tag_name().name()),
+                    attr: name.to_string(),
+                    known,
+                }
+                .into(),
+                doc_name,
+                Some(pos.row),
+                Some(pos.col),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Parse `<sce:entry key="..." value="..."/>` children from a node.

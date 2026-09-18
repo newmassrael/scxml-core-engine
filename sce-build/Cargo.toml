@@ -747,5 +747,10 @@ name = "forge_unresolved"
 path = "tests/forge_unresolved.rs"
 required-features = ["cli"]
 
+[[test]]
+name = "forge_unknown_sce_attribute"
+path = "tests/forge_unknown_sce_attribute.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
