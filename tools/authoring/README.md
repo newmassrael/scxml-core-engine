@@ -111,6 +111,22 @@ clause around the picture states anything at all, so that is what is reported,
 with the clause number attached. On the specification above the answer was
 **none**: every clause showing a picture also states something in text.
 
+**And then the picture is read by whoever can read it.** Refusing to read a
+diagram is not the same as refusing to use one. A reading may come from a
+person, a model, or a phone call with whoever drew it, and it enters the
+document the way every other guess does -- marked `sce:assumed`, with the
+clause it came from written in the reason. `verify` runs the document and, if
+a case refutes that value, reports *the guess you recorded* rather than *your
+document is wrong*. The four hops are one route and it is tested as one:
+
+    ingest     names the clause whose whole content is a picture
+    questions  puts that in front of the author
+    the author reads it and writes the rule, marked
+    verify     runs it and hands the author's own sentence back
+
+What is refused is not the picture. It is a reading of a picture entering as a
+fact, where nothing downstream can ever disagree with it.
+
 ⚠ A cheaper discriminator was built first and measured wrong: "a stretch of
 pictures with no text between them" was true of 156 drawings out of 156,
 because a word processor anchors a picture in a paragraph of its own. A test
