@@ -38,7 +38,11 @@
 
 use crate::comment_text;
 use crate::forge::model::{
-    BackpressurePolicy, BoundedCollectionModel, BufferPoolModel, BufferPoolVariant, CachePolicy,
+    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
+    AlgorithmStmt, BackpressurePolicy, BoundedCollectionModel, BufferPoolModel, BufferPoolVariant,
+    CachePolicy, FoldBody, TestVector, TestVectorValue,
+};
+use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
     EnumVariant, EventSchemaModel, FilterModel, FilterType, ForgeDocument, ForgeField, InboxConfig,
     InboxOrdering, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
@@ -183,6 +187,7 @@ pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
         "buffer-pool" => parse_buffer_pool(head, &body).map(ForgeDocument::BufferPool),
         "link" => parse_link(head, &body).map(ForgeDocument::Link),
         "observer" => parse_observer(head, &body).map(ForgeDocument::Observer),
+        "algorithm" => parse_algorithm(head, &body).map(ForgeDocument::Algorithm),
         other => Err(ParseError {
             line: head.number,
             why: format!("`{other}` is not a kind this reader covers yet"),
@@ -1102,6 +1107,355 @@ fn parse_observer(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ObserverModel, 
     Ok(m)
 }
 
+/// `algorithm <name>(<p>: <t>, …) [-> <t> [returns-max <n>]]`.
+///
+/// The first kind whose body nests arbitrarily deep, so [`group`] is
+/// applied recursively rather than once.
+fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel, ParseError> {
+    let (name, rest) = head.text["algorithm ".len()..]
+        .split_once('(')
+        .ok_or_else(|| ParseError {
+            line: head.number,
+            why: "an algorithm head needs a parameter list".to_string(),
+        })?;
+    let (params_text, tail) = rest.rsplit_once(')').ok_or_else(|| ParseError {
+        line: head.number,
+        why: "an algorithm head needs a closing `)`".to_string(),
+    })?;
+
+    let mut params = Vec::new();
+    for p in params_text
+        .split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        let (pname, ptype) = p.split_once(": ").ok_or_else(|| ParseError {
+            line: head.number,
+            why: format!("`{p}` is not `<name>: <type>`"),
+        })?;
+        params.push(AlgorithmParam {
+            name: undo(pname, head.number)?,
+            sce_type: SceType::from_attr(ptype).ok_or_else(|| ParseError {
+                line: head.number,
+                why: format!("`{ptype}` is not an sce:type"),
+            })?,
+        });
+    }
+
+    let tail: Vec<&str> = tail.split_whitespace().collect();
+    let (return_type, returns_max_size) = match tail.first().copied() {
+        None => (None, None),
+        Some("->") => {
+            let t = tail.get(1).copied().unwrap_or("");
+            let rt = SceType::from_attr(t).ok_or_else(|| ParseError {
+                line: head.number,
+                why: format!("`{t}` is not an sce:type"),
+            })?;
+            let max = match tail.get(2).copied() {
+                Some("returns-max") => tail.get(3).and_then(|v| v.parse().ok()),
+                None => None,
+                Some(other) => {
+                    return Err(ParseError {
+                        line: head.number,
+                        why: format!("`{other}` is not a signature clause"),
+                    })
+                }
+            };
+            (Some(rt), max)
+        }
+        Some(other) => {
+            return Err(ParseError {
+                line: head.number,
+                why: format!("`{other}` is not a signature clause"),
+            })
+        }
+    };
+
+    let mut m = AlgorithmModel {
+        name: undo(name, head.number)?,
+        signature: AlgorithmSignature {
+            params,
+            return_type,
+            returns_max_size,
+        },
+        consts: Vec::new(),
+        body: Vec::new(),
+        test_vectors: Vec::new(),
+        source_location: None,
+    };
+
+    // Consts and test vectors bracket the body, so they are pulled out
+    // first and the rest goes through the one statement walker — which
+    // is also what folds `else:` back into its `if`.
+    let mut statements: Vec<&Line<'_>> = Vec::new();
+    for (line, kids) in group(body) {
+        if line.text.starts_with("const ") {
+            m.consts.push(parse_const(line, &kids)?);
+        } else if line.text.starts_with("test ") {
+            m.test_vectors.push(parse_test_vector(line)?);
+        } else {
+            statements.push(line);
+            statements.extend(kids);
+        }
+    }
+    m.body = parse_stmt_list(&statements)?;
+    Ok(m)
+}
+
+/// `const <name>: <type> = <expr>` or the `fold` block form.
+fn parse_const(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmConst, ParseError> {
+    let rest = &line.text["const ".len()..];
+    let (name, after) = rest.split_once(": ").ok_or_else(|| ParseError {
+        line: line.number,
+        why: "a const needs `<name>: <type>`".to_string(),
+    })?;
+    let (type_text, value) = after.split_once(" = ").ok_or_else(|| ParseError {
+        line: line.number,
+        why: "a const needs `= <value>`".to_string(),
+    })?;
+
+    if let Some(spec) = type_text.strip_prefix("array<") {
+        let (elem, len) =
+            spec.trim_end_matches('>')
+                .split_once(", ")
+                .ok_or_else(|| ParseError {
+                    line: line.number,
+                    why: "an array const needs `array<<type>, <n>>`".to_string(),
+                })?;
+        let w: Vec<&str> = value.split_whitespace().collect();
+        // `fold <var> in <a>..<b> -> <type>:`
+        let (start, end) = w
+            .get(3)
+            .and_then(|r| r.split_once(".."))
+            .ok_or_else(|| ParseError {
+                line: line.number,
+                why: "a fold needs `<a>..<b>`".to_string(),
+            })?;
+        let elem_type_word = w.get(5).copied().unwrap_or("").trim_end_matches(':');
+        let mut fold = FoldBody {
+            range_start: start.parse().unwrap_or(0),
+            range_end: end.parse().unwrap_or(0),
+            iter_var: undo(w.get(1).copied().unwrap_or(""), line.number)?,
+            elem_type: SceType::from_attr(elem_type_word).ok_or_else(|| ParseError {
+                line: line.number,
+                why: format!("`{elem_type_word}` is not an sce:type"),
+            })?,
+            body: Vec::new(),
+            yield_expr: String::new(),
+        };
+        for (l, k) in group(kids) {
+            if let Some(y) = l.text.strip_prefix("yield ") {
+                fold.yield_expr = undo(y, l.number)?;
+            } else {
+                fold.body.push(parse_stmt(l, &k)?);
+            }
+        }
+        return Ok(AlgorithmConst {
+            name: undo(name, line.number)?,
+            sce_type: AlgorithmConstType::Array {
+                elem: SceType::from_attr(elem).ok_or_else(|| ParseError {
+                    line: line.number,
+                    why: format!("`{elem}` is not an sce:type"),
+                })?,
+                len: len.parse().unwrap_or(0),
+            },
+            init: None,
+            fold: Some(fold),
+            compute_at_build: true,
+        });
+    }
+
+    Ok(AlgorithmConst {
+        name: undo(name, line.number)?,
+        sce_type: AlgorithmConstType::Scalar(SceType::from_attr(type_text).ok_or_else(|| {
+            ParseError {
+                line: line.number,
+                why: format!("`{type_text}` is not an sce:type"),
+            }
+        })?),
+        init: Some(undo(value, line.number)?),
+        fold: None,
+        compute_at_build: false,
+    })
+}
+
+/// `test <hex> -> (bool|uint|int) <literal> @line <n>`
+fn parse_test_vector(line: &Line<'_>) -> Result<TestVector, ParseError> {
+    let w: Vec<&str> = line.text.split_whitespace().collect();
+    let hex_text = w
+        .get(1)
+        .and_then(|h| h.strip_prefix("0x"))
+        .ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a test vector needs `0x<hex>`".to_string(),
+        })?;
+    let hex = (0..hex_text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex_text[i..i + 2], 16))
+        .collect::<Result<Vec<u8>, _>>()
+        .map_err(|_| ParseError {
+            line: line.number,
+            why: "a test vector's hex is not hex".to_string(),
+        })?;
+    let literal = w.get(4).copied().unwrap_or("");
+    let bad = || ParseError {
+        line: line.number,
+        why: format!("`{literal}` is not a test-vector literal"),
+    };
+    let value = match w.get(3).copied() {
+        Some("bool") => TestVectorValue::Bool(literal == "true"),
+        Some("uint") => TestVectorValue::Uint(literal.parse().map_err(|_| bad())?),
+        Some("int") => TestVectorValue::Int(literal.parse().map_err(|_| bad())?),
+        _ => return Err(bad()),
+    };
+    Ok(TestVector {
+        hex,
+        value,
+        source_line: w.get(6).and_then(|v| v.parse().ok()).unwrap_or(0),
+    })
+}
+
+/// A run of statements, with `else:` folded into the `if` before it.
+///
+/// ⚠ The renderer writes `else:` as a SIBLING of its `if`, not as a
+/// child, because that is how the block reads. So the one place that
+/// walks a statement list is also the only place that can put the two
+/// back together — doing it inside `parse_stmt` would need the previous
+/// statement, which a per-line parser does not have.
+fn parse_stmt_list(body: &[&Line<'_>]) -> Result<Vec<AlgorithmStmt>, ParseError> {
+    let mut out: Vec<AlgorithmStmt> = Vec::new();
+    for (line, kids) in group(body) {
+        if line.text == "else:" {
+            let Some(AlgorithmStmt::If { else_body, .. }) = out.last_mut() else {
+                return Err(ParseError {
+                    line: line.number,
+                    why: "an `else:` with no `if` before it".to_string(),
+                });
+            };
+            *else_body = Some(parse_stmt_list(&kids)?);
+            continue;
+        }
+        out.push(parse_stmt(line, &kids)?);
+    }
+    Ok(out)
+}
+
+/// One statement, with the lines nested under it.
+fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, ParseError> {
+    let t = line.text;
+    let body_of = parse_stmt_list;
+
+    if let Some(rest) = t.strip_prefix("var ") {
+        let (name, after) = rest.split_once(": ").ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a var needs `<name>: <type>`".to_string(),
+        })?;
+        let (decl, init) = after.split_once(" = ").ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a var needs `= <expr>`".to_string(),
+        })?;
+        let mut w = decl.split_whitespace();
+        let type_word = w.next().unwrap_or("");
+        let capacity = match (w.next(), w.next()) {
+            (Some("cap"), Some(n)) => n.parse().ok(),
+            _ => None,
+        };
+        return Ok(AlgorithmStmt::Var {
+            name: undo(name, line.number)?,
+            sce_type: SceType::from_attr(type_word).ok_or_else(|| ParseError {
+                line: line.number,
+                why: format!("`{type_word}` is not an sce:type"),
+            })?,
+            init: undo(init, line.number)?,
+            capacity,
+        });
+    }
+    if let Some(rest) = t.strip_prefix("append ") {
+        let (target, expr) = rest.split_once(" <- ").ok_or_else(|| ParseError {
+            line: line.number,
+            why: "an append needs `<- <expr>`".to_string(),
+        })?;
+        return Ok(AlgorithmStmt::Append {
+            target: undo(target, line.number)?,
+            expr: undo(expr, line.number)?,
+        });
+    }
+    if let Some(rest) = t.strip_prefix("if ") {
+        return Ok(AlgorithmStmt::If {
+            cond: undo(rest.trim_end_matches(':'), line.number)?,
+            then_body: body_of(kids)?,
+            // The renderer writes `else:` as a sibling line, so this
+            // arm is filled by the caller's `else` handling below.
+            else_body: None,
+        });
+    }
+    if let Some(rest) = t.strip_prefix("while ") {
+        let rest = rest.trim_end_matches(':');
+        let (max_iter, cond) = match rest.strip_prefix("max ") {
+            Some(after) => {
+                let (n, c) = after.split_once(' ').ok_or_else(|| ParseError {
+                    line: line.number,
+                    why: "a while bound needs `max <n> <cond>`".to_string(),
+                })?;
+                (n.parse().ok(), c)
+            }
+            None => (None, rest),
+        };
+        return Ok(AlgorithmStmt::While {
+            cond: undo(cond, line.number)?,
+            body: body_of(kids)?,
+            max_iter,
+        });
+    }
+    if let Some(rest) = t.strip_prefix("foreach ") {
+        let (item, source) = rest
+            .trim_end_matches(':')
+            .split_once(" in ")
+            .ok_or_else(|| ParseError {
+                line: line.number,
+                why: "a foreach needs `<item> in <source>`".to_string(),
+            })?;
+        return Ok(AlgorithmStmt::Foreach {
+            item: undo(item, line.number)?,
+            source: undo(source, line.number)?,
+            body: body_of(kids)?,
+        });
+    }
+    if t == "return" {
+        return Ok(AlgorithmStmt::Return { expr: None });
+    }
+    if let Some(rest) = t.strip_prefix("return ") {
+        return Ok(AlgorithmStmt::Return {
+            expr: Some(undo(rest, line.number)?),
+        });
+    }
+    if let Some(rest) = t.strip_prefix("call ") {
+        let target = rest.trim_end_matches(':');
+        let mut args = Vec::new();
+        for k in kids {
+            let a = k.text.strip_prefix("arg ").ok_or_else(|| ParseError {
+                line: k.number,
+                why: format!("`{}` is not a call argument", k.text),
+            })?;
+            args.push(undo(a, k.number)?);
+        }
+        return Ok(AlgorithmStmt::Call {
+            target: undo(target, line.number)?,
+            args,
+        });
+    }
+    if let Some((target, expr)) = t.split_once(" = ") {
+        return Ok(AlgorithmStmt::Assign {
+            target: undo(target, line.number)?,
+            expr: undo(expr, line.number)?,
+        });
+    }
+    Err(ParseError {
+        line: line.number,
+        why: format!("`{t}` is not a statement"),
+    })
+}
+
 /// Serialised comparison of two documents, with the one key the law
 /// excludes stripped wherever it appears.
 ///
@@ -1152,6 +1506,7 @@ pub const COVERED_KINDS: &[&str] = &[
     "buffer-pool",
     "link",
     "observer",
+    "algorithm",
 ];
 
 /// This document's kind name when the reader covers it.
@@ -1176,6 +1531,7 @@ pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
         ForgeDocument::BufferPool(_) => "buffer-pool",
         ForgeDocument::Link(_) => "link",
         ForgeDocument::Observer(_) => "observer",
+        ForgeDocument::Algorithm(_) => "algorithm",
         _ => return None,
     };
     COVERED_KINDS.contains(&name).then_some(name)

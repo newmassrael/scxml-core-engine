@@ -125,12 +125,14 @@
 //!       <stmt>...
 //!     else:
 //!       <stmt>...
-//!     while <cond> [max <n>]:
+//!     while [max <n>] <cond>:
 //!       <stmt>...
 //!     foreach <item> in <source>:
 //!       <stmt>...
 //!     return [<expr>]
-//!     call <target>(<arg>, ...)
+//!     call <target>
+//!     call <target>:
+//!       arg <expr>
 //!     test <hex> -> (bool|uint|int) <literal> @line <n>
 //!
 //!   procedure <name> initial <state>
@@ -542,11 +544,17 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out) {
             body,
             max_iter,
         } => {
+            // The bound goes BEFORE the condition, which is the only
+            // free-text value on the line. Written the other way round
+            // a condition containing ` max ` would decide where the
+            // line breaks — no fixture does today (measured: 6
+            // conditions, none of them), and the rule is not a bet on
+            // that staying true.
             let max = match max_iter {
-                Some(n) => format!(" max {n}"),
+                Some(n) => format!("max {n} "),
                 None => String::new(),
             };
-            out.line(&format!("while {}{}:", text(cond), max));
+            out.line(&format!("while {}{}:", max, text(cond)));
             out.nested(|out| {
                 for s in body {
                     render_stmt(s, out);
@@ -566,8 +574,22 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out) {
             None => out.line("return"),
         },
         AlgorithmStmt::Call { target, args } => {
-            let rendered: Vec<String> = args.iter().map(|a| text(a).into_owned()).collect();
-            out.line(&format!("call {}({})", text(target), rendered.join(", ")));
+            // One argument per line. Joined with `, ` they were several
+            // free-text values on one line, and an argument containing
+            // a comma-space would have decided where they split. ⚠ No
+            // fixture in this tree calls anything (measured: zero
+            // arguments across 587 documents), so this arm is written
+            // to the rule rather than to an example.
+            if args.is_empty() {
+                out.line(&format!("call {}", text(target)));
+            } else {
+                out.line(&format!("call {}:", text(target)));
+                out.nested(|out| {
+                    for a in args {
+                        out.line(&format!("arg {}", text(a)));
+                    }
+                });
+            }
         }
     }
 }

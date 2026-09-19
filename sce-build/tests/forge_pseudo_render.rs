@@ -157,8 +157,10 @@ algorithm crc(data: bytes, seed: uint16) -> bytes returns-max 64
     return out
   else:
     return
-  while crc != 0 max 16:
-    call step(crc, 1)
+  while max 16 crc != 0:
+    call step:
+      arg crc
+      arg 1
   foreach b in data:
     crc = crc ^ b
   return out
