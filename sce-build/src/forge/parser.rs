@@ -9292,19 +9292,6 @@ fn parse_forge_field(
     })
 }
 
-/// Physical-quantity surface — parse the `sce:quantity` /
-/// `sce:scale` / `sce:offset` attribute trio.
-///
-/// Returns `Ok(None)` when no attribute is present; returns `Ok(Some(q))`
-/// when at least `sce:quantity` is set. Rejects the four malformed
-/// combinations:
-///
-/// 1. `sce:scale` or `sce:offset` without `sce:quantity`  — orphan
-///    conversion factor (no unit to anchor against).
-/// 2. Empty `sce:quantity` string — a unit name is required.
-/// 3. Malformed `sce:scale` / `sce:offset` rational text.
-/// 4. `sce:scale` parses to zero (raw value never influences the
-///    physical reading, so the annotation has no observable effect).
 /// Retention surface — parse the `sce:retain` / `sce:initial` pair.
 ///
 /// ⚠ EACH REQUIRES THE OTHER, and both orphans are refused. A retained
@@ -9372,6 +9359,19 @@ fn parse_retention_attrs(
     }
 }
 
+/// Physical-quantity surface — parse the `sce:quantity` /
+/// `sce:scale` / `sce:offset` attribute trio.
+///
+/// Returns `Ok(None)` when no attribute is present; returns `Ok(Some(q))`
+/// when at least `sce:quantity` is set. Rejects the four malformed
+/// combinations:
+///
+/// 1. `sce:scale` or `sce:offset` without `sce:quantity` — orphan
+///    conversion factor (no unit to anchor against).
+/// 2. Empty `sce:quantity` string — a unit name is required.
+/// 3. Malformed `sce:scale` / `sce:offset` rational text.
+/// 4. `sce:scale` parses to zero (raw value never influences the
+///    physical reading, so the annotation has no observable effect).
 fn parse_quantity_attrs(
     node: &roxmltree::Node,
     doc_name: &str,
