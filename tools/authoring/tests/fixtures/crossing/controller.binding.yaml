@@ -1,0 +1,41 @@
+# The third artefact, for a subject matter that shares nothing with the first.
+version: 1
+document: controller.scxml
+
+inputs:
+  approaching:
+    address: plant/in/train-approach
+    equals: APPROACHING
+  occupied:
+    address: plant/in/train-approach
+    equals: OCCUPIED
+  clear:
+    address: plant/in/train-approach
+    equals: CLEAR
+  obstacleNone:
+    address: plant/in/obstacle
+    equals: NONE
+  barrierDown:
+    address: plant/in/barrier-position
+    equals: DOWN
+  override:
+    address: plant/in/local-override
+    equals: "ON"
+
+outputs:
+  roadSignal:
+    address: plant/out/road-signal
+    field: value
+    map: {0: DARK, 1: FLASHING, 2: STEADY}
+  bell:
+    address: plant/out/bell
+    field: value
+    map: {0: SILENT, 1: RINGING}
+  barrier:
+    address: plant/out/barrier
+    field: value
+    map: {0: STOP, 1: LOWER, 2: RAISE}
+  trainSignal:
+    address: plant/out/train-signal
+    field: value
+    map: {0: DANGER, 1: CAUTION, 2: CLEAR}

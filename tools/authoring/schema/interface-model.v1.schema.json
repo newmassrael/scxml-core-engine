@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/interface-model.v1.schema.json",
+  "title": "Interface model",
+  "description": "What exists outside a document: addresses the platform owns, the names prose uses for them, and the values each may take. Supplied by a pack; the authoring core never carries one.",
+  "type": "object",
+  "required": ["version", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/entry"}
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["address", "role"],
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The platform's own identifier. Opaque to the core."
+        },
+        "role": {
+          "enum": ["input", "output", "internal"],
+          "description": "input: the document receives it. output: the document writes it. internal: the platform owns it and the document may read it, but it is not a subject-matter input."
+        },
+        "names": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "What prose calls this address. A list because prose is inconsistent. This is the only place the correspondence is written down."
+        },
+        "values": {
+          "$ref": "#/$defs/valueSpace",
+          "description": "For a scalar address. Mutually exclusive with fields."
+        },
+        "type": {
+          "enum": ["number", "text", "boolean"],
+          "description": "For a scalar address with no enumerated values."
+        },
+        "fields": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/field"},
+          "description": "For a record address. Each field carries its own value space."
+        },
+        "note": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "not": {"required": ["values", "fields"]},
+          "$comment": "A scalar address and a record address are different shapes; carrying both hides which one a writer meant."
+        }
+      ]
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "values": {"$ref": "#/$defs/valueSpace"},
+        "type": {"enum": ["number", "text", "boolean"]},
+        "note": {"type": "string"}
+      }
+    },
+    "valueSpace": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "integer"},
+      "description": "Symbol to number. The numbers are the platform's; the core compares symbols and passes numbers through untouched."
+    }
+  }
+}

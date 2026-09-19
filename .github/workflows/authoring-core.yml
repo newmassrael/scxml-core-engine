@@ -1,0 +1,45 @@
+name: Authoring Core (domain-free)
+
+# The authoring core is the half of prose-to-SCXML that must work for every
+# subject matter. Everything a subject matter knows arrives as data, in a pack;
+# nothing about a subject matter may live in the package itself.
+#
+# That boundary erodes in one predictable way: a special case added for the
+# subject in front of whoever is working. So it is measured on every push
+# rather than maintained by care, and this lane is where the measurement runs.
+#
+# Python only. The engine toolchain is not needed and is deliberately not
+# installed, so this lane stays fast and cannot be made to depend on a build.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'tools/authoring/**'
+      - '.github/workflows/authoring-core.yml'
+      - 'scripts/gates/authoring-core.sh'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tools/authoring/**'
+      - '.github/workflows/authoring-core.yml'
+      - 'scripts/gates/authoring-core.sh'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Domain-free boundary + refusal suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - name: Install the two libraries a pack is parsed and validated with
+        run: python3 -m pip install --upgrade pyyaml jsonschema
+      - name: Authoring core gate
+        run: scripts/gate authoring-core

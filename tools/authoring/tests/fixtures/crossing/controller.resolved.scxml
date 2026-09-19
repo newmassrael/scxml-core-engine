@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The same controller with the open decision closed, so that running the
+     examples has something to run.
+
+     `controller.scxml` next to this one leaves the train signal unresolved on
+     purpose: the specification never says what it shows, and writing a guess
+     that compiles would be worse than writing the marker. That document is
+     what proves the marker survives to the author. THIS one is what proves the
+     rest of the logic is right, by being executed against the commissioning
+     records rather than read.
+
+     ⚠ Two of those records cannot both be satisfied by any document of this
+     kind, and that is deliberate. They drive every input identically and
+     require the bell to ring in one and stay silent in the other, which is the
+     planted gap `example-shows-memory` reports. Verification is expected to
+     fail exactly there, and a change that makes it pass everything has almost
+     certainly stopped running the cases. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="crossing_controller_resolved">
+  <datamodel>
+    <data id="approaching" sce:type="bool" sce:direction="in"/>
+    <data id="occupied" sce:type="bool" sce:direction="in"/>
+    <data id="clear" sce:type="bool" sce:direction="in"/>
+    <data id="obstacleNone" sce:type="bool" sce:direction="in"/>
+    <data id="barrierDown" sce:type="bool" sce:direction="in"/>
+    <data id="override" sce:type="bool" sce:direction="in"/>
+    <data id="mainsOk" sce:type="bool" sce:direction="in"/>
+
+    <!-- 0 DARK · 1 FLASHING · 2 STEADY -->
+    <data id="roadSignal" sce:type="int32" sce:direction="out"
+          expr="override ? 0 : (approaching ? 1 : (occupied ? 2 : 0))"/>
+
+    <data id="bell" sce:type="int32" sce:direction="out"
+          expr="(roadSignal !== 0) ? 1 : 0"/>
+
+    <!-- 0 STOP · 1 LOWER · 2 RAISE -->
+    <data id="barrier" sce:type="int32" sce:direction="out"
+          expr="override ? 0
+        : (barrierDown ? 0
+          : ((approaching &amp;&amp; obstacleNone) ? 1 : (clear ? 2 : 0)))"/>
+
+    <!-- 0 DANGER · 1 CAUTION · 2 CLEAR. The answer the installation's owner
+         gave when the question was put to them: danger whenever the mains are
+         not healthy, clear once the barrier is proven down, caution while a
+         train is approaching. -->
+    <data id="trainSignal" sce:type="int32" sce:direction="out"
+          expr="!mainsOk ? 0 : (barrierDown ? 2 : (approaching ? 1 : 2))"/>
+  </datamodel>
+</scxml>

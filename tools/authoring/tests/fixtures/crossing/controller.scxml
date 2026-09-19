@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written from the brief the core assembled for this specification, by the
+     same route the first subject matter was converted by. It is kept here as
+     the other half of the evidence: the questions are only worth having if a
+     document comes out at the end of them.
+
+     One output is deliberately NOT decided. The specification never says what
+     the train signal shows, the examples read it back, and the core said so.
+     The right thing to write for an answer nobody has is the marker that says
+     so, rather than a guess that would compile and be wrong. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="crossing_controller">
+  <datamodel>
+    <data id="approaching" sce:type="bool" sce:direction="in"/>
+    <data id="occupied" sce:type="bool" sce:direction="in"/>
+    <data id="clear" sce:type="bool" sce:direction="in"/>
+    <data id="obstacleNone" sce:type="bool" sce:direction="in"/>
+    <data id="barrierDown" sce:type="bool" sce:direction="in"/>
+    <data id="override" sce:type="bool" sce:direction="in"/>
+
+    <!-- 0 DARK · 1 FLASHING · 2 STEADY -->
+    <data id="roadSignal" sce:type="int32" sce:direction="out"
+          expr="override ? 0 : (approaching ? 1 : (occupied ? 2 : 0))"/>
+
+    <!-- The bell follows the signal rather than the detector, because the
+         specification defines it that way: it rings whenever the signal is
+         not dark. -->
+    <data id="bell" sce:type="int32" sce:direction="out"
+          expr="(roadSignal !== 0) ? 1 : 0"/>
+
+    <!-- 0 STOP · 1 LOWER · 2 RAISE -->
+    <data id="barrier" sce:type="int32" sce:direction="out"
+          expr="override ? 0
+        : (barrierDown ? 0
+          : ((approaching &amp;&amp; obstacleNone) ? 1 : (clear ? 2 : 0)))"/>
+
+    <data id="trainSignal" sce:type="int32" sce:direction="out"
+          sce:unresolved="CROSSING_TRAIN_SIGNAL_UNDECIDED"
+          sce:unresolved-reason="the specification never says what the train signal shows. The commissioning records read it back in every case -- CAUTION while a train approaches, CLEAR once the barrier is down, DANGER when the mains fail -- so the value is load-bearing and cannot be left to a guess. Whoever owns this installation has to say it."/>
+  </datamodel>
+</scxml>

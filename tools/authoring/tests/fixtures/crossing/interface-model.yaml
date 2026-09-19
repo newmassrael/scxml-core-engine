@@ -1,0 +1,58 @@
+# A second subject matter, shaped as differently from the first as the schema
+# allows: other name prefixes, other value idioms, addresses with no dotted
+# hierarchy at all. If anything in the core has quietly learned the first
+# subject matter's habits, this is where it shows.
+version: 1
+entries:
+  - address: plant/in/train-approach
+    role: input
+    names: [IN_TrainApproach]
+    values: {CLEAR: 0, APPROACHING: 1, OCCUPIED: 2}
+
+  - address: plant/in/barrier-position
+    role: input
+    names: [IN_BarrierPosition]
+    values: {UP: 0, MOVING: 1, DOWN: 2}
+
+  - address: plant/in/obstacle
+    role: input
+    names: [IN_ObstacleDetector]
+    values: {NONE: 0, DETECTED: 1, FAULT: 2}
+
+  # ⚠ Quoted. YAML reads bare ON and OFF as booleans, and a value space keyed
+  #   by True is not a value space. The loader refuses it and says why.
+  - address: plant/in/local-override
+    role: input
+    names: [IN_LocalOverride]
+    values: {"OFF": 0, "ON": 1}
+
+  # PLANT 2: the examples drive this and the prose never names it.
+  - address: plant/in/mains-power
+    role: input
+    names: [IN_MainsPower]
+    values: {OK: 0, FAIL: 1}
+
+  - address: plant/out/barrier
+    role: output
+    names: [OUT_BarrierCommand]
+    fields:
+      value: {values: {STOP: 0, LOWER: 1, RAISE: 2}}
+
+  - address: plant/out/road-signal
+    role: output
+    names: [OUT_RoadSignal]
+    fields:
+      value: {values: {DARK: 0, FLASHING: 1, STEADY: 2}}
+
+  - address: plant/out/bell
+    role: output
+    names: [OUT_Bell]
+    fields:
+      value: {values: {SILENT: 0, RINGING: 1}}
+
+  # PLANT 3: the examples read this back and the prose never decides it.
+  - address: plant/out/train-signal
+    role: output
+    names: [OUT_TrainSignal]
+    fields:
+      value: {values: {DANGER: 0, CAUTION: 1, CLEAR: 2}}

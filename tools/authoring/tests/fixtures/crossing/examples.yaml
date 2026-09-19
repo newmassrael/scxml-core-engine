@@ -1,0 +1,70 @@
+# What the installation is shown doing. The second expectation source: these
+# are what make a silence visible, because a silence is only a silence once
+# something expects the thing that is missing.
+version: 1
+origin: commissioning records
+# Each case drives the whole input, so the cases may be read in any order and
+# two of them may be compared with each other. An installation log where each
+# entry recorded only what CHANGED would say false here, and the checks that
+# compare cases would decline rather than read a delta as a whole input.
+independent_cases: true
+cases:
+  - name: a train approaches on a healthy installation
+    given:
+      plant/in/train-approach: APPROACHING
+      plant/in/barrier-position: UP
+      plant/in/obstacle: NONE
+      plant/in/mains-power: OK
+    expect:
+      plant/out/road-signal.value: FLASHING
+      plant/out/bell.value: RINGING
+      plant/out/train-signal.value: CAUTION
+
+  - name: the barrier is down and the road is held
+    given:
+      plant/in/train-approach: OCCUPIED
+      plant/in/barrier-position: DOWN
+      plant/in/obstacle: NONE
+      plant/in/mains-power: OK
+    expect:
+      plant/out/barrier.value: STOP
+      plant/out/road-signal.value: STEADY
+      plant/out/train-signal.value: CLEAR
+
+  - name: the mains fail while a train is approaching
+    given:
+      plant/in/train-approach: APPROACHING
+      plant/in/mains-power: FAIL
+    expect:
+      plant/out/road-signal.value: FLASHING
+      plant/out/train-signal.value: DANGER
+
+  # PLANTED GAP 5, and the one no other class can reach. These two records
+  # drive EVERY input identically and the bell does two different things, so
+  # the installation is not a function of its inputs -- it is remembering
+  # something. Read the specification and you will not find out what: it
+  # describes each situation correctly and never says the two are told apart
+  # by history.
+  #
+  # The shape is ordinary. A bell that has already been ringing for a while
+  # falls silent once the barrier is proven down, and a bell that has just
+  # started does not. Nothing in the text above says so.
+  - name: a train sits at the crossing, bell ringing
+    given:
+      plant/in/train-approach: OCCUPIED
+      plant/in/barrier-position: DOWN
+      plant/in/obstacle: NONE
+      plant/in/mains-power: OK
+    expect:
+      plant/out/bell.value: RINGING
+      plant/out/road-signal.value: STEADY
+
+  - name: the same train, the same everything, and the bell is silent
+    given:
+      plant/in/train-approach: OCCUPIED
+      plant/in/barrier-position: DOWN
+      plant/in/obstacle: NONE
+      plant/in/mains-power: OK
+    expect:
+      plant/out/bell.value: SILENT
+      plant/out/road-signal.value: STEADY

@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/binding.v1.schema.json",
+  "title": "Binding",
+  "description": "The third artefact. A prose specification decides, an interface model declares, and neither one says which of the model's addresses the document's own inputs and outputs are. Until this file exists that correspondence lives only in somebody's head, and every conversion re-derives it.",
+  "type": "object",
+  "required": ["version", "document"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "document": {
+      "type": "string",
+      "description": "Path to the SCXML this binds, relative to the binding file."
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/input"}
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/output"}
+    }
+  },
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "address": {"type": "string"},
+        "equals": {"type": "string"},
+        "equals_any": {"type": "array", "items": {"type": "string"}},
+        "not_equals": {
+          "type": "string",
+          "$comment": "Kept distinct from equals_any on purpose: a negation stays correct when the enumeration grows, and a positive list silently narrows."
+        },
+        "number": {
+          "type": "boolean",
+          "description": "Pass the number itself rather than a truth value."
+        },
+        "range": {
+          "type": "array",
+          "items": {"type": "number"},
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Admissible bounds for a number. A value outside them is out of range, which is a different fact from zero and must not be folded into it silently."
+        },
+        "absent": {
+          "type": "boolean",
+          "description": "True when the address is not reporting at all. Absence is not a value the address takes, so it never belongs in a value space."
+        },
+        "when_absent": {
+          "description": "What a NUMBER reads as when its address is not reporting, or reports outside `range`. ⚠ Required for a numeric input whose address a case may not drive -- there is no safe silent answer. Folding absence into zero made seven cases on one corpus look as though the specification had been misread, when what had actually happened was that nothing was reporting. A symbol comparison needs no such declaration: an address that is not reporting is not any symbol, which is already the answer. Out of range counts as absent here because a reading the platform cannot represent is not a reading."
+        },
+        "previous_of": {
+          "type": "string",
+          "description": "The value another input had on the previous round, named by that input's own identifier. Prose writes transitions, and a transition needs the earlier value. ⚠ Reading one requires examples that declare themselves `ordered`; without an order there is no previous round to have differed from."
+        },
+        "state_of": {
+          "type": "string",
+          "description": "An output this same document produced on the previous round, named by that output's own identifier."
+        },
+        "initial": {
+          "description": "What `previous_of` or `state_of` yields on the FIRST round, when there is no previous one. For `previous_of` it may be omitted, and then the first round reads the input's current value -- the assumption that nothing had changed before observation began, which is what edge detection means in practice. For `state_of` there is no current value to fall back on, so omitting it makes the first round a refusal rather than a guess: an output fed back before it has ever been produced is a number nobody computed."
+        },
+        "variant_is": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "True when the case's `variant` is one of these. Its own key rather than an address for the same reason `clock` is: a variant is not a signal -- nothing drives it and it takes no value space. It is what a record means by being taken from one build rather than another."
+        },
+        "clock": {
+          "type": "boolean",
+          "description": "This input receives the case's `at_ms` -- the time it was observed -- rather than a value read from an address. It is its own key rather than an address because time is a different CATEGORY from a signal: it has no address, no value space, and nothing drives it. Measured as the one thing a whole subject matter's bindings needed and the published vocabulary could not say."
+        },
+        "protocol": {
+          "type": "string",
+          "description": "A way of reading declared by the pack's conventions."
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {"type": "string"},
+          "description": "Addresses the protocol needs, by the parameter names the pack declared."
+        },
+        "note": {"type": "string"}
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "address": {"type": "string"},
+        "field": {"type": "string"},
+        "map": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number", "boolean"]},
+          "description": "Document value to the symbol written at the address."
+        },
+        "passthrough": {
+          "type": "boolean",
+          "description": "Write the number the document computed, unmapped."
+        },
+        "also": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number", "boolean"]},
+          "description": "Other fields of the same address that always accompany this one."
+        },
+        "when": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {"type": ["string", "number", "boolean"]}
+          },
+          "description": "Other fields that accompany a particular document value. Applied before `also`, so a default in `also` would overwrite these rather than fill the gaps."
+        },
+        "internal": {
+          "type": "boolean",
+          "description": "The document computes this and it reaches no address. Without it, a document's own carried state is never computed at all and every read of it returns a default, which looks like wrong logic rather than absent logic."
+        },
+        "note": {"type": "string"}
+      }
+    }
+  }
+}

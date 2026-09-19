@@ -1,0 +1,43 @@
+# Everything here is different from the first subject matter's pack, on
+# purpose. If the core has learned any of that one's habits, this pack cannot
+# work -- which is the point of keeping it.
+version: 1
+
+# Other prefixes entirely, and a third class the first pack did not have.
+name_classes:
+  - pattern: '\bIN_[A-Za-z0-9_]+\b'
+    role: supplied
+  - pattern: '\bLOCAL_[A-Za-z0-9_]+\b'
+    role: own_internal
+  - pattern: '\bOUT_[A-Za-z0-9_]+\b'
+    role: own_output
+
+# This subject matter writes comparisons in words. The default pattern in the
+# core reads `X == Y` and would see none of these.
+comparison_pattern: '(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s+(?P<op>is|becomes)\s+(?P<token>[A-Za-z_][A-Za-z0-9_]*)'
+
+preconditions:
+  inputs:
+    poweredUp: "the installation is energised"
+  phrases:
+    "powered": "poweredUp"
+    "not powered": "!poweredUp"
+
+# A different cascade, with a different neutral. The first pack's `OFF` rule
+# would give the wrong answer for every output here.
+gate_off:
+  - {when: has_symbol, symbol: DARK, use: DARK}
+  - {when: has_symbol, symbol: STOP, use: STOP}
+  - {when: has_symbol, symbol: SILENT, use: SILENT}
+  - {when: always, use: first}
+gate_off_note: "chosen for this installation, not measured"
+
+neutral_symbols: []
+absence_tokens: [NO_SIGNAL]
+
+# PLANT 4: a duration is stated in the prose and nothing here can observe
+# time passing.
+duration_pattern: '\b\d+\s*(?:seconds?|s)\b'
+time_inputs: []
+
+infrastructure: []

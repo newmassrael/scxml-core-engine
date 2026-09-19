@@ -197,6 +197,14 @@ PACED_BUDGET_SHARE_CEILING = 0.237
 # than another number would: it is the only thing that says whether the
 # figure still describes the gate.
 COST_MEASURED: dict[str, str] = {
+    # Measured on arrival rather than declared and left, because a gate that
+    # enters unmeasured raises the ceiling this table exists to lower.
+    # `scripts/gate --measure` read 0.262 on 2026-09-19. Timing the runner
+    # from outside read 0.54 three times over, and the difference is the
+    # process the runner starts around the gate — the same gap
+    # `http-endpoint-ssot` records. `cost_s` carries the runner's figure,
+    # because the drift report compares against that one.
+    "authoring-core": "2026-09-19",
     # `scripts/gate --measure rust-modrs-drift` on 2026-09-02 reported 0 —
     # the same figure the table already carried. That is the point rather
     # than an anticlimax: the NUMBER was right and unaskable, and what the
@@ -907,6 +915,16 @@ GATES: dict[str, dict] = {
                    "sweep. spec-citations.yml runs it.",
         "cost_s": 121,
         "summary": "spec-citation ledgers, 5 workspaces",
+    },
+    # The authoring core's claim is that it knows no subject matter. A claim
+    # like that decays silently -- one helpful special case at a time -- so it
+    # is a test, and the test has to be on the same side of the push as the
+    # code it judges. Python only; no engine toolchain, hence the low cost.
+    "authoring-core": {
+        "workflows": ["authoring-core.yml"],
+        "runner_workflow": True,
+        "cost_s": 0.262,
+        "summary": "authoring core is domain-free, and its refusals still fire",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
     # `ledger-citations` runs mnemosyne-cli, this workflow runs a separate

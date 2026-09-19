@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/conventions.v1.schema.json",
+  "title": "Pack conventions",
+  "description": "A subject matter's answers to the questions prose never answers: which names must come from outside, what a precondition phrase means, and what an output becomes when its precondition is false.",
+  "type": "object",
+  "required": ["version", "name_classes"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+
+    "name_classes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "How to recognise a name in prose, and whose it is. Ordered: the first pattern that matches decides the role.",
+      "items": {
+        "type": "object",
+        "required": ["pattern", "role"],
+        "additionalProperties": false,
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "A regular expression matched against the prose."
+          },
+          "role": {
+            "enum": ["supplied", "own_internal", "own_output"],
+            "description": "supplied: must come from outside, so an unknown one is a question. own_internal: the document defines it. own_output: the document produces it and it reaches a platform address by the pack's own naming rule."
+          },
+          "note": {"type": "string"}
+        }
+      }
+    },
+
+    "preconditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Question 3. Prose states a precondition as a phrase; a document needs an expression over inputs it declares.",
+      "properties": {
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {"type": "string"},
+          "description": "Input name the document declares, to a one-line description of what it observes. The core only needs the names; how a runtime supplies them belongs to the pack."
+        },
+        "phrases": {
+          "type": "object",
+          "additionalProperties": {"type": "string"},
+          "description": "Normalised phrase to an expression over the inputs above."
+        },
+        "normalise": {
+          "type": "array",
+          "description": "Applied in order before a phrase is looked up. Spelling drift in prose is a property of the subject matter, not of the core.",
+          "items": {
+            "type": "object",
+            "required": ["from", "to"],
+            "additionalProperties": false,
+            "properties": {
+              "from": {"type": "string"},
+              "to": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+
+    "gate_off": {
+      "type": "array",
+      "description": "Question 4, as an ordered cascade over a value space. The first clause that applies wins, because a generator must choose one value.",
+      "items": {
+        "type": "object",
+        "required": ["when", "use"],
+        "additionalProperties": false,
+        "properties": {
+          "when": {
+            "enum": ["has_symbol", "unique_suffix", "binary", "always"],
+            "description": "has_symbol: the space contains the named symbol. unique_suffix: exactly one symbol ends with the given suffix. binary: exactly two symbols remain after neutrals. always: matches."
+          },
+          "symbol": {"type": "string"},
+          "suffix": {"type": "string"},
+          "use": {
+            "type": "string",
+            "description": "A literal symbol, or one of: matched (the symbol the clause found), first, last (over the space with neutrals removed)."
+          },
+          "note": {"type": "string"}
+        }
+      }
+    },
+
+    "infrastructure": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Address prefixes that carry the platform's own plumbing rather than the subject matter -- a supply ladder, an initialisation flag. Examples drive these in every case and prose never names them by address, so reporting them would bury the signals that matter. The pack decides what counts, because only the pack knows which of its addresses are plumbing.",
+      "$comment": "Measured: without this, the grounded classes reported the supply ladder in every component and nothing else was visible."
+    },
+
+    "gate_off_note": {
+      "type": "string",
+      "description": "What the pack knows about how often its own cascade is right, in one phrase (e.g. 'measured 87% over 174 value spaces'). Printed beside every proposal the cascade makes. A procedure with a measured hit rate is not an oracle, and a reader who is not told the difference will treat a proposal as a fact -- which is how a tool makes its reader wrong without ever raising an error."
+    },
+
+    "neutral_symbols": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Symbols that are placeholders rather than values, removed before first/last/binary are evaluated."
+    },
+
+    "absence_tokens": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Tokens a specification writes in a comparison that mean the source is not reporting at all, rather than a value it takes. Absence is not a member of any value space and must never be added to one, so the core skips these rather than reporting them as values outside the space. A binding expresses them with `absent: true`."
+    },
+
+    "time_inputs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Inputs through which a document can observe time passing. If prose states a duration and none of these is available, that is a question."
+    },
+
+    "duration_pattern": {
+      "type": "string",
+      "description": "A regular expression that recognises a stated duration in prose. Units are a property of the subject matter's language."
+    },
+
+    "comparison_pattern": {
+      "type": "string",
+      "description": "A regular expression with named groups `name`, `op` and `token`, recognising the way THIS kind of document writes a comparison. The core carries a default in programming notation (`X == Y`), which is what the specifications measured so far happen to use; a document that writes `X is Y`, `X equals Y` or a natural-language equivalent replaces it here rather than in the core. It is the one thing about the SHAPE of prose the core would otherwise have assumed."
+    },
+
+    "protocols": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["parameters"],
+        "additionalProperties": false,
+        "properties": {
+          "parameters": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Names of the parameters a binding must supply, each of which must be an address in the interface model."
+          },
+          "latch": {
+            "type": "object",
+            "required": ["set_when_changed", "clear_when_changed"],
+            "additionalProperties": false,
+            "description": "This protocol read as a latch over two of its parameters: true from the round one of them changes until the round the other does. That is the whole definition, and it is enough for the reading idiom this was measured against -- a pair of cumulative counters where whichever ticked most recently is the state. A protocol WITHOUT this stays undefined to the core, which is the original seam and still the default; declaring it is what lets `verify` actually run a document that uses the protocol, rather than declining.",
+            "properties": {
+              "set_when_changed": {
+                "type": "string",
+                "description": "The parameter whose change makes this true."
+              },
+              "clear_when_changed": {
+                "type": "string",
+                "description": "The parameter whose change makes this false."
+              },
+              "both": {
+                "enum": ["set", "clear", "last"],
+                "default": "clear",
+                "description": "Which wins when both change in the same round. `last` means whichever the case listed later in its `drove`, which is the reading the name of this idiom already implies and the only one that needs no arbitrary choice; it requires cases that record `drove`, and falls back to `clear` without one. ⚠ Declared rather than assumed because the orders are all ordinary and picking one silently makes a whole class of rounds answer wrongly with nothing to show for it. `clear` was measured against a component whose single round with both changing happened to agree with `last`, so the two were indistinguishable there -- a definition confirmed on one subject is not confirmed."
+              },
+              "initial": {
+                "enum": ["set", "clear"],
+                "default": "clear",
+                "description": "The state before either parameter has ever changed."
+              },
+              "cumulative": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Addresses the `set_when_changed` parameter is drawn from, in ascending order, where reaching a later one INCLUDES every earlier one. A change at any address at or after the one a binding names then sets that binding's latch. ⚠ Without this a rung only ever sets itself, and an input asking \"has it been on at all\" reads false once a later rung has passed -- which is the state that input exists to describe. Measured: a component with one rung was unaffected and a component with three had every event stay dark. The list is the pack's, because which readings include which is a fact about the platform and about nothing else."
+              }
+            }
+          },
+          "note": {"type": "string"}
+        }
+      },
+      "description": "Ways of reading an address that are neither a symbol comparison nor a number, declared by name. The core checks that a binding names a declared protocol and supplies its parameters. ⚠ What a protocol MEANS was deliberately left to the pack's runtime, and the cost of that was measured: `verify` could not run ANY document using one, which on one corpus was 79 binding inputs. So a protocol may now carry an evaluable definition as DATA -- never as code, which would make a pack a program. A protocol with no definition is still accepted and still undefined to the core; it is simply one `verify` declines rather than guesses at."
+    }
+  }
+}

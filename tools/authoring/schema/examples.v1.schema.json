@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/examples.v1.schema.json",
+  "title": "Examples",
+  "description": "Cases that show the subject matter behaving. The second thing that can EXPECT something, and therefore the second thing that can reveal a silence. An interface model catches a specification that says something the platform cannot do; only an example catches a specification that does not say something the platform does.",
+  "type": "object",
+  "required": ["version", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "origin": {
+      "type": "string",
+      "description": "Where these came from, in one phrase. An example that the specification's own author wrote proves less than one the product shipped, and a reader of a question deserves to know which they are looking at."
+    },
+    "independent_cases": {
+      "type": "boolean",
+      "description": "True when each case's `given` is the WHOLE input, so the cases may be read in any order. False or absent means a case is a delta on the one before it: two cases whose `given` looks alike were not run alike, and any check that compares one case with another is unsound. It is declared rather than inferred because a delta and a whole input are the same shape, so nothing can tell them apart by looking. Absent is read as false, which makes those checks decline to run rather than answer wrongly."
+    },
+    "ordered": {
+      "type": "boolean",
+      "description": "True when the cases are in the order they happened, so a subject matter that carries state may be driven through them. Separate from `independent_cases` because they are separate properties and conflating them cost a real capability: a shipped test log is BOTH -- every entry records the whole input AND the entries are in order -- and one flag could only say one of those. Independence decides whether two cases may be COMPARED; order decides whether they may be REPLAYED. Absent is read as false, so anything needing a previous round declines rather than reading the file's line order as a timeline it was never promised.",
+      "default": false
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "variant": {
+            "type": "string",
+            "description": "Which VARIANT of the subject matter this case exercises -- a build, a market, a trim. ⚠ Like `elapsed_ms` this sits on the case rather than in `given`, and for the same reason: it is not a signal. Nothing drives it, it has no address and no value space; it is a fact about which product the record was taken from. Measured: a record tagged with a variant and never setting any configuration signal, which no binding could read until the variant had a place to live.",
+            "default": ""
+          },
+          "elapsed_ms": {
+            "type": "number",
+            "description": "How long the situation had held when this case was observed, in milliseconds. ⚠ A DURATION, not a timestamp -- it restarts whenever the situation does, and a record where it goes backwards is ordinary rather than broken. This was first published as `at_ms`, a moment on a timeline, and the data said otherwise: on one corpus the two cases a specification described as 4 seconds and 70 seconds carried 4123 and 70123, which is time since a condition began and nothing else. ⚠⚠ Time is not a signal: no address, no value space, nothing drives it. That is why it sits on the case rather than in `given`. The unit is fixed so two packs cannot mean different things by one number."
+          },
+          "given": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Addresses this case drives, to the values it drives them to."
+          },
+          "drove": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Addresses this case actually SET, as opposed to the ones that merely still held their value. ⚠ Not derivable by comparing this case's `given` with the one before it, and assuming otherwise cost a whole component: a counter restated at the SAME value is still a statement that the thing happened again, and a subtraction reads it as nothing happening. On one corpus the ignition ladder stood at identical readings for dozens of consecutive cases while the record went on asserting them, and every reading that asked \"which rung most recently\" answered no. Optional: without it, anything needing the distinction falls back to comparing consecutive cases, and says so.",
+            "default": []
+          },
+          "expect": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Addresses this case reads back, to the values it requires."
+          }
+        }
+      }
+    }
+  }
+}
