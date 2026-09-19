@@ -615,6 +615,8 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     bound = set()
     writes = {}
     for name, rule in outputs.items():
+        if rule.get("unresolved"):
+            continue
         if not rule.get("internal") and rule.get("address"):
             key = rule["address"] + (f".{rule['field']}" if rule.get("field") else "")
             bound.add(key)
@@ -634,6 +636,24 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     # PACK, knowable before a single case runs -- and it would refuse every
     # case identically. So it is said once, up front, rather than repeated as
     # many times as there are cases.
+    # ⚠ A binding with an unresolved INPUT cannot be run at all: the document
+    # would be driven from a value nobody supplied, and the verdict would be
+    # about that. Said once, naming every gap and the reason its author gave,
+    # because the next step is to take those reasons to whoever can answer
+    # them -- not to fix the document.
+    #
+    # An unresolved OUTPUT is narrower and does NOT stop the run: the rest
+    # still executes and only the positions that output would have written go
+    # unchecked, which the per-case report already says.
+    open_inputs = sorted((n, r["unresolved"]) for n, r in inputs.items()
+                         if r.get("unresolved"))
+    if open_inputs:
+        return Verification(refusal=(
+            "the binding does not say which address feeds "
+            + ", ".join(n for n, _ in open_inputs)
+            + ". Nothing can be run until it does:\n  "
+            + "\n  ".join(f"{n}: {why}" for n, why in open_inputs)))
+
     # ⚠ There is deliberately NO monotonicity check on the clock. One was
     # written, on the reading that `elapsed_ms` is a moment on a timeline, and
     # the data refused it: the field is how long the SITUATION had held, so it
@@ -685,6 +705,10 @@ def verify(pack: Pack, binding_path: pathlib.Path,
         kwargs = {_snake(n): v for n, v in values.items()}
         produced: dict = {}
         for name, rule in outputs.items():
+            if rule.get("unresolved"):
+                # It has nowhere to land yet. The document still computes it,
+                # and saying so would be reporting a gap the author declared.
+                continue
             fn = getattr(module, "compute_" + _snake(name), None)
             if fn is None:
                 if not rule.get("internal"):

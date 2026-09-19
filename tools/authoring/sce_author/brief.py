@@ -154,6 +154,29 @@ between them is whether the build should proceed:
 Write the reason for whoever has to answer it, not for yourself: what the
 source does and does not say, what you tried, and what would settle it. A
 marker with no reason is a guess with a label.
+
+⚠ THE SAME APPLIES TO ADDRESSES, AND YOU MAY NOT HAVE THEM YET.
+
+The document is already independent of the platform: it uses its own
+identifiers and the BINDING is the dictionary that says which address each one
+is. So the decision logic can be written in full before anybody has produced
+the platform's list of addresses -- section 2 of this page is that list, and if
+it is thin or absent, that is the situation you are in.
+
+Do not invent an address. Write the rule with the reason instead:
+
+    inputs:
+      supplyOn:
+        unresolved: "the source calls this the supply signal and the
+                     platform list is not available yet"
+
+`check` then reports it as an address still missing rather than as a name that
+does not exist, and `verify` says it cannot run rather than running on a value
+nobody supplied. When the list arrives, only the binding changes; the document
+you wrote does not.
+
+A plausible wrong address is invisible. A declared missing one is a question
+with an owner.
 """
 
 

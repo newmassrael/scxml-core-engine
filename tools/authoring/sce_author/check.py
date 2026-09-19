@@ -197,7 +197,23 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
     declared_inputs = dict(binding.get("inputs") or {})
     declared_outputs = dict(binding.get("outputs") or {})
 
+    # ⚠ Declared unknowns are reported FIRST and as their own thing. A binding
+    # written before the platform's list exists is an ordinary state -- the
+    # document is already platform-free, so the logic can be authored long
+    # before the addresses are known -- and the right report for it names what
+    # is still missing rather than complaining that the addresses are not real.
+    # It still fails: an incomplete binding cannot reach the platform, which is
+    # exactly what this command answers.
+    for side, rules in (("input", declared_inputs), ("output", declared_outputs)):
+        for name, rule in sorted(rules.items()):
+            if isinstance(rule, dict) and rule.get("unresolved"):
+                out.append(Finding(
+                    f"{side} {name}",
+                    f"no address yet — {rule['unresolved']}"))
+
     for name, rule in sorted(declared_inputs.items()):
+        if rule.get("unresolved"):
+            continue
         address = rule.get("address")
         if rule.get("protocol"):
             proto = conv.protocols.get(rule["protocol"]) if conv.protocols else None
@@ -236,7 +252,7 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
                 out.append(Finding(f"input {name}", f"{address} does not admit {sym!r}"))
 
     for name, rule in sorted(declared_outputs.items()):
-        if rule.get("internal"):
+        if rule.get("internal") or rule.get("unresolved"):
             continue
         address = rule.get("address")
         entry = model.by_address.get(address) if address else None
