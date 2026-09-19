@@ -80,7 +80,7 @@
 //!       req <id>
 //!       on entry: / on exit: / on initial: / on history-default:
 //!         <action>...
-//!       [on <event>] [when <cond>] [native-guard <g>] -> <target> [<type>]
+//!       [on <event> ]-> <target> [<type>] [when <cond>] [native-guard <g>]
 //!         <action>...
 //!       on sample <link> event <e> [callback <c>]
 //!       invoke [<id>]:
@@ -140,8 +140,10 @@
 //!     internal <id>: <type> <field-clause>...
 //!     helper <name>(<type>, ...) -> <type> [returns-max <n>]
 //!     state <id>:
-//!       send <service> [subfunc <e>] [addr <e>] [payload <e>] [response-max <n>]
-//!       on <event> when <cond> -> <target>
+//!       send <service>
+//!       send <service>:
+//!         subfunc <e> / addr <e> / payload <e> / response-max <n>
+//!       [on <event> ]-> <target>[ when <cond>]
 //!         <location> = <expr>
 //!     final <id>:
 //!       done <name> = <expr>
@@ -699,20 +701,33 @@ fn render_state(s: &ProcedureState, out: &mut Out) {
     out.line(&format!("{} {}:", keyword, text(&s.id)));
     out.nested(|out| {
         for send in &s.on_entry_sends {
-            let mut line = format!("send {}", text(&send.service));
-            if let Some(v) = &send.subfunc {
-                let _ = write!(line, " subfunc {}", text(v));
+            // A block when it carries anything past the service:
+            // `subfunc`, `addr` and `payload` are author expressions,
+            // and three free-text values on one line have no
+            // unambiguous split.
+            let clauses: Vec<(&str, String)> = [
+                ("subfunc", send.subfunc.clone()),
+                ("addr", send.addr.clone()),
+                ("payload", send.payload.clone()),
+                (
+                    "response-max",
+                    send.response_max_size.map(|n| n.to_string()),
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(k, v)| v.map(|v| (k, v)))
+            .collect();
+
+            if clauses.is_empty() {
+                out.line(&format!("send {}", text(&send.service)));
+            } else {
+                out.line(&format!("send {}:", text(&send.service)));
+                out.nested(|out| {
+                    for (name, value) in clauses {
+                        out.line(&format!("{name} {}", text(&value)));
+                    }
+                });
             }
-            if let Some(v) = &send.addr {
-                let _ = write!(line, " addr {}", text(v));
-            }
-            if let Some(v) = &send.payload {
-                let _ = write!(line, " payload {}", text(v));
-            }
-            if let Some(n) = send.response_max_size {
-                let _ = write!(line, " response-max {n}");
-            }
-            out.line(&line);
         }
         for t in &s.transitions {
             render_transition(t, out);
@@ -724,25 +739,24 @@ fn render_state(s: &ProcedureState, out: &mut Out) {
 }
 
 fn render_transition(t: &ProcedureTransition, out: &mut Out) {
-    let mut line = String::from("on");
+    let mut line = String::new();
     match &t.event {
         Some(e) => {
-            let _ = write!(line, " {}", text(e));
+            let _ = write!(line, "on {} ", text(e));
         }
         // An eventless transition is the bare arrow: `on` with no event
         // would read as an event named by the empty string.
-        None => line.clear(),
-    }
-    if let Some(c) = &t.cond {
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        let _ = write!(line, "when {}", text(c));
-    }
-    if !line.is_empty() {
-        line.push(' ');
+        None => {}
     }
     let _ = write!(line, "-> {}", text(&t.target));
+    // The guard goes LAST, after the target, because it is the only
+    // free-text value on the line and the rule puts those at the end.
+    // Written before the arrow, a condition containing ` -> ` would
+    // decide where the line breaks — none of the 232 conditions in
+    // this tree does, and the rule is not a bet on that.
+    if let Some(c) = &t.cond {
+        let _ = write!(line, " when {}", text(c));
+    }
     out.line(&line);
 
     out.nested(|out| {
@@ -1366,22 +1380,7 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out) -> Result<(), Unsu
 fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out) {
     let mut line = String::new();
     if !t.event.is_empty() {
-        let _ = write!(line, "on {}", text(&t.event));
-    }
-    if !t.cond.is_empty() {
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        let _ = write!(line, "when {}", text(&t.cond));
-    }
-    if !t.native_payload_guard.is_empty() {
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        let _ = write!(line, "native-guard {}", text(&t.native_payload_guard));
-    }
-    if !line.is_empty() {
-        line.push(' ');
+        let _ = write!(line, "on {} ", text(&t.event));
     }
     if t.target.is_empty() {
         line.push_str("-> (no target)");
@@ -1390,6 +1389,15 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out) {
     }
     if !t.transition_type.is_empty() {
         let _ = write!(line, " [{}]", text(&t.transition_type));
+    }
+    // The guard goes last: it is the line's only free-text value, and
+    // no transition in this tree carries both a condition and a native
+    // guard (measured over 587 documents), so "last" is unambiguous.
+    if !t.cond.is_empty() {
+        let _ = write!(line, " when {}", text(&t.cond));
+    }
+    if !t.native_payload_guard.is_empty() {
+        let _ = write!(line, " native-guard {}", text(&t.native_payload_guard));
     }
     out.line(&line);
 

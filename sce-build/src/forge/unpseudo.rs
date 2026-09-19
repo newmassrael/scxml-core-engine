@@ -40,7 +40,8 @@ use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
     AlgorithmStmt, BackpressurePolicy, BoundedCollectionModel, BufferPoolModel, BufferPoolVariant,
-    CachePolicy, FoldBody, TestVector, TestVectorValue,
+    CachePolicy, FoldBody, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
+    ProcedureSendAction, ProcedureState, ProcedureTransition, TestVector, TestVectorValue,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
@@ -188,6 +189,7 @@ pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
         "link" => parse_link(head, &body).map(ForgeDocument::Link),
         "observer" => parse_observer(head, &body).map(ForgeDocument::Observer),
         "algorithm" => parse_algorithm(head, &body).map(ForgeDocument::Algorithm),
+        "procedure" => parse_procedure(head, &body).map(ForgeDocument::Procedure),
         other => Err(ParseError {
             line: head.number,
             why: format!("`{other}` is not a kind this reader covers yet"),
@@ -1456,6 +1458,187 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
     })
 }
 
+/// `procedure <name> initial <state>` with fields, helpers and states.
+fn parse_procedure(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ProcedureModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    if w.get(2) != Some(&"initial") {
+        return Err(ParseError {
+            line: head.number,
+            why: "a procedure head needs `initial <state>`".to_string(),
+        });
+    }
+    let mut m = ProcedureModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        inputs: Vec::new(),
+        internals: Vec::new(),
+        helpers: Vec::new(),
+        initial: undo(w.get(3).copied().unwrap_or(""), head.number)?,
+        states: Vec::new(),
+        source_location: None,
+    };
+
+    for (line, kids) in group(body) {
+        if let Some(rest) = line.text.strip_prefix("helper ") {
+            m.helpers.push(parse_helper(rest, line.number)?);
+        } else if line.text.starts_with("state ") || line.text.starts_with("final ") {
+            m.states.push(parse_procedure_state(line, &kids)?);
+        } else {
+            let f = parse_field(line)?;
+            match f.direction {
+                Direction::Internal => m.internals.push(f),
+                _ => m.inputs.push(f),
+            }
+        }
+    }
+    Ok(m)
+}
+
+/// `<name>(<type>, …) -> <type> [returns-max <n>]`
+fn parse_helper(rest: &str, line: usize) -> Result<ProcedureHelper, ParseError> {
+    let (name, tail) = rest.split_once('(').ok_or_else(|| ParseError {
+        line,
+        why: "a helper needs an argument list".to_string(),
+    })?;
+    let (args_text, after) = tail.rsplit_once(')').ok_or_else(|| ParseError {
+        line,
+        why: "a helper needs a closing `)`".to_string(),
+    })?;
+    let args = args_text
+        .split(',')
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .map(|a| {
+            SceType::from_attr(a).ok_or_else(|| ParseError {
+                line,
+                why: format!("`{a}` is not an sce:type"),
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let w: Vec<&str> = after.split_whitespace().collect();
+    let returns_word = w.get(1).copied().unwrap_or("");
+    Ok(ProcedureHelper {
+        name: undo(name, line)?,
+        args,
+        returns: SceType::from_attr(returns_word).ok_or_else(|| ParseError {
+            line,
+            why: format!("`{returns_word}` is not an sce:type"),
+        })?,
+        returns_max_size: match w.get(2).copied() {
+            Some("returns-max") => w.get(3).and_then(|v| v.parse().ok()),
+            _ => None,
+        },
+    })
+}
+
+fn parse_procedure_state(
+    line: &Line<'_>,
+    kids: &[&Line<'_>],
+) -> Result<ProcedureState, ParseError> {
+    let (keyword, rest) = line.text.split_once(' ').ok_or_else(|| ParseError {
+        line: line.number,
+        why: "a state needs an id".to_string(),
+    })?;
+    let mut s = ProcedureState {
+        id: undo(rest.trim_end_matches(':'), line.number)?,
+        is_final: keyword == "final",
+        transitions: Vec::new(),
+        on_entry_sends: Vec::new(),
+        done_params: Vec::new(),
+        line: None,
+    };
+
+    for (l, sub) in group(kids) {
+        if let Some(service) = l.text.strip_prefix("send ") {
+            let mut send = ProcedureSendAction {
+                service: undo(service.trim_end_matches(':'), l.number)?,
+                subfunc: None,
+                addr: None,
+                payload: None,
+                response_max_size: None,
+            };
+            for k in sub {
+                let (keyword, value) = k.text.split_once(' ').ok_or_else(|| ParseError {
+                    line: k.number,
+                    why: format!("`{}` is not a send clause", k.text),
+                })?;
+                match keyword {
+                    "subfunc" => send.subfunc = Some(undo(value, k.number)?),
+                    "addr" => send.addr = Some(undo(value, k.number)?),
+                    "payload" => send.payload = Some(undo(value, k.number)?),
+                    "response-max" => send.response_max_size = value.parse().ok(),
+                    other => {
+                        return Err(ParseError {
+                            line: k.number,
+                            why: format!("`{other}` is not a send clause"),
+                        })
+                    }
+                }
+            }
+            s.on_entry_sends.push(send);
+        } else if let Some(rest) = l.text.strip_prefix("done ") {
+            let (name, expr) = rest.split_once(" = ").ok_or_else(|| ParseError {
+                line: l.number,
+                why: "a done param needs `= <expr>`".to_string(),
+            })?;
+            s.done_params.push(ProcedureDoneParam {
+                name: undo(name, l.number)?,
+                expr: undo(expr, l.number)?,
+            });
+        } else {
+            s.transitions.push(parse_procedure_transition(l, &sub)?);
+        }
+    }
+    Ok(s)
+}
+
+/// `[on <event> ]-> <target>[ when <cond>]` with assigns under it.
+fn parse_procedure_transition(
+    line: &Line<'_>,
+    kids: &[&Line<'_>],
+) -> Result<ProcedureTransition, ParseError> {
+    let (event, rest) = match line.text.strip_prefix("on ") {
+        Some(after) => {
+            let (e, r) = after.split_once(" -> ").ok_or_else(|| ParseError {
+                line: line.number,
+                why: "a transition needs `-> <target>`".to_string(),
+            })?;
+            (Some(undo(e, line.number)?), r)
+        }
+        None => (
+            None,
+            line.text.strip_prefix("-> ").ok_or_else(|| ParseError {
+                line: line.number,
+                why: format!("`{}` is not a transition", line.text),
+            })?,
+        ),
+    };
+    // The guard is last, so the target is whatever precedes ` when `.
+    let (target, cond) = match rest.split_once(" when ") {
+        Some((t, c)) => (t, Some(undo(c, line.number)?)),
+        None => (rest, None),
+    };
+
+    let mut assigns = Vec::new();
+    for k in kids {
+        let (location, expr) = k.text.split_once(" = ").ok_or_else(|| ParseError {
+            line: k.number,
+            why: format!("`{}` is not an assign", k.text),
+        })?;
+        assigns.push(ProcedureAssign {
+            location: undo(location, k.number)?,
+            expr: undo(expr, k.number)?,
+        });
+    }
+
+    Ok(ProcedureTransition {
+        target: undo(target, line.number)?,
+        cond,
+        event,
+        assigns,
+        line: None,
+    })
+}
+
 /// Serialised comparison of two documents, with the one key the law
 /// excludes stripped wherever it appears.
 ///
@@ -1507,6 +1690,7 @@ pub const COVERED_KINDS: &[&str] = &[
     "link",
     "observer",
     "algorithm",
+    "procedure",
 ];
 
 /// This document's kind name when the reader covers it.
@@ -1532,6 +1716,7 @@ pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
         ForgeDocument::Link(_) => "link",
         ForgeDocument::Observer(_) => "observer",
         ForgeDocument::Algorithm(_) => "algorithm",
+        ForgeDocument::Procedure(_) => "procedure",
         _ => return None,
     };
     COVERED_KINDS.contains(&name).then_some(name)

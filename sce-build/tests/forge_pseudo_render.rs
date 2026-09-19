@@ -250,8 +250,12 @@ procedure unlock initial request
   internal counter: uint16 = 0 retain nvm initial 7 default-covers A B
   helper computeKey(uint32, bytes) -> bytes returns-max 8
   state request:
-    send diag subfunc 0x27 addr seed payload computeKey(seed, payload) response-max 16
-    on reply when counter < 3 -> granted
+    send diag:
+      subfunc 0x27
+      addr seed
+      payload computeKey(seed, payload)
+      response-max 16
+    on reply -> granted when counter < 3
       counter = counter + 1
     -> denied
   final granted:
@@ -537,7 +541,7 @@ machine m (datamodel: ecmascript, initial: s0, binding: early)
   state s0:
     on entry:
       raise go
-    on go when v == 0 -> done [external]
+    on go -> done [external] when v == 0
   final done:
 "
     );
