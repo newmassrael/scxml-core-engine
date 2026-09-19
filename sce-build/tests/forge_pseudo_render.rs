@@ -14,14 +14,16 @@
 
 use sce_build::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
-    AlgorithmStmt, BoundedCollectionModel, CapacitySource, CollectionOrdering, ConcurrencyMode,
-    ConditionModel, Direction, EnumModel, EnumVariant, EventSchemaModel, FilterModel, FilterType,
-    FoldBody, ForgeDocument, ForgeField, InterpolationAxis, InterpolationMethod,
-    InterpolationModel, LookupEntry, LookupModel, MissPolicy, ObserverModel, OutOfBounds,
-    OverflowPolicy, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
-    ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule,
-    Retention, SceType, TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TransformModel,
-    ValidatorModel, ValidatorRules,
+    AlgorithmStmt, BackpressurePolicy, BoundedCollectionModel, BufferPoolModel, BufferPoolVariant,
+    CachePolicy, CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction,
+    EnumModel, EnumVariant, EventSchemaModel, FilterModel, FilterType, FoldBody, ForgeDocument,
+    ForgeField, InboxConfig, InboxOrdering, InterpolationAxis, InterpolationMethod,
+    InterpolationModel, LinkClass, LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry,
+    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, ProcedureAssign,
+    ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState,
+    ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, Retention, SceType,
+    TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TransformModel, ValidatorModel,
+    ValidatorRules, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -533,5 +535,79 @@ fn each_signal_kind_renders_every_field_it_can_carry() {
         "bounded-collection table of entry capacity deploy-key tables.max \
          overflow oldest-wins ordering sorted-by-index concurrency \
          multi-writer index-by id\n"
+    );
+}
+
+/// The three MCU kinds, with every optional field populated.
+///
+/// The enum spellings asserted here are the grammar's
+/// (`xs:enumeration`), not serde's: `raw_eth` and `acq_rel` are snake
+/// while `signal-event` and `non-cacheable` are kebab, and rendering
+/// either family by the Rust enum's `rename_all` would print a word no
+/// author ever wrote.
+#[test]
+fn each_mcu_kind_renders_every_field_it_can_carry() {
+    let wk = WorkerModel {
+        name: "rx".to_string(),
+        link_rx: "udp0".to_string(),
+        inbox: InboxConfig {
+            depth: 16,
+            ordering: InboxOrdering::AcqRel,
+        },
+        outbox: Some("tx0".to_string()),
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Worker(wk)).unwrap(),
+        "worker rx link-rx udp0 inbox depth 16 ordering acq_rel outbox tx0\n"
+    );
+
+    let bp = BufferPoolModel {
+        name: "pool".to_string(),
+        slot_count: 8,
+        slot_size: 256,
+        section: "sram1".to_string(),
+        alignment: 32,
+        dma_channel: Some("ch3".to_string()),
+        cache_policy: CachePolicy::NonCacheable,
+        variant: BufferPoolVariant::Reassembly(ReassemblyConfig {
+            max_fragments_per_message: 4,
+            reassembly_timeout_ms: 500,
+            per_peer_quota: 2,
+        }),
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::BufferPool(bp)).unwrap(),
+        "buffer-pool pool slots 8 size 256 section sram1 align 32 \
+         cache non-cacheable dma ch3\n  \
+         reassembly max-fragments 4 timeout 500ms per-peer-quota 2\n"
+    );
+
+    let lk = LinkModel {
+        name: "eth".to_string(),
+        class: LinkClass::RawEth,
+        framer: "frame".to_string(),
+        backpressure: BackpressurePolicy::SignalEvent,
+        inbound: vec![LinkInboundEvent {
+            event: "rx".to_string(),
+            when: Some("len > 0".to_string()),
+        }],
+        outbound: vec![LinkOutboundEvent {
+            event: "tx".to_string(),
+            encode: "enc".to_string(),
+        }],
+        rx_pool: Some("rp".to_string()),
+        tx_pool: Some("tp".to_string()),
+        stage_pool: Some("sp".to_string()),
+        accept_stage_copy_rate: true,
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Link(lk)).unwrap(),
+        "link eth class raw_eth framer frame backpressure signal-event \
+         accept-stage-copy-rate\n  rx-pool rp\n  tx-pool tp\n  \
+         stage-pool sp\n  inbound rx when len > 0\n  \
+         outbound tx encode enc\n"
     );
 }

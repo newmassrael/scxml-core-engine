@@ -143,6 +143,18 @@
 //!
 //!   bounded-collection <name> of <type> capacity (deploy-key <k>|const <n>)
 //!       overflow <p> ordering <o> concurrency <c> [index-by <field>]
+//!
+//!   worker <name> link-rx <l> inbox depth <n> ordering <o> [outbox <x>]
+//!
+//!   buffer-pool <name> slots <n> size <n> section <s> align <n>
+//!       cache <p> [dma <c>]
+//!     reassembly max-fragments <n> timeout <n>ms per-peer-quota <n>
+//!
+//!   link <name> class <c> framer <f> backpressure <p>
+//!       [accept-stage-copy-rate]
+//!     rx-pool <p> / tx-pool <p> / stage-pool <p>
+//!     inbound <event> [when <expr>]
+//!     outbound <event> encode <e>
 //! ```
 //!
 //! A `<field>` is `(in|out|internal) <id>: <type> <field-clause>...`,
@@ -162,12 +174,14 @@ use std::fmt::Write as _;
 
 use crate::comment_text;
 use crate::forge::model::{
-    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, BoundedCollectionModel,
-    CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
-    EventSchemaModel, FilterModel, FilterType, FoldBody, ForgeDocument, ForgeField,
-    InterpolationMethod, InterpolationModel, LookupModel, MissPolicy, ObserverModel, OutOfBounds,
-    OverflowPolicy, ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, SceType,
-    TestVector, TestVectorValue, TimerModel, TransformModel, ValidatorModel,
+    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, BackpressurePolicy,
+    BoundedCollectionModel, BufferPoolModel, BufferPoolVariant, CachePolicy, CapacitySource,
+    CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel, EventSchemaModel,
+    FilterModel, FilterType, FoldBody, ForgeDocument, ForgeField, InboxOrdering,
+    InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel, MissPolicy,
+    ObserverModel, OutOfBounds, OverflowPolicy, ProcedureHelper, ProcedureModel, ProcedureState,
+    ProcedureTransition, SceType, TestVector, TestVectorValue, TimerModel, TransformModel,
+    ValidatorModel, WorkerModel,
 };
 
 /// Why a document has no pseudocode rendering, as opposed to an empty
@@ -217,13 +231,11 @@ pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
         ForgeDocument::Observer(m) => Ok(render_observer(m)),
         ForgeDocument::Interpolation(m) => Ok(render_interpolation(m)),
         ForgeDocument::BoundedCollection(m) => Ok(render_bounded_collection(m)),
+        ForgeDocument::Worker(m) => Ok(render_worker(m)),
+        ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
+        ForgeDocument::Link(m) => Ok(render_link(m)),
         ForgeDocument::Statechart(_) => Err(Unsupported { kind: "statechart" }),
         ForgeDocument::Codec(_) => Err(Unsupported { kind: "codec" }),
-        ForgeDocument::Link(_) => Err(Unsupported { kind: "link" }),
-        ForgeDocument::BufferPool(_) => Err(Unsupported {
-            kind: "buffer-pool",
-        }),
-        ForgeDocument::Worker(_) => Err(Unsupported { kind: "worker" }),
     }
 }
 
@@ -860,6 +872,117 @@ fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
         let _ = write!(head, " index-by {}", text(ix));
     }
     out.line(&head);
+    out.buf
+}
+
+// ── MCU kinds ──────────────────────────────────────────────────
+//
+// ⚠ The enum spellings below come from `schemas/sce-forge-ext.xsd`'s
+// `xs:enumeration` values, NOT from the serde rename on the Rust enum.
+// The two disagree: `LinkClass` and `InboxOrdering` carry
+// `rename_all = "snake_case"` / `"kebab-case"` while the grammar spells
+// them `raw_eth` and `acq_rel`, and a kebab rendering would print words
+// no author ever wrote. What a reviewer compares against the
+// specification is the authored spelling.
+
+fn render_worker(m: &WorkerModel) -> String {
+    let mut out = Out::new();
+    let ordering = match m.inbox.ordering {
+        InboxOrdering::AcqRel => "acq_rel",
+        InboxOrdering::Relaxed => "relaxed",
+    };
+    let mut head = format!(
+        "worker {} link-rx {} inbox depth {} ordering {ordering}",
+        text(&m.name),
+        text(&m.link_rx),
+        m.inbox.depth
+    );
+    if let Some(o) = &m.outbox {
+        let _ = write!(head, " outbox {}", text(o));
+    }
+    out.line(&head);
+    out.buf
+}
+
+fn render_buffer_pool(m: &BufferPoolModel) -> String {
+    let mut out = Out::new();
+    let cache = match m.cache_policy {
+        CachePolicy::Maintain => "maintain",
+        CachePolicy::NonCacheable => "non-cacheable",
+        CachePolicy::None => "none",
+    };
+    let mut head = format!(
+        "buffer-pool {} slots {} size {} section {} align {} cache {cache}",
+        text(&m.name),
+        m.slot_count,
+        m.slot_size,
+        text(&m.section),
+        m.alignment
+    );
+    if let Some(c) = &m.dma_channel {
+        let _ = write!(head, " dma {}", text(c));
+    }
+    out.line(&head);
+    match &m.variant {
+        BufferPoolVariant::Default => {}
+        BufferPoolVariant::Reassembly(r) => out.nested(|out| {
+            out.line(&format!(
+                "reassembly max-fragments {} timeout {}ms per-peer-quota {}",
+                r.max_fragments_per_message, r.reassembly_timeout_ms, r.per_peer_quota
+            ));
+        }),
+    }
+    out.buf
+}
+
+fn render_link(m: &LinkModel) -> String {
+    let mut out = Out::new();
+    let class = match m.class {
+        LinkClass::Udp => "udp",
+        LinkClass::Tcp => "tcp",
+        LinkClass::Serial => "serial",
+        LinkClass::Websocket => "websocket",
+        LinkClass::RawEth => "raw_eth",
+    };
+    let backpressure = match m.backpressure {
+        BackpressurePolicy::Drop => "drop",
+        BackpressurePolicy::Block => "block",
+        BackpressurePolicy::SignalEvent => "signal-event",
+    };
+    let mut head = format!(
+        "link {} class {class} framer {} backpressure {backpressure}",
+        text(&m.name),
+        text(&m.framer)
+    );
+    if m.accept_stage_copy_rate {
+        head.push_str(" accept-stage-copy-rate");
+    }
+    out.line(&head);
+    out.nested(|out| {
+        for p in [
+            ("rx-pool", &m.rx_pool),
+            ("tx-pool", &m.tx_pool),
+            ("stage-pool", &m.stage_pool),
+        ] {
+            if let Some(v) = p.1 {
+                out.line(&format!("{} {}", p.0, text(v)));
+            }
+        }
+        for e in &m.inbound {
+            let mut line = format!("inbound {}", text(&e.event));
+            if let Some(w) = &e.when {
+                let _ = write!(line, " when {}", text(w));
+            }
+            out.line(&line);
+        }
+        for e in &m.outbound {
+            out.line(&format!(
+                "outbound {} encode {}",
+                text(&e.event),
+                text(&e.encode)
+            ));
+        }
+    });
     out.buf
 }
 
