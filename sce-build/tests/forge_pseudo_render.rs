@@ -14,11 +14,14 @@
 
 use sce_build::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
-    AlgorithmStmt, Direction, FoldBody, ForgeDocument, ForgeField, ProcedureAssign,
+    AlgorithmStmt, ConditionModel, Direction, EnumModel, EnumVariant, EventSchemaModel, FoldBody,
+    ForgeDocument, ForgeField, LookupEntry, LookupModel, MissPolicy, ProcedureAssign,
     ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState,
-    ProcedureTransition, Retention, SceType, TestVector, TestVectorValue,
+    ProcedureTransition, RangeRule, RateOfChangeRule, Retention, SceType, TestVector,
+    TestVectorValue, TimerModel, TransformModel, ValidatorModel, ValidatorRules,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
+use sce_build::provenance::RequirementId;
 
 fn field(id: &str, t: SceType, dir: Direction) -> ForgeField {
     ForgeField {
@@ -335,4 +338,120 @@ fn two_renderings_of_one_model_agree() {
     };
     let doc = ForgeDocument::Algorithm(m);
     assert_eq!(render(&doc).unwrap(), render(&doc).unwrap());
+}
+
+/// Each declarative kind, with every optional field populated.
+///
+/// Whole-output comparisons again, and for these kinds the reason is
+/// sharper than elsewhere: their documents ARE their models — no
+/// backend-derived field, nothing the parser computed — so a field
+/// missing from the output is a field missing from the review, with
+/// nothing downstream to notice.
+#[test]
+fn each_declarative_kind_renders_every_field_it_can_carry() {
+    let cond = ConditionModel {
+        name: "hot".to_string(),
+        inputs: vec![field("t", SceType::Float64, Direction::In)],
+        expr: "t > 90".to_string(),
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Condition(cond)).unwrap(),
+        "condition hot\n  in t: float64\n  when t > 90\n"
+    );
+
+    let mut out_field = field("c", SceType::Float64, Direction::Out);
+    out_field.expr = Some("f * 2".to_string());
+    let tr = TransformModel {
+        name: "scale".to_string(),
+        inputs: vec![field("f", SceType::Uint16, Direction::In)],
+        outputs: vec![out_field],
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Transform(tr)).unwrap(),
+        "transform scale\n  in f: uint16\n  out c: float64 = f * 2\n"
+    );
+
+    let val = ValidatorModel {
+        name: "plaus".to_string(),
+        inputs: vec![field("v", SceType::Int32, Direction::In)],
+        rules: ValidatorRules {
+            ranges: vec![RangeRule {
+                id: "v".to_string(),
+                min: Some("-10".to_string()),
+                max: Some("10".to_string()),
+            }],
+            rate_of_changes: vec![RateOfChangeRule {
+                id: "v".to_string(),
+                max_delta: "5".to_string(),
+                sample_interval_ms: 100,
+            }],
+            plausibility: Some("v != 0".to_string()),
+        },
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Validator(val)).unwrap(),
+        "validator plaus\n  in v: int32\n  range v min -10 max 10\n  \
+         rate v max-delta 5 interval 100ms\n  plausibility v != 0\n"
+    );
+
+    let ev = EventSchemaModel {
+        name: "tick".to_string(),
+        event_name: "bus.tick".to_string(),
+        fields: vec![field("seq", SceType::Uint8, Direction::In)],
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::EventSchema(ev)).unwrap(),
+        "event-schema tick event bus.tick\n  in seq: uint8\n"
+    );
+
+    let en = EnumModel {
+        name: "nrc".to_string(),
+        underlying_type: SceType::Uint8,
+        variants: vec![EnumVariant {
+            name: "reject".to_string(),
+            value: 16,
+            source_line: Some(29),
+        }],
+        strict_variants: true,
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Enum(en)).unwrap(),
+        "enum nrc: uint8 strict\n  variant reject = 16 @line 29\n"
+    );
+
+    let ti = TimerModel {
+        name: "sched".to_string(),
+        period_us: 2_000_000,
+        reset_on_event: Some("beat".to_string()),
+        cancel_on_state_exit: Some("idle".to_string()),
+        fire_event: "tick".to_string(),
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Timer(ti)).unwrap(),
+        "timer sched period 2000000us fire tick reset-on beat cancel-on-exit idle\n"
+    );
+
+    let lk = LookupModel {
+        name: "gear".to_string(),
+        input: field("raw", SceType::Uint8, Direction::In),
+        output: field("name", SceType::String, Direction::Out),
+        entries: vec![LookupEntry {
+            key: "0".to_string(),
+            value: "PARK".to_string(),
+            requirements: vec![RequirementId("REQ-1".to_string())],
+        }],
+        miss_policy: MissPolicy::Default("NEUTRAL".to_string()),
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Lookup(lk)).unwrap(),
+        "lookup gear\n  in raw: uint8\n  out name: string\n  \
+         0 -> PARK req REQ-1\n  miss default NEUTRAL\n"
+    );
 }

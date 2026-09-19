@@ -102,7 +102,37 @@
 //!         <location> = <expr>
 //!     final <id>:
 //!       done <name> = <expr>
+//!
+//!   condition <name>
+//!     <field>...
+//!     when <expr>
+//!
+//!   transform <name>
+//!     <field>...
+//!
+//!   validator <name>
+//!     <field>...
+//!     range <id> [min <v>] [max <v>]
+//!     rate <id> max-delta <v> interval <n>ms
+//!     plausibility <expr>
+//!
+//!   event-schema <name> event <event>
+//!     <field>...
+//!
+//!   enum <name>: <type> [strict]
+//!     variant <name> = <n> [@line <n>]
+//!
+//!   timer <name> period <n>us fire <event> [reset-on <e>] [cancel-on-exit <s>]
+//!
+//!   lookup <name>
+//!     <field>          (the input, then the output)
+//!     <key> -> <value> [req <id>...]
+//!     miss default <v> | miss error
 //! ```
+//!
+//! A `<field>` is `(in|out|internal) <id>: <type> <field-clause>...`,
+//! the direction printed as the keyword rather than inferred from which
+//! list the field came out of.
 //!
 //! A `<field-clause>` is any of `= <expr>`, `max-size <n>`,
 //! `quantity <scale> <offset> <unit>`, `retain <scope> initial <expr>`,
@@ -117,9 +147,10 @@ use std::fmt::Write as _;
 
 use crate::comment_text;
 use crate::forge::model::{
-    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, Direction, FoldBody,
-    ForgeDocument, ForgeField, ProcedureHelper, ProcedureModel, ProcedureState,
-    ProcedureTransition, SceType, TestVector, TestVectorValue,
+    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, ConditionModel, Direction,
+    EnumModel, EventSchemaModel, FoldBody, ForgeDocument, ForgeField, LookupModel, MissPolicy,
+    ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, SceType, TestVector,
+    TestVectorValue, TimerModel, TransformModel, ValidatorModel,
 };
 
 /// Why a document has no pseudocode rendering, as opposed to an empty
@@ -158,17 +189,19 @@ pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
     match doc {
         ForgeDocument::Algorithm(m) => Ok(render_algorithm(m)),
         ForgeDocument::Procedure(m) => Ok(render_procedure(m)),
+        ForgeDocument::Condition(m) => Ok(render_condition(m)),
+        ForgeDocument::Transform(m) => Ok(render_transform(m)),
+        ForgeDocument::Validator(m) => Ok(render_validator(m)),
+        ForgeDocument::EventSchema(m) => Ok(render_event_schema(m)),
+        ForgeDocument::Enum(m) => Ok(render_enum(m)),
+        ForgeDocument::Timer(m) => Ok(render_timer(m)),
+        ForgeDocument::Lookup(m) => Ok(render_lookup(m)),
         ForgeDocument::Statechart(_) => Err(Unsupported { kind: "statechart" }),
-        ForgeDocument::Transform(_) => Err(Unsupported { kind: "transform" }),
-        ForgeDocument::Lookup(_) => Err(Unsupported { kind: "lookup" }),
-        ForgeDocument::Condition(_) => Err(Unsupported { kind: "condition" }),
         ForgeDocument::Codec(_) => Err(Unsupported { kind: "codec" }),
-        ForgeDocument::Validator(_) => Err(Unsupported { kind: "validator" }),
         ForgeDocument::Filter(_) => Err(Unsupported { kind: "filter" }),
         ForgeDocument::Interpolation(_) => Err(Unsupported {
             kind: "interpolation",
         }),
-        ForgeDocument::Timer(_) => Err(Unsupported { kind: "timer" }),
         ForgeDocument::Observer(_) => Err(Unsupported { kind: "observer" }),
         ForgeDocument::Link(_) => Err(Unsupported { kind: "link" }),
         ForgeDocument::BufferPool(_) => Err(Unsupported {
@@ -177,10 +210,6 @@ pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
         ForgeDocument::Worker(_) => Err(Unsupported { kind: "worker" }),
         ForgeDocument::BoundedCollection(_) => Err(Unsupported {
             kind: "bounded-collection",
-        }),
-        ForgeDocument::Enum(_) => Err(Unsupported { kind: "enum" }),
-        ForgeDocument::EventSchema(_) => Err(Unsupported {
-            kind: "event-schema",
         }),
     }
 }
@@ -567,4 +596,149 @@ fn render_transition(t: &ProcedureTransition, out: &mut Out) {
             out.line(&format!("{} = {}", text(&a.location), text(&a.expr)));
         }
     });
+}
+
+// ── Declarative kinds ──────────────────────────────────────────
+//
+// Each of these is its whole document: the model carries what the
+// author wrote and nothing a backend derived, which is why the
+// rendering is a transcription rather than a walk. `render_field` is
+// shared with the procedure above for the same reason the review table
+// shares its row type — two spellings of one field is how they drift.
+
+fn render_condition(m: &ConditionModel) -> String {
+    let mut out = Out::new();
+    out.line(&format!("condition {}", text(&m.name)));
+    out.nested(|out| {
+        for f in &m.inputs {
+            render_field(f, out);
+        }
+        out.line(&format!("when {}", text(&m.expr)));
+    });
+    out.buf
+}
+
+fn render_transform(m: &TransformModel) -> String {
+    let mut out = Out::new();
+    out.line(&format!("transform {}", text(&m.name)));
+    out.nested(|out| {
+        for f in m.inputs.iter().chain(&m.outputs) {
+            render_field(f, out);
+        }
+    });
+    out.buf
+}
+
+fn render_validator(m: &ValidatorModel) -> String {
+    let mut out = Out::new();
+    out.line(&format!("validator {}", text(&m.name)));
+    out.nested(|out| {
+        for f in &m.inputs {
+            render_field(f, out);
+        }
+        for r in &m.rules.ranges {
+            let mut line = format!("range {}", text(&r.id));
+            if let Some(v) = &r.min {
+                let _ = write!(line, " min {}", text(v));
+            }
+            if let Some(v) = &r.max {
+                let _ = write!(line, " max {}", text(v));
+            }
+            out.line(&line);
+        }
+        for r in &m.rules.rate_of_changes {
+            out.line(&format!(
+                "rate {} max-delta {} interval {}ms",
+                text(&r.id),
+                text(&r.max_delta),
+                r.sample_interval_ms
+            ));
+        }
+        if let Some(p) = &m.rules.plausibility {
+            out.line(&format!("plausibility {}", text(p)));
+        }
+    });
+    out.buf
+}
+
+fn render_event_schema(m: &EventSchemaModel) -> String {
+    let mut out = Out::new();
+    out.line(&format!(
+        "event-schema {} event {}",
+        text(&m.name),
+        text(&m.event_name)
+    ));
+    out.nested(|out| {
+        for f in &m.fields {
+            render_field(f, out);
+        }
+    });
+    out.buf
+}
+
+fn render_enum(m: &EnumModel) -> String {
+    let mut out = Out::new();
+    let mut head = format!("enum {}: {}", text(&m.name), m.underlying_type.as_attr());
+    if m.strict_variants {
+        head.push_str(" strict");
+    }
+    out.line(&head);
+    out.nested(|out| {
+        for v in &m.variants {
+            // `source_line` is printed for the reason the algorithm's
+            // test vector prints its own: it is a position that does NOT
+            // travel under the `source_location` key, so a round trip
+            // stripping that one key would still see it differ.
+            let mut line = format!("variant {} = {}", text(&v.name), v.value);
+            if let Some(l) = v.source_line {
+                let _ = write!(line, " @line {l}");
+            }
+            out.line(&line);
+        }
+    });
+    out.buf
+}
+
+fn render_timer(m: &TimerModel) -> String {
+    let mut out = Out::new();
+    let mut head = format!(
+        "timer {} period {}us fire {}",
+        text(&m.name),
+        m.period_us,
+        text(&m.fire_event)
+    );
+    if let Some(e) = &m.reset_on_event {
+        let _ = write!(head, " reset-on {}", text(e));
+    }
+    if let Some(s) = &m.cancel_on_state_exit {
+        let _ = write!(head, " cancel-on-exit {}", text(s));
+    }
+    out.line(&head);
+    out.buf
+}
+
+fn render_lookup(m: &LookupModel) -> String {
+    let mut out = Out::new();
+    out.line(&format!("lookup {}", text(&m.name)));
+    out.nested(|out| {
+        render_field(&m.input, out);
+        render_field(&m.output, out);
+        for e in &m.entries {
+            let mut line = format!("{} -> {}", text(&e.key), text(&e.value));
+            if !e.requirements.is_empty() {
+                let ids: Vec<String> = e
+                    .requirements
+                    .iter()
+                    .map(|r| text(&r.to_string()).into_owned())
+                    .collect();
+                let _ = write!(line, " req {}", ids.join(" "));
+            }
+            out.line(&line);
+        }
+        match &m.miss_policy {
+            MissPolicy::Default(v) => out.line(&format!("miss default {}", text(v))),
+            MissPolicy::Error => out.line("miss error"),
+        }
+    });
+    out.buf
 }
