@@ -17,6 +17,31 @@
 //! list of paths: a hand-kept exclusion list is how a real difference
 //! gets filed as an expected one.
 //!
+//! # ⚠ Two layers, and why the statechart gets the weaker one
+//!
+//! For the seventeen forge kinds the model IS the authored document, so
+//! comparing models proves both halves at once: the renderer wrote
+//! everything and the reader recovered it.
+//!
+//! The statechart model is not the document. Of its 92 fields, 39 are
+//! written by the analyzer and more are computed while parsing, and the
+//! renderer deliberately writes only the authored core — so a model
+//! read back from a rendering is missing everything derived, and a
+//! model comparison would fail on every document for a reason that is
+//! not a defect. Excluding those fields by name would be the hand-kept
+//! list this file exists to avoid.
+//!
+//! So the statechart is compared as TEXT:
+//! `render(parse(render(m))) == render(m)`. That proves the reader
+//! recovers everything the renderer wrote, and nothing about what the
+//! renderer left out. The other half is carried by two gates that
+//! already stand: `an_action_uses_only_the_fields_its_tag_declares`
+//! pins which fields each action tag may use, and
+//! `the_analyzer_declares_which_fields_it_writes` pins which fields are
+//! SCE's arithmetic rather than the author's. Neither is a substitute
+//! for the model comparison; together they are what makes the weaker
+//! layer honest rather than convenient.
+//!
 //! # ⚠ What a failure means, and what it does not
 //!
 //! A difference is a defect in the PAIR, not a reason to widen the
@@ -37,9 +62,19 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Every `.scxml` this checkout holds.
+///
+/// ⚠ `integration_resources` and `examples` are here for the
+/// statechart's sake: `tests/forge/resources` is mostly forge kinds and
+/// holds only a handful of machines, and the generated W3C corpus —
+/// which is where the statecharts live in bulk — is a build artefact of
+/// another tree, which a test may not reach into.
 fn fixture_files() -> Vec<PathBuf> {
+    let root = repo_root();
     let mut out = Vec::new();
-    collect(&repo_root().join("tests/forge/resources"), &mut out);
+    for sub in ["tests/forge/resources", "integration_resources", "examples"] {
+        collect(&root.join(sub), &mut out);
+    }
     out.sort();
     out
 }
@@ -83,16 +118,29 @@ fn every_covered_kind_survives_the_round_trip() {
             identifier: stem,
             diagnostic_label: stem,
         };
-        let Ok(Some(parsed)) =
-            sce_build::forge::parser::parse_forge_with_imports(&expanded.0, label)
-        else {
-            continue;
+        // ⚠ BOTH pipelines. The forge entry point answers `Ok(None)`
+        // for a statechart, so routing through it alone skips exactly
+        // the kind with the largest grammar. The same omission was made
+        // once already, in the action-table gate.
+        let document = match sce_build::forge::parser::parse_forge_with_imports(&expanded.0, label)
+        {
+            Ok(Some(p)) => p.document,
+            Ok(None) => match sce_build::parser::SCXMLParser::new().parse_string(&expanded.0, stem)
+            {
+                Ok(model) => sce_build::forge::model::ForgeDocument::Statechart(Box::new(model)),
+                Err(_) => continue,
+            },
+            Err(_) => continue,
         };
-        if !unpseudo::covers(&parsed.document) {
+        if !unpseudo::covers(&document) {
             continue;
         }
+        let is_statechart = matches!(
+            document,
+            sce_build::forge::model::ForgeDocument::Statechart(_)
+        );
 
-        let rendered = match sce_build::forge::pseudo::render(&parsed.document) {
+        let rendered = match sce_build::forge::pseudo::render(&document) {
             Ok(r) => r,
             Err(e) => {
                 broken.push(format!("{stem}: the renderer refused it — {e}"));
@@ -107,13 +155,31 @@ fn every_covered_kind_survives_the_round_trip() {
             }
         };
 
-        let before = unpseudo::ir_for_comparison(&parsed.document).expect("a model serialises");
-        let after = unpseudo::ir_for_comparison(&read_back).expect("a model serialises");
+        // The statechart is compared as text; see the note at the top
+        // of this file for why its model cannot be.
+        let (before, after) = if is_statechart {
+            let again = match sce_build::forge::pseudo::render(&read_back) {
+                Ok(r) => r,
+                Err(e) => {
+                    broken.push(format!("{stem}: the re-render refused it — {e}"));
+                    continue;
+                }
+            };
+            (
+                serde_json::Value::String(rendered.clone()),
+                serde_json::Value::String(again),
+            )
+        } else {
+            (
+                unpseudo::ir_for_comparison(&document).expect("a model serialises"),
+                unpseudo::ir_for_comparison(&read_back).expect("a model serialises"),
+            )
+        };
         checked += 1;
         // The reader's own namer, not a copy of it here: two spellings
         // of "which kind is this" would let this gate report a kind the
         // reader does not take.
-        kinds_seen.extend(unpseudo::covered_kind(&parsed.document));
+        kinds_seen.extend(unpseudo::covered_kind(&document));
         if before != after {
             broken.push(format!(
                 "{stem}: the IR moved across the round trip\n  before: {before}\n  after : {after}"

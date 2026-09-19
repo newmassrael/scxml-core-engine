@@ -194,6 +194,7 @@ pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
         "algorithm" => parse_algorithm(head, &body).map(ForgeDocument::Algorithm),
         "procedure" => parse_procedure(head, &body).map(ForgeDocument::Procedure),
         "codec" => parse_codec(head, &body).map(ForgeDocument::Codec),
+        "machine" => parse_statechart(head, &body).map(|m| ForgeDocument::Statechart(Box::new(m))),
         other => Err(ParseError {
             line: head.number,
             why: format!("`{other}` is not a kind this reader covers yet"),
@@ -2022,6 +2023,651 @@ fn parse_codec_test(
     })
 }
 
+// ── Statechart ─────────────────────────────────────────────────
+//
+// ⚠ The statechart model is NOT the document: of its 92 fields, 39 are
+// written by the analyzer and many more are computed during parsing.
+// The renderer deliberately writes only the authored core, so a model
+// read back from a rendering is missing everything derived — and that
+// is why the round-trip law for this kind compares RENDERINGS rather
+// than models. See the gate's own note; the split is stated there.
+
+/// `machine <name> (datamodel: <d>, initial: <s>[, binding: <b>]…)`.
+fn parse_statechart(
+    head: &Line<'_>,
+    body: &[&Line<'_>],
+) -> Result<crate::model::SCXMLModel, ParseError> {
+    let (name, clauses) = head.text["machine ".len()..]
+        .split_once(" (")
+        .ok_or_else(|| ParseError {
+            line: head.number,
+            why: "a machine head needs its clause list".to_string(),
+        })?;
+
+    let mut m = crate::model::SCXMLModel {
+        name: undo(name, head.number)?,
+        ..Default::default()
+    };
+    for clause in clauses.trim_end_matches(')').split(", ") {
+        let (key, value) = clause.split_once(": ").ok_or_else(|| ParseError {
+            line: head.number,
+            why: format!("`{clause}` is not `<key>: <value>`"),
+        })?;
+        match key {
+            "datamodel" => {
+                m.datamodel = match value {
+                    "null" => crate::model::Datamodel::Null,
+                    "ecmascript" => crate::model::Datamodel::EcmaScript,
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not a datamodel"),
+                        })
+                    }
+                }
+            }
+            "initial" => m.initial = undo(value, head.number)?,
+            "binding" => m.binding = undo(value, head.number)?,
+            "queue" => m.event_queue_capacity = value.parse().ok(),
+            other => {
+                return Err(ParseError {
+                    line: head.number,
+                    why: format!("`{other}` is not a machine clause"),
+                })
+            }
+        }
+    }
+
+    let mut order = 0u32;
+    for (line, kids) in group(body) {
+        let w: Vec<&str> = line.text.split_whitespace().collect();
+        match w.first().copied() {
+            Some("context") => {
+                let mut c = crate::model::ContextObject {
+                    id: undo(w.get(1).copied().unwrap_or(""), line.number)?,
+                    cpp_type: String::new(),
+                    cpp_include: String::new(),
+                    kt_type: String::new(),
+                };
+                let mut i = 2;
+                while i < w.len() {
+                    let v = undo(w.get(i + 1).copied().unwrap_or(""), line.number)?;
+                    match w[i] {
+                        "cpp-type" => c.cpp_type = v,
+                        "cpp-include" => c.cpp_include = v,
+                        "kt-type" => c.kt_type = v,
+                        other => {
+                            return Err(ParseError {
+                                line: line.number,
+                                why: format!("`{other}` is not a context clause"),
+                            })
+                        }
+                    }
+                    i += 2;
+                }
+                m.context_object_ids.insert(c.id.clone());
+                m.context_objects.push(c);
+            }
+            Some("data") => m.variables.push(parse_variable(line)?),
+            Some("state") | Some("parallel") | Some("final") => {
+                let mut s = parse_scxml_state(line, &kids)?;
+                s.document_order = order;
+                order += 1;
+                m.invokes.extend(s.invokes.iter().cloned());
+                m.states.insert(s.id.clone(), s);
+            }
+            _ => m.global_scripts.push(parse_scxml_action(line, &kids)?),
+        }
+    }
+    Ok(m)
+}
+
+/// `data <id>[: <type>] [src <s>] [= <expr>] [content <c>]`
+fn parse_variable(line: &Line<'_>) -> Result<crate::model::Variable, ParseError> {
+    let rest = &line.text["data ".len()..];
+    let (id, mut tail) = match rest.split_once(' ') {
+        Some((a, b)) => (a, b),
+        None => (rest, ""),
+    };
+    let (id, var_type) = match id.split_once(':') {
+        Some((i, _)) => {
+            // The type sits after the colon and before the first space,
+            // so it is the head of the tail when the id ended in `:`.
+            let (t, after) = match tail.split_once(' ') {
+                Some((t, a)) => (t, a),
+                None => (tail, ""),
+            };
+            tail = after;
+            (i, t.to_string())
+        }
+        None => (id, String::new()),
+    };
+
+    let mut v = crate::model::Variable {
+        id: undo(id, line.number)?,
+        expr: String::new(),
+        src: String::new(),
+        content: String::new(),
+        source_location: None,
+        var_type: undo(&var_type, line.number)?,
+    };
+    // Clause order is the renderer's: `src` first, then the free-text
+    // `= <expr>` and `content`, each of which closes the line.
+    if let Some(after) = tail.strip_prefix("src ") {
+        let (s, more) = match after.split_once(' ') {
+            Some((s, m)) => (s, m),
+            None => (after, ""),
+        };
+        v.src = undo(s, line.number)?;
+        tail = more;
+    }
+    if let Some(after) = tail.strip_prefix("= ") {
+        match after.split_once(" content ") {
+            Some((e, c)) => {
+                v.expr = undo(e, line.number)?;
+                v.content = undo(c, line.number)?;
+            }
+            None => v.expr = undo(after, line.number)?,
+        }
+    } else if let Some(c) = tail.strip_prefix("content ") {
+        v.content = undo(c, line.number)?;
+    }
+    Ok(v)
+}
+
+fn parse_scxml_state(
+    line: &Line<'_>,
+    kids: &[&Line<'_>],
+) -> Result<crate::model::State, ParseError> {
+    let w: Vec<&str> = line.text.trim_end_matches(':').split_whitespace().collect();
+    let mut s = crate::model::State {
+        id: undo(w.get(1).copied().unwrap_or(""), line.number)?,
+        is_final: w[0] == "final",
+        is_parallel: w[0] == "parallel",
+        ..Default::default()
+    };
+    let mut i = 2;
+    while i < w.len() {
+        match w[i] {
+            "initial" => {
+                s.initial = undo(w.get(i + 1).copied().unwrap_or(""), line.number)?;
+                i += 2;
+            }
+            "history" => {
+                s.initial_history_id = undo(w.get(i + 1).copied().unwrap_or(""), line.number)?;
+                s.initial_history_default_target =
+                    undo(w.get(i + 3).copied().unwrap_or(""), line.number)?;
+                i += 4;
+            }
+            "initial-children" | "unhandled" => {
+                let keyword = w[i];
+                let mut items = Vec::new();
+                i += 1;
+                while i < w.len() && !matches!(w[i], "initial" | "history" | "unhandled") {
+                    items.push(undo(w[i], line.number)?);
+                    i += 1;
+                }
+                if keyword == "unhandled" {
+                    s.unhandled = items;
+                } else {
+                    s.initial_children = items;
+                }
+            }
+            other => {
+                return Err(ParseError {
+                    line: line.number,
+                    why: format!("`{other}` is not a state clause"),
+                })
+            }
+        }
+    }
+
+    for (l, sub) in group(kids) {
+        if let Some(id) = l.text.strip_prefix("req ") {
+            s.req.push(RequirementId(undo(id, l.number)?));
+        } else if l.text.starts_with("data ") {
+            s.datamodel.push(parse_variable(l)?);
+        } else if l.text.starts_with("invoke") {
+            s.invokes.push(parse_scxml_invoke(l, &sub)?);
+        } else if let Some(rest) = l.text.strip_prefix("on sample ") {
+            let sw: Vec<&str> = rest.split_whitespace().collect();
+            s.on_sample_blocks.push(crate::model::OnSampleNode {
+                link: undo(sw.first().copied().unwrap_or(""), l.number)?,
+                event: undo(sw.get(2).copied().unwrap_or(""), l.number)?,
+                callback: match sw.get(3).copied() {
+                    Some("callback") => Some(undo(sw.get(4).copied().unwrap_or(""), l.number)?),
+                    _ => None,
+                },
+                document_order: s.on_sample_blocks.len() as u32,
+            });
+        } else if l.text == "on entry:" {
+            s.on_entry_blocks.push(parse_action_list(&sub)?);
+        } else if l.text == "on exit:" {
+            s.on_exit_blocks.push(parse_action_list(&sub)?);
+        } else if l.text == "on initial:" {
+            s.initial_transition_actions = parse_action_list(&sub)?;
+        } else if l.text == "on history-default:" {
+            s.initial_history_default_actions = parse_action_list(&sub)?;
+        } else if l.text == "done:" {
+            s.donedata = Some(parse_scxml_donedata(&sub)?);
+        } else {
+            s.transitions.push(parse_scxml_transition(l, &sub)?);
+        }
+    }
+    for (i, t) in s.transitions.iter_mut().enumerate() {
+        t.transition_index = i;
+    }
+    Ok(s)
+}
+
+fn parse_scxml_donedata(kids: &[&Line<'_>]) -> Result<crate::model::DoneData, ParseError> {
+    let mut d = crate::model::DoneData {
+        params: Vec::new(),
+        content: crate::model::DoneDataContent::None,
+    };
+    for k in kids {
+        if let Some(rest) = k.text.strip_prefix("param ") {
+            let (name, tail) = match rest.split_once(' ') {
+                Some((n, t)) => (n, t),
+                None => (rest, ""),
+            };
+            let (expr, location) = match tail.split_once(" from ") {
+                Some((e, l)) => (e.strip_prefix("= "), Some(l)),
+                None => (tail.strip_prefix("= "), None),
+            };
+            d.params.push(crate::model::DoneDataParam {
+                name: undo(name, k.number)?,
+                expr: match expr {
+                    Some(e) => Some(undo(e, k.number)?),
+                    None => None,
+                },
+                location: match location {
+                    Some(l) => Some(undo(l, k.number)?),
+                    None => None,
+                },
+            });
+        } else if let Some(rest) = k.text.strip_prefix("content ") {
+            let (kind, value) = rest.split_once(' ').ok_or_else(|| ParseError {
+                line: k.number,
+                why: "done content needs a kind and a value".to_string(),
+            })?;
+            d.content = match kind {
+                "expr" => crate::model::DoneDataContent::Expression(undo(value, k.number)?),
+                "text" => crate::model::DoneDataContent::InlineText(undo(value, k.number)?),
+                "literal" => crate::model::DoneDataContent::Literal(undo(value, k.number)?),
+                other => {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{other}` is not a done content kind"),
+                    })
+                }
+            };
+        } else {
+            return Err(ParseError {
+                line: k.number,
+                why: format!("`{}` is not a done line", k.text),
+            });
+        }
+    }
+    Ok(d)
+}
+
+/// `[on <event> ]-> <target> [<type>] [when <cond>] [native-guard <g>]`
+fn parse_scxml_transition(
+    line: &Line<'_>,
+    kids: &[&Line<'_>],
+) -> Result<crate::model::Transition, ParseError> {
+    let (event, rest) = match line.text.strip_prefix("on ") {
+        Some(after) => {
+            let (e, r) = after.split_once(" -> ").ok_or_else(|| ParseError {
+                line: line.number,
+                why: "a transition needs `-> <target>`".to_string(),
+            })?;
+            (undo(e, line.number)?, r)
+        }
+        None => (
+            String::new(),
+            line.text.strip_prefix("-> ").ok_or_else(|| ParseError {
+                line: line.number,
+                why: format!("`{}` is not a transition", line.text),
+            })?,
+        ),
+    };
+    // The two guards close the line, so they come off the end first.
+    let (rest, native_payload_guard) = match rest.split_once(" native-guard ") {
+        Some((r, g)) => (r, undo(g, line.number)?),
+        None => (rest, String::new()),
+    };
+    let (rest, cond) = match rest.split_once(" when ") {
+        Some((r, c)) => (r, undo(c, line.number)?),
+        None => (rest, String::new()),
+    };
+    let (target, transition_type) = match rest.split_once(" [") {
+        Some((t, ty)) => (t, undo(ty.trim_end_matches(']'), line.number)?),
+        None => (rest, String::new()),
+    };
+
+    Ok(crate::model::Transition {
+        event,
+        target: if target == "(no target)" {
+            String::new()
+        } else {
+            undo(target, line.number)?
+        },
+        cond,
+        transition_type,
+        native_payload_guard,
+        actions: parse_action_list(kids)?,
+        ..Default::default()
+    })
+}
+
+fn parse_scxml_invoke(
+    line: &Line<'_>,
+    kids: &[&Line<'_>],
+) -> Result<crate::model::Invoke, ParseError> {
+    use crate::model::*;
+
+    let id = line
+        .text
+        .trim_end_matches(':')
+        .strip_prefix("invoke")
+        .unwrap_or("")
+        .trim();
+    let mut base = InvokeBase {
+        invoke_id: undo(id, line.number)?,
+        ..Default::default()
+    };
+    let mut kind = String::new();
+    let mut autoforward = false;
+    let mut scxml = ScxmlInvokeInfo::default();
+    let mut hybrid = HybridInvokeInfo::default();
+    let mut mesh_target: Option<MeshRpcTarget> = None;
+    let mut mesh_event = String::new();
+    let mut deadline_ms = None;
+    let mut unsupported_src = String::new();
+    let mut host_served = false;
+
+    for (k, sub) in group(kids) {
+        let (keyword, value) = match k.text.split_once(' ') {
+            Some((a, b)) => (a, b),
+            // A clause that opens a block has no value and ends in a
+            // colon — `child:` is the one. Split on the space alone and
+            // the keyword keeps the colon and matches nothing.
+            None => (k.text.trim_end_matches(':'), ""),
+        };
+        match keyword {
+            "id-into" => base.idlocation = undo(value, k.number)?,
+            "param" => base.params.push(parse_param(value, k.number)?),
+            "req" => base.req.push(RequirementId(undo(value, k.number)?)),
+            "type" => kind = value.to_string(),
+            "autoforward" => autoforward = true,
+            "src" => {
+                scxml.src = undo(value, k.number)?;
+                unsupported_src = scxml.src.clone();
+            }
+            "namelist" => scxml.namelist = undo(value, k.number)?,
+            "finalize" => scxml.finalize_content = undo(value, k.number)?,
+            "mesh-target" => scxml.remote_mesh_target = Some(undo(value, k.number)?),
+            "mesh-transport" => scxml.remote_mesh_transport = Some(undo(value, k.number)?),
+            "srcexpr" => hybrid.srcexpr = undo(value, k.number)?,
+            "contentexpr" => hybrid.contentexpr = undo(value, k.number)?,
+            "target" => {
+                let (how, what) = value.split_once(' ').ok_or_else(|| ParseError {
+                    line: k.number,
+                    why: "a mesh target needs `src` or `srcexpr`".to_string(),
+                })?;
+                mesh_target = Some(match how {
+                    "src" => MeshRpcTarget::Src {
+                        src: undo(what, k.number)?,
+                    },
+                    _ => MeshRpcTarget::SrcExpr {
+                        srcexpr: undo(what, k.number)?,
+                    },
+                });
+            }
+            "event" => mesh_event = undo(value, k.number)?,
+            "deadline" => deadline_ms = value.trim_end_matches("ms").parse().ok(),
+            "host-served" => host_served = true,
+            "child" => {
+                scxml.inline_child = Some(Box::new(parse_statechart(
+                    sub.first().ok_or_else(|| ParseError {
+                        line: k.number,
+                        why: "a child block needs a machine".to_string(),
+                    })?,
+                    &sub[1..],
+                )?));
+            }
+            other => {
+                return Err(ParseError {
+                    line: k.number,
+                    why: format!("`{other}` is not an invoke clause"),
+                })
+            }
+        }
+    }
+
+    Ok(match kind.as_str() {
+        "scxml" => {
+            scxml.common = InvokeSessionCommon {
+                base,
+                autoforward,
+                ..Default::default()
+            };
+            Invoke::Scxml(scxml)
+        }
+        "hybrid" => {
+            hybrid.common = InvokeSessionCommon {
+                base,
+                autoforward,
+                ..Default::default()
+            };
+            Invoke::Hybrid(hybrid)
+        }
+        "mesh-rpc" => Invoke::MeshRpc(MeshRpcInvokeInfo {
+            base,
+            target: mesh_target.ok_or_else(|| ParseError {
+                line: line.number,
+                why: "a mesh-rpc invoke needs a target".to_string(),
+            })?,
+            mesh_event,
+            deadline_ms,
+        }),
+        // Anything else is the `Unsupported` arm, whose `invoke_type`
+        // IS the word the `type` clause carried — the renderer writes
+        // the raw type there rather than a keyword of its own.
+        other => Invoke::Unsupported(UnsupportedInvokeInfo {
+            base,
+            invoke_type: other.to_string(),
+            src: unsupported_src,
+            host_served,
+        }),
+    })
+}
+
+/// `<name>[=<expr>][@<loc>]`
+fn parse_param(s: &str, line: usize) -> Result<crate::model::Param, ParseError> {
+    let (head, location) = match s.split_once('@') {
+        Some((h, l)) => (h, undo(l, line)?),
+        None => (s, String::new()),
+    };
+    let (name, expr) = match head.split_once('=') {
+        Some((n, e)) => (n, undo(e, line)?),
+        None => (head, String::new()),
+    };
+    Ok(crate::model::Param {
+        name: undo(name, line)?,
+        expr,
+        location,
+        ..Default::default()
+    })
+}
+
+fn parse_action_list(body: &[&Line<'_>]) -> Result<Vec<crate::model::Action>, ParseError> {
+    let mut out: Vec<crate::model::Action> = Vec::new();
+    for (line, kids) in group(body) {
+        if line.text == "else:" {
+            let Some(last) = out.last_mut() else {
+                return Err(ParseError {
+                    line: line.number,
+                    why: "an `else:` with no `if` before it".to_string(),
+                });
+            };
+            last.else_actions = parse_action_list(&kids)?;
+            continue;
+        }
+        if let Some(cond) = line.text.strip_prefix("elif ") {
+            let Some(last) = out.last_mut() else {
+                return Err(ParseError {
+                    line: line.number,
+                    why: "an `elif` with no `if` before it".to_string(),
+                });
+            };
+            last.elseif_branches.push(crate::model::ElseIfBranch {
+                cond: undo(cond.trim_end_matches(':'), line.number)?,
+                actions: parse_action_list(&kids)?,
+                ..Default::default()
+            });
+            continue;
+        }
+        out.push(parse_scxml_action(line, &kids)?);
+    }
+    Ok(out)
+}
+
+fn parse_scxml_action(
+    line: &Line<'_>,
+    kids: &[&Line<'_>],
+) -> Result<crate::model::Action, ParseError> {
+    let t = line.text;
+    let mut a = crate::model::Action::default();
+
+    if let Some(rest) = t.strip_prefix("raise ") {
+        a.action_type = "raise".to_string();
+        a.event = undo(rest, line.number)?;
+    } else if let Some(rest) = t.strip_prefix("script ") {
+        a.action_type = "script".to_string();
+        a.content = undo(rest, line.number)?;
+    } else if t == "cancel" || t.starts_with("cancel ") {
+        a.action_type = "cancel".to_string();
+        let rest = t.strip_prefix("cancel").unwrap_or("").trim();
+        match rest.split_once(" expr ") {
+            Some((id, e)) => {
+                a.sendid = undo(id, line.number)?;
+                a.sendidexpr = undo(e, line.number)?;
+            }
+            None if rest.starts_with("expr ") => {
+                a.sendidexpr = undo(&rest["expr ".len()..], line.number)?
+            }
+            None => a.sendid = undo(rest, line.number)?,
+        }
+    } else if t == "log" || t.starts_with("log ") || t.starts_with("log:") {
+        a.action_type = "log".to_string();
+        let rest = t.strip_prefix("log").unwrap_or("");
+        match rest.split_once(": ") {
+            Some((label, expr)) => {
+                a.label = undo(label.trim(), line.number)?;
+                a.expr = undo(expr, line.number)?;
+            }
+            None => a.label = undo(rest.trim(), line.number)?,
+        }
+    } else if let Some(rest) = t.strip_prefix("call ") {
+        a.action_type = "native_action".to_string();
+        a.native_action_name = undo(rest.trim_end_matches(':'), line.number)?;
+        for k in kids {
+            let arg = k.text.strip_prefix("arg ").ok_or_else(|| ParseError {
+                line: k.number,
+                why: format!("`{}` is not a call argument", k.text),
+            })?;
+            a.params.push(parse_param(arg, k.number)?);
+        }
+    } else if t == "assign:" || t.starts_with("assign ") {
+        a.action_type = "assign".to_string();
+        let rest = t.strip_prefix("assign").unwrap_or("").trim();
+        a.location = undo(rest.trim_end_matches(':'), line.number)?;
+        for k in kids {
+            let (keyword, value) = k.text.split_once(' ').ok_or_else(|| ParseError {
+                line: k.number,
+                why: format!("`{}` is not an assign clause", k.text),
+            })?;
+            match keyword {
+                "expr" => a.expr = undo(value, k.number)?,
+                "content" => a.content = undo(value, k.number)?,
+                other => {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{other}` is not an assign clause"),
+                    })
+                }
+            }
+        }
+    } else if let Some(rest) = t.strip_prefix("if ") {
+        a.action_type = "if".to_string();
+        a.cond = undo(rest.trim_end_matches(':'), line.number)?;
+        a.then_actions = parse_action_list(kids)?;
+    } else if let Some(rest) = t.strip_prefix("foreach ") {
+        a.action_type = "foreach".to_string();
+        let (head, array) = rest
+            .trim_end_matches(':')
+            .rsplit_once(" in ")
+            .ok_or_else(|| ParseError {
+                line: line.number,
+                why: "a foreach needs `in <array>`".to_string(),
+            })?;
+        a.array = undo(array, line.number)?;
+        match head.split_once(" index ") {
+            Some((item, index)) => {
+                a.item = undo(item, line.number)?;
+                a.index = undo(index, line.number)?;
+            }
+            None => a.item = undo(head, line.number)?,
+        }
+        a.actions = parse_action_list(kids)?;
+    } else if t == "send" || t.starts_with("send ") {
+        a.action_type = "send".to_string();
+        let rest = t.strip_prefix("send").unwrap_or("").trim();
+        a.event = undo(rest.trim_end_matches(':'), line.number)?;
+        for k in kids {
+            let (keyword, value) = k.text.split_once(' ').ok_or_else(|| ParseError {
+                line: k.number,
+                why: format!("`{}` is not a send clause", k.text),
+            })?;
+            let v = undo(value, k.number)?;
+            match keyword {
+                "eventexpr" => a.eventexpr = v,
+                "to" => a.target = v,
+                "to-expr" => a.targetexpr = v,
+                "type" => a.send_type = v,
+                "type-expr" => a.typeexpr = v,
+                "after" => a.delay = v,
+                "after-expr" => a.delayexpr = v,
+                "id" => a.id = v,
+                "id-into" => a.idlocation = v,
+                "namelist" => a.namelist = v,
+                "content" => a.content = v,
+                "content-expr" => a.contentexpr = v,
+                "param" => a.params.push(parse_param(value, k.number)?),
+                other => {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{other}` is not a send clause"),
+                    })
+                }
+            }
+        }
+    } else if let Some((location, expr)) = t.split_once(" = ") {
+        a.action_type = "assign".to_string();
+        a.location = undo(location, line.number)?;
+        a.expr = undo(expr, line.number)?;
+    } else {
+        return Err(ParseError {
+            line: line.number,
+            why: format!("`{t}` is not an action"),
+        });
+    }
+    Ok(a)
+}
+
 /// Serialised comparison of two documents, with the one key the law
 /// excludes stripped wherever it appears.
 ///
@@ -2075,6 +2721,7 @@ pub const COVERED_KINDS: &[&str] = &[
     "algorithm",
     "procedure",
     "codec",
+    "statechart",
 ];
 
 /// This document's kind name when the reader covers it.
@@ -2102,7 +2749,7 @@ pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
         ForgeDocument::Algorithm(_) => "algorithm",
         ForgeDocument::Procedure(_) => "procedure",
         ForgeDocument::Codec(_) => "codec",
-        _ => return None,
+        ForgeDocument::Statechart(_) => "statechart",
     };
     COVERED_KINDS.contains(&name).then_some(name)
 }

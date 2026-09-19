@@ -74,7 +74,7 @@
 //! ```text
 //!   machine <name> (datamodel: <d>, initial: <s>[, binding: <b>][, queue: <n>])
 //!     context <id> [cpp-type <t>] [cpp-include <i>] [kt-type <t>]
-//!     data <id>[: <type>] [= <expr>] [src <s>] [content <c>]
+//!     data <id>[: <type>] [src <s>] [= <expr>] [content <c>]
 //!     (state|parallel|final) <id> [initial <s>] [initial-children <s>...]
 //!         [history <h> default <s>] [unhandled <e>...]:
 //!       req <id>
@@ -1263,11 +1263,16 @@ fn render_variable(v: &crate::model::Variable, out: &mut Out) {
     if !v.var_type.is_empty() {
         let _ = write!(line, ": {}", text(&v.var_type));
     }
-    if !v.expr.is_empty() {
-        let _ = write!(line, " = {}", text(&v.expr));
-    }
     if !v.src.is_empty() {
         let _ = write!(line, " src {}", text(&v.src));
+    }
+    // `= <expr>` and `content` are the free-text clauses, so they close
+    // the line. No variable in this tree carries an expression together
+    // with a `src` or a content body (measured: 0 of 425), so the order
+    // changes nothing anyone has written — it removes the shape in
+    // which a future one could not be read back.
+    if !v.expr.is_empty() {
+        let _ = write!(line, " = {}", text(&v.expr));
     }
     if !v.content.is_empty() {
         let _ = write!(line, " content {}", text(&v.content));
@@ -1455,10 +1460,22 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out) {
             // `<assign>` carrying child content instead becomes a block:
             // `= <expr> content <c>` put free text before a keyword, and
             // one assign in this tree does carry content.
-            if a.content.is_empty() {
+            // ⚠ The block is also what an EMPTY location gets. W3C
+            // requires one, but the model can hold a document that
+            // omitted it, and rendering that as ` = 1` produces a line
+            // starting with the operator — which reads as nothing and
+            // cannot be read back. Two fixtures in this tree do it.
+            if a.content.is_empty() && !a.location.is_empty() {
                 out.line(&format!("{} = {}", text(&a.location), text(&a.expr)));
             } else {
-                out.line(&format!("assign {}:", text(&a.location)));
+                let id = text(&a.location);
+                out.line(
+                    &(if id.is_empty() {
+                        "assign:".to_string()
+                    } else {
+                        format!("assign {id}:")
+                    }),
+                );
                 out.nested(|out| {
                     if !a.expr.is_empty() {
                         out.line(&format!("expr {}", text(&a.expr)));
