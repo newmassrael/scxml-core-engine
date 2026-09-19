@@ -98,13 +98,17 @@
 //!         content (expr|text|literal) <v>
 //!
 //!   <action> is one of
-//!     <location> = <expr> [content <c>]
+//!     <location> = <expr>
+//!     assign <location>:            (when it carries child content)
+//!       [expr <e>] content <c>
 //!     cancel [<sendid>] [expr <e>]
 //!     log [<label>][: <expr>]
 //!     raise <event>
 //!     script <text>
-//!     call <name>(<arg>...)
-//!     foreach <item> in <array> [index <i>]:
+//!     call <name>
+//!     call <name>:
+//!       arg <param>
+//!     foreach <item> [index <i>] in <array>:
 //!     if <cond>: / elif <cond>: / else:
 //!     send <event>                       (when it carries nothing else)
 //!     send [<event>]:
@@ -1447,11 +1451,21 @@ fn render_donedata(d: &crate::model::DoneData, out: &mut Out) {
 fn render_scxml_action(a: &crate::model::Action, out: &mut Out) {
     match a.action_type.as_str() {
         "assign" => {
-            let mut line = format!("{} = {}", text(&a.location), text(&a.expr));
-            if !a.content.is_empty() {
-                let _ = write!(line, " content {}", text(&a.content));
+            // The common shape is one line with the expression last. An
+            // `<assign>` carrying child content instead becomes a block:
+            // `= <expr> content <c>` put free text before a keyword, and
+            // one assign in this tree does carry content.
+            if a.content.is_empty() {
+                out.line(&format!("{} = {}", text(&a.location), text(&a.expr)));
+            } else {
+                out.line(&format!("assign {}:", text(&a.location)));
+                out.nested(|out| {
+                    if !a.expr.is_empty() {
+                        out.line(&format!("expr {}", text(&a.expr)));
+                    }
+                    out.line(&format!("content {}", text(&a.content)));
+                });
             }
-            out.line(&line);
         }
         "cancel" => {
             let mut line = String::from("cancel");
@@ -1476,18 +1490,32 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out) {
         "raise" => out.line(&format!("raise {}", text(&a.event))),
         "script" => out.line(&format!("script {}", text(&a.content))),
         "native_action" => {
-            let args: Vec<String> = a.params.iter().map(|p| render_param(p)).collect();
-            out.line(&format!(
-                "call {}({})",
-                text(&a.native_action_name),
-                args.join(", ")
-            ));
+            // One argument per line, as the algorithm's `call` does and
+            // for the same reason. ⚠ No native action in this tree
+            // carries an argument (measured: zero), so this arm is
+            // written to the rule rather than to an example.
+            if a.params.is_empty() {
+                out.line(&format!("call {}", text(&a.native_action_name)));
+            } else {
+                out.line(&format!("call {}:", text(&a.native_action_name)));
+                out.nested(|out| {
+                    for p in &a.params {
+                        out.line(&format!("arg {}", render_param(p)));
+                    }
+                });
+            }
         }
         "foreach" => {
-            let mut head = format!("foreach {} in {}", text(&a.item), text(&a.array));
+            // The array is an expression and goes last; the index is an
+            // identifier and moves in front of it. Written the other
+            // way round, an array containing ` index ` would decide
+            // where the line breaks — and 8 foreach in this tree do
+            // carry both an array and an index.
+            let mut head = format!("foreach {}", text(&a.item));
             if !a.index.is_empty() {
                 let _ = write!(head, " index {}", text(&a.index));
             }
+            let _ = write!(head, " in {}", text(&a.array));
             out.line(&format!("{head}:"));
             out.nested(|out| {
                 for inner in &a.actions {
