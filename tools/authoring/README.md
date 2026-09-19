@@ -82,6 +82,42 @@ whose generated shape it cannot drive, an input rule it cannot evaluate, an
 expected address the binding never writes. A verifier that quietly skips what
 it does not understand reports a clean run for a document it never executed.
 
+### Before any of that: what the file itself gives up
+
+Every command starts by turning a file into text, and that step is where a
+specification quietly loses the parts that decide things. A format is not a
+subject matter, so the reader lives in the core and answers two things: the
+text, and what it could not carry.
+
+**What a document encloses is opened, not merely named.** A table pasted from
+a spreadsheet is stored as the whole spreadsheet, and the body text keeps only
+a reference to it. `.xlsx` and `.pptx` are zips of XML, so the rows come out
+mechanically -- nothing to guess. Measured on one 22,669-line specification:
+eleven enclosed files held 732 spreadsheet rows and 14 slides that the body
+handed its requirements to, and every command downstream had been running
+clean on the remainder. ⚠ The grid is preserved by placing each cell at the
+column its reference names; a sparse row omits its empty cells, and reading
+positionally turns "condition A gives X" into "condition A gives Y" with no
+sign that it happened. A merged range is **counted and left as stored** --
+inventing which rows it covered would manufacture rules nobody wrote.
+
+**A picture is not read, and the report says where the unread ones sit.** This
+core makes no model calls, so it cannot say what an image shows. But the count
+alone -- "71 pictures were not read" -- leaves two piles a person cannot tell
+apart: a screenshot beside a paragraph that already states the rule, and a
+diagram a clause hands its whole content to. The second is the requirement.
+Which one it is *can* be decided mechanically, by asking whether the numbered
+clause around the picture states anything at all, so that is what is reported,
+with the clause number attached. On the specification above the answer was
+**none**: every clause showing a picture also states something in text.
+
+⚠ A cheaper discriminator was built first and measured wrong: "a stretch of
+pictures with no text between them" was true of 156 drawings out of 156,
+because a word processor anchors a picture in a paragraph of its own. A test
+every instance passes says nothing. And a document with no numbering says so
+rather than reporting "no clause hands its content to a picture", which would
+be true of it trivially and read as reassurance.
+
 ### What "precision" means here, and where it can actually go wrong
 
 Most of these classes are not empirical claims. `ambiguous-name` fires exactly
