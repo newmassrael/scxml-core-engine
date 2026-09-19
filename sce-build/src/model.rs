@@ -461,6 +461,119 @@ impl<'a> NestedBlock<'a> {
 }
 
 impl Action {
+    /// Which of this struct's fields each `action_type` actually uses.
+    ///
+    /// ⭐ Why this table exists. [`Action`] carries nine kinds of
+    /// executable content in ONE flat struct with a `String` tag, and
+    /// until this table there was nowhere that said which fields belong
+    /// to which tag: the per-backend template branches were the de facto
+    /// definition, nine copies of an answer nobody had written down. A
+    /// reader asking "what can a `<send>` carry" had to read six
+    /// template trees and intersect them.
+    ///
+    /// # How it was derived, and why not by reading the templates
+    ///
+    /// Measured 2026-09-20 over 587 documents (the forge, integration
+    /// and example fixtures plus the generated W3C corpus): every
+    /// `Action` in the emitted IR was grouped by tag and its fields
+    /// counted — **by non-default value, not by key presence**, because
+    /// most fields here are plain `String` / `bool` / `i64` and
+    /// serialize whether or not the author wrote anything. Counting keys
+    /// reports 38 fields for every tag and says nothing.
+    ///
+    /// Reading the templates instead was rejected: a source scan is
+    /// only as precise as its pattern, and the same session had already
+    /// produced a false positive that way.
+    ///
+    /// # The split, and what it is for
+    ///
+    /// [`Self::authored_fields`] is what an author writes.
+    /// [`Self::derived_fields`] is what the parser and analyzer compute
+    /// onto the same struct — `delay_ms` from `delay`, `auto_send_id`
+    /// for a `<send>` with no id, the per-backend `cond_cpp` /
+    /// `cond_kt` lowerings. A surface that shows a reviewer the derived
+    /// half is showing them SCE's arithmetic, not their document.
+    ///
+    /// ⚠ `native_action` has NO instance in either corpus, so its row is
+    /// the one not derived from data. It is taken from the field's own
+    /// name and marked here rather than left out, because an absent row
+    /// and an empty row read the same. `sce-build/tests/` holds the
+    /// check that keeps the rest true.
+    pub fn authored_fields(action_type: &str) -> &'static [&'static str] {
+        match action_type {
+            "assign" => &["location", "expr", "content"],
+            "cancel" => &["sendid", "sendidexpr"],
+            "foreach" => &["array", "item", "index", "actions"],
+            "if" => &["cond", "then_actions", "else_actions", "elseif_branches"],
+            "log" => &["label", "expr"],
+            "native_action" => &["native_action_name", "params"],
+            "raise" => &["event"],
+            "script" => &["content"],
+            "send" => &[
+                "event",
+                "eventexpr",
+                "target",
+                "targetexpr",
+                "send_type",
+                "typeexpr",
+                "delay",
+                "delayexpr",
+                "id",
+                "idlocation",
+                "namelist",
+                "params",
+                "content",
+                "contentexpr",
+            ],
+            _ => &[],
+        }
+    }
+
+    /// Fields SCE computes onto an action of this tag. Never authored,
+    /// and never part of what a reviewer is asked to approve.
+    pub fn derived_fields(action_type: &str) -> &'static [&'static str] {
+        match action_type {
+            "if" => &[
+                "cond_cpp",
+                "cond_cpp_transformed",
+                "cond_kt",
+                "cond_constant",
+                "is_cpp_condition",
+                "is_kt_condition",
+                "is_pure_in_predicate",
+            ],
+            "script" => &[
+                "content_transformed",
+                "content_kt",
+                "is_cpp_function",
+                "is_kt_function",
+            ],
+            "send" => &[
+                "auto_send_id",
+                "delay_ms",
+                "send_type_host_served",
+                "send_type_unsupported",
+                "is_static_literal",
+                "static_value",
+            ],
+            _ => &[],
+        }
+    }
+
+    /// The nine tags an `action_type` can hold, in the order the parser
+    /// and the template branches list them.
+    pub const TAGS: &'static [&'static str] = &[
+        "assign",
+        "cancel",
+        "foreach",
+        "if",
+        "log",
+        "native_action",
+        "raise",
+        "script",
+        "send",
+    ];
+
     /// Every block of executable content nested DIRECTLY inside this
     /// action, in document order, each with the field path a `node_path`
     /// names it by.
