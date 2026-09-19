@@ -19,6 +19,7 @@ from .errors import AuthoringError
 from .pack import load_pack
 from .prose import load_prose
 from .questions import ask
+from .review import review as run_review
 from .verify import verify as run_verify
 
 
@@ -101,6 +102,31 @@ def cmd_verify(args) -> int:
     return 1 if result.failed else 0
 
 
+def cmd_review(args) -> int:
+    """Numbers about the pack, and no verdict on it.
+
+    ⚠ The exit status is 0 unless a shape that cannot be right was found.
+    "The pack is correct" is not a claim anything here can make -- the
+    platform it describes is not in this tree -- so the status says only
+    whether one of the known-impossible shapes is present.
+    """
+    pack = _pack(args)
+    prose = load_prose([pathlib.Path(p) for p in args.prose])
+    got = run_review(pack, prose)
+    print(f"addresses {got.addresses} ({got.outputs} output)"
+          f" · one spelling only {got.single_spelling}"
+          f" · never written in the prose {len(got.unmentioned)}")
+    print(f"prose attributed {got.attribution:.0%}"
+          f" over {got.blocks_built} block(s)"
+          f" · {got.thin_blocks} of them one or two lines")
+    print(f"examples {'present' if got.has_examples else 'ABSENT'}"
+          f" · addresses they drive that the model lacks"
+          f" {got.driven_undeclared}")
+    for alarm in got.alarms():
+        print(f"  ALARM: {alarm}")
+    return 1 if got.alarms() else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sce_author", description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
@@ -118,6 +144,11 @@ def main(argv=None) -> int:
     q.add_argument("--prose", required=True, nargs="+")
     q.add_argument("--out", help="write every question as NDJSON (the screen shows counts only)")
     q.set_defaults(fn=cmd_questions)
+
+    r = with_pack(sub.add_parser(
+        "review", help="measure the pack itself, which every other command trusts"))
+    r.add_argument("--prose", required=True, nargs="+")
+    r.set_defaults(fn=cmd_review)
 
     c = with_pack(sub.add_parser("check", help="judge a written document against the model"))
     c.add_argument("--binding", required=True, help="the binding file, which names its own document")

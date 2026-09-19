@@ -43,6 +43,7 @@ for the other case and none of them write it down.
 
     python3 -m sce_author brief     --pack <dir> --prose <file>...
     python3 -m sce_author questions --pack <dir> --prose <file>...
+    python3 -m sce_author review    --pack <dir> --prose <file>...
     python3 -m sce_author check     --pack <dir> --document <file.scxml>
 
 **brief** assembles one page for whoever writes the document: the prose, the
@@ -64,6 +65,27 @@ not say. All domain-free; the ones an author acts on most are:
 | `no-time-input` | the prose states a duration and no input can observe time passing |
 | `example-shows-memory` | two cases drive the same inputs and require different results, so the component remembers something the prose never states |
 | `depends-on-another-component` | the examples drive addresses another specification in the system writes, so this document is one of several and cannot be judged alone |
+
+**review** measures the PACK, which every other command trusts and nothing
+else examines. No answer can be more right than the pack is, and the pack is
+written by an adapter that reads a platform's own format -- which is not this
+tree's format and, when the platform is under an agreement, cannot be
+committed here at all. Testing somebody else's converter is not available; the
+two ways a pack goes wrong are, and both are computed here: the share of the
+document the partition attributes, how many blocks are one or two lines, how
+many addresses the prose never writes under any spelling it is given, and how
+many addresses the examples drive that the model does not declare -- the only
+evidence inside a pack that its model is INCOMPLETE rather than small.
+
+⚠ It reports figures and refuses a verdict. A pack is a claim about a platform
+this tree does not have, so "correct" is not something it can be told. What it
+does say out loud is the handful of shapes that cannot be right whatever the
+platform turns out to be: no outputs, no examples, an address with neither a
+value space nor a type, a partition owning none of the document.
+
+Measured over 129 subject packs the day it was written: attribution ranges
+from under 10% to over 90% -- 38 packs above 90%, and **29 below 20%**, where
+`gate-off-unstated` had been running nearly blind with nothing to say so.
 
 **check** judges a written document against the same model: every input it
 declares must exist, every output it writes must be a real field, and every
