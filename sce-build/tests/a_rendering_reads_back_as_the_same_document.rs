@@ -110,12 +110,10 @@ fn every_covered_kind_survives_the_round_trip() {
         let before = unpseudo::ir_for_comparison(&parsed.document).expect("a model serialises");
         let after = unpseudo::ir_for_comparison(&read_back).expect("a model serialises");
         checked += 1;
-        kinds_seen.insert(match &parsed.document {
-            sce_build::forge::model::ForgeDocument::Condition(_) => "condition",
-            sce_build::forge::model::ForgeDocument::Timer(_) => "timer",
-            sce_build::forge::model::ForgeDocument::Enum(_) => "enum",
-            _ => "other",
-        });
+        // The reader's own namer, not a copy of it here: two spellings
+        // of "which kind is this" would let this gate report a kind the
+        // reader does not take.
+        kinds_seen.extend(unpseudo::covered_kind(&parsed.document));
         if before != after {
             broken.push(format!(
                 "{stem}: the IR moved across the round trip\n  before: {before}\n  after : {after}"

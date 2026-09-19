@@ -38,9 +38,11 @@
 
 use crate::comment_text;
 use crate::forge::model::{
-    ConditionModel, Direction, EnumModel, EnumVariant, ForgeDocument, ForgeField, SceType,
-    TimerModel,
+    ConditionModel, Direction, EnumModel, EnumVariant, EventSchemaModel, ForgeDocument, ForgeField,
+    LookupEntry, LookupModel, MissPolicy, RangeRule, RateOfChangeRule, SceType, TimerModel,
+    TransformModel, ValidatorModel, ValidatorRules,
 };
+use crate::provenance::RequirementId;
 
 /// Why a rendering could not be read back.
 ///
@@ -130,11 +132,180 @@ pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
         "condition" => parse_condition(head, &body).map(ForgeDocument::Condition),
         "timer" => parse_timer(head).map(ForgeDocument::Timer),
         "enum" => parse_enum(head, &body).map(ForgeDocument::Enum),
+        "transform" => parse_transform(head, &body).map(ForgeDocument::Transform),
+        "event-schema" => parse_event_schema(head, &body).map(ForgeDocument::EventSchema),
+        "lookup" => parse_lookup(head, &body).map(ForgeDocument::Lookup),
+        "validator" => parse_validator(head, &body).map(ForgeDocument::Validator),
         other => Err(ParseError {
             line: head.number,
             why: format!("`{other}` is not a kind this reader covers yet"),
         }),
     }
+}
+
+/// `transform <name>` with `in`/`out` fields, split by their keyword.
+///
+/// The direction is read from the line rather than from position,
+/// which is the same choice the renderer made when it printed the
+/// keyword instead of relying on which list the field came out of.
+fn parse_transform(head: &Line<'_>, body: &[&Line<'_>]) -> Result<TransformModel, ParseError> {
+    let mut m = TransformModel {
+        name: head_name(head)?,
+        inputs: Vec::new(),
+        outputs: Vec::new(),
+        source_location: None,
+    };
+    for l in body {
+        let f = parse_field(l)?;
+        match f.direction {
+            Direction::Out => m.outputs.push(f),
+            _ => m.inputs.push(f),
+        }
+    }
+    Ok(m)
+}
+
+/// `event-schema <name> event <event>`
+fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchemaModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    if w.get(2) != Some(&"event") {
+        return Err(ParseError {
+            line: head.number,
+            why: "an event-schema head needs `event <name>`".to_string(),
+        });
+    }
+    Ok(EventSchemaModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        event_name: undo(w.get(3).copied().unwrap_or(""), head.number)?,
+        fields: body
+            .iter()
+            .map(|l| parse_field(l))
+            .collect::<Result<_, _>>()?,
+        source_location: None,
+    })
+}
+
+/// `lookup <name>` with the input field, the output field, the entries
+/// and the miss policy.
+fn parse_lookup(head: &Line<'_>, body: &[&Line<'_>]) -> Result<LookupModel, ParseError> {
+    let mut fields: Vec<ForgeField> = Vec::new();
+    let mut entries: Vec<LookupEntry> = Vec::new();
+    let mut miss: Option<MissPolicy> = None;
+
+    for l in body {
+        if let Some(rest) = l.text.strip_prefix("miss ") {
+            miss = Some(match rest.strip_prefix("default ") {
+                Some(v) => MissPolicy::Default(undo(v, l.number)?),
+                None if rest == "error" => MissPolicy::Error,
+                None => {
+                    return Err(ParseError {
+                        line: l.number,
+                        why: format!("`miss {rest}` is not a miss policy"),
+                    })
+                }
+            });
+        } else if let Some((key, rest)) = l.text.split_once(" -> ") {
+            let (value, reqs) = match rest.split_once(" req ") {
+                Some((v, r)) => (v, r.split_whitespace().collect::<Vec<_>>()),
+                None => (rest, Vec::new()),
+            };
+            entries.push(LookupEntry {
+                key: undo(key, l.number)?,
+                value: undo(value, l.number)?,
+                requirements: reqs
+                    .into_iter()
+                    .map(|r| undo(r, l.number).map(RequirementId))
+                    .collect::<Result<_, _>>()?,
+            });
+        } else {
+            fields.push(parse_field(l)?);
+        }
+    }
+
+    if fields.len() != 2 {
+        return Err(ParseError {
+            line: head.number,
+            why: format!(
+                "a lookup needs an input and an output; found {}",
+                fields.len()
+            ),
+        });
+    }
+    let miss_policy = miss.ok_or_else(|| ParseError {
+        line: head.number,
+        why: "a lookup needs a miss policy".to_string(),
+    })?;
+    let mut it = fields.into_iter();
+    Ok(LookupModel {
+        name: head_name(head)?,
+        input: it.next().expect("two fields"),
+        output: it.next().expect("two fields"),
+        entries,
+        miss_policy,
+        source_location: None,
+    })
+}
+
+/// `validator <name>` with fields and the three rule shapes.
+fn parse_validator(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ValidatorModel, ParseError> {
+    let mut m = ValidatorModel {
+        name: head_name(head)?,
+        inputs: Vec::new(),
+        rules: ValidatorRules {
+            ranges: Vec::new(),
+            rate_of_changes: Vec::new(),
+            plausibility: None,
+        },
+        source_location: None,
+    };
+    for l in body {
+        let w: Vec<&str> = l.text.split_whitespace().collect();
+        match w.first().copied() {
+            Some("range") => {
+                let mut r = RangeRule {
+                    id: undo(w.get(1).copied().unwrap_or(""), l.number)?,
+                    min: None,
+                    max: None,
+                };
+                let mut i = 2;
+                while i < w.len() {
+                    match w[i] {
+                        "min" => r.min = Some(undo(w.get(i + 1).copied().unwrap_or(""), l.number)?),
+                        "max" => r.max = Some(undo(w.get(i + 1).copied().unwrap_or(""), l.number)?),
+                        other => {
+                            return Err(ParseError {
+                                line: l.number,
+                                why: format!("`{other}` is not a range clause"),
+                            })
+                        }
+                    }
+                    i += 2;
+                }
+                m.rules.ranges.push(r);
+            }
+            Some("rate") => {
+                let interval = w
+                    .get(5)
+                    .and_then(|v| v.strip_suffix("ms"))
+                    .and_then(|v| v.parse().ok())
+                    .ok_or_else(|| ParseError {
+                        line: l.number,
+                        why: "a rate needs `interval <n>ms`".to_string(),
+                    })?;
+                m.rules.rate_of_changes.push(RateOfChangeRule {
+                    id: undo(w.get(1).copied().unwrap_or(""), l.number)?,
+                    max_delta: undo(w.get(3).copied().unwrap_or(""), l.number)?,
+                    sample_interval_ms: interval,
+                });
+            }
+            Some("plausibility") => {
+                let rest = l.text.strip_prefix("plausibility ").unwrap_or("");
+                m.rules.plausibility = Some(undo(rest, l.number)?);
+            }
+            _ => m.inputs.push(parse_field(l)?),
+        }
+    }
+    Ok(m)
 }
 
 /// `<keyword> <name>` — the shape every head starts with.
@@ -148,6 +319,28 @@ fn head_name(head: &Line<'_>) -> Result<String, ParseError> {
             why: "a head with no name".to_string(),
         })?;
     undo(rest.split_whitespace().next().unwrap_or(""), head.number)
+}
+
+/// A rational as [`Rational`](crate::forge::quantity::Rational)'s own
+/// `Display` writes it: `n` when the denominator is one, else `n/d`.
+///
+/// The fields are private, so the way back is `Rational::new`, which
+/// also re-canonicalises — a value that reduces differently than it was
+/// written comes back as the same rational, which is what the model
+/// holds anyway.
+fn rational(s: &str, line: usize) -> Result<crate::forge::quantity::Rational, ParseError> {
+    let bad = || ParseError {
+        line,
+        why: format!("`{s}` is not a rational this renderer could have written"),
+    };
+    let (num, denom) = match s.split_once('/') {
+        Some((n, d)) => (
+            n.parse::<i64>().map_err(|_| bad())?,
+            d.parse::<i64>().map_err(|_| bad())?,
+        ),
+        None => (s.parse::<i64>().map_err(|_| bad())?, 1),
+    };
+    crate::forge::quantity::Rational::new(num, denom).ok_or_else(bad)
 }
 
 /// `(in|out|internal) <id>: <type> <clause>...`
@@ -206,6 +399,20 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
             "max-size" => {
                 f.max_size = rest.get(i + 1).and_then(|v| v.parse().ok());
                 i += 2;
+            }
+            "quantity" => {
+                let scale = rational(rest.get(i + 1).copied().unwrap_or(""), line.number)?;
+                let offset = rational(rest.get(i + 2).copied().unwrap_or(""), line.number)?;
+                let unit = crate::forge::quantity::UnitTag::intern(&undo(
+                    rest.get(i + 3).copied().unwrap_or(""),
+                    line.number,
+                )?);
+                f.quantity = Some(crate::forge::quantity::Quantity {
+                    scale,
+                    offset,
+                    unit,
+                });
+                i += 4;
             }
             other => {
                 return Err(ParseError {
@@ -368,15 +575,37 @@ fn strip(v: &mut serde_json::Value, key: &str) {
 /// Published so the round-trip gate derives its worklist instead of
 /// keeping a second list beside this one — the two would drift, and the
 /// drift would look like coverage.
-pub const COVERED_KINDS: &[&str] = &["condition", "timer", "enum"];
+pub const COVERED_KINDS: &[&str] = &[
+    "condition",
+    "timer",
+    "enum",
+    "transform",
+    "event-schema",
+    "lookup",
+    "validator",
+];
 
-/// Whether this document is one the reader covers.
-pub fn covers(doc: &ForgeDocument) -> bool {
+/// This document's kind name when the reader covers it.
+///
+/// One `match` rather than a predicate plus a separate namer: the
+/// round-trip gate needs the name to report which kinds it exercised,
+/// and two spellings of "which kind is this" would let the gate count a
+/// kind the reader does not actually take.
+pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
     let name = match doc {
         ForgeDocument::Condition(_) => "condition",
         ForgeDocument::Timer(_) => "timer",
         ForgeDocument::Enum(_) => "enum",
-        _ => return false,
+        ForgeDocument::Transform(_) => "transform",
+        ForgeDocument::EventSchema(_) => "event-schema",
+        ForgeDocument::Lookup(_) => "lookup",
+        ForgeDocument::Validator(_) => "validator",
+        _ => return None,
     };
-    COVERED_KINDS.contains(&name)
+    COVERED_KINDS.contains(&name).then_some(name)
+}
+
+/// Whether this document is one the reader covers.
+pub fn covers(doc: &ForgeDocument) -> bool {
+    covered_kind(doc).is_some()
 }
