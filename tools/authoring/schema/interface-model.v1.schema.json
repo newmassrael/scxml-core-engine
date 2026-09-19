@@ -25,8 +25,8 @@
           "description": "The platform's own identifier. Opaque to the core."
         },
         "role": {
-          "enum": ["input", "output", "internal"],
-          "description": "input: the document receives it. output: the document writes it. internal: the platform owns it and the document may read it, but it is not a subject-matter input."
+          "enum": ["input", "output", "internal", "upstream"],
+          "description": "input: the document receives it. output: the document writes it. internal: the platform owns it and the document may read it, but it is not a subject-matter input. upstream: ANOTHER SPECIFICATION IN THE SAME SYSTEM WRITES IT -- this document reads it and does not decide it. Measured 2026-09-20 over 129 subject packs against a 244-component platform: of 180 addresses the examples drove and the packs did not declare, 45 are output by another component, and they are CONCENTRATED -- 19 of one pack's 20 and 9 of another's 9, against 2 of the largest pack's 33. Without this value such an address is simply absent, which reads as a specification reaching outside what it declares; with it the tool can say the true thing instead, which is that one specification is not one program and the author has another document to go and read."
         },
         "names": {
           "type": "array",

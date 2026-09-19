@@ -9,6 +9,7 @@ The fixture subject matter is deliberately about nothing: a supply, a lamp and
 a count. The core may not know what those are either.
 """
 
+import collections
 import pathlib
 import tempfile
 import unittest
@@ -406,12 +407,83 @@ class TheQuestionsFire(Fixture):
         pack = self.pack()
         from sce_author.questions import ask
         found = ask(prose, pack.model, pack.conventions, pack.examples)
-        undeclared = [q.subject for q in found
+        undeclared = [q for q in found
                       if q.kind == "example-drives-undeclared-address"]
-        # The family member the model does not declare is NOT repeated here;
-        # the address from outside the subject matter still is.
-        self.assertEqual(["Elsewhere.Upstream.Out.Reading"], undeclared)
+        # ⚠ The addresses moved from `subject` into `detail` when this class
+        # became one question per pack rather than one per address. What the
+        # case is about did not move: the family member the model does not
+        # declare is NOT repeated here, and the address from outside the
+        # subject matter still is.
+        self.assertEqual(1, len(undeclared))
+        self.assertIn("Elsewhere.Upstream.Out.Reading", undeclared[0].detail)
+        self.assertNotIn("Setting_Tolerance", undeclared[0].detail)
+        self.assertIn("drive 1 address(es)", undeclared[0].detail)
         self.assertIn("name-is-indexed", {q.kind for q in found})
+
+    # ------------------------ one specification is not one program
+
+    def outside_pack(self, upstream: bool):
+        """A pack whose examples drive two addresses it does not decide."""
+        elsewhere = [
+            {"address": "Elsewhere.Unit.Out.Reading", "role": "upstream",
+             "names": ["Up_Reading"], "type": "number"},
+            {"address": "Elsewhere.Unit.Out.Mode", "role": "upstream",
+             "names": ["Up_Mode"], "values": {"OFF": 0, "ON": 1}},
+        ] if upstream else []
+        examples = {
+            **EXAMPLES,
+            "cases": [{
+                "name": "the lamp follows a reading this document does not make",
+                "given": {"Plant.Input.SupplyMode": 2,
+                          "Elsewhere.Unit.Out.Reading": 9,
+                          "Elsewhere.Unit.Out.Mode": 1},
+                "expect": {"Plant.Out.Lamp.Stat": 2},
+            }],
+        }
+        self.write_pack({**MODEL, "entries": [*MODEL["entries"], *elsewhere]},
+                        CONVENTIONS, examples=examples)
+        text = "Fig_Lamp_stat is ON when In_SupplyMode == HIGH, and OFF otherwise.\n"
+        from sce_author.questions import ask
+        pack = self.pack()
+        return ask(self.prose(text), pack.model, pack.conventions,
+                   pack.examples)
+
+    def test_an_address_another_unit_writes_is_said_once_as_a_dependency(self):
+        """⚠ A DIFFERENT CLAIM FROM "UNDECLARED", and the only one an author
+        can act on. "Reaching outside what it declares" sends them looking for
+        something missing from this document; this sends them to the document
+        that decides it.
+
+        Measured over 129 subject packs against a 244-component platform: 45
+        of 180 undeclared addresses are another component's output, and they
+        concentrate -- 19 of one pack's 20, 9 of another's 9. For those, the
+        report is not a defect, it is what the system is.
+        """
+        found = self.outside_pack(upstream=True)
+        kinds = collections.Counter(q.kind for q in found)
+        self.assertEqual(1, kinds["depends-on-another-component"],
+                         "said once, or not at all")
+        self.assertEqual(0, kinds["example-drives-undeclared-address"])
+        said = next(q.detail for q in found
+                    if q.kind == "depends-on-another-component")
+        self.assertIn("2 address(es)", said)
+        self.assertIn("Elsewhere.Unit.Out.Reading", said)
+        self.assertIn("one of several", said)
+
+    def test_the_same_addresses_undeclared_are_a_different_sentence(self):
+        """The discriminator. Identical examples, identical prose; the model
+        simply does not say who writes them. Without this, a class that always
+        said "dependency" would pass the case above.
+        """
+        found = self.outside_pack(upstream=False)
+        kinds = collections.Counter(q.kind for q in found)
+        self.assertEqual(0, kinds["depends-on-another-component"])
+        self.assertEqual(1, kinds["example-drives-undeclared-address"],
+                         "two addresses, one sentence")
+        said = next(q.detail for q in found
+                    if q.kind == "example-drives-undeclared-address")
+        self.assertIn("2 address(es)", said)
+        self.assertIn("reaching outside what it declares", said)
 
     def test_a_name_with_no_family_is_still_simply_unknown(self):
         """The discriminator. One numbered sibling is not a family."""

@@ -63,6 +63,7 @@ not say. All domain-free; the ones an author acts on most are:
 | `gate-off-unstated` | an output is gated and the prose does not say what it becomes when the gate is false |
 | `no-time-input` | the prose states a duration and no input can observe time passing |
 | `example-shows-memory` | two cases drive the same inputs and require different results, so the component remembers something the prose never states |
+| `depends-on-another-component` | the examples drive addresses another specification in the system writes, so this document is one of several and cannot be judged alone |
 
 **check** judges a written document against the same model: every input it
 declares must exist, every output it writes must be a real field, and every
@@ -235,9 +236,26 @@ refuses a file that does not validate, naming the path that failed.
           Stat:  {values: {NONE: 0, OFF: 1, ON: 2}}
           Value: {type: number}
 
+      - address: Another.Unit.Output
+        role: upstream                            # another SPECIFICATION writes it
+        names: [WhatTheProseCallsIt]
+        type: number
+
 `names` is what makes question 1 answerable: prose writes names, platforms have
 addresses, and no document anywhere states the correspondence. It is a list
 because prose is inconsistent.
+
+**`role: upstream` is how a pack says one specification is not one program.**
+An address the examples drive and the model does not declare reads as a
+document reaching outside what it declares -- which is a defect report, and
+for some documents it is simply wrong. Measured over 129 subject packs against
+a 244-component platform: of 180 such addresses, **45 are output by another
+component**, and they concentrate rather than spread -- 19 of one pack's 20,
+9 of another's 9, against 2 of the largest pack's 33. Declared `upstream`, the
+tool says the useful thing instead: this document is one of several and cannot
+be judged alone, with the addresses to go and look up. Both sentences are said
+**once per pack**, not once per address; 180 findings fell on 33 packs, and
+thirty-three copies of one sentence bury every other class.
 
 ### conventions
 

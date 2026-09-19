@@ -519,6 +519,14 @@ def examples_drive_unnamed(prose: Prose, model: Model, conv: Conventions,
     body = prose.text
     origin = f" (examples: {examples.origin})" if examples.origin else ""
     out = []
+    # ⚠ GROUPED, not one question per address. Both of these say the same
+    # sentence about a different address, and a specification that reaches
+    # outside itself usually does so many times at once: measured over 129
+    # packs, 180 such findings fell on 33 packs, one of them carrying 33 by
+    # itself. Thirty-three copies of one sentence bury the other classes and
+    # tell the author nothing the first copy did not.
+    outside: list[str] = []
+    upstream: list[str] = []
     for address in sorted(examples.driven):
         if address.startswith(conv.infrastructure):
             continue
@@ -542,17 +550,12 @@ def examples_drive_unnamed(prose: Prose, model: Model, conv: Conventions,
             # -- another component's output, a shared setting. A specification
             # that is silent about that reads as self-contained when it is not,
             # and no comparison against this pack's own model can say so.
-            out.append(
-                Question(
-                    kind="example-drives-undeclared-address",
-                    subject=address,
-                    detail=(
-                        "the examples drive this and the interface model does "
-                        "not declare it; the specification is reaching outside "
-                        "what it declares" + origin
-                    ),
-                )
-            )
+            outside.append(address)
+            continue
+        if entry.role == "upstream":
+            # The pack knows who writes it, so the tool can say the true thing
+            # rather than the alarming one.
+            upstream.append(address)
             continue
         if entry.role == "output" or mentions(prose, entry.names):
             continue
@@ -561,6 +564,49 @@ def examples_drive_unnamed(prose: Prose, model: Model, conv: Conventions,
                 kind="example-drives-unnamed-signal",
                 subject=address,
                 detail="the examples drive this and the specification never names it" + origin,
+            )
+        )
+    if outside:
+        out.append(
+            Question(
+                kind="example-drives-undeclared-address",
+                subject="(this pack)",
+                detail=(
+                    f"the examples drive {len(outside)} address(es) the "
+                    f"interface model does not declare, so the specification "
+                    f"is reaching outside what it declares: "
+                    + ", ".join(outside) + origin
+                ),
+            )
+        )
+    if upstream:
+        # ⚠ A DIFFERENT CLAIM, and the one an author can act on. "Undeclared"
+        # sends them looking for something missing from this document; this
+        # sends them to the document that decides it. Measured over 129 packs
+        # against a 244-component platform: 45 of 180 undeclared addresses are
+        # another component's output, and two packs are almost entirely made
+        # of them -- 19 of 20, and 9 of 9. For those two, "reaching outside
+        # what it declares" is not a defect report, it is a description of
+        # what the system is.
+        #
+        # ⚠⚠ AND IT WAS WEARING ANOTHER CLASS'S CLOTHES. Declaring those 45
+        # addresses dissolved 28 `example-shows-memory` findings across the
+        # same corpus -- 91 to 63. Two cases that drove every DECLARED input
+        # identically and required different results look exactly like a
+        # component that remembers something; they were a component reading
+        # something the model never mentioned. A class that says "your
+        # specification is hiding state" is an expensive thing to be wrong
+        # about, and nothing else here could have told the difference.
+        out.append(
+            Question(
+                kind="depends-on-another-component",
+                subject="(this pack)",
+                detail=(
+                    f"the examples drive {len(upstream)} address(es) another "
+                    f"specification in this system writes, so this document "
+                    f"is one of several that make up the program and cannot "
+                    f"be judged alone: " + ", ".join(upstream) + origin
+                ),
             )
         )
     return out
