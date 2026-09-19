@@ -72,6 +72,33 @@
 //! order of lines is order in the document.
 //!
 //! ```text
+//!   machine <name> (datamodel: <d>, initial: <s>[, binding: <b>][, queue: <n>])
+//!     data <id>[: <type>] [= <expr>] [src <s>] [content <c>]
+//!     (state|parallel|final) <id> [initial <s>] [initial-children <s>...]
+//!         [history <h> default <s>] [unhandled <e>...]:
+//!       req <id>
+//!       on entry: / on exit: / on initial: / on history-default:
+//!         <action>...
+//!       [on <event>] [when <cond>] [native-guard <g>] -> <target> [<type>]
+//!         <action>...
+//!       done:
+//!         param <name> [= <expr>] [from <loc>]
+//!         content (expr|text|literal) <v>
+//!
+//!   <action> is one of
+//!     <location> = <expr> [content <c>]
+//!     cancel [<sendid>] [expr <e>]
+//!     log [<label>][: <expr>]
+//!     raise <event>
+//!     script <text>
+//!     call <name>(<arg>...)
+//!     foreach <item> in <array> [index <i>]:
+//!     if <cond>: / elif <cond>: / else:
+//!     send [<event>] [eventexpr <e>] [to <t>] [to-expr <e>] [type <t>]
+//!          [type-expr <e>] [after <d>] [after-expr <e>] [id <i>]
+//!          [id-into <l>] [namelist <n>] [content <c>] [content-expr <e>]
+//!          [with <param>...]
+//!
 //!   algorithm <name>(<param>: <type>, ...) [-> <type> [returns-max <n>]]
 //!     const <name>: <type> = <expr>
 //!     const <name>: array<<type>, <n>> = fold <var> in <a>..<b> -> <type>:
@@ -215,16 +242,39 @@ use crate::forge::model::{
 pub struct Unsupported {
     /// `sce:kind` as authored, e.g. `codec`.
     pub kind: &'static str,
+    /// The construct that stopped the rendering.
+    ///
+    /// ⚠ The refusal is per DOCUMENT, and that is a stronger contract
+    /// than per kind rather than a weaker one. What a reviewer needs is
+    /// "what I am shown is all of it"; a kind that renders nine
+    /// documents in full and abbreviates the tenth would break that
+    /// promise while looking covered. Naming the construct is what makes
+    /// the refusal actionable — the kind alone says nothing about which
+    /// document.
+    ///
+    /// All eighteen kinds render, so there is no "this kind has no
+    /// rendering" case left to express. A kind added to
+    /// [`ForgeDocument`](crate::forge::model::ForgeDocument) breaks the
+    /// `match` in [`render`] until somebody either renders it or names
+    /// what stops them.
+    pub feature: &'static str,
+}
+
+impl Unsupported {
+    /// A document carrying a construct this module does not render.
+    fn feature(kind: &'static str, feature: &'static str) -> Self {
+        Unsupported { kind, feature }
+    }
 }
 
 impl std::fmt::Display for Unsupported {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "SCE renders no pseudocode for the '{}' kind yet — a partial \
-             rendering would read like a complete one, so the kind is \
-             refused rather than abbreviated",
-            self.kind
+            "this '{}' document carries {}, which SCE does not render yet — \
+             the rest of it would read like the whole of it, so the document \
+             is refused rather than abbreviated",
+            self.kind, self.feature
         )
     }
 }
@@ -256,7 +306,7 @@ pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
         ForgeDocument::Codec(m) => Ok(render_codec(m)),
-        ForgeDocument::Statechart(_) => Err(Unsupported { kind: "statechart" }),
+        ForgeDocument::Statechart(m) => render_statechart(m),
     }
 }
 
@@ -894,6 +944,405 @@ fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
     }
     out.line(&head);
     out.buf
+}
+
+// ── Statechart ─────────────────────────────────────────────────
+//
+// The one kind whose model is mostly NOT the document: of its 92
+// fields, 39 are written by the analyzer (measured — see
+// `sce-build/tests/the_analyzer_declares_which_fields_it_writes.rs`),
+// and showing any of them to a reviewer would be showing SCE's
+// arithmetic rather than their machine. What is rendered here is the
+// authored core: the states, their executable content, the datamodel
+// and the transitions.
+//
+// ⚠ Five of those 39 are authored fields the analyzer REWRITES —
+// `datamodel`, `states`, `transitions`, `variables` and a transition's
+// `type`. They are rendered from the model as given, which is correct
+// on the `--emit-ast` path (no analyzer pass) and is the reason the
+// contract says a rendering must come from before that pass.
+
+/// The constructs a statechart document may carry that this module does
+/// not render yet, checked before anything is written.
+///
+/// Returning the FIRST one found rather than a list: the author needs
+/// to know the document is not fully rendered, and one name says that
+/// as well as five do.
+fn statechart_gap(m: &crate::model::SCXMLModel) -> Option<&'static str> {
+    if !m.invokes.is_empty() {
+        return Some("an <invoke>");
+    }
+    if m.states.values().any(|s| !s.invokes.is_empty()) {
+        return Some("an <invoke>");
+    }
+    if m.states.values().any(|s| !s.on_sample_blocks.is_empty()) {
+        return Some("an <sce:on-sample> block");
+    }
+    if !m.context_objects.is_empty() {
+        return Some("an <sce:context> object");
+    }
+    None
+}
+
+fn render_statechart(m: &crate::model::SCXMLModel) -> Result<String, Unsupported> {
+    if let Some(gap) = statechart_gap(m) {
+        return Err(Unsupported::feature("statechart", gap));
+    }
+
+    let mut out = Out::new();
+    let datamodel = match m.datamodel {
+        crate::model::Datamodel::Null => "null",
+        crate::model::Datamodel::EcmaScript => "ecmascript",
+    };
+    let mut clauses = vec![
+        format!("datamodel: {datamodel}"),
+        format!("initial: {}", text(&m.initial)),
+    ];
+    if !m.binding.is_empty() {
+        clauses.push(format!("binding: {}", text(&m.binding)));
+    }
+    if let Some(cap) = m.event_queue_capacity {
+        clauses.push(format!("queue: {cap}"));
+    }
+    out.line(&format!(
+        "machine {} ({})",
+        text(&m.name),
+        clauses.join(", ")
+    ));
+
+    out.nested(|out| {
+        for v in &m.variables {
+            render_variable(v, out);
+        }
+        for s in &m.global_scripts {
+            render_scxml_action(s, out);
+        }
+        // States are held in a map, so the order a reviewer reads must
+        // come from `document_order` — the field the model keeps
+        // precisely because the container lost it.
+        let mut states: Vec<&crate::model::State> = m.states.values().collect();
+        states.sort_by_key(|s| (s.document_order, s.id.clone()));
+        for s in states {
+            render_scxml_state(s, out);
+        }
+    });
+
+    Ok(out.buf)
+}
+
+fn render_variable(v: &crate::model::Variable, out: &mut Out) {
+    let mut line = format!("data {}", text(&v.id));
+    if !v.var_type.is_empty() {
+        let _ = write!(line, ": {}", text(&v.var_type));
+    }
+    if !v.expr.is_empty() {
+        let _ = write!(line, " = {}", text(&v.expr));
+    }
+    if !v.src.is_empty() {
+        let _ = write!(line, " src {}", text(&v.src));
+    }
+    if !v.content.is_empty() {
+        let _ = write!(line, " content {}", text(&v.content));
+    }
+    out.line(&line);
+}
+
+fn render_scxml_state(s: &crate::model::State, out: &mut Out) {
+    let keyword = if s.is_final {
+        "final"
+    } else if s.is_parallel {
+        "parallel"
+    } else {
+        "state"
+    };
+    let mut head = format!("{keyword} {}", text(&s.id));
+    if !s.initial.is_empty() {
+        let _ = write!(head, " initial {}", text(&s.initial));
+    }
+    if !s.initial_children.is_empty() {
+        let kids: Vec<String> = s
+            .initial_children
+            .iter()
+            .map(|k| text(k).into_owned())
+            .collect();
+        let _ = write!(head, " initial-children {}", kids.join(" "));
+    }
+    if !s.initial_history_id.is_empty() {
+        let _ = write!(
+            head,
+            " history {} default {}",
+            text(&s.initial_history_id),
+            text(&s.initial_history_default_target)
+        );
+    }
+    if !s.unhandled.is_empty() {
+        let u: Vec<String> = s.unhandled.iter().map(|k| text(k).into_owned()).collect();
+        let _ = write!(head, " unhandled {}", u.join(" "));
+    }
+    out.line(&format!("{head}:"));
+
+    out.nested(|out| {
+        for id in &s.req {
+            out.line(&format!("req {}", text(&id.to_string())));
+        }
+        for v in &s.datamodel {
+            render_variable(v, out);
+        }
+        for block in &s.on_entry_blocks {
+            out.line("on entry:");
+            out.nested(|out| {
+                for a in block {
+                    render_scxml_action(a, out);
+                }
+            });
+        }
+        for block in &s.on_exit_blocks {
+            out.line("on exit:");
+            out.nested(|out| {
+                for a in block {
+                    render_scxml_action(a, out);
+                }
+            });
+        }
+        if !s.initial_transition_actions.is_empty() {
+            out.line("on initial:");
+            out.nested(|out| {
+                for a in &s.initial_transition_actions {
+                    render_scxml_action(a, out);
+                }
+            });
+        }
+        if !s.initial_history_default_actions.is_empty() {
+            out.line("on history-default:");
+            out.nested(|out| {
+                for a in &s.initial_history_default_actions {
+                    render_scxml_action(a, out);
+                }
+            });
+        }
+        // `transition_index` is what the model keeps document order in;
+        // selection depends on it, so a reviewer must read them in it.
+        let mut ts: Vec<&crate::model::Transition> = s.transitions.iter().collect();
+        ts.sort_by_key(|t| t.transition_index);
+        for t in ts {
+            render_scxml_transition(t, out);
+        }
+        if let Some(d) = &s.donedata {
+            render_donedata(d, out);
+        }
+    });
+}
+
+fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out) {
+    let mut line = String::new();
+    if !t.event.is_empty() {
+        let _ = write!(line, "on {}", text(&t.event));
+    }
+    if !t.cond.is_empty() {
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        let _ = write!(line, "when {}", text(&t.cond));
+    }
+    if !t.native_payload_guard.is_empty() {
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        let _ = write!(line, "native-guard {}", text(&t.native_payload_guard));
+    }
+    if !line.is_empty() {
+        line.push(' ');
+    }
+    if t.target.is_empty() {
+        line.push_str("-> (no target)");
+    } else {
+        let _ = write!(line, "-> {}", text(&t.target));
+    }
+    if !t.transition_type.is_empty() {
+        let _ = write!(line, " [{}]", text(&t.transition_type));
+    }
+    out.line(&line);
+
+    out.nested(|out| {
+        for id in &t.req {
+            out.line(&format!("req {}", text(&id.to_string())));
+        }
+        for a in &t.actions {
+            render_scxml_action(a, out);
+        }
+    });
+}
+
+fn render_donedata(d: &crate::model::DoneData, out: &mut Out) {
+    out.line("done:");
+    out.nested(|out| {
+        for p in &d.params {
+            let mut line = format!("param {}", text(&p.name));
+            if let Some(e) = &p.expr {
+                let _ = write!(line, " = {}", text(e));
+            }
+            if let Some(l) = &p.location {
+                let _ = write!(line, " from {}", text(l));
+            }
+            out.line(&line);
+        }
+        match &d.content {
+            crate::model::DoneDataContent::None => {}
+            crate::model::DoneDataContent::Expression(e) => {
+                out.line(&format!("content expr {}", text(e)))
+            }
+            crate::model::DoneDataContent::InlineText(e) => {
+                out.line(&format!("content text {}", text(e)))
+            }
+            crate::model::DoneDataContent::Literal(e) => {
+                out.line(&format!("content literal {}", text(e)))
+            }
+        }
+    });
+}
+
+/// One item of executable content.
+///
+/// The field each tag reads is `Action::authored_fields`, measured over
+/// 587 documents; the derived half is deliberately absent, because a
+/// reviewer approving `cond_cpp` would be approving SCE's lowering.
+fn render_scxml_action(a: &crate::model::Action, out: &mut Out) {
+    match a.action_type.as_str() {
+        "assign" => {
+            let mut line = format!("{} = {}", text(&a.location), text(&a.expr));
+            if !a.content.is_empty() {
+                let _ = write!(line, " content {}", text(&a.content));
+            }
+            out.line(&line);
+        }
+        "cancel" => {
+            let mut line = String::from("cancel");
+            if !a.sendid.is_empty() {
+                let _ = write!(line, " {}", text(&a.sendid));
+            }
+            if !a.sendidexpr.is_empty() {
+                let _ = write!(line, " expr {}", text(&a.sendidexpr));
+            }
+            out.line(&line);
+        }
+        "log" => {
+            let mut line = String::from("log");
+            if !a.label.is_empty() {
+                let _ = write!(line, " {}", text(&a.label));
+            }
+            if !a.expr.is_empty() {
+                let _ = write!(line, ": {}", text(&a.expr));
+            }
+            out.line(&line);
+        }
+        "raise" => out.line(&format!("raise {}", text(&a.event))),
+        "script" => out.line(&format!("script {}", text(&a.content))),
+        "native_action" => {
+            let args: Vec<String> = a.params.iter().map(|p| render_param(p)).collect();
+            out.line(&format!(
+                "call {}({})",
+                text(&a.native_action_name),
+                args.join(", ")
+            ));
+        }
+        "foreach" => {
+            let mut head = format!("foreach {} in {}", text(&a.item), text(&a.array));
+            if !a.index.is_empty() {
+                let _ = write!(head, " index {}", text(&a.index));
+            }
+            out.line(&format!("{head}:"));
+            out.nested(|out| {
+                for inner in &a.actions {
+                    render_scxml_action(inner, out);
+                }
+            });
+        }
+        "if" => {
+            out.line(&format!("if {}:", text(&a.cond)));
+            out.nested(|out| {
+                for inner in &a.then_actions {
+                    render_scxml_action(inner, out);
+                }
+            });
+            for b in &a.elseif_branches {
+                out.line(&format!("elif {}:", text(&b.cond)));
+                out.nested(|out| {
+                    for inner in &b.actions {
+                        render_scxml_action(inner, out);
+                    }
+                });
+            }
+            if !a.else_actions.is_empty() {
+                out.line("else:");
+                out.nested(|out| {
+                    for inner in &a.else_actions {
+                        render_scxml_action(inner, out);
+                    }
+                });
+            }
+        }
+        "send" => render_send(a, out),
+        other => out.line(&format!("<unrendered action {}>", text(other))),
+    }
+}
+
+fn render_param(p: &crate::model::Param) -> String {
+    let mut s = text(&p.name).into_owned();
+    if !p.expr.is_empty() {
+        let _ = write!(s, "={}", text(&p.expr));
+    }
+    if !p.location.is_empty() {
+        let _ = write!(s, "@{}", text(&p.location));
+    }
+    s
+}
+
+fn render_send(a: &crate::model::Action, out: &mut Out) {
+    let mut line = String::from("send");
+    if !a.event.is_empty() {
+        let _ = write!(line, " {}", text(&a.event));
+    }
+    if !a.eventexpr.is_empty() {
+        let _ = write!(line, " eventexpr {}", text(&a.eventexpr));
+    }
+    if !a.target.is_empty() {
+        let _ = write!(line, " to {}", text(&a.target));
+    }
+    if !a.targetexpr.is_empty() {
+        let _ = write!(line, " to-expr {}", text(&a.targetexpr));
+    }
+    if !a.send_type.is_empty() {
+        let _ = write!(line, " type {}", text(&a.send_type));
+    }
+    if !a.typeexpr.is_empty() {
+        let _ = write!(line, " type-expr {}", text(&a.typeexpr));
+    }
+    if !a.delay.is_empty() {
+        let _ = write!(line, " after {}", text(&a.delay));
+    }
+    if !a.delayexpr.is_empty() {
+        let _ = write!(line, " after-expr {}", text(&a.delayexpr));
+    }
+    if !a.id.is_empty() {
+        let _ = write!(line, " id {}", text(&a.id));
+    }
+    if !a.idlocation.is_empty() {
+        let _ = write!(line, " id-into {}", text(&a.idlocation));
+    }
+    if !a.namelist.is_empty() {
+        let _ = write!(line, " namelist {}", text(&a.namelist));
+    }
+    if !a.content.is_empty() {
+        let _ = write!(line, " content {}", text(&a.content));
+    }
+    if !a.contentexpr.is_empty() {
+        let _ = write!(line, " content-expr {}", text(&a.contentexpr));
+    }
+    if !a.params.is_empty() {
+        let ps: Vec<String> = a.params.iter().map(render_param).collect();
+        let _ = write!(line, " with {}", ps.join(", "));
+    }
+    out.line(&line);
 }
 
 // ── Codec ──────────────────────────────────────────────────────

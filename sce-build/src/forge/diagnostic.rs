@@ -13547,9 +13547,10 @@ mod tests {
             (
                 "cli/pseudo-unavailable",
                 CliError::PseudoUnavailable {
-                    kind: "codec".into(),
+                    kind: "statechart".into(),
+                    feature: "an <invoke>".into(),
                 },
-                r#"{"v":1,"id":"fnv1a:a1cb3fed131cb56a","code":"cli/pseudo-unavailable","stage":"cli","message":"codec: no pseudocode — SCE does not render this kind yet","actual":"codec"}"#,
+                r#"{"v":1,"id":"fnv1a:4634ffbae78e91b7","code":"cli/pseudo-unavailable","stage":"cli","message":"statechart: no pseudocode — this document carries an <invoke>","actual":"statechart: an <invoke>"}"#,
             ),
         ]
     }
@@ -17627,7 +17628,13 @@ mod anchor_contract_tests {
                 r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
                          xmlns:sce="http://sce.dev/ext"
                          version="1.0" initial="s0">
-                     <sce:context id="hw" type="Hardware"/>
+                     <!-- No `type=`: the parser reads a C++ type only
+                          as `cpp:type` in `urn:sce:cpp`, so an
+                          unqualified one was read by nobody. It rode
+                          here on the lax wildcard until the grammar
+                          declared `<sce:context>`, which is what the
+                          declaration is for. -->
+                     <sce:context id="hw"/>
                      <state id="s0"
                             sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
                        <transition event="go" cond="cpp:hw.ready()"

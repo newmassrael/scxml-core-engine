@@ -296,24 +296,69 @@ fn a_newline_in_an_expression_does_not_become_a_line() {
     );
 }
 
-/// Each refused kind names itself.
+/// A refusal names the construct, not just the kind.
 ///
-/// The `match` in `render` is exhaustive, so a kind added to
-/// `ForgeDocument` cannot be forgotten — but a copy-pasted arm returning
-/// a neighbour's name compiles, and the refusal would then send a
-/// reader to the wrong kind. Only the kinds a fixture can build cheaply
-/// are listed; the assertion is on the name, not on the count.
+/// Every kind renders now, so the only refusal left is per document.
+/// The message has to say WHICH construct: it once said the kind was
+/// unrendered while every kind rendered and the document simply carried
+/// an `<invoke>`, which sends the reader to the wrong question.
 #[test]
-fn a_refused_kind_names_itself() {
-    let doc = ForgeDocument::Statechart(Box::default());
+fn a_refusal_names_the_construct_that_stopped_it() {
+    let mut model = sce_build::model::SCXMLModel::default();
+    model.name = "m".to_string();
+    model.invokes.push(sce_build::model::Invoke::Unsupported(
+        sce_build::model::UnsupportedInvokeInfo::default(),
+    ));
+
+    let doc = ForgeDocument::Statechart(Box::new(model));
     assert_eq!(
         render(&doc).unwrap_err(),
-        Unsupported { kind: "statechart" }
+        Unsupported {
+            kind: "statechart",
+            feature: "an <invoke>",
+        }
     );
-    assert!(render(&doc)
-        .unwrap_err()
-        .to_string()
-        .contains("refused rather than abbreviated"));
+    let said = render(&doc).unwrap_err().to_string();
+    assert!(
+        said.contains("carries an <invoke>") && said.contains("refused rather than abbreviated"),
+        "the refusal must name the construct; got: {said}"
+    );
+}
+
+/// A document with nothing unrendered is rendered, not refused.
+///
+/// The companion to the test above, and the reason it is here: a
+/// `statechart_gap` that answered `Some` for everything would satisfy
+/// that assertion while rendering no statechart at all.
+#[test]
+fn a_statechart_without_a_gap_is_rendered() {
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_string(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                      datamodel="ecmascript" initial="s0">
+                 <datamodel><data id="v" expr="0"/></datamodel>
+                 <state id="s0">
+                   <onentry><raise event="go"/></onentry>
+                   <transition event="go" cond="v == 0" target="done"/>
+                 </state>
+                 <final id="done"/>
+               </scxml>"#,
+            "m",
+        )
+        .expect("the test's own document must parse");
+
+    assert_eq!(
+        render(&ForgeDocument::Statechart(Box::new(model))).unwrap(),
+        "\
+machine m (datamodel: ecmascript, initial: s0, binding: early)
+  data v = 0
+  state s0:
+    on entry:
+      raise go
+    on go when v == 0 -> done [external]
+  final done:
+"
+    );
 }
 
 /// The rendering is a pure function of the model.

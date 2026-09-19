@@ -7633,15 +7633,55 @@ fn cmd_review_table(document: &str, error_format: ErrorFormat) {
 // its own, for the reason that function states: what a reviewer approves
 // and what the build compiles must not drift.
 
-/// Render a non-statechart forge document as pseudocode on stdout.
+/// Render a forge document, of any kind, as pseudocode on stdout.
+///
+/// ⚠ BOTH pipelines, unlike `review-table` beside it. That command
+/// refuses a statechart because its columns are a non-statechart
+/// vocabulary; this one renders every kind, so routing through the
+/// forge entry point alone would refuse exactly the documents that
+/// carry executable content. Measured: the renderer covered statecharts
+/// for a while before this function reached them.
 fn cmd_pseudo(document: &str, error_format: ErrorFormat) {
-    let parsed = parse_forge_review_input(document, error_format);
+    let path = std::path::Path::new(document);
+    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: document.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+    let content =
+        match sce_build::parser::expand_preprocessors(&content, document, path.parent(), &[]) {
+            Ok((expanded, _map, _deps)) => expanded,
+            Err(e) => error_format.emit_forge_and_exit(&e),
+        };
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or(stem);
+    let label = sce_build::DocumentLabel {
+        identifier: stem,
+        diagnostic_label: basename,
+    };
 
-    match sce_build::forge::pseudo::render(&parsed.document) {
+    let doc = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
+        Ok(Some(p)) => p.document,
+        Ok(None) => match sce_build::parser::SCXMLParser::new().parse_string(&content, stem) {
+            Ok(model) => sce_build::forge::model::ForgeDocument::Statechart(Box::new(model)),
+            Err(e) => error_format.emit_forge_and_exit(&e),
+        },
+        Err(e) => error_format.emit_forge_and_exit(&e),
+    };
+
+    match sce_build::forge::pseudo::render(&doc) {
         Ok(text) => out_stream(|w| w.write_all(text.as_bytes())),
         // ⚠ Not a partial rendering. See `CliError::PseudoUnavailable`.
         Err(unsupported) => cli_exit(CliError::PseudoUnavailable {
             kind: unsupported.kind.to_string(),
+            feature: unsupported.feature.to_string(),
         }),
     }
 }

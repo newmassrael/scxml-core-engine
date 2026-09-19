@@ -323,7 +323,7 @@ pub enum CliError {
     #[error("{kind}: no review table — SCE reads sce:req on no node of this kind")]
     ReviewTableUnavailable { kind: String },
 
-    /// Pseudocode was asked for of a kind
+    /// Pseudocode was asked for of a document carrying a construct
     /// [`crate::forge::pseudo::render`] does not cover.
     ///
     /// ⚠ Deliberately NOT a partial rendering, for a reason one step
@@ -332,10 +332,13 @@ pub enum CliError {
     /// signs a rendering has signed the document. A rendering missing
     /// part of the document reads exactly like one missing none of it,
     /// which would turn an unreviewed document into a signed one.
-    /// `kind` is `sce:kind` as authored, so the sentence names what the
-    /// reader asked about rather than the file they asked it of.
-    #[error("{kind}: no pseudocode — SCE does not render this kind yet")]
-    PseudoUnavailable { kind: String },
+    ///
+    /// ⚠⚠ `feature` is the load-bearing half and was added after the
+    /// message told an author their KIND was unrendered while every kind
+    /// rendered and their document carried an `<invoke>`. A refusal that
+    /// misnames the cause sends the reader to the wrong question.
+    #[error("{kind}: no pseudocode — this document carries {feature}")]
+    PseudoUnavailable { kind: String, feature: String },
 }
 
 impl CliError {
@@ -593,12 +596,15 @@ impl SingleDiagnostic for CliError {
                 Some(kind.clone()),
                 None,
             ),
-            // Keyed by kind for the same reason as the row above: the
-            // kind is unrendered in every document written in it.
-            CliError::PseudoUnavailable { kind } => (
+            // Keyed by the CONSTRUCT, not the kind: every document
+            // carrying an `<invoke>` is one finding about SCE, and two
+            // kinds blocked by the same construct are still that one
+            // finding. Keying on the kind would split it and keying on
+            // the path would multiply it per file.
+            CliError::PseudoUnavailable { kind, feature } => (
                 DiagnosticCode::CliPseudoUnavailable,
-                vec![kind.clone()],
-                Some(kind.clone()),
+                vec![feature.clone()],
+                Some(format!("{kind}: {feature}")),
                 None,
             ),
         };
