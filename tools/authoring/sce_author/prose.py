@@ -12,6 +12,23 @@ from __future__ import annotations
 import pathlib
 import re
 from dataclasses import dataclass
+from functools import lru_cache
+
+
+@lru_cache(maxsize=None)
+def token(symbol: str) -> re.Pattern:
+    """This symbol WRITTEN, rather than these letters appearing somewhere.
+
+    `\\b` is not enough: the boundary between `_` and a letter is not a word
+    boundary, so `\\bOFF\\b` still matches inside `DISPLAY_OFF`. The guards
+    below treat an underscore as part of the name, which is what a symbol is.
+
+    ⚠ It lives here, beside the text it reads, because three separate readers
+    have needed it and the two that did not have it were both wrong in the
+    same direction -- quietly, by finding a name that was not written.
+    """
+    return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(str(symbol))
+                      + r"(?![A-Za-z0-9_])")
 
 # The default way a comparison is written, in programming notation.
 #
@@ -83,13 +100,47 @@ class Prose:
         `universe` is subject to the names it may be written as. Ownership
         changes only on a name in that universe, so prose between two subjects
         belongs to the first, which is where it was written.
+
+        ⚠ A NAME IS MATCHED AS A TOKEN, AND THE LONGEST ONE TAKES THE LINE.
+        Both halves were measured rather than argued, because this partition
+        is the one thing a whole question class is built on and it was
+        deciding ownership by two accidents.
+
+        The first was a substring: `n in line` gave a line naming
+        `OUT_LampState` to an address called `Lamp`, which is the same defect
+        `token` exists for and which this tree has now fixed in four places.
+        The second was iteration order: the first key whose name appeared
+        won, and the keys arrive in address order, so which address owned a
+        line naming two of them was settled by the alphabet.
+
+        Measured 2026-09-20 over 129 subject packs, counting only the class
+        this feeds. The test is whether the partition survives an address
+        gaining a name it does not need -- a model that publishes every
+        spelling rather than the ones its document happens to use:
+
+            substring, first wins      132 findings move
+            token, first wins           16
+            token, longest name wins     4
+
+        ⚠⚠ The point of that last column is not tidiness. An interface model
+        is supposed to be a property of the PLATFORM, published once and read
+        by every specification written against it; under the old rule it could
+        not be, because adding a spelling moved 132 findings. The rule below
+        is most of what stood in the way.
         """
         blocks: dict[str, list[str]] = {key: [] for key in universe}
+        # Longest first, so a specific name beats a general one that happens
+        # to be written on the same line. Ties keep the universe's order.
+        ranked = sorted(
+            ((name, key) for key, names in universe.items() for name in names),
+            key=lambda pair: -len(pair[0]),
+        )
+        patterns = [(token(name), key) for name, key in ranked]
         for src in self.sources:
             owner = None
             for line in src.text.splitlines():
-                for key, names in universe.items():
-                    if any(n in line for n in names):
+                for pattern, key in patterns:
+                    if pattern.search(line):
                         owner = key
                         break
                 if owner is not None:

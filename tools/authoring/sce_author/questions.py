@@ -39,7 +39,7 @@ from dataclasses import dataclass, asdict
 from functools import lru_cache
 
 from .pack import Conventions, Model, gate_off_value
-from .prose import Prose
+from .prose import Prose, token
 
 
 # How loudly each class speaks. This is a judgement about ACTIONABILITY -- an
@@ -94,18 +94,6 @@ _WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+")
 # `IN_TrainApproach` in a sentence lends the word "train" to it, and an output
 # called `OUT_TrainSignal` looks mentioned by a line that never mentions it.
 _IDENTIFIER = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")
-
-
-@lru_cache(maxsize=None)
-def _token(symbol: str) -> re.Pattern:
-    """This symbol WRITTEN, rather than these letters appearing somewhere.
-
-    `\\b` is not enough: the boundary between `_` and a letter is not a word
-    boundary, so `\\bOFF\\b` still matches inside `DISPLAY_OFF`. The guards
-    below treat an underscore as part of the name, which is what a symbol is.
-    """
-    return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(str(symbol))
-                      + r"(?![A-Za-z0-9_])")
 
 
 def _name_words(name: str) -> list[str]:
@@ -424,7 +412,7 @@ def gate_off_unstated(prose: Prose, model: Model, conv: Conventions, examples=No
             # deleting the closing case from documents that state it and
             # checking that the class then fires: 38 of 49 did, and every one
             # of the eleven that did not was this.
-            if off is None or _token(off).search(said):
+            if off is None or token(off).search(said):
                 continue
             where = prose.locate(entry.names[0]) if entry.names else None
             # ⚠ This class stays UNGROUNDED, and the attempt to ground it is
