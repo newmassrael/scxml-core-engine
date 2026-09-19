@@ -1105,22 +1105,33 @@ pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, Expr
         // author could plausibly write in a guard, which is what lets a
         // caller ask "does this expression read typed event data?" of an
         // expression the Forge *parser* will go on to reject.
-        if i + 2 < len && &input[i..i + 3] == "..." {
+        //
+        // Each multi-byte needle below is matched against `bytes`, never
+        // against a `&input[i..i + n]` slice. `i` is always on a character
+        // boundary, but `i + n` need not be: one non-ASCII character in the
+        // expression put the end of the slice inside it, and slicing a `&str`
+        // there panics. The lexer already has the right answer for a
+        // character it does not know — the `ExprError::Lex` below — and the
+        // panic was reaching the author *instead of* that answer, as an
+        // abort with no diagnostic at all. Byte comparison is total over any
+        // input and identical for these ASCII needles, so the unknown
+        // character now walks to the arm that names it.
+        if bytes[i..].starts_with(b"...") {
             tokens.push(Token::Unsupported("spread/rest (...)"));
             i += 3;
             continue;
         }
-        if i + 1 < len && &input[i..i + 2] == "=>" {
+        if bytes[i..].starts_with(b"=>") {
             tokens.push(Token::Unsupported("arrow function (=>)"));
             i += 2;
             continue;
         }
-        if i + 1 < len && &input[i..i + 2] == "??" {
+        if bytes[i..].starts_with(b"??") {
             tokens.push(Token::Unsupported("nullish coalescing (??)"));
             i += 2;
             continue;
         }
-        if i + 1 < len && &input[i..i + 2] == "?." {
+        if bytes[i..].starts_with(b"?.") {
             tokens.push(Token::Unsupported("optional chaining (?.)"));
             i += 2;
             continue;
@@ -1143,40 +1154,41 @@ pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, Expr
             continue;
         }
 
-        // Multi-char operators (longest match first)
-        if i + 2 < len && &input[i..i + 3] == ">>>" {
+        // Multi-char operators (longest match first), on bytes for the
+        // reason given above the Forge-subset needles.
+        if bytes[i..].starts_with(b">>>") {
             tokens.push(Token::UShr);
             i += 3;
             continue;
         }
-        if i + 2 < len && &input[i..i + 3] == "===" {
+        if bytes[i..].starts_with(b"===") {
             tokens.push(Token::StrictEq);
             i += 3;
             continue;
         }
-        if i + 2 < len && &input[i..i + 3] == "!==" {
+        if bytes[i..].starts_with(b"!==") {
             tokens.push(Token::StrictNeq);
             i += 3;
             continue;
         }
         if i + 1 < len {
-            let two = &input[i..i + 2];
-            let tok = match two {
-                "==" => Some(Token::LooseEq),
-                "!=" => Some(Token::LooseNeq),
-                "&&" => Some(Token::AmpAmp),
-                "||" => Some(Token::PipePipe),
-                "<<" => Some(Token::Shl),
-                ">>" => Some(Token::Shr),
-                "<=" => Some(Token::LtEq),
-                ">=" => Some(Token::GtEq),
-                "++" if ecma => Some(Token::PlusPlus),
-                "--" if ecma => Some(Token::MinusMinus),
-                "+=" if ecma => Some(Token::OpAssign(BinOp::Add)),
-                "-=" if ecma => Some(Token::OpAssign(BinOp::Sub)),
-                "*=" if ecma => Some(Token::OpAssign(BinOp::Mul)),
-                "/=" if ecma => Some(Token::OpAssign(BinOp::Div)),
-                "%=" if ecma => Some(Token::OpAssign(BinOp::Mod)),
+            let two = [bytes[i], bytes[i + 1]];
+            let tok = match &two {
+                b"==" => Some(Token::LooseEq),
+                b"!=" => Some(Token::LooseNeq),
+                b"&&" => Some(Token::AmpAmp),
+                b"||" => Some(Token::PipePipe),
+                b"<<" => Some(Token::Shl),
+                b">>" => Some(Token::Shr),
+                b"<=" => Some(Token::LtEq),
+                b">=" => Some(Token::GtEq),
+                b"++" if ecma => Some(Token::PlusPlus),
+                b"--" if ecma => Some(Token::MinusMinus),
+                b"+=" if ecma => Some(Token::OpAssign(BinOp::Add)),
+                b"-=" if ecma => Some(Token::OpAssign(BinOp::Sub)),
+                b"*=" if ecma => Some(Token::OpAssign(BinOp::Mul)),
+                b"/=" if ecma => Some(Token::OpAssign(BinOp::Div)),
+                b"%=" if ecma => Some(Token::OpAssign(BinOp::Mod)),
                 _ => None,
             };
             if let Some(t) = tok {
@@ -1213,10 +1225,18 @@ pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, Expr
             b';' if ecma => Token::Semi,
             b'=' if ecma => Token::Assign,
             ch => {
+                // `ch` is one byte, and the character that stopped the lexer
+                // may be several: `ch as char` reads a UTF-8 lead byte as the
+                // Latin-1 codepoint of that byte, so the author would be
+                // shown a character that is nowhere in their document and
+                // cannot be searched for. Decode the character actually at
+                // `i` instead; the byte is the fallback only for input this
+                // arm cannot reach, since `i` is always a character boundary.
+                let shown = input[i..].chars().next().unwrap_or(ch as char);
                 return Err(ExprError::Lex {
                     position: i,
-                    detail: format!("unexpected character: '{}'", ch as char),
-                })
+                    detail: format!("unexpected character: '{shown}'"),
+                });
             }
         };
         tokens.push(tok);
@@ -5308,6 +5328,96 @@ mod tests {
         let mut ast = Parser::new(&tokens).parse_expression().unwrap();
         infer_types(&mut ast, &ctx);
         assert_eq!(ast.ty, InferredType::Unknown);
+    }
+
+    /// The lexer is total: it answers for any `&str`, including one holding
+    /// a character it does not know.
+    ///
+    /// It used to abort instead. The multi-character needles were compared
+    /// as `&input[i..i + n]`, and while `i` is always on a character
+    /// boundary `i + n` is not — one non-ASCII character put the end of the
+    /// slice inside it and slicing a `&str` there panics. The reachable
+    /// shapes are two, and only the first is the one a reader predicts:
+    ///
+    ///   * the unknown character *starts* a token, so `i` is on it;
+    ///   * the unknown character *follows* a one-byte operator that has a
+    ///     longer form — `?`, `!`, `>`, `<`, `&`, `|`, `.`, `=` — so `i` is
+    ///     on ASCII and only `i + 1` or `i + 2` lands inside the character.
+    ///
+    /// Inserting at every byte offset covers both without naming them, and
+    /// is what keeps this honest if a needle is added later at a position
+    /// nobody thought to enumerate. A panic here is not a worse diagnostic
+    /// than a rejection — it is *no* diagnostic: `sce-codegen` aborts, so
+    /// the author gets an exit status and an empty `--error-format=json`
+    /// stream where the `expression/lex` record belongs.
+    #[test]
+    fn the_lexer_answers_for_a_character_it_does_not_know() {
+        // Every operator whose longer form the lexer looks ahead for.
+        let host = "a ? b . c ! d = e > f < g & h | i / j * k";
+        // Chosen for UTF-8 *width*, not for what they mean: two, three and
+        // four bytes, so the end of a two- or three-byte needle can land on
+        // the character's every interior offset. Any character of that width
+        // would do; these are not sampled from a document.
+        for unknown in ["\u{00e9}", "\u{21d2}", "\u{ac00}", "\u{10348}"] {
+            assert!(
+                matches!(unknown.len(), 2..=4),
+                "a one-byte probe cannot reach the defect"
+            );
+            for at in 0..=host.len() {
+                if !host.is_char_boundary(at) {
+                    continue;
+                }
+                let mut probe = String::with_capacity(host.len() + unknown.len());
+                probe.push_str(&host[..at]);
+                probe.push_str(unknown);
+                probe.push_str(&host[at..]);
+                for mode in [LexMode::Forge, LexMode::EcmaScript] {
+                    // The verdict is only that it *returns*. Whether the
+                    // character is refused or swallowed by a literal is the
+                    // business of the arms above, not of this claim.
+                    let answer = tokenize_as(&probe, mode);
+                    if let Err(ExprError::Lex { detail, .. }) = &answer {
+                        // A lead byte read as Latin-1 would name a character
+                        // the author never wrote and cannot search for.
+                        assert!(
+                            !detail.contains('\u{fffd}'),
+                            "the refusal names a replacement character: {detail}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The character in the refusal is the one in the document.
+    ///
+    /// Splitting this from the totality claim above is deliberate: making
+    /// the lexer return is one fix, and making it name the right character
+    /// is another. A test that only asserted "it returns" would have passed
+    /// on a version that reported `'\u{e2}'` — the first byte of the
+    /// character below, read as a codepoint — which is a character the
+    /// author never wrote and cannot find by searching their document.
+    #[test]
+    fn the_refusal_names_the_character_the_author_wrote() {
+        const UNKNOWN: char = '\u{21d2}';
+        let source = format!("a + {UNKNOWN}");
+        let err = tokenize(&source).expect_err("an arrow is not Forge syntax");
+        let ExprError::Lex { detail, position } = err else {
+            panic!("expected a lex error, got {err:?}");
+        };
+        assert!(
+            detail.contains(UNKNOWN),
+            "the refusal must carry the character itself: {detail}"
+        );
+        assert!(
+            !detail.contains(source.as_bytes()[position] as char),
+            "the refusal names the lead byte rather than the character: {detail}"
+        );
+        // A byte offset, so the caller can slice the author's own text.
+        assert!(
+            source.is_char_boundary(position),
+            "position {position} is not a character boundary"
+        );
     }
 
     // ── Rename map ──────────────────────────────────────────────

@@ -1227,6 +1227,52 @@
         }
       ]
     },
+    "Cycle": {
+      "description": "An ORDERED sequence of named alternatives, each present only when its condition holds — `<sce:cycle id=\"…\" of=\"<enum alias>\">` with a `<sce:step name=\"…\" when=\"…\"/>` per alternative.\n\n⚠ WHY THE ORDER LIVES HERE AND NOT IN THE ENUM. The obvious design was to walk the imported enum's declaration order and skip the unavailable variants — no new element, one intrinsic. It is wrong, and measurably so. In surveyed material a prose specification and the platform value space it draws on listed the SAME seven alternatives in two different orders: they agreed on the first three, and one variant that the specification put FOURTH the value space declared LAST. So \"the next alternative\" would have been silently wrong in a way a shallow fixture cannot see — the two orders share a prefix, which is exactly the shape a small example fails to distinguish.\n\n⚠ The shape of the disagreement is the measurement and it stays; the variant names are the surveyed document's identity and do not, the same split [`requirement_manifest`] already draws when it keeps its marker counts and withholds the standard they were counted over.\n\nThe two are different facts. A value space says WHICH values exist; a cycle says IN WHAT ORDER a user walks them, and that order is the specification's to state. Reading one off the other is a layer confusion that happens to be invisible until the two disagree.\n\n⚠⚠ THE STEPS ARE A SUBSET, deliberately. A value space usually holds values that are not stops on the cycle at all — an `OFF`, an `INVALID`, a `MAX` sentinel. Requiring every variant to appear would force an author to invent conditions for values that are not alternatives.\n\n⚠⚠⚠ THE CONDITION SITS ON THE STEP because that is how the source notation writes it: one table whose rows are the alternatives in order, each row carrying the condition under which it is present. An earlier design passed availability in as a bitmask built by the caller, which made the author write bit positions by hand — positions that only mean anything relative to this list, declared in another file. Putting the condition on the step removes the mask, the positions, and the chance for them to drift apart.",
+      "properties": {
+        "id": {
+          "description": "Document-unique name. Expressions reach the cycle by this id, and one value space may carry SEVERAL cycles — the surveyed material has two lists over overlapping alternatives, with one name appearing on both.",
+          "type": "string"
+        },
+        "of": {
+          "description": "The `<sce:import kind=\"enum\">` alias whose variants the steps draw from. Every step's `name` is checked against it, which is what makes a misspelled alternative a build failure rather than a stop nobody can reach.",
+          "type": "string"
+        },
+        "steps": {
+          "description": "The alternatives, in the order the document states.",
+          "items": {
+            "$ref": "#/definitions/CycleStep"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "of",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "CycleStep": {
+      "description": "One stop on a [`Cycle`].",
+      "properties": {
+        "name": {
+          "description": "A variant of the cycle's value space.",
+          "type": "string"
+        },
+        "when": {
+          "description": "The condition under which this stop is present, as an expression over the document's own fields. `None` means always present — the common case for a cycle whose membership is fixed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "Datamodel": {
       "description": "The data model a document declares, restricted to what SCE supports.\n\n§scxml-3.2 lists the attribute's valid values as `\"null\"`, `\"ecmascript\"`, `\"xpath\"` \"or other platform-defined values\", and its default as platform-specific. Appendix B adds the obligation: a conformant processor MUST support the null data model and MAY support the others.\n\nThis enum is the set SCE supports, not the set the spec names. `\"xpath\"` is a legal value SCE does not implement and SCE defines no values of its own, so both are rejected where the attribute is read rather than being carried into the model — an unsupported data model that reaches code generation is a document silently evaluated in a language nobody declared, which is the defect this type exists to make unrepresentable. The two rejections stay distinct because their repairs differ: one is \"SCE has not implemented this yet\", the other is \"no processor defines this at all\".",
       "oneOf": [
@@ -3382,6 +3428,13 @@
     "ForgeField": {
       "description": "A typed data field common to all kinds.",
       "properties": {
+        "default_covers": {
+          "description": "The variants of this field's value space that the author says reach the default branch ON PURPOSE — `sce:default-covers=\"A B C\"`.\n\nThis is the ANSWER half of [`crate::forge::coverage`]. That module reports which variants nothing in the document tests for; without a way to record \"yes, I meant those\", the report re-asks the same question on every run, and a list that never shrinks is a list nobody reads.\n\n⚠ It is a CLAIM, not a suppression, and the difference is the whole design. The claim names the variants, so it stays true only while they are exactly the ones falling through: add a variant to the enum document and the new one is unacknowledged, so the question comes back — which is right, because a value space growing is precisely when the author must decide again. A boolean `sce:default-is-deliberate` would have gone silent forever on the day the platform added a value.\n\n⚠⚠ A claim can be FALSE, and a false claim is refused rather than reported: naming a non-variant, or naming one the document's own conditions test for. See `coverage::check`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "direction": {
           "$ref": "#/definitions/Direction"
         },
@@ -3414,6 +3467,17 @@
             }
           ],
           "description": "Physical-quantity annotation (`sce:quantity`). `Some({ scale, offset, unit })` when the field carries a `sce:quantity=\"…\"` attribute. Drives type checking (units that disagree across an arithmetic operator are rejected) and codegen (raw + physical accessor pair emitted on numeric fields). Absent quantity declarations preserve the dimensionless baseline."
+        },
+        "retain": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Retention"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`sce:retain` / `sce:initial` — this field's value outlives the program. See [`Retention`] for what SCE does with it and why the scope label is opaque."
         },
         "sce_type": {
           "$ref": "#/definitions/SceType"
@@ -4382,6 +4446,25 @@
       ],
       "type": "object"
     },
+    "MarkerKind": {
+      "description": "What the author means by a marker. The two are different states and a build must not treat them the same way.\n\n⚠ WHY THIS DISTINCTION EXISTS. A real conversion found a spec whose operating logic covers `0..=221` and `225..=254` and says nothing about the three values between. `Unresolved` is the honest first answer — the build stops and the refusal is the question to send the spec's author. But a question that has been ANSWERED, or a value the author deliberately chose while the answer is outstanding, is not the same state, and collapsing the two forces a false choice: either delete the marker (and lose the record that this was never specified) or stay blocked (and measure nothing else in the document).\n\nSo `Assumed` lets the build proceed while keeping the choice on the record, and every report still carries it. Deleting a marker remains the only way to make a document claim the spec covered something.",
+      "oneOf": [
+        {
+          "description": "\"I do not know this value.\" A `--strict-unresolved` build stops.",
+          "enum": [
+            "unresolved"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "\"The spec does not say; this is what I chose, and here is why.\" A `--strict-unresolved` build proceeds; reports still list it.",
+          "enum": [
+            "assumed"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "MissPolicy": {
       "description": "Miss-handling policy for `sce:kind=\"lookup\"`. Captured from the `sce:on-miss` attribute on the mapping `<data>` element, with `sce:default` implied as `Default`. These are two orthogonal codegen strategies, not two different kinds — see SCE_FORGE.md Section 4.9.\n\n`Default(fallback)`: total function — every input produces an output, and the fallback string is the value returned when no entry key matches. Used by symbolic dispatch (gear positions, engine status, etc.).\n\n`Error`: partial function — the generated `lookup(x)` returns `Option<V>` / `std::optional<V>` / `(V, bool)` / `V?` depending on the target language. Callers must handle the miss case explicitly. Used by numeric data tables where an unknown key is a bug, not a fallback case.",
       "oneOf": [
@@ -4526,6 +4609,14 @@
     "ParsedForge": {
       "description": "Parsed forge result — combines the document model with cross-file imports. The `imports` field is empty for standalone documents (no `<sce:import>` elements).",
       "properties": {
+        "cycles": {
+          "default": [],
+          "description": "`<sce:cycle>` declarations — an ORDERED sequence of named alternatives drawn from a value space, each with a condition saying whether it is currently present. Always emitted, even empty, for the reason `externs` gives one field up.",
+          "items": {
+            "$ref": "#/definitions/Cycle"
+          },
+          "type": "array"
+        },
         "document": {
           "$ref": "#/definitions/ForgeDocument"
         },
@@ -4964,6 +5055,24 @@
     "Rational": {
       "pattern": "^-?\\d+(/\\d+)?$",
       "type": "string"
+    },
+    "Retention": {
+      "description": "A field whose value OUTLIVES the program that computes it — `sce:retain=\"<scope>\"` with `sce:initial=\"<value>\"`.\n\n⚠ WHAT SCE DOES AND DOES NOT DO HERE. SCE cannot implement persistence: where a value is kept between runs is the host's business (an EEPROM page, a config file, a key-value store). What SCE does is DECLARE it, CHECK the one thing it can check, and CARRY it into the AST so the host knows what to provision. The same division `sce:quantity` already uses: the document states the physics, the tree checks the arithmetic, the platform supplies the sensor.\n\n⚠⚠ THE SCOPE IS OPAQUE, AND THAT IS THE GENERAL PART. The measurement that prompted this surface is automotive — a value that survives ignition-off, and one that survives battery removal — but `sce:retain=\"battery\"` would put one domain's vocabulary in a general tool. So SCE never interprets the scope: it records the label, and a domain adapter decides what labels mean, exactly as `sce:req` keeps requirement ids opaque because two spellings that normalise together are two requirements to the document that issued them.\n\n⚠⚠⚠ THE PAIR IS REQUIRED IN BOTH DIRECTIONS, and that is the part worth the most. A retained field with no initial value has undefined behaviour on the first run, before anything has ever been stored — exactly the silent gap this tree refuses elsewhere. An initial value with no retention is meaningless: an ordinary field is computed afresh every cycle, so nothing ever reads it. Both orphans are refused, reusing `validation/invalid-attribute` rather than minting a code, which is what `parse_quantity_attrs` does for the same shape.",
+      "properties": {
+        "initial": {
+          "description": "`sce:initial` — the value before the store has ever been written. Verbatim as the author wrote it; membership in the field's value space is checked by [`crate::forge::retention::check`], which is the one question SCE can answer about it.",
+          "type": "string"
+        },
+        "scope": {
+          "description": "`sce:retain` — an opaque label naming the store this field is kept in. SCE compares scopes for equality and nothing else.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "initial",
+        "scope"
+      ],
+      "type": "object"
     },
     "SceType": {
       "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",
@@ -5616,7 +5725,7 @@
       "type": "string"
     },
     "UnresolvedMarker": {
-      "description": "`<sce:unresolved>` marker — an explicit \"this value is a guess, revisit later\" placeholder that the parser can detect, the codegen propagates as a comment, and `--strict` builds reject.\n\nSCE stores the marker; any consumer (linter, IDE, NL→IR pipeline) interprets it. SCE never resolves it.",
+      "description": "`<sce:unresolved>` / `<sce:assumed>` marker — an explicit \"this value is not something the spec settled\" placeholder that the parser can detect, the codegen propagates as a comment, and (for the former) `--strict` builds reject.\n\nSCE stores the marker; any consumer (linter, IDE, NL→IR pipeline) interprets it. SCE never resolves it.",
       "properties": {
         "candidates": {
           "description": "Suggested values the author was choosing between. Whitespace is the separator on the attribute form (`sce:unresolved-candidates=\"a b c\"`).",
@@ -5628,6 +5737,15 @@
         "id": {
           "description": "Author-chosen identifier — opaque to SCE, but unique within the enclosing document is the convention.",
           "type": "string"
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/MarkerKind"
+            }
+          ],
+          "default": "unresolved",
+          "description": "Whether this blocks a strict build or is merely on the record."
         },
         "location": {
           "anyOf": [

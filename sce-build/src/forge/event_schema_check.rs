@@ -1402,23 +1402,10 @@ fn literal_kind_canonical(kind: LiteralKind) -> String {
     }
 }
 
+/// See the note on `cross_kind_check::sce_type_canonical`: one spelling,
+/// owned by [`SceType::as_attr`] next to `from_attr`.
 fn sce_type_canonical(t: &SceType) -> String {
-    match t {
-        SceType::Uint8 => "uint8".to_string(),
-        SceType::Uint16 => "uint16".to_string(),
-        SceType::Uint32 => "uint32".to_string(),
-        SceType::Uint64 => "uint64".to_string(),
-        SceType::Int8 => "int8".to_string(),
-        SceType::Int16 => "int16".to_string(),
-        SceType::Int32 => "int32".to_string(),
-        SceType::Int64 => "int64".to_string(),
-        SceType::Float32 => "float32".to_string(),
-        SceType::Float64 => "float64".to_string(),
-        SceType::Bool => "bool".to_string(),
-        SceType::String => "string".to_string(),
-        SceType::Bytes => "bytes".to_string(),
-        SceType::Enum(r) => format!("enum:{}", r.alias),
-    }
+    t.as_attr()
 }
 
 fn is_comparison(op: BinOp) -> bool {
@@ -1811,6 +1798,8 @@ mod tests {
             expr: None,
             quantity: None,
             max_size: None,
+            default_covers: Vec::new(),
+            retain: None,
         }
     }
 

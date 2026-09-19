@@ -180,6 +180,10 @@ pub fn statechart_parsed_forge(model: crate::model::SCXMLModel) -> ParsedForge {
         document: crate::forge::model::ForgeDocument::Statechart(Box::new(model)),
         imports: Vec::new(),
         externs: Vec::new(),
+        // A statechart carries no `<sce:cycle>`: the element is parsed
+        // from a forge root, and `parse_forge` returns before it for the
+        // statechart kind.
+        cycles: Vec::new(),
     }
 }
 

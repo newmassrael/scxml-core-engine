@@ -183,6 +183,8 @@ mod tests {
                 expr: None,
                 quantity: None,
                 max_size: seed_cap,
+                default_covers: Vec::new(),
+                retain: None,
             }],
             helpers: vec![ProcedureHelper {
                 name: "computeKey".to_string(),

@@ -8,7 +8,7 @@
 // surrounding entry-action chain, so the second `<send event="timeout">`
 // never queues. The internal-priority drain (App.D.2) then matches the
 // `error.execution` transition before any wildcard fallback fires.
-// Same code path test159 already pins (옵션 A2.target 좁음).
+// Same code path test159 already pins, narrowed to the `<send target>` arm.
 
 #include <stdio.h>
 

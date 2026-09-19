@@ -629,14 +629,25 @@ mod tests {
 
     #[test]
     fn column_counts_unicode_scalars_not_bytes() {
-        // "한" is three UTF-8 bytes but one Unicode scalar — column
-        // 2 must point at the character after it, not at byte 3.
-        let text = "한abc";
+        // `\u{D55C}` is three UTF-8 bytes but one Unicode scalar — column 2
+        // must point at the character after it, not at byte 3.
+        //
+        // Written as an escape rather than as the glyph: what this test
+        // needs is the WIDTH, and the codepoint says so to every reader,
+        // where the glyph says it only to one who reads the script. The two
+        // asserts hold the fixture to that width, so a later edit cannot
+        // quietly swap in a one-byte character and leave the test passing
+        // while it measures nothing.
+        let wide = "\u{D55C}";
+        assert_eq!(wide.len(), 3, "the fixture must be three UTF-8 bytes");
+        assert_eq!(wide.chars().count(), 1, "and exactly one scalar");
+
+        let text = "\u{D55C}abc";
         let map = PositionMap::identity("main.scxml", text);
 
-        let byte_offset = "한".len();
+        let byte_offset = wide.len();
         let pos = map.lookup(byte_offset);
-        // One scalar ("한") has been traversed → column 2.
+        // One scalar has been traversed → column 2.
         assert_eq!(pos.row, 1);
         assert_eq!(pos.col, 2);
     }
@@ -789,11 +800,17 @@ mod tests {
 
     #[test]
     fn rowcol_to_offset_unicode_column() {
-        // "한" is 3 bytes but 1 char. (1, 2) must point at the
-        // byte *after* "한" = byte offset 3.
-        let text = "한abc";
-        assert_eq!(rowcol_to_offset(text, 1, 2), "한".len());
-        assert_eq!(rowcol_to_offset(text, 1, 3), "한".len() + 1);
+        // `\u{D55C}` is 3 bytes but 1 char, so (1, 2) must point at the
+        // byte *after* it = byte offset 3. Escape rather than glyph, and
+        // the width asserted, for the reason given in
+        // `column_counts_unicode_scalars_not_bytes`.
+        let wide = "\u{D55C}";
+        assert_eq!(wide.len(), 3, "the fixture must be three UTF-8 bytes");
+        assert_eq!(wide.chars().count(), 1, "and exactly one scalar");
+
+        let text = "\u{D55C}abc";
+        assert_eq!(rowcol_to_offset(text, 1, 2), wide.len());
+        assert_eq!(rowcol_to_offset(text, 1, 3), wide.len() + 1);
     }
 
     #[test]

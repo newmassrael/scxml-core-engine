@@ -36,7 +36,7 @@ const log = logger.debug.bind(logger);
 class HardConstraints {
     /**
      * HC1: No initial edge blocking
-     * Initial transition이 사용하는 edge는 다른 transition 사용 불가
+     * An edge used by the initial transition cannot be used by another one
      */
     static validateInitialBlocking(link, sourceEdge, targetEdge, optimizer, visualSourceId = null, visualTargetId = null) {
         if (link.linkType === 'initial') return true;
@@ -55,7 +55,7 @@ class HardConstraints {
 
     /**
      * HC2: No node collisions
-     * Path가 source/target 이외의 노드를 관통하지 않음
+     * A path must not pass through any node other than its source and target
      * **Exception: Compound hierarchy (parent-child) paths are allowed to intersect parent nodes**
      */
     static validateNodeCollisions(combo, sourceNode, targetNode, allNodes, optimizer, parentChildMap = new Map()) {
@@ -152,7 +152,7 @@ class HardConstraints {
 
     /**
      * HC3: No too-close snaps
-     * Snap point가 너무 가까우면 path가 target node와 충돌
+     * Snap points too close together make the path collide with the target node
      */
     static validateMinimumDistance(combo) {
         const MIN_SAFE_DISTANCE = TransitionLayoutOptimizer.MIN_SAFE_DISTANCE;
@@ -179,7 +179,7 @@ class HardConstraints {
 
     /**
      * HC4: No bidirectional edge pair conflicts
-     * 양방향 링크는 같은 edge pair를 반대 방향으로 사용할 수 없음
+     * A bidirectional link cannot use the same edge pair in reverse
      */
     static validateBidirectionalConflict(link, sourceEdge, targetEdge, assignment, reverseLinkMap, visualSourceId = null, visualTargetId = null) {
         const sourceId = visualSourceId || link.source;

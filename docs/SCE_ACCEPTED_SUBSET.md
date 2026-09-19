@@ -524,6 +524,185 @@ kinds only. Statecharts carry a different `sce:` vocabulary
 has not been measured the same way, and running one list over both
 would refuse valid documents.
 
+**`sce:default-covers` — answering the value-space coverage report.**
+On an enum-typed input `<data>` of a `sce:kind="transform"`, it names
+the variants of that input's value space which reach the expression's
+default branch *on purpose*:
+
+```xml
+<data id="country" sce:type="enum:Country" sce:direction="in"
+      sce:default-covers="KOREA MEXICO EUROPE JAPAN"/>
+```
+
+`sce-codegen coverage` reports which variants nothing in a document
+tests for (§B). That report is deliberately exit-0 — falling through to
+a default is legal and often right — but a report with no way to answer
+it re-asks the same question forever, and a list that never shrinks is a
+list nobody reads.
+
+⚠ **It names the variants rather than being a flag, so the claim
+expires.** Add a variant to the enum document and the new one is
+unacknowledged, so the question comes back — which is exactly right, because
+a value space growing is when the author has something new to decide. A
+boolean `sce:default-is-deliberate` would have gone silent forever on the
+day the platform added a value.
+
+⚠⚠ **A claim can be false, and a false claim is refused rather than
+reported.** The gap is legal; an untrue statement about the document is
+not — the same failure `unknown-sce-attribute` exists to prevent. Three
+ways, three codes, because the repairs have three shapes:
+
+- *names something the value space does not declare* — usually drift,
+  after a variant was renamed upstream. Refused as
+  `validation/default-covers-unknown-variant`; the fix offers the
+  declared variants.
+- *names a variant the document's own conditions test for* — the name is
+  real and the list is stale. Refused as
+  `validation/default-covers-tested-variant`; the fix drops that name.
+- *sits on a field with no value space* — a non-enum type, or an output.
+  Refused as `validation/default-covers-not-a-value-space`; the fix drops
+  the attribute.
+
+⚠ The codes are written inline here rather than as a table, because the
+appendix below is keyed on a `| `code` |` row and each code must sit in
+exactly one of those (`acceptance_doc_covers_every_code`).
+
+**`sce:retain` / `sce:initial` — a value that outlives the program.**
+On a forge `<data>` field, the pair declares that the field's value is
+kept between runs and names the value it has before anything has ever
+been stored:
+
+```xml
+<data id="prevMode" sce:type="enum:Mode" sce:direction="in"
+      sce:retain="battery" sce:initial="NORMAL"/>
+```
+
+⚠ **SCE does not implement persistence** — where a value is kept between
+runs belongs to the host. SCE declares it, carries it into the forge AST
+so the host knows what to provision, and checks the one question it can
+answer: whether `sce:initial` names a value the field's type could ever
+hold (an enum variant, `true`/`false`, an integer inside the declared
+width). That check earns its place because the initial value is taken on
+the day a system is first switched on and on no other day — the value
+least likely to be reached by a test, and the one whose mistake survives
+longest.
+
+⚠⚠ **The scope label is opaque.** SCE compares it for equality and never
+interprets it, so `"battery"`, `"ignition"` and `"sd-card"` are all
+simply labels. The measurement behind this surface is automotive, and
+enumerating its two stores here would put one domain's vocabulary in a
+general tool — the same reason `sce:req` ids are never normalised. What
+a label means, and whether that store exists, is the deployment's
+business.
+
+⚠⚠⚠ **Each attribute requires the other**, and both orphans are refused
+as `validation/invalid-attribute` with the missing partner named. A
+retained field with no initial value is undefined on its first run; an
+initial value on a field that is not retained is read by nothing,
+because an ordinary field is computed afresh every cycle. No new
+diagnostic code: this is the orphan shape `sce:quantity` / `sce:scale` /
+`sce:offset` already established.
+
+**`<sce:cycle>` — an order the document states.** An ordered sequence of
+named alternatives drawn from an imported value space, each optionally
+carrying the condition under which it is present:
+
+```xml
+<sce:cycle id="panels" of="Panel">
+  <sce:step name="LIST"/>
+  <sce:step name="GRID"   when="gridAvailable"/>
+  <sce:step name="DETAIL" when="itemSelected"/>
+  <sce:step name="MAP"    when="locationKnown"/>
+</sce:cycle>
+```
+
+⚠ **The order belongs to the document, not to the value space**, and
+that is the whole reason the element exists. The obvious design walks
+the imported enum's declaration order and skips what is unavailable — no
+new element, one intrinsic. It is wrong, and measurably so. In surveyed
+material a prose specification and the platform value space it draws on
+listed the **same seven alternatives in two different orders**: they
+agreed on the first three, and one variant the specification put
+**fourth** the value space declared **last**. So "the next alternative"
+would have been wrong in a way a fixture that steps one place cannot
+see — the two orders share a prefix, which is exactly what a small
+example fails to distinguish. A value space says *which* values exist; a
+cycle says *in what order* a user walks them.
+
+⚠ The shape of that disagreement is the measurement and it is stated
+here; the variant names are the surveyed document's identity and are
+not. The example above is therefore an invented one, chosen to show a
+conditional step rather than to reproduce anything observed.
+
+⚠⚠ **The steps are a subset.** A value space usually holds values that
+are not stops at all — an `OFF`, an `INVALID`, a `MAX` sentinel — and
+requiring every variant would force conditions for values that are not
+alternatives. The names are checked against the value space, so a
+misspelled stop is refused rather than becoming a position no cursor can
+reach.
+
+⚠⚠⚠ **`when` sits on the step** because that is how the source notation
+writes it: one table whose rows are the alternatives in order, each row
+carrying the condition under which it is present. An earlier design
+passed availability in as a bitmask, which made the author write bit
+positions by hand — positions meaningful only relative to a list
+declared elsewhere.
+
+Refused, all as `validation/invalid-attribute` or the existing
+cardinality codes: a step naming no value, an `of` that is not an
+imported enum alias, fewer than two stops (nothing to navigate), and a
+repeated name (one value in two positions makes `next` ambiguous). One
+value space may carry several cycles, and one alternative may be a stop
+on more than one of them.
+
+**Navigating a cycle** — four calls, usable in any `transform`
+expression:
+
+| Call | Answers |
+|---|---|
+| `cycle_has(c, cur)` | is `cur` a stop that is currently present |
+| `cycle_first(c, cur)` | the first present stop, or `cur` when none is |
+| `cycle_next(c, cur)` | the next present stop after `cur`, wrapping |
+| `cycle_prev(c, cur)` | the previous present stop, wrapping |
+
+The boundary rules are decided once, in
+`sce-build/src/forge/cycle_expand.rs`, and hold for every target:
+
+- **Nothing present.** `cycle_first` answers the `cur` it was given.
+  That is why it takes one: naming the first *declared* stop instead
+  would be the primitive claiming a presence the document's own
+  condition denies.
+- **The cursor is not a stop.** `cycle_next` / `cycle_prev` answer it
+  unchanged. Walking the cycle is the only thing they do, and "not on
+  the cycle" is not a walk. Snapping to the first stop is a defensible
+  rule — the surveyed specification states exactly that one — which is
+  precisely why it belongs in the document, written with `cycle_has`;
+  folded into the primitive it would vanish from the document and the
+  specification's sentence would have nothing to read against. Standing
+  still is also the louder failure: a document that forgets the rule
+  gets a cursor that sticks rather than one that silently jumps.
+- **A cursor on an absent stop still navigates from its position.**
+  `cycle_has` reports the absence; what to do about it is the
+  document's call.
+
+⚠ **These are expanded, not lowered.** The four calls are rewritten into
+ordinary conditional expressions once, before any backend sees the
+document, because nothing about walking a declared list differs per
+language — unlike `round`, whose halfway rule genuinely does. One
+rewrite instead of six emitter arms, and a seventh backend inherits it.
+
+⚠⚠ **Go cannot take them**, for a reason that predates them: its emitter
+refuses every conditional expression (`expression/go-ternary-unsupported`,
+raised identically for a one-line `a ? 1 : 0` that mentions no cycle).
+The cycle surface is exactly as portable as the rest of the expression
+language, no more and no less.
+
+⚠⚠⚠ **`cycle_next` expands to O(n²) terms** — the expression language
+has no way to bind the cursor's position once and reuse it. At the arity
+this was built for (seven stops, 49 terms) that is fine; the escape
+hatch, if it ever is not, is a generated helper function per cycle,
+which is O(n) with a local.
+
 ### §2.3 Context objects — `<sce:context>`
 
 Per-kind context objects carrying stateful scratch data. Rules:
@@ -1768,6 +1947,16 @@ surface. Three rejection codes:
   graph contains a cycle. Defensive check; without it, the enrichment
   pass recurses into infinite open-file work or surfaces as an opaque
   stack-overflow at codegen.
+- `validation/transform-output-cycle` — a Transform's outputs depend on
+  each other in a cycle. An output MAY read a sibling output: a
+  specification routinely names an intermediate value that several
+  outputs consume, and the generator lowers such a read to a call of the
+  sibling's own `compute_*` function, which is sound because every one
+  of them is a pure function of the same inputs. A cycle is the one
+  shape that lowering cannot serve — the emitted functions would call
+  each other until the stack ends — so it is refused before any language
+  is rendered. ⚠ Before this pair existed, a sibling read of ANY kind
+  emitted an identifier the signature never bound, with exit 0.
 
 Today the validator is wired only on the Forge→Forge path (a Forge
 document's expressions reference another Forge document imported via
@@ -2346,6 +2535,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/missing-attribute` | Validation |
 | `validation/invalid-attribute` | Validation |
 | `validation/unknown-sce-attribute` | Validation |
+| `validation/default-covers-unknown-variant` | Validation |
+| `validation/default-covers-tested-variant` | Validation |
+| `validation/default-covers-not-a-value-space` | Validation |
 | `validation/unsupported-kind` | Validation |
 | `validation/duplicate-id` | Validation |
 | `validation/malformed-identifier` | Validation |
@@ -2379,6 +2571,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/cross-kind-field-not-found` | Validation |
 | `validation/cross-kind-type-mismatch` | Validation |
 | `validation/cross-kind-circular-dependency` | Validation |
+| `validation/transform-output-cycle` | Validation |
 | `validation/enum-no-variants` | Validation |
 | `validation/enum-variant-duplicate-name` | Validation |
 | `validation/enum-variant-duplicate-value` | Validation |

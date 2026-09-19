@@ -5,7 +5,7 @@
 //
 // W3C SCXML 6.2: <send> respects the delay specification — onentry sends event2 with delay=1s then event1 immediately;
 // the immediate event1 fires first (routes s0→s1), then the 1s timer fires event2 → pass. If the scheduler ignored
-// delay, event2 would land first against the s0 wildcard → fail. Tests scheduled_push fire_time_ms-keyed sort (옵션 σ).
+// delay, event2 would land first against the s0 wildcard → fail. Tests scheduled_push fire_time_ms-keyed sort.
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -64,6 +64,15 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // enumerates the documents already known to pass and by construction
     // cannot start on the arrival it was built to refuse.
     "an_identifier_is_checked_against_the_grammar_w3c_gives_it",
+    // Asks `git ls-files` for every tracked file and decodes each one,
+    // refusing a line of prose written in a script this tree does not write
+    // prose in unless the file argues for it. What it exists for is a
+    // sentence arriving in a file nobody thought to look at — the six it was
+    // written for were spread across the C AOT suite, a Gradle properties
+    // file and the visualizer, which share no prefix — so a `paths:` filter
+    // written over the tree as it stands would name the places already
+    // cleaned and by construction miss the next one.
+    "non_latin_prose_declares_why_it_is_here",
     // Sweeps every tracked file under `scripts/` for a second spelling of the
     // parallel-jobs rule, so a script added anywhere under that tree changes
     // what it reads — and a NEW script carrying its own copy is the case the

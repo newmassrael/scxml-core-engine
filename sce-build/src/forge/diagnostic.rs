@@ -545,6 +545,40 @@ pub enum DiagnosticCode {
     /// would otherwise have dropped in silence.
     #[serde(rename = "validation/unknown-sce-attribute")]
     ValidationUnknownSceAttribute,
+    // ── `sce:default-covers` — the three ways an acknowledgement can be
+    //    false. It exists to SILENCE the value-space coverage report
+    //    (`forge::coverage`), so each of these is a refusal rather than a
+    //    report: an author who can quiet a question with a claim nothing
+    //    checks has a worse tool than one with no way to quiet it.
+    //
+    //    Three codes because the REPAIRS have three shapes — correct the
+    //    name, drop the name, drop the attribute — and a consumer that
+    //    could not tell them apart would have to re-derive which by
+    //    re-reading the document. ──────────────────────────────────────
+    /// The acknowledgement names something that is not a variant of the
+    /// field's value space. Most often DRIFT rather than a typo: the
+    /// enum document is generated from a platform model, so a variant
+    /// renamed upstream leaves the claim pointing at a name nobody
+    /// declares any more.
+    ///
+    /// ⚠ Distinct from `unknown-sce-attribute`: the NAME of the
+    /// attribute is known and read here; it is what the name CLAIMS that
+    /// is false.
+    #[serde(rename = "validation/default-covers-unknown-variant")]
+    ValidationDefaultCoversUnknownVariant,
+    /// The acknowledgement names a variant the document's own conditions
+    /// test for, so the claim that it reaches the default is false. The
+    /// name is real and the LIST is stale — the fix is to drop the name,
+    /// not to correct it.
+    #[serde(rename = "validation/default-covers-tested-variant")]
+    ValidationDefaultCoversTestedVariant,
+    /// The acknowledgement sits on a field with no value space to
+    /// acknowledge — a non-enum type, or an output. Nothing would ever
+    /// read it, which is the invisible-attribute failure
+    /// `unknown-sce-attribute` exists to prevent, let back in by a name
+    /// that IS on the roster.
+    #[serde(rename = "validation/default-covers-not-a-value-space")]
+    ValidationDefaultCoversNotAValueSpace,
     #[serde(rename = "validation/unsupported-kind")]
     ValidationUnsupportedKind,
     #[serde(rename = "validation/duplicate-id")]
@@ -656,6 +690,8 @@ pub enum DiagnosticCode {
     ValidationCrossKindTypeMismatch,
     #[serde(rename = "validation/cross-kind-circular-dependency")]
     ValidationCrossKindCircularDependency,
+    #[serde(rename = "validation/transform-output-cycle")]
+    ValidationTransformOutputCycle,
 
     // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A, item A3).
     //    Parser-stage sema for the pure-function kind. Three of
@@ -2937,6 +2973,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMissingAttribute,
         ValidationInvalidAttribute,
         ValidationUnknownSceAttribute,
+        ValidationDefaultCoversUnknownVariant,
+        ValidationDefaultCoversTestedVariant,
+        ValidationDefaultCoversNotAValueSpace,
         ValidationUnsupportedKind,
         ValidationDuplicateId,
         ValidationMalformedIdentifier,
@@ -2974,6 +3013,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationCrossKindFieldNotFound,
         ValidationCrossKindTypeMismatch,
         ValidationCrossKindCircularDependency,
+        ValidationTransformOutputCycle,
         // Algorithm (SCE Protocol-Synthesis RFC §synth-5-A, item A3)
         AlgorithmLocalShadowsParam,
         AlgorithmLvalueUnsupported,
@@ -3470,6 +3510,12 @@ impl DiagnosticCode {
             // The vocabulary an `sce:` attribute may come from is the
             // accepted-subset document's business, same as the kinds.
             ValidationUnknownSceAttribute => Some("SCE Accepted Subset §2.2"),
+            // Same clause, for the same reason: `sce:default-covers` is
+            // a name from that vocabulary, and what it may say about a
+            // value space is part of what the subset accepts.
+            ValidationDefaultCoversUnknownVariant => Some("SCE Accepted Subset §2.2"),
+            ValidationDefaultCoversTestedVariant => Some("SCE Accepted Subset §2.2"),
+            ValidationDefaultCoversNotAValueSpace => Some("SCE Accepted Subset §2.2"),
             ValidationInvalidDirection => Some("SCE Forge §3.3"),
             ValidationWrongPipeline => Some("SCE Forge §4"),
 
@@ -4079,6 +4125,9 @@ impl DiagnosticCode {
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
+            // An output cycle is a well-formedness rule about this
+            // tree's own forge grammar; no external spec names it.
+            | ValidationTransformOutputCycle
             // NL→IR Mapping Roadmap Item 3 — reachability is
             // implied by §scxml-3 entry semantics (the design-time
             // BFS over `initial`, parallel cascade, history default
@@ -4169,6 +4218,9 @@ impl DiagnosticCode {
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
             ValidationUnknownSceAttribute => "validation/unknown-sce-attribute",
+            ValidationDefaultCoversUnknownVariant => "validation/default-covers-unknown-variant",
+            ValidationDefaultCoversTestedVariant => "validation/default-covers-tested-variant",
+            ValidationDefaultCoversNotAValueSpace => "validation/default-covers-not-a-value-space",
             ValidationUnsupportedKind => "validation/unsupported-kind",
             ValidationDuplicateId => "validation/duplicate-id",
             ValidationMalformedIdentifier => "validation/malformed-identifier",
@@ -4204,6 +4256,7 @@ impl DiagnosticCode {
             ValidationCrossKindFieldNotFound => "validation/cross-kind-field-not-found",
             ValidationCrossKindTypeMismatch => "validation/cross-kind-type-mismatch",
             ValidationCrossKindCircularDependency => "validation/cross-kind-circular-dependency",
+            ValidationTransformOutputCycle => "validation/transform-output-cycle",
             AlgorithmLocalShadowsParam => "algorithm/local-shadows-param",
             AlgorithmLvalueUnsupported => "algorithm/lvalue-unsupported",
             AlgorithmReturnMissing => "algorithm/return-missing",
@@ -5175,6 +5228,56 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![element.clone(), attr.clone()],
         },
+        // ── `sce:default-covers`: three false claims, three repairs ──
+        ValidationError::DefaultCoversUnknownVariant {
+            field,
+            value_space,
+            name,
+            known,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationDefaultCoversUnknownVariant,
+            stage: Stage::Validation,
+            expected: None,
+            // The offending value is the name in the list, and the
+            // repair is "one of the value space's own variants" — the
+            // producer knows the closed set but not which one was meant.
+            actual: Some(name.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: known.clone(),
+            }),
+            key_fragments: vec![field.clone(), value_space.clone(), name.clone()],
+        },
+        ValidationError::DefaultCoversTestedVariant {
+            field,
+            value_space,
+            name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationDefaultCoversTestedVariant,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            // Deterministic and single-direction: the name is real, the
+            // claim about it is not, so it leaves the list. Nothing else
+            // about the document has to change.
+            fix: Some(Fix::RemoveFields {
+                location: format!("{field}.sce:default-covers"),
+                fields: vec![name.clone()],
+            }),
+            key_fragments: vec![field.clone(), value_space.clone(), name.clone()],
+        },
+        ValidationError::DefaultCoversWithoutValueSpace { field, found } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationDefaultCoversNotAValueSpace,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(found.clone()),
+            // The whole attribute goes, not one name from it: there is
+            // no value space here for any list to be about.
+            fix: Some(Fix::RemoveFields {
+                location: field.clone(),
+                fields: vec!["sce:default-covers".to_string()],
+            }),
+            key_fragments: vec![field.clone(), found.clone()],
+        },
         ValidationError::UnknownSceAttribute {
             element,
             attr,
@@ -5388,6 +5491,19 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // distinct cycles in the same build will have different
             // `cycle` vectors and thus different IDs.
             key_fragments: cycle.clone(),
+        },
+        ValidationError::TransformOutputCycle { name, cycle } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationTransformOutputCycle,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(cycle.join(" → ")),
+            fix: None,
+            // Document name first, then the cycle path: two transforms
+            // in one build can carry the same output ids, so the path
+            // alone would collide.
+            key_fragments: std::iter::once(name.clone())
+                .chain(cycle.iter().cloned())
+                .collect(),
         },
         ValidationError::QuantityUnitMismatch {
             kind,
@@ -9163,6 +9279,47 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5951c84e07165387","code":"validation/unknown-sce-attribute","stage":"validation","spec":"SCE Accepted Subset §2.2","message":"<data>: unknown attribute sce:directon (known: direction)","actual":"sce:directon","fix":{"kind":"replace_one_of","candidates":["direction"]}}"#,
             ),
             (
+                // A value space that was renamed upstream: the
+                // acknowledgement still names `KORIA`, which nothing
+                // declares. The likeliest shape of this failure, and
+                // the one the named-rather-than-boolean design exists
+                // to catch.
+                "forge/default-covers-unknown-variant",
+                ValidationError::DefaultCoversUnknownVariant {
+                    field: "country".into(),
+                    value_space: "Country".into(),
+                    name: "KORIA".into(),
+                    known: vec!["KOREA".into(), "USA".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ec66dcb727b6aa2c","code":"validation/default-covers-unknown-variant","stage":"validation","spec":"SCE Accepted Subset §2.2","message":"field 'country': sce:default-covers names 'KORIA', which is not a variant of Country (declared: KOREA, USA)","actual":"KORIA","fix":{"kind":"replace_one_of","candidates":["KOREA","USA"]}}"#,
+            ),
+            (
+                // A stale list: the document grew an arm for `KOREA`
+                // and the acknowledgement was not updated, so it now
+                // claims something the document itself contradicts.
+                "forge/default-covers-tested-variant",
+                ValidationError::DefaultCoversTestedVariant {
+                    field: "country".into(),
+                    value_space: "Country".into(),
+                    name: "KOREA".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:dc7774ecbc0283e3","code":"validation/default-covers-tested-variant","stage":"validation","spec":"SCE Accepted Subset §2.2","message":"field 'country': sce:default-covers names 'KOREA', but this document tests for it, so it does not reach the default","actual":"KOREA","fix":{"kind":"remove_fields","location":"country.sce:default-covers","fields":["KOREA"]}}"#,
+            ),
+            (
+                // The attribute on a field with no value space at all —
+                // parsed, unreadable by anything, and exit 0 before
+                // this code existed.
+                "forge/default-covers-not-a-value-space",
+                ValidationError::DefaultCoversWithoutValueSpace {
+                    field: "warnOn".into(),
+                    found: "bool".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8504a05c4d6adb9e","code":"validation/default-covers-not-a-value-space","stage":"validation","spec":"SCE Accepted Subset §2.2","message":"field 'warnOn': sce:default-covers needs an enum-typed input to acknowledge; this field is bool","actual":"bool","fix":{"kind":"remove_fields","location":"warnOn","fields":["sce:default-covers"]}}"#,
+            ),
+            (
                 // The document §1 of the accepted subset measures: an
                 // `id` carrying a comment terminator and a path
                 // separator, which used to generate `…_STATE_S0*/X`.
@@ -9325,6 +9482,15 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9316da7f260e4553","code":"validation/cross-kind-circular-dependency","stage":"validation","message":"circular <sce:import> dependency: a.scxml → b.scxml → a.scxml","actual":"a.scxml → b.scxml → a.scxml"}"#,
+            ),
+            (
+                "forge/transform-output-cycle",
+                ValidationError::TransformOutputCycle {
+                    name: "scaler".into(),
+                    cycle: vec!["a".into(), "b".into(), "a".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:924af7f5278f8f99","code":"validation/transform-output-cycle","stage":"validation","message":"transform 'scaler': outputs form a dependency cycle: a → b → a","actual":"a → b → a"}"#,
             ),
             (
                 "forge/reserved-context-id",
@@ -13570,6 +13736,11 @@ mod tests {
             // ── Fix carries a closed candidate / attr list ─────
             ValidationInvalidAttribute
             | ValidationUnknownSceAttribute
+            // The value space's own variants are the closed set the
+            // acknowledgement should have drawn from. Its two siblings
+            // are NOT here: both repair by removal, which is why they
+            // are separate codes at all.
+            | ValidationDefaultCoversUnknownVariant
             | ValidationInvalidReference
             | ValidationRequireEither
             | ValidationUnsupportedKind
@@ -14400,6 +14571,9 @@ mod tests {
             // candidate set on the diagnostic wire.
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
+            // Same shape: breaking an output cycle means deleting one
+            // dependency edge, and which edge is the author's call.
+            | ValidationTransformOutputCycle
             // NL→IR Mapping Roadmap Item 3 — reachability codes
             // ship without a closed candidate set. Repair for an
             // unreachable state is author-domain (delete the orphan or
@@ -14459,6 +14633,13 @@ mod tests {
             // deterministic, no closed candidate set the validator can
             // predict, so NeutralOrDeterministic.
             | ValidationBytesComparisonNotEquality
+            // The two `sce:default-covers` claims whose repair is a
+            // REMOVAL — one name out of the list, or the attribute
+            // itself. `Fix::RemoveFields` names exactly what goes, so
+            // both are deterministic; neither offers candidates, which
+            // is what separates them from their sibling above.
+            | ValidationDefaultCoversTestedVariant
+            | ValidationDefaultCoversNotAValueSpace
             // NL→IR Item C1 Path A: mesh cross-machine
             // EventSchema mismatch — repair is two-axis (realign
             // sender ↔ receiver schemas by editing one side's field
@@ -14692,6 +14873,9 @@ mod tests {
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationUnknownSceAttribute
+                | ValidationDefaultCoversUnknownVariant
+                | ValidationDefaultCoversTestedVariant
+                | ValidationDefaultCoversNotAValueSpace
                 | ValidationUnsupportedKind | ValidationDuplicateId
                 | ValidationMalformedIdentifier | ValidationEventNameGrammar
                 | ValidationDuplicateContextObject | ValidationReservedContextId
@@ -14715,6 +14899,7 @@ mod tests {
                 | ValidationCrossKindFieldNotFound
                 | ValidationCrossKindTypeMismatch
                 | ValidationCrossKindCircularDependency
+                | ValidationTransformOutputCycle
                 | AlgorithmLocalShadowsParam
                 | AlgorithmLvalueUnsupported
                 | AlgorithmReturnMissing
@@ -15015,9 +15200,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            365,
+            369,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 365 distinct variants to match the DiagnosticCode \
+             expected 369 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15603,6 +15788,14 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // roxmltree tree so it can name the attribute's own
             // position, which is before the anchor index exists.
             | ValidationUnknownSceAttribute
+            // The `sce:default-covers` claims, for a different reason:
+            // their check runs over the PARSED model (it needs the
+            // document's expressions and an imported enum's variants),
+            // which no longer holds the node the attribute sat on. A
+            // position for them is owed work, not a settled absence.
+            | ValidationDefaultCoversUnknownVariant
+            | ValidationDefaultCoversTestedVariant
+            | ValidationDefaultCoversNotAValueSpace
             | ValidationUnsupportedKind
             // Raised in `parse_impl`, before `anchor_index` is built —
             // the sweep runs on the roxmltree tree so it can name the
@@ -15637,6 +15830,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
+            | ValidationTransformOutputCycle
             | AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing

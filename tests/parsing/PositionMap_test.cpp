@@ -77,16 +77,20 @@ TEST(PositionMap, MultiLineFileLookup) {
 }
 
 // ── Test 3: Unicode scalar column counting ─────────────────────────
-// Mirrors Rust `column_counts_unicode_scalars_not_bytes`. "한" is 3
-// UTF-8 bytes but a single Unicode scalar — column 2 must point at
-// the byte *after* "한", not at byte 3. Byte counting would report
-// col 4 and silently skew every multibyte diagnostic.
+// Mirrors Rust `column_counts_unicode_scalars_not_bytes`. U+D55C is 3
+// UTF-8 bytes but a single Unicode scalar — column 2 must point at the
+// byte *after* it, not at byte 3. Byte counting would report col 4 and
+// silently skew every multibyte diagnostic.
+//
+// The fixture is spelled as its UTF-8 bytes, and named by its codepoint
+// rather than by its glyph: what the test needs is the WIDTH, which the
+// codepoint states to every reader.
 TEST(PositionMap, UnicodeScalarColumn) {
     const std::string text = "\xED\x95\x9C"
-                             "abc";  // "한abc"
+                             "abc";  // U+D55C followed by "abc"
     auto map = PositionMap::identity("main.scxml", text);
 
-    const size_t byte_offset = 3;  // Length of "한" in UTF-8.
+    const size_t byte_offset = 3;  // Length of U+D55C in UTF-8.
     SourcePos pos = map.lookup(byte_offset);
     EXPECT_EQ(pos.row, 1u);
     EXPECT_EQ(pos.col, 2u);

@@ -58,6 +58,40 @@ restricted_term_gate_staged() {
         return 1
     fi
 
+    # ⚠⚠ KNOWN WEAKNESS, MEASURED 2026-09-18 AND DELIBERATELY NOT PATCHED
+    # HERE. Several of the list's patterns are anchored `\b<term>`, and a
+    # word boundary needs a non-word character on the other side — so a
+    # term does not match when one letter is stuck in front of it. That
+    # is not a hypothetical spelling: the platform model this repository
+    # is used against writes the same identifiers as member variables
+    # with exactly such a prefix, so the shape most likely to be
+    # committed is the shape that passes.
+    #
+    # Two repairs were tried in the gate and both were rejected BY
+    # MEASUREMENT rather than by argument:
+    #
+    #   * Dropping the anchors from every pattern closes the hole and
+    #     turns four of this repository's own committed files red — a
+    #     vendored JSON header, a W3C specification snapshot, a solution
+    #     file and a benchmark, none of which can hold a restricted term.
+    #     A gate that refuses every commit is an off gate with extra
+    #     steps.
+    #   * Dropping them only for long plain identifiers keeps the tree
+    #     green and closes nothing: the anchored patterns are not that
+    #     shape.
+    #
+    # ⚠ A SECOND WEAKNESS OF THE SAME FAMILY, measured the same day: the
+    # patterns are CASE-SENSITIVE. A term written one way is caught, and
+    # the same identifier lower-cased or upper-cased is not. That matters
+    # because a lower-cased spelling is not exotic — it is what any
+    # normalising step produces, so a tool that folds case before writing
+    # a file hands the gate something it will wave through.
+    #
+    # What is left needs a decision per pattern, which needs READING the
+    # list — and reading it copies every restricted term into whatever
+    # is doing the reading, which is worse than the hole. So both belong
+    # to whoever owns the list, and this note is here so the weaknesses
+    # are recorded rather than rediscovered.
     local -a pats=()
     local line
     while IFS= read -r line || [[ -n "$line" ]]; do

@@ -156,7 +156,9 @@ fn unicode_escapes_decode_to_utf8() {
     let lua = shared_reader();
     let b = '\\';
     for (text, want) in [
-        (format!(r#""{b}u0041{b}ubd81""#), "A북"),
+        // The expected side is spelled as the escape it must decode to, so
+        // the two halves of the claim are visibly the same codepoint.
+        (format!(r#""{b}u0041{b}ubd81""#), "A\u{BD81}"),
         (format!(r#""{b}ud83d{b}ude00""#), "😀"),
     ] {
         lua.globals().set("_probe", text.as_str()).expect("bind");

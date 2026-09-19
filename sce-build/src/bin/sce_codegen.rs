@@ -1918,6 +1918,20 @@ enum Commands {
         /// SCXML file path
         scxml: String,
     },
+    /// Emit value-space coverage NDJSON for a single forge document.
+    ///
+    /// One record per enum-typed input whose declared variants the
+    /// document does not name in full — the variants that reach only a
+    /// default branch. Empty output when every value space is named.
+    ///
+    /// ⚠ This is a REPORT, not a refusal. Falling through to a default
+    /// is legal and often correct; the command exists because the author
+    /// is the only one who can say whether it was intended, and cannot
+    /// say so about a fall-through nobody showed them.
+    Coverage {
+        /// SCXML file path (a `sce:kind` forge document)
+        scxml: String,
+    },
     /// Generate a cross-language numerical conformance test harness from
     /// a fixture catalog — one catalog is the single source of truth for
     /// every backend it serves, which `--language` names.
@@ -2477,6 +2491,7 @@ fn main() {
         } => cmd_acceptance_check(&record, &variant, &root),
         Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
         Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
+        Commands::Coverage { scxml } => cmd_coverage(&scxml, error_format),
         Commands::GenerateConformance {
             language,
             manifest,
@@ -7799,6 +7814,48 @@ fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorForm
 // NDJSON. Same architecture as the `requirements` subcommand — parse
 // through the production parser, walk the model, emit one record per
 // detected marker.
+
+/// `sce-codegen coverage` — value-space coverage for a forge document.
+///
+/// ⚠ Exit 0 whether or not anything is uncovered, and that is the
+/// design. A non-zero exit would make a CI lane treat "the author has
+/// not named every variant" as a failure, and the first response to
+/// that is to name them with a rule that does nothing — which is worse
+/// than the fall-through it replaced, because it looks decided.
+fn cmd_coverage(scxml: &str, error_format: ErrorFormat) {
+    let content = match std::fs::read_to_string(scxml) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("cannot read {scxml}: {e}");
+            std::process::exit(1);
+        }
+    };
+    let path = std::path::Path::new(scxml);
+    let base_dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or(stem);
+    let label = sce_build::DocumentLabel {
+        identifier: stem,
+        diagnostic_label: basename,
+    };
+    let parsed = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
+        Ok(Some(p)) => p,
+        // Not a forge document — the SCXML pipeline owns it and has no
+        // declared value spaces to report on. Empty output, exit 0: a
+        // consumer that asked every file in a tree must not have to
+        // pre-filter by kind.
+        Ok(None) => return,
+        Err(e) => error_format.emit_forge_and_exit(&e),
+    };
+    let rows = match sce_build::forge::coverage::report(&parsed, base_dir, basename) {
+        Ok(r) => r,
+        Err(e) => error_format.emit_forge_and_exit(&e),
+    };
+    out_stream(|w| sce_build::forge::coverage::emit_ndjson(&rows, w));
+}
 
 fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
     // ⚠ A forge document is READ HERE TOO, and did not used to be.

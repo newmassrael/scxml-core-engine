@@ -292,6 +292,23 @@ pub struct ImportContext {
     /// [`LangCtx::resolved_type`]: super::generator::LangCtx::resolved_type
     #[serde(skip)]
     pub enum_qualified_type: String,
+    /// Variant names of an imported `sce:kind="enum"` document, in
+    /// declaration order and UNCONVERTED — the source spelling the
+    /// author wrote.
+    ///
+    /// ⚠ Unconverted on purpose. Each backend derives its own identifier
+    /// from this via [`crate::forge::enum_naming::variant_ident`], and
+    /// storing a pre-converted form here would pick one backend's
+    /// spelling for all of them — which is the exact drift the naming
+    /// module exists to prevent.
+    #[serde(skip)]
+    pub enum_variants: Vec<String>,
+    /// The imported enum document's own `name`, unconverted. Needed
+    /// alongside the variants because two backends fold the type name
+    /// INTO the variant identifier (Go's `TypeVariant`, C11's
+    /// `TYPE_VARIANT`), so the variant alone cannot produce them.
+    #[serde(skip)]
+    pub enum_source_name: String,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -577,7 +594,11 @@ fn resolve_single_import(
         codec_variant_is_caller_tag: false,
         codec_flag_inputs: Vec::new(),
         flag_binds: imp.flag_binds.clone(),
+        // Populated by the enum-import enrichment in `lib.rs`, which is
+        // the only place that has the imported document's typed model.
         enum_qualified_type: String::new(),
+        enum_variants: Vec::new(),
+        enum_source_name: String::new(),
     }
 }
 
@@ -1069,10 +1090,83 @@ fn render_transform(
     let l = LangCtx::new(lang);
 
     let go_renames = l.go_rename_pairs(m.inputs.iter().map(|f| f.id.as_str()));
-    let renames = rename_map(&go_renames);
 
     let type_ctx = crate::forge::type_ctx::transform(m, imports);
-    let params = l.param_str(&m.inputs);
+    // ⚠ Resolved, not raw: an `enum:<alias>` input panics every
+    // per-language `*_type` helper by design. See `param_str_resolved`.
+    let params = l.param_str_resolved(&m.inputs, imports);
+
+    // ── A sibling output is a CALL, not a bare name ───────────────
+    //
+    // An output may read another output. Measured 2026-09-18, that read
+    // used to fall through as an unbound identifier and the generator
+    // emitted it verbatim with exit 0 — Python raised `NameError`, C++
+    // and Rust would not compile. The read is legitimate (a prose spec
+    // names an intermediate value and several outputs consume it), so it
+    // is lowered here into a call of the sibling's own function.
+    //
+    // Sound because every `compute_*` in this document is a pure
+    // function of the SAME input list, so the call site can forward its
+    // own parameters unchanged. The cycle that this lowering cannot
+    // serve is refused before rendering — `forge::transform_dep_check`.
+    //
+    // Rides the existing rename map rather than a second mechanism:
+    // renames run AFTER inference and replace an `Ident` with a `Raw`
+    // fragment while leaving the inferred type intact, which is exactly
+    // what a call-shaped replacement needs (and is how C11 already
+    // lowers `_st->member.field`).
+    let args = m
+        .inputs
+        .iter()
+        .map(|f| l.local_id(&f.id))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sibling_calls: Vec<(String, String)> = m
+        .outputs
+        .iter()
+        .map(|o| {
+            let fname =
+                forge_stateless_def_symbol(&m.name, &forge_transform_symbol(&o.id, lang), lang);
+            (o.id.clone(), format!("{fname}({args})"))
+        })
+        .collect();
+
+    // ── An enum VARIANT reference is a qualified name ──────────────
+    //
+    // `Fuel.DSL` in an expression names a variant of an imported
+    // `sce:kind="enum"` document. Before this, nothing resolved it: the
+    // rename pass case-converted the alias and emitted `fuel.DSL`, a name
+    // bound nowhere, with exit 0 — the same shape as the sibling-output
+    // defect above, and found the same way (by writing the first document
+    // that needed it).
+    //
+    // ⚠ The spelling comes from `enum_naming`, NOT from a second match
+    // here. That module owns it precisely because this is the second
+    // consumer; restating six arms is how `Error` and `ERROR` end up in
+    // the same build.
+    //
+    // ⚠⚠ Every variant of every imported enum is registered, not only the
+    // ones this document mentions. Registering on demand would mean
+    // parsing the expression first to learn which names to resolve —
+    // and a name the scan missed would fall through to the old
+    // case-converted emit, i.e. back to the defect.
+    let mut enum_variant_refs: Vec<(String, String)> = Vec::new();
+    for imp in imports {
+        if imp.kind != "enum" || imp.enum_qualified_type.is_empty() {
+            continue;
+        }
+        for variant in &imp.enum_variants {
+            enum_variant_refs.push((
+                format!("{}.{}", imp.alias, variant),
+                crate::forge::enum_naming::variant_ref(
+                    lang,
+                    &imp.enum_qualified_type,
+                    &imp.enum_source_name,
+                    variant,
+                ),
+            ));
+        }
+    }
 
     // Physical-quantity surface — collect per-input quantity
     // annotations once so every `compute_<out>` doc-comment block
@@ -1098,6 +1192,27 @@ fn render_transform(
         .iter()
         .map(|out| {
             let expected = crate::forge::type_ctx::forge_field_type(out);
+            // Every sibling but this one. Excluding self is not an
+            // optimisation: a self-reference is a cycle and was already
+            // refused, so leaving it in could only produce a call that
+            // recurses forever.
+            let pairs: Vec<(String, String)> = go_renames
+                .iter()
+                .cloned()
+                .chain(
+                    sibling_calls
+                        .iter()
+                        .filter(|(id, _)| *id != out.id)
+                        .cloned(),
+                )
+                // `<alias>.<variant>` collapses to the backend's own
+                // qualified reference. The rename pass already handles a
+                // two-segment path this way (it is how `_event.data`
+                // lowers), so no new mechanism is needed here — only the
+                // entries, and their spelling has one owner.
+                .chain(enum_variant_refs.iter().cloned())
+                .collect();
+            let renames = rename_map(&pairs);
             let expr_val = expr::transpile_typed(
                 out.expr.as_deref().unwrap_or("0"),
                 l.expr_target(),
@@ -1363,7 +1478,10 @@ fn render_enum(
     let l = LangCtx::new(lang);
 
     let enum_name = filters::to_pascal_case(m.name.clone());
-    let upper_snake_type = to_upper_snake(&m.name);
+    // ⚠ The SCREAMING_SNAKE form of the type name used to be computed
+    // here for the C11 variant prefix. It moved with the rest of the
+    // spelling into `enum_naming`, which is now the only place that
+    // knows it — leaving a second copy here is how the two drift.
 
     let underlying_type: String = match lang {
         Language::Cpp => cpp_type(&m.underlying_type).to_string(),
@@ -1381,12 +1499,13 @@ fn render_enum(
         .variants
         .iter()
         .map(|v| {
-            let name = match lang {
-                Language::Cpp | Language::Rust => filters::to_pascal_case(v.name.clone()),
-                Language::Kotlin | Language::Python => to_upper_snake(&v.name),
-                Language::Go => format!("{}{}", enum_name, filters::to_pascal_case(v.name.clone())),
-                Language::C11 => format!("{}_{}", upper_snake_type, to_upper_snake(&v.name)),
-            };
+            // ⚠ The spelling is NOT restated here. It has one owner —
+            // `enum_naming::variant_ident` — because a second consumer
+            // exists: an expression in another document referring to this
+            // variant must produce the identifier this line emits, in
+            // every backend. Two copies of a six-arm match is how a
+            // reference drifts from its declaration in one lane only.
+            let name = crate::forge::enum_naming::variant_ident(lang, &m.name, &v.name);
             let value_text = v.value.to_string();
             let value = match lang {
                 // Kotlin's `UByte`/`UShort` have no literal suffix —
@@ -19412,6 +19531,54 @@ impl LangCtx {
             .join(", ")
     }
 
+    /// [`param_str`](Self::param_str) for a document whose inputs may be
+    /// `enum:<alias>`-typed.
+    ///
+    /// ⚠ WHY THIS EXISTS. Every per-language `*_type` helper answers an
+    /// Enum with `unreachable!`, by design — the alias can only be
+    /// resolved through the import table, so the helpers refuse to guess.
+    /// `param_str` called them directly, so a document that declared
+    /// `sce:type="enum:Fuel"` on a transform input **panicked the
+    /// generator** instead of emitting the resolved type. Measured
+    /// 2026-09-18 against the first document this tree wrote that put a
+    /// value space on an input rather than flattening it to booleans.
+    ///
+    /// ⚠⚠ A panic, not a diagnostic: the combination was not reachable
+    /// from any committed fixture, so nothing exercised it. The enum kind
+    /// and the transform kind each had tests; the pair did not.
+    fn param_str_resolved(&self, fields: &[ForgeField], imports: &[ImportContext]) -> String {
+        fields
+            .iter()
+            .map(|f| match &f.sce_type {
+                SceType::Enum(_) => {
+                    self.format_param_typed(&f.id, &self.resolved_type(&f.sce_type, imports))
+                }
+                _ => self.format_param(&f.id, &f.sce_type),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Place an already-rendered type string next to a parameter name in
+    /// this language's order. Shares the placement rule with
+    /// [`format_param`](Self::format_param) rather than restating it —
+    /// two copies of "does the type come before or after the name" is
+    /// exactly the kind of duplication that drifts per backend.
+    fn format_param_typed(&self, id: &str, ty: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Cpp | crate::generator::Language::Go => {
+                format!("{ty} {id}")
+            }
+            crate::generator::Language::C11 => {
+                format!("{ty} {}", filters::to_snake_case(id.to_string()))
+            }
+            crate::generator::Language::Kotlin => format!("{id}: {ty}"),
+            crate::generator::Language::Rust | crate::generator::Language::Python => {
+                format!("{}: {ty}", filters::to_snake_case(id.to_string()))
+            }
+        }
+    }
+
     /// Format a single parameter: handles language-specific id casing, type
     /// placement order, and reference/borrow semantics.
     fn format_param(&self, id: &str, ty: &SceType) -> String {
@@ -20045,11 +20212,24 @@ fn render_observer(
         })
         .collect();
 
+    // The event list is the DOMAIN's members, not one entry per monitor. Two
+    // monitors may raise the same event -- an observer that watches one
+    // quantity against two different thresholds is the ordinary case, and
+    // both arms mean "entered the zone".
+    //
+    // Emitting a member per monitor produced a duplicated enum variant. Python
+    // refuses that at import (`TypeError: 'X' already defined as 'X'`), so the
+    // generated module could not be loaded at all; the other backends accept
+    // it silently or not depending on the language. Deduplicating here rather
+    // than in five templates keeps one answer in one place.
     let mut events = Vec::new();
     for mon in &m.monitors {
-        events.push(l.event_name(&mon.on_enter));
-        if let Some(ref on_leave) = mon.on_leave {
-            events.push(l.event_name(on_leave));
+        for name in std::iter::once(l.event_name(&mon.on_enter))
+            .chain(mon.on_leave.as_ref().map(|s| l.event_name(s)))
+        {
+            if !events.contains(&name) {
+                events.push(name);
+            }
         }
     }
 
@@ -22888,6 +23068,8 @@ mod tests {
             expr: None,
             quantity: None,
             max_size,
+            default_covers: Vec::new(),
+            retain: None,
         };
         // Bytes with no annotation → default-capacity buffer + length sibling.
         assert_eq!(
@@ -23092,6 +23274,8 @@ mod tests {
             codec_flag_inputs: Vec::new(),
             flag_binds: Vec::new(),
             enum_qualified_type: qualified.to_string(),
+            enum_variants: Vec::new(),
+            enum_source_name: String::new(),
         }
     }
 
@@ -23700,6 +23884,8 @@ mod tests {
                 codec_flag_inputs: Vec::new(),
                 flag_binds: Vec::new(),
                 enum_qualified_type: String::new(),
+                enum_variants: Vec::new(),
+                enum_source_name: String::new(),
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -23730,6 +23916,8 @@ mod tests {
                 codec_flag_inputs: Vec::new(),
                 flag_binds: Vec::new(),
                 enum_qualified_type: String::new(),
+                enum_variants: Vec::new(),
+                enum_source_name: String::new(),
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

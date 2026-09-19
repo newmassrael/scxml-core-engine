@@ -422,6 +422,76 @@ pub enum ValidationError {
         known: Vec<String>,
     },
 
+    /// `sce:default-covers` names something that is not a variant of the
+    /// field's declared value space.
+    ///
+    /// ⚠ WHY THIS IS A REFUSAL. The attribute exists to SILENCE a
+    /// question (see [`crate::forge::coverage`]), so a name in it that
+    /// means nothing is worse than no name at all: the author believes a
+    /// value is accounted for, and the machine agrees with a claim about
+    /// a value that does not exist. The likeliest cause is not a typo but
+    /// DRIFT — the enum document is generated from a platform model, and
+    /// a variant renamed upstream leaves the acknowledgement pointing at
+    /// a name nobody declares any more. That is exactly the moment the
+    /// author must look again.
+    #[error(
+        "field '{field}': sce:default-covers names '{name}', which is not a variant of {value_space} (declared: {})",
+        .known.join(", ")
+    )]
+    DefaultCoversUnknownVariant {
+        field: String,
+        value_space: String,
+        name: String,
+        /// The value space's own variants, so the refusal answers "then
+        /// what could I have written".
+        known: Vec<String>,
+    },
+
+    /// `sce:default-covers` names a variant the document's own conditions
+    /// test for, so the claim that it reaches the default is false.
+    ///
+    /// ⚠ WHY THIS IS A REFUSAL AND NOT A REPORT. The gap this surface
+    /// reports on is legal — falling through to a default is ordinary,
+    /// and `coverage` is deliberately exit-0 about it. A CLAIM is a
+    /// different object: here the document states something untrue about
+    /// itself, which is the same failure
+    /// [`ValidationError::UnknownSceAttribute`] refuses — the author's
+    /// sentence and the machine's behaviour parting company in silence.
+    #[error(
+        "field '{field}': sce:default-covers names '{name}', but this document tests for it, so it does not reach the default"
+    )]
+    DefaultCoversTestedVariant {
+        field: String,
+        value_space: String,
+        name: String,
+    },
+
+    /// `sce:default-covers` on a field that has no value space to
+    /// acknowledge — a non-enum type, or an output rather than an input.
+    ///
+    /// ⚠ Its own code rather than a share of
+    /// `default-covers-unknown-variant`, although it is the same finding
+    /// one level up. The repair is a different SHAPE: there is no name
+    /// the author could have written instead, so the diagnostic offers a
+    /// removal rather than candidates — and a code whose raises disagree
+    /// about whether `fix` carries a candidate list cannot sit in one
+    /// bucket of the non-overlap contract (SCE_ERROR_CONTRACT.md §3.2).
+    ///
+    /// ⚠⚠ Without this, the attribute would be parsed, ignored, and
+    /// exit 0 — the invisible-attribute failure that
+    /// [`ValidationError::UnknownSceAttribute`] exists to prevent, let
+    /// back in by a name that IS on the roster.
+    #[error(
+        "field '{field}': sce:default-covers needs an enum-typed input to acknowledge; this field is {found}"
+    )]
+    DefaultCoversWithoutValueSpace {
+        field: String,
+        /// What the field is instead, as the author would recognise it —
+        /// its `sce:type`, or `"an output"` when the type is fine and
+        /// the direction is not.
+        found: String,
+    },
+
     /// The sce:kind value is not recognised or supported.
     #[error("unsupported sce:kind value: '{0}'")]
     UnsupportedKind(String),
@@ -3548,6 +3618,35 @@ pub enum ValidationError {
     CrossKindCircularDependency {
         /// Cycle path in traversal order, starting and ending with the
         /// same document name. Length >= 2 by construction.
+        cycle: Vec<String>,
+    },
+
+    /// A transform's outputs depend on each other in a cycle:
+    /// `<data id="a" … expr="b + 1"/>` and `<data id="b" … expr="a * 2"/>`.
+    ///
+    /// ⚠ WHY THIS EXISTS. An output may read a sibling output — a spec
+    /// routinely names an intermediate value and has several outputs
+    /// consume it, and forcing the author to paste the expression into
+    /// every consumer would lose the spec's own name for the thing and
+    /// let the copies drift. The generator lowers such a read to a call
+    /// of the sibling's `compute_*` function, which is sound because
+    /// every one of them is a pure function of the document's inputs.
+    ///
+    /// A cycle is the one shape that lowering cannot serve: the emitted
+    /// functions would call each other forever. Refusing it here is what
+    /// makes the permission above safe — without this the reward for
+    /// writing a cycle is generated code that recurses until the stack
+    /// ends, which is far worse than the unbound-name error the tree
+    /// used to emit for ANY sibling read.
+    #[error(
+        "transform '{name}': outputs form a dependency cycle: {}",
+        cycle.join(" → ")
+    )]
+    TransformOutputCycle {
+        /// The transform document's `name`.
+        name: String,
+        /// Cycle path in traversal order, starting and ending with the
+        /// same output id. Length >= 2 by construction.
         cycle: Vec<String>,
     },
 

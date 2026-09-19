@@ -19,9 +19,10 @@
 //!
 //! # ⭐ Why the declaration is PROPERTIES and never a source's name
 //!
-//! Owner's instruction, 2026-09-12: *"범용적으로 만들어야 해, 특정
-//! 스펙에 종속되면 안 돼"*. A field whose values were `"autosar"` or
-//! `"iso"` would make SCE the keeper of a catalogue of standards — and
+//! Owner's instruction, 2026-09-12: build it generally; it must not become
+//! dependent on one particular specification. A field whose values were
+//! `"autosar"` or `"iso"` would make SCE the keeper of a catalogue of
+//! standards — and
 //! the next source, an OEM document or a spreadsheet or a ticket
 //! system, has no entry in that catalogue. Asking what is TRUE of the
 //! extraction instead (`ids: native`, `trace: published`) is a question

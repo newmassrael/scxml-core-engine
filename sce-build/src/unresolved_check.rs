@@ -29,7 +29,7 @@ use serde::Serialize;
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
 use crate::model::SCXMLModel;
-use crate::provenance::{SpecProvenance, UnresolvedMarker};
+use crate::provenance::{MarkerKind, SpecProvenance, UnresolvedMarker};
 use crate::requirements_report::{walk_nodes, ActionSite, NodeSubject};
 
 /// The first unresolved placeholder in a model, with everything the
@@ -57,9 +57,18 @@ pub struct Unresolved<'a> {
 /// is a question, and the spec paragraph the author anchored the node
 /// at is where its answer lives. Returning the label without them
 /// would hand a triager an SCXML line and stop.
+/// ⚠ `MarkerKind::Assumed` is deliberately NOT returned here. An
+/// assumption is on the record but does not block — the distinction is
+/// argued at [`MarkerKind`]. Filtering at this one function is what
+/// keeps the reports (which list both) and the refusal (which lists one)
+/// reading the same markers.
 pub fn first_unresolved(model: &SCXMLModel) -> Option<Unresolved<'_>> {
     walk_nodes(model).into_iter().find_map(|node| {
-        let marker = node.subject.unresolved().first()?;
+        let marker = node
+            .subject
+            .unresolved()
+            .iter()
+            .find(|m| m.kind == MarkerKind::Unresolved)?;
         Some(Unresolved {
             element: element_label(&node.subject),
             marker,
@@ -150,6 +159,11 @@ struct UnresolvedRecord<'a> {
     node_type: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     action_type: Option<&'a str>,
+    /// `unresolved` or `assumed`. A consumer that renders a work queue
+    /// needs it: the first is a question to send the spec's author, the
+    /// second is a decision already taken that the author should confirm.
+    /// Without it both arrive as one undifferentiated list.
+    kind: MarkerKind,
     id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<&'a str>,
@@ -198,6 +212,7 @@ fn write_marker<W: Write + ?Sized>(
         node_path: node_path.to_string(),
         node_type,
         action_type,
+        kind: marker.kind,
         id: marker.id.as_str(),
         reason: marker.reason.as_deref(),
         candidates: marker.candidates.iter().map(|s| s.as_str()).collect(),
@@ -276,7 +291,11 @@ pub fn check_strict_unresolved_forge(
     source_name: &str,
 ) -> Result<(), Located<ForgeError>> {
     let markers = forge_markers(content, source_name)?;
-    match markers.into_iter().next() {
+    // Same filter as `first_unresolved`, same reason — see [`MarkerKind`].
+    match markers
+        .into_iter()
+        .find(|(_, m)| m.kind == MarkerKind::Unresolved)
+    {
         None => Ok(()),
         Some((element, marker)) => {
             let location = marker.location.clone().unwrap_or(SourceLocation {
