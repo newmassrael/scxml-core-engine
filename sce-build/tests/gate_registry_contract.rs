@@ -1903,6 +1903,47 @@ fn the_push_run_names_the_validator_that_rejected() {
     );
 }
 
+/// A restricted-term list for a hook run, outside every git repository.
+///
+/// The restricted-term gate runs BEFORE Stage 0 and fails closed when it
+/// cannot read its list, which is right: a list it cannot read is a check it
+/// did not perform. The consequence for anything that drives the hook is that
+/// the list becomes a precondition, and a hosted runner has none by design --
+/// the list is itself the restricted material and must never reach CI.
+///
+/// So the fixture brings its own, for the same reason and in the same shape as
+/// the identity precondition above: fixed by the fixture rather than inherited
+/// from whoever is watching. Measured 2026-09-20, and it is the identical
+/// failure the identity gate produced on 2026-08-26 -- green locally, red on
+/// the runner, and red as "the hook did not reach the citation stage", which
+/// reads as a defect in the stage under test rather than in its preconditions.
+///
+/// ⚠ The list names a term rather than being empty or comment-only. The gate
+/// refuses an empty list in its own words -- "an empty list would pass every
+/// commit while looking like a check" -- and a fixture that satisfies a stage
+/// vacuously is how a stage stops being exercised with nobody noticing.
+fn a_term_list_outside_any_repository(term: &str) -> tempfile::TempDir {
+    let home = tempfile::tempdir().expect("tempdir for the term list");
+    std::fs::write(
+        home.path().join("restricted-terms.txt"),
+        format!("# One extended regex per line.\n{term}\n"),
+    )
+    .expect("write the term list");
+    home
+}
+
+fn hook_with_terms(dir: &Path, terms: &tempfile::TempDir) -> std::process::Output {
+    Command::new("bash")
+        .arg(dir.join("tools/git-hooks/pre-commit"))
+        .env(
+            "SCE_RESTRICTED_TERMS",
+            terms.path().join("restricted-terms.txt"),
+        )
+        .current_dir(dir)
+        .output()
+        .expect("run the pre-commit hook")
+}
+
 #[test]
 fn the_commit_hook_fails_the_commit_when_the_citation_stage_fails() {
     // End to end, because the text arm cannot see the failure that matters
@@ -1911,11 +1952,8 @@ fn the_commit_hook_fails_the_commit_when_the_citation_stage_fails() {
     // carries a fabricated citation, and the commit has to be refused.
     let dir = tempfile::tempdir().expect("tempdir");
     staged_citation_fixture(dir.path(), "// probe: §synth-F4 is not a section\n");
-    let out = Command::new("bash")
-        .arg(dir.path().join("tools/git-hooks/pre-commit"))
-        .current_dir(dir.path())
-        .output()
-        .expect("run the pre-commit hook");
+    let terms = a_term_list_outside_any_repository("SYNTHETIC_TERM_NO_FIXTURE_CARRIES");
+    let out = hook_with_terms(dir.path(), &terms);
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
         err.contains("Stage 3/3"),
@@ -1927,6 +1965,121 @@ fn the_commit_hook_fails_the_commit_when_the_citation_stage_fails() {
         !out.status.success(),
         "the hook allowed a commit whose staged content carries a fabricated \
          citation: {err}"
+    );
+}
+
+// ── The restricted-term stage, which shipped with no test at all ──
+//
+// It arrived as 124 lines of hook and gate and nothing that ran either. The
+// cost of that was not theoretical: it changed the precondition of EVERY hook
+// run, and what reported the change was an unrelated test going red on a
+// runner two weeks later, phrased as a defect in the citation stage.
+//
+// The three below are the gate's own promises, in its own words, turned into
+// something that fails when one stops holding.
+
+#[test]
+fn the_hook_refuses_staged_content_that_matches_the_term_list() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let term = "SYNTHETIC_RESTRICTED_TOKEN_QX";
+    staged_citation_fixture_files(
+        dir.path(),
+        &[
+            ("tests/cite.rs", "// probe: §synth-5-B is a section\n"),
+            (
+                "tests/carried.txt",
+                &format!("a line holding {term} in it\n"),
+            ),
+        ],
+    );
+    let out = hook_with_terms(dir.path(), &a_term_list_outside_any_repository(term));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "the hook allowed a commit carrying a listed term: {err}"
+    );
+    assert!(
+        err.contains("restricted-term list"),
+        "the refusal does not say which gate refused, so an author cannot \
+         tell it from the four numbered stages: {err}"
+    );
+    assert!(
+        err.contains("tests/carried.txt"),
+        "the refusal names no file, so the author is told the commit is bad \
+         and not where to look: {err}"
+    );
+}
+
+#[test]
+fn the_refusal_never_prints_the_text_it_matched() {
+    // ⚠ THE PROPERTY THE WHOLE GATE EXISTS FOR. It reports a file, line
+    // numbers and a term INDEX, and its own comment says "the matched text is
+    // deliberately NOT printed". A gate that echoes what it caught publishes
+    // it into every terminal, log and CI artifact that reads the hook's
+    // output -- which is the disclosure the gate was written to prevent,
+    // performed by the gate.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let term = "SYNTHETIC_RESTRICTED_TOKEN_QX";
+    staged_citation_fixture_files(
+        dir.path(),
+        &[
+            ("tests/cite.rs", "// probe: §synth-5-B is a section\n"),
+            (
+                "tests/carried.txt",
+                &format!("a line holding {term} in it\n"),
+            ),
+        ],
+    );
+    let out = hook_with_terms(dir.path(), &a_term_list_outside_any_repository(term));
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
+    // ⚠ The precondition is the whole test. "The output does not contain the
+    // term" is true of a hook that died before the gate ran, of a gate that
+    // matched nothing, and of one that is not there at all -- so it has to be
+    // pinned to THIS refusal before the absence means anything.
+    assert!(
+        !out.status.success() && said.contains("restricted-term list"),
+        "the hook did not refuse as the restricted-term gate, so the absence \
+         below would say nothing about what that gate prints: {said}"
+    );
+    assert!(
+        !said.contains(term),
+        "the gate printed the very text it caught: {said}"
+    );
+}
+
+#[test]
+fn the_hook_refuses_when_it_cannot_read_the_term_list() {
+    // Fail-closed, asserted rather than discovered. A list it cannot read is a
+    // check it did not perform, and passing there would be worse than
+    // refusing -- but until this existed, the behaviour was only visible as
+    // an unrelated stage's test failing on a machine without the list.
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture(dir.path(), "// probe: §synth-5-B is a section\n");
+    let absent = tempfile::tempdir().expect("tempdir");
+    let out = Command::new("bash")
+        .arg(dir.path().join("tools/git-hooks/pre-commit"))
+        .env("SCE_RESTRICTED_TERMS", absent.path().join("not-here.txt"))
+        .current_dir(dir.path())
+        .output()
+        .expect("run the pre-commit hook");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "the hook ran the commit through with an unreadable term list: {err}"
+    );
+    assert!(
+        err.contains("FAILS CLOSED"),
+        "the refusal does not say it is a fail-closed one, so it reads as a \
+         broken hook rather than a working guard: {err}"
+    );
+    assert!(
+        !err.contains("Stage 0/3"),
+        "the gate let the numbered stages start before it had judged \
+         anything, so a commit reaches them on a machine with no list: {err}"
     );
 }
 
