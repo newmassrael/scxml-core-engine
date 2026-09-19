@@ -302,6 +302,11 @@ fn a_newline_in_an_expression_does_not_become_a_line() {
 /// The message has to say WHICH construct: it once said the kind was
 /// unrendered while every kind rendered and the document simply carried
 /// an `<invoke>`, which sends the reader to the wrong question.
+///
+/// The case used here is the invariant the invoke rendering rests on —
+/// the rendering walks the states and skips the root's flat index, so
+/// an invoke the index holds and no state owns must refuse rather than
+/// vanish.
 #[test]
 fn a_refusal_names_the_construct_that_stopped_it() {
     let mut model = sce_build::model::SCXMLModel::default();
@@ -315,13 +320,130 @@ fn a_refusal_names_the_construct_that_stopped_it() {
         render(&doc).unwrap_err(),
         Unsupported {
             kind: "statechart",
-            feature: "an <invoke>",
+            feature: "an <invoke> no state owns",
         }
     );
     let said = render(&doc).unwrap_err().to_string();
     assert!(
-        said.contains("carries an <invoke>") && said.contains("refused rather than abbreviated"),
+        said.contains("carries an <invoke> no state owns")
+            && said.contains("refused rather than abbreviated"),
         "the refusal must name the construct; got: {said}"
+    );
+}
+
+/// Every invoke shape, with the optional fields filled.
+///
+/// Also the guard against the defect this test was written after: the
+/// model keeps each invoke twice — on its state and in a flat index on
+/// the root — and rendering both printed every `<invoke>` a second
+/// time. The expected text below has one of each.
+#[test]
+fn each_invoke_shape_renders_once_and_whole() {
+    use sce_build::model::{
+        HybridInvokeInfo, Invoke, InvokeBase, InvokeSessionCommon, MeshRpcInvokeInfo,
+        MeshRpcTarget, ScxmlInvokeInfo, State, UnsupportedInvokeInfo,
+    };
+
+    let base = |id: &str| InvokeBase {
+        invoke_id: id.to_string(),
+        idlocation: "where".to_string(),
+        params: vec![sce_build::model::Param {
+            name: "p".to_string(),
+            expr: "1".to_string(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let common = |id: &str| InvokeSessionCommon {
+        base: base(id),
+        autoforward: true,
+        ..Default::default()
+    };
+
+    let mut state = State {
+        id: "s0".to_string(),
+        ..Default::default()
+    };
+    state.invokes = vec![
+        Invoke::Scxml(ScxmlInvokeInfo {
+            common: common("i1"),
+            src: "child.scxml".to_string(),
+            namelist: "a b".to_string(),
+            finalize_content: "v = 1".to_string(),
+            remote_mesh_target: Some("ecu2".to_string()),
+            remote_mesh_transport: Some("someip".to_string()),
+            ..Default::default()
+        }),
+        Invoke::Hybrid(HybridInvokeInfo {
+            common: common("i2"),
+            srcexpr: "pick()".to_string(),
+            contentexpr: "body()".to_string(),
+        }),
+        Invoke::MeshRpc(MeshRpcInvokeInfo {
+            base: base("i3"),
+            target: MeshRpcTarget::SrcExpr {
+                srcexpr: "peer()".to_string(),
+            },
+            mesh_event: "ping".to_string(),
+            deadline_ms: Some(250),
+        }),
+        Invoke::Unsupported(UnsupportedInvokeInfo {
+            base: base("i4"),
+            invoke_type: "http".to_string(),
+            src: "http://x".to_string(),
+            host_served: true,
+        }),
+    ];
+
+    let mut m = sce_build::model::SCXMLModel {
+        name: "m".to_string(),
+        initial: "s0".to_string(),
+        ..Default::default()
+    };
+    // The flat index the root keeps; `statechart_gap` requires it to
+    // agree with what the states own, and the rendering walks only the
+    // states.
+    m.invokes = state.invokes.clone();
+    m.states.insert("s0".to_string(), state);
+
+    let expected = "\
+machine m (datamodel: ecmascript, initial: s0)
+  state s0:
+    invoke i1:
+      id-into where
+      param p=1
+      type scxml
+      autoforward
+      src child.scxml
+      namelist a b
+      mesh-target ecu2
+      mesh-transport someip
+      finalize v = 1
+    invoke i2:
+      id-into where
+      param p=1
+      type hybrid
+      autoforward
+      srcexpr pick()
+      contentexpr body()
+    invoke i3:
+      id-into where
+      param p=1
+      type mesh-rpc
+      target srcexpr peer()
+      event ping
+      deadline 250ms
+    invoke i4:
+      id-into where
+      param p=1
+      type http
+      src http://x
+      host-served
+";
+
+    assert_eq!(
+        render(&ForgeDocument::Statechart(Box::new(m))).unwrap(),
+        expected
     );
 }
 

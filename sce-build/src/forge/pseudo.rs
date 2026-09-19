@@ -81,6 +81,16 @@
 //!         <action>...
 //!       [on <event>] [when <cond>] [native-guard <g>] -> <target> [<type>]
 //!         <action>...
+//!       invoke [<id>]:
+//!         id-into <loc> / param <name>[=<expr>][@<loc>] / req <id>
+//!         type (scxml|hybrid|mesh-rpc|<other>)
+//!         [autoforward] [src <s>] [namelist <n>] [finalize <t>]
+//!         [srcexpr <e>] [contentexpr <e>]
+//!         [mesh-target <t>] [mesh-transport <t>]
+//!         [target (src|srcexpr) <s>] [event <e>] [deadline <n>ms]
+//!         [host-served]
+//!         child:
+//!           <the inline machine, rendered the same way>
 //!       done:
 //!         param <name> [= <expr>] [from <loc>]
 //!         content (expr|text|literal) <v>
@@ -344,6 +354,18 @@ impl Out {
         self.depth += 1;
         body(self);
         self.depth -= 1;
+    }
+
+    /// An already-rendered block, re-indented under the current depth.
+    ///
+    /// Used where a rendering nests one of its own kind — an `<invoke>`
+    /// carrying an inline child machine. Re-indenting the finished text
+    /// keeps one renderer for a machine instead of a second one that
+    /// takes a starting depth, which is how the two would drift.
+    fn block(&mut self, rendered: &str) {
+        for line in rendered.lines() {
+            self.line(line);
+        }
     }
 }
 
@@ -969,17 +991,20 @@ fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
 /// to know the document is not fully rendered, and one name says that
 /// as well as five do.
 fn statechart_gap(m: &crate::model::SCXMLModel) -> Option<&'static str> {
-    if !m.invokes.is_empty() {
-        return Some("an <invoke>");
-    }
-    if m.states.values().any(|s| !s.invokes.is_empty()) {
-        return Some("an <invoke>");
-    }
     if m.states.values().any(|s| !s.on_sample_blocks.is_empty()) {
         return Some("an <sce:on-sample> block");
     }
     if !m.context_objects.is_empty() {
         return Some("an <sce:context> object");
+    }
+    // The root's `invokes` is a flat index of the ones the states own,
+    // so the rendering walks the states and skips the index. That is
+    // only sound while the two agree: an invoke reachable from the root
+    // and from no state would be dropped in silence, which is the one
+    // thing this module may not do.
+    let owned: usize = m.states.values().map(|s| s.invokes.len()).sum();
+    if m.invokes.len() != owned {
+        return Some("an <invoke> no state owns");
     }
     None
 }
@@ -1010,6 +1035,7 @@ fn render_statechart(m: &crate::model::SCXMLModel) -> Result<String, Unsupported
         clauses.join(", ")
     ));
 
+    let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
         for v in &m.variables {
             render_variable(v, out);
@@ -1017,17 +1043,148 @@ fn render_statechart(m: &crate::model::SCXMLModel) -> Result<String, Unsupported
         for s in &m.global_scripts {
             render_scxml_action(s, out);
         }
+        // ⚠ NOT `m.invokes`. The model keeps every invoke twice — once
+        // on the state that owns it and once in a flat index on the
+        // root — so rendering both printed each `<invoke>` a second
+        // time, and a reviewer would have counted two where the
+        // document has one. Measured on test187. The invariant that
+        // makes the flat index redundant is asserted above.
         // States are held in a map, so the order a reviewer reads must
         // come from `document_order` — the field the model keeps
         // precisely because the container lost it.
         let mut states: Vec<&crate::model::State> = m.states.values().collect();
         states.sort_by_key(|s| (s.document_order, s.id.clone()));
         for s in states {
-            render_scxml_state(s, out);
+            if let Err(e) = render_scxml_state(s, out) {
+                nested = Err(e);
+            }
         }
     });
+    nested?;
 
     Ok(out.buf)
+}
+
+/// One `<invoke>`, in whichever of its four shapes.
+///
+/// ⚠ What is deliberately NOT printed, named here so the omission is
+/// stated rather than silent: `field_suffix` and `state_name` on
+/// [`InvokeBase`](crate::model::InvokeBase), and `child_name`,
+/// `use_specific_event`, `child_needs_script_engine`,
+/// `child_has_send_to_parent`, `child_needs_event_scheduler` and
+/// `child_datamodel_vars` on
+/// [`InvokeSessionCommon`](crate::model::InvokeSessionCommon). Every one
+/// is a codegen-facing conclusion SCE draws about the child — symbol
+/// naming, whether the child needs an engine — and not a thing the
+/// author wrote. Printing them would put SCE's reasoning in front of a
+/// reviewer as if it were their machine.
+///
+/// ⚠⚠ `inline_child_xml` is also absent, and for a different reason: it
+/// is the same content as `inline_child`, in its source form. The
+/// parsed child is rendered; repeating its XML underneath would be one
+/// document shown twice.
+fn render_invoke(inv: &crate::model::Invoke, out: &mut Out) -> Result<(), Unsupported> {
+    use crate::model::Invoke;
+
+    let base = match inv {
+        Invoke::Scxml(i) => &i.common.base,
+        Invoke::Hybrid(i) => &i.common.base,
+        Invoke::MeshRpc(i) => &i.base,
+        Invoke::Unsupported(i) => &i.base,
+    };
+
+    let mut head = String::from("invoke");
+    if !base.invoke_id.is_empty() {
+        let _ = write!(head, " {}", text(&base.invoke_id));
+    }
+    out.line(&format!("{head}:"));
+
+    let mut nested: Result<(), Unsupported> = Ok(());
+    out.nested(|out| {
+        if !base.idlocation.is_empty() {
+            out.line(&format!("id-into {}", text(&base.idlocation)));
+        }
+        for p in &base.params {
+            out.line(&format!("param {}", render_param(p)));
+        }
+        for id in &base.req {
+            out.line(&format!("req {}", text(&id.to_string())));
+        }
+
+        match inv {
+            Invoke::Scxml(i) => {
+                out.line("type scxml");
+                if i.common.autoforward {
+                    out.line("autoforward");
+                }
+                if !i.src.is_empty() {
+                    out.line(&format!("src {}", text(&i.src)));
+                }
+                if !i.namelist.is_empty() {
+                    out.line(&format!("namelist {}", text(&i.namelist)));
+                }
+                if let Some(t) = &i.remote_mesh_target {
+                    out.line(&format!("mesh-target {}", text(t)));
+                }
+                if let Some(t) = &i.remote_mesh_transport {
+                    out.line(&format!("mesh-transport {}", text(t)));
+                }
+                if !i.finalize_content.is_empty() {
+                    out.line(&format!("finalize {}", text(&i.finalize_content)));
+                }
+                if let Some(child) = &i.inline_child {
+                    match render_statechart(child) {
+                        Ok(rendered) => {
+                            out.line("child:");
+                            out.nested(|out| out.block(&rendered));
+                        }
+                        // A child the renderer cannot finish makes the
+                        // PARENT unrenderable: a machine shown without
+                        // the machine it invokes is the abbreviation
+                        // this module exists to refuse.
+                        Err(e) => nested = Err(e),
+                    }
+                }
+            }
+            Invoke::Hybrid(i) => {
+                out.line("type hybrid");
+                if i.common.autoforward {
+                    out.line("autoforward");
+                }
+                if !i.srcexpr.is_empty() {
+                    out.line(&format!("srcexpr {}", text(&i.srcexpr)));
+                }
+                if !i.contentexpr.is_empty() {
+                    out.line(&format!("contentexpr {}", text(&i.contentexpr)));
+                }
+            }
+            Invoke::MeshRpc(i) => {
+                out.line("type mesh-rpc");
+                match &i.target {
+                    crate::model::MeshRpcTarget::Src { src } => {
+                        out.line(&format!("target src {}", text(src)))
+                    }
+                    crate::model::MeshRpcTarget::SrcExpr { srcexpr } => {
+                        out.line(&format!("target srcexpr {}", text(srcexpr)))
+                    }
+                }
+                out.line(&format!("event {}", text(&i.mesh_event)));
+                if let Some(d) = i.deadline_ms {
+                    out.line(&format!("deadline {d}ms"));
+                }
+            }
+            Invoke::Unsupported(i) => {
+                out.line(&format!("type {}", text(&i.invoke_type)));
+                if !i.src.is_empty() {
+                    out.line(&format!("src {}", text(&i.src)));
+                }
+                if i.host_served {
+                    out.line("host-served");
+                }
+            }
+        }
+    });
+    nested
 }
 
 fn render_variable(v: &crate::model::Variable, out: &mut Out) {
@@ -1047,7 +1204,7 @@ fn render_variable(v: &crate::model::Variable, out: &mut Out) {
     out.line(&line);
 }
 
-fn render_scxml_state(s: &crate::model::State, out: &mut Out) {
+fn render_scxml_state(s: &crate::model::State, out: &mut Out) -> Result<(), Unsupported> {
     let keyword = if s.is_final {
         "final"
     } else if s.is_parallel {
@@ -1081,12 +1238,18 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out) {
     }
     out.line(&format!("{head}:"));
 
+    let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
         for id in &s.req {
             out.line(&format!("req {}", text(&id.to_string())));
         }
         for v in &s.datamodel {
             render_variable(v, out);
+        }
+        for inv in &s.invokes {
+            if let Err(e) = render_invoke(inv, out) {
+                nested = Err(e);
+            }
         }
         for block in &s.on_entry_blocks {
             out.line("on entry:");
@@ -1131,6 +1294,7 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out) {
             render_donedata(d, out);
         }
     });
+    nested
 }
 
 fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out) {
