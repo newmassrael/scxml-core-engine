@@ -38,9 +38,13 @@
 
 use crate::comment_text;
 use crate::forge::model::{
-    ConditionModel, Direction, EnumModel, EnumVariant, EventSchemaModel, ForgeDocument, ForgeField,
-    LookupEntry, LookupModel, MissPolicy, RangeRule, RateOfChangeRule, SceType, TimerModel,
-    TransformModel, ValidatorModel, ValidatorRules,
+    BackpressurePolicy, BoundedCollectionModel, BufferPoolModel, BufferPoolVariant, CachePolicy,
+    CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
+    EnumVariant, EventSchemaModel, FilterModel, FilterType, ForgeDocument, ForgeField, InboxConfig,
+    InboxOrdering, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
+    LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
+    OutOfBounds, OverflowPolicy, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType,
+    TimerModel, TransformModel, ValidatorModel, ValidatorRules, WorkerModel,
 };
 use crate::provenance::RequirementId;
 
@@ -110,22 +114,30 @@ pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
     let keyword = head.text.split_whitespace().next().unwrap_or("");
     let body: Vec<&Line<'_>> = lines.iter().skip(1).collect();
 
-    // The three kinds read here are flat: the renderer puts the head at
-    // depth 0 and every body line at depth 1. Checking it rather than
-    // ignoring it is what makes the indentation load-bearing — a line
-    // that drifted a level is a disagreement between the two halves,
-    // and this is the only place that can see it.
+    // Indentation carries the structure, so it is checked rather than
+    // ignored: a line that drifted a level is a disagreement between
+    // the two halves, and this is the only place that can see it.
     if head.depth != 0 {
         return Err(ParseError {
             line: head.number,
             why: "a head must sit at depth 0".to_string(),
         });
     }
-    if let Some(bad) = body.iter().find(|l| l.depth != 1) {
-        return Err(ParseError {
-            line: bad.number,
-            why: format!("expected depth 1, found depth {}", bad.depth),
-        });
+    // A line may go one level deeper than the one before it and no
+    // more. That is weaker than "every body line sits at depth 1" —
+    // which was true while every kind read here was flat — and it is
+    // the invariant that survives the nested kinds: a jump of two means
+    // the two halves disagree about structure, and nothing else can see
+    // it.
+    let mut previous = 0usize;
+    for l in &body {
+        if l.depth > previous + 1 || l.depth == 0 {
+            return Err(ParseError {
+                line: l.number,
+                why: format!("depth {} cannot follow depth {previous}", l.depth),
+            });
+        }
+        previous = l.depth;
     }
 
     match keyword {
@@ -136,6 +148,14 @@ pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
         "event-schema" => parse_event_schema(head, &body).map(ForgeDocument::EventSchema),
         "lookup" => parse_lookup(head, &body).map(ForgeDocument::Lookup),
         "validator" => parse_validator(head, &body).map(ForgeDocument::Validator),
+        "filter" => parse_filter(head, &body).map(ForgeDocument::Filter),
+        "interpolation" => parse_interpolation(head, &body).map(ForgeDocument::Interpolation),
+        "bounded-collection" => {
+            parse_bounded_collection(head).map(ForgeDocument::BoundedCollection)
+        }
+        "worker" => parse_worker(head).map(ForgeDocument::Worker),
+        "buffer-pool" => parse_buffer_pool(head, &body).map(ForgeDocument::BufferPool),
+        "link" => parse_link(head, &body).map(ForgeDocument::Link),
         other => Err(ParseError {
             line: head.number,
             why: format!("`{other}` is not a kind this reader covers yet"),
@@ -540,6 +560,456 @@ fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseErr
     Ok(m)
 }
 
+/// An `f64` as the renderer's `num` wrote it.
+fn number(s: &str, line: usize) -> Result<f64, ParseError> {
+    s.parse().map_err(|_| ParseError {
+        line,
+        why: format!("`{s}` is not a number this renderer could have written"),
+    })
+}
+
+/// `filter <name> <type> [window <n>] [alpha <f>]` with two fields.
+fn parse_filter(head: &Line<'_>, body: &[&Line<'_>]) -> Result<FilterModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let filter_type = match w.get(2).copied() {
+        Some("moving-average") => FilterType::MovingAverage,
+        Some("low-pass") => FilterType::LowPass,
+        Some("debounce") => FilterType::Debounce,
+        other => {
+            return Err(ParseError {
+                line: head.number,
+                why: format!("`{}` is not a filter type", other.unwrap_or("")),
+            })
+        }
+    };
+    let mut window = None;
+    let mut alpha = None;
+    let mut i = 3;
+    while i < w.len() {
+        match w[i] {
+            "window" => window = w.get(i + 1).and_then(|v| v.parse().ok()),
+            "alpha" => alpha = Some(number(w.get(i + 1).copied().unwrap_or(""), head.number)?),
+            other => {
+                return Err(ParseError {
+                    line: head.number,
+                    why: format!("`{other}` is not a filter clause"),
+                })
+            }
+        }
+        i += 2;
+    }
+    let fields: Vec<ForgeField> = body
+        .iter()
+        .map(|l| parse_field(l))
+        .collect::<Result<_, _>>()?;
+    if fields.len() != 2 {
+        return Err(ParseError {
+            line: head.number,
+            why: format!(
+                "a filter needs an input and an output; found {}",
+                fields.len()
+            ),
+        });
+    }
+    let mut it = fields.into_iter();
+    Ok(FilterModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        input: it.next().expect("two fields"),
+        output: it.next().expect("two fields"),
+        filter_type,
+        window,
+        alpha,
+        source_location: None,
+    })
+}
+
+/// `interpolation <name> method <m> out-of-bounds <o>` with fields,
+/// axes and the value grid.
+fn parse_interpolation(
+    head: &Line<'_>,
+    body: &[&Line<'_>],
+) -> Result<InterpolationModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let method = match w.get(3).copied() {
+        Some("linear") => InterpolationMethod::Linear,
+        Some("bilinear") => InterpolationMethod::Bilinear,
+        other => {
+            return Err(ParseError {
+                line: head.number,
+                why: format!("`{}` is not an interpolation method", other.unwrap_or("")),
+            })
+        }
+    };
+    let out_of_bounds = match w.get(5).copied() {
+        Some("clamp") => OutOfBounds::Clamp,
+        Some("extrapolate") => OutOfBounds::Extrapolate,
+        Some("error") => OutOfBounds::Error,
+        other => {
+            return Err(ParseError {
+                line: head.number,
+                why: format!("`{}` is not an out-of-bounds policy", other.unwrap_or("")),
+            })
+        }
+    };
+
+    let mut fields: Vec<ForgeField> = Vec::new();
+    let mut axes: Vec<InterpolationAxis> = Vec::new();
+    let mut values: Vec<f64> = Vec::new();
+    for l in body {
+        let lw: Vec<&str> = l.text.split_whitespace().collect();
+        match lw.first().copied() {
+            Some("axis") => {
+                if lw.get(2) != Some(&"breakpoints") {
+                    return Err(ParseError {
+                        line: l.number,
+                        why: "an axis needs `breakpoints`".to_string(),
+                    });
+                }
+                axes.push(InterpolationAxis {
+                    input_id: undo(lw.get(1).copied().unwrap_or(""), l.number)?,
+                    breakpoints: lw[3..]
+                        .iter()
+                        .map(|v| number(v, l.number))
+                        .collect::<Result<_, _>>()?,
+                });
+            }
+            Some("values") => {
+                values = lw[1..]
+                    .iter()
+                    .map(|v| number(v, l.number))
+                    .collect::<Result<_, _>>()?;
+            }
+            _ => fields.push(parse_field(l)?),
+        }
+    }
+    let output = fields.pop().ok_or_else(|| ParseError {
+        line: head.number,
+        why: "an interpolation needs an output field".to_string(),
+    })?;
+    Ok(InterpolationModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        inputs: fields,
+        output,
+        method,
+        out_of_bounds,
+        axes,
+        values,
+        source_location: None,
+    })
+}
+
+/// One line: `bounded-collection <name> of <t> capacity … overflow …
+/// ordering … concurrency … [index-by <f>]`.
+fn parse_bounded_collection(head: &Line<'_>) -> Result<BoundedCollectionModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let mut m = BoundedCollectionModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        element_type: String::new(),
+        capacity: CapacitySource::CompileConst { value: 0 },
+        index_by: None,
+        on_overflow: OverflowPolicy::Reject,
+        ordering: CollectionOrdering::Insertion,
+        concurrency: ConcurrencyMode::SingleWriter,
+        source_location: None,
+    };
+    let mut i = 2;
+    while i < w.len() {
+        let value = w.get(i + 1).copied().unwrap_or("");
+        match w[i] {
+            "of" => m.element_type = undo(value, head.number)?,
+            "capacity" => {
+                m.capacity = match value {
+                    "deploy-key" => CapacitySource::DeployKey {
+                        key: undo(w.get(i + 2).copied().unwrap_or(""), head.number)?,
+                    },
+                    "const" => CapacitySource::CompileConst {
+                        value: w.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(0),
+                    },
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not a capacity source"),
+                        })
+                    }
+                };
+                i += 1;
+            }
+            "overflow" => {
+                m.on_overflow = match value {
+                    "diagnostic-event" => OverflowPolicy::DiagnosticEvent,
+                    "reject" => OverflowPolicy::Reject,
+                    "oldest-wins" => OverflowPolicy::OldestWins,
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not an overflow policy"),
+                        })
+                    }
+                }
+            }
+            "ordering" => {
+                m.ordering = match value {
+                    "insertion" => CollectionOrdering::Insertion,
+                    "sorted-by-index" => CollectionOrdering::SortedByIndex,
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not an ordering"),
+                        })
+                    }
+                }
+            }
+            "concurrency" => {
+                m.concurrency = match value {
+                    "single-writer" => ConcurrencyMode::SingleWriter,
+                    "multi-writer" => ConcurrencyMode::MultiWriter,
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not a concurrency mode"),
+                        })
+                    }
+                }
+            }
+            "index-by" => m.index_by = Some(undo(value, head.number)?),
+            other => {
+                return Err(ParseError {
+                    line: head.number,
+                    why: format!("`{other}` is not a bounded-collection clause"),
+                })
+            }
+        }
+        i += 2;
+    }
+    Ok(m)
+}
+
+/// One line: `worker <name> link-rx <l> inbox depth <n> ordering <o>
+/// [outbox <x>]`.
+fn parse_worker(head: &Line<'_>) -> Result<WorkerModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let mut m = WorkerModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        link_rx: String::new(),
+        inbox: InboxConfig {
+            depth: 0,
+            ordering: InboxOrdering::Relaxed,
+        },
+        outbox: None,
+        source_location: None,
+    };
+    let mut i = 2;
+    while i < w.len() {
+        let value = w.get(i + 1).copied().unwrap_or("");
+        match w[i] {
+            "link-rx" => m.link_rx = undo(value, head.number)?,
+            "inbox" => {
+                if value != "depth" {
+                    return Err(ParseError {
+                        line: head.number,
+                        why: "inbox needs `depth <n>`".to_string(),
+                    });
+                }
+                m.inbox.depth = w.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(0);
+                i += 1;
+            }
+            "ordering" => {
+                m.inbox.ordering = match value {
+                    "acq_rel" => InboxOrdering::AcqRel,
+                    "relaxed" => InboxOrdering::Relaxed,
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not an inbox ordering"),
+                        })
+                    }
+                }
+            }
+            "outbox" => m.outbox = Some(undo(value, head.number)?),
+            other => {
+                return Err(ParseError {
+                    line: head.number,
+                    why: format!("`{other}` is not a worker clause"),
+                })
+            }
+        }
+        i += 2;
+    }
+    Ok(m)
+}
+
+/// `buffer-pool <name> slots … size … section … align … cache …
+/// [dma …]`, with an optional `reassembly` line under it.
+fn parse_buffer_pool(head: &Line<'_>, body: &[&Line<'_>]) -> Result<BufferPoolModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let mut m = BufferPoolModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        slot_count: 0,
+        slot_size: 0,
+        section: String::new(),
+        alignment: 0,
+        dma_channel: None,
+        cache_policy: CachePolicy::None,
+        variant: BufferPoolVariant::Default,
+        source_location: None,
+    };
+    let mut i = 2;
+    while i < w.len() {
+        let value = w.get(i + 1).copied().unwrap_or("");
+        match w[i] {
+            "slots" => m.slot_count = value.parse().unwrap_or(0),
+            "size" => m.slot_size = value.parse().unwrap_or(0),
+            "section" => m.section = undo(value, head.number)?,
+            "align" => m.alignment = value.parse().unwrap_or(0),
+            "dma" => m.dma_channel = Some(undo(value, head.number)?),
+            "cache" => {
+                m.cache_policy = match value {
+                    "maintain" => CachePolicy::Maintain,
+                    "non-cacheable" => CachePolicy::NonCacheable,
+                    "none" => CachePolicy::None,
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not a cache policy"),
+                        })
+                    }
+                }
+            }
+            other => {
+                return Err(ParseError {
+                    line: head.number,
+                    why: format!("`{other}` is not a buffer-pool clause"),
+                })
+            }
+        }
+        i += 2;
+    }
+    for l in body {
+        let lw: Vec<&str> = l.text.split_whitespace().collect();
+        if lw.first() != Some(&"reassembly") {
+            return Err(ParseError {
+                line: l.number,
+                why: format!("`{}` is not a buffer-pool body line", l.text),
+            });
+        }
+        m.variant = BufferPoolVariant::Reassembly(ReassemblyConfig {
+            max_fragments_per_message: lw.get(2).and_then(|v| v.parse().ok()).unwrap_or(0),
+            reassembly_timeout_ms: lw
+                .get(4)
+                .and_then(|v| v.strip_suffix("ms"))
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            per_peer_quota: lw.get(6).and_then(|v| v.parse().ok()).unwrap_or(0),
+        });
+    }
+    Ok(m)
+}
+
+/// `link <name> class <c> framer <f> backpressure <p>
+/// [accept-stage-copy-rate]` with pool and event lines under it.
+fn parse_link(head: &Line<'_>, body: &[&Line<'_>]) -> Result<LinkModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let mut m = LinkModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        class: LinkClass::Udp,
+        framer: String::new(),
+        backpressure: BackpressurePolicy::Drop,
+        inbound: Vec::new(),
+        outbound: Vec::new(),
+        rx_pool: None,
+        tx_pool: None,
+        stage_pool: None,
+        accept_stage_copy_rate: false,
+        source_location: None,
+    };
+    let mut i = 2;
+    while i < w.len() {
+        let value = w.get(i + 1).copied().unwrap_or("");
+        match w[i] {
+            "class" => {
+                m.class = match value {
+                    "udp" => LinkClass::Udp,
+                    "tcp" => LinkClass::Tcp,
+                    "serial" => LinkClass::Serial,
+                    "websocket" => LinkClass::Websocket,
+                    "raw_eth" => LinkClass::RawEth,
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not a link class"),
+                        })
+                    }
+                }
+            }
+            "framer" => m.framer = undo(value, head.number)?,
+            "backpressure" => {
+                m.backpressure = match value {
+                    "drop" => BackpressurePolicy::Drop,
+                    "block" => BackpressurePolicy::Block,
+                    "signal-event" => BackpressurePolicy::SignalEvent,
+                    other => {
+                        return Err(ParseError {
+                            line: head.number,
+                            why: format!("`{other}` is not a backpressure policy"),
+                        })
+                    }
+                }
+            }
+            "accept-stage-copy-rate" => {
+                m.accept_stage_copy_rate = true;
+                i -= 1;
+            }
+            other => {
+                return Err(ParseError {
+                    line: head.number,
+                    why: format!("`{other}` is not a link clause"),
+                })
+            }
+        }
+        i += 2;
+    }
+
+    for l in body {
+        let lw: Vec<&str> = l.text.split_whitespace().collect();
+        match lw.first().copied() {
+            Some("rx-pool") => m.rx_pool = Some(undo(lw.get(1).copied().unwrap_or(""), l.number)?),
+            Some("tx-pool") => m.tx_pool = Some(undo(lw.get(1).copied().unwrap_or(""), l.number)?),
+            Some("stage-pool") => {
+                m.stage_pool = Some(undo(lw.get(1).copied().unwrap_or(""), l.number)?)
+            }
+            Some("inbound") => {
+                let rest = l.text.strip_prefix("inbound ").unwrap_or("");
+                let (event, when) = match rest.split_once(" when ") {
+                    Some((e, w)) => (e, Some(undo(w, l.number)?)),
+                    None => (rest, None),
+                };
+                m.inbound.push(LinkInboundEvent {
+                    event: undo(event, l.number)?,
+                    when,
+                });
+            }
+            Some("outbound") => {
+                let rest = l.text.strip_prefix("outbound ").unwrap_or("");
+                let (event, encode) = rest.split_once(" encode ").ok_or_else(|| ParseError {
+                    line: l.number,
+                    why: "an outbound needs `encode <e>`".to_string(),
+                })?;
+                m.outbound.push(LinkOutboundEvent {
+                    event: undo(event, l.number)?,
+                    encode: undo(encode, l.number)?,
+                });
+            }
+            _ => {
+                return Err(ParseError {
+                    line: l.number,
+                    why: format!("`{}` is not a link body line", l.text),
+                })
+            }
+        }
+    }
+    Ok(m)
+}
+
 /// Serialised comparison of two documents, with the one key the law
 /// excludes stripped wherever it appears.
 ///
@@ -583,6 +1053,12 @@ pub const COVERED_KINDS: &[&str] = &[
     "event-schema",
     "lookup",
     "validator",
+    "filter",
+    "interpolation",
+    "bounded-collection",
+    "worker",
+    "buffer-pool",
+    "link",
 ];
 
 /// This document's kind name when the reader covers it.
@@ -600,6 +1076,12 @@ pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
         ForgeDocument::EventSchema(_) => "event-schema",
         ForgeDocument::Lookup(_) => "lookup",
         ForgeDocument::Validator(_) => "validator",
+        ForgeDocument::Filter(_) => "filter",
+        ForgeDocument::Interpolation(_) => "interpolation",
+        ForgeDocument::BoundedCollection(_) => "bounded-collection",
+        ForgeDocument::Worker(_) => "worker",
+        ForgeDocument::BufferPool(_) => "buffer-pool",
+        ForgeDocument::Link(_) => "link",
         _ => return None,
     };
     COVERED_KINDS.contains(&name).then_some(name)
