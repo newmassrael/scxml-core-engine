@@ -777,5 +777,14 @@ name = "forge_unknown_sce_attribute"
 path = "tests/forge_unknown_sce_attribute.rs"
 required-features = ["cli"]
 
+# Two observer monitors that raise the same event. The defect was a repeated
+# enum variant in the EMITTED module, which no in-crate assertion can see, so
+# the target renders through the real binary and carries the same `cli` gate
+# as every other binary-driven test.
+[[test]]
+name = "forge_observer_monitors_may_share_an_event"
+path = "tests/forge_observer_monitors_may_share_an_event.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
