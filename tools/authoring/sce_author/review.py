@@ -67,6 +67,12 @@ class Review:
     # evidence in a pack that the model is INCOMPLETE rather than small.
     driven_undeclared: int = 0
     has_examples: bool = False
+    # Output positions the model declares that no case ever expects. `verify`
+    # reports the same thing against the BINDING, once one exists; this is the
+    # view a pack author has before that, and it is the number that says what
+    # a future pass would be worth.
+    unasserted_outputs: list[str] = field(default_factory=list)
+    asserted_outputs: int = 0
 
     @property
     def attribution(self) -> float:
@@ -92,6 +98,9 @@ class Review:
             out.append(f"{len(self.unspecified)} address(es) carry neither a "
                        f"value space nor a type, so every value compared "
                        f"against them passes")
+        if self.has_examples and not self.asserted_outputs:
+            out.append("no case expects any output this model declares, so a "
+                       "run of them would judge nothing and still pass")
         if self.total_lines and self.attribution < 0.25:
             out.append(f"the partition attributes {self.attribution:.0%} of "
                        f"the prose, so most of the document is read by no "
@@ -141,4 +150,13 @@ def review(pack, prose: Prose) -> Review:
             if model.owning(address) is None
             and not address.startswith(pack.conventions.infrastructure)
         )
+        # ⚠ Every WRITABLE POSITION, not every address. A record address with
+        # four fields is four things a case can be wrong about, and counting
+        # it once reports a pack that asserts one field of four as complete.
+        expected = {a for case in pack.examples.cases for a in case.expect}
+        positions = [entry.address + (f".{f.name}" if f.name else "")
+                     for entry in model.outputs() for f in entry.fields]
+        out.asserted_outputs = sum(1 for p in positions if p in expected)
+        out.unasserted_outputs = sorted(p for p in positions
+                                        if p not in expected)
     return out

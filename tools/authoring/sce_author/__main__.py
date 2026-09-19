@@ -94,6 +94,14 @@ def cmd_verify(args) -> int:
     if result.unbound:
         print(f"  the examples read {len(result.unbound)} address(es) the "
               f"binding never writes: {', '.join(result.unbound)}")
+    # ⚠ PRINTED WHETHER OR NOT ANYTHING FAILED, and beside the count rather
+    # than under it. A pass is a statement about the cases, and a reader who
+    # is not told what the cases never looked at will finish the sentence
+    # themselves in the generous direction.
+    if result.unasserted:
+        print(f"  {len(result.unasserted)} written position(s) no case "
+              f"expects, so nothing was judged there: "
+              f"{', '.join(result.unasserted)}")
     # ⚠ Unjudged is reported beside the other two and never folded into either.
     # Counting it as a pass claims a run that did not happen; counting it as a
     # failure blames a document for a case nobody could drive.
@@ -122,6 +130,10 @@ def cmd_review(args) -> int:
     print(f"examples {'present' if got.has_examples else 'ABSENT'}"
           f" · addresses they drive that the model lacks"
           f" {got.driven_undeclared}")
+    if got.has_examples:
+        total = got.asserted_outputs + len(got.unasserted_outputs)
+        print(f"output positions any case expects {got.asserted_outputs}"
+              f" of {total} · never expected {len(got.unasserted_outputs)}")
     for alarm in got.alarms():
         print(f"  ALARM: {alarm}")
     return 1 if got.alarms() else 0

@@ -79,6 +79,36 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         for case in result.results:
             self.assertEqual([], case.unchecked, f"{case.name} left addresses unread")
 
+    def test_a_position_no_case_expects_is_named_beside_the_pass(self):
+        """⚠ THE OTHER HALF, and the one a pass needs.
+
+        `unbound` says the cases reach for something the binding never writes.
+        This says the binding writes something no case ever looks at -- where
+        nothing failed because nothing looked. Two runs that judged two of
+        nine positions and nine of nine print the same count otherwise, and
+        the difference between them is the whole value of having run anything.
+
+        Measured over 127 packs with examples: 3,272 of 3,593 output positions
+        are expected by some case, and one pack expects none of its own.
+        """
+        # The closed pack expects all four, which is what makes the mutation
+        # below mean something rather than being one more empty list.
+        self.assertEqual([], verify(self.pack, CLOSED_BINDING).unasserted)
+
+        def drop_the_bell(examples):
+            for case in examples["cases"]:
+                case["expect"].pop("plant/out/bell.value", None)
+
+        pack, binding = self.staged(lambda b: None,
+                                    mutate_examples=drop_the_bell)
+        result = verify(pack, binding)
+        self.assertTrue(result.ran, f"it would not run: {result.refusal}")
+        self.assertEqual(["plant/out/bell.value"], result.unasserted)
+        # ⚠ And it now PASSES everything, because the one failing case was the
+        # planted memory gap at that very address. A report that stopped at
+        # the count would say this document got better.
+        self.assertEqual(0, result.failed)
+
     # ------------------------------------------------------------ refusing
 
     def test_an_open_decision_is_refused_with_the_reason_its_author_wrote(self):

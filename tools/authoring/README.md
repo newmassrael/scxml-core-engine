@@ -105,6 +105,15 @@ whose generated shape it cannot drive, an input rule it cannot evaluate, an
 expected address the binding never writes. A verifier that quietly skips what
 it does not understand reports a clean run for a document it never executed.
 
+⚠ **It also says what the cases never looked at.** "Every case passed" is a
+statement about the cases, and a run that judged two of nine written positions
+prints the same count as one that judged nine of nine. So the positions no
+case expects are named beside the count, always -- pass or fail. Measured over
+127 packs with examples: 3,272 of 3,593 output positions are expected by some
+case, 101 packs expect every one of their own, 25 expect some, and **one
+expects none**, whose cases pass while judging nothing at all. Without the
+figure, that pack's run and a thorough one are the same line of output.
+
 ### Before any of that: what the file itself gives up
 
 Every command starts by turning a file into text, and that step is where a

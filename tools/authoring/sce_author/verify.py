@@ -88,6 +88,14 @@ class Verification:
     # separately from a failure: nothing was computed wrongly, the document
     # simply has nothing to say there.
     unbound: list[str] = field(default_factory=list)
+    # ⚠ THE OTHER HALF OF `unbound`, AND THE ONE A PASS NEEDS. Positions the
+    # document writes that NO case ever expects. Nothing failed there because
+    # nothing looked: "every case passed" is a statement about the cases, and
+    # without this figure a reader supplies the rest of the sentence
+    # themselves. A run that judged two of nine outputs and a run that judged
+    # nine of nine print the same line otherwise, and the difference between
+    # them is the whole value of running anything.
+    unasserted: list[str] = field(default_factory=list)
     # ⚠ Failing addresses whose value the DOCUMENT marks `sce:assumed`, to the
     # reason its author wrote. An assumption compiles, so nothing downstream
     # ever mentioned it again and a case refuting one read as "your document
@@ -623,8 +631,9 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             writes[key] = name
 
     verification = Verification()
-    verification.unbound = sorted(
-        {a for case in examples.cases for a in case.expect} - bound)
+    expected = {a for case in examples.cases for a in case.expect}
+    verification.unbound = sorted(expected - bound)
+    verification.unasserted = sorted(bound - expected)
 
     # A latch carries state between cases, so it exists only when the pack says
     # the cases are a timeline. Without that, `None` here is what makes the

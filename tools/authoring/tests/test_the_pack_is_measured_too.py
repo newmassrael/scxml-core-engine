@@ -136,6 +136,44 @@ class ThePackIsMeasuredToo(unittest.TestCase):
         self.assertEqual(0.0, got.attribution)
         self.assertIn("attributes 0%", " ".join(got.alarms()))
 
+    # --------------------------------- what a pass would have been worth
+
+    def test_outputs_no_case_expects_are_counted(self):
+        """⚠ The scope of a future pass, said before anybody runs anything.
+
+        Measured over 127 packs with examples: 3,272 of 3,593 output positions
+        are expected by some case, 101 packs expect every one of their own,
+        25 expect some, and one expects NONE. A run of that last pack's cases
+        passes while judging nothing at all.
+        """
+        model = {"version": 1, "entries": [
+            *MODEL["entries"],
+            {"address": "Plant.Out.Second", "role": "output",
+             "names": ["Out_Second"], "values": {"OFF": 0, "ON": 1}},
+        ]}
+        got = self.reviewed(model=model,
+                            prose=PROSE + "Out_Second is ON when In_Supply == HIGH.\n")
+        self.assertEqual(1, got.asserted_outputs)
+        self.assertEqual(["Plant.Out.Second"], got.unasserted_outputs)
+        # Partial coverage is a figure, not a fault: a specification may be
+        # commissioned in stages, and calling that a defect would be a claim
+        # about the platform's test records rather than about the pack.
+        self.assertEqual([], got.alarms())
+
+    def test_examples_that_expect_no_output_at_all_are_an_alarm(self):
+        """The discriminator for the case above. Some coverage is a number;
+        none of it is a shape that cannot be right -- every case passes and
+        nothing was judged.
+        """
+        examples = {**EXAMPLES, "cases": [
+            {"name": "drives an input and checks nothing",
+             "given": {"Plant.In.Supply": 1},
+             "expect": {"Plant.In.Supply": 1}},
+        ]}
+        got = self.reviewed(examples=examples)
+        self.assertEqual(0, got.asserted_outputs)
+        self.assertIn("judge nothing and still pass", " ".join(got.alarms()))
+
     # ------------------------------------ what it measures rather than judges
 
     def test_an_address_the_prose_never_writes_is_counted_not_condemned(self):
