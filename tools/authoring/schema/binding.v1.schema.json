@@ -27,6 +27,10 @@
       "additionalProperties": false,
       "properties": {
         "address": {"type": "string"},
+        "unresolved": {
+          "type": "string",
+          "description": "Written INSTEAD of `address`, when the platform's own list is not available yet and nobody has said which address this is. The string is the reason, for whoever can answer it. ⚠ This exists because absence has to be WRITABLE or it does not get written: a document is already platform-free -- it uses its own identifiers and the binding is the dictionary -- so the logic can be authored long before the addresses are known. Without a way to say 'not known yet', that gap gets filled with a plausible address instead, and a plausible wrong address is invisible. It is the peer of the document's `sce:unresolved`, which has stopped exactly this for VALUES since before this file existed."
+        },
         "equals": {"type": "string"},
         "equals_any": {"type": "array", "items": {"type": "string"}},
         "not_equals": {
@@ -88,6 +92,10 @@
       "additionalProperties": false,
       "properties": {
         "address": {"type": "string"},
+        "unresolved": {
+          "type": "string",
+          "description": "Written INSTEAD of `address`, when nobody has yet said which address this output reaches. The string is the reason. An unresolved OUTPUT is narrower than an unresolved input: the rest of the document still runs, and only the positions this one would have written go unchecked."
+        },
         "field": {"type": "string"},
         "map": {
           "type": "object",

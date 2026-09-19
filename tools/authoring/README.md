@@ -289,6 +289,7 @@ the model's addresses the document's names are.
     document: controller.scxml
     inputs:
       approaching: {address: plant/in/approach, equals: APPROACHING}
+      supplyOn:    {unresolved: "the platform list is not available yet"}
       anyWarning:  {address: plant/in/state, equals_any: [WARN, FAULT]}
       notClear:    {address: plant/in/state, not_equals: CLEAR,
                     note: "a negation stays right when the enum grows"}
@@ -308,6 +309,30 @@ the model's addresses the document's names are.
                 when: {1: {blink: "ON"}}, also: {source: "LOCAL"}}
       reading: {address: plant/out/reading, field: value, passthrough: true}
       held:    {internal: true}
+
+### Writing the document before the addresses exist
+
+⚠ The document is ALREADY independent of the platform — it uses its own
+identifiers and this file is the dictionary — so the decision logic can be
+written in full before anybody has produced the platform's list of addresses.
+That is the ordinary situation when a specification arrives first.
+
+`unresolved` is how a rule says so. It is written instead of `address`, and
+the string is the reason, for whoever can answer it:
+
+    supplyOn: {unresolved: "the source calls this the supply signal and
+                            the platform list is not available yet"}
+
+`check` then reports an address still missing rather than a name that does not
+exist; `verify` says it cannot run rather than running the document on a value
+nobody supplied. When the list arrives, only this file changes.
+
+⚠⚠ This exists because ABSENCE HAS TO BE WRITABLE OR IT DOES NOT GET WRITTEN.
+Asked for a complete binding with no list to hand, an author — human or model
+— produces a complete-looking one, and a plausible wrong address is invisible
+in a way a missing one never is. The document's `sce:unresolved` has stopped
+exactly this for VALUES since before this package existed; this is its peer for
+addresses.
 
 ⚠ `when_absent` is required for a NUMBER whose address a case may not drive: a
 symbol comparison needs no such declaration, because an address that is not
