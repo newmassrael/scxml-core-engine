@@ -1726,6 +1726,39 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- Timer kind: the period and the event it raises, both as element
+       text. Found by the grammar/parser gate rather than by hand — the
+       first sweep for undeclared surface enumerated (element, attribute)
+       PAIRS, and an element carrying no attribute is invisible to that
+       unit. -->
+  <xs:element name="period">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="fire-event">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Bounded-collection kind: names the element type the collection
+       holds, resolved across documents, so `xs:string` rather than
+       `xs:NCName` — an alias may carry a separator this grammar does not
+       get to constrain. -->
+  <xs:element name="element-type">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
   <!-- Read by the STATECHART parser (`src/parser.rs`), not the forge
        one, and reachable here because `sce-forge.xsd` wraps W3C SCXML.
        ⚠ Fixtures also hang `urn:sce:cpp` attributes on it, and that

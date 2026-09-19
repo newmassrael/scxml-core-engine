@@ -199,6 +199,125 @@ fn parse_to_ir(text: &str, label_stem: &str, dir: Option<&Path>) -> Option<Strin
     serde_json::to_string(&parsed).ok()
 }
 
+/// Every element `sce-forge-ext.xsd` declares.
+fn declared_elements() -> BTreeSet<String> {
+    let path = repo_root().join("schemas/sce-forge-ext.xsd");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let doc = roxmltree::Document::parse(&text)
+        .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+    doc.descendants()
+        .filter(|n| n.has_tag_name("element"))
+        .filter_map(|n| n.attribute("name").map(str::to_string))
+        .collect()
+}
+
+/// The grammar must name every `sce:` element a real document carries.
+///
+/// The companion to the test below, asked from the other end. That one
+/// starts at the grammar and looks for a reader; this one starts at a
+/// document the parser accepted and looks for a declaration. Neither
+/// direction implies the other, and both were red on 2026-09-20:
+/// `<sce:while max-iter>` was declared and unread, while `<sce:helper>`,
+/// `<sce:capacity>`, `<sce:cancel-on>`, `<sce:reset-on>`,
+/// `<sce:context>`, `<sce:period>`, `<sce:fire-event>` and
+/// `<sce:element-type>` were read and declared nowhere.
+///
+/// # ⚠ Why this asks about ELEMENTS and not about attributes
+///
+/// The attribute question cannot be asked here, and the reason is worth
+/// stating rather than leaving as an omission somebody later "fixes".
+/// XSD validation runs inside the parse path and is compile-time gated
+/// (`feature = "xsd"`, no runtime bypass), so an attribute the grammar
+/// does not admit makes the whole document invalid — the parser never
+/// sees it, and no fixture carrying one can reach this test. An
+/// attribute half would therefore be structurally unable to fire.
+/// Measured: one was written, then armed by deleting the `max-iter`
+/// declaration from the schema, and it stayed green.
+///
+/// An undeclared ELEMENT is different, and that difference is the whole
+/// value of this test: the content models it appears in are
+/// `xs:any processContents="lax"`, so an element the grammar never names
+/// validates *by being unknown*. Eight had accumulated.
+///
+/// What it also buys: a misspelled `sce:` element name is admitted the
+/// same way, and this is what makes one visible.
+#[test]
+fn every_sce_element_a_document_carries_is_named_by_the_grammar() {
+    let elements = declared_elements();
+    let files = fixture_files();
+    assert!(
+        !elements.is_empty() && !files.is_empty(),
+        "nothing to measure: {} declared element(s), {} fixture(s)",
+        elements.len(),
+        files.len()
+    );
+
+    let mut undeclared: BTreeMap<String, String> = BTreeMap::new();
+    let mut accepted = 0usize;
+
+    for path in &files {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(doc) = roxmltree::Document::parse(&text) else {
+            continue;
+        };
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("fixture");
+        // A fixture the parser refuses is not evidence about the accepted
+        // surface — it never got that far. Deciding this from the
+        // document itself keeps negative fixtures out without a list of
+        // their names.
+        if parse_to_ir(&text, stem, path.parent()).is_none() {
+            continue;
+        }
+        accepted += 1;
+
+        for node in doc.descendants() {
+            if node.tag_name().namespace() != Some(SCE_NS) {
+                continue;
+            }
+            let name = node.tag_name().name();
+            if elements.contains(name) {
+                continue;
+            }
+            undeclared.entry(name.to_string()).or_insert_with(|| {
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            });
+        }
+    }
+
+    println!("declared elements       : {}", elements.len());
+    println!("fixtures the parser took: {accepted}");
+
+    // A floor: a sweep that accepted no document would satisfy the
+    // assertion below by looking at nothing.
+    assert!(
+        accepted > 0,
+        "no fixture parsed — the sweep is vacuous, not clean"
+    );
+
+    assert!(
+        undeclared.is_empty(),
+        "these `sce:` elements appear in a document the parser accepts \
+         and `sce-forge-ext.xsd` declares none of them — the content \
+         model admits them by lax wildcard, so the grammar is silent \
+         about them rather than permissive on purpose, and a misspelling \
+         validates the same way:\n  {}",
+        undeclared
+            .iter()
+            .map(|(el, f)| format!("<sce:{el}>  (e.g. {f})"))
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+}
+
 #[test]
 fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
     let declared = declared_pairs();
