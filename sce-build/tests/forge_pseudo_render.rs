@@ -315,8 +315,10 @@ fn a_newline_in_an_expression_does_not_become_a_line() {
 /// vanish.
 #[test]
 fn a_refusal_names_the_construct_that_stopped_it() {
-    let mut model = sce_build::model::SCXMLModel::default();
-    model.name = "m".to_string();
+    let mut model = sce_build::model::SCXMLModel {
+        name: "m".to_string(),
+        ..Default::default()
+    };
     model.invokes.push(sce_build::model::Invoke::Unsupported(
         sce_build::model::UnsupportedInvokeInfo::default(),
     ));

@@ -107,7 +107,7 @@ fn lines_of(input: &str) -> Vec<Line<'_>> {
 /// parser counting indents for itself. A line's children are the run
 /// that follows it at a greater depth; the run ends at the next line
 /// back at its own depth or shallower.
-fn group<'a, 'b>(body: &'b [&'a Line<'a>]) -> Vec<(&'a Line<'a>, Vec<&'a Line<'a>>)> {
+fn group<'a>(body: &[&'a Line<'a>]) -> Vec<(&'a Line<'a>, Vec<&'a Line<'a>>)> {
     let mut out: Vec<(&Line<'_>, Vec<&Line<'_>>)> = Vec::new();
     let Some(top) = body.first().map(|l| l.depth) else {
         return out;
@@ -141,6 +141,27 @@ fn undo(s: &str, line: usize) -> Result<String, ParseError> {
 /// reason the renderer refuses rather than abbreviates.
 pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
     let lines = lines_of(input);
+
+    // A derived line came from a deployment, not from a document, so
+    // there is no document to read this text back into. Refused here,
+    // before any kind's parser runs, because the alternative — dropping
+    // the lines and reading the rest — would let a round trip report
+    // that it had verified a text part of which it never looked at.
+    // `crate::forge::pseudo::DEPLOYMENT_SIGIL` is the one spelling.
+    if let Some(l) = lines
+        .iter()
+        .find(|l| l.text.split_whitespace().next() == Some(crate::forge::pseudo::DEPLOYMENT_SIGIL))
+    {
+        return Err(ParseError {
+            line: l.number,
+            why: format!(
+                "`{}` starts a line a deployment wrote, and a deployment is not \
+                 part of any document — read back the rendering made without one",
+                crate::forge::pseudo::DEPLOYMENT_SIGIL
+            ),
+        });
+    }
+
     let head = lines.first().ok_or_else(|| ParseError {
         line: 0,
         why: "empty rendering".to_string(),
@@ -2726,31 +2747,15 @@ pub const COVERED_KINDS: &[&str] = &[
 
 /// This document's kind name when the reader covers it.
 ///
-/// One `match` rather than a predicate plus a separate namer: the
-/// round-trip gate needs the name to report which kinds it exercised,
-/// and two spellings of "which kind is this" would let the gate count a
-/// kind the reader does not actually take.
+/// The name comes from
+/// [`ForgeKind::as_attr`](crate::forge::model::ForgeKind::as_attr), not
+/// from a `match` here: which kind a document is is one question, and
+/// this module used to answer it a second time. Two spellings would let
+/// this report a kind the reader does not actually take. What belongs
+/// here is only the second half — whether that name is in
+/// [`COVERED_KINDS`].
 pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
-    let name = match doc {
-        ForgeDocument::Condition(_) => "condition",
-        ForgeDocument::Timer(_) => "timer",
-        ForgeDocument::Enum(_) => "enum",
-        ForgeDocument::Transform(_) => "transform",
-        ForgeDocument::EventSchema(_) => "event-schema",
-        ForgeDocument::Lookup(_) => "lookup",
-        ForgeDocument::Validator(_) => "validator",
-        ForgeDocument::Filter(_) => "filter",
-        ForgeDocument::Interpolation(_) => "interpolation",
-        ForgeDocument::BoundedCollection(_) => "bounded-collection",
-        ForgeDocument::Worker(_) => "worker",
-        ForgeDocument::BufferPool(_) => "buffer-pool",
-        ForgeDocument::Link(_) => "link",
-        ForgeDocument::Observer(_) => "observer",
-        ForgeDocument::Algorithm(_) => "algorithm",
-        ForgeDocument::Procedure(_) => "procedure",
-        ForgeDocument::Codec(_) => "codec",
-        ForgeDocument::Statechart(_) => "statechart",
-    };
+    let name = doc.kind().as_attr();
     COVERED_KINDS.contains(&name).then_some(name)
 }
 

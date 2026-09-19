@@ -66,6 +66,57 @@
 //! exact inverse. Sharing it rather than writing a second escape
 //! grammar is what lets one decoder serve both surfaces.
 //!
+//! # Deployment is not the document
+//!
+//! A mesh deployment changes what a `<send>` does without changing the
+//! document that wrote it: the same `<send target="#motor"/>` becomes a
+//! same-process call under one `deploy.yaml` and a SOME/IP request
+//! under another. A rendering of the document alone cannot say which,
+//! so a reviewer approves behaviour the deployment then decides —
+//! `claudedocs/rfc-pseudocode-review-surface.md` §8 names this the
+//! review gap, and [`render_with_deployment`] is what closes it.
+//!
+//! Those facts are **derived**, and the rendering says so in its syntax
+//! rather than in its typography. Every derived line begins with
+//! [`DEPLOYMENT_SIGIL`]:
+//!
+//! ```text
+//!   machine brake (datamodel: null, initial: idle, binding: early)
+//!     ! device ecu1
+//!     state braking:
+//!       on entry:
+//!         send brake.activate:
+//!           to #motor
+//!             ! transport zenoh
+//!             ! key sce/brake/motor/cmd
+//! ```
+//!
+//! ⚠ The sigil is not a comment marker and not emphasis. It is the one
+//! thing that tells the document's text apart from the deployment's,
+//! and three properties rest on it:
+//!
+//! 1. **[`crate::forge::unpseudo::parse`] refuses any line carrying
+//!    it.** A deployed rendering has no document to be read back into,
+//!    because part of it came from `deploy.yaml`. The reader says so
+//!    instead of quietly dropping those lines, which would let a round
+//!    trip report that it had verified a text half of which it never
+//!    looked at.
+//! 2. **Removing every sigil line yields exactly [`render`]'s output.**
+//!    A deployment adds and never alters, so a reviewer's approval of
+//!    the authored half is the same approval either way.
+//! 3. **No authored line can begin with it.** Every line this module
+//!    writes starts with a keyword it chose, and author text reaches
+//!    the output only after one — encoded, so it carries no line
+//!    terminator to break out with.
+//!
+//! `sce-build/tests/a_deployment_annotation_is_not_the_document.rs`
+//! holds all three to the corpus rather than to this comment.
+//!
+//! A sigil rather than a word (`derived`, `deployed`) because a word is
+//! identifier-shaped: a construct spelled the same way could be added
+//! to the grammar later and the two would collide in silence. `!`
+//! cannot become a keyword.
+//!
 //! # Grammar
 //!
 //! Indentation is two spaces per level and carries block structure;
@@ -311,12 +362,111 @@ impl std::fmt::Display for Unsupported {
     }
 }
 
+/// The first token of every derived line. See the module comment.
+///
+/// One `const` rather than the character written at each site: the
+/// renderer emits it, the reader refuses it, and the gate looks for it,
+/// and a three-way agreement spelled three times is a disagreement
+/// waiting to happen.
+pub const DEPLOYMENT_SIGIL: &str = "!";
+
+/// One thing a deployment settles that the document does not say.
+///
+/// `name` is a word this renderer and its builder agree on
+/// (`transport`, `key`, `device`); `value` is whatever the deployment
+/// holds — an opaque string from `deploy.yaml`, encoded on the way out
+/// like any author text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fact {
+    /// What the fact is about, e.g. `transport`.
+    pub name: String,
+    /// What the deployment settled it to, e.g. `zenoh`.
+    pub value: String,
+}
+
+impl Fact {
+    /// A fact from two things that can be spelled as strings.
+    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Fact {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+}
+
+/// What a deployment adds to a document's meaning.
+///
+/// Deliberately not a mesh type. `sce-build::mesh` resolves a
+/// `deploy.yaml` into transports, service ids and pool plans; this
+/// carries only the part of that answer a reviewer reads, so the
+/// renderer takes no dependency on the mesh pipeline and a caller can
+/// state a deployment without running one. The builder that turns a
+/// real resolution into this lives on the mesh side, where the types it
+/// reads already are.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Deployment {
+    /// True of the deployed machine as a whole — the device it runs on,
+    /// and any send target the deployment could not resolve statically.
+    pub machine: Vec<Fact>,
+    /// Per `<send>` target, keyed by the target exactly as the document
+    /// writes it (`#motor`), which is also how `deploy.yaml` keys its
+    /// bindings.
+    pub targets: std::collections::BTreeMap<String, Vec<Fact>>,
+}
+
+impl Deployment {
+    /// Nothing derived — the rendering is the document alone.
+    pub fn is_empty(&self) -> bool {
+        self.machine.is_empty() && self.targets.is_empty()
+    }
+}
+
+/// The empty deployment, so [`Out::new`] has one to borrow.
+///
+/// A borrowed empty value rather than an `Option<&Deployment>` on the
+/// writer: an absent deployment and a deployment that settles nothing
+/// render the same bytes, and giving the writer one shape to handle is
+/// what keeps that true.
+///
+/// ⚠ `static`, not `const`. A `const` is substituted at each use and
+/// would make a temporary the borrow outlives.
+static NO_DEPLOYMENT: Deployment = Deployment {
+    machine: Vec::new(),
+    targets: std::collections::BTreeMap::new(),
+};
+
 /// The pseudocode for this document, or why there is none.
 ///
 /// The returned string ends in a newline when it is non-empty, so a
 /// caller writing it to a file or to stdout needs no terminator of its
 /// own.
 pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
+    render_with_deployment(doc, &NO_DEPLOYMENT)
+}
+
+/// The pseudocode for this document under a deployment.
+///
+/// Identical to [`render`] except that each fact the deployment settles
+/// is written as its own line beginning with [`DEPLOYMENT_SIGIL`]. See
+/// the module comment for why the distinction is syntactic.
+///
+/// ⚠ The result is a review surface and not a document: the reader
+/// refuses it. Read [`render`]'s output back, not this.
+pub fn render_with_deployment(
+    doc: &ForgeDocument,
+    deployment: &Deployment,
+) -> Result<String, Unsupported> {
+    // A deployment binds `<send>` targets. No other kind has one, so a
+    // deployment handed in with one is a caller error, and it is
+    // refused by name rather than rendered without the facts it was
+    // given — which would hand back a text that looks complete and is
+    // missing exactly what the caller asked to see.
+    if !deployment.is_empty() && !matches!(doc, ForgeDocument::Statechart(_)) {
+        return Err(Unsupported::feature(
+            doc.kind().as_attr(),
+            "a deployment, which binds the <send> targets only a statechart has",
+        ));
+    }
     // One arm per kind, listed rather than collapsed behind `_`, so a
     // kind added to the enum stops the build until somebody decides
     // whether it is rendered or refused.
@@ -338,7 +488,7 @@ pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
         ForgeDocument::Codec(m) => Ok(render_codec(m)),
-        ForgeDocument::Statechart(m) => render_statechart(m),
+        ForgeDocument::Statechart(m) => render_statechart(m, deployment),
     }
 }
 
@@ -349,16 +499,28 @@ pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
 /// A plain `String` plus a depth counter rather than a formatter: the
 /// grammar's only structural device is leading whitespace, and every
 /// writer here appends whole lines.
-struct Out {
+struct Out<'d> {
     buf: String,
     depth: usize,
+    /// The facts to interleave, borrowed for the whole rendering.
+    ///
+    /// On the writer rather than threaded through twenty rendering
+    /// functions: the writer is already the one place every line goes
+    /// through, so a derived line lands at its site without each caller
+    /// learning what a deployment is.
+    deployment: &'d Deployment,
 }
 
-impl Out {
-    fn new() -> Self {
+impl<'d> Out<'d> {
+    fn new() -> Out<'static> {
+        Out::with_deployment(&NO_DEPLOYMENT)
+    }
+
+    fn with_deployment(deployment: &'d Deployment) -> Out<'d> {
         Out {
             buf: String::new(),
             depth: 0,
+            deployment,
         }
     }
 
@@ -369,6 +531,46 @@ impl Out {
         }
         self.buf.push_str(text);
         self.buf.push('\n');
+    }
+
+    /// One derived line at the current depth.
+    ///
+    /// Both halves are encoded. The value is opaque `deploy.yaml` text
+    /// and could carry a newline; the name is chosen by the builder and
+    /// could not, but encoding it anyway costs nothing and means no
+    /// future builder can make this the one unescaped site.
+    fn derived(&mut self, fact: &Fact) {
+        self.line(&format!(
+            "{DEPLOYMENT_SIGIL} {} {}",
+            text(&fact.name),
+            text(&fact.value)
+        ));
+    }
+
+    /// The deployment's facts about a send target, one level under it.
+    ///
+    /// `target` is the raw attribute value, not the encoded one —
+    /// `deploy.yaml` keys its bindings by what the document wrote.
+    fn annotate_target(&mut self, target: &str) {
+        // Read the facts out through the deployment's own lifetime
+        // before writing, so the buffer is free to be borrowed.
+        let deployment: &'d Deployment = self.deployment;
+        let Some(facts) = deployment.targets.get(target) else {
+            return;
+        };
+        self.nested(|out| {
+            for f in facts {
+                out.derived(f);
+            }
+        });
+    }
+
+    /// The deployment's facts about the machine, at the current depth.
+    fn annotate_machine(&mut self) {
+        let deployment: &'d Deployment = self.deployment;
+        for f in &deployment.machine {
+            self.derived(f);
+        }
     }
 
     /// Run `body` one level deeper.
@@ -432,7 +634,7 @@ fn render_algorithm(m: &AlgorithmModel) -> String {
     out.buf
 }
 
-fn render_const(c: &AlgorithmConst, out: &mut Out) {
+fn render_const(c: &AlgorithmConst, out: &mut Out<'_>) {
     match (&c.sce_type, &c.init, &c.fold) {
         // Scalar form. `compute_at_build` is false here by the parser's
         // "exactly one of init / fold" invariant, so the keyword below
@@ -495,7 +697,7 @@ fn fold_head(fold: &FoldBody) -> String {
     )
 }
 
-fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out) {
+fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
     match stmt {
         AlgorithmStmt::Var {
             name,
@@ -600,7 +802,7 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out) {
     }
 }
 
-fn render_test_vector(tv: &TestVector, out: &mut Out) {
+fn render_test_vector(tv: &TestVector, out: &mut Out<'_>) {
     let hex: String = tv.hex.iter().map(|b| format!("{b:02x}")).collect();
     let value = match &tv.value {
         TestVectorValue::Bool(b) => format!("bool {b}"),
@@ -651,7 +853,7 @@ fn render_procedure(m: &ProcedureModel) -> String {
 /// from which list the field came out of: the two agree today, and a
 /// rendering that relies on them continuing to agree would be a
 /// rendering that stops being total the day they do not.
-fn render_field(f: &ForgeField, out: &mut Out) {
+fn render_field(f: &ForgeField, out: &mut Out<'_>) {
     let dir = match f.direction {
         Direction::In => "in",
         Direction::Out => "out",
@@ -686,7 +888,7 @@ fn render_field(f: &ForgeField, out: &mut Out) {
     out.line(&line);
 }
 
-fn render_helper(h: &ProcedureHelper, out: &mut Out) {
+fn render_helper(h: &ProcedureHelper, out: &mut Out<'_>) {
     let args: Vec<String> = h.args.iter().map(SceType::as_attr).collect();
     let mut line = format!(
         "helper {}({}) -> {}",
@@ -700,7 +902,7 @@ fn render_helper(h: &ProcedureHelper, out: &mut Out) {
     out.line(&line);
 }
 
-fn render_state(s: &ProcedureState, out: &mut Out) {
+fn render_state(s: &ProcedureState, out: &mut Out<'_>) {
     let keyword = if s.is_final { "final" } else { "state" };
     out.line(&format!("{} {}:", keyword, text(&s.id)));
     out.nested(|out| {
@@ -742,15 +944,12 @@ fn render_state(s: &ProcedureState, out: &mut Out) {
     });
 }
 
-fn render_transition(t: &ProcedureTransition, out: &mut Out) {
+fn render_transition(t: &ProcedureTransition, out: &mut Out<'_>) {
     let mut line = String::new();
-    match &t.event {
-        Some(e) => {
-            let _ = write!(line, "on {} ", text(e));
-        }
-        // An eventless transition is the bare arrow: `on` with no event
-        // would read as an event named by the empty string.
-        None => {}
+    // An eventless transition is the bare arrow: `on` with no event
+    // would read as an event named by the empty string.
+    if let Some(e) = &t.event {
+        let _ = write!(line, "on {} ", text(e));
     }
     let _ = write!(line, "-> {}", text(&t.target));
     // The guard goes LAST, after the target, because it is the only
@@ -1063,12 +1262,15 @@ fn statechart_gap(m: &crate::model::SCXMLModel) -> Option<&'static str> {
     None
 }
 
-fn render_statechart(m: &crate::model::SCXMLModel) -> Result<String, Unsupported> {
+fn render_statechart(
+    m: &crate::model::SCXMLModel,
+    deployment: &Deployment,
+) -> Result<String, Unsupported> {
     if let Some(gap) = statechart_gap(m) {
         return Err(Unsupported::feature("statechart", gap));
     }
 
-    let mut out = Out::new();
+    let mut out = Out::with_deployment(deployment);
     let datamodel = match m.datamodel {
         crate::model::Datamodel::Null => "null",
         crate::model::Datamodel::EcmaScript => "ecmascript",
@@ -1091,6 +1293,10 @@ fn render_statechart(m: &crate::model::SCXMLModel) -> Result<String, Unsupported
 
     let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
+        // The machine's own derived facts come first, before anything
+        // the document says, so a reader meets the deployment before
+        // the behaviour it reinterprets rather than after it.
+        out.annotate_machine();
         // ⚠ `context_objects`, not `context_object_ids`: the parser
         // fills the id set alongside the list from the same elements, so
         // rendering both would print each object twice — the shape the
@@ -1154,7 +1360,7 @@ fn render_statechart(m: &crate::model::SCXMLModel) -> Result<String, Unsupported
 /// is the same content as `inline_child`, in its source form. The
 /// parsed child is rendered; repeating its XML underneath would be one
 /// document shown twice.
-fn render_invoke(inv: &crate::model::Invoke, out: &mut Out) -> Result<(), Unsupported> {
+fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Unsupported> {
     use crate::model::Invoke;
 
     let base = match inv {
@@ -1204,7 +1410,16 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out) -> Result<(), Unsupp
                     out.line(&format!("finalize {}", text(&i.finalize_content)));
                 }
                 if let Some(child) = &i.inline_child {
-                    match render_statechart(child) {
+                    // ⚠ The child renders WITHOUT the parent's
+                    // deployment, and that is the honest answer rather
+                    // than a shortcut: a deployment binds one machine's
+                    // send targets, and an inline child is a different
+                    // machine whose `deploy.yaml` entry is its own. A
+                    // child's own deployment is a thing this surface
+                    // does not yet show — stated here because the
+                    // alternative, lending it the parent's facts, would
+                    // print bindings that are not its.
+                    match render_statechart(child, &NO_DEPLOYMENT) {
                         Ok(rendered) => {
                             out.line("child:");
                             out.nested(|out| out.block(&rendered));
@@ -1258,7 +1473,7 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out) -> Result<(), Unsupp
     nested
 }
 
-fn render_variable(v: &crate::model::Variable, out: &mut Out) {
+fn render_variable(v: &crate::model::Variable, out: &mut Out<'_>) {
     let mut line = format!("data {}", text(&v.id));
     if !v.var_type.is_empty() {
         let _ = write!(line, ": {}", text(&v.var_type));
@@ -1280,7 +1495,7 @@ fn render_variable(v: &crate::model::Variable, out: &mut Out) {
     out.line(&line);
 }
 
-fn render_scxml_state(s: &crate::model::State, out: &mut Out) -> Result<(), Unsupported> {
+fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), Unsupported> {
     let keyword = if s.is_final {
         "final"
     } else if s.is_parallel {
@@ -1386,7 +1601,7 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out) -> Result<(), Unsu
     nested
 }
 
-fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out) {
+fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
     let mut line = String::new();
     if !t.event.is_empty() {
         let _ = write!(line, "on {} ", text(&t.event));
@@ -1420,7 +1635,7 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out) {
     });
 }
 
-fn render_donedata(d: &crate::model::DoneData, out: &mut Out) {
+fn render_donedata(d: &crate::model::DoneData, out: &mut Out<'_>) {
     out.line("done:");
     out.nested(|out| {
         for p in &d.params {
@@ -1453,7 +1668,7 @@ fn render_donedata(d: &crate::model::DoneData, out: &mut Out) {
 /// The field each tag reads is `Action::authored_fields`, measured over
 /// 587 documents; the derived half is deliberately absent, because a
 /// reviewer approving `cond_cpp` would be approving SCE's lowering.
-fn render_scxml_action(a: &crate::model::Action, out: &mut Out) {
+fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
     match a.action_type.as_str() {
         "assign" => {
             // The common shape is one line with the expression last. An
@@ -1592,7 +1807,7 @@ fn render_param(p: &crate::model::Param) -> String {
 ///
 /// A bare `send <event>` stays one line: with nothing after the event
 /// there is nothing to be ambiguous about, and most sends are that.
-fn render_send(a: &crate::model::Action, out: &mut Out) {
+fn render_send(a: &crate::model::Action, out: &mut Out<'_>) {
     let clauses: Vec<(&str, &str)> = [
         ("eventexpr", a.eventexpr.as_str()),
         ("to", a.target.as_str()),
@@ -1624,6 +1839,16 @@ fn render_send(a: &crate::model::Action, out: &mut Out) {
     out.nested(|out| {
         for (name, value) in clauses {
             out.line(&format!("{name} {}", text(value)));
+            // The deployment binds a target, so its facts belong under
+            // the clause that names one. `to-expr` is deliberately not
+            // annotated: an expression is resolved at run time and the
+            // deployment has nothing to say about it — the builder
+            // records that as a machine-level fact instead, where it
+            // reads as "this send could not be resolved" rather than as
+            // an absence nobody notices.
+            if name == "to" {
+                out.annotate_target(value);
+            }
         }
         for p in &a.params {
             out.line(&format!("param {}", render_param(p)));
@@ -1730,7 +1955,7 @@ fn render_codec(m: &CodecModel) -> String {
     out.buf
 }
 
-fn render_codec_field(f: &CodecField, out: &mut Out) {
+fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
     let at = match f.bit_offset {
         Some(b) => format!("{}.{b}", f.byte_offset),
         None => f.byte_offset.to_string(),
@@ -1784,7 +2009,7 @@ fn render_codec_field(f: &CodecField, out: &mut Out) {
     });
 }
 
-fn render_flag_def(keyword: &str, fl: &FlagDef, out: &mut Out) {
+fn render_flag_def(keyword: &str, fl: &FlagDef, out: &mut Out<'_>) {
     let mut line = format!(
         "{keyword} {} bit {} width {}",
         text(&fl.name),
@@ -1797,7 +2022,7 @@ fn render_flag_def(keyword: &str, fl: &FlagDef, out: &mut Out) {
     out.line(&line);
 }
 
-fn render_codec_variant(v: &CodecVariant, out: &mut Out) {
+fn render_codec_variant(v: &CodecVariant, out: &mut Out<'_>) {
     let mut head = String::from("variant");
     if let Some(f) = &v.tag_field {
         let _ = write!(head, " tag-field {}", text(f));
@@ -1832,7 +2057,7 @@ fn render_codec_variant(v: &CodecVariant, out: &mut Out) {
     });
 }
 
-fn render_codec_test_vector(tv: &CodecTestVector, out: &mut Out) {
+fn render_codec_test_vector(tv: &CodecTestVector, out: &mut Out<'_>) {
     let hex: String = tv.hex.iter().map(|b| format!("{b:02x}")).collect();
     out.line(&format!("test 0x{hex} @line {}", tv.source_line));
     out.nested(|out| {

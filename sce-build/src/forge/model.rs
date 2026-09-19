@@ -197,6 +197,40 @@ impl ForgeKind {
         "event-schema",
     ];
 
+    /// This kind's `sce:kind` attribute value — the inverse of
+    /// [`Self::from_attr`].
+    ///
+    /// Every surface that has to name a kind to a human asks here: the
+    /// pseudocode reader's coverage report, the pseudocode renderer's
+    /// refusal, and any diagnostic that quotes the kind back. Written as
+    /// one `match` on the enum rather than as a lookup into
+    /// [`Self::ALL_ATTR_NAMES`], so a variant added to `ForgeKind` stops
+    /// the build instead of silently taking its neighbour's name.
+    /// `forge_kind_attr_names_round_trip` pins it against `from_attr`
+    /// and against that list.
+    pub fn as_attr(&self) -> &'static str {
+        match self {
+            Self::Statechart => "statechart",
+            Self::Transform => "transform",
+            Self::Lookup => "lookup",
+            Self::Condition => "condition",
+            Self::Codec => "codec",
+            Self::Procedure => "procedure",
+            Self::Validator => "validator",
+            Self::Filter => "filter",
+            Self::Interpolation => "interpolation",
+            Self::Timer => "timer",
+            Self::Observer => "observer",
+            Self::Algorithm => "algorithm",
+            Self::Link => "link",
+            Self::BufferPool => "buffer-pool",
+            Self::Worker => "worker",
+            Self::BoundedCollection => "bounded-collection",
+            Self::Enum => "enum",
+            Self::EventSchema => "event-schema",
+        }
+    }
+
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
     pub fn from_attr(s: &str) -> Option<Self> {
         match s {
@@ -4238,6 +4272,36 @@ pub struct ExternDeclaration {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    /// `as_attr` and `from_attr` are inverses, and `ALL_ATTR_NAMES` is
+    /// the same set.
+    ///
+    /// Three spellings of the kind vocabulary sit next to each other,
+    /// and nothing but this test makes them one. Driving it from
+    /// `ALL_ATTR_NAMES` rather than from a list written here is what
+    /// makes it catch a variant whose `as_attr` arm was copied from its
+    /// neighbour: the name would parse to a different kind and come
+    /// back spelled differently.
+    #[test]
+    fn forge_kind_attr_names_round_trip() {
+        assert_eq!(
+            ForgeKind::ALL_ATTR_NAMES.len(),
+            18,
+            "the kind vocabulary changed size — every arm below counts it"
+        );
+        let mut seen: BTreeSet<&'static str> = BTreeSet::new();
+        for name in ForgeKind::ALL_ATTR_NAMES {
+            let kind = ForgeKind::from_attr(name)
+                .unwrap_or_else(|| panic!("`{name}` is listed and does not parse"));
+            assert_eq!(
+                kind.as_attr(),
+                *name,
+                "`{name}` parsed to a kind that names itself differently"
+            );
+            assert!(seen.insert(kind.as_attr()), "`{name}` is named twice");
+        }
+        assert_eq!(seen.len(), ForgeKind::ALL_ATTR_NAMES.len());
+    }
 
     #[test]
     fn forge_import_serialization_omits_line_field() {
