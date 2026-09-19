@@ -39,9 +39,12 @@
 use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
-    AlgorithmStmt, BackpressurePolicy, BoundedCollectionModel, BufferPoolModel, BufferPoolVariant,
-    CachePolicy, FoldBody, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
-    ProcedureSendAction, ProcedureState, ProcedureTransition, TestVector, TestVectorValue,
+    AlgorithmStmt, BackpressurePolicy, BitSize, BoundedCollectionModel, BufferPoolModel,
+    BufferPoolVariant, CachePolicy, CodecField, CodecModel, CodecTestVector, CodecVariant,
+    CountRef, DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef, FlagInput, FoldBody,
+    PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam,
+    ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition,
+    TestVector, TestVectorValue, TlvOverflowPolicy, TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
@@ -190,6 +193,7 @@ pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
         "observer" => parse_observer(head, &body).map(ForgeDocument::Observer),
         "algorithm" => parse_algorithm(head, &body).map(ForgeDocument::Algorithm),
         "procedure" => parse_procedure(head, &body).map(ForgeDocument::Procedure),
+        "codec" => parse_codec(head, &body).map(ForgeDocument::Codec),
         other => Err(ParseError {
             line: head.number,
             why: format!("`{other}` is not a kind this reader covers yet"),
@@ -1639,6 +1643,385 @@ fn parse_procedure_transition(
     })
 }
 
+fn endian_of(s: &str, line: usize) -> Result<Endian, ParseError> {
+    match s {
+        "big" => Ok(Endian::Big),
+        "little" => Ok(Endian::Little),
+        "native" => Ok(Endian::Native),
+        other => Err(ParseError {
+            line,
+            why: format!("`{other}` is not an endianness"),
+        }),
+    }
+}
+
+/// `flag <name> bit <n> width <n> [value <v>]`, under either keyword.
+fn parse_flag_def(w: &[&str], line: usize) -> Result<FlagDef, ParseError> {
+    Ok(FlagDef {
+        name: undo(w.get(1).copied().unwrap_or(""), line)?,
+        bit: w.get(3).and_then(|v| v.parse().ok()).unwrap_or(0),
+        width: w.get(5).and_then(|v| v.parse().ok()).unwrap_or(0),
+        value: match w.get(6).copied() {
+            Some("value") => w.get(7).and_then(|v| v.parse().ok()),
+            _ => None,
+        },
+    })
+}
+
+/// `[not] (local|input):<field>.<flag> [or …]`
+fn parse_present_if(s: &str, line: usize) -> Result<PresentIfPredicate, ParseError> {
+    let (head, rest) = match s.split_once(" or ") {
+        Some((h, r)) => (h, Some(r)),
+        None => (s, None),
+    };
+    let (negate, head) = match head.strip_prefix("not ") {
+        Some(h) => (true, h),
+        None => (false, head),
+    };
+    let (scope_word, path) = head.split_once(':').ok_or_else(|| ParseError {
+        line,
+        why: "a present-if needs `<scope>:<field>.<flag>`".to_string(),
+    })?;
+    let (field_id, flag_name) = path.split_once('.').ok_or_else(|| ParseError {
+        line,
+        why: "a present-if needs `<field>.<flag>`".to_string(),
+    })?;
+    Ok(PresentIfPredicate {
+        scope: match scope_word {
+            "local" => PresentIfScope::Local,
+            "input" => PresentIfScope::Input,
+            other => {
+                return Err(ParseError {
+                    line,
+                    why: format!("`{other}` is not a present-if scope"),
+                })
+            }
+        },
+        field_id: undo(field_id, line)?,
+        flag_name: undo(flag_name, line)?,
+        negate,
+        or_with: match rest {
+            Some(r) => Some(Box::new(parse_present_if(r, line)?)),
+            None => None,
+        },
+    })
+}
+
+fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
+    Ok(match w.first().copied() {
+        Some("fixed") => BitSize::Fixed {
+            bits: w.get(1).and_then(|v| v.parse().ok()).unwrap_or(0),
+        },
+        Some("tail") => BitSize::Tail,
+        Some("length-ref") => BitSize::LengthRef,
+        Some("embed") => BitSize::Embed,
+        Some("vle") => BitSize::Vle {
+            width_bits: w.get(1).and_then(|v| v.parse().ok()).unwrap_or(0),
+        },
+        Some("repeat") => BitSize::Repeat {
+            count_ref: match w.get(1).copied() {
+                Some("until-eof") => CountRef::UntilEof,
+                Some("length-field") => {
+                    CountRef::LengthField(undo(w.get(2).copied().unwrap_or(""), line)?)
+                }
+                other => {
+                    return Err(ParseError {
+                        line,
+                        why: format!("`{}` is not a repeat count", other.unwrap_or("")),
+                    })
+                }
+            },
+        },
+        Some("tlv-chain") => BitSize::TlvChain {
+            max_depth: w.get(2).and_then(|v| v.parse().ok()).unwrap_or(0),
+            on_overflow: match w.get(4).copied() {
+                Some("reject") => TlvOverflowPolicy::Reject,
+                Some("truncate") => TlvOverflowPolicy::Truncate,
+                other => {
+                    return Err(ParseError {
+                        line,
+                        why: format!("`{}` is not a TLV overflow policy", other.unwrap_or("")),
+                    })
+                }
+            },
+            terminate_on: match w.get(6).copied() {
+                Some("exhaust-or-depth") => TlvTerminateStrategy::ExhaustOrDepth,
+                Some("entry-flag") => TlvTerminateStrategy::EntryFlag {
+                    flag_name: undo(w.get(7).copied().unwrap_or(""), line)?,
+                },
+                other => {
+                    return Err(ParseError {
+                        line,
+                        why: format!("`{}` is not a TLV terminator", other.unwrap_or("")),
+                    })
+                }
+            },
+        },
+        other => {
+            return Err(ParseError {
+                line,
+                why: format!("`{}` is not a bit size", other.unwrap_or("")),
+            })
+        }
+    })
+}
+
+/// `codec <name> endian <e> [input-length <n>]`.
+fn parse_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let mut m = CodecModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        default_endian: endian_of(w.get(3).copied().unwrap_or(""), head.number)?,
+        input_length: match w.get(4).copied() {
+            Some("input-length") => w.get(5).and_then(|v| v.parse().ok()),
+            _ => None,
+        },
+        fields: Vec::new(),
+        variant: None,
+        flag_inputs: Vec::new(),
+        test_vectors: Vec::new(),
+        source_location: None,
+    };
+
+    for (line, kids) in group(body) {
+        let lw: Vec<&str> = line.text.split_whitespace().collect();
+        match lw.first().copied() {
+            Some("flag-input") => m.flag_inputs.push(FlagInput {
+                name: undo(lw.get(1).copied().unwrap_or(""), line.number)?,
+                width: lw.get(3).and_then(|v| v.parse().ok()).unwrap_or(0),
+            }),
+            Some("field") => m.fields.push(parse_codec_field(line, &kids)?),
+            Some("variant") => m.variant = Some(parse_codec_variant(&lw, &kids, line.number)?),
+            Some("test") => m
+                .test_vectors
+                .push(parse_codec_test(&lw, &kids, line.number)?),
+            _ => {
+                return Err(ParseError {
+                    line: line.number,
+                    why: format!("`{}` is not a codec body line", line.text),
+                })
+            }
+        }
+    }
+    Ok(m)
+}
+
+fn parse_codec_field(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<CodecField, ParseError> {
+    let w: Vec<&str> = line.text.split_whitespace().collect();
+    let id = w
+        .get(1)
+        .and_then(|v| v.strip_suffix(':'))
+        .ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a codec field needs `<id>:`".to_string(),
+        })?;
+    let type_word = w.get(2).copied().unwrap_or("");
+    let at = w.get(4).copied().unwrap_or("");
+    let (byte_offset, bit_offset) = match at.split_once('.') {
+        Some((b, x)) => (b.parse().unwrap_or(0), x.parse().ok()),
+        None => (at.parse().unwrap_or(0), None),
+    };
+
+    let mut f = CodecField {
+        id: undo(id, line.number)?,
+        sce_type: SceType::from_attr(type_word).ok_or_else(|| ParseError {
+            line: line.number,
+            why: format!("`{type_word}` is not an sce:type"),
+        })?,
+        byte_offset,
+        bit_offset,
+        bit_size: parse_bit_size(&w[6..], line.number)?,
+        endian: None,
+        max_size: None,
+        length_field: None,
+        flags: Vec::new(),
+        present_if: None,
+        repeat_body_alias: None,
+        max_count: None,
+        tlv_chain_body_alias: None,
+        dma_burst_align: None,
+        embed_body_alias: None,
+        embed_length_from: None,
+        length_arith: None,
+        quantity: None,
+    };
+
+    for k in kids {
+        let kw: Vec<&str> = k.text.split_whitespace().collect();
+        let tail = |n: usize| k.text.splitn(n + 1, ' ').nth(n).unwrap_or("");
+        match kw.first().copied() {
+            Some("endian") => f.endian = Some(endian_of(kw[1], k.number)?),
+            Some("max-size") => f.max_size = kw.get(1).and_then(|v| v.parse().ok()),
+            Some("length-field") => f.length_field = Some(undo(tail(1), k.number)?),
+            Some("length-arith") => f.length_arith = kw.get(1).and_then(|v| v.parse().ok()),
+            Some("max-count") => f.max_count = kw.get(1).and_then(|v| v.parse().ok()),
+            Some("repeat-body") => f.repeat_body_alias = Some(undo(tail(1), k.number)?),
+            Some("tlv-body") => f.tlv_chain_body_alias = Some(undo(tail(1), k.number)?),
+            Some("embed-body") => f.embed_body_alias = Some(undo(tail(1), k.number)?),
+            Some("embed-length-from") => f.embed_length_from = Some(undo(tail(1), k.number)?),
+            Some("dma-align") => f.dma_burst_align = kw.get(1).and_then(|v| v.parse().ok()),
+            Some("quantity") => {
+                f.quantity = Some(crate::forge::quantity::Quantity {
+                    scale: rational(kw.get(1).copied().unwrap_or(""), k.number)?,
+                    offset: rational(kw.get(2).copied().unwrap_or(""), k.number)?,
+                    unit: crate::forge::quantity::UnitTag::intern(&undo(
+                        kw.get(3).copied().unwrap_or(""),
+                        k.number,
+                    )?),
+                })
+            }
+            Some("present-if") => f.present_if = Some(parse_present_if(tail(1), k.number)?),
+            Some("flag") => f.flags.push(parse_flag_def(&kw, k.number)?),
+            _ => {
+                return Err(ParseError {
+                    line: k.number,
+                    why: format!("`{}` is not a codec field clause", k.text),
+                })
+            }
+        }
+    }
+    Ok(f)
+}
+
+fn parse_codec_variant(
+    w: &[&str],
+    kids: &[&Line<'_>],
+    line: usize,
+) -> Result<CodecVariant, ParseError> {
+    let mut v = CodecVariant {
+        tag_field: None,
+        tag_flag: None,
+        arms: Vec::new(),
+        default_arm: None,
+        peek_byte: None,
+    };
+    let mut peek_id: Option<String> = None;
+    let mut i = 1;
+    while i < w.len() {
+        let value = w.get(i + 1).copied().unwrap_or("");
+        match w[i] {
+            "tag-field" => v.tag_field = Some(undo(value, line)?),
+            "tag-flag" => v.tag_flag = Some(undo(value, line)?),
+            "peek-byte" => peek_id = Some(undo(value, line)?),
+            other => {
+                return Err(ParseError {
+                    line,
+                    why: format!("`{other}` is not a variant clause"),
+                })
+            }
+        }
+        i += 2;
+    }
+
+    let mut peek_flags = Vec::new();
+    for k in kids {
+        let kw: Vec<&str> = k.text.split_whitespace().collect();
+        match kw.first().copied() {
+            Some("peek-flag") => peek_flags.push(parse_flag_def(&kw, k.number)?),
+            Some("arm") | Some("default-arm") => {
+                let (value, rest) = k
+                    .text
+                    .split_once(" -> ")
+                    .and_then(|(l, r)| l.split_whitespace().nth(1).map(|n| (n, r)))
+                    .ok_or_else(|| ParseError {
+                        line: k.number,
+                        why: "an arm needs `<n> -> <alias>`".to_string(),
+                    })?;
+                let is_default = rest.ends_with(" default");
+                let alias = rest.strip_suffix(" default").unwrap_or(rest);
+                let arm = VariantArm {
+                    value: value.parse().unwrap_or(0),
+                    body_alias: undo(alias, k.number)?,
+                    is_default,
+                };
+                if kw[0] == "arm" {
+                    v.arms.push(arm);
+                } else {
+                    v.default_arm = Some(arm);
+                }
+            }
+            _ => {
+                return Err(ParseError {
+                    line: k.number,
+                    why: format!("`{}` is not a variant body line", k.text),
+                })
+            }
+        }
+    }
+    if let Some(id) = peek_id {
+        v.peek_byte = Some(PeekByteSpec {
+            id,
+            flags: peek_flags,
+        });
+    }
+    Ok(v)
+}
+
+fn parse_codec_test(
+    w: &[&str],
+    kids: &[&Line<'_>],
+    line: usize,
+) -> Result<CodecTestVector, ParseError> {
+    let hex_text = w
+        .get(1)
+        .and_then(|h| h.strip_prefix("0x"))
+        .ok_or_else(|| ParseError {
+            line,
+            why: "a test vector needs `0x<hex>`".to_string(),
+        })?;
+    let hex = (0..hex_text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex_text[i..i + 2], 16))
+        .collect::<Result<Vec<u8>, _>>()
+        .map_err(|_| ParseError {
+            line,
+            why: "a test vector's hex is not hex".to_string(),
+        })?;
+
+    let mut fields = Vec::new();
+    for k in kids {
+        let (name, rest) = k.text.split_once(" = ").ok_or_else(|| ParseError {
+            line: k.number,
+            why: "a decoded field needs `= <value>`".to_string(),
+        })?;
+        let (kind, literal) = rest.split_once(' ').ok_or_else(|| ParseError {
+            line: k.number,
+            why: "a decoded value needs a type and a literal".to_string(),
+        })?;
+        let bad = || ParseError {
+            line: k.number,
+            why: format!("`{literal}` is not a {kind} literal"),
+        };
+        let value = match kind {
+            "bool" => DecodedFieldValue::Bool(literal == "true"),
+            "uint" => DecodedFieldValue::Uint(literal.parse().map_err(|_| bad())?),
+            "int" => DecodedFieldValue::Int(literal.parse().map_err(|_| bad())?),
+            "string" => DecodedFieldValue::String(undo(literal, k.number)?),
+            "bytes" => {
+                let h = literal.strip_prefix("0x").ok_or_else(bad)?;
+                DecodedFieldValue::Bytes(
+                    (0..h.len())
+                        .step_by(2)
+                        .map(|i| u8::from_str_radix(&h[i..i + 2], 16))
+                        .collect::<Result<_, _>>()
+                        .map_err(|_| bad())?,
+                )
+            }
+            _ => return Err(bad()),
+        };
+        fields.push(DecodedField {
+            name: undo(name, k.number)?,
+            value,
+        });
+    }
+
+    Ok(CodecTestVector {
+        hex,
+        decoded: DecodedValue::Plain { fields },
+        source_line: w.get(3).and_then(|v| v.parse().ok()).unwrap_or(0),
+    })
+}
+
 /// Serialised comparison of two documents, with the one key the law
 /// excludes stripped wherever it appears.
 ///
@@ -1691,6 +2074,7 @@ pub const COVERED_KINDS: &[&str] = &[
     "observer",
     "algorithm",
     "procedure",
+    "codec",
 ];
 
 /// This document's kind name when the reader covers it.
@@ -1717,6 +2101,7 @@ pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
         ForgeDocument::Observer(_) => "observer",
         ForgeDocument::Algorithm(_) => "algorithm",
         ForgeDocument::Procedure(_) => "procedure",
+        ForgeDocument::Codec(_) => "codec",
         _ => return None,
     };
     COVERED_KINDS.contains(&name).then_some(name)

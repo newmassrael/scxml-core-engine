@@ -1406,7 +1406,18 @@ impl Endian {
 ///     sce:until-eof="true"/>`.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(tag = "type")]
+// ⚠ ADJACENTLY tagged, not internally. `LengthField` is a newtype
+// variant carrying a string, and serde cannot represent that with
+// `tag` alone — `to_value` and `to_writer` both refuse it. Measured
+// 2026-09-20: six codec fixtures could not be exported AT ALL,
+// `--emit-ast` failing on each with "cannot serialize tagged newtype
+// variant" — `codec_repeat_basic`, `codec_nested_body`,
+// `codec_nested_parent`, `codec_repeat_present_if_basic`,
+// `codec_repeat_unconditional_count`, `codec_zenoh_hello`. Nothing in
+// the tree noticed until the pseudocode round trip tried to serialise
+// the same model. `content` is the shape [`TestVectorValue`] in this
+// file already uses against the same limitation.
+#[serde(tag = "type", content = "value")]
 pub enum CountRef {
     /// Sibling integer field id whose decoded value names the count.
     /// Validated at parse time against forward references and against

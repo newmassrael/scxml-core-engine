@@ -1200,15 +1200,16 @@
                 "LengthField"
               ],
               "type": "string"
+            },
+            "value": {
+              "type": "string"
             }
           },
           "required": [
-            "type"
+            "type",
+            "value"
           ],
-          "type": [
-            "object",
-            "string"
-          ]
+          "type": "object"
         },
         {
           "description": "Greedy consume-remaining; element count is whatever fits before cursor exhaustion.",
