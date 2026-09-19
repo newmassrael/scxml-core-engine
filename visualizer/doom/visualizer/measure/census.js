@@ -20,73 +20,13 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const REPO = path.resolve(__dirname, '../../..');
 
-const fakeElement = {
-    clientWidth: 1600,
-    clientHeight: 1000,
-    getBoundingClientRect: () => ({ x: 0, y: 0, width: 1600, height: 1000, top: 0, left: 0 }),
-    getBBox: () => ({ x: 0, y: 0, width: 0, height: 0 }),
-    appendChild() {}, removeChild() {}, setAttribute() {}, querySelector: () => null,
-    querySelectorAll: () => [], addEventListener() {}, style: {},
-    classList: { add() {}, remove() {}, contains: () => false },
-};
-const d3Chain = new Proxy(function () {}, {
-    get: (_t, prop) => (prop === 'node' ? () => fakeElement : d3Chain),
-    apply: () => d3Chain,
-});
+// ⚠ The harness is `harness.js` now, not a copy here. There were two
+// copies and they had already drifted: this one's `d3Chain` answered
+// `size()` with itself, which throws the moment the collapse path
+// interpolates it into a log message. A probe that cannot collapse and a
+// probe that can, from the same file, is what two copies buy.
+const { makeSandbox } = require('./harness');
 
-function makeSandbox(elkInstance) {
-    const sandbox = {
-        console: { log() {}, warn() {}, error() {}, debug() {}, info() {} },
-        logger: { debug() {}, info() {}, warn() {}, error() {} },
-        setTimeout: () => 0,
-        clearTimeout() {},
-        Worker: undefined,
-        d3: d3Chain,
-        window: { location: { search: '' }, addEventListener() {} },
-        document: {
-            addEventListener() {},
-            querySelector: () => fakeElement,
-            querySelectorAll: () => [],
-            getElementById: () => fakeElement,
-            createElement: () => fakeElement,
-            createElementNS: () => fakeElement,
-            body: fakeElement,
-        },
-        URLSearchParams: class { has() { return false; } get() { return null; } },
-        // The CSP solver times itself to decide when to stop. Without this
-        // it throws mid-optimisation, and the throw surfaces as "this
-        // document could not be measured" — which reads as a defect in the
-        // document rather than in the harness.
-        performance: { now: () => Date.now() },
-        // ⚠ The INSTANCE, built on the host. elkjs constructed inside the vm
-        // cannot reach node's module system, and does not fail when it
-        // cannot — `layout()` resolves with the graph unchanged.
-        // ⚠ Wrapped so the graph becomes a HOST object at the boundary.
-        // elkjs running on the host cannot lay out an object built inside
-        // this vm context — and it does not fail: `layout()` resolves with
-        // the input UNCHANGED, every `x` still undefined. Code inside the
-        // context calls `computeLayout()` itself, so the round trip belongs
-        // here rather than at each call site.
-        ELK: function ELKFromHost() {
-            return { layout: (g) => elkInstance.layout(JSON.parse(JSON.stringify(g))) };
-        },
-    };
-    sandbox.globalThis = sandbox;
-    vm.createContext(sandbox);
-    for (const file of [
-        'utils.js', 'edge-direction-utils.js', 'routing-state.js', 'label-metrics.js',
-        'visualizer/action-formatter.js', 'visualizer/invoke-formatter.js',
-        'visualizer/path-calculator.js', 'visualizer/node-builder.js',
-        'visualizer/link-builder.js', 'visualizer/layout-manager.js',
-        'optimizer/snap-calculator.js', 'optimizer/path-utils.js',
-        'optimizer/csp-solver.js', 'optimizer/optimizer-core.js',
-        'visualizer/focus-manager.js', 'visualizer/interaction-handler.js',
-        'visualizer/renderer.js', 'collision-detector.js', 'visualizer/visualizer-core.js',
-    ]) {
-        vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), sandbox, { filename: file });
-    }
-    return sandbox;
-}
 
 // ---------------------------------------------------------------- oracle
 
@@ -106,8 +46,31 @@ const segsOf = (pts) => pts.slice(0, -1).map((p, i) => [p, pts[i + 1]]);
  * "it does not overlap exactly, but it overlaps in the middle" describes,
  * and what an intersection count scores as zero.
  */
+// ⭐ 24 was written as a guess — "a label is about that tall" — and the
+// measurement agrees with it for a better reason than the one given.
+// Histogram of the gap between parallel arrow runs, over the ten fixtures at
+// layout and around collapses (bucket width 4px):
+//
+//     0-3    8    8-11   65    20-23   74    32-35  32    44-47  41
+//     4-7    2   12-15    4    24-27    0    36-39  15    68-71  33
+//                16-19    3    28-31    7    40-43  23
+//
+// The orthogonal router puts parallel edges in channels about 10 and about
+// 22 apart, and everything else it draws is 28 or more. **24-27 is empty.**
+// The threshold sits in a real valley rather than in the middle of a lump,
+// which is what makes "alongside" a class and not an arbitrary cut.
 const NEAR = 24;
 const RUN = 25;
+// Below this the two lines are not "close", they are on top of each other:
+// no reader can tell which arrow is which. Above it they are separate lines
+// that happen to run alongside, which is what an orthogonal router produces
+// by design.
+//
+// ⚠ Unlike NEAR, this one the data does NOT pick out: 0-3 holds 8 samples
+// and 4-7 holds 2, so the valley is shallow and 4 could as well be 6 or 8.
+// It stays a judgement — "closer than this and a reader cannot separate
+// them" — and is written here as one rather than dressed up as a finding.
+const STACKED_GAP = 4;
 
 function crowding(drawn) {
     const hits = [];
@@ -192,6 +155,36 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
             && pt[1] >= b.y1 - slack && pt[1] <= b.y2 + slack;
     };
 
+    // ⚠ How many edges ELK actually routes, asked of the product rather
+    // than restated here. A route ELK computes and the drawing discards is
+    // invisible in every other column: the fallback draws a finite, attached
+    // line, so `undrawable` and `detached` both stay clean while the layout
+    // ELK was asked for is thrown away.
+    //
+    // ⚠ Split, because one total conflates a normal case with a defect. An
+    // edge ELK never routed (a self-loop, a targetless transition, an end
+    // inside a collapsed container) has nothing to discard and must use the
+    // fallback. An edge ELK DID route and the drawing rejected is the
+    // defect, and a single "fallback" total hides it behind the first kind.
+    //
+    // ⚠⚠ THREE buckets, not two. An edge ELK never routed at all is the
+    // third, and it is the one that can hide a whole document drawing
+    // itself: `elkDropped` reads a clean zero when there was nothing to
+    // drop, which looks identical to ELK having routed everything.
+    let elkOffered = 0;
+    let elkAbsent = 0;
+    const elkDropped = [];
+    for (const link of links) {
+        const src = v.nodes.find((n) => n.id === (link.visualSource || link.source));
+        const tgt = v.nodes.find((n) => n.id === (link.visualTarget || link.target));
+        if (!src || !tgt || src.id === tgt.id) continue;   // self-loops draw their own shape
+        if (!(link.elkSections && link.elkSections.length > 0)) { elkAbsent++; continue; }
+        elkOffered++;
+        if (!v.pathCalculator.usesELKRoute(link)) {
+            elkDropped.push(`${link.source} -> ${link.target}`);
+        }
+    }
+
     for (const link of links) {
         let d;
         try { d = v.getLinkPath(link); } catch (e) { d = ''; }
@@ -213,6 +206,10 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
     // reader actually sees colliding. A proxy is what you use when the real
     // quantity is out of reach, and this one never was: the position
     // function and the box function are both right here.
+    // ⚠ The STAGE first. The drawing runs it before it writes a single
+    // label (`Renderer.updateLabels`), so reading positions without it
+    // measures the per-label seed — a position the product never draws.
+    try { v.pathCalculator.placeTransitionLabels(links); } catch (e) { /* surfaces as a column */ }
     const labelRects = [];
     for (const link of links) {
         const box = v.layoutManager.labelBoxForLink(link);
@@ -264,6 +261,33 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
     // ancestor of the other.
     const positioned = v.nodes.filter((n) => Number.isFinite(n.x) && Number.isFinite(n.y));
     const unplaced = v.nodes.length - positioned.length;
+    // ⚠ The arrow id COLLIDES, deliberately, and only a check keeps that a
+    // decision rather than a bug waiting to be "corrected".
+    //
+    // `getTransitionId` is `source_event_target`, and transitions differing
+    // only by their guard share it — 33 of 1557 ids across 27 documents, one
+    // of them naming thirteen. The engine cannot tell them apart either: it
+    // reports `{source, target, event}` for what fired and nothing about the
+    // guard, so narrowing the id would take highlighting from "marks all of
+    // them" to "marks none".
+    //
+    // ⭐ What must hold is that the collision lines up with the MERGE: every
+    // transition sharing an id is drawn on ONE arrow. That is what makes a
+    // colliding id the right key for a drawn element rather than a defect.
+    // If a future change splits a merged arrow without changing the id, this
+    // is what says so.
+    const getTransitionId = vm.runInContext('getTransitionId', sandbox);
+    const arrowsPerId = new Map();
+    for (const link of links) {
+        for (const member of link.transitions || [link]) {
+            const tid = getTransitionId(member);
+            if (!tid) continue;
+            if (!arrowsPerId.has(tid)) arrowsPerId.set(tid, new Set());
+            arrowsPerId.get(tid).add(link.id);
+        }
+    }
+    const idsOnSeveralArrows = [...arrowsPerId.values()].filter((s) => s.size > 1).length;
+
     const leaves = positioned.filter((n) => !(n.children && n.children.length));
 
     let labelNode = 0;
@@ -314,8 +338,12 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
         transitions: (structure.transitions || []).length,
         arrows: links.length,
         undrawable: nan,
+        elkOffered,
+        elkAbsent,
+        elkDropped,
         detached,
         unplaced,
+        idsOnSeveralArrows,
         crowded: crowding(drawn),
         nodeOverlap,
         labels: labelRects.length,
@@ -401,14 +429,31 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
 
     console.log(`\n${structures.length} document(s), ${configs.length} configuration(s)\n`);
     console.log('configuration'.padEnd(28)
-        + 'lbl-lbl  lbl-edge  lbl-node  DETACHED  node-overlap  unplaced   area');
+        + 'STACKED  alongside  lbl-lbl  lbl-edge  lbl-node  no-ELK  ELK-dropped  DETACHED  node-overlap  unplaced   area');
 
     const violations = [];
     for (const cfg of configs) {
         let bad = 0; let ll = 0; let le = 0; let ln = 0;
-        let detached = 0; let overlap = 0; let unplaced = 0;
+        let detached = 0; let overlap = 0; let unplaced = 0; let splitIds = 0;
+        let elkOffered = 0; let elkAbsent = 0; const elkDropped = [];
+        // ⚠ Computed since this census was written and printed by nothing,
+        // while "the lines bundle" was the complaint every round was chasing.
+        //
+        // ⚠⚠ Reported as two numbers, because ONE would say the wrong thing.
+        // `crowding`'s NEAR is 24px, and an orthogonal router puts parallel
+        // edges in adjacent channels about 10px apart ON PURPOSE — so a
+        // single "pairs within 24px" total counts good routing as crowding
+        // and moves the wrong way when the routing improves. Measured here:
+        // turning ELK's routes back on took that total from 17 to 18 while
+        // the drawing got better by every other column.
+        //
+        // ⭐ The discriminator is the GAP. Two lines drawn on top of each
+        // other have a gap near zero; two channels have the router's
+        // spacing. `stacked` counts the first kind and is the one that
+        // means "unreadable".
+        const stackedPairs = []; let nearby = 0;
         const areas = [];
-        for (const { structure } of structures) {
+        for (const { rel, structure } of structures) {
             try {
                 const m = await measure(makeSandbox(elkInstance), elkInstance,
                     JSON.parse(JSON.stringify(structure)), cfg.legacy, cfg.spacing);
@@ -417,6 +462,15 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
                 le += m.labelEdge;
                 ln += m.labelNode;
                 detached += m.detached;
+                elkOffered += m.elkOffered;
+                elkAbsent += m.elkAbsent;
+                for (const name of m.elkDropped) elkDropped.push(`${rel}: ${name}`);
+                nearby += m.crowded.length;
+                for (const hit of m.crowded.filter((h) => h.gap <= STACKED_GAP)) {
+                    stackedPairs.push(`${rel}: ${hit.a} over ${hit.b}`
+                        + ` (${hit.gap.toFixed(1)}px apart for ${Math.round(hit.run)}px)`);
+                }
+                splitIds += m.idsOnSeveralArrows;
                 overlap += m.nodeOverlap;
                 unplaced += m.unplaced;
                 areas.push(m.area);
@@ -426,11 +480,24 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
         }
         const total = areas.reduce((x, y) => x + y, 0);
         console.log(cfg.name.padEnd(28)
-            + String(ll).padStart(7) + String(le).padStart(10) + String(ln).padStart(10)
+            + String(stackedPairs.length).padStart(7) + String(nearby).padStart(11)
+            + String(ll).padStart(9) + String(le).padStart(10) + String(ln).padStart(10)
+            + String(elkAbsent).padStart(8)
+            + `${elkDropped.length}/${elkOffered}`.padStart(13)
             + String(detached).padStart(10) + String(overlap).padStart(14)
             + String(unplaced).padStart(10)
             + String((total / 1e6).toFixed(2) + 'M').padStart(9)
             + (bad ? `   (${bad} undrawable)` : ''));
+
+        // ⚠ A count sends a reader looking; a name tells them where. Every
+        // wrong turn this column was added for began with a number that
+        // said something was discarded and nothing that said which.
+        for (const name of elkDropped) {
+            console.log(`  ELK routed but the drawing dropped: ${name}`);
+        }
+        for (const pair of stackedPairs) {
+            console.log(`  drawn on top of each other: ${pair}`);
+        }
 
         // ⭐ The invariants, and only in the gate's mode. A sweep includes
         // the self-router control, whose failures are the reason it was
@@ -444,9 +511,31 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
         // number teaches people to work around it.
         if (!sweep) {
             if (detached) violations.push(`${detached} edge(s) do not reach the states they join`);
+            // ⚠ A route ELK computed and the drawing threw away. Every other
+            // column stays clean when this happens — the fallback draws a
+            // finite, attached line — so for a whole round the diagram was
+            // routed entirely by the fallback while the census reported a
+            // clean sheet. `ancestor_entry_is_not_default_entry` alone had
+            // four routes, four rejections, zero uses.
+            if (elkDropped.length) {
+                violations.push(`${elkDropped.length} route(s) ELK computed were discarded by the`
+                    + ' drawing, so the layout being asked for is not the one shown');
+            }
+            // ⚠ And the other half of the same defect: an edge ELK was never
+            // asked to route, or whose route was never collected. Both leave
+            // the fallback drawing an edge the layout knows nothing about,
+            // which is where all three stacked pairs lived.
+            if (elkAbsent) {
+                violations.push(`${elkAbsent} edge(s) reached the renderer with no ELK route at all,`
+                    + ' so the fallback drew them against a layout that never saw them');
+            }
             if (overlap) violations.push(`${overlap} pair(s) of unrelated states share area`);
             if (unplaced) violations.push(`${unplaced} node(s) were never given a position`);
             if (bad) violations.push(`${bad} edge(s) could not be drawn at all`);
+            if (splitIds) {
+                violations.push(`${splitIds} arrow id(s) name transitions drawn on more than one`
+                    + ' arrow, so highlighting one id cannot mark one thing');
+            }
         }
     }
 

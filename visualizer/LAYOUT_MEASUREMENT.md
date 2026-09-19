@@ -137,3 +137,37 @@ Each was a clean zero, and each was correct about the thing it measured.
 ⭐ Before trusting a number from this harness, check that what it reads is
 what reaches the screen — the failure mode is never a wrong number, it is a
 right number about the wrong rectangle.
+
+### Two more, from the round that added the stress probe
+
+| measured | what was actually true |
+|---|---|
+| distance from a label to the path's VERTICES | the label was 30px from the SEGMENT it is anchored to; the nearest corner of a long straight run was 334px away |
+| `getTotalLength` / `getPointAtLength` in a browser | they disagreed with the same path's own `d` string — 1726 against 1819 — and sent a measurement 400px wrong |
+
+And one that was not a measurement of geometry at all: a probe that CALLED
+the placement stage itself and then read the result reported zero collisions
+at every phase while a browser showed ten overlapping pairs after the same
+gesture. The defect was never inside the stage; it was in when the product
+ran it. ⭐ A probe that performs the step it is checking can only confirm
+that the step works in isolation.
+
+## Open, and not explained
+
+⚠ **A node moved between the edge block and the check, inside one layout.**
+Hunting the 16-to-18px routes, `elkFrame` recorded the target at x=402 with a
+miss of 0 — and the same node, same layout serial, same single object, was at
+x=286 when the drawing was measured. Only `applyToNode` and the two compound
+blocks write a node's `x`, and all three run before the edge block or touch
+containers only. The symptom was removed by tightening `REACH_SLACK` from a
+borrowed 20px to 6px, which is right on its own terms and makes such routes
+fall back to a router that attaches exactly — but the 116px is unexplained,
+so that fix may be covering something rather than curing it. If a route is
+ever seen missing again, start here.
+
+⚠ **A page froze once under synthetic load.** After dozens of scripted
+clicks and drags the renderer stopped responding to CDP for 45s, and on that
+same exhausted page `focusOnTransition` stopped panning. A fresh page focuses
+correctly at every zoom level tested (0.1, 0.74, 1.5, 4.0), so the focus
+"defect" that was briefly reported here was an artifact of that state and is
+retracted. The freeze itself was never reproduced.

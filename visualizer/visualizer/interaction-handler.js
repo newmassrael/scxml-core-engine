@@ -31,11 +31,6 @@ class InteractionHandler {
             // const mode = useGreedy ? 'GREEDY (fast)' : 'CSP (optimal)';
             // logger.debug(`[DRAG UPDATE] Re-running optimizer (${mode})...`);
 
-            // Clear all routing
-            this.visualizer.allLinks.forEach(link => {
-                delete link.routing;
-            });
-
             // ELK routed for the arrangement that existed before this drag,
             // so the bend points on the edges TOUCHING what moved describe a
             // drawing nobody is looking at. Every other edge is still
@@ -44,6 +39,24 @@ class InteractionHandler {
             const movedIds = this.visualizer.nodes
                 .filter(n => n.isDragging)
                 .map(n => n.id);
+            const moved = new Set(movedIds);
+
+            // ⚠ Clear the routing of those same edges, and no others.
+            //
+            // This used to delete `routing` from EVERY link. Measured, that
+            // changed no drawn path — an edge still holding ELK's route is
+            // drawn from it, and `getLinkPath` prefers that over the snap
+            // points — so the diagram was correct by accident, kept right by
+            // a preference in another file rather than by this one meaning
+            // it. The moment an edge falls back, the wider clear would
+            // re-route a line the reader never touched.
+            this.visualizer.allLinks.forEach(link => {
+                if (moved.has(link.source) || moved.has(link.target)
+                    || moved.has(link.visualSource) || moved.has(link.visualTarget)) {
+                    delete link.routing;
+                }
+            });
+
             this.visualizer.layoutManager.invalidateELKRouting(movedIds);
 
             // **ADAPTIVE ALGORITHM SELECTION**
@@ -83,15 +96,33 @@ class InteractionHandler {
         }
         this.visualizer.linkElements.attr('d', d => this.visualizer.getLinkPath(d));
 
+        // Stage 3, on the real array and before any label is drawn.
+        //
+        // ⚠⚠⚠ `useGreedy` is what says whether the pointer is still down. A
+        // greedy pass is a live drag frame; the optimal pass is the one the
+        // drag-end handler runs once the gesture is over. That distinction
+        // already existed here and is reliable — unlike `isDragging`, which
+        // the drag-end handler clears inside a `setTimeout` to dodge a hover
+        // race. Gating on `isDragging` meant the settle pass still looked
+        // like a live frame, so the positions were dropped and never
+        // replaced: ten overlapping pairs in a browser, zero in the probe.
+        this.visualizer.pathCalculator.placeTransitionLabels(visibleLinks, useGreedy);
+
         // Update transition labels if they exist
         if (this.visualizer.transitionLabels) {
             // Rebind with updated visibleLinks data
             this.visualizer.transitionLabels = this.visualizer.transitionLabels
                 .data(visibleLinks, d => d.id);
             
-            this.visualizer.transitionLabels
-                .attr('x', d => this.visualizer.getTransitionLabelPosition(d).x)
-                .attr('y', d => this.visualizer.getTransitionLabelPosition(d).y);
+            // ⚠ Through the same function that placed them, or the label
+            // moves by half its own box. `x` on a `foreignObject` is its LEFT
+            // edge; this used to assign the CENTRE to it, so a drag threw
+            // every label it touched off the line it names and left it there.
+            //
+            // ⚠⚠ And through the STAGE, not one label at a time. This ran
+            // the per-label rule while the full render ran ELK's placement,
+            // so the drawing was readable until the reader touched it.
+            Renderer.updateLabels(this.visualizer.transitionLabels, this.visualizer);
         }
 
         // Update node visuals with latest positions from this.visualizer.nodes
@@ -298,7 +329,7 @@ class InteractionHandler {
             }
 
             html += `
-                <div class="transition-list-item" data-transition-id="${transitionId}" data-transition-index="${index}">
+                <div class="transition-list-item" data-transition-id="${transitionId}" data-transition-index="${index}" data-source-index="${transition.sourceIndex ?? -1}" data-source-state="${transition.source}">
                     <div class="transition-list-source-target">
                         <strong>${transition.source}</strong> → <strong>${transition.target}</strong>
                         ${badgesHtml}

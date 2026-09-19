@@ -386,8 +386,16 @@ async function initVisualizer(scxmlContent) {
         const availableEvents = new Set();
         if (structure.transitions) {
             structure.transitions.forEach(trans => {
+                // ⚠ One transition may match SEVERAL event descriptors
+                // (W3C SCXML 3.12.1, `event="a b c"`), and each is a button
+                // the reader can press. Adding the attribute whole would
+                // offer a single button named `a b c`, which raises an event
+                // no transition is waiting for.
                 if (trans.event && trans.event.trim() !== '') {
-                    availableEvents.add(trans.event);
+                    const descriptors = Array.isArray(trans.events) && trans.events.length
+                        ? trans.events
+                        : trans.event.trim().split(/\s+/);
+                    descriptors.forEach(name => availableEvents.add(name));
                 }
             });
         }

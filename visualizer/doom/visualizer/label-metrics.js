@@ -100,6 +100,24 @@ const LINE_STYLES = {
 const MAX_LABEL_TRANSITIONS = 2;
 
 /**
+ * How far a label's box may sit from the line it names before the drawing
+ * counts as broken.
+ *
+ * ⚠ ONE number, here, because there were two: the drag probe used 40 and the
+ * stress probe 48 for the same property. Nothing chose those values apart —
+ * they were written on different days — and two numbers for one question is
+ * how `REACH_SLACK` came to borrow a label constant and accept routes ending
+ * 18px short of a state.
+ *
+ * ⭐ Measured 2026-09-18 over the ten layout fixtures, at layout and after a
+ * gesture: n=184, median 0, 95th percentile 10, MAXIMUM 10. The label stage
+ * places a label beside its line by half the label's own height plus padding,
+ * so ~10 is the designed distance and this bound sits four times above it.
+ * It is a fence against a label coming adrift, not a tuning knob.
+ */
+const LABEL_TO_LINE_LIMIT = 40;
+
+/**
  * How many monospace cells a code point occupies.
  *
  * Two for the ranges a monospace font draws double-width (CJK, Hangul, the
@@ -336,6 +354,7 @@ if (typeof module !== 'undefined' && module.exports) {
         LABEL_BORDER,
         LINE_STYLES,
         MAX_LABEL_TRANSITIONS,
+        LABEL_TO_LINE_LIMIT,
         cellsForCodePoint,
         textWidth,
         buildTransitionLabelLines,
