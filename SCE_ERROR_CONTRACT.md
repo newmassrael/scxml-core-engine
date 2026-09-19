@@ -893,6 +893,7 @@ references against a real document and drift silently.
 | `cli/no-scxml-tag` | `cli` | no |  |
 | `cli/not-a-directory` | `cli` | no |  |
 | `cli/project-root-not-found` | `cli` | no |  |
+| `cli/pseudo-unavailable` | `cli` | no |  |
 | `cli/query-no-match` | `cli` | no |  |
 | `cli/read-input` | `cli` | no |  |
 | `cli/requirement-closure-broken` | `cli` | no |  |

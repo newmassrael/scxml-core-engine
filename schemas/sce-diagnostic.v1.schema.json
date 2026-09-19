@@ -259,6 +259,7 @@
         "cli/acceptance-lapsed",
         "cli/requirement-closure-broken",
         "cli/review-table-unavailable",
+        "cli/pseudo-unavailable",
         "mesh/deploy-read",
         "mesh/deploy-parse",
         "mesh/deploy-unsupported-version",

@@ -322,6 +322,20 @@ pub enum CliError {
     /// reader asked about rather than the file they asked it of.
     #[error("{kind}: no review table — SCE reads sce:req on no node of this kind")]
     ReviewTableUnavailable { kind: String },
+
+    /// Pseudocode was asked for of a kind
+    /// [`crate::forge::pseudo::render`] does not cover.
+    ///
+    /// ⚠ Deliberately NOT a partial rendering, for a reason one step
+    /// stronger than the review table's. That artefact is a projection
+    /// and says so; this one exists to be *approved*, so a reader who
+    /// signs a rendering has signed the document. A rendering missing
+    /// part of the document reads exactly like one missing none of it,
+    /// which would turn an unreviewed document into a signed one.
+    /// `kind` is `sce:kind` as authored, so the sentence names what the
+    /// reader asked about rather than the file they asked it of.
+    #[error("{kind}: no pseudocode — SCE does not render this kind yet")]
+    PseudoUnavailable { kind: String },
 }
 
 impl CliError {
@@ -575,6 +589,14 @@ impl SingleDiagnostic for CliError {
             // findings about the files.
             CliError::ReviewTableUnavailable { kind } => (
                 DiagnosticCode::CliReviewTableUnavailable,
+                vec![kind.clone()],
+                Some(kind.clone()),
+                None,
+            ),
+            // Keyed by kind for the same reason as the row above: the
+            // kind is unrendered in every document written in it.
+            CliError::PseudoUnavailable { kind } => (
+                DiagnosticCode::CliPseudoUnavailable,
                 vec![kind.clone()],
                 Some(kind.clone()),
                 None,

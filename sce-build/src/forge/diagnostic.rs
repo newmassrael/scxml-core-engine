@@ -2203,6 +2203,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "cli/review-table-unavailable")]
     CliReviewTableUnavailable,
 
+    /// Pseudocode was asked for of a kind SCE does not render yet.
+    /// Reported rather than answered with a partial rendering: the
+    /// rendering exists so that approving it is approving the document,
+    /// and a text missing some of the document reads exactly like one
+    /// missing none of it.
+    #[serde(rename = "cli/pseudo-unavailable")]
+    CliPseudoUnavailable,
+
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
     #[serde(rename = "mesh/deploy-read")]
@@ -3245,6 +3253,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliAcceptanceLapsed,
         CliRequirementClosureBroken,
         CliReviewTableUnavailable,
+        CliPseudoUnavailable,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -4075,6 +4084,7 @@ impl DiagnosticCode {
             | CliAcceptanceLapsed
             | CliRequirementClosureBroken
             | CliReviewTableUnavailable
+            | CliPseudoUnavailable
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4474,6 +4484,7 @@ impl DiagnosticCode {
             CliAcceptanceLapsed => "cli/acceptance-lapsed",
             CliRequirementClosureBroken => "cli/requirement-closure-broken",
             CliReviewTableUnavailable => "cli/review-table-unavailable",
+            CliPseudoUnavailable => "cli/pseudo-unavailable",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -13529,6 +13540,17 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:aef233a4ab1f387c","code":"cli/review-table-unavailable","stage":"cli","message":"condition: no review table — SCE reads sce:req on no node of this kind","actual":"condition"}"#,
             ),
+            // Keyed on the kind for the same reason as the entry above.
+            // The kind chosen is one the renderer refuses today; the
+            // golden is about the record's shape, so it stays valid when
+            // `codec` is later rendered and some other kind is not.
+            (
+                "cli/pseudo-unavailable",
+                CliError::PseudoUnavailable {
+                    kind: "codec".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:a1cb3fed131cb56a","code":"cli/pseudo-unavailable","stage":"cli","message":"codec: no pseudocode — SCE does not render this kind yet","actual":"codec"}"#,
+            ),
         ]
     }
 
@@ -14328,6 +14350,10 @@ mod tests {
             // grammar, which is an SCE edit rather than a choice among
             // names a fix could offer.
             | CliReviewTableUnavailable
+            // The repair is to teach the renderer that kind, which is
+            // an SCE edit rather than a choice among names a fix could
+            // offer.
+            | CliPseudoUnavailable
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -15042,7 +15068,7 @@ mod tests {
                 | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
                 | CliAcceptanceLapsed | CliRequirementClosureBroken
-                | CliReviewTableUnavailable
+                | CliReviewTableUnavailable | CliPseudoUnavailable
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -15200,9 +15226,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            369,
+            370,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 369 distinct variants to match the DiagnosticCode \
+             expected 370 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16139,7 +16165,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliClosureInputUnusable
             | CliAcceptanceLapsed
             | CliRequirementClosureBroken
-            | CliReviewTableUnavailable => Registered(NoAnchor::NoAuthoredArtefact),
+            | CliReviewTableUnavailable
+            | CliPseudoUnavailable => Registered(NoAnchor::NoAuthoredArtefact),
         }
 }
 
@@ -16798,8 +16825,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            23,
-            "expected the 23 `cli`/`io` codes to be filed as permanent \
+            24,
+            "expected the 24 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",

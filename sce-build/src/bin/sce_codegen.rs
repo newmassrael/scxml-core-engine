@@ -1776,6 +1776,22 @@ enum Commands {
         /// Forge document path (`sce:kind` other than `statechart`)
         document: String,
     },
+    /// Render a forge document as pseudocode on stdout — the surface a
+    /// specification author reviews instead of the XML.
+    ///
+    /// Distinct from `review-table`, which is a projection: one row per
+    /// requirement-bearing node, read for what the document claims. This
+    /// is total — every field of the model reaches the output — because
+    /// it exists to be approved, and an approval of a summary is not an
+    /// approval of the document.
+    ///
+    /// ⚠ Exits with `cli/pseudo-unavailable` for a kind the renderer
+    /// does not cover. That is NOT a partial rendering: a text missing
+    /// part of the document reads exactly like one missing none of it.
+    Pseudo {
+        /// Forge document path (`sce:kind` other than `statechart`)
+        document: String,
+    },
     /// Emit what a diagram must be told to draw the annotation family —
     /// NL→IR closure ledger row G2. One JSON object on stdout.
     ///
@@ -2464,6 +2480,7 @@ fn main() {
         }
         Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
         Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
+        Commands::Pseudo { document } => cmd_pseudo(&document, error_format),
         Commands::AnnotationOverlay { scxml } => cmd_annotation_overlay(&scxml, error_format),
         Commands::AcceptanceReport {
             scxml,
@@ -7530,8 +7547,15 @@ fn cmd_annotation_overlay(scxml: &str, error_format: ErrorFormat) {
 // Parses through the production forge parser for that command's reason:
 // what the table shows and what the build compiles must not drift.
 
-/// Emit the review table of a non-statechart forge document.
-fn cmd_review_table(document: &str, error_format: ErrorFormat) {
+/// Read, preprocess and parse a non-statechart forge document.
+///
+/// Shared by every review artefact that reads one, so two of them cannot
+/// disagree about which document they were handed: same preprocessor
+/// pass, same label, same refusal for a statechart.
+fn parse_forge_review_input(
+    document: &str,
+    error_format: ErrorFormat,
+) -> sce_build::forge::model::ParsedForge {
     let path = std::path::Path::new(document);
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
@@ -7544,7 +7568,7 @@ fn cmd_review_table(document: &str, error_format: ErrorFormat) {
     });
 
     // Through the preprocessor first, for the reason the AST export
-    // gives: a table built from the unexpanded text would describe a
+    // gives: an artefact built from the unexpanded text would describe a
     // document the author never wrote, because every node a `<sce:use>`
     // carries would simply be absent from it.
     let content =
@@ -7554,8 +7578,8 @@ fn cmd_review_table(document: &str, error_format: ErrorFormat) {
         };
 
     // The label every other forge caller builds: the stem identifies the
-    // document, the basename is what a diagnostic shows, so a table and a
-    // codegen run name the same document the same way.
+    // document, the basename is what a diagnostic shows, so a review
+    // artefact and a codegen run name the same document the same way.
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -7566,13 +7590,13 @@ fn cmd_review_table(document: &str, error_format: ErrorFormat) {
         diagnostic_label: basename,
     };
 
-    let parsed = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
+    match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
         Ok(Some(p)) => p,
         // A statechart reaches the shared kind/pipeline refusal rather
-        // than an empty table. It is the one kind that already HAS a
-        // review artefact — `transition-table`, with the columns this
-        // one deliberately does not carry — so the answer here is "wrong
-        // command", not "nothing to review".
+        // than an empty artefact. It is the one kind that already HAS a
+        // review artefact — `transition-table`, with the columns the
+        // review table deliberately does not carry — so the answer here
+        // is "wrong command", not "nothing to review".
         Ok(None) => error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
             sce_build::forge::error::ValidationError::WrongPipeline {
                 kind: sce_build::forge::model::ForgeKind::Statechart,
@@ -7584,7 +7608,12 @@ fn cmd_review_table(document: &str, error_format: ErrorFormat) {
             None,
         )),
         Err(e) => error_format.emit_forge_and_exit(&e),
-    };
+    }
+}
+
+/// Emit the review table of a non-statechart forge document.
+fn cmd_review_table(document: &str, error_format: ErrorFormat) {
+    let parsed = parse_forge_review_input(document, error_format);
 
     match sce_build::forge::review_table::review_table(&parsed.document) {
         Ok(rows) => {
@@ -7593,6 +7622,26 @@ fn cmd_review_table(document: &str, error_format: ErrorFormat) {
         // ⚠ Not an empty table. See `CliError::ReviewTableUnavailable`.
         Err(no_table) => cli_exit(CliError::ReviewTableUnavailable {
             kind: no_table.kind.to_string(),
+        }),
+    }
+}
+
+// ── Subcommand: pseudo ─────────────────────────────────────────
+//
+// The surface a specification author reads instead of the XML. Reads the
+// document through `parse_forge_review_input` rather than a parser of
+// its own, for the reason that function states: what a reviewer approves
+// and what the build compiles must not drift.
+
+/// Render a non-statechart forge document as pseudocode on stdout.
+fn cmd_pseudo(document: &str, error_format: ErrorFormat) {
+    let parsed = parse_forge_review_input(document, error_format);
+
+    match sce_build::forge::pseudo::render(&parsed.document) {
+        Ok(text) => out_stream(|w| w.write_all(text.as_bytes())),
+        // ⚠ Not a partial rendering. See `CliError::PseudoUnavailable`.
+        Err(unsupported) => cli_exit(CliError::PseudoUnavailable {
+            kind: unsupported.kind.to_string(),
         }),
     }
 }
