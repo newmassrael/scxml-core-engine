@@ -7150,7 +7150,17 @@ fn parse_algorithm_stmt(
         }
         "while" => {
             let cond = require_attr(node, "cond", "<sce:while>", doc_name)?;
-            let max_iter = sce_attr(node, "max-iter").and_then(|s| parse_int(&s));
+            // Read unqualified, as `cond` on the line above is. The
+            // grammar declares `max-iter` LOCALLY on `<sce:while>`
+            // (`sce-forge-ext.xsd`), and that file sets
+            // `attributeFormDefault="unqualified"`, so an author writes
+            // it with no prefix and every fixture does. Read through
+            // `sce_attr` it could never match: that asks for the
+            // attribute in the SCE namespace, which an unprefixed
+            // attribute is not in. The declared bound was accepted by
+            // the XSD and dropped here — the silent-drop class this
+            // file's `SCE_ATTRIBUTES` comment names, one namespace over.
+            let max_iter = node.attribute("max-iter").and_then(parse_int);
             let body = parse_algorithm_body(node, doc_name)?;
             Ok(AlgorithmStmt::While {
                 cond,

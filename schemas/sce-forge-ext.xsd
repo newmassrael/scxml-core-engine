@@ -1670,4 +1670,74 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- ── Elements the tree reads that this grammar did not declare ──
+
+       Measured 2026-09-20: five `sce:` elements were read by a parser,
+       written by fixtures, and declared nowhere. The SCXML root content
+       model in `sce-forge.xsd` is `xs:any namespace="##any" lax`, so an
+       undeclared element validates by being unknown — the grammar was
+       silent about them rather than permissive on purpose. That silence
+       is the same defect class as an attribute nobody looks for (see the
+       `SCE_ATTRIBUTES` comment in `forge/parser.rs`), one level up: an
+       element the grammar does not name cannot be checked, spell-checked
+       or rejected when misspelled.
+
+       Each declaration below states what its reader actually accepts, so
+       the grammar becomes a true statement about the tree rather than a
+       partial one. -->
+
+  <!-- Read by `parse_procedure`'s datamodel walk (`forge/parser.rs`,
+       `tag_name().name() == "helper"`). ⚠ `returns-max-size` is read
+       QUALIFIED here (`sce_attr`) while `<sce:return>` above declares an
+       unqualified one — two spellings of one name, which is why the
+       global declaration below exists. Converging them is a behaviour
+       change for authored documents and belongs to its own round. -->
+  <xs:attribute name="returns-max-size" type="xs:positiveInteger"/>
+
+  <xs:element name="helper">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:NCName" use="required"/>
+      <xs:attribute name="args" type="xs:string" use="required"/>
+      <xs:attribute name="returns" type="sce:sceType" use="required"/>
+      <xs:attribute ref="sce:returns-max-size"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Timer kind: read by `parse_timer` via `find_sce_child`. -->
+  <xs:element name="cancel-on">
+    <xs:complexType>
+      <xs:attribute name="state-exit" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="reset-on">
+    <xs:complexType>
+      <xs:attribute name="event" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Bounded-collection kind: required by its parser
+       (`find_sce_child(root, "capacity")` … `ok_or_else`). Distinct from
+       the `capacity` ATTRIBUTE on `<sce:var>` above, which bounds a
+       byte buffer; the two share a name and nothing else. -->
+  <xs:element name="capacity">
+    <xs:complexType>
+      <xs:attribute name="const" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Read by the STATECHART parser (`src/parser.rs`), not the forge
+       one, and reachable here because `sce-forge.xsd` wraps W3C SCXML.
+       ⚠ Fixtures also hang `urn:sce:cpp` attributes on it, and that
+       namespace has NO schema in this tree — so they are admitted as
+       `##other` rather than named. That is narrower than the status quo
+       (which admitted the whole element unknown) and stops short of
+       inventing a grammar for an extension that has none. -->
+  <xs:element name="context">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:NCName" use="required"/>
+      <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+  </xs:element>
+
 </xs:schema>
