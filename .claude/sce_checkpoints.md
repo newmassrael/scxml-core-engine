@@ -214,8 +214,8 @@ constrains any answer — whatever draws it must move under all of them.
 
 ## The general-purpose rule ATOMIC-L enforces
 
-Owner's instruction, 2026-09-12: *"범용적으로 만들어야 해, 특정 스펙에 종속되면
-안 돼"*.
+Owner's instruction, 2026-09-12: build it generally; it must not become
+dependent on one particular specification.
 
 > No production code may branch on the identity of a specification. It branches
 > on declared properties, which a source SCE has never seen can supply too.

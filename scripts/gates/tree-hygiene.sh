@@ -108,6 +108,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # commit never started. That is precisely the case the gate exists for,
 # which is why it runs from this unfiltered workflow instead.
 #
+# `non_latin_prose_declares_why_it_is_here` decodes every tracked file and
+# refuses a line of prose written in a script this tree does not write prose
+# in, unless the file argues in one line that the characters are what it
+# measures. It is here for the registry's plainest reason: the six files it
+# was written for sat in the C AOT suite, a Gradle properties file and the
+# visualizer — no prefix joins them — and the case it exists for is the
+# SEVENTH, in a file that does not exist today. A filter written over the
+# places already cleaned names the answers and not the case.
+#
 # `spec_surface_registration` is here for the registry's own reason, and it
 # is the sharpest instance of it. What it reads is every tracked path, and
 # what it judges is whether `SCE_WIRE_CONTRACTS.md` names the spec-bearing
@@ -130,6 +139,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cargo test -p sce-build --features cli,ffi \
     --test a_standard_named_in_code_is_one_sce_implements \
     --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
+    --test non_latin_prose_declares_why_it_is_here \
     --test ffi_header_parity \
     --test roadmap_marker_gate \
     --test scope_terminology \

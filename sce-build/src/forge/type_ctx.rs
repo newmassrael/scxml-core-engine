@@ -137,12 +137,27 @@ fn insert_stateful_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportContex
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// TypeCtx for a **Transform** kind: inputs are readable (parameters),
-/// outputs are not visible to expressions but their types drive the
-/// `expected` output parameter passed to `transpile_typed` at each call.
+/// and so is a SIBLING OUTPUT — the generator lowers such a read to a
+/// call of that output's own function. Each output's own type still
+/// drives the `expected` parameter passed to `transpile_typed`.
 /// Cross-file imports add function signatures.
+///
+/// ⚠ THIS USED TO SAY "outputs are not visible to expressions". That was
+/// the stated rule and NOTHING ENFORCED IT: measured 2026-09-18, a
+/// document whose output read a sibling generated with exit 0 and emitted
+/// a body naming an identifier the signature never bound. A rule that is
+/// only written down is not a rule. The resolution was to make the read
+/// legal and lower it, because prose specifications genuinely name
+/// intermediate values that several outputs consume — see
+/// [`crate::forge::transform_dep_check`], which refuses the one shape
+/// lowering cannot serve.
 pub fn transform<'a>(m: &'a TransformModel, imports: &'a [ImportContext]) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
     insert_fields(&mut ctx, &m.inputs);
+    // Outputs AFTER inputs: an id declared on both sides is the author's
+    // own collision, and the input spelling is the one a reader expects
+    // to win because it is what the signature binds.
+    insert_fields(&mut ctx, &m.outputs);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
     // ⚠ A forge kind has no host to call. Everything callable from here was

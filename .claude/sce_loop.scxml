@@ -190,9 +190,9 @@
       🎯🎯🎯 WHO SAYS A MILESTONE WAS REACHED — the generic checker.
 
       `claude -p` with JSON output, which is what `debt_loop.scxml` uses and
-      what the owner asked for on 2026-09-02, quoted in that file: *전부
-      공통되게 해야해, 지금 프로젝트말고 다른 프로젝트에서도 자동으로 적용되게
-      범용적으로 들어가야해*.
+      what the owner asked for on 2026-09-02, recorded in that file: make it
+      all shared, so that it applies automatically in other projects too, not
+      only this one — it has to go in generally.
 
       ⚠⚠⚠ THIS CORRECTS A CLAIM THE SKILL STILL MAKES. The debt-repayment-loop
       skill says a kind names a checker that *reads ONE tree's own record*, and

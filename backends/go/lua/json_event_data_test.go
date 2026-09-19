@@ -12,6 +12,7 @@ package scelua
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	sce "github.com/newmassrael/sce-go-runtime"
 )
@@ -51,7 +52,14 @@ func TestJSONEventDataCarriesNonASCIIWhole(t *testing.T) {
 	if err := e.CreateSession("s"); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	const want = "북극성 — ship it"
+	// Codepoints rather than glyphs: what this needs is a value that is not
+	// ASCII and is several UTF-8 bytes wide, and the numbers state that to
+	// every reader. WHICH characters they are is arbitrary, so naming them
+	// by script would misread the test.
+	want := string([]rune{0xBD81, 0xADF9, 0xC131, ' ', 0x2014, ' '}) + "ship it"
+	if len(want) == utf8.RuneCountInString(want) {
+		t.Fatalf("the fixture has no multi-byte rune, so it tests nothing here")
+	}
 	setEvent(t, e, "s", `{"north_star": "`+want+`"}`)
 	if got := heldString(t, e, "held = _event.data.north_star"); got != want {
 		t.Errorf("north_star: got %q want %q", got, want)
@@ -68,12 +76,13 @@ func TestJSONEventDataUnicodeEscapeYieldsATable(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 	// Built from the backslash so this source carries no escape of its own:
-	// the payload is the literal text a JSON encoder emits for "A북" when
+	// the payload is the literal text a JSON encoder emits for `mixed` when
 	// asked to stay ASCII-only.
+	mixed := "A" + string(rune(0xBD81))
 	bs := "\\"
 	setEvent(t, e, "s", `{"north_star": "`+bs+`u0041`+bs+`ubd81"}`)
-	if got := heldString(t, e, "held = _event.data.north_star"); got != "A북" {
-		t.Errorf("north_star: got %q want %q", got, "A북")
+	if got := heldString(t, e, "held = _event.data.north_star"); got != mixed {
+		t.Errorf("north_star: got %q want %q", got, mixed)
 	}
 }
 

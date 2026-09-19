@@ -13,8 +13,8 @@
 //! sufficient — equal inputs still permit different outputs when the
 //! routes differ, and they do differ: one resolves includes against a
 //! directory, the other against a map held in memory. The registry's own
-//! landing note filed exactly this as open work: *"진입점이 다르다 …
-//! 출력 바이트 비교는 아직 없다."*
+//! landing note filed exactly this as open work: the entry points differ,
+//! and there is still no byte comparison of their outputs.
 //!
 //! Two differences are declared rather than drift, and both are excluded
 //! deliberately.

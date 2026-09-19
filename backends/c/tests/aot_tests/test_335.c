@@ -6,7 +6,7 @@
 // W3C SCXML 5.10.1: `_event.origin` is bound only on external pops (process_event_queues seeds `_pending_event_origin =
 // '<name>_session'`), so internal events leave `_event.origin` as nil — the receiving transition's cond `typeof
 // _event.origin === 'undefined'` (lua_transformer rewrites to `_event.origin == nil`) matches and routes to pass.
-// Mirrors 옵션 σ + τ + υ binding.
+// Mirrors the scheduled-send, origin-metadata and session-literal bindings.
 
 #include <stdio.h>
 

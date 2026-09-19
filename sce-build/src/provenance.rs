@@ -273,9 +273,53 @@ impl std::fmt::Display for RequirementId {
     }
 }
 
-/// `<sce:unresolved>` marker — an explicit "this value is a guess,
-/// revisit later" placeholder that the parser can detect, the
-/// codegen propagates as a comment, and `--strict` builds reject.
+/// What the author means by a marker. The two are different states and
+/// a build must not treat them the same way.
+///
+/// ⚠ WHY THIS DISTINCTION EXISTS. A real conversion found a spec whose
+/// operating logic covers `0..=221` and `225..=254` and says nothing
+/// about the three values between. `Unresolved` is the honest first
+/// answer — the build stops and the refusal is the question to send the
+/// spec's author. But a question that has been ANSWERED, or a value the
+/// author deliberately chose while the answer is outstanding, is not the
+/// same state, and collapsing the two forces a false choice: either
+/// delete the marker (and lose the record that this was never specified)
+/// or stay blocked (and measure nothing else in the document).
+///
+/// So `Assumed` lets the build proceed while keeping the choice on the
+/// record, and every report still carries it. Deleting a marker remains
+/// the only way to make a document claim the spec covered something.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum MarkerKind {
+    /// "I do not know this value." A `--strict-unresolved` build stops.
+    #[default]
+    Unresolved,
+    /// "The spec does not say; this is what I chose, and here is why."
+    /// A `--strict-unresolved` build proceeds; reports still list it.
+    Assumed,
+}
+
+impl MarkerKind {
+    /// The `sce:` attribute prefix an author writes for this kind, and
+    /// the element name of its child form. One function so the parser,
+    /// the attribute roster and any future writer cannot drift apart.
+    pub const fn attr(self) -> &'static str {
+        match self {
+            MarkerKind::Unresolved => "unresolved",
+            MarkerKind::Assumed => "assumed",
+        }
+    }
+
+    /// Both kinds, in the order a report lists them.
+    pub const ALL: [MarkerKind; 2] = [MarkerKind::Unresolved, MarkerKind::Assumed];
+}
+
+/// `<sce:unresolved>` / `<sce:assumed>` marker — an explicit "this value
+/// is not something the spec settled" placeholder that the parser can
+/// detect, the codegen propagates as a comment, and (for the former)
+/// `--strict` builds reject.
 ///
 /// SCE stores the marker; any consumer (linter, IDE, NL→IR
 /// pipeline) interprets it. SCE never resolves it.
@@ -285,6 +329,9 @@ pub struct UnresolvedMarker {
     /// Author-chosen identifier — opaque to SCE, but unique within
     /// the enclosing document is the convention.
     pub id: String,
+    /// Whether this blocks a strict build or is merely on the record.
+    #[serde(default)]
+    pub kind: MarkerKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// Suggested values the author was choosing between. Whitespace

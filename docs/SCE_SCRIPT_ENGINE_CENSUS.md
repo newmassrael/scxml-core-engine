@@ -100,7 +100,7 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 233
 native-prefix-documents 1
-datamodel-variable-init 236
+datamodel-variable-init 246
 transition-guard 210
 assign-action 206
 child-invoke-needs-script-engine 46
@@ -129,7 +129,7 @@ never spelled correctly.
 
 ## What the table says
 
-- **Three causes carry 75%** of the 870 records: `<data>` initialisers,
+- **Three causes carry 75%** of the 880 records: `<data>` initialisers,
   transition guards, and `<assign>`. These are the ECMAScript expression
   core, and they are the programme's first three sections. Nothing about
   that ordering was decided by preference.

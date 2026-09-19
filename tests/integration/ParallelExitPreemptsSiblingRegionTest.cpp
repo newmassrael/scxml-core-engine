@@ -6,7 +6,7 @@
 //
 // This is the fixture G2 asked for. The registry recorded that C++ and Go carry
 // spec-alien heuristics in conflict resolution and that removing them broke
-// nothing — "관측된 결함 없음". Measured 2026-08-26: deleting them leaves the
+// nothing — "no observed defect". Measured 2026-08-26: deleting them leaves the
 // whole W3C suite green at 404 cases, so the suite cannot see the difference and
 // the heuristics' worth could not be judged from it. This document can see it.
 //

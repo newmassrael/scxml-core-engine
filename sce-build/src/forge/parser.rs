@@ -203,11 +203,134 @@ pub fn parse_forge_with_imports_and_plugin(
         }
     }
 
+    let cycles = parse_cycles(&root, diag)?;
+
     Ok(Some(ParsedForge {
         document,
         imports,
         externs,
+        cycles,
     }))
+}
+
+/// Parse `<sce:cycle>` declarations from the document root.
+///
+/// ⚠ The ORDER is what this element exists to carry, and it is the
+/// document's to state rather than the value space's to imply — see
+/// [`crate::forge::model::Cycle`] for the measurement that settled it.
+/// Everything checked here is SHAPE; whether each step names a real
+/// variant needs the imported enum, so that lives in
+/// [`crate::forge::cycle_check::check`].
+fn parse_cycles(
+    root: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<crate::forge::model::Cycle>, Located<ForgeError>> {
+    use crate::forge::model::{Cycle, CycleStep};
+
+    let mut cycles: Vec<Cycle> = Vec::new();
+    for child in root.children().filter(|n| n.is_element()) {
+        if child.tag_name().name() != "cycle" || child.tag_name().namespace() != Some(SCE_NAMESPACE)
+        {
+            continue;
+        }
+        let need = |attr: &str| -> Result<String, Located<ForgeError>> {
+            match child.attribute(attr) {
+                Some(s) if !s.trim().is_empty() => Ok(s.trim().to_string()),
+                _ => Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:cycle>".into(),
+                        attr: attr.into(),
+                    },
+                )),
+            }
+        };
+        let id = need("id")?;
+        let of = need("of")?;
+
+        if cycles.iter().any(|c| c.id == id) {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::Transform,
+                    what: "cycle id".into(),
+                    id,
+                },
+            ));
+        }
+
+        let mut steps: Vec<CycleStep> = Vec::new();
+        for step in child.children().filter(|n| n.is_element()) {
+            if step.tag_name().name() != "step"
+                || step.tag_name().namespace() != Some(SCE_NAMESPACE)
+            {
+                continue;
+            }
+            let name = match step.attribute("name") {
+                Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+                _ => {
+                    return Err(located(
+                        &step,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:step>".into(),
+                            attr: "name".into(),
+                        },
+                    ))
+                }
+            };
+            // ⚠ A repeated stop is refused rather than deduplicated. The
+            // cursor's position is an index into this sequence, so one
+            // name in two places is two different positions with the
+            // same value — `next` from either would be ambiguous, and
+            // silently picking the first is a guess about which the
+            // author meant.
+            if steps.iter().any(|s: &CycleStep| s.name == name) {
+                return Err(located(
+                    &step,
+                    doc_name,
+                    ValidationError::DuplicateId {
+                        kind: ForgeKind::Transform,
+                        what: format!("step in cycle '{id}'"),
+                        id: name,
+                    },
+                ));
+            }
+            steps.push(CycleStep {
+                name,
+                when: step
+                    .attribute("when")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+            });
+        }
+
+        // ⚠⚠ A cycle with fewer than two stops is refused. `next` and
+        // `prev` on a one-element cycle both return that element, so
+        // every navigation is a no-op — the document would describe a
+        // choice the user cannot make, and nothing downstream would say
+        // so. An empty one is the same failure with nothing at all in
+        // it.
+        if steps.len() < 2 {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::EmptyCollection {
+                    kind: ForgeKind::Transform,
+                    what: format!(
+                        "second <sce:step> in cycle '{id}' (a cycle of {} cannot be navigated)",
+                        steps.len()
+                    ),
+                },
+            ));
+        }
+
+        cycles.push(Cycle { id, of, steps });
+    }
+    Ok(cycles)
 }
 
 /// C5 helper: build the 3 cache-maintenance ExternDeclaration entries
@@ -606,6 +729,49 @@ fn parse_transform(
 
     for out in &outputs {
         if out.expr.is_none() {
+            // ⚠ WHICH question this raises depends on whether the author
+            // already said they do not know the answer.
+            //
+            // `sce:unresolved` MEANS "this value is not decided yet". A
+            // field carrying it and no `expr` is not an author who forgot
+            // an attribute — it is an author who declared the very thing
+            // `expr` would have to state. Answering them with
+            // `validation/missing-attribute` sends them to write the
+            // expression they just said they cannot write, and the
+            // placeholder id they DID supply — the one naming what has to
+            // be settled, and by whom — never appears in the refusal.
+            //
+            // Both refusals are fatal, and deliberately so: there is
+            // nothing to generate either way. What changes is the question
+            // the author is handed. `--strict-unresolved` is not the fix
+            // for this, because it is opt-in and this document cannot be
+            // built with or without it.
+            //
+            // The marker is read through `collect_sce_unresolved`, the
+            // same reader `unresolved_check` uses, so a marker spelling
+            // added to `MarkerKind` is understood here on the day it is
+            // added rather than on the day someone remembers this site.
+            let node =
+                data_children(&datamodel).find(|d| d.attribute("id") == Some(out.id.as_str()));
+            let unresolved = node.as_ref().and_then(|d| {
+                crate::parser::collect_sce_unresolved(d, label.diagnostic_label)
+                    .into_iter()
+                    .find(|m| m.kind == crate::provenance::MarkerKind::Unresolved)
+            });
+            if let Some(marker) = unresolved {
+                return Err(located(
+                    node.as_ref().unwrap_or(&datamodel),
+                    label.diagnostic_label,
+                    ValidationError::UnresolvedPlaceholder {
+                        // The spelling `forge_markers` uses, so the two
+                        // paths that can raise this code do not describe
+                        // the same element two ways.
+                        element: format!("<data id=\"{}\">", out.id),
+                        id: marker.id,
+                        reason: marker.reason,
+                    },
+                ));
+            }
             return Err(located(
                 &datamodel,
                 label.diagnostic_label,
@@ -8765,6 +8931,21 @@ fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
 /// anything. The union errs wide on purpose: too narrow refuses a valid
 /// document, too wide only weakens the check.
 ///
+/// ⚠⚠ THAT DERIVATION HAS A THIRD SOURCE AND THE FIRST CUT MISSED IT:
+/// documents a TEST SYNTHESISES at runtime are in neither (a) nor (b),
+/// because they are neither read by the sources nor committed as files.
+/// Measured 2026-09-18 — `sce:codec-id` is used at 79 sites inside
+/// `forge_conformance.rs`, appears in no `.scxml` and is read by no
+/// source, and adding this check therefore turned 29 conformance cases
+/// red. Anyone re-deriving this roster must sweep the test sources for
+/// `sce:` markup too, not only the tree's own documents.
+///
+/// ⚠⚠⚠ AND THE RED WAS INVISIBLE FOR A WHILE. `cargo test` stops at the
+/// first failing TARGET, so an unrelated failure in `b9_drift_detection`
+/// meant `forge_conformance` never ran and the suite reported one
+/// failure rather than thirty. A green-looking run is not evidence that
+/// the targets after the first red one were measured.
+///
 /// ⚠⚠⚠ THIS IS A NAME CHECK, NOT A PLACEMENT CHECK. It answers "is this
 /// a name the tree knows", not "is this name legal on this element". A
 /// valid name on the wrong element still passes here. Saying so is the
@@ -8773,12 +8954,30 @@ fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
 const KNOWN_SCE_ATTRS: &[&str] = &[
     "addr",
     "alpha",
+    // `assumed*` is the non-blocking half of the marker pair; see
+    // `provenance::MarkerKind` for why the two kinds are distinct.
+    "assumed",
+    "assumed-candidates",
+    "assumed-reason",
     "bit-offset",
     "bit-size",
     "byte",
     "capacity",
+    // ⚠ `codec-id` is read by NOTHING in this tree and appears in no
+    // committed `.scxml` — so both halves of the derivation below missed
+    // it, and adding the check turned 29 conformance cases red at once.
+    // It is listed rather than deleted because the 79 sites that carry it
+    // are consistent and deliberate, and the roster's own policy is to err
+    // wide: a name that is merely unread still costs the check nothing,
+    // while refusing a document the tree builds costs it everything.
+    "codec-id",
     "compute-at",
     "default",
+    // The answering half of the value-space coverage report — the
+    // variants an author says reach the default on purpose. Named
+    // rather than boolean so it expires when the value space grows;
+    // see `forge::model::ForgeField::default_covers`.
+    "default-covers",
     "default-endian",
     "direction",
     "dma-burst-align",
@@ -8788,6 +8987,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "event-name",
     "exhaustive",
     "filter",
+    // The retention pair — a field whose value outlives the program.
+    // Each requires the other; see `parse_retention_attrs`.
+    "initial",
     "input",
     "interpolation",
     "kind",
@@ -8814,6 +9016,11 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "range-min",
     "req",
     "response-max-size",
+    // `retain` names the store a field's value outlives the program in.
+    // The label is OPAQUE — SCE compares it for equality and never
+    // interprets it, so one domain's vocabulary stays out of a general
+    // tool. See `model::Retention`.
+    "retain",
     "returns-max-size",
     "sample-interval",
     "scale",
@@ -9057,6 +9264,22 @@ fn parse_forge_field(
     // pass decides whether to flag it on a non-bytes field.
     let max_size = sce_attr(data, "max-size").and_then(|s| parse_int(&s));
 
+    // Whitespace-separated, like every other list-valued SCE attribute
+    // in the tree (`sce:req`, `sce:unresolved-candidates`) — one
+    // spelling for "several names in one attribute" rather than a
+    // second, comma-shaped one.
+    //
+    // ⚠ Parsed for EVERY field, and checked for none of them here. What
+    // makes a claim true depends on the document's expressions and on an
+    // imported enum's variants, neither of which this function has;
+    // `forge::coverage::check` owns the whole relation so the covered
+    // and uncovered sets are computed in exactly one place.
+    let default_covers = sce_attr(data, "default-covers")
+        .map(|s| s.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default();
+
+    let retain = parse_retention_attrs(data, doc_name, &format!("field '{id}'"))?;
+
     Ok(ForgeField {
         id,
         sce_type,
@@ -9064,6 +9287,8 @@ fn parse_forge_field(
         expr,
         quantity,
         max_size,
+        default_covers,
+        retain,
     })
 }
 
@@ -9080,6 +9305,73 @@ fn parse_forge_field(
 /// 3. Malformed `sce:scale` / `sce:offset` rational text.
 /// 4. `sce:scale` parses to zero (raw value never influences the
 ///    physical reading, so the annotation has no observable effect).
+/// Retention surface — parse the `sce:retain` / `sce:initial` pair.
+///
+/// ⚠ EACH REQUIRES THE OTHER, and both orphans are refused. A retained
+/// field with no initial value is undefined on the first run, before
+/// anything has ever been stored; an initial value on a field that is
+/// not retained is read by nothing, because an ordinary field is
+/// computed afresh every cycle. Neither is a state an author means to
+/// be in, and both are silent if accepted.
+///
+/// ⚠⚠ Reuses `validation/invalid-attribute` rather than minting codes,
+/// exactly as [`parse_quantity_attrs`] does for the same orphan shape
+/// one screen below. The refusal names the missing partner, which is
+/// the whole repair.
+///
+/// The SCOPE is not validated here or anywhere: it is an opaque label
+/// (see [`crate::forge::model::Retention`]). What IS checked — that
+/// `initial` names a value the field's type can hold — needs the
+/// imported enum's variants, so it lives in
+/// [`crate::forge::retention::check`] rather than in this parse.
+fn parse_retention_attrs(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    owner_label: &str,
+) -> Result<Option<crate::forge::model::Retention>, Located<ForgeError>> {
+    let scope = sce_attr(node, "retain");
+    let initial = sce_attr(node, "initial");
+    let orphan = |attr: &str, value: String, expected: &str| {
+        Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: owner_label.to_string(),
+                attr: attr.into(),
+                value,
+                expected: expected.into(),
+            },
+        ))
+    };
+    match (scope, initial) {
+        (None, None) => Ok(None),
+        (Some(s), None) => orphan(
+            "sce:retain",
+            s,
+            "a retained field also needs `sce:initial=\"<value>\"` on the same element — \
+             without it the field has no value on the first run, before anything has been stored",
+        ),
+        (None, Some(i)) => orphan(
+            "sce:initial",
+            i,
+            "an initial value needs `sce:retain=\"<scope>\"` on the same element — \
+             a field that is not retained is computed afresh every cycle, so nothing reads it",
+        ),
+        (Some(s), Some(i)) => {
+            if s.trim().is_empty() {
+                return orphan("sce:retain", s, "a non-empty scope label");
+            }
+            if i.trim().is_empty() {
+                return orphan("sce:initial", i, "a non-empty value");
+            }
+            Ok(Some(crate::forge::model::Retention {
+                scope: s.trim().to_string(),
+                initial: i.trim().to_string(),
+            }))
+        }
+    }
+}
+
 fn parse_quantity_attrs(
     node: &roxmltree::Node,
     doc_name: &str,

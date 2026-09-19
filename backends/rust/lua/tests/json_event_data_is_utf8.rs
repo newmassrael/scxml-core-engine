@@ -16,6 +16,47 @@
 use sce_rust_lua::LuaEngine;
 use sce_rust_runtime::{IScriptEngine, ScriptValue, SetCurrentEventArgs};
 
+// The non-ASCII fixtures, spelled as escapes.
+//
+// ⚠ WHICH characters these are is arbitrary, and naming them for their
+// script would misread the tests below. What every one of them needs is a
+// value that is NOT ASCII and is several UTF-8 bytes wide, because the
+// rewrite under test walks bytes. Escapes keep this source ASCII and state
+// the codepoints, which is the property; a glyph would show that property
+// only to a reader of whichever script was picked.
+//
+// `the_fixtures_are_actually_wide` holds them to it, so a later edit cannot
+// replace one with an ASCII string and leave every test below green while
+// they measure nothing.
+
+/// A whole value: multi-byte text with ASCII on both sides of it.
+const WIDE_TEXT: &str = "\u{BD81}\u{ADF9}\u{C131} \u{2014} ship it";
+/// A multi-byte string used as an object KEY rather than as a value.
+const WIDE_KEY: &str = "\u{BD81}\u{ADF9}\u{C131}";
+/// A second key, for the nested case.
+const WIDE_INNER_KEY: &str = "\u{BAA9}\u{D45C}";
+/// A longer multi-byte value, so the nested case is not a one-character one.
+const WIDE_VALUE: &str = "\u{BE44}\u{C6A9} \u{ACE0}\u{CE58}\u{ACE0} \u{C633}\u{C740}";
+/// ASCII and multi-byte in one string — what a `\uXXXX` pair decodes to.
+const MIXED: &str = "A\u{BD81}";
+
+#[test]
+fn the_fixtures_are_actually_wide() {
+    for (name, s) in [
+        ("WIDE_TEXT", WIDE_TEXT),
+        ("WIDE_KEY", WIDE_KEY),
+        ("WIDE_INNER_KEY", WIDE_INNER_KEY),
+        ("WIDE_VALUE", WIDE_VALUE),
+        ("MIXED", MIXED),
+    ] {
+        assert!(!s.is_ascii(), "{name} is ASCII, so it tests nothing here");
+        assert!(
+            s.len() > s.chars().count(),
+            "{name} has no multi-byte scalar, which is the property under test"
+        );
+    }
+}
+
 fn event(engine: &LuaEngine, session: &str, data: &str) {
     engine
         .set_current_event(
@@ -33,11 +74,11 @@ fn event(engine: &LuaEngine, session: &str, data: &str) {
         .expect("set_current_event");
 }
 
-/// Korean prose in a JSON event payload — the shape a caller that did not edit
-/// the document uses to fill in a loop's goal.
+/// Non-ASCII text in a JSON event payload — the shape a caller that did not
+/// edit the document uses to fill in a value.
 #[test]
 fn json_event_data_carries_a_non_ascii_string_whole() {
-    let sent = "북극성 — ship it";
+    let sent = WIDE_TEXT;
     let engine = LuaEngine::new();
     engine.create_session("s");
     event(&engine, "s", &format!(r#"{{"north_star": "{sent}"}}"#));
@@ -57,7 +98,7 @@ fn json_event_data_carries_a_non_ascii_string_whole() {
 /// is not.
 #[test]
 fn a_non_ascii_string_assigned_directly_is_unaffected() {
-    let sent = "북극성 — ship it";
+    let sent = WIDE_TEXT;
     let engine = LuaEngine::new();
     engine.create_session("s");
     engine
@@ -76,9 +117,9 @@ fn a_non_ascii_string_assigned_directly_is_unaffected() {
 fn a_non_ascii_json_key_survives_the_rewrite() {
     let engine = LuaEngine::new();
     engine.create_session("s");
-    event(&engine, "s", r#"{"북극성": "ok"}"#);
+    event(&engine, "s", &format!(r#"{{"{WIDE_KEY}": "ok"}}"#));
     engine
-        .execute_script("s", "held = _event.data['북극성']")
+        .execute_script("s", &format!("held = _event.data['{WIDE_KEY}']"))
         .expect("execute_script");
 
     assert_eq!(
@@ -96,10 +137,13 @@ fn nested_json_keeps_non_ascii_on_both_sides_of_the_colon() {
     event(
         &engine,
         "s",
-        r#"{"outer": {"목표": "비용 무시하고 가장 옳은 것", "n": 3}}"#,
+        &format!(r#"{{"outer": {{"{WIDE_INNER_KEY}": "{WIDE_VALUE}", "n": 3}}}}"#),
     );
     engine
-        .execute_script("s", "held = _event.data.outer['목표']")
+        .execute_script(
+            "s",
+            &format!("held = _event.data.outer['{WIDE_INNER_KEY}']"),
+        )
         .expect("execute_script");
     engine
         .execute_script("s", "n = _event.data.outer.n")
@@ -107,7 +151,7 @@ fn nested_json_keeps_non_ascii_on_both_sides_of_the_colon() {
 
     assert_eq!(
         engine.get_variable("s", "held").expect("get_variable"),
-        ScriptValue::String("비용 무시하고 가장 옳은 것".to_string()),
+        ScriptValue::String(WIDE_VALUE.to_string()),
     );
     assert_eq!(
         engine.get_variable("s", "n").expect("get_variable"),
@@ -120,7 +164,7 @@ fn nested_json_keeps_non_ascii_on_both_sides_of_the_colon() {
 /// exact string stops a different kind of damage from wearing this symptom.
 #[test]
 fn a_mangled_payload_would_be_a_latin1_widening_and_is_not() {
-    let sent = "북극성 — ship it";
+    let sent = WIDE_TEXT;
     let widened: String = sent.bytes().map(char::from).collect();
     assert_ne!(widened, sent, "the case must be able to tell the two apart");
 
@@ -153,7 +197,7 @@ fn a_unicode_escape_still_yields_a_table_not_a_string() {
     engine.create_session("s");
     // Built from the backslash character so this source carries no escape of
     // its own: the payload is the literal text a JSON encoder emits for
-    // "A북" when asked to stay ASCII-only.
+    // `MIXED` when asked to stay ASCII-only.
     let b = '\\';
     let payload = format!("{{\"north_star\": \"{b}u0041{b}ubd81\"}}");
     assert!(
@@ -167,7 +211,7 @@ fn a_unicode_escape_still_yields_a_table_not_a_string() {
 
     assert_eq!(
         engine.get_variable("s", "held").expect("get_variable"),
-        ScriptValue::String("A북".to_string()),
+        ScriptValue::String(MIXED.to_string()),
     );
 }
 
@@ -262,7 +306,7 @@ fn json_parse_and_event_data_agree_on_the_same_document() {
     let from_parse = engine
         .get_variable("s", "from_parse")
         .expect("get_variable");
-    assert_eq!(from_event, ScriptValue::String("A북".to_string()));
+    assert_eq!(from_event, ScriptValue::String(MIXED.to_string()));
     assert_eq!(from_parse, from_event, "the two entry points disagree");
 }
 
@@ -290,13 +334,21 @@ fn json_parse_builds_a_one_based_sequence() {
 fn an_escape_before_non_ascii_text_does_not_split_it() {
     let engine = LuaEngine::new();
     engine.create_session("s");
-    event(&engine, "s", r#"{"q": "\"북\" and \"극\""}"#);
+    // Two single multi-byte scalars, each sitting immediately after an
+    // escaped quote — the position the scan has to get right.
+    let one = "\u{BD81}";
+    let two = "\u{ADF9}";
+    event(
+        &engine,
+        "s",
+        &format!(r#"{{"q": "\"{one}\" and \"{two}\""}}"#),
+    );
     engine
         .execute_script("s", "held = _event.data.q")
         .expect("execute_script");
 
     assert_eq!(
         engine.get_variable("s", "held").expect("get_variable"),
-        ScriptValue::String("\"북\" and \"극\"".to_string()),
+        ScriptValue::String(format!("\"{one}\" and \"{two}\"")),
     );
 }

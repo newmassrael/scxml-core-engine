@@ -465,13 +465,24 @@ const CI_ONLY: &[(&str, &str)] = &[
          failure is a retry, at push time it is a blocked push. CI runs it \
          on a schedule for the same reason.",
     ),
-    (
-        "gradlew :sce-forge-runtime-kotlin:jvmTest",
-        "the Gradle task rewrites the committed trees' `generated-at` pins \
-         as a side effect, so running it from the hook would dirty the very \
-         tree being pushed. Startup cost is the secondary objection; the \
-         side effect is the disqualifying one.",
-    ),
+    // `gradlew :sce-forge-runtime-kotlin:jvmTest` used to sit here, on the
+    // grounds that the task dirtied the tree being pushed. `3abfe9ae36`
+    // ("Mirror the sixth forge arm locally, not five of six") moved the
+    // invocation into `scripts/gates/forge-kotlin.sh`, and the hook
+    // surface is the union of `pre-push` and every gate script — so the
+    // entry stopped describing anything this test can see and Direction 2
+    // below rightly called it stale.
+    //
+    // ⚠ The exemption itself did NOT disappear; it MOVED. `forge-kotlin`
+    // carries `ci_only` in `gate_registry.py`, which is where a gate's
+    // "CI judges this, the push does not" now lives. Reading the removal
+    // as "a push runs the Kotlin forge arm" would be wrong — a gate being
+    // in the hook's TEXT is not the same as the push SELECTING it, and
+    // this test cannot tell those apart by construction.
+    //
+    // ⚠⚠ It was red on the committed tree and nobody saw it, because
+    // `cargo test` stops at the first failing TARGET and two earlier ones
+    // were failing. Found 2026-09-18 only after those were repaired.
     (
         "gradlew :sce-forge-runtime-kotlin:jvmJar",
         "provisions the runner rather than verifying the tree: it builds the \
@@ -806,7 +817,16 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
             "commit_audit.sh failed internally when invoked from the {label}:\n{err}",
         );
         assert!(
-            !err.contains("unbound variable") && !err.contains("바인딩 해제한 변수"),
+            // Both spellings of the same shell diagnostic. The second is
+            // what bash prints under a Korean locale, and it is here so
+            // that the check does not go blind on a machine set to one —
+            // a developer's locale must not decide whether a gate can see
+            // its own failure. Spelled as escapes to keep this source
+            // ASCII; it is the shell's message, not prose of ours.
+            !err.contains("unbound variable")
+                && !err.contains(
+                    "\u{BC14}\u{C778}\u{B529} \u{D574}\u{C81C}\u{D55C} \u{BCC0}\u{C218}",
+                ),
             "commit_audit.sh read an uninitialised variable from the {label}:\n{err}",
         );
     }

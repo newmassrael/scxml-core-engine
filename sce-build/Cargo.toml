@@ -748,6 +748,31 @@ path = "tests/forge_unresolved.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "transform_reads_a_sibling_output"
+path = "tests/transform_reads_a_sibling_output.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "value_space_coverage"
+path = "tests/value_space_coverage.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "retained_state"
+path = "tests/retained_state.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "declared_cycle"
+path = "tests/declared_cycle.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cycle_navigation"
+path = "tests/cycle_navigation.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "forge_unknown_sce_attribute"
 path = "tests/forge_unknown_sce_attribute.rs"
 required-features = ["cli"]

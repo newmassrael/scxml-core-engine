@@ -292,6 +292,18 @@ impl ScriptEngineCauseKind {
 pub fn analyze(model: &SCXMLModel) -> Vec<NeedsScriptEngineCause> {
     let mut causes = Vec::new();
     collect_datamodel_causes(&model.variables, &mut causes);
+    // §scxml-5.3: a `<datamodel>` under a `<state>` populates the same flat
+    // set of names the document-level one does — `analyzer::classify_variables`
+    // walks both for exactly that reason, and codegen initialises both into the
+    // engine session. Collecting only the top level UNDER-reported, which is the
+    // dangerous direction: a document whose only initializer was state-scoped
+    // read as needing no engine while its generated code called one. Measured
+    // 2026-09-17 on `integration_resources/send_param_payload/`, where
+    // `<data id="tag">` inside `<state id="typedPhase">` produced none of that
+    // document's causes.
+    for state in model.states.values() {
+        collect_datamodel_causes(&state.datamodel, &mut causes);
+    }
     collect_global_script_causes(model, &mut causes);
     for (state_id, state) in &model.states {
         collect_state_causes(state_id, state, &model.imported_event_schemas, &mut causes);
@@ -704,6 +716,52 @@ mod tests {
             single_cause(scxml),
             ScriptEngineCauseKind::DatamodelVariableInit { var_id } if var_id == "x"
         ));
+    }
+
+    /// §scxml-5.3: a `<datamodel>` under a `<state>` is the same declaration
+    /// into the same flat set of names, so it costs the same engine.
+    ///
+    /// Regression: `analyze` used to pass only `model.variables`, so this
+    /// document reported NO cause while codegen still initialised `tag`
+    /// into the engine session — an under-report, which reads as a false
+    /// green rather than a false alarm.
+    #[test]
+    fn a_state_scoped_datamodel_init_triggers() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="ecmascript">
+            <state id="s">
+                <datamodel><data id="tag" expr="'kept'"/></datamodel>
+            </state>
+        </scxml>"#;
+        assert!(matches!(
+            single_cause(scxml),
+            ScriptEngineCauseKind::DatamodelVariableInit { var_id } if var_id == "tag"
+        ));
+    }
+
+    /// The state-scoped collection ADDS to the document-level one rather
+    /// than standing in for it.
+    ///
+    /// Without this, a fix that collected state datamodels *instead of* the
+    /// top-level ones would satisfy both single-cause tests above and lose
+    /// half the population in silence.
+    #[test]
+    fn both_datamodel_depths_are_counted() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="ecmascript">
+            <datamodel><data id="top" expr="1"/></datamodel>
+            <state id="s">
+                <datamodel><data id="scoped" expr="2"/></datamodel>
+            </state>
+        </scxml>"#;
+        let model = parse(scxml);
+        let mut ids: Vec<String> = analyze(&model)
+            .into_iter()
+            .filter_map(|c| match c.kind {
+                ScriptEngineCauseKind::DatamodelVariableInit { var_id } => Some(var_id),
+                _ => None,
+            })
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["scoped".to_string(), "top".to_string()]);
     }
 
     #[test]

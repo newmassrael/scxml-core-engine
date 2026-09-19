@@ -715,64 +715,65 @@ pub(crate) fn collect_sce_unresolved(
 ) -> Vec<crate::provenance::UnresolvedMarker> {
     use crate::forge::error::SourceLocation;
     use crate::forge::model::SCE_NAMESPACE;
-    use crate::provenance::UnresolvedMarker;
+    use crate::provenance::{MarkerKind, UnresolvedMarker};
+
+    let split = |raw: &str| {
+        raw.split_whitespace()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+    };
+    let at = |n: &roxmltree::Node| {
+        let pos = n.document().text_pos_at(n.range().start);
+        Some(SourceLocation {
+            file: artifact_label(source_name),
+            line: Some(pos.row),
+            col: Some(pos.col),
+        })
+    };
+
+    // ⚠ Both kinds are read by THIS loop rather than by a copy of it.
+    // `MarkerKind::ALL` drives the iteration, so a kind added to that
+    // enum is read on the day it is added — in both the attribute and
+    // the child-element form. The two forms had already been a place
+    // where a reader could drift; a second KIND of marker would have
+    // doubled that surface again.
     let mut markers: Vec<UnresolvedMarker> = Vec::new();
-    if let Some(id) = node.attribute((SCE_NAMESPACE, "unresolved")) {
-        if !id.is_empty() {
-            let reason = node
-                .attribute((SCE_NAMESPACE, "unresolved-reason"))
-                .map(|s| s.to_string());
-            let candidates = node
-                .attribute((SCE_NAMESPACE, "unresolved-candidates"))
-                .map(|raw| {
-                    raw.split_whitespace()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            let pos = node.document().text_pos_at(node.range().start);
+    for kind in MarkerKind::ALL {
+        let attr = kind.attr();
+        if let Some(id) = node.attribute((SCE_NAMESPACE, attr)) {
+            if !id.is_empty() {
+                markers.push(UnresolvedMarker {
+                    id: id.to_string(),
+                    kind,
+                    reason: node
+                        .attribute((SCE_NAMESPACE, &*format!("{attr}-reason")))
+                        .map(|s| s.to_string()),
+                    candidates: node
+                        .attribute((SCE_NAMESPACE, &*format!("{attr}-candidates")))
+                        .map(split)
+                        .unwrap_or_default(),
+                    location: at(node),
+                });
+            }
+        }
+        for child in node.children().filter(|c| c.is_element()) {
+            if child.tag_name().namespace() != Some(SCE_NAMESPACE)
+                || child.tag_name().name() != attr
+            {
+                continue;
+            }
+            let id = match child.attribute("id") {
+                Some(s) if !s.is_empty() => s.to_string(),
+                _ => continue,
+            };
             markers.push(UnresolvedMarker {
-                id: id.to_string(),
-                reason,
-                candidates,
-                location: Some(SourceLocation {
-                    file: artifact_label(source_name),
-                    line: Some(pos.row),
-                    col: Some(pos.col),
-                }),
+                id,
+                kind,
+                reason: child.attribute("reason").map(|s| s.to_string()),
+                candidates: child.attribute("candidates").map(split).unwrap_or_default(),
+                location: at(&child),
             });
         }
-    }
-    for child in node.children().filter(|c| c.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
-            || child.tag_name().name() != "unresolved"
-        {
-            continue;
-        }
-        let id = match child.attribute("id") {
-            Some(s) if !s.is_empty() => s.to_string(),
-            _ => continue,
-        };
-        let reason = child.attribute("reason").map(|s| s.to_string());
-        let candidates = child
-            .attribute("candidates")
-            .map(|raw| {
-                raw.split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let pos = child.document().text_pos_at(child.range().start);
-        markers.push(UnresolvedMarker {
-            id,
-            reason,
-            candidates,
-            location: Some(SourceLocation {
-                file: artifact_label(source_name),
-                line: Some(pos.row),
-                col: Some(pos.col),
-            }),
-        });
     }
     markers
 }

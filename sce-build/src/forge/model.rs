@@ -493,6 +493,39 @@ impl SceType {
         }
     }
 
+    /// The canonical `sce:type` spelling — the exact inverse of
+    /// [`SceType::from_attr`], so a type read from a document and written
+    /// back into a diagnostic reads the way the author typed it.
+    ///
+    /// ⚠ It lives HERE, next to `from_attr`, because the two must move
+    /// together: a variant added to this enum is a variant `from_attr`
+    /// must accept and this must spell, and the compiler says so for
+    /// both only while they share a file. Two private copies had grown
+    /// in `cross_kind_check` and `event_schema_check`, which is how a
+    /// fourteenth variant gets three spellings and two of them are the
+    /// one nobody updated.
+    ///
+    /// Returns `String` rather than `&'static str` for the
+    /// `Enum(EnumRef)` arm, whose spelling carries the import alias.
+    pub fn as_attr(&self) -> String {
+        match self {
+            Self::Uint8 => "uint8".to_string(),
+            Self::Uint16 => "uint16".to_string(),
+            Self::Uint32 => "uint32".to_string(),
+            Self::Uint64 => "uint64".to_string(),
+            Self::Int8 => "int8".to_string(),
+            Self::Int16 => "int16".to_string(),
+            Self::Int32 => "int32".to_string(),
+            Self::Int64 => "int64".to_string(),
+            Self::Float32 => "float32".to_string(),
+            Self::Float64 => "float64".to_string(),
+            Self::Bool => "bool".to_string(),
+            Self::String => "string".to_string(),
+            Self::Bytes => "bytes".to_string(),
+            Self::Enum(r) => format!("enum:{}", r.alias),
+        }
+    }
+
     /// Unsigned integer types (uint8..uint64).
     pub fn is_unsigned(&self) -> bool {
         matches!(
@@ -571,6 +604,122 @@ impl SceType {
     }
 }
 
+// ── Cycle ──────────────────────────────────────────────────────
+
+/// An ORDERED sequence of named alternatives, each present only when its
+/// condition holds — `<sce:cycle id="…" of="<enum alias>">` with a
+/// `<sce:step name="…" when="…"/>` per alternative.
+///
+/// ⚠ WHY THE ORDER LIVES HERE AND NOT IN THE ENUM. The obvious design
+/// was to walk the imported enum's declaration order and skip the
+/// unavailable variants — no new element, one intrinsic. It is wrong,
+/// and measurably so. In surveyed material a prose specification and the
+/// platform value space it draws on listed the SAME seven alternatives in
+/// two different orders: they agreed on the first three, and one variant
+/// that the specification put FOURTH the value space declared LAST. So
+/// "the next alternative" would have been silently wrong in a way a
+/// shallow fixture cannot see — the two orders share a prefix, which is
+/// exactly the shape a small example fails to distinguish.
+///
+/// ⚠ The shape of the disagreement is the measurement and it stays; the
+/// variant names are the surveyed document's identity and do not, the
+/// same split [`requirement_manifest`] already draws when it keeps its
+/// marker counts and withholds the standard they were counted over.
+///
+/// The two are different facts. A value space says WHICH values exist; a
+/// cycle says IN WHAT ORDER a user walks them, and that order is the
+/// specification's to state. Reading one off the other is a layer
+/// confusion that happens to be invisible until the two disagree.
+///
+/// ⚠⚠ THE STEPS ARE A SUBSET, deliberately. A value space usually holds
+/// values that are not stops on the cycle at all — an `OFF`, an
+/// `INVALID`, a `MAX` sentinel. Requiring every variant to appear would
+/// force an author to invent conditions for values that are not
+/// alternatives.
+///
+/// ⚠⚠⚠ THE CONDITION SITS ON THE STEP because that is how the source
+/// notation writes it: one table whose rows are the alternatives in
+/// order, each row carrying the condition under which it is present. An
+/// earlier design passed availability in as a bitmask built by the
+/// caller, which made the author write bit positions by hand — positions
+/// that only mean anything relative to this list, declared in another
+/// file. Putting the condition on the step removes the mask, the
+/// positions, and the chance for them to drift apart.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct Cycle {
+    /// Document-unique name. Expressions reach the cycle by this id, and
+    /// one value space may carry SEVERAL cycles — the surveyed material
+    /// has two lists over overlapping alternatives, with one name
+    /// appearing on both.
+    pub id: String,
+    /// The `<sce:import kind="enum">` alias whose variants the steps
+    /// draw from. Every step's `name` is checked against it, which is
+    /// what makes a misspelled alternative a build failure rather than a
+    /// stop nobody can reach.
+    pub of: String,
+    /// The alternatives, in the order the document states.
+    pub steps: Vec<CycleStep>,
+}
+
+/// One stop on a [`Cycle`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct CycleStep {
+    /// A variant of the cycle's value space.
+    pub name: String,
+    /// The condition under which this stop is present, as an expression
+    /// over the document's own fields. `None` means always present —
+    /// the common case for a cycle whose membership is fixed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<String>,
+}
+
+// ── Retention ──────────────────────────────────────────────────
+
+/// A field whose value OUTLIVES the program that computes it —
+/// `sce:retain="<scope>"` with `sce:initial="<value>"`.
+///
+/// ⚠ WHAT SCE DOES AND DOES NOT DO HERE. SCE cannot implement
+/// persistence: where a value is kept between runs is the host's
+/// business (an EEPROM page, a config file, a key-value store). What SCE
+/// does is DECLARE it, CHECK the one thing it can check, and CARRY it
+/// into the AST so the host knows what to provision. The same division
+/// `sce:quantity` already uses: the document states the physics, the
+/// tree checks the arithmetic, the platform supplies the sensor.
+///
+/// ⚠⚠ THE SCOPE IS OPAQUE, AND THAT IS THE GENERAL PART. The
+/// measurement that prompted this surface is automotive — a value that
+/// survives ignition-off, and one that survives battery removal — but
+/// `sce:retain="battery"` would put one domain's vocabulary in a
+/// general tool. So SCE never interprets the scope: it records the
+/// label, and a domain adapter decides what labels mean, exactly as
+/// `sce:req` keeps requirement ids opaque because two spellings that
+/// normalise together are two requirements to the document that issued
+/// them.
+///
+/// ⚠⚠⚠ THE PAIR IS REQUIRED IN BOTH DIRECTIONS, and that is the part
+/// worth the most. A retained field with no initial value has undefined
+/// behaviour on the first run, before anything has ever been stored —
+/// exactly the silent gap this tree refuses elsewhere. An initial value
+/// with no retention is meaningless: an ordinary field is computed
+/// afresh every cycle, so nothing ever reads it. Both orphans are
+/// refused, reusing `validation/invalid-attribute` rather than minting a
+/// code, which is what `parse_quantity_attrs` does for the same shape.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct Retention {
+    /// `sce:retain` — an opaque label naming the store this field is
+    /// kept in. SCE compares scopes for equality and nothing else.
+    pub scope: String,
+    /// `sce:initial` — the value before the store has ever been
+    /// written. Verbatim as the author wrote it; membership in the
+    /// field's value space is checked by
+    /// [`crate::forge::retention::check`], which is the one question
+    /// SCE can answer about it.
+    pub initial: String,
+}
+
 // ── Field direction ────────────────────────────────────────────
 
 /// Data flow direction for kind fields.
@@ -620,6 +769,34 @@ pub struct ForgeField {
     /// types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
+    /// The variants of this field's value space that the author says
+    /// reach the default branch ON PURPOSE — `sce:default-covers="A B C"`.
+    ///
+    /// This is the ANSWER half of [`crate::forge::coverage`]. That
+    /// module reports which variants nothing in the document tests for;
+    /// without a way to record "yes, I meant those", the report re-asks
+    /// the same question on every run, and a list that never shrinks is
+    /// a list nobody reads.
+    ///
+    /// ⚠ It is a CLAIM, not a suppression, and the difference is the
+    /// whole design. The claim names the variants, so it stays true only
+    /// while they are exactly the ones falling through: add a variant to
+    /// the enum document and the new one is unacknowledged, so the
+    /// question comes back — which is right, because a value space
+    /// growing is precisely when the author must decide again. A boolean
+    /// `sce:default-is-deliberate` would have gone silent forever on the
+    /// day the platform added a value.
+    ///
+    /// ⚠⚠ A claim can be FALSE, and a false claim is refused rather than
+    /// reported: naming a non-variant, or naming one the document's own
+    /// conditions test for. See `coverage::check`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub default_covers: Vec<String>,
+    /// `sce:retain` / `sce:initial` — this field's value outlives the
+    /// program. See [`Retention`] for what SCE does with it and why the
+    /// scope label is opaque.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retain: Option<Retention>,
 }
 
 // ── Transform kind ─────────────────────────────────────────────
@@ -4009,6 +4186,12 @@ pub struct ParsedForge {
     /// long-term-correctness review surfaced.
     #[serde(default)]
     pub externs: Vec<ExternDeclaration>,
+    /// `<sce:cycle>` declarations — an ORDERED sequence of named
+    /// alternatives drawn from a value space, each with a condition
+    /// saying whether it is currently present. Always emitted, even
+    /// empty, for the reason `externs` gives one field up.
+    #[serde(default)]
+    pub cycles: Vec<Cycle>,
 }
 
 /// One `<sce:extern>` declaration after parse-time validation has

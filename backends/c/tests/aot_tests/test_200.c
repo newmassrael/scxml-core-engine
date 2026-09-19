@@ -4,7 +4,7 @@
 // W3C SCXML test200 — C11 AOT runner.
 //
 // W3C SCXML 6.2: `type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"` literal is supported and routes through
-// bare-external dispatch — same send_type carve-out test348/495 cover (옵션 ρ); the receiving transition matches event1
+// bare-external dispatch — the same send_type carve-out test348/495 cover; the receiving transition matches event1
 // before the wildcard fail.
 
 #include <stdio.h>

@@ -1054,6 +1054,8 @@ mod tests {
                     expr: None,
                     quantity: None,
                     max_size: Some(64),
+                    default_covers: Vec::new(),
+                    retain: None,
                 },
                 ForgeField {
                     id: "offset".to_string(),
@@ -1062,6 +1064,8 @@ mod tests {
                     expr: None,
                     quantity: None,
                     max_size: None,
+                    default_covers: Vec::new(),
+                    retain: None,
                 },
             ],
             source_location: None,

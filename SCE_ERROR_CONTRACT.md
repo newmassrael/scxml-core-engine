@@ -804,6 +804,9 @@ references against a real document and drift silently.
 | `validation/cross-kind-circular-dependency` | `validation` | no |  |
 | `validation/cross-kind-field-not-found` | `validation` | `replace_one_of` |  |
 | `validation/cross-kind-type-mismatch` | `validation` | no |  |
+| `validation/default-covers-not-a-value-space` | `validation` | `remove_fields` | SCE Accepted Subset §2.2 |
+| `validation/default-covers-tested-variant` | `validation` | `remove_fields` | SCE Accepted Subset §2.2 |
+| `validation/default-covers-unknown-variant` | `validation` | `replace_one_of` | SCE Accepted Subset §2.2 |
 | `validation/duplicate-context-object` | `validation` | `rename_duplicate` |  |
 | `validation/duplicate-id` | `validation` | `rename_duplicate` |  |
 | `validation/duplicate-requirement-id` | `validation` | no |  |
@@ -839,6 +842,7 @@ references against a real document and drift silently.
 | `validation/require-either` | `validation` | `add_one_of` |  |
 | `validation/reserved-context-id` | `validation` | no |  |
 | `validation/singleton-violation` | `validation` | no |  |
+| `validation/transform-output-cycle` | `validation` | no |  |
 | `validation/unknown-sce-attribute` | `validation` | `replace_one_of` | SCE Accepted Subset §2.2 |
 | `validation/unresolved-placeholder` | `validation` | no |  |
 | `validation/unsupported-kind` | `validation` | `replace_one_of` | SCE Forge §3.2 |

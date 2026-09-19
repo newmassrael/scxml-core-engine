@@ -4036,7 +4036,7 @@ Every red witness this backend has ever shown was bought BY HAND. Edit the
 file, run the suite, read the failure, put it back — and the rounds above say
 so in their own words, three times: *"bought by hand because `scripts/mutate`
 still has no Gradle runner"*, *"the two reds above were applied and reverted by
-hand"*, *"Kotlin 엔 mutate 러너가 없다"*. A hand-bought red is evidence about
+hand"*, *"Kotlin has no mutate runner"*. A hand-bought red is evidence about
 the day it was bought. It is not in the corpus, `scripts/mutate --check` never
 asks whether it still applies, and the weekly sweep cannot re-prove it. So
 `scripts/mutate` grows a fifth runner.

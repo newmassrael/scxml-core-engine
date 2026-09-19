@@ -242,6 +242,48 @@
        `validation/event-schema-on-builtin-event`). Free-form string
        at the XSD layer; semantic validation lives in sce-build. -->
   <xs:attribute name="event-name" type="xs:string"/>
+  <!-- `sce:default-covers` on an enum-typed INPUT `<data>` of a
+       `sce:kind="transform"`: the variants of that input's value space
+       which reach the expression's default branch on purpose. It is the
+       answering half of the value-space coverage report (`sce-codegen
+       coverage`), which lists the variants nothing in the document tests
+       for.
+
+       Whitespace-separated variant names, like every other list-valued
+       SCE attribute. Named rather than boolean so the claim EXPIRES: a
+       variant added to the enum document is unacknowledged, and the
+       report asks again — which is right, because a value space growing
+       is when the author must decide again.
+
+       Opaque at the XSD layer; the claim is checked in sce-build
+       (`forge::coverage::check`), which refuses a name that is not a
+       variant (`validation/default-covers-unknown-variant`), a name the
+       document tests for (`…/default-covers-tested-variant`), and the
+       attribute on a field with no value space
+       (`…/default-covers-not-a-value-space`). -->
+  <xs:attribute name="default-covers" type="xs:string"/>
+
+  <!-- `sce:retain` / `sce:initial` on a forge `<data>` field: the
+       field's value OUTLIVES the program that computes it.
+
+       `sce:retain` names the store, and the label is OPAQUE — SCE
+       compares it for equality and never interprets it. The measurement
+       behind this surface is automotive (one store survives
+       ignition-off, another survives battery removal) and enumerating
+       those two here would put one domain's vocabulary in a general
+       grammar; a domain adapter gives labels meaning, the same policy
+       `sce:req` uses for requirement ids.
+
+       `sce:initial` is the value before the store has ever been
+       written. Each attribute REQUIRES the other: a retained field with
+       no initial value is undefined on the first run, and an initial
+       value on a field that is not retained is read by nothing. Both
+       orphans are refused as `validation/invalid-attribute`
+       (`parse_retention_attrs`), and membership of `sce:initial` in the
+       field's value space is checked by `forge::retention::check`. -->
+  <xs:attribute name="retain" type="xs:string"/>
+  <xs:attribute name="initial" type="xs:string"/>
+
   <xs:attribute name="unit" type="xs:string"/>
   <xs:attribute name="default" type="xs:string"/>
   <xs:attribute name="input" type="xs:string"/>
@@ -538,6 +580,45 @@
     </xs:complexType>
   </xs:element>
 
+
+  <!-- An ORDERED sequence of named alternatives drawn from a value
+       space — `<sce:cycle id="…" of="<enum alias>">` with one
+       `<sce:step name="…" when="…"/>` per alternative, in the order the
+       document states.
+
+       ⚠ The ORDER is the document's, not the value space's, and that is
+       the whole reason this element exists. The obvious design walked
+       the imported enum's declaration order; in the surveyed material
+       the specification's list and the platform's value space agree on
+       their first three alternatives and disagree after that, so "the
+       next alternative" would have been silently wrong. A value space
+       says WHICH values exist; a cycle says in what order a user walks
+       them.
+
+       The steps are a SUBSET — a value space usually holds values that
+       are not stops at all (an OFF, an INVALID, a MAX sentinel). `when`
+       is optional and names the condition under which that stop is
+       present; putting it on the step is what removes the hand-typed bit
+       positions an availability mask would have needed. Fewer than two
+       stops is refused (nothing to navigate), as is a repeated name (one
+       value in two positions makes `next` ambiguous). Step names are
+       checked against the value space by `forge::cycle_check`. -->
+  <xs:element name="cycle">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:step" minOccurs="2" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="of" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="step">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+      <xs:attribute name="when" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
 
   <!-- Section 4.6: Codec field definition with byte layout -->
   <xs:element name="field">

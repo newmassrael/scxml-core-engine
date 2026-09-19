@@ -509,6 +509,8 @@ mod tests {
             expr: None,
             quantity: None,
             max_size: None,
+            default_covers: Vec::new(),
+            retain: None,
         };
         let cases: Vec<ForgeDocument> = vec![
             ForgeDocument::Transform(TransformModel {

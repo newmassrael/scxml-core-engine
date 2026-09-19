@@ -6,12 +6,12 @@
 // W3C SCXML 6.2 + 5.10.1: an explicit `type="http://www.w3.org/TR/scxml/
 // #SCXMLEventProcessor"` literal collapses to the default external
 // dispatch; the receiving transition assigns `_event.origin` into Var1.
-// With the SCXMLEventProcessor type carve-out (옵션 ρ) the literal
+// With the SCXMLEventProcessor type carve-out the literal
 // reduces to bare-external send, and with no cond gating the assign
 // the s0→s2→pass path runs regardless of whether `_event.origin` is
 // bound to a session URI or stays nil — the round-trip exercises the
 // type literal on two distinct sends without relying on origin
-// resolution. Once the origin/origintype metadata fields land (옵션 τ)
+// resolution. Once the origin/origintype metadata fields land
 // the assigned value will hold the deterministic `<name>_session`
 // literal but the boolean outcome is unchanged.
 

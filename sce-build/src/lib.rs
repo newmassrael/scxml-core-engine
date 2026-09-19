@@ -2505,6 +2505,52 @@ pub fn compile_forge_from_parsed(
     // walker can trust that imported alias references resolve.
     forge::quantity_check::check(parsed, label.diagnostic_label)?;
 
+    // A transform output may read a sibling output — the generator
+    // lowers that read to a call of the sibling's own function. A CYCLE
+    // among them cannot be lowered (the emitted functions would call
+    // each other forever), so it is refused here, before any language is
+    // rendered: the verdict must not depend on which backend was asked
+    // for. See `forge::transform_dep_check` for the measurement that
+    // prompted both halves.
+    forge::transform_dep_check::check(parsed, label.diagnostic_label)?;
+
+    // `sce:default-covers` is the author's answer to the value-space
+    // coverage report — "these variants reach the default on purpose".
+    // The REPORT runs only when asked (`sce-codegen coverage`); the
+    // CLAIM is checked here, on every build, because a claim nothing
+    // verifies is how an attribute silences a question while meaning
+    // nothing. Runs after cross-kind check so the imported enum the
+    // claim is about is known to resolve.
+    forge::coverage::check(parsed, base_dir, label.diagnostic_label)?;
+
+    // A retained field's initial value is the one a system takes on the
+    // day it is first switched on and on no other day — the value least
+    // likely to be exercised by a test, and the one whose mistake
+    // survives longest. Checking it here means a factory-fresh boot
+    // cannot be the thing that discovers a misspelled variant.
+    forge::retention::check(parsed, base_dir, label.diagnostic_label)?;
+
+    // A `<sce:cycle>` stop that names no real value is a position no
+    // cursor can land on — and because the stops ARE positions, it
+    // shifts every stop after it, so the defect surfaces as "the wrong
+    // alternative" some distance from the line that caused it.
+    forge::cycle_check::check(parsed, base_dir, label.diagnostic_label)?;
+
+    // Navigating a `<sce:cycle>` expands to ordinary conditionals over
+    // the stops the document declares, so it is rewritten ONCE here
+    // rather than lowered in each of the six backends: nothing about it
+    // differs per language, and an emitter arm per backend is six copies
+    // of one rewrite plus a seventh backend that silently lacks it.
+    // Everything downstream — inference, folding, the unit checker,
+    // every emitter — then sees expressions it already understands.
+    //
+    // ⚠ Runs AFTER `cycle_check`, so a cycle whose stops do not resolve
+    // is refused before anything is expanded from it. `None` means the
+    // document uses no cycles, and then the original document is passed
+    // through untouched rather than cloned.
+    let expanded = forge::cycle_expand::expand(parsed);
+    let document = expanded.as_ref().unwrap_or(&parsed.document);
+
     // RFC §synth-5-C link-side cross-resolution. Runs after enrichment
     // populates `ImportContext::codec_max_bytes` (framer side) and
     // `ImportContext::buffer_pool_slot_size` (pool side); both axes
@@ -2565,39 +2611,39 @@ pub fn compile_forge_from_parsed(
 
     let output = match language {
         generator::Language::Cpp => forge::generator::generate_cpp_with_imports_and_externs(
-            &parsed.document,
+            document,
             &template_base,
             &import_ctx,
             &parsed.externs,
             options,
         ),
         generator::Language::Kotlin => forge::generator::generate_kotlin_with_imports(
-            &parsed.document,
+            document,
             &template_base,
             &import_ctx,
             options,
         ),
         generator::Language::Rust => forge::generator::generate_rust_with_imports_and_externs(
-            &parsed.document,
+            document,
             &template_base,
             &import_ctx,
             &parsed.externs,
             options,
         ),
         generator::Language::Go => forge::generator::generate_go_with_imports(
-            &parsed.document,
+            document,
             &template_base,
             &import_ctx,
             options,
         ),
         generator::Language::Python => forge::generator::generate_python_with_imports(
-            &parsed.document,
+            document,
             &template_base,
             &import_ctx,
             options,
         ),
         generator::Language::C11 => forge::generator::generate_c11_with_imports_and_externs(
-            &parsed.document,
+            document,
             &template_base,
             &import_ctx,
             &parsed.externs,
@@ -4096,6 +4142,12 @@ fn validate_and_enrich_imports(
                     // alone (matches the codec / buffer-pool pattern).
                     generator::Language::C11 => format!("{pascal}_t"),
                 };
+                // The variants and the document's own name ride along so
+                // an expression referring to `<alias>.<variant>` can be
+                // lowered without re-opening the imported file. Stored
+                // UNCONVERTED — see `ImportContext::enum_variants`.
+                ctx.enum_variants = em.variants.iter().map(|v| v.name.clone()).collect();
+                ctx.enum_source_name = em.name.clone();
             }
             if !ctx.is_stateful {
                 // `ctx.namespace` was recomputed from `doc.name()` above, so
