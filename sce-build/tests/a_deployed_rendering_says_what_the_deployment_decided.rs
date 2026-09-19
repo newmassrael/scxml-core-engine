@@ -284,6 +284,183 @@ fn a_deployed_rendering_carries_the_resolution_codegen_was_given() {
     assert!(broken.is_empty(), "{}", broken.join("\n"));
 }
 
+/// Every type that can hide a field from the page is taken apart by
+/// hand.
+///
+/// `mesh::review` destructures three types — `ResolvedTarget`,
+/// `TransportState`, `EventPatternInfo` — because each carries a
+/// `skip_serializing_if`, and a skipped field prints nothing at all on
+/// a surface whose contract is that it prints everything. Everything
+/// below those goes through serde, which is sound exactly while nothing
+/// below them skips.
+///
+/// That was a sentence in a comment, and a sentence cannot notice a
+/// fourth type acquiring a skip. This reads the declarations instead.
+///
+/// ⚠ Comments are stripped first. Measuring this by hand, an occurrence
+/// inside the prose `No `skip_serializing_if`: the field always
+/// serializes` was counted as a real one and made `MeshRpcInvokeSite`
+/// look like a hole it is not. A scanner that reads comments is
+/// measuring the wrong text — the tree's own standing note.
+#[test]
+fn nothing_the_builder_leaves_to_serde_can_skip_a_field() {
+    // Both files, because reachability crosses them:
+    // `ResolvedTarget::retry` is a `deploy::RetryPolicyConfig`.
+    let sources = [
+        repo_root().join("sce-build/src/mesh/topology.rs"),
+        repo_root().join("sce-build/src/mesh/deploy.rs"),
+    ];
+    let mut declared: std::collections::BTreeMap<String, TypeDecl> = Default::default();
+    for src in &sources {
+        let text = std::fs::read_to_string(src)
+            .unwrap_or_else(|e| panic!("{} is unreadable: {e}", src.display()));
+        read_declarations(&text, &mut declared);
+    }
+    assert!(
+        declared.contains_key("ResolvedTarget"),
+        "the reader found no `ResolvedTarget` declaration, so the walk below \
+         starts nowhere and would pass on an empty set"
+    );
+
+    // Taken apart by name in `mesh::review`, so a skip inside one of
+    // these is already answered — and their FIELDS are still walked,
+    // because destructuring a type says nothing about what its fields
+    // hand to serde.
+    const DESTRUCTURED: &[&str] = &[
+        "ResolvedTarget",
+        "TransportState",
+        "EventPatternInfo",
+        "AuthPolicyConfig",
+    ];
+
+    // Reachable from `ResolvedTarget` by field position. Derived
+    // rather than listed: a list of "the types the review surface
+    // touches" is a list that stops being true, and `BindingDefaultIds`
+    // is the other half of the same point — it carries five skips and
+    // is an INPUT to resolution, so a scan of the whole file reports it
+    // and a scan of what the surface actually serialises does not.
+    let mut reached: BTreeSet<String> = BTreeSet::new();
+    let mut queue = vec!["ResolvedTarget".to_string()];
+    while let Some(name) = queue.pop() {
+        if !reached.insert(name.clone()) {
+            continue;
+        }
+        if let Some(decl) = declared.get(&name) {
+            for f in &decl.field_types {
+                if declared.contains_key(f) {
+                    queue.push(f.clone());
+                }
+            }
+        }
+    }
+
+    let offenders: Vec<String> = reached
+        .iter()
+        .filter(|n| !DESTRUCTURED.contains(&n.as_str()))
+        .filter_map(|n| {
+            let decl = declared.get(n)?;
+            (decl.skips > 0).then(|| format!("{n}: {} field(s) skip", decl.skips))
+        })
+        .collect();
+
+    let total_skips: usize = declared.values().map(|d| d.skips).sum();
+    println!("types declared         : {}", declared.len());
+    println!("reachable from ResolvedTarget: {}", reached.len());
+    println!("skip_serializing_if in those files: {total_skips}");
+
+    // Three floors. Without the first a reader that matched nothing
+    // would pass loudest; without the second a walk that reached only
+    // its own root would too; without the third a reader that stopped
+    // recognising the attribute would look like a tree that has none.
+    assert!(
+        declared.len() > 20,
+        "the declaration reader found almost nothing"
+    );
+    assert!(
+        reached.len() > 5,
+        "the walk reached {} types from ResolvedTarget, which is fewer than it \
+         has fields — the field-type reader stopped working",
+        reached.len()
+    );
+    assert!(
+        total_skips > 0,
+        "no `skip_serializing_if` was read at all, so this scan is measuring \
+         nothing"
+    );
+    assert!(
+        offenders.is_empty(),
+        "these types are reachable from `ResolvedTarget`, are not taken apart \
+         in `mesh::review`, and skip a field when it is empty — so that field \
+         vanishes from the review surface with nothing said:\n{}",
+        offenders.join("\n")
+    );
+}
+
+/// What one `struct`/`enum` declaration says that this check needs.
+#[derive(Default)]
+struct TypeDecl {
+    /// Every identifier appearing in a field's type, so
+    /// `Option<RetryPolicyConfig>` and `BTreeMap<String, SomeipEventIds>`
+    /// both yield their payload. Over-inclusive on purpose: a name that
+    /// is not a declared type is dropped by the walk.
+    field_types: Vec<String>,
+    /// How many of its fields carry `skip_serializing_if`.
+    skips: usize,
+}
+
+/// Read the `struct`/`enum` declarations out of one Rust source.
+///
+/// ⚠ Comments are stripped before anything is counted. Measuring this
+/// by hand, the prose "No `skip_serializing_if`: the field always
+/// serializes" was counted as a real attribute and made
+/// `MeshRpcInvokeSite` look like a hole it is not — the tree's standing
+/// note that a scanner must clear comments first, met again.
+fn read_declarations(text: &str, out: &mut std::collections::BTreeMap<String, TypeDecl>) {
+    let mut current: Option<String> = None;
+    for line in text.lines() {
+        let t = line.trim_start();
+        if t.starts_with("//") {
+            continue;
+        }
+        // A declaration at column zero opens a type and `}` at column
+        // zero closes it, which is the shape of both files. The floors
+        // in the caller are what turn a file that stops looking like
+        // that into a red.
+        let opened = ["pub struct ", "pub enum ", "struct ", "enum "]
+            .iter()
+            .find_map(|kw| line.strip_prefix(*kw));
+        if let Some(rest) = opened {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                current = Some(name.clone());
+                out.entry(name).or_default();
+            }
+            continue;
+        }
+        if line.starts_with('}') {
+            current = None;
+            continue;
+        }
+        let Some(name) = &current else { continue };
+        let entry = out.entry(name.clone()).or_default();
+        if t.contains("skip_serializing_if") {
+            entry.skips += 1;
+        }
+        // A field line, or an enum variant's named field. Both are
+        // `<name>: <type>`, which is the only form these two files use.
+        if let Some((_, ty)) = t.split_once(": ") {
+            entry.field_types.extend(
+                ty.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+            );
+        }
+    }
+}
+
 /// A deployment leaves the caller's model as it found it.
 ///
 /// The pipeline injects sends — SCE_MESH.md §13 auto-symmetry and the

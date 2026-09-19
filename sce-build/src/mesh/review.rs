@@ -40,13 +40,30 @@
 //! # The facts are derived from the types, not listed here
 //!
 //! [`crate::mesh::topology::ResolvedTarget`] is what the deployment
-//! settled for one target, and it is `Serialize`. The facts are its
-//! serialised form flattened to one scalar per line, so a field added
-//! to `ResolvedTarget` or to
-//! [`crate::mesh::topology::TransportState`] reaches the reviewer
-//! without anybody remembering to add it. A hand-written list of
-//! interesting fields is the shape that goes stale silently, and going
-//! stale here means a reviewer approves a binding they were not shown.
+//! settled for one target, and a field of it that reaches no reviewer
+//! is a binding approved unseen. So every type reachable from it that
+//! carries a `skip_serializing_if` — `ResolvedTarget` itself,
+//! [`crate::mesh::topology::TransportState`],
+//! [`crate::mesh::topology::EventPatternInfo`] and
+//! [`crate::mesh::deploy::AuthPolicyConfig`] — is taken apart by name
+//! with no `..` and no `_` arm, and the compiler is the check: a field
+//! or variant added to any of them stops the build here until somebody
+//! decides what a reviewer should be told.
+//!
+//! ⚠ Serialising and flattening was the first shape of this, and it
+//! was wrong in a way that does not show. Six fields of
+//! `ResolvedTarget` alone skip when they are empty, so `retry: None`
+//! printed nothing at all — and on a page, "there is no retry policy"
+//! and "retry is not a thing here" read identically. The serialised
+//! form is tuned for what the templates probe with `is defined`; it
+//! does not owe a reviewer an answer for every field.
+//!
+//! Everything else still goes through serde, which is sound only while
+//! nothing else reachable skips — and that is held by
+//! `nothing_the_builder_leaves_to_serde_can_skip_a_field`, not by this
+//! paragraph. ⚠ It has to be: `AuthPolicyConfig` is on the list above
+//! because that gate found it, after three separate readings of the
+//! sources by hand had each concluded there was nothing there.
 
 use std::path::Path;
 
@@ -164,13 +181,6 @@ fn facts_for(target: &ResolvedTarget) -> Vec<Fact> {
     let mut facts = Vec::new();
     // `transport` rather than the field's own name `state`: the field
     // name is Rust's and the reviewer is reading about a deployment.
-    //
-    // ⚠ Which transport it is comes from the serde tag
-    // (`transport.kind`) and NOT additionally from
-    // `TransportState::transport_name`. Writing both read better and
-    // put the same fact on the page twice from two sources, which is
-    // one source too many — and removing the duplicate afterwards
-    // would be a filter matching a key name that nothing keeps true.
     push_transport("transport", state, &mut facts);
     push_list("events", events, &mut facts);
     if event_patterns.is_empty() {
@@ -184,7 +194,10 @@ fn facts_for(target: &ResolvedTarget) -> Vec<Fact> {
     push_nested("ordering", ordering, &mut facts);
     push_list("responders", responders, &mut facts);
     push_optional("retry", retry.as_ref(), &mut facts);
-    push_optional("auth", auth.as_ref(), &mut facts);
+    match auth {
+        Some(a) => push_auth("auth", a, &mut facts),
+        None => facts.push(Fact::new("auth", "(none)")),
+    }
     push_optional("pool", pool_plan.as_ref(), &mut facts);
     facts
 }
@@ -266,6 +279,38 @@ fn push_event_pattern(name: &str, p: &EventPatternInfo, out: &mut Vec<Fact>) {
         Some(e) => out.push(Fact::new(format!("{name}.reply"), e)),
         None => out.push(Fact::new(format!("{name}.reply"), "(none)")),
     }
+}
+
+/// The authentication the deployment requires of this peer.
+///
+/// ⚠ No `..`. Two of its three fields carry `skip_serializing_if`, and
+/// this is the one place in the whole surface where a vanished field is
+/// a security statement: a `zenoh` binding with `required: true` and no
+/// pinned fingerprint on the page reads exactly like one whose
+/// fingerprint the reviewer simply was not shown.
+///
+/// ⚠⚠ This type was NOT found by reading the sources by hand. Three
+/// hand measurements said `deploy.rs` carried no skips at all, each
+/// wrong for its own reason, and
+/// `nothing_the_builder_leaves_to_serde_can_skip_a_field` found it in
+/// one run. The gate is the instrument; the reading was not.
+fn push_auth(name: &str, a: &crate::mesh::deploy::AuthPolicyConfig, out: &mut Vec<Fact>) {
+    let crate::mesh::deploy::AuthPolicyConfig {
+        required,
+        peer_fingerprint,
+        sd_denied_classifies_as_unauthorized,
+    } = a;
+    out.push(Fact::new(format!("{name}.required"), required.to_string()));
+    push_optional_scalar(
+        &format!("{name}.peer-fingerprint"),
+        peer_fingerprint.as_ref(),
+        out,
+    );
+    push_optional_scalar(
+        &format!("{name}.sd-denied-is-unauthorized"),
+        sd_denied_classifies_as_unauthorized.as_ref(),
+        out,
+    );
 }
 
 /// A scalar the deployment may or may not have settled.
