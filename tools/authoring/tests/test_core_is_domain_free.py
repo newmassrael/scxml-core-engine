@@ -125,7 +125,7 @@ class CoreIsDomainFree(unittest.TestCase):
         from sce_author.pack import load_pack
         with self.assertRaises(VerifyError) as caught:
             verify(load_pack(crossing),
-                   crossing / "controller.resolved.binding.yaml",
+                   crossing / "controller_resolved.binding.yaml",
                    codegen=crossing / "no-such-generator")
         self.assertIn("no-such-generator", str(caught.exception))
 

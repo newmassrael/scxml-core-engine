@@ -36,7 +36,7 @@ from sce_author.verify import _default_codegen, verify
 
 HERE = pathlib.Path(__file__).resolve().parent
 CROSSING = HERE / "fixtures" / "crossing"
-CLOSED = CROSSING / "controller.resolved.binding.yaml"
+CLOSED = CROSSING / "controller_resolved.binding.yaml"
 
 REASON = "the platform list is not available yet; the source calls it the override"
 
@@ -47,7 +47,7 @@ class ADocumentCanPrecedeItsAddresses(unittest.TestCase):
         self.tmp = pathlib.Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
         for name in ("interface-model.yaml", "conventions.yaml",
-                     "examples.yaml", "controller.resolved.scxml"):
+                     "examples.yaml", "controller_resolved.scxml"):
             shutil.copy(CROSSING / name, self.tmp / name)
         self.pack = load_pack(self.tmp)
 
@@ -116,14 +116,14 @@ class ADocumentCanPrecedeItsAddresses(unittest.TestCase):
                          "the product's code generator is not built")
     def test_filling_the_gap_changes_only_the_binding(self):
         """The whole promise of the two phases, asserted rather than claimed."""
-        document = (self.tmp / "controller.resolved.scxml").read_bytes()
+        document = (self.tmp / "controller_resolved.scxml").read_bytes()
         before = verify(self.pack, self.binding(self.open_input))
         self.assertFalse(before.ran)
 
         after = verify(self.pack, self.binding(lambda d: None))
         self.assertTrue(after.ran, f"it would not run: {after.refusal}")
         self.assertEqual(
-            document, (self.tmp / "controller.resolved.scxml").read_bytes(),
+            document, (self.tmp / "controller_resolved.scxml").read_bytes(),
             "the document written in phase one must not need editing")
 
 

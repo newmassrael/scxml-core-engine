@@ -292,12 +292,12 @@ class ABindingRefusesAYamlBoolean(unittest.TestCase):
         self.tmp = pathlib.Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
         for name in ("interface-model.yaml", "conventions.yaml", "examples.yaml",
-                     "controller.resolved.scxml"):
+                     "controller_resolved.scxml"):
             shutil.copy(CROSSING / name, self.tmp / name)
 
     def binding(self, mutate):
         doc = yaml.safe_load(
-            (CROSSING / "controller.resolved.binding.yaml").read_text(encoding="utf-8"))
+            (CROSSING / "controller_resolved.binding.yaml").read_text(encoding="utf-8"))
         mutate(doc)
         path = self.tmp / "b.yaml"
         path.write_text(yaml.safe_dump(doc), encoding="utf-8")
