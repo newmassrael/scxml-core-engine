@@ -721,8 +721,11 @@ fn each_signal_kind_renders_every_field_it_can_carry() {
     };
     assert_eq!(
         render(&ForgeDocument::Observer(ob)).unwrap(),
-        "observer heat domain diag\n  in t: float64\n  \
-         monitor alarm enter t > 110 on-enter raise leave t < 100 on-leave clear\n"
+        // A block, not a line: `enter` and `leave` carry author
+        // expressions, and two free-text values on one line have no
+        // unambiguous split.
+        "observer heat domain diag\n  in t: float64\n  monitor alarm:\n    \
+         on-enter raise\n    on-leave clear\n    enter t > 110\n    leave t < 100\n"
     );
 
     let ip = InterpolationModel {

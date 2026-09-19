@@ -43,8 +43,9 @@ use crate::forge::model::{
     EnumVariant, EventSchemaModel, FilterModel, FilterType, ForgeDocument, ForgeField, InboxConfig,
     InboxOrdering, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
     LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
-    OutOfBounds, OverflowPolicy, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType,
-    TimerModel, TransformModel, ValidatorModel, ValidatorRules, WorkerModel,
+    ObserverModel, OutOfBounds, OverflowPolicy, RangeRule, RateOfChangeRule, ReassemblyConfig,
+    SceType, ThresholdMonitor, TimerModel, TransformModel, ValidatorModel, ValidatorRules,
+    WorkerModel,
 };
 use crate::provenance::RequirementId;
 
@@ -90,6 +91,31 @@ fn lines_of(input: &str) -> Vec<Line<'_>> {
             }
         })
         .collect()
+}
+
+/// Split a body into each top-level line and the lines nested under it.
+///
+/// The tree the nested kinds need, built once here rather than by each
+/// parser counting indents for itself. A line's children are the run
+/// that follows it at a greater depth; the run ends at the next line
+/// back at its own depth or shallower.
+fn group<'a, 'b>(body: &'b [&'a Line<'a>]) -> Vec<(&'a Line<'a>, Vec<&'a Line<'a>>)> {
+    let mut out: Vec<(&Line<'_>, Vec<&Line<'_>>)> = Vec::new();
+    let Some(top) = body.first().map(|l| l.depth) else {
+        return out;
+    };
+    let mut i = 0;
+    while i < body.len() {
+        let head = body[i];
+        let mut kids = Vec::new();
+        i += 1;
+        while i < body.len() && body[i].depth > top {
+            kids.push(body[i]);
+            i += 1;
+        }
+        out.push((head, kids));
+    }
+    out
 }
 
 /// Author text, with the renderer's escaping undone.
@@ -156,6 +182,7 @@ pub fn parse(input: &str) -> Result<ForgeDocument, ParseError> {
         "worker" => parse_worker(head).map(ForgeDocument::Worker),
         "buffer-pool" => parse_buffer_pool(head, &body).map(ForgeDocument::BufferPool),
         "link" => parse_link(head, &body).map(ForgeDocument::Link),
+        "observer" => parse_observer(head, &body).map(ForgeDocument::Observer),
         other => Err(ParseError {
             line: head.number,
             why: format!("`{other}` is not a kind this reader covers yet"),
@@ -1010,6 +1037,71 @@ fn parse_link(head: &Line<'_>, body: &[&Line<'_>]) -> Result<LinkModel, ParseErr
     Ok(m)
 }
 
+/// `observer <name> [domain <d>]` with fields and monitor blocks.
+///
+/// The first kind read here that is not flat, and the first user of
+/// [`group`]. A monitor is a block because two of its four values are
+/// author expressions; see the renderer's note.
+fn parse_observer(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ObserverModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let event_domain = match (w.get(2), w.get(3)) {
+        (Some(&"domain"), Some(d)) => Some(undo(d, head.number)?),
+        (None, _) => None,
+        (Some(other), _) => {
+            return Err(ParseError {
+                line: head.number,
+                why: format!("`{other}` is not an observer clause"),
+            })
+        }
+    };
+
+    let mut m = ObserverModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        inputs: Vec::new(),
+        monitors: Vec::new(),
+        event_domain,
+        source_location: None,
+    };
+
+    for (line, kids) in group(body) {
+        let Some(id) = line
+            .text
+            .strip_prefix("monitor ")
+            .and_then(|r| r.strip_suffix(':'))
+        else {
+            m.inputs.push(parse_field(line)?);
+            continue;
+        };
+        let mut mon = ThresholdMonitor {
+            id: undo(id, line.number)?,
+            enter_expr: String::new(),
+            leave_expr: None,
+            on_enter: String::new(),
+            on_leave: None,
+        };
+        for k in kids {
+            let (keyword, value) = k.text.split_once(' ').ok_or_else(|| ParseError {
+                line: k.number,
+                why: format!("`{}` is not a monitor clause", k.text),
+            })?;
+            match keyword {
+                "on-enter" => mon.on_enter = undo(value, k.number)?,
+                "on-leave" => mon.on_leave = Some(undo(value, k.number)?),
+                "enter" => mon.enter_expr = undo(value, k.number)?,
+                "leave" => mon.leave_expr = Some(undo(value, k.number)?),
+                other => {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{other}` is not a monitor clause"),
+                    })
+                }
+            }
+        }
+        m.monitors.push(mon);
+    }
+    Ok(m)
+}
+
 /// Serialised comparison of two documents, with the one key the law
 /// excludes stripped wherever it appears.
 ///
@@ -1059,6 +1151,7 @@ pub const COVERED_KINDS: &[&str] = &[
     "worker",
     "buffer-pool",
     "link",
+    "observer",
 ];
 
 /// This document's kind name when the reader covers it.
@@ -1082,6 +1175,7 @@ pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
         ForgeDocument::Worker(_) => "worker",
         ForgeDocument::BufferPool(_) => "buffer-pool",
         ForgeDocument::Link(_) => "link",
+        ForgeDocument::Observer(_) => "observer",
         _ => return None,
     };
     COVERED_KINDS.contains(&name).then_some(name)
