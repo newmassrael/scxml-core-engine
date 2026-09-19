@@ -14,16 +14,18 @@
 
 use sce_build::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
-    AlgorithmStmt, BackpressurePolicy, BoundedCollectionModel, BufferPoolModel, BufferPoolVariant,
-    CachePolicy, CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction,
-    EnumModel, EnumVariant, EventSchemaModel, FilterModel, FilterType, FoldBody, ForgeDocument,
-    ForgeField, InboxConfig, InboxOrdering, InterpolationAxis, InterpolationMethod,
-    InterpolationModel, LinkClass, LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry,
-    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, ProcedureAssign,
-    ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState,
-    ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, Retention, SceType,
-    TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TransformModel, ValidatorModel,
-    ValidatorRules, WorkerModel,
+    AlgorithmStmt, BackpressurePolicy, BitSize, BoundedCollectionModel, BufferPoolModel,
+    BufferPoolVariant, CachePolicy, CapacitySource, CodecField, CodecModel, CodecTestVector,
+    CodecVariant, CollectionOrdering, ConcurrencyMode, ConditionModel, DecodedField,
+    DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel, EnumVariant, EventSchemaModel,
+    FilterModel, FilterType, FlagDef, FlagInput, FoldBody, ForgeDocument, ForgeField, InboxConfig,
+    InboxOrdering, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
+    LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
+    ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec, PresentIfPredicate, PresentIfScope,
+    ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction,
+    ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, Retention,
+    SceType, TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TlvOverflowPolicy,
+    TlvTerminateStrategy, TransformModel, ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -536,6 +538,131 @@ fn each_signal_kind_renders_every_field_it_can_carry() {
          overflow oldest-wins ordering sorted-by-index concurrency \
          multi-writer index-by id\n"
     );
+}
+
+/// The codec kind, with every optional field of its widest type set.
+///
+/// `CodecField` carries eighteen fields, which is why the rendering is
+/// a block rather than a line and why this assertion is written whole:
+/// with eighteen optionals, a `contains` check would pass while most of
+/// them were missing.
+#[test]
+fn a_codec_renders_every_field_it_can_carry() {
+    let f = CodecField {
+        id: "payload".to_string(),
+        sce_type: SceType::Bytes,
+        byte_offset: 4,
+        bit_offset: Some(2),
+        bit_size: BitSize::TlvChain {
+            max_depth: 3,
+            on_overflow: TlvOverflowPolicy::Truncate,
+            terminate_on: TlvTerminateStrategy::EntryFlag {
+                flag_name: "more".to_string(),
+            },
+        },
+        endian: Some(Endian::Little),
+        max_size: Some(64),
+        length_field: Some("len".to_string()),
+        flags: vec![FlagDef {
+            name: "more".to_string(),
+            bit: 7,
+            width: 1,
+            value: Some(1),
+        }],
+        present_if: Some(PresentIfPredicate {
+            scope: PresentIfScope::Input,
+            field_id: "hdr".to_string(),
+            flag_name: "ext".to_string(),
+            negate: true,
+            or_with: Some(Box::new(PresentIfPredicate {
+                scope: PresentIfScope::Local,
+                field_id: "hdr".to_string(),
+                flag_name: "alt".to_string(),
+                negate: false,
+                or_with: None,
+            })),
+        }),
+        repeat_body_alias: Some("rb".to_string()),
+        max_count: Some(9),
+        tlv_chain_body_alias: Some("tb".to_string()),
+        dma_burst_align: Some(16),
+        embed_body_alias: Some("eb".to_string()),
+        embed_length_from: Some("len".to_string()),
+        length_arith: Some(-2),
+        quantity: None,
+    };
+
+    let m = CodecModel {
+        name: "env".to_string(),
+        default_endian: Endian::Big,
+        input_length: Some(32),
+        fields: vec![f],
+        variant: Some(CodecVariant {
+            tag_field: Some("hdr".to_string()),
+            tag_flag: Some("mid".to_string()),
+            arms: vec![VariantArm {
+                value: 1,
+                body_alias: "one".to_string(),
+                is_default: false,
+            }],
+            default_arm: Some(VariantArm {
+                value: 0,
+                body_alias: "zero".to_string(),
+                is_default: true,
+            }),
+            peek_byte: Some(PeekByteSpec {
+                id: "pk".to_string(),
+                flags: vec![FlagDef {
+                    name: "k".to_string(),
+                    bit: 0,
+                    width: 2,
+                    value: None,
+                }],
+            }),
+        }),
+        flag_inputs: vec![FlagInput {
+            name: "hdr".to_string(),
+            width: 8,
+        }],
+        test_vectors: vec![CodecTestVector {
+            hex: vec![0xab],
+            decoded: DecodedValue::Plain {
+                fields: vec![DecodedField {
+                    name: "payload".to_string(),
+                    value: DecodedFieldValue::Bytes(vec![0x01]),
+                }],
+            },
+            source_line: 7,
+        }],
+        source_location: None,
+    };
+
+    let expected = "\
+codec env endian big input-length 32
+  flag-input hdr width 8
+  field payload: bytes at 4.2 size tlv-chain max-depth 3 on-overflow truncate \
+terminate entry-flag more
+    endian little
+    max-size 64
+    length-field len
+    length-arith -2
+    max-count 9
+    repeat-body rb
+    tlv-body tb
+    embed-body eb
+    embed-length-from len
+    dma-align 16
+    present-if not input:hdr.ext or local:hdr.alt
+    flag more bit 7 width 1 value 1
+  variant tag-field hdr tag-flag mid peek-byte pk
+    peek-flag k bit 0 width 2
+    arm 1 -> one
+    default-arm 0 -> zero default
+  test 0xab @line 7
+    payload = bytes 0x01
+";
+
+    assert_eq!(render(&ForgeDocument::Codec(m)).unwrap(), expected);
 }
 
 /// The three MCU kinds, with every optional field populated.

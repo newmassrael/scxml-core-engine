@@ -155,7 +155,26 @@
 //!     rx-pool <p> / tx-pool <p> / stage-pool <p>
 //!     inbound <event> [when <expr>]
 //!     outbound <event> encode <e>
+//!
+//!   codec <name> endian <e> [input-length <n>]
+//!     flag-input <name> width <n>
+//!     field <id>: <type> at <byte>[.<bit>] size <bit-size>
+//!       endian <e> / max-size <n> / length-field <f> / length-arith <i>
+//!       max-count <n> / repeat-body <a> / tlv-body <a> / embed-body <a>
+//!       embed-length-from <f> / dma-align <n> / quantity <s> <o> <u>
+//!       present-if [not] (local|input):<field>.<flag> [or ...]
+//!       flag <name> bit <n> width <n> [value <v>]
+//!     variant [tag-field <f>] [tag-flag <f>] [peek-byte <id>]
+//!       peek-flag <name> bit <n> width <n> [value <v>]
+//!       arm <n> -> <alias> [default]
+//!       default-arm <n> -> <alias> [default]
+//!     test <hex> @line <n>
+//!       <name> = (bool|uint|int|bytes|string) <literal>
 //! ```
+//!
+//! A `<bit-size>` is `fixed <n>`, `tail`, `length-ref`, `vle <n>`,
+//! `repeat (length-field <f>|until-eof)`, `embed`, or
+//! `tlv-chain max-depth <n> on-overflow <p> terminate <s>`.
 //!
 //! A `<field>` is `(in|out|internal) <id>: <type> <field-clause>...`,
 //! the direction printed as the keyword rather than inferred from which
@@ -174,13 +193,15 @@ use std::fmt::Write as _;
 
 use crate::comment_text;
 use crate::forge::model::{
-    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, BackpressurePolicy,
+    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, BackpressurePolicy, BitSize,
     BoundedCollectionModel, BufferPoolModel, BufferPoolVariant, CachePolicy, CapacitySource,
-    CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel, EventSchemaModel,
-    FilterModel, FilterType, FoldBody, ForgeDocument, ForgeField, InboxOrdering,
-    InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel, MissPolicy,
-    ObserverModel, OutOfBounds, OverflowPolicy, ProcedureHelper, ProcedureModel, ProcedureState,
-    ProcedureTransition, SceType, TestVector, TestVectorValue, TimerModel, TransformModel,
+    CodecField, CodecModel, CodecTestVector, CodecVariant, CollectionOrdering, ConcurrencyMode,
+    ConditionModel, CountRef, DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel,
+    EventSchemaModel, FilterModel, FilterType, FlagDef, FoldBody, ForgeDocument, ForgeField,
+    InboxOrdering, InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel,
+    MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate, PresentIfScope,
+    ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, SceType, TestVector,
+    TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
     ValidatorModel, WorkerModel,
 };
 
@@ -234,8 +255,8 @@ pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
+        ForgeDocument::Codec(m) => Ok(render_codec(m)),
         ForgeDocument::Statechart(_) => Err(Unsupported { kind: "statechart" }),
-        ForgeDocument::Codec(_) => Err(Unsupported { kind: "codec" }),
     }
 }
 
@@ -873,6 +894,228 @@ fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
     }
     out.line(&head);
     out.buf
+}
+
+// ── Codec ──────────────────────────────────────────────────────
+//
+// The widest declarative kind: `CodecField` alone carries eighteen
+// fields. A field is therefore rendered as a BLOCK rather than as one
+// line — a line naming all eighteen would be unreadable, and an
+// unreadable rendering fails the only purpose this module has.
+
+fn endian_word(e: Endian) -> &'static str {
+    match e {
+        Endian::Big => "big",
+        Endian::Little => "little",
+        Endian::Native => "native",
+    }
+}
+
+fn bit_size_words(b: &BitSize) -> String {
+    match b {
+        BitSize::Fixed { bits } => format!("fixed {bits}"),
+        BitSize::Tail => "tail".to_string(),
+        BitSize::LengthRef => "length-ref".to_string(),
+        BitSize::Vle { width_bits } => format!("vle {width_bits}"),
+        BitSize::Repeat { count_ref } => match count_ref {
+            CountRef::LengthField(f) => format!("repeat length-field {}", text(f)),
+            CountRef::UntilEof => "repeat until-eof".to_string(),
+        },
+        BitSize::TlvChain {
+            max_depth,
+            on_overflow,
+            terminate_on,
+        } => {
+            let overflow = match on_overflow {
+                TlvOverflowPolicy::Reject => "reject",
+                TlvOverflowPolicy::Truncate => "truncate",
+            };
+            let terminate = match terminate_on {
+                TlvTerminateStrategy::ExhaustOrDepth => "exhaust-or-depth".to_string(),
+                TlvTerminateStrategy::EntryFlag { flag_name } => {
+                    format!("entry-flag {}", text(flag_name))
+                }
+            };
+            format!("tlv-chain max-depth {max_depth} on-overflow {overflow} terminate {terminate}")
+        }
+        BitSize::Embed => "embed".to_string(),
+    }
+}
+
+/// A `present-if` predicate, including the `or_with` chain.
+///
+/// The scope is printed as a word (`local` / `input`) rather than in the
+/// attribute's own encoding. The distinction decides which document the
+/// flag is read from, so a reviewer has to see it; spelling it out is
+/// the only form that says so without the reader knowing the attribute
+/// grammar.
+fn present_if_words(p: &PresentIfPredicate) -> String {
+    let scope = match p.scope {
+        PresentIfScope::Local => "local",
+        PresentIfScope::Input => "input",
+    };
+    let mut s = format!(
+        "{}{scope}:{}.{}",
+        if p.negate { "not " } else { "" },
+        text(&p.field_id),
+        text(&p.flag_name)
+    );
+    if let Some(next) = &p.or_with {
+        let _ = write!(s, " or {}", present_if_words(next));
+    }
+    s
+}
+
+fn render_codec(m: &CodecModel) -> String {
+    let mut out = Out::new();
+    let mut head = format!(
+        "codec {} endian {}",
+        text(&m.name),
+        endian_word(m.default_endian)
+    );
+    if let Some(n) = m.input_length {
+        let _ = write!(head, " input-length {n}");
+    }
+    out.line(&head);
+
+    out.nested(|out| {
+        for fi in &m.flag_inputs {
+            out.line(&format!("flag-input {} width {}", text(&fi.name), fi.width));
+        }
+        for f in &m.fields {
+            render_codec_field(f, out);
+        }
+        if let Some(v) = &m.variant {
+            render_codec_variant(v, out);
+        }
+        for tv in &m.test_vectors {
+            render_codec_test_vector(tv, out);
+        }
+    });
+    out.buf
+}
+
+fn render_codec_field(f: &CodecField, out: &mut Out) {
+    let at = match f.bit_offset {
+        Some(b) => format!("{}.{b}", f.byte_offset),
+        None => f.byte_offset.to_string(),
+    };
+    out.line(&format!(
+        "field {}: {} at {at} size {}",
+        text(&f.id),
+        f.sce_type.as_attr(),
+        bit_size_words(&f.bit_size)
+    ));
+    out.nested(|out| {
+        if let Some(e) = f.endian {
+            out.line(&format!("endian {}", endian_word(e)));
+        }
+        if let Some(n) = f.max_size {
+            out.line(&format!("max-size {n}"));
+        }
+        if let Some(v) = &f.length_field {
+            out.line(&format!("length-field {}", text(v)));
+        }
+        if let Some(n) = f.length_arith {
+            out.line(&format!("length-arith {n}"));
+        }
+        if let Some(n) = f.max_count {
+            out.line(&format!("max-count {n}"));
+        }
+        if let Some(v) = &f.repeat_body_alias {
+            out.line(&format!("repeat-body {}", text(v)));
+        }
+        if let Some(v) = &f.tlv_chain_body_alias {
+            out.line(&format!("tlv-body {}", text(v)));
+        }
+        if let Some(v) = &f.embed_body_alias {
+            out.line(&format!("embed-body {}", text(v)));
+        }
+        if let Some(v) = &f.embed_length_from {
+            out.line(&format!("embed-length-from {}", text(v)));
+        }
+        if let Some(n) = f.dma_burst_align {
+            out.line(&format!("dma-align {n}"));
+        }
+        if let Some(q) = &f.quantity {
+            out.line(&format!("quantity {} {} {}", q.scale, q.offset, q.unit));
+        }
+        if let Some(p) = &f.present_if {
+            out.line(&format!("present-if {}", present_if_words(p)));
+        }
+        for fl in &f.flags {
+            render_flag_def("flag", fl, out);
+        }
+    });
+}
+
+fn render_flag_def(keyword: &str, fl: &FlagDef, out: &mut Out) {
+    let mut line = format!(
+        "{keyword} {} bit {} width {}",
+        text(&fl.name),
+        fl.bit,
+        fl.width
+    );
+    if let Some(v) = fl.value {
+        let _ = write!(line, " value {v}");
+    }
+    out.line(&line);
+}
+
+fn render_codec_variant(v: &CodecVariant, out: &mut Out) {
+    let mut head = String::from("variant");
+    if let Some(f) = &v.tag_field {
+        let _ = write!(head, " tag-field {}", text(f));
+    }
+    if let Some(f) = &v.tag_flag {
+        let _ = write!(head, " tag-flag {}", text(f));
+    }
+    if let Some(p) = &v.peek_byte {
+        let _ = write!(head, " peek-byte {}", text(&p.id));
+    }
+    out.line(&head);
+    out.nested(|out| {
+        if let Some(p) = &v.peek_byte {
+            for fl in &p.flags {
+                render_flag_def("peek-flag", fl, out);
+            }
+        }
+        for a in &v.arms {
+            let mut line = format!("arm {} -> {}", a.value, text(&a.body_alias));
+            if a.is_default {
+                line.push_str(" default");
+            }
+            out.line(&line);
+        }
+        if let Some(a) = &v.default_arm {
+            let mut line = format!("default-arm {} -> {}", a.value, text(&a.body_alias));
+            if a.is_default {
+                line.push_str(" default");
+            }
+            out.line(&line);
+        }
+    });
+}
+
+fn render_codec_test_vector(tv: &CodecTestVector, out: &mut Out) {
+    let hex: String = tv.hex.iter().map(|b| format!("{b:02x}")).collect();
+    out.line(&format!("test 0x{hex} @line {}", tv.source_line));
+    out.nested(|out| {
+        let DecodedValue::Plain { fields } = &tv.decoded;
+        for f in fields {
+            let v = match &f.value {
+                DecodedFieldValue::Bool(b) => format!("bool {b}"),
+                DecodedFieldValue::Uint(u) => format!("uint {u}"),
+                DecodedFieldValue::Int(i) => format!("int {i}"),
+                DecodedFieldValue::Bytes(b) => {
+                    let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
+                    format!("bytes 0x{h}")
+                }
+                DecodedFieldValue::String(s) => format!("string {}", text(s)),
+            };
+            out.line(&format!("{} = {v}", text(&f.name)));
+        }
+    });
 }
 
 // ── MCU kinds ──────────────────────────────────────────────────
