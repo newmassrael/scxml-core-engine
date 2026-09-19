@@ -5659,6 +5659,19 @@ pub struct MeshResult {
     /// Warnings, never errors: the section marks the check conservative,
     /// and a timeout or guard on any leg breaks the wait.
     pub invoke_wait_cycles: Vec<mesh::topology::InvokeWaitCycle>,
+    /// What stage 2b resolved each `<send>` target to — the same values
+    /// the templates were handed.
+    ///
+    /// Exposed because the pseudocode review surface has to tell a
+    /// reviewer what a `<send>` will actually do
+    /// ([`mesh::review`]), and the only honest source for that is the
+    /// resolution codegen itself consumed. A second pass over
+    /// `deploy.yaml` would be a second stage sequence, free to disagree
+    /// with this one about exactly the thing the reviewer is approving.
+    pub resolved_targets: Vec<mesh::topology::ResolvedTarget>,
+    /// The device `deploy.yaml` places this machine on, when it names
+    /// one.
+    pub device: Option<String>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -6986,6 +6999,10 @@ pub fn compile_mesh_transport(
             distributability_merge_notices,
             distributability_snapshot_notices,
             invoke_wait_cycles,
+            resolved_targets: resolved,
+            device: deploy_cfg
+                .device_name_for_machine(&effective_machine_name)
+                .map(str::to_string),
         });
     }
 
@@ -7147,6 +7164,10 @@ pub fn compile_mesh_transport(
         distributability_merge_notices,
         distributability_snapshot_notices,
         invoke_wait_cycles,
+        resolved_targets: resolved,
+        device: deploy_cfg
+            .device_name_for_machine(&effective_machine_name)
+            .map(str::to_string),
     })
 }
 

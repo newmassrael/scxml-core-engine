@@ -509,6 +509,16 @@ struct Out<'d> {
     /// through, so a derived line lands at its site without each caller
     /// learning what a deployment is.
     deployment: &'d Deployment,
+    /// Which targets already had their facts written.
+    ///
+    /// A deployment can bind a target the document never names: a
+    /// `deploy.yaml` `subscriptions:` entry, or an `<invoke>` whose
+    /// target the renderer reaches by another clause. Those facts have
+    /// no `to` line to sit under, and without this set they would be
+    /// dropped — the review gap this whole surface exists to close,
+    /// reappearing one level down. [`Out::annotate_unplaced`] writes
+    /// whatever is left.
+    annotated: std::collections::BTreeSet<String>,
 }
 
 impl<'d> Out<'d> {
@@ -521,6 +531,7 @@ impl<'d> Out<'d> {
             buf: String::new(),
             depth: 0,
             deployment,
+            annotated: Default::default(),
         }
     }
 
@@ -558,6 +569,7 @@ impl<'d> Out<'d> {
         let Some(facts) = deployment.targets.get(target) else {
             return;
         };
+        self.annotated.insert(target.to_string());
         self.nested(|out| {
             for f in facts {
                 out.derived(f);
@@ -570,6 +582,33 @@ impl<'d> Out<'d> {
         let deployment: &'d Deployment = self.deployment;
         for f in &deployment.machine {
             self.derived(f);
+        }
+    }
+
+    /// The facts for every target no clause in the document named.
+    ///
+    /// ⚠ Written LAST, because which targets those are is only known
+    /// once the document has been walked. A `deploy.yaml`
+    /// `subscriptions:` entry binds a target the machine never
+    /// `<send>`s to, and measured over `tests/mesh` eleven fixtures do
+    /// exactly that — so without this block eleven deployments would
+    /// have bound a transport that no reviewer was ever shown.
+    ///
+    /// The target heads its own derived line and its facts nest under
+    /// it, so the shape reads like the `to` case rather than inventing
+    /// a second one.
+    fn annotate_unplaced(&mut self) {
+        let deployment: &'d Deployment = self.deployment;
+        for (target, facts) in &deployment.targets {
+            if self.annotated.contains(target) {
+                continue;
+            }
+            self.derived(&Fact::new("bound-without-a-send", target));
+            self.nested(|out| {
+                for f in facts {
+                    out.derived(f);
+                }
+            });
         }
     }
 
@@ -1336,6 +1375,9 @@ fn render_statechart(
                 nested = Err(e);
             }
         }
+        // Last, once every clause that could have claimed a target has
+        // had its turn. See `Out::annotate_unplaced`.
+        out.annotate_unplaced();
     });
     nested?;
 
@@ -1402,6 +1444,14 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                 }
                 if let Some(t) = &i.remote_mesh_target {
                     out.line(&format!("mesh-target {}", text(t)));
+                    // An `<invoke>` names a target too, and the
+                    // deployment binds it exactly as it binds a
+                    // `<send>`'s. Annotated here so the facts sit at
+                    // the clause that names them rather than in the
+                    // trailing block, which is where they would
+                    // otherwise land — correct, and further from the
+                    // thing they are about.
+                    out.annotate_target(t);
                 }
                 if let Some(t) = &i.remote_mesh_transport {
                     out.line(&format!("mesh-transport {}", text(t)));

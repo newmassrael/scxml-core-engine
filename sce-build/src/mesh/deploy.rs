@@ -6670,9 +6670,26 @@ impl DeployConfig {
     /// any realistic deployment. Returns `None` if the machine is not
     /// declared on any device.
     pub fn device_for_machine(&self, machine_name: &str) -> Option<&DeviceConfig> {
+        self.device_entry_for_machine(machine_name).map(|(_, d)| d)
+    }
+
+    /// The name `deploy.yaml` gives the device that owns a machine.
+    ///
+    /// The name is the map key, which [`Self::device_for_machine`]
+    /// cannot return. Surfaces that report a deployment to a human need
+    /// it — the pseudocode review surface says which device a machine
+    /// runs on, and "the device" is not a fact a reviewer can act on.
+    pub fn device_name_for_machine(&self, machine_name: &str) -> Option<&str> {
+        self.device_entry_for_machine(machine_name)
+            .map(|(name, _)| name.as_str())
+    }
+
+    /// One predicate for "which device owns this machine", so the name
+    /// and the config can never come from different devices.
+    fn device_entry_for_machine(&self, machine_name: &str) -> Option<(&String, &DeviceConfig)> {
         self.topology
-            .values()
-            .find(|d| d.machines.contains_key(machine_name))
+            .iter()
+            .find(|(_, d)| d.machines.contains_key(machine_name))
     }
 
     /// Find a machine name in deploy.yaml by matching the source filename.

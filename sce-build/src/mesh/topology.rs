@@ -591,7 +591,12 @@ pub struct TargetResolution {
 
 /// Visit every `<send>` action in the model, providing state ID and action ref.
 /// Single traversal point for entry/exit blocks, transitions, and initial actions.
-fn for_each_send_action<F>(model: &SCXMLModel, mut visitor: F)
+///
+/// Public because being the single traversal point is the point:
+/// [`crate::mesh::review`] has to count the sends this pipeline injects
+/// into a model, and a second walk written for counting would be free
+/// to visit a different set than the one that gets resolved.
+pub fn for_each_send_action<F>(model: &SCXMLModel, mut visitor: F)
 where
     F: FnMut(&str, &crate::model::Action),
 {

@@ -1791,6 +1791,15 @@ enum Commands {
     Pseudo {
         /// Forge document path (`sce:kind` other than `statechart`)
         document: String,
+        /// deploy.yaml to resolve this machine's `<send>` targets
+        /// against, so the rendering says what each send will actually
+        /// do. Every derived line begins with `!`.
+        ///
+        /// ⚠ The result is a review surface and not a document: the
+        /// reverse converter refuses it. Render without this flag to
+        /// get a text that reads back.
+        #[arg(long, value_name = "PATH")]
+        deploy: Option<String>,
     },
     /// Emit what a diagram must be told to draw the annotation family —
     /// NL→IR closure ledger row G2. One JSON object on stdout.
@@ -2480,7 +2489,9 @@ fn main() {
         }
         Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
         Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
-        Commands::Pseudo { document } => cmd_pseudo(&document, error_format),
+        Commands::Pseudo { document, deploy } => {
+            cmd_pseudo(&document, deploy.as_deref(), error_format)
+        }
         Commands::AnnotationOverlay { scxml } => cmd_annotation_overlay(&scxml, error_format),
         Commands::AcceptanceReport {
             scxml,
@@ -7641,7 +7652,7 @@ fn cmd_review_table(document: &str, error_format: ErrorFormat) {
 /// forge entry point alone would refuse exactly the documents that
 /// carry executable content. Measured: the renderer covered statecharts
 /// for a while before this function reached them.
-fn cmd_pseudo(document: &str, error_format: ErrorFormat) {
+fn cmd_pseudo(document: &str, deploy: Option<&str>, error_format: ErrorFormat) {
     let path = std::path::Path::new(document);
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
@@ -7676,7 +7687,36 @@ fn cmd_pseudo(document: &str, error_format: ErrorFormat) {
         Err(e) => error_format.emit_forge_and_exit(&e),
     };
 
-    match sce_build::forge::pseudo::render(&doc) {
+    // A deployment is resolved against the model the document holds,
+    // and the rendering is of that same model — the pipeline runs on a
+    // copy so the sends it injects never reach the page as if an author
+    // had written them. See `sce_build::mesh::review`.
+    let deployment = match (deploy, &doc) {
+        (None, _) => sce_build::forge::pseudo::Deployment::default(),
+        (Some(path), sce_build::forge::model::ForgeDocument::Statechart(model)) => {
+            match sce_build::mesh::review::deployment_for(
+                model,
+                std::path::Path::new(path),
+                sce_build::generator::Language::Cpp,
+            ) {
+                Ok(d) => d,
+                Err(e) => cli_exit(CliError::PseudoUnavailable {
+                    kind: "statechart".to_string(),
+                    feature: format!("a deployment this deploy.yaml cannot resolve: {e}"),
+                }),
+            }
+        }
+        // Refused rather than rendered without the facts: a caller who
+        // asked what the deployment does must not be handed a text that
+        // looks complete and answers a different question.
+        (Some(_), other) => cli_exit(CliError::PseudoUnavailable {
+            kind: other.kind().as_attr().to_string(),
+            feature: "a deployment, which binds the <send> targets only a statechart has"
+                .to_string(),
+        }),
+    };
+
+    match sce_build::forge::pseudo::render_with_deployment(&doc, &deployment) {
         Ok(text) => out_stream(|w| w.write_all(text.as_bytes())),
         // ⚠ Not a partial rendering. See `CliError::PseudoUnavailable`.
         Err(unsupported) => cli_exit(CliError::PseudoUnavailable {
