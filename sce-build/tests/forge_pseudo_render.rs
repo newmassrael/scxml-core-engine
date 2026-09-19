@@ -14,11 +14,14 @@
 
 use sce_build::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
-    AlgorithmStmt, ConditionModel, Direction, EnumModel, EnumVariant, EventSchemaModel, FoldBody,
-    ForgeDocument, ForgeField, LookupEntry, LookupModel, MissPolicy, ProcedureAssign,
-    ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState,
-    ProcedureTransition, RangeRule, RateOfChangeRule, Retention, SceType, TestVector,
-    TestVectorValue, TimerModel, TransformModel, ValidatorModel, ValidatorRules,
+    AlgorithmStmt, BoundedCollectionModel, CapacitySource, CollectionOrdering, ConcurrencyMode,
+    ConditionModel, Direction, EnumModel, EnumVariant, EventSchemaModel, FilterModel, FilterType,
+    FoldBody, ForgeDocument, ForgeField, InterpolationAxis, InterpolationMethod,
+    InterpolationModel, LookupEntry, LookupModel, MissPolicy, ObserverModel, OutOfBounds,
+    OverflowPolicy, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
+    ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule,
+    Retention, SceType, TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TransformModel,
+    ValidatorModel, ValidatorRules,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -453,5 +456,82 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
         render(&ForgeDocument::Lookup(lk)).unwrap(),
         "lookup gear\n  in raw: uint8\n  out name: string\n  \
          0 -> PARK req REQ-1\n  miss default NEUTRAL\n"
+    );
+}
+
+/// The four signal-shaped kinds, with every optional field populated.
+#[test]
+fn each_signal_kind_renders_every_field_it_can_carry() {
+    let fi = FilterModel {
+        name: "smooth".to_string(),
+        input: field("raw", SceType::Float64, Direction::In),
+        output: field("out", SceType::Float64, Direction::Out),
+        filter_type: FilterType::LowPass,
+        window: Some(4),
+        alpha: Some(0.25),
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Filter(fi)).unwrap(),
+        "filter smooth low-pass window 4 alpha 0.25\n  \
+         in raw: float64\n  out out: float64\n"
+    );
+
+    let ob = ObserverModel {
+        name: "heat".to_string(),
+        inputs: vec![field("t", SceType::Float64, Direction::In)],
+        monitors: vec![ThresholdMonitor {
+            id: "alarm".to_string(),
+            enter_expr: "t > 110".to_string(),
+            leave_expr: Some("t < 100".to_string()),
+            on_enter: "raise".to_string(),
+            on_leave: Some("clear".to_string()),
+        }],
+        event_domain: Some("diag".to_string()),
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Observer(ob)).unwrap(),
+        "observer heat domain diag\n  in t: float64\n  \
+         monitor alarm enter t > 110 on-enter raise leave t < 100 on-leave clear\n"
+    );
+
+    let ip = InterpolationModel {
+        name: "map".to_string(),
+        inputs: vec![field("rpm", SceType::Uint16, Direction::In)],
+        output: field("ms", SceType::Float64, Direction::Out),
+        method: InterpolationMethod::Linear,
+        out_of_bounds: OutOfBounds::Extrapolate,
+        axes: vec![InterpolationAxis {
+            input_id: "rpm".to_string(),
+            breakpoints: vec![800.0, 1200.5],
+        }],
+        values: vec![2.1, 4.5],
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::Interpolation(ip)).unwrap(),
+        "interpolation map method linear out-of-bounds extrapolate\n  \
+         in rpm: uint16\n  out ms: float64\n  \
+         axis rpm breakpoints 800 1200.5\n  values 2.1 4.5\n"
+    );
+
+    let bc = BoundedCollectionModel {
+        name: "table".to_string(),
+        element_type: "entry".to_string(),
+        capacity: CapacitySource::DeployKey {
+            key: "tables.max".to_string(),
+        },
+        index_by: Some("id".to_string()),
+        on_overflow: OverflowPolicy::OldestWins,
+        ordering: CollectionOrdering::SortedByIndex,
+        concurrency: ConcurrencyMode::MultiWriter,
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::BoundedCollection(bc)).unwrap(),
+        "bounded-collection table of entry capacity deploy-key tables.max \
+         overflow oldest-wins ordering sorted-by-index concurrency \
+         multi-writer index-by id\n"
     );
 }

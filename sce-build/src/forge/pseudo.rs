@@ -128,6 +128,21 @@
 //!     <field>          (the input, then the output)
 //!     <key> -> <value> [req <id>...]
 //!     miss default <v> | miss error
+//!
+//!   filter <name> <type> [window <n>] [alpha <f>]
+//!     <field>          (the input, then the output)
+//!
+//!   observer <name> [domain <d>]
+//!     <field>...
+//!     monitor <id> enter <e> on-enter <ev> [leave <e>] [on-leave <ev>]
+//!
+//!   interpolation <name> method <m> out-of-bounds <o>
+//!     <field>...       (the inputs, then the output)
+//!     axis <input> breakpoints <f>...
+//!     values <f>...
+//!
+//!   bounded-collection <name> of <type> capacity (deploy-key <k>|const <n>)
+//!       overflow <p> ordering <o> concurrency <c> [index-by <field>]
 //! ```
 //!
 //! A `<field>` is `(in|out|internal) <id>: <type> <field-clause>...`,
@@ -147,10 +162,12 @@ use std::fmt::Write as _;
 
 use crate::comment_text;
 use crate::forge::model::{
-    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, ConditionModel, Direction,
-    EnumModel, EventSchemaModel, FoldBody, ForgeDocument, ForgeField, LookupModel, MissPolicy,
-    ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, SceType, TestVector,
-    TestVectorValue, TimerModel, TransformModel, ValidatorModel,
+    AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, BoundedCollectionModel,
+    CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
+    EventSchemaModel, FilterModel, FilterType, FoldBody, ForgeDocument, ForgeField,
+    InterpolationMethod, InterpolationModel, LookupModel, MissPolicy, ObserverModel, OutOfBounds,
+    OverflowPolicy, ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, SceType,
+    TestVector, TestVectorValue, TimerModel, TransformModel, ValidatorModel,
 };
 
 /// Why a document has no pseudocode rendering, as opposed to an empty
@@ -196,21 +213,17 @@ pub fn render(doc: &ForgeDocument) -> Result<String, Unsupported> {
         ForgeDocument::Enum(m) => Ok(render_enum(m)),
         ForgeDocument::Timer(m) => Ok(render_timer(m)),
         ForgeDocument::Lookup(m) => Ok(render_lookup(m)),
+        ForgeDocument::Filter(m) => Ok(render_filter(m)),
+        ForgeDocument::Observer(m) => Ok(render_observer(m)),
+        ForgeDocument::Interpolation(m) => Ok(render_interpolation(m)),
+        ForgeDocument::BoundedCollection(m) => Ok(render_bounded_collection(m)),
         ForgeDocument::Statechart(_) => Err(Unsupported { kind: "statechart" }),
         ForgeDocument::Codec(_) => Err(Unsupported { kind: "codec" }),
-        ForgeDocument::Filter(_) => Err(Unsupported { kind: "filter" }),
-        ForgeDocument::Interpolation(_) => Err(Unsupported {
-            kind: "interpolation",
-        }),
-        ForgeDocument::Observer(_) => Err(Unsupported { kind: "observer" }),
         ForgeDocument::Link(_) => Err(Unsupported { kind: "link" }),
         ForgeDocument::BufferPool(_) => Err(Unsupported {
             kind: "buffer-pool",
         }),
         ForgeDocument::Worker(_) => Err(Unsupported { kind: "worker" }),
-        ForgeDocument::BoundedCollection(_) => Err(Unsupported {
-            kind: "bounded-collection",
-        }),
     }
 }
 
@@ -712,6 +725,139 @@ fn render_timer(m: &TimerModel) -> String {
     }
     if let Some(s) = &m.cancel_on_state_exit {
         let _ = write!(head, " cancel-on-exit {}", text(s));
+    }
+    out.line(&head);
+    out.buf
+}
+
+/// An `f64` as the shortest text that reads back as the same value.
+///
+/// ⚠ This is deterministic but NOT the author's spelling: a breakpoint
+/// written `1.0` prints as `1`, because the model holds an `f64` and the
+/// literal's text was already gone before this module saw it. Same
+/// class as an enum variant written `0x10` arriving as `16`. It costs
+/// nothing under a model-level round trip and it costs a reviewer
+/// something, which is why it is written down rather than left to be
+/// rediscovered.
+fn num(v: f64) -> String {
+    format!("{v}")
+}
+
+fn render_filter(m: &FilterModel) -> String {
+    let mut out = Out::new();
+    let kind = match m.filter_type {
+        FilterType::MovingAverage => "moving-average",
+        FilterType::LowPass => "low-pass",
+        FilterType::Debounce => "debounce",
+    };
+    let mut head = format!("filter {} {}", text(&m.name), kind);
+    if let Some(w) = m.window {
+        let _ = write!(head, " window {w}");
+    }
+    if let Some(a) = m.alpha {
+        let _ = write!(head, " alpha {}", num(a));
+    }
+    out.line(&head);
+    out.nested(|out| {
+        render_field(&m.input, out);
+        render_field(&m.output, out);
+    });
+    out.buf
+}
+
+fn render_observer(m: &ObserverModel) -> String {
+    let mut out = Out::new();
+    let mut head = format!("observer {}", text(&m.name));
+    if let Some(d) = &m.event_domain {
+        let _ = write!(head, " domain {}", text(d));
+    }
+    out.line(&head);
+    out.nested(|out| {
+        for f in &m.inputs {
+            render_field(f, out);
+        }
+        for mon in &m.monitors {
+            let mut line = format!(
+                "monitor {} enter {} on-enter {}",
+                text(&mon.id),
+                text(&mon.enter_expr),
+                text(&mon.on_enter)
+            );
+            if let Some(e) = &mon.leave_expr {
+                let _ = write!(line, " leave {}", text(e));
+            }
+            if let Some(e) = &mon.on_leave {
+                let _ = write!(line, " on-leave {}", text(e));
+            }
+            out.line(&line);
+        }
+    });
+    out.buf
+}
+
+fn render_interpolation(m: &InterpolationModel) -> String {
+    let mut out = Out::new();
+    let method = match m.method {
+        InterpolationMethod::Linear => "linear",
+        InterpolationMethod::Bilinear => "bilinear",
+    };
+    let oob = match m.out_of_bounds {
+        OutOfBounds::Clamp => "clamp",
+        OutOfBounds::Extrapolate => "extrapolate",
+        OutOfBounds::Error => "error",
+    };
+    out.line(&format!(
+        "interpolation {} method {} out-of-bounds {}",
+        text(&m.name),
+        method,
+        oob
+    ));
+    out.nested(|out| {
+        for f in &m.inputs {
+            render_field(f, out);
+        }
+        render_field(&m.output, out);
+        for a in &m.axes {
+            let bps: Vec<String> = a.breakpoints.iter().copied().map(num).collect();
+            out.line(&format!(
+                "axis {} breakpoints {}",
+                text(&a.input_id),
+                bps.join(" ")
+            ));
+        }
+        let vals: Vec<String> = m.values.iter().copied().map(num).collect();
+        out.line(&format!("values {}", vals.join(" ")));
+    });
+    out.buf
+}
+
+fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
+    let mut out = Out::new();
+    let capacity = match &m.capacity {
+        CapacitySource::DeployKey { key } => format!("deploy-key {}", text(key)),
+        CapacitySource::CompileConst { value } => format!("const {value}"),
+    };
+    let overflow = match m.on_overflow {
+        OverflowPolicy::DiagnosticEvent => "diagnostic-event",
+        OverflowPolicy::Reject => "reject",
+        OverflowPolicy::OldestWins => "oldest-wins",
+    };
+    let ordering = match m.ordering {
+        CollectionOrdering::Insertion => "insertion",
+        CollectionOrdering::SortedByIndex => "sorted-by-index",
+    };
+    let concurrency = match m.concurrency {
+        ConcurrencyMode::SingleWriter => "single-writer",
+        ConcurrencyMode::MultiWriter => "multi-writer",
+    };
+    let mut head = format!(
+        "bounded-collection {} of {} capacity {capacity} overflow {overflow}",
+        text(&m.name),
+        text(&m.element_type)
+    );
+    let _ = write!(head, " ordering {ordering} concurrency {concurrency}");
+    if let Some(ix) = &m.index_by {
+        let _ = write!(head, " index-by {}", text(ix));
     }
     out.line(&head);
     out.buf
