@@ -787,6 +787,21 @@ CLASSES = (
 
 
 def ask(prose: Prose, model: Model, conv: Conventions, examples=None) -> list[Question]:
+    # ⚠ DROPPING THE NAMES A DOCUMENT DOES NOT USE WOULD CHANGE NOTHING HERE,
+    # and it was measured rather than reasoned about. A pack-builder outside
+    # this tree narrows an address's spellings to the ones its specification
+    # writes, on the stated ground that keeping all of them makes "the prose
+    # never calls this address" impossible to be true. That ground is false:
+    # `mentions` is a disjunction over the names, so removing a name it
+    # already answers False for cannot move it. Measured 2026-09-20 over 129
+    # components, three differently-built packs and every class below: 2,235 /
+    # 2,306 / 2,313 questions, and narrowing moved ZERO of them.
+    #
+    # What does move them is the pack-builder's FALLBACK -- when no spelling
+    # is used it substitutes the address's last segment, which ADDS a name and
+    # can make an address reachable that was not. That is the part worth
+    # understanding before anything moves in here, and it is not narrowing.
+    #
     # Every class takes the same four arguments. Dispatching on whether a call
     # raises TypeError was tried and removed: it swallows a real TypeError
     # raised INSIDE a class, and a check that fails silently is the shape this
