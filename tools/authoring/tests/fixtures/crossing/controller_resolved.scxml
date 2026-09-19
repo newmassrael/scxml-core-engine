@@ -14,7 +14,14 @@
      require the bell to ring in one and stay silent in the other, which is the
      planted gap `example-shows-memory` reports. Verification is expected to
      fail exactly there, and a change that makes it pass everything has almost
-     certainly stopped running the cases. -->
+     certainly stopped running the cases.
+
+     ⚠⚠ The stem carries no dot. A document's identity is its file stem, and a
+     dotted stem cannot be recovered from the artifact it produces: the
+     generator sanitises `controller.resolved` to `controller_resolved`, so
+     that artifact could have come from either spelling. This file was named
+     with a dot and `the_identity_rule_holds_for_every_kind_the_corpus_declares`
+     caught it, the only document in the tree that had one. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="transform" name="crossing_controller_resolved">
   <datamodel>

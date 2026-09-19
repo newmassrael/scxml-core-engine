@@ -17,8 +17,10 @@ from dataclasses import dataclass
 #
 # ⚠ This is the ONE thing about the SHAPE of prose that lives here rather than
 # in a pack, and it is a DEFAULT, not an assumption: `conventions.
-# comparison_pattern` replaces it. A document that says "X is HIGH" or "X이
-# HIGH일 때" writes its own pattern there and this module never learns about it.
+# comparison_pattern` replaces it. A document that says "X is HIGH", or that
+# attaches a grammatical particle to the name as an agglutinative language
+# does, so that the name's end is not a word boundary, writes its own pattern
+# there and this module never learns about it.
 #
 # It is a default rather than a required field because the specifications
 # measured so far all use this notation, and a pack that must restate the

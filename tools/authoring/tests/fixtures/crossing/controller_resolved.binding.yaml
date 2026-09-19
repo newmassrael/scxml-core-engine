@@ -2,7 +2,7 @@
 # plus the two things the closed document needs: the mains input it reads, and
 # the train signal it now decides.
 version: 1
-document: controller.resolved.scxml
+document: controller_resolved.scxml
 
 inputs:
   approaching:

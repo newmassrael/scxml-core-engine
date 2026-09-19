@@ -31,7 +31,7 @@ from sce_author.verify import CALLABLE_KINDS, verify
 HERE = pathlib.Path(__file__).resolve().parent
 CROSSING = HERE / "fixtures" / "crossing"
 OPEN_BINDING = CROSSING / "controller.binding.yaml"
-CLOSED_BINDING = CROSSING / "controller.resolved.binding.yaml"
+CLOSED_BINDING = CROSSING / "controller_resolved.binding.yaml"
 
 
 def codegen_is_built() -> bool:
@@ -99,7 +99,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         for name in ("interface-model.yaml", "conventions.yaml", "examples.yaml"):
             shutil.copy(CROSSING / name, tmp / name)
-        document = (CROSSING / "controller.resolved.scxml").read_text(encoding="utf-8")
+        document = (CROSSING / "controller_resolved.scxml").read_text(encoding="utf-8")
         (tmp / "doc.scxml").write_text(
             document.replace('sce:kind="transform"', 'sce:kind="observer"'),
             encoding="utf-8")
@@ -127,7 +127,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         was one step upstream every time, and attributing only to the direct
         writer found none of them.
         """
-        document = (CROSSING / "controller.resolved.scxml").read_text(
+        document = (CROSSING / "controller_resolved.scxml").read_text(
             encoding="utf-8")
         guessed = document.replace(
             '<data id="roadSignal"',
@@ -258,7 +258,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         for name in ("interface-model.yaml", "conventions.yaml"):
             shutil.copy(CROSSING / name, tmp / name)
-        for name in ("controller.resolved.scxml",):
+        for name in ("controller_resolved.scxml",):
             shutil.copy(CROSSING / name, tmp / name)
         shutil.copy(CLOSED_BINDING, tmp / "b.yaml")
         examples = yaml.safe_load((CROSSING / "examples.yaml").read_text(encoding="utf-8"))
@@ -276,7 +276,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         """A copy of the crossing pack with parts of it changed."""
         tmp = pathlib.Path(tempfile.mkdtemp(prefix="verify_stage_"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        for name in ("interface-model.yaml", "controller.resolved.scxml"):
+        for name in ("interface-model.yaml", "controller_resolved.scxml"):
             shutil.copy(CROSSING / name, tmp / name)
         conventions = yaml.safe_load(
             (CROSSING / "conventions.yaml").read_text(encoding="utf-8"))

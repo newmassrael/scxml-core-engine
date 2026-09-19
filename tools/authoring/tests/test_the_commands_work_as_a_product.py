@@ -96,17 +96,17 @@ class TheCommandsWorkAsAProduct(unittest.TestCase):
 
     def test_check_passes_a_binding_whose_names_are_all_real(self):
         code, said, _ = run(["check", "--pack", str(CROSSING), "--binding",
-                             str(CROSSING / "controller.resolved.binding.yaml")])
+                             str(CROSSING / "controller_resolved.binding.yaml")])
         self.assertEqual(0, code, f"it refused: {said}")
         self.assertIn("0 refusal", said)
 
     def test_check_fails_when_a_name_is_not_real(self):
         binding = self.tmp / "b.yaml"
-        text = (CROSSING / "controller.resolved.binding.yaml").read_text(
+        text = (CROSSING / "controller_resolved.binding.yaml").read_text(
             encoding="utf-8").replace("plant/out/bell", "plant/out/nothing")
         binding.write_text(text, encoding="utf-8")
-        shutil.copy(CROSSING / "controller.resolved.scxml",
-                    self.tmp / "controller.resolved.scxml")
+        shutil.copy(CROSSING / "controller_resolved.scxml",
+                    self.tmp / "controller_resolved.scxml")
         code, said, _ = run(["check", "--pack", str(CROSSING),
                              "--binding", str(binding)])
         self.assertEqual(1, code)
@@ -116,7 +116,7 @@ class TheCommandsWorkAsAProduct(unittest.TestCase):
                          "the product's code generator is not built")
     def test_verify_fails_the_build_when_a_case_fails(self):
         code, said, _ = run(["verify", "--pack", str(CROSSING), "--binding",
-                             str(CROSSING / "controller.resolved.binding.yaml")])
+                             str(CROSSING / "controller_resolved.binding.yaml")])
         self.assertEqual(1, code)
         self.assertIn("passed", said)
         self.assertIn("could not be judged", said)
