@@ -101,10 +101,23 @@ class Review:
         if self.has_examples and not self.asserted_outputs:
             out.append("no case expects any output this model declares, so a "
                        "run of them would judge nothing and still pass")
-        if self.total_lines and self.attribution < 0.25:
-            out.append(f"the partition attributes {self.attribution:.0%} of "
-                       f"the prose, so most of the document is read by no "
-                       f"address and the gated-output class is nearly blind")
+        # ⚠ THE SHAPE, NOT THE SHARE, AND THE FIRST VERSION HAD IT WRONG. It
+        # alarmed below 25% attribution, and measured against 129 packs that
+        # fires on 36 of them where nothing is wrong: the low group has a
+        # median of ONE output in a 49-line document, and most of such a
+        # document not being about that one output is what a specification
+        # looks like. The group above 90% has a median of 13 outputs in 655
+        # lines. An alarm that fires on healthy input is a gate people learn
+        # to ignore, which is the one failure mode worse than no gate.
+        #
+        # What cannot be right is a partition that owns NOTHING: the class
+        # reading it then has no text at all and is wholly inert. Zero packs
+        # in that corpus; the one fixture that hit it named its outputs in
+        # words the model did not list, which is a thing the pack can fix.
+        if self.outputs and self.total_lines and not self.blocks_built:
+            out.append("the partition owns no line of the document, so the "
+                       "gated-output class reads nothing at all -- the model "
+                       "lists no spelling this prose actually uses")
         return out
 
 
@@ -140,8 +153,14 @@ def review(pack, prose: Prose) -> Review:
     out.blocks_built = sum(1 for text in blocks.values() if text.strip())
     out.thin_blocks = sum(1 for text in blocks.values()
                           if 0 < len(text.splitlines()) <= 2)
-    out.attributed_lines = sum(len(text.splitlines())
-                               for text in blocks.values() if text.strip())
+    # ⚠ BOTH SIDES COUNT THE SAME THING. The first version counted every line
+    # of a block against the non-blank lines of the document, so a block
+    # holding blank lines reported 121% of a document it could not have owned
+    # more than all of. A ratio whose halves are measured differently is not
+    # a ratio, and this one looked plausible enough to print.
+    out.attributed_lines = sum(
+        1 for text in blocks.values() for line in text.splitlines()
+        if line.strip())
     out.total_lines = sum(1 for line in prose.text.splitlines() if line.strip())
 
     if out.has_examples:

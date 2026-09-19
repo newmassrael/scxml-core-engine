@@ -21,10 +21,13 @@ reports figures, and separately names the shapes that cannot be right whatever
 the platform turns out to be -- a model with no outputs, an address with no
 value space, a partition that owns none of the document.
 
-⚠⚠⚠ Measured over 129 subject packs on the day it was written: attribution
-ranges from under 10% to over 90%, with 38 packs above 90% and **29 below
-20%**. Nothing computed that before, and on those 29 a whole question class
-was running blind while the suite stayed green.
+⚠⚠⚠ Measured over 129 subject packs: attribution ranges from under 10% to
+over 90%, with 13 packs above 90% and 36 below 20%. Nothing computed that
+before. And the low end turned out NOT to be a defect -- those packs have a
+median of one output in a 49-line document, so most of the document not being
+about that output is what a specification looks like. The first version of
+this file reported 38 above 90% and 29 below 20%, from a ratio whose numerator
+counted blank lines and whose denominator did not.
 """
 
 from __future__ import annotations
@@ -128,13 +131,45 @@ class ThePackIsMeasuredToo(unittest.TestCase):
                       " ".join(got.alarms()))
 
     def test_a_partition_that_owns_none_of_the_prose_is_named(self):
-        """⚠ The measurement the README specified and nothing computed. A
-        class that reads "what the document says about THIS address" is worth
-        exactly as much as the share of the document it can attribute.
+        """⚠ The SHAPE, not the share, and the first version alarmed on the
+        share. Below 25% fires on 36 of 129 real packs where nothing is wrong:
+        their median is ONE output in a 49-line document, and most of such a
+        document not being about that one output is what a specification looks
+        like. What cannot be right is a partition that owns NOTHING -- the
+        class reading it then has no text to read at all.
         """
         got = self.reviewed(prose="Nothing here names anything at all.\n")
         self.assertEqual(0.0, got.attribution)
-        self.assertIn("attributes 0%", " ".join(got.alarms()))
+        self.assertEqual(0, got.blocks_built)
+        self.assertIn("owns no line of the document", " ".join(got.alarms()))
+
+    def test_a_small_specification_is_not_alarmed_at_for_being_small(self):
+        """The discriminator, and the reason the rule above is the shape.
+
+        One output, and most of the document about something else. That is 36
+        of 129 measured packs, and an alarm they all trip is a gate people
+        learn to scroll past.
+        """
+        got = self.reviewed(prose=(
+            "Revision history, scope, definitions, references.\n"
+            "None of these lines name an output.\n"
+            "Out_Lamp is ON when In_Supply == HIGH, and OFF otherwise.\n"
+            "More context that decides nothing at all.\n"
+            "Still more, as a real document has.\n"))
+        self.assertLess(got.attribution, 1.0)
+        self.assertEqual(1, got.blocks_built)
+        self.assertEqual([], got.alarms())
+
+    def test_the_share_can_never_exceed_the_document(self):
+        """⚠ It did, and it printed. The numerator counted every line of a
+        block and the denominator counted only the non-blank ones, so a
+        document came back 121% attributed. A ratio whose halves are measured
+        differently is not a ratio, and this one was plausible enough to ship.
+        """
+        got = review(load_pack(CROSSING),
+                     load_prose([CROSSING / "specification.md"]))
+        self.assertGreater(got.attribution, 0.0)
+        self.assertLessEqual(got.attribution, 1.0)
 
     # --------------------------------- what a pass would have been worth
 

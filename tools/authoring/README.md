@@ -83,9 +83,15 @@ does say out loud is the handful of shapes that cannot be right whatever the
 platform turns out to be: no outputs, no examples, an address with neither a
 value space nor a type, a partition owning none of the document.
 
-Measured over 129 subject packs the day it was written: attribution ranges
-from under 10% to over 90% -- 38 packs above 90%, and **29 below 20%**, where
-`gate-off-unstated` had been running nearly blind with nothing to say so.
+⚠⚠ **A low share is not one of them, and the first version of this treated it
+as one.** Measured over 129 subject packs: 13 attribute above 90% and 36 below
+20%, and the low group is not broken — its median is ONE output in a 49-line
+document, against 13 outputs in 655 lines for the high group. Most of a small
+specification not being about its one output is what a specification looks
+like, and an alarm 36 packs trip is a gate people learn to scroll past. What
+cannot be right is owning NOTHING, which is a pack listing no spelling its
+prose uses; this tree's own second subject matter did exactly that, and the
+figures above come from the instrument that found it.
 
 **check** judges a written document against the same model: every input it
 declares must exist, every output it writes must be a real field, and every

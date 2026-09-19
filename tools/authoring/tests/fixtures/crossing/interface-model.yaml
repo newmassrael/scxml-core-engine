@@ -32,27 +32,34 @@ entries:
     names: [IN_MainsPower]
     values: {OK: 0, FAIL: 1}
 
+  # ⚠ TWO SPELLINGS EACH, AND THE SECOND IS WHY `names` IS A LIST. This
+  # specification writes its outputs the way a person does -- "the road
+  # signal" -- and lists the platform's identifier only where it states a
+  # comparison. With the identifier alone the partition that cuts the document
+  # up by subject owned NOT ONE LINE of it, so the class reading those blocks
+  # had nothing at all to read and said so about nothing. `review` is what
+  # reports that, and adding the spelling is what a pack author does about it.
   - address: plant/out/barrier
     role: output
-    names: [OUT_BarrierCommand]
+    names: [OUT_BarrierCommand, barrier command]
     fields:
       value: {values: {STOP: 0, LOWER: 1, RAISE: 2}}
 
   - address: plant/out/road-signal
     role: output
-    names: [OUT_RoadSignal]
+    names: [OUT_RoadSignal, road signal]
     fields:
       value: {values: {DARK: 0, FLASHING: 1, STEADY: 2}}
 
   - address: plant/out/bell
     role: output
-    names: [OUT_Bell]
+    names: [OUT_Bell, bell]
     fields:
       value: {values: {SILENT: 0, RINGING: 1}}
 
   # PLANT 3: the examples read this back and the prose never decides it.
   - address: plant/out/train-signal
     role: output
-    names: [OUT_TrainSignal]
+    names: [OUT_TrainSignal, train signal]
     fields:
       value: {values: {DANGER: 0, CAUTION: 1, CLEAR: 2}}
