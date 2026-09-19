@@ -417,6 +417,15 @@ the model's addresses the document's names are.
       reading: {address: plant/out/reading, field: value, passthrough: true}
       held:    {internal: true}
 
+**One address to one name, and no form for comparing several at once.** A
+platform's own rule format had two keys that group addresses; measured over
+499 files of a real corpus they occur 4 times each, both in ONE of 28
+hand-written bindings, against 490 uses of the single-address form in 106
+files -- and the component that binding serves reaches a full pass without the
+shape when its binding is written in this vocabulary instead. So what grouping
+buys is brevity in one file, and what it costs is a dictionary that decides
+things. Grouping is what the DOCUMENT is for.
+
 ### Writing the document before the addresses exist
 
 ⚠ The document is ALREADY independent of the platform — it uses its own

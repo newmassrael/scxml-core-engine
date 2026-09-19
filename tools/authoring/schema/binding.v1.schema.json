@@ -25,6 +25,7 @@
     "input": {
       "type": "object",
       "additionalProperties": false,
+      "x-sce-deliberately-absent": "There is no form for comparing SEVERAL addresses at once, and that is a measured decision rather than an oversight. One platform's own rule format has two such keys; measured 2026-09-20 across 499 files of a real corpus, they appear 4 times each, both in ONE of 28 hand-written bindings, against 490 uses of the one-address form in 106 files. The component that binding is for reaches a full pass without the shape when its binding is written in this vocabulary instead, so what the multi-address form buys is brevity in one file. An input rule here stays one address to one name; grouping is what the DOCUMENT is for, and a binding that could group would be deciding logic in the dictionary.",
       "properties": {
         "address": {"type": "string"},
         "unresolved": {
