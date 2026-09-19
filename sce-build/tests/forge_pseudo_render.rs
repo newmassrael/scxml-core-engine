@@ -447,6 +447,64 @@ machine m (datamodel: ecmascript, initial: s0)
     );
 }
 
+/// The two constructs that carry a derived index beside them.
+///
+/// `<sce:context>` sits next to `context_object_ids`, filled by the
+/// parser from the same elements, and `<sce:on-sample>` next to
+/// `on_sample_links`, filled by the analyzer from the same blocks.
+/// Rendering the index too would print each one twice — the defect the
+/// invoke rendering was caught doing, which is why both are asserted
+/// whole here rather than by `contains`.
+#[test]
+fn a_context_object_and_an_on_sample_block_render_once() {
+    use sce_build::model::{ContextObject, OnSampleNode, State};
+
+    let mut state = State {
+        id: "s0".to_string(),
+        ..Default::default()
+    };
+    state.on_sample_blocks = vec![
+        OnSampleNode {
+            link: "l2".to_string(),
+            event: "late".to_string(),
+            callback: None,
+            document_order: 2,
+        },
+        OnSampleNode {
+            link: "l1".to_string(),
+            event: "early".to_string(),
+            callback: Some("cb".to_string()),
+            document_order: 1,
+        },
+    ];
+
+    let mut m = sce_build::model::SCXMLModel {
+        name: "m".to_string(),
+        initial: "s0".to_string(),
+        ..Default::default()
+    };
+    m.context_objects.push(ContextObject {
+        id: "hw".to_string(),
+        cpp_type: "Hardware".to_string(),
+        cpp_include: "hw.h".to_string(),
+        kt_type: "Hw".to_string(),
+    });
+    m.context_object_ids.insert("hw".to_string());
+    m.on_sample_links.insert("l1".to_string());
+    m.states.insert("s0".to_string(), state);
+
+    assert_eq!(
+        render(&ForgeDocument::Statechart(Box::new(m))).unwrap(),
+        "\
+machine m (datamodel: ecmascript, initial: s0)
+  context hw cpp-type Hardware cpp-include hw.h kt-type Hw
+  state s0:
+    on sample l1 event early callback cb
+    on sample l2 event late
+"
+    );
+}
+
 /// A document with nothing unrendered is rendered, not refused.
 ///
 /// The companion to the test above, and the reason it is here: a

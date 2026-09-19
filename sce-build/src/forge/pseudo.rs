@@ -73,6 +73,7 @@
 //!
 //! ```text
 //!   machine <name> (datamodel: <d>, initial: <s>[, binding: <b>][, queue: <n>])
+//!     context <id> [cpp-type <t>] [cpp-include <i>] [kt-type <t>]
 //!     data <id>[: <type>] [= <expr>] [src <s>] [content <c>]
 //!     (state|parallel|final) <id> [initial <s>] [initial-children <s>...]
 //!         [history <h> default <s>] [unhandled <e>...]:
@@ -81,6 +82,7 @@
 //!         <action>...
 //!       [on <event>] [when <cond>] [native-guard <g>] -> <target> [<type>]
 //!         <action>...
+//!       on sample <link> event <e> [callback <c>]
 //!       invoke [<id>]:
 //!         id-into <loc> / param <name>[=<expr>][@<loc>] / req <id>
 //!         type (scxml|hybrid|mesh-rpc|<other>)
@@ -991,12 +993,6 @@ fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
 /// to know the document is not fully rendered, and one name says that
 /// as well as five do.
 fn statechart_gap(m: &crate::model::SCXMLModel) -> Option<&'static str> {
-    if m.states.values().any(|s| !s.on_sample_blocks.is_empty()) {
-        return Some("an <sce:on-sample> block");
-    }
-    if !m.context_objects.is_empty() {
-        return Some("an <sce:context> object");
-    }
     // The root's `invokes` is a flat index of the ones the states own,
     // so the rendering walks the states and skips the index. That is
     // only sound while the two agree: an invoke reachable from the root
@@ -1037,6 +1033,23 @@ fn render_statechart(m: &crate::model::SCXMLModel) -> Result<String, Unsupported
 
     let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
+        // ⚠ `context_objects`, not `context_object_ids`: the parser
+        // fills the id set alongside the list from the same elements, so
+        // rendering both would print each object twice — the shape the
+        // invoke rendering was caught doing.
+        for c in &m.context_objects {
+            let mut line = format!("context {}", text(&c.id));
+            if !c.cpp_type.is_empty() {
+                let _ = write!(line, " cpp-type {}", text(&c.cpp_type));
+            }
+            if !c.cpp_include.is_empty() {
+                let _ = write!(line, " cpp-include {}", text(&c.cpp_include));
+            }
+            if !c.kt_type.is_empty() {
+                let _ = write!(line, " kt-type {}", text(&c.kt_type));
+            }
+            out.line(&line);
+        }
         for v in &m.variables {
             render_variable(v, out);
         }
@@ -1250,6 +1263,19 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out) -> Result<(), Unsu
             if let Err(e) = render_invoke(inv, out) {
                 nested = Err(e);
             }
+        }
+        // ⚠ Per state, not from the root's `on_sample_links`: that set
+        // is filled by the ANALYZER from these same blocks
+        // (`analyzer.rs`), so it is a derived index and printing it too
+        // would say each link twice.
+        let mut samples: Vec<&crate::model::OnSampleNode> = s.on_sample_blocks.iter().collect();
+        samples.sort_by_key(|n| n.document_order);
+        for n in samples {
+            let mut line = format!("on sample {} event {}", text(&n.link), text(&n.event));
+            if let Some(c) = &n.callback {
+                let _ = write!(line, " callback {}", text(c));
+            }
+            out.line(&line);
         }
         for block in &s.on_entry_blocks {
             out.line("on entry:");
