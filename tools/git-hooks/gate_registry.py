@@ -328,12 +328,22 @@ COST_MEASURED: dict[str, str] = {
     # not the gate. 52 is what it costs when it has something to do, which is
     # the only time the change set selects it.
     "forge-kotlin": "2026-09-18",
+    # 1363s against a declared 151 — the widest gap this table has recorded,
+    # and the first entry for a `ci_only` gate, which is why it went unseen:
+    # the drift report prices what a push selects, and nothing selects this.
+    # `scripts/gate --measure workspace-tests` on a warm tree, load 4, with
+    # `SCE_GATE_NO_FAIL_FAST` unset — the switch changes what is REPORTED,
+    # not what is run, so it does not change the figure. Two nearby readings
+    # corroborate the band rather than the number: 1231s for the same command
+    # timed from outside, and 1184s for a fail-fast run that stopped at 180 of
+    # 504 binaries. Load cannot account for nine times.
+    "workspace-tests": "2026-09-20",
 }
 
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
 # with slack — an equality, so measuring one gate forces this down in the
 # same commit and the count cannot drift away from the map.
-UNMEASURED_COST_CEILING = 26
+UNMEASURED_COST_CEILING = 25
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -681,20 +691,39 @@ GATES: dict[str, dict] = {
         # so an `include_str!` added tomorrow is covered the day it is
         # written rather than the day somebody remembers a list.
         "include_str_roots": ["sce-build"],
-        # 151s — half the budget for one gate, and the hardest of the four to
-        # give up, so the reason is stated rather than left to the number.
-        # This is the densest correctness net in the tree: every contract test
-        # under `sce-build/tests/` runs here. It leaves anyway because the
-        # budget is a ceiling on what a developer waits for, not a ranking of
-        # what is valuable, and a gate that eats half the ceiling decides the
-        # budget for every other gate. `rust-workspace-tests.yml` runs the
-        # same command with `--no-fail-fast`.
-        "ci_only": "151s, half the 300s push budget for one gate. Fully "
-                   "mirrored by rust-workspace-tests.yml, which runs the same "
-                   "command. The trade is the sharpest of the four: this is "
-                   "where every sce-build contract test lives, so a broken "
-                   "contract now reaches main and is answered a round later.",
-        "cost_s": 151,
+        # 1363s, and it was declared 151 until 2026-09-20. This is the densest
+        # correctness net in the tree — every contract test under
+        # `sce-build/tests/` runs here — and it leaves the push anyway,
+        # because the budget is a ceiling on what a developer waits for rather
+        # than a ranking of what is valuable.
+        #
+        # ⚠ NINE TIMES OFF, AND NOTHING HERE COULD SEE IT. `budget_breach`
+        # compares a declaration against a measurement only for gates a push
+        # SELECTS; this one is `ci_only`, so no push prices it and its figure
+        # was watched by nothing. The header says as much about `w3c-kotlin`
+        # and calls it the right scope for a PUSH budget, which it is — the
+        # residue is that a ci_only cost can rot without limit, and this is
+        # what that looks like when it does.
+        #
+        # ⚠⚠ Where the time actually is, measured the same day: three targets
+        # own 790s of it — `diagnostic_fix_is_applicable` 469s over 5 tests,
+        # `ecmascript_acceptance_parity` 187s over 4, `mutation_rounds_
+        # selection` 134s over 13. 64% of the lane in 22 tests, so "the suite
+        # is large" is not what makes it long, and 504 test binaries share the
+        # other 36%.
+        #
+        # ⚠⚠⚠ A fail-fast run reads a THIRD of this and looks like the whole
+        # lane: 180 of 504 binaries in 1184s, because the slow targets sort
+        # early. `SCE_GATE_NO_FAIL_FAST=1` is what makes a local run comparable
+        # to the CI lane's, and three rounds of fixing one failure at a time
+        # were spent before that was read off the gate script.
+        "ci_only": "1363s measured 2026-09-20, declared 151s until then. "
+                   "Fully mirrored by rust-workspace-tests.yml, which runs "
+                   "the same command. The trade is the sharpest of the four: "
+                   "this is where every sce-build contract test lives, so a "
+                   "broken contract now reaches main and is answered a round "
+                   "later.",
+        "cost_s": 1363,
         "summary": "cargo test --workspace --features cli",
     },
     # The one reader of the axis both drift hashes miss. `source-hash` and
