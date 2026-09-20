@@ -46,6 +46,24 @@ from .pack import Pack
 # at it would produce a verdict about something that was never run.
 CALLABLE_KINDS = frozenset({"transform", "lookup", "condition", "interpolation"})
 
+# The one backend this can DRIVE, which is a different list from the ones the
+# product can EMIT.
+#
+# ⚠ Python is here because its generated form is importable into this process
+# and its runtime is a package this process can reach: the document becomes an
+# object, and driving it is calling methods. Every other backend the product
+# emits is a build and a separate process, so driving one needs three things
+# that do not exist yet -- a build step per language, a host program that
+# stands up the engine and registers what a verifier registers, and a wire
+# carrying each case's inputs in and each reading out.
+#
+# ⚠⚠ What that costs is stated rather than hidden: a pass here is a pass for
+# the PYTHON lowering, and most of this product ships as C++. The backend
+# parity suite compares what the six emitters WRITE, byte for byte, which is a
+# different claim from how they BEHAVE under these cases. Nothing in this tree
+# makes the second claim, so the verdict carries the backend it is about.
+DRIVEN_BACKENDS = frozenset({"python"})
+
 SCE_NS = "{http://sce.dev/ext}"
 
 
@@ -84,6 +102,12 @@ class Verification:
     """What running the examples said, or why they could not be run."""
 
     refusal: str = ""
+    # Which lowering of the document was actually run. ⚠ Carried on the
+    # verdict rather than assumed by its reader: "every case passed" is a
+    # statement about one backend, and the one driven here is not usually the
+    # one a product ships. A reader told only the result supplies the rest of
+    # the sentence themselves, and supplies it wrongly.
+    backend: str = ""
     results: list[CaseResult] = field(default_factory=list)
     # Addresses the examples expect that the binding never writes. Reported
     # separately from a failure: nothing was computed wrongly, the document
@@ -166,7 +190,7 @@ class Build:
 
 
 def generate(document: pathlib.Path, codegen: pathlib.Path,
-             into: pathlib.Path) -> Build:
+             into: pathlib.Path, backend: str = "python") -> Build:
     """Build the document, declaring whatever host processors it sends to.
 
     ⚠ TWO PASSES, and it is the product's own handshake rather than a way
@@ -179,11 +203,11 @@ def generate(document: pathlib.Path, codegen: pathlib.Path,
     resting value -- a full run, judged, and about a document nobody could
     hear.
     """
-    build = _emit(document, codegen, into, ())
+    build = _emit(document, codegen, into, (), backend)
     if build.refusal or not build.unreachable:
         return build
     declared = build.unreachable
-    build = _emit(document, codegen, into, declared)
+    build = _emit(document, codegen, into, declared, backend)
     if build.refusal:
         return build
     if build.unreachable:
@@ -199,7 +223,7 @@ def generate(document: pathlib.Path, codegen: pathlib.Path,
 
 
 def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
-          host_processors) -> Build:
+          host_processors, backend: str) -> Build:
     """One run of the generator. Its refusal, or its manifest.
 
     ⚠ The product's own words are passed through untouched. A document with an
@@ -212,7 +236,7 @@ def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
             f"{codegen}: the code generator is not there, so no document can "
             f"be run. Build it, or name another with --codegen.")
     argv = [str(codegen), "generate", str(document), "-o", str(into),
-            "-l", "python"]
+            "-l", backend]
     for kind in host_processors:
         argv += ["--host-processor", kind]
     run = subprocess.run(argv, capture_output=True, text=True)
@@ -973,10 +997,24 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
 
 
 def verify(pack: Pack, binding_path: pathlib.Path,
-           codegen: pathlib.Path | None = None) -> Verification:
+           codegen: pathlib.Path | None = None,
+           backend: str = "python") -> Verification:
     """Run every example case against the bound document."""
     from .check import read_document  # local: only verification needs it
 
+    if backend not in DRIVEN_BACKENDS:
+        return Verification(refusal=(
+            f"{backend!r} is a backend the product EMITS and this verifier "
+            f"cannot DRIVE. It drives {', '.join(sorted(DRIVEN_BACKENDS))}, "
+            f"whose generated form imports into this process and whose "
+            f"runtime is reachable from it -- the document becomes an object "
+            f"and driving it is calling methods. Another backend is a build "
+            f"and a separate process, so it needs three things nothing here "
+            f"has: a build step for that language, a host program that stands "
+            f"the engine up and registers what a verifier registers, and a "
+            f"wire carrying each case's inputs in and each reading out. Until "
+            f"those exist, running it would report a verdict about a program "
+            f"nobody started."))
     binding = read_binding(binding_path)
     document = (binding_path.parent / binding["document"]).resolve()
     declared = read_document(document)
@@ -1002,13 +1040,15 @@ def verify(pack: Pack, binding_path: pathlib.Path,
 
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     into = pathlib.Path(tempfile.mkdtemp(prefix="sce_verify_"))
-    build = generate(document, codegen, into)
+    build = generate(document, codegen, into, backend)
     if build.refusal:
         return Verification(refusal=build.refusal)
     module = load(into, document)
 
     if declared.kind in STATECHART_KINDS:
-        return verify_statechart(pack, binding, module, build, declared)
+        run = verify_statechart(pack, binding, module, build, declared)
+        run.backend = backend
+        return run
 
     inputs = dict(binding.get("inputs") or {})
     outputs = dict(binding.get("outputs") or {})
@@ -1022,7 +1062,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             bound.add(key)
             writes[key] = name
 
-    verification = Verification()
+    verification = Verification(backend=backend)
     expected = {a for case in examples.cases for a in case.expect}
     verification.unbound = sorted(expected - bound)
     verification.unasserted = sorted(bound - expected)

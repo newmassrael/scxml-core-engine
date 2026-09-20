@@ -198,6 +198,18 @@ TOOLS = [
                     "type": "string",
                     "description": "The binding file, which names its own document.",
                 },
+                "backend": {
+                    "type": "string",
+                    "description": (
+                        "Which lowering of the document to DRIVE, defaulting "
+                        "to python. The product emits six; this drives the "
+                        "one it can import into its own process and refuses "
+                        "the rest, naming what would have to exist first. The "
+                        "answer carries the backend it is about, because a "
+                        "pass is a statement about one lowering and most of "
+                        "this product ships as another."
+                    ),
+                },
             },
         },
     },
@@ -362,7 +374,11 @@ def call_tool(name: str, args: dict) -> dict:
             if not binding or not isinstance(binding, str):
                 raise ToolArgumentError("'binding' is required: the path to the "
                                         "binding file, which names its own document")
-            result = run_verify(pack, pathlib.Path(binding))
+            backend = args.get("backend", "python")
+            if not isinstance(backend, str):
+                raise ToolArgumentError("'backend' has to be a language name, "
+                                        "as a string")
+            result = run_verify(pack, pathlib.Path(binding), None, backend)
             if not result.ran:
                 return _failure(result.refusal)
             # ⚠ Same shape as `questions`: versioned, an object, and the
@@ -370,6 +386,9 @@ def call_tool(name: str, args: dict) -> dict:
             # the counts; a model reads the cases.
             payload = {
                 "version": 1,
+                # ⚠ Beside the counts, because the counts are about ONE
+                # lowering and most of this product ships as another.
+                "backend": result.backend,
                 "counts": {"passed": result.passed, "failed": result.failed,
                            "unjudged": result.unjudged},
                 "unbound": result.unbound,

@@ -68,7 +68,8 @@ def cmd_check(args) -> int:
 def cmd_verify(args) -> int:
     pack = _pack(args)
     result = run_verify(pack, pathlib.Path(args.binding),
-                        pathlib.Path(args.codegen) if args.codegen else None)
+                        pathlib.Path(args.codegen) if args.codegen else None,
+                        args.backend)
     if not result.ran:
         # The product's own refusal, whole. It names the placeholder and the
         # reason the author wrote beside it, and that reason is the message.
@@ -106,8 +107,13 @@ def cmd_verify(args) -> int:
     # ⚠ Unjudged is reported beside the other two and never folded into either.
     # Counting it as a pass claims a run that did not happen; counting it as a
     # failure blames a document for a case nobody could drive.
+    # ⚠ The backend is on the same line as the counts, not in a footer. This
+    # ran ONE lowering of the document, and most of this product ships as
+    # another one -- a reader shown only "passed" will read it as a statement
+    # about what they are about to ship.
     print(f"  {result.passed} passed, {result.failed} failed, "
-          f"{result.unjudged} could not be judged")
+          f"{result.unjudged} could not be judged "
+          f"(the {result.backend} lowering)")
     return 1 if result.failed else 0
 
 
@@ -197,6 +203,11 @@ def main(argv=None) -> int:
                    help="the binding file, which names its own document")
     v.add_argument("--codegen",
                    help="the product's code generator (default: the one in this tree)")
+    v.add_argument("--backend", default="python",
+                   help="which lowering of the document to DRIVE. The product "
+                        "emits six; this drives the one it can import, and "
+                        "refuses the rest rather than reporting on a program "
+                        "nobody started")
     v.set_defaults(fn=cmd_verify)
 
     o = with_pack(sub.add_parser(

@@ -178,6 +178,24 @@ is renamed or split while the document went on doing exactly the same thing.
 That is an assertion about the insides wearing the clothes of one about
 behaviour, and it is refused instead.
 
+**It drives ONE of the six backends the product emits, and the verdict says
+which.** Python is the one whose generated form imports into this process and
+whose runtime this process can reach, so the document becomes an object and
+driving it is calling methods. Every other backend is a build and a separate
+process, which needs three things nothing here has: a build step for that
+language, a host program that stands the engine up and registers what a
+verifier registers, and a wire carrying each case's inputs in and each reading
+out. Naming one is refused, and the refusal says that rather than quietly
+running Python instead.
+
+⚠ The limitation is printed beside the counts because leaving it unsaid is
+what costs. Most of this product ships as C++, and a reader handed `12 passed,
+0 failed` finishes the sentence themselves about the thing they are about to
+ship. ⚠⚠ The backend parity suite does not close that gap, though it looks as
+though it should: it compares what the six emitters WRITE, byte for byte. How
+they BEHAVE under these cases is a different claim, and nothing in this tree
+makes it.
+
 ⚠ Two silences get refused rather than chosen. A reading with no `elapsed_ms`
 taken while the machine is still waiting on a delayed act is dated to a moment
 no record names. And a case that drove the same addresses to the same values
