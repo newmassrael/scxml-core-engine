@@ -66,7 +66,8 @@ class Rendering:
         return not self.refusal
 
 
-def render(binding_path, codegen=None, deploy=None) -> Rendering:
+def render(binding_path, codegen=None, deploy=None, shape=None,
+           lexicon=None) -> Rendering:
     """Render the document this binding names, or carry back the refusal.
 
     ⚠ The product's own words are passed through untouched, the way `verify`
@@ -74,6 +75,14 @@ def render(binding_path, codegen=None, deploy=None) -> Rendering:
     will not abbreviate is refused BY THE PRODUCT, and that refusal names the
     construct — which is exactly what the author needs to hear. Re-phrasing it
     would lose the name.
+
+    ⚠ `shape` and `lexicon` choose how the page is laid out and what the
+    grammar's words are called. Neither changes what the document says: a
+    value reaches the page as the author spelled it whichever pair is asked
+    for, which is what lets a reviewer read the page in their own language
+    and have their approval still be about the document. A page written in
+    any pair but the default says so on its first line, so it can be filed
+    and handed on without whoever picks it up having to be told.
     """
     binding_path = pathlib.Path(binding_path)
     binding = read_binding(binding_path)
@@ -98,9 +107,13 @@ def render(binding_path, codegen=None, deploy=None) -> Rendering:
         if not deploy.is_file():
             raise PseudoError(describe_path(deploy))
 
+    # ⚠ Neither name is checked here, and this module lists neither. What a
+    # shape or a lexicon may be called is the product's registry to answer;
+    # a copy of the set here would refuse a name the product accepts the day
+    # one is registered, and it would sound authoritative doing it.
     page, refusal = pseudo_page(document,
                                 pathlib.Path(codegen) if codegen else None,
-                                deploy)
+                                deploy, shape, lexicon)
     return Rendering(document=document,
                      deployed=deploy is not None,
                      text=page,

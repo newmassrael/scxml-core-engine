@@ -238,6 +238,50 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         with self.assertRaises(json.JSONDecodeError):
             json.loads(page)
 
+    @unittest.skipUnless(_default_codegen().exists(),
+                         "the product's code generator is not built")
+    def test_a_page_in_another_pair_says_so_on_its_first_line(self):
+        """What makes a chosen pair safe to approve and file.
+
+        ⚠ The page a reviewer approves is kept and handed on, and whoever
+        picks it up next has the page and nothing else -- not the request
+        that produced it. So the page has to say how it is read, and the
+        alternative that has to be excluded is guessing it back from how the
+        page looks.
+
+        ⚠ The second assertion is the one that says a pair is a choice of
+        SURFACE. The expression is the author's, character for character, in
+        a page whose every grammar word has been renamed around it -- so a
+        reviewer reading this page is reading this document.
+        """
+        result = self.call("pseudo", binding=str(self.binding),
+                           shape="endmark", lexicon="ko")
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        page = result["content"][0]["text"]
+        self.assertEqual("#!sce-pseudo shape=endmark lexicon=ko",
+                         page.splitlines()[0])
+        self.assertIn("mode ? 1 : 0", page)
+
+    @unittest.skipUnless(_default_codegen().exists(),
+                         "the product's code generator is not built")
+    def test_an_unregistered_shape_is_refused_with_the_names_there_are(self):
+        """The refusal comes from the product, and that is the point.
+
+        ⚠ Nothing in this tool lists which shapes exist. A list here would
+        refuse a name the product accepts on the day one is registered, and
+        it would sound authoritative doing it -- so an unknown name travels
+        all the way down and comes back as the generator's own refusal,
+        which names the real set. This case reads that set out of the
+        refusal, which is how it stays true as the registry grows.
+        """
+        result = self.call("pseudo", binding=str(self.binding),
+                           shape="no-such-shape")
+        self.assertTrue(result.get("isError"))
+        said = result["content"][0]["text"]
+        self.assertIn("no-such-shape", said)
+        self.assertIn("indent", said,
+                      f"the refusal does not name the shapes there are: {said}")
+
     def test_pseudo_refuses_an_empty_document_path(self):
         """A refusal names the file the caller gave, not this program.
 

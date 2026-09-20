@@ -162,6 +162,29 @@ TOOLS = [
                         "for byte."
                     ),
                 },
+                "shape": {
+                    "type": "string",
+                    "description": (
+                        "How lines and nesting are written -- 'indent' (the "
+                        "default) nests by two spaces a level, 'endmark' "
+                        "closes each block with the word that opened it. A "
+                        "choice of layout and never of content: a value "
+                        "still appears as the author spelled it, so the same "
+                        "document says the same thing in every shape. An "
+                        "unknown name is refused with the names there are."
+                    ),
+                },
+                "lexicon": {
+                    "type": "string",
+                    "description": (
+                        "What the grammar's own words are called -- 'en' (the "
+                        "default) or 'ko'. Only the words the grammar spends "
+                        "are translated; what the document wrote is never "
+                        "touched. A page in any pair but the default says so "
+                        "on its first line, so a reviewer's approval can be "
+                        "filed and read back later."
+                    ),
+                },
             },
         },
     },
@@ -371,12 +394,24 @@ def call_tool(name: str, args: dict) -> dict:
             deploy = args.get("deploy")
             if deploy is not None and not isinstance(deploy, str):
                 raise ToolArgumentError("'deploy' has to be a path, as a string")
+            # ⚠ Type only. WHICH shapes and lexicons exist is the product's
+            # registry to answer, and a set listed here would refuse a name
+            # the product accepts the day one is registered -- so an unknown
+            # name travels to the generator and comes back as its refusal,
+            # which names the real set.
+            shape = args.get("shape")
+            if shape is not None and not isinstance(shape, str):
+                raise ToolArgumentError("'shape' has to be a name, as a string")
+            lexicon = args.get("lexicon")
+            if lexicon is not None and not isinstance(lexicon, str):
+                raise ToolArgumentError("'lexicon' has to be a name, as a string")
             # ⚠ No pack is loaded, and none is asked for. Rendering needs the
             # document alone, and a caller handed a refusal about their pack
             # when they asked to read their document is told about the wrong
             # file.
             got = render_pseudo(pathlib.Path(binding), None,
-                                pathlib.Path(deploy) if deploy else None)
+                                pathlib.Path(deploy) if deploy else None,
+                                shape, lexicon)
             if not got.produced:
                 return _failure(got.refusal)
             # ⚠ The page itself, as text and not as JSON. This is the one

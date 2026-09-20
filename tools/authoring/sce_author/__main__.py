@@ -60,7 +60,8 @@ def cmd_questions(args) -> int:
 def cmd_pseudo(args) -> int:
     got = render_pseudo(pathlib.Path(args.binding),
                         pathlib.Path(args.codegen) if args.codegen else None,
-                        pathlib.Path(args.deploy) if args.deploy else None)
+                        pathlib.Path(args.deploy) if args.deploy else None,
+                        args.shape, args.lexicon)
     if not got.produced:
         print(f"refused: {got.refusal}", file=sys.stderr)
         return 1
@@ -220,6 +221,17 @@ def main(argv=None) -> int:
     s.add_argument("--deploy",
                    help="a deployment descriptor; every line it decides is "
                         "shown too, each marked with a leading '!'")
+    # ⚠ No `choices=`. What a shape or a lexicon may be called is the
+    # product's registry to answer, and a list here would refuse a name the
+    # product accepts the day one is registered. An unknown name comes back
+    # as the product's own refusal, which names the real set.
+    s.add_argument("--shape",
+                   help="how lines and nesting are written: 'indent' (the "
+                        "default) or 'endmark'; layout only, never content")
+    s.add_argument("--lexicon",
+                   help="what the grammar's own words are called: 'en' (the "
+                        "default) or 'ko'; what the document wrote is never "
+                        "translated")
     s.set_defaults(fn=cmd_pseudo)
 
     c = with_pack(sub.add_parser("check", help="judge a written document against the model"))

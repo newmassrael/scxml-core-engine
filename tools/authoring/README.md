@@ -230,6 +230,7 @@ summary of it. ⚠ Call it after `verify` passes -- a page that behaves wrongly
 is not worth a reader's time.
 
     python3 -m sce_author pseudo --binding <file> [--deploy <file>]
+                                 [--shape <name>] [--lexicon <name>]
 
 ⚠ It takes no `--pack`. Rendering consults the pack for nothing, and a caller
 handed a refusal about their pack when they asked to read their document has
@@ -239,6 +240,25 @@ page rendered from some other document on disk would read just as well, which
 is exactly how an approval goes wrong. With `--deploy`, the lines the
 deployment decides are shown too, each marked with a leading `!` -- strike
 those and what is left is the undeployed page, byte for byte.
+
+`--shape` picks how lines and nesting are written -- `indent`, the default,
+nests by two spaces a level; `endmark` closes each block with the word that
+opened it. `--lexicon` picks what the grammar's own words are called: `en`,
+the default, or `ko`. ⚠ Neither changes a thing the document says. A shape
+may surround a value and may never alter one, and a lexicon renames only the
+words the grammar itself spends -- so a reviewer can read the page in their
+own language and their approval is still an approval of the document.
+
+⚠ A page written in any pair but the default begins with a line saying which
+one, like `#!sce-pseudo shape=endmark lexicon=ko`. That is what lets an
+approved page be filed and handed on: whoever picks it up months later has
+the page and nothing else, and the page says how it is read rather than
+leaving it to be guessed from how it looks.
+
+⚠ Neither flag has a list of valid names in this tool, on purpose. Which
+shapes and lexicons exist is the product's registry to answer, and a copy
+here would refuse a name the product accepts the day one is registered. An
+unknown name comes back as the product's own refusal, naming the real set.
 
 ⚠ It does not spawn the generator itself. Exactly one module in this core may
 run another program, and a second caller gets a function there rather than a

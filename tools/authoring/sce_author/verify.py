@@ -259,7 +259,8 @@ def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
 
 
 def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
-                deploy: pathlib.Path | None) -> tuple[str, str]:
+                deploy: pathlib.Path | None, shape: str | None = None,
+                lexicon: str | None = None) -> tuple[str, str]:
     """One run of the generator's review surface. Returns `(page, refusal)`.
 
     ⚠ It lives HERE, in the module that already spawns, rather than beside
@@ -273,6 +274,17 @@ def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
     with a build refusal. A document the surface will not abbreviate is
     refused BY THE PRODUCT, and that refusal names the construct -- which is
     what the author needs to read.
+
+    ⚠ `shape` and `lexicon` are passed through WITHOUT being checked here,
+    and nothing in this tool lists what they may be. The product's registry
+    is what those names mean; a copy of it here would be a second list that
+    goes stale the day a shape is registered, and it would refuse a name the
+    product accepts while sounding authoritative about it. An unknown name
+    comes back as the product's own refusal, which names the real set.
+
+    ⚠ Omitted rather than defaulted when nobody asked. The generator's own
+    defaults are `indent` and `en`, and passing them explicitly would make
+    this tool the second place that decides what the default page is.
     """
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     if not codegen.exists():
@@ -282,6 +294,10 @@ def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
     argv = [str(codegen), "pseudo", str(document)]
     if deploy is not None:
         argv += ["--deploy", str(deploy)]
+    if shape is not None:
+        argv += ["--shape", shape]
+    if lexicon is not None:
+        argv += ["--lexicon", lexicon]
     run = subprocess.run(argv, capture_output=True, text=True)
     if run.returncode != 0:
         return "", (run.stderr.strip() or run.stdout.strip()
