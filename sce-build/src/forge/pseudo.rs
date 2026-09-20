@@ -1937,28 +1937,34 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
 }
 
 fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
-    let mut line = String::new();
+    let mut line = Vec::new();
     if !t.event.is_empty() {
-        let _ = write!(line, "on {} ", text(&t.event));
+        line.push(Part::Word(Word::On));
+        line.push(Part::Text(text(&t.event).into_owned()));
     }
+    line.push(Part::Text("->".into()));
     if t.target.is_empty() {
-        line.push_str("-> (no target)");
+        line.push(Part::Word(Word::NoTarget));
     } else {
-        let _ = write!(line, "-> {}", text(&t.target));
+        line.push(Part::Text(text(&t.target).into_owned()));
     }
     if !t.transition_type.is_empty() {
-        let _ = write!(line, " [{}]", text(&t.transition_type));
+        // The brackets are this clause's punctuation and travel with
+        // the value, for the reason `page`'s module note gives.
+        line.push(Part::Text(format!("[{}]", text(&t.transition_type))));
     }
     // The guard goes last: it is the line's only free-text value, and
     // no transition in this tree carries both a condition and a native
     // guard (measured over 587 documents), so "last" is unambiguous.
     if !t.cond.is_empty() {
-        let _ = write!(line, " when {}", text(&t.cond));
+        line.push(Part::Word(Word::When));
+        line.push(Part::Text(text(&t.cond).into_owned()));
     }
     if !t.native_payload_guard.is_empty() {
-        let _ = write!(line, " native-guard {}", text(&t.native_payload_guard));
+        line.push(Part::Word(Word::NativeGuard));
+        line.push(Part::Text(text(&t.native_payload_guard).into_owned()));
     }
-    out.line(&line);
+    out.line_of(line);
 
     out.nested(|out| {
         for id in &t.req {

@@ -136,6 +136,8 @@ pub enum Word {
     History,
     Default,
     Unhandled,
+    NoTarget,
+    NativeGuard,
 }
 
 impl Word {
@@ -215,6 +217,8 @@ impl Word {
         Word::History,
         Word::Default,
         Word::Unhandled,
+        Word::NoTarget,
+        Word::NativeGuard,
     ];
 }
 
@@ -313,6 +317,13 @@ fn en_word(w: Word) -> &'static str {
         Word::History => "history",
         Word::Default => "default",
         Word::Unhandled => "unhandled",
+        // ⚠ A phrase in parentheses, and it is a WORD: the grammar
+        // says "this transition names no target" in so many words,
+        // because an absent target is the difference between changing
+        // state and staying put. A lexicon that left it English would
+        // leave the one clause a reviewer most needs to read untranslated.
+        Word::NoTarget => "(no target)",
+        Word::NativeGuard => "native-guard",
     }
 }
 
