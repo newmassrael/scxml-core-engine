@@ -918,6 +918,191 @@ pub const SHAPES: &[&dyn Shape] = &[&Indent, &Endmark];
 /// Every lexicon a caller may choose.
 pub const LEXICONS: &[&Lexicon] = &[&EN, &KO];
 
+// ── Choosing a pair, and the page saying which one it is ───────
+
+/// The shape a caller named, if the registry has one.
+///
+/// ⚠ Looked up in [`SHAPES`] rather than matched on a list written
+/// here, so a shape becomes selectable on the day it is registered and
+/// not on the day somebody remembers this function.
+pub fn shape_named(name: &str) -> Option<&'static dyn Shape> {
+    SHAPES.iter().copied().find(|s| s.name() == name)
+}
+
+/// The lexicon a caller named, if the registry has one.
+pub fn lexicon_named(name: &str) -> Option<&'static Lexicon> {
+    LEXICONS.iter().copied().find(|l| l.name == name)
+}
+
+/// Every shape name, for a caller telling somebody what they may pick.
+pub fn shape_names() -> Vec<&'static str> {
+    SHAPES.iter().map(|s| s.name()).collect()
+}
+
+/// Every lexicon name, for the same reason.
+pub fn lexicon_names() -> Vec<&'static str> {
+    LEXICONS.iter().map(|l| l.name).collect()
+}
+
+/// What a page's first line begins with when it declares itself.
+///
+/// ⚠ Never translated, and not spelled by any lexicon. It has to be
+/// legible BEFORE the lexicon is known — that is the whole point of
+/// it — so putting it in a lexicon would make reading the declaration
+/// require the answer the declaration carries.
+pub const DECLARATION: &str = "#!sce-pseudo";
+
+/// A page whose own first line says how to read it, and cannot be
+/// obeyed.
+///
+/// ⚠ Refused rather than read as the default pair. A page that says
+/// `lexicon=de` is a page written by something this build does not
+/// have; reading it as `en` would succeed on every line whose words
+/// happen to coincide and quietly mis-read the rest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Undeclared {
+    /// The declaration as it stands on the page.
+    pub line: String,
+    /// What is wrong with it, as a clause.
+    pub why: String,
+}
+
+impl std::fmt::Display for Undeclared {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "the page declares '{}', and {}", self.line, self.why)
+    }
+}
+
+/// Why a page could not be handed back as the canonical one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotCanonical {
+    /// The page's first line cannot be obeyed.
+    Undeclared(Undeclared),
+    /// The shape the page names refused its own page.
+    Refused(Refusal),
+}
+
+impl std::fmt::Display for NotCanonical {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NotCanonical::Undeclared(u) => write!(f, "{u}"),
+            NotCanonical::Refused(r) => write!(f, "{r}"),
+        }
+    }
+}
+
+/// Whether this pair is the one a page with no declaration means.
+///
+/// ⚠ By name, because the registry's names are unique — see
+/// `every_registered_shape_has_its_own_name` and
+/// `every_registered_lexicon_has_its_own_name` — and a trait object
+/// has no cheaper identity than that.
+fn is_default(shape: &dyn Shape, lexicon: &Lexicon) -> bool {
+    shape.name() == Indent.name() && lexicon.name == EN.name
+}
+
+/// The whole page: a declaration when one is owed, then the body.
+///
+/// # ⚠ Why the default page carries no declaration
+///
+/// One rule, and it is total: **a page declares every choice that is
+/// not the default, and a page with no declaration made none.** So
+/// every page still answers "how do I read you" without anybody
+/// guessing — which is what an approved page being filed and handed
+/// on requires — and the default page stays byte for byte what every
+/// gate, every golden and every approval to date already means.
+///
+/// The declaration names BOTH halves even when only one differs, so a
+/// reader never has to know what the defaults were on the day it was
+/// written.
+pub fn write_page(nodes: &[Node], shape: &dyn Shape, lexicon: &Lexicon) -> Result<String, Refusal> {
+    let body = shape.write(nodes, lexicon)?;
+    if is_default(shape, lexicon) {
+        return Ok(body);
+    }
+    Ok(format!(
+        "{DECLARATION} shape={} lexicon={}\n{body}",
+        shape.name(),
+        lexicon.name
+    ))
+}
+
+/// The pair a page was written in, and the page after its declaration.
+///
+/// A page with no declaration is the default pair and is its own body.
+pub fn read_page(page: &str) -> Result<(&'static dyn Shape, &'static Lexicon, &str), Undeclared> {
+    let Some(rest) = page.strip_prefix(DECLARATION) else {
+        return Ok((&Indent, &EN, page));
+    };
+    let (line, body) = match rest.split_once('\n') {
+        Some((l, b)) => (l, b),
+        None => (rest, ""),
+    };
+    let declared = |why: String| Undeclared {
+        line: format!("{DECLARATION}{line}"),
+        why,
+    };
+
+    let mut shape: Option<&'static dyn Shape> = None;
+    let mut lexicon: Option<&'static Lexicon> = None;
+    for field in line.split_whitespace() {
+        let Some((key, value)) = field.split_once('=') else {
+            return Err(declared(format!(
+                "'{field}' is not a 'key=value' the declaration can carry"
+            )));
+        };
+        match key {
+            "shape" => match shape_named(value) {
+                Some(s) => shape = Some(s),
+                None => {
+                    return Err(declared(format!(
+                        "this build has no '{value}' shape — it has {}",
+                        shape_names().join(", ")
+                    )))
+                }
+            },
+            "lexicon" => match lexicon_named(value) {
+                Some(l) => lexicon = Some(l),
+                None => {
+                    return Err(declared(format!(
+                        "this build has no '{value}' lexicon — it has {}",
+                        lexicon_names().join(", ")
+                    )))
+                }
+            },
+            other => {
+                return Err(declared(format!(
+                    "'{other}' is not something a declaration says"
+                )))
+            }
+        }
+    }
+
+    // ⚠ Both halves are required once a declaration is present. A page
+    // that named only its shape would have to be read with whatever
+    // this build calls the default lexicon, which is exactly the guess
+    // the declaration exists to remove.
+    match (shape, lexicon) {
+        (Some(s), Some(l)) => Ok((s, l, body)),
+        (None, _) => Err(declared("it does not say which shape".to_string())),
+        (_, None) => Err(declared("it does not say which lexicon".to_string())),
+    }
+}
+
+/// Any page, back as the canonical one the reader reads.
+///
+/// ⚠ This is the entry point a stored page goes through. It is what
+/// makes a page in a chosen shape and a chosen language something that
+/// can be filed, handed on, and later read back into the document —
+/// rather than a rendering that is only legible to whoever asked for
+/// it while they still remember what they asked for.
+pub fn normalise_page(page: &str) -> Result<String, NotCanonical> {
+    let (shape, lexicon, body) = read_page(page).map_err(NotCanonical::Undeclared)?;
+    shape
+        .normalise(body, lexicon)
+        .map_err(NotCanonical::Refused)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1178,5 +1363,125 @@ mod tests {
     fn a_raw_line_is_written_unchanged() {
         let nodes = vec![Node::raw(2, "on entry:".into())];
         assert_eq!("    on entry:\n", Indent.write(&nodes, &EN).unwrap());
+    }
+
+    /// The name is how a caller asks for a lexicon, so two alike would
+    /// make one of them unreachable and a page naming it ambiguous.
+    #[test]
+    fn every_registered_lexicon_has_its_own_name() {
+        let mut seen: std::collections::BTreeSet<&str> = Default::default();
+        for lexicon in LEXICONS {
+            assert!(!lexicon.name.is_empty(), "a registered lexicon has no name");
+            assert!(
+                seen.insert(lexicon.name),
+                "two lexicons are both called {:?}",
+                lexicon.name
+            );
+        }
+        assert!(
+            seen.contains("en"),
+            "the default lexicon left the registry, so nothing offers it"
+        );
+    }
+
+    /// Every name the registries carry reaches its own entry.
+    ///
+    /// ⚠ Derived from the registries, not listed here: a shape added
+    /// tomorrow is asked this question tomorrow.
+    #[test]
+    fn a_registered_name_is_how_a_caller_asks_for_it() {
+        for shape in SHAPES {
+            let found = shape_named(shape.name()).expect("a registered shape answers to its name");
+            assert_eq!(shape.name(), found.name());
+        }
+        for lexicon in LEXICONS {
+            let found =
+                lexicon_named(lexicon.name).expect("a registered lexicon answers to its name");
+            assert_eq!(lexicon.name, found.name);
+        }
+        assert!(shape_named("no-such-shape").is_none());
+        assert!(lexicon_named("no-such-lexicon").is_none());
+    }
+
+    /// The whole point of the declaration: a page that has been filed
+    /// and handed on still says how it is read.
+    ///
+    /// ⚠ The population is `SHAPES × LEXICONS`, so this is also the
+    /// case that fails on the day a pair is registered whose
+    /// declaration cannot be read back.
+    #[test]
+    fn a_page_says_which_pair_wrote_it() {
+        let nodes = vec![
+            Node {
+                depth: 0,
+                parts: vec![Part::Word(Word::Enum), Part::Text("colour".into())],
+            },
+            Node {
+                depth: 1,
+                parts: vec![Part::Text("red".into())],
+            },
+        ];
+        for shape in SHAPES {
+            for lexicon in LEXICONS {
+                let Ok(page) = write_page(&nodes, *shape, lexicon) else {
+                    continue;
+                };
+                let (back_shape, back_lexicon, _body) =
+                    read_page(&page).expect("a page this module wrote is a page it can read");
+                assert_eq!(
+                    (shape.name(), lexicon.name),
+                    (back_shape.name(), back_lexicon.name),
+                    "the page did not hand back the pair that wrote it"
+                );
+                assert_eq!(
+                    canonical(&nodes),
+                    normalise_page(&page).expect("a declared page normalises"),
+                    "{} x {} did not come back as the canonical page",
+                    shape.name(),
+                    lexicon.name
+                );
+            }
+        }
+    }
+
+    /// The default page is unchanged, which is the safety net this
+    /// whole extension rests on.
+    #[test]
+    fn the_default_pair_writes_no_declaration() {
+        let nodes = vec![Node::raw(0, "enum colour".into())];
+        let page = write_page(&nodes, &Indent, &EN).unwrap();
+        assert_eq!(canonical(&nodes), page);
+        assert!(
+            !page.contains(DECLARATION),
+            "the default page grew a declaration, so every golden moved"
+        );
+    }
+
+    /// A declaration this build cannot obey is refused BY NAME.
+    ///
+    /// ⚠ The alternative is the one that has to be excluded: falling
+    /// back to the default pair would read a page written elsewhere as
+    /// though it were written here, and every line whose words happen
+    /// to coincide would come back looking right.
+    #[test]
+    fn a_declaration_this_build_cannot_obey_is_refused() {
+        // ⚠ `let Err(..) else` rather than `expect_err`, which would
+        // want the Ok side to be `Debug` — and that side carries a
+        // `&dyn Shape`, so the convenience would cost every shape a
+        // derive it has no other use for.
+        let Err(unknown) = read_page("#!sce-pseudo shape=indent lexicon=de\nenum colour\n") else {
+            panic!("an unregistered lexicon was read as though this build had it");
+        };
+        assert!(unknown.why.contains("'de' lexicon"), "{unknown}");
+
+        let Err(half) = read_page("#!sce-pseudo shape=endmark\nenum colour\n") else {
+            panic!("half a declaration left the other half to a guess");
+        };
+        assert!(half.why.contains("which lexicon"), "{half}");
+
+        let Err(junk) = read_page("#!sce-pseudo endmark ko\nenum colour\n") else {
+            panic!("a declaration is key=value, not a pair of bare words");
+        };
+        assert!(junk.why.contains("key=value"), "{junk}");
     }
 }

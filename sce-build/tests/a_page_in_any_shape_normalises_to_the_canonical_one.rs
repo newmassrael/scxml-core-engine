@@ -11,10 +11,16 @@
 //! back to that, and this is where the debt is collected:
 //!
 //! ```text
-//! normalise_S,L( write_S,L(nodes) )  ==  canonical(nodes)
+//! normalise_page( write_page(nodes, S, L) )  ==  canonical(nodes)
 //! ```
 //!
 //! byte for byte, over every document the parser takes.
+//!
+//! ⚠ Through the PAGE entry points, and that is the point of them:
+//! `normalise_page` is told nothing about the pair. An approved page is
+//! filed and handed on, and the reader that picks it up months later
+//! has only the page — so a law that handed the pair back in would be a
+//! law about a caller's memory rather than about the artefact.
 //!
 //! # ⚠ Why the population is derived twice over
 //!
@@ -36,7 +42,7 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::page::{canonical, LEXICONS, SHAPES};
+use sce_build::forge::page::{canonical, normalise_page, read_page, write_page, LEXICONS, SHAPES};
 use sce_build::forge::pseudo;
 use sce_build::DocumentLabel;
 
@@ -121,7 +127,10 @@ fn a_page_in_any_shape_normalises_to_the_canonical_one() {
         let want = canonical(&nodes);
         for shape in SHAPES {
             for lexicon in LEXICONS {
-                let page = match shape.write(&nodes, lexicon) {
+                // ⚠ The WHOLE page, declaration and all — the artefact a
+                // reviewer is handed and files, not the body a caller who
+                // still remembers what they asked for could read.
+                let page = match write_page(&nodes, *shape, lexicon) {
                     Ok(p) => p,
                     Err(e) => {
                         broken.push(format!(
@@ -131,7 +140,30 @@ fn a_page_in_any_shape_normalises_to_the_canonical_one() {
                         continue;
                     }
                 };
-                let back = match shape.normalise(&page, lexicon) {
+
+                // The page says which pair wrote it. Asked here rather
+                // than trusted, because the whole reason a page carries
+                // a declaration is that nobody will be around to say.
+                match read_page(&page) {
+                    Ok((s, l, _)) if (s.name(), l.name) == (shape.name(), lexicon.name) => {}
+                    Ok((s, l, _)) => broken.push(format!(
+                        "{stem}: {} × {} says it was written by {} × {}",
+                        shape.name(),
+                        lexicon.name,
+                        s.name(),
+                        l.name
+                    )),
+                    Err(e) => broken.push(format!(
+                        "{stem}: {} × {} wrote a declaration nothing can read — {e}",
+                        shape.name(),
+                        lexicon.name
+                    )),
+                }
+
+                // ⚠ The page is handed back with NOTHING told to it. A
+                // normalise that had to be given the pair would be a law
+                // about a caller's memory rather than about the page.
+                let back = match normalise_page(&page) {
                     Ok(b) => b,
                     Err(e) => {
                         broken.push(format!(
@@ -149,6 +181,14 @@ fn a_page_in_any_shape_normalises_to_the_canonical_one() {
                         shape.name(),
                         lexicon.name
                     ));
+                }
+
+                // The safety net the whole extension rests on, asked of
+                // every document rather than of one: the default pair's
+                // page is the page every golden and every approval to
+                // date already means, byte for byte.
+                if (shape.name(), lexicon.name) == ("indent", "en") && page != want {
+                    broken.push(format!("{stem}: the default pair's page moved"));
                 }
             }
         }
