@@ -55,13 +55,20 @@ def extract_w3c_aot_tests(registry_file):
         raise ValueError(f"{registry_file} declares no `fixtures` array")
 
     tests = [f['id'] for f in fixtures]
+    # ⚠ Carried alongside the ids rather than derived in the page. The
+    # registry already records which harness a fixture needs, and the
+    # visualizer was the one reader not looking: it offered every fixture
+    # and let the ones needing an HTTP endpoint fail at expression time
+    # with `_ioprocessors['basichttp'].location`, a message about a symbol
+    # rather than about the environment.
+    needs_http = [f['id'] for f in fixtures if f.get('harness') == 'http']
     if len(tests) < MIN_TESTS:
         raise ValueError(
             f"{registry_file} yielded {len(tests)} test(s); expected at least "
             f"{MIN_TESTS}. Refusing to rewrite the visualizer list from what "
             f"looks like a broken read."
         )
-    return tests
+    return tests, needs_http
 
 
 def format_js_array(tests):
@@ -113,17 +120,19 @@ def format_js_array(tests):
     return '\n'.join(lines)
 
 
-def generate_test_list_js(tests):
+def generate_test_list_js(tests, needs_http):
     """
     Generate complete test-list.js content
 
     Args:
         tests: List of test numbers
+        needs_http: The ids whose registry `harness` is `http`
 
     Returns:
         Complete JavaScript file content
     """
     js_array = format_js_array(tests)
+    http_ids = ', '.join(f"'{t}'" for t in needs_http)
 
     return f"""// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
@@ -144,6 +153,41 @@ def generate_test_list_js(tests):
 const W3C_TEST_LIST = [
 {js_array}
 ];
+
+/**
+ * The fixtures the registry marks `harness: "http"`.
+ *
+ * ⚠ These need a BasicHTTPEventProcessor — an endpoint the machine
+ * publishes and then receives requests at. A page has no way to open one,
+ * so the document's `_ioprocessors['basichttp'].location` has nothing to
+ * read and the run stops on an expression.
+ *
+ * The list is generated from the registry rather than written here,
+ * because the registry is where `harness` is already decided and a second
+ * copy would be a second answer that drifts.
+ */
+const W3C_TESTS_NEEDING_HTTP = new Set([{http_ids}]);
+
+/**
+ * Why this test cannot run in a browser, or `null` when it can.
+ *
+ * ⚠ Answered BEFORE the run rather than after it. Without this the page
+ * offered every fixture and let the twelve HTTP ones fail at expression
+ * time, so what a reader saw was `Failed to evaluate expression:
+ * _ioprocessors['basichttp'].location` — true, and about a symbol rather
+ * than about the environment that cannot supply it. The registry knew the
+ * answer the whole time; nothing carried it to the page.
+ */
+function testEnvironmentLimitation(testId) {{
+    if (testId === undefined || testId === null) return null;
+    if (!W3C_TESTS_NEEDING_HTTP.has(String(testId))) return null;
+    return `W3C test ${{testId}} exercises the BasicHTTP event processor: the `
+        + `machine has to publish an HTTP endpoint and receive requests at it. `
+        + `A browser page cannot open one, so `
+        + `_ioprocessors['basichttp'].location has nothing to read and the run `
+        + `stops there. The diagram below is the document itself and is `
+        + `unaffected; to RUN this test, use the repository's http harness.`;
+}}
 
 /**
  * Get current test number from URL hash
@@ -273,14 +317,15 @@ def main():
 
     # Extract tests
     try:
-        tests = extract_w3c_aot_tests(registry_file)
-        print(f"Extracted {len(tests)} tests from {registry_file}")
+        tests, needs_http = extract_w3c_aot_tests(registry_file)
+        print(f"Extracted {len(tests)} tests from {registry_file}"
+              f" ({len(needs_http)} need an HTTP endpoint)")
     except Exception as e:
         print(f"Error extracting tests: {e}", file=sys.stderr)
         sys.exit(1)
 
     # Generate JavaScript
-    js_content = generate_test_list_js(tests)
+    js_content = generate_test_list_js(tests, needs_http)
 
     # Write output
     output_file.parent.mkdir(parents=True, exist_ok=True)

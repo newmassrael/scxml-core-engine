@@ -852,6 +852,52 @@ body {
     color: #ffffff;
 }
 
+/* A limitation of this environment, which is not an error.
+ *
+ * ⚠ Deliberately NOT red. Nothing is wrong with the document or the
+ * engine when a fixture wants an HTTP endpoint a page cannot open, and
+ * dressing that as a failure teaches the reader to distrust a diagram
+ * that is perfectly correct. It shares the fatal banner's geometry so
+ * the two cannot overlap, and differs in colour alone. */
+.environment-notice-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 18px;
+    background: #fff8c5;
+    border-bottom: 2px solid #9a6700;
+    color: #4d2d00;
+    font-size: 14px;
+    line-height: 1.5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.environment-notice-message {
+    flex: 1;
+    user-select: text;
+}
+
+.environment-notice-dismiss {
+    flex: none;
+    padding: 6px 14px;
+    border: 1px solid #9a6700;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #9a6700;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.environment-notice-dismiss:hover {
+    background: #9a6700;
+    color: #ffffff;
+}
+
 /* One arrow may stand for several transitions — the link builder merges the
  * ones sharing a pair of states. These two rules are what tells a reader
  * that, so they are not decoration: without the rule, two alternatives read

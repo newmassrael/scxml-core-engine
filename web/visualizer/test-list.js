@@ -23,6 +23,41 @@ const W3C_TEST_LIST = [
 ];
 
 /**
+ * The fixtures the registry marks `harness: "http"`.
+ *
+ * ⚠ These need a BasicHTTPEventProcessor — an endpoint the machine
+ * publishes and then receives requests at. A page has no way to open one,
+ * so the document's `_ioprocessors['basichttp'].location` has nothing to
+ * read and the run stops on an expression.
+ *
+ * The list is generated from the registry rather than written here,
+ * because the registry is where `harness` is already decided and a second
+ * copy would be a second answer that drifts.
+ */
+const W3C_TESTS_NEEDING_HTTP = new Set(['201', '509', '510', '513', '518', '519', '520', '522', '531', '532', '534', '567']);
+
+/**
+ * Why this test cannot run in a browser, or `null` when it can.
+ *
+ * ⚠ Answered BEFORE the run rather than after it. Without this the page
+ * offered every fixture and let the twelve HTTP ones fail at expression
+ * time, so what a reader saw was `Failed to evaluate expression:
+ * _ioprocessors['basichttp'].location` — true, and about a symbol rather
+ * than about the environment that cannot supply it. The registry knew the
+ * answer the whole time; nothing carried it to the page.
+ */
+function testEnvironmentLimitation(testId) {
+    if (testId === undefined || testId === null) return null;
+    if (!W3C_TESTS_NEEDING_HTTP.has(String(testId))) return null;
+    return `W3C test ${testId} exercises the BasicHTTP event processor: the `
+        + `machine has to publish an HTTP endpoint and receive requests at it. `
+        + `A browser page cannot open one, so `
+        + `_ioprocessors['basichttp'].location has nothing to read and the run `
+        + `stops there. The diagram below is the document itself and is `
+        + `unaffected; to RUN this test, use the repository's http harness.`;
+}
+
+/**
  * Get current test number from URL hash
  */
 function getCurrentTestNumber() {
