@@ -6954,17 +6954,6 @@ impl W3cBackend for KotlinBackend {
         write_if_changed_drift_aware(&child_sm_file, &fixed_code, drift_ctx);
     }
 
-    /// Kotlin's parent template handles hybrid invokes via
-    /// `ScxmlRuntimeInterpreter.fromFile/fromString` (see
-    /// `entry_exit_actions.kt.jinja2` `inv.is_hybrid` branch) and never
-    /// imports the generated `Test{N}Hybrid{M}StateMachine` class, so
-    /// emitting that stub would be dead code. Static `src=` / inline
-    /// `<content>` invokes still get a stub via the trait default
-    /// because the parent template instantiates them by name.
-    fn emits_hybrid_child_stub(&self) -> bool {
-        false
-    }
-
     fn process_child_failure(
         &self,
         test_id: &str,

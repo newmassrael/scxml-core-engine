@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: c7fa1bace9cc09130fe34c6bb613ca8da547abc5200c95b444deca8a9309196b
+// template-hash: 7b98e70bedf81ba26d5ed411dff10dd848488064e2842a1bb6ffe1d783a88c2a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -11,7 +11,6 @@
 package com.sce.generated.test216
 
 import com.sce.runtime.*
-import com.sce.interpreter.ScxmlRuntimeInterpreter
 
 
 // --- States (W3C SCXML 3.2) ---
@@ -390,7 +389,13 @@ class Test216StateMachine(
                                 raisePlatformError(Test216Event.Error.Execution, "<invoke srcexpr='Var1'> could not be evaluated")
                                 return@deferInvoke
                             }
-                            val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "resources/216", scriptEngine)
+                            // §scxml-6.4: the child is the build-time stub, as on
+                            // every other AOT backend. `filePath` is not consulted:
+                            // the clause this arm answers is that the expression
+                            // evaluates, and what the value NAMES is a residue this
+                            // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
+                            @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
+                            val childSM = Test216Hybrid0StateMachine()
                             startInvoke("_invoke_0", childSM, false, Test216Event.Done.Invoke, "", generatedInvokeId)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation

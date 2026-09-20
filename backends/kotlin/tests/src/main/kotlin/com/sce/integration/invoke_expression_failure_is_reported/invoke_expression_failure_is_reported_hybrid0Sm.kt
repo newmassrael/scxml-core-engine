@@ -1,14 +1,14 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 093b876a9ac3d5191526d3c37fa64f1e3d18e4b91f132c7e8e2c8dd8521dbdfb
-// template-hash: c7fa1bace9cc09130fe34c6bb613ca8da547abc5200c95b444deca8a9309196b
+// template-hash: 7b98e70bedf81ba26d5ed411dff10dd848488064e2842a1bb6ffe1d783a88c2a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
-// Source: /tmp/tmp.JHG7VnuRlr/invoke_expression_failure_is_reported_hybrid0.scxml
+// Source: /tmp/tmp.OYKyGmMjRJ/invoke_expression_failure_is_reported_hybrid0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:2 :: _machine
 
-package com.sce.integration.invoke_expression_failure_is_reported_hybrid0
+package com.sce.integration.invoke_expression_failure_is_reported
 
 import com.sce.runtime.*
 
@@ -60,6 +60,20 @@ class InvokeExpressionFailureIsReportedHybrid0StateMachine(
         is InvokeExpressionFailureIsReportedHybrid0State.Final -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): InvokeExpressionFailureIsReportedHybrid0Event? = when (name) {
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    // A child SM that inherits the has_parent_communication override while
+    // declaring no events of its own leaves the sealed hierarchy with zero
+    // implementors, so `InvokeExpressionFailureIsReportedHybrid0Event` is uninhabited: no caller can
+    // construct an argument and the body is unreachable. A `when` over an
+    // uninhabited sealed subject is vacuously exhaustive, so any branch —
+    // `else` included — is dead code the compiler rejects under -Werror.
+    // Returning the null directly is the honest expression of "unreachable".
+    override fun eventNameOf(event: InvokeExpressionFailureIsReportedHybrid0Event): String? = null
 
 
 

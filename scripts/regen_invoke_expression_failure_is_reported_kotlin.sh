@@ -41,9 +41,13 @@ trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l kotlin -o "$TMP/" \
     --kotlin-package-prefix "$PACKAGE_PREFIX"
+# `--as-child --parent-stem` puts the child in the parent's package. Kotlin
+# gives each document a package of its own, so without it the parent's
+# unqualified reference to the stub class does not resolve — measured, as an
+# `Unresolved reference` at compile time.
 for child in "$TMP"/*_hybrid*.scxml; do
     [ -e "$child" ] || continue
-    "$CODEGEN" generate "$child" -l kotlin -o "$TMP/" \
+    "$CODEGEN" generate "$child" --as-child --parent-stem "$STEM" -l kotlin -o "$TMP/" \
         --kotlin-package-prefix "$PACKAGE_PREFIX"
 done
 

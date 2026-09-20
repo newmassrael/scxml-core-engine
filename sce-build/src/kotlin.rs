@@ -345,9 +345,25 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
 
                 let params_json = serde_json::to_value(&hi.params).unwrap_or_default();
 
+                // §scxml-6.4: the child a hybrid `<invoke>` runs is the stub
+                // codegen fixed at build time, the same one the other five AOT
+                // backends spawn (docs/SCE_ACCEPTED_SUBSET.md §2.13). This used
+                // to be empty because Kotlin resolved the evaluated string into
+                // a document through `ScxmlRuntimeInterpreter` instead — an
+                // interpreter fallback inside an AOT backend, and one that
+                // could not ship: that class lives in this repository's Kotlin
+                // TEST module, so every generated file carrying a hybrid invoke
+                // imported a symbol a consumer's runtime does not have.
+                let child_class = if hi.common.child_name.is_empty() {
+                    String::new()
+                } else {
+                    crate::filters::to_pascal_case(hi.common.child_name.clone())
+                };
+
                 entries.push(serde_json::json!({
                     "invoke_id": invoke_id,
-                    "child_name": "",
+                    "child_name": hi.common.child_name,
+                    "child_class": child_class,
                     "autoforward": hi.autoforward,
                     "done_event": done_event,
                     "has_done_event": has_done_event,

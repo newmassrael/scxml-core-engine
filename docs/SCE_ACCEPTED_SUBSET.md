@@ -1965,31 +1965,42 @@ named".
 </state>
 ```
 
-The contract five backends implement is therefore "the expression
-evaluates at invoke-fire time" (§scxml-6.4.3), not "the evaluated
-string selects the child". The C11 template says so in as many words.
-Two backends are not on that contract, and the difference is
-behaviour a document cannot see from its own text:
+The contract every AOT backend implements — C++, Rust, Go, C11, Python
+and Kotlin, with no row for any of them to differ in — is therefore
+"the expression evaluates at invoke-fire time" (§scxml-6.4.3), not
+"the evaluated string selects the child". The C11 template says so in
+as many words,
+and a failure to evaluate raises `error.execution` under one wording on
+all six (`sce-build/tests/one_wording_for_an_invoke_expression_failure.rs`).
 
-| Backend | Evaluates the expression | Child that runs |
-|---|---|---|
-| C++, Rust, Go, C11 | Yes — an evaluation failure raises `error.execution` and no child starts | The build-time stub |
-| **Python** | **No** — nothing evaluates it, so a failing expression raises nothing | The build-time stub |
-| **Kotlin** | Yes — `ScxmlRuntimeInterpreter.fromFile` | **The document the value names**, resolved against a base directory baked in at codegen time |
+⚠ The consequence for an author is one sentence: on the AOT path a
+child reached through `srcexpr` **does nothing**. A child that must run
+logic has to be named by `src=` or carried inline by `<content>`, both
+of which are resolved at build time and generated whole. `--deploy`
+changes none of this; it writes the same stub. The C++ Interpreter,
+which parses at run time, does honour the value and runs the document it
+names.
 
-⚠⚠⚠ The Kotlin row is not a capability the other five lack. Every
-generated Kotlin file carrying a hybrid invoke emits `import
-com.sce.interpreter.ScxmlRuntimeInterpreter`, and that class exists only
-in this repository's Kotlin **test** module — not in the published
-runtime package the generated code otherwise imports. A consumer who
-depends on the runtime alone gets source that does not compile, which is
-the same failure the closure ledger's C1 and C2 rows were opened for.
+⚠⚠ Two of the six did not hold that contract when it was written down,
+and both are recorded here rather than quietly repaired:
+**Python** evaluated nothing at all, so a failing expression raised
+nothing and the child started as though the document were fine.
+**Kotlin** resolved the value into a document through
+`ScxmlRuntimeInterpreter` — an interpreter fallback inside an AOT
+backend, which ARCHITECTURE.md forbids, and one that could not ship:
+that class lives in this repository's Kotlin **test** module, so every
+generated file carrying a hybrid invoke imported a symbol a consumer's
+runtime does not have and did not compile for them. It now spawns the
+same stub as the rest.
 
-⚠ The consequence for an author is one sentence: on the five stub
-backends a child reached through `srcexpr` **does nothing**. A child
-that must run logic has to be named by `src=` or carried inline by
-`<content>`, both of which are resolved at build time and generated
-whole. `--deploy` changes none of this; it writes the same stub.
+⚠⚠⚠ What Kotlin lost is worth naming rather than filing as a tidy-up:
+it was the one AOT channel whose child was the document the expression
+named. Getting that back is not a Kotlin-shaped job. It needs the
+build to know a SET of candidate children and the runtime to choose
+among them by the evaluated value — with a document that declares no
+candidates refused rather than silently given a stub. Until that
+exists, this section's residue is the honest description of every AOT
+channel.
 
 ⚠⚠ No fixture's oracle can currently tell a stub from the named
 document, which is why the divergence above could persist unremarked.

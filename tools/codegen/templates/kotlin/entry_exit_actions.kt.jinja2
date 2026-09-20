@@ -180,7 +180,13 @@
                                 raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr='{{ inv.srcexpr | escape_kotlin }}'> could not be evaluated")
                                 return@deferInvoke
                             }
-                            val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "{{ model.scxml_base_path | escape_kotlin }}", scriptEngine)
+                            // §scxml-6.4: the child is the build-time stub, as on
+                            // every other AOT backend. `filePath` is not consulted:
+                            // the clause this arm answers is that the expression
+                            // evaluates, and what the value NAMES is a residue this
+                            // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
+                            @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
+                            val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
 {% elif inv.contentexpr %}
                             // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child.
                             // Split for the reason the srcexpr arm above states.
@@ -193,7 +199,9 @@
                                 raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke contentexpr='{{ inv.contentexpr | escape_kotlin }}'> could not be evaluated")
                                 return@deferInvoke
                             }
-                            val childSM = ScxmlRuntimeInterpreter.fromString(scxmlContent, scriptEngine)
+                            // The stub, for the reason the srcexpr arm above states.
+                            @Suppress("UNUSED_VARIABLE") val _evaluated = scxmlContent
+                            val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
 {% endif %}
                             startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, "", generatedInvokeId)
                         } catch (_: Exception) {

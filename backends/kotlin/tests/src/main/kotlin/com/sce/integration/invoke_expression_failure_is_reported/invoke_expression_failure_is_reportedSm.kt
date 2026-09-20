@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 330474c9d384762034a0ce81e85f7fab16d80ad68caac74a931eac551a42e48f
-// template-hash: c7fa1bace9cc09130fe34c6bb613ca8da547abc5200c95b444deca8a9309196b
+// template-hash: 7b98e70bedf81ba26d5ed411dff10dd848488064e2842a1bb6ffe1d783a88c2a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -11,7 +11,6 @@
 package com.sce.integration.invoke_expression_failure_is_reported
 
 import com.sce.runtime.*
-import com.sce.interpreter.ScxmlRuntimeInterpreter
 
 
 // --- States (W3C SCXML 3.2) ---
@@ -368,7 +367,13 @@ class InvokeExpressionFailureIsReportedStateMachine(
                                 raisePlatformError(InvokeExpressionFailureIsReportedEvent.Error.Execution, "<invoke srcexpr='target.path'> could not be evaluated")
                                 return@deferInvoke
                             }
-                            val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "integration_resources/invoke_expression_failure_is_reported", scriptEngine)
+                            // §scxml-6.4: the child is the build-time stub, as on
+                            // every other AOT backend. `filePath` is not consulted:
+                            // the clause this arm answers is that the expression
+                            // evaluates, and what the value NAMES is a residue this
+                            // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
+                            @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
+                            val childSM = InvokeExpressionFailureIsReportedHybrid0StateMachine()
                             startInvoke("_invoke_0", childSM, false, InvokeExpressionFailureIsReportedEvent.Done.Invoke, "", generatedInvokeId)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
