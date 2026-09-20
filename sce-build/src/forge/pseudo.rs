@@ -500,6 +500,19 @@ pub fn render_with_deployment(
     doc: &ForgeDocument,
     deployment: &Deployment,
 ) -> Result<String, Unsupported> {
+    Ok(Indent.write(&render_nodes(doc, deployment)?, &EN))
+}
+
+/// The page before a shape has written it.
+///
+/// ⚠ The seam a second shape needs, and the one a gate needs to ask
+/// whether every block-opening line carries a word — a question about
+/// the page's STRUCTURE, which the written text has already flattened
+/// away. [`render_with_deployment`] is this plus the default shape.
+pub fn render_nodes(
+    doc: &ForgeDocument,
+    deployment: &Deployment,
+) -> Result<Vec<Node>, Unsupported> {
     // A deployment binds `<send>` targets. No other kind has one, so a
     // deployment handed in with one is a caller error, and it is
     // refused by name rather than rendered without the facts it was
@@ -729,9 +742,21 @@ impl<'d> Out<'d> {
     /// carrying an inline child machine. Re-indenting the finished text
     /// keeps one renderer for a machine instead of a second one that
     /// takes a starting depth, which is how the two would drift.
-    fn block(&mut self, rendered: &str) {
-        for line in rendered.lines() {
-            self.line(line);
+    /// Another page's nodes, nested under this one.
+    ///
+    /// ⚠ Nodes, not its text. Splicing the rendered lines back in
+    /// would make every one of them RAW — the child's words, and with
+    /// them the child's block structure, would be flattened into
+    /// strings at the moment it was embedded. An inline child machine
+    /// is the only place this happens, and a shape that closes blocks
+    /// would have found the child's openers wordless for a reason
+    /// nothing in the child explains.
+    fn block(&mut self, rendered: Vec<Node>) {
+        for node in rendered {
+            self.nodes.push(Node {
+                depth: self.depth + node.depth,
+                parts: node.parts,
+            });
         }
     }
 }
@@ -744,7 +769,7 @@ fn text(s: &str) -> std::borrow::Cow<'_, str> {
 
 // ── Algorithm ──────────────────────────────────────────────────
 
-fn render_algorithm(m: &AlgorithmModel) -> String {
+fn render_algorithm(m: &AlgorithmModel) -> Vec<Node> {
     let mut out = Out::new();
 
     let params: Vec<String> = m
@@ -763,7 +788,7 @@ fn render_algorithm(m: &AlgorithmModel) -> String {
         Part::Text(format!("{}({})", text(&m.name), params.join(", "))),
     ];
     if let Some(ret) = &m.signature.return_type {
-        head.push(Part::Text("->".into()));
+        head.push(Part::Word(Word::Arrow));
         head.push(Part::Text(ret.as_attr().to_string()));
         if let Some(max) = m.signature.returns_max_size {
             head.push(Part::Word(Word::ReturnsMax));
@@ -784,7 +809,7 @@ fn render_algorithm(m: &AlgorithmModel) -> String {
         }
     });
 
-    out.finish()
+    out.nodes
 }
 
 fn render_const(c: &AlgorithmConst, out: &mut Out<'_>) {
@@ -801,13 +826,16 @@ fn render_const(c: &AlgorithmConst, out: &mut Out<'_>) {
             ));
         }
         (AlgorithmConstType::Array { elem, len }, _, Some(fold)) => {
-            out.line(&format!(
-                "const {}: array<{}, {}> = {}",
-                text(&c.name),
-                elem.as_attr(),
-                len,
-                fold_head(fold)
-            ));
+            out.line_of(vec![
+                Part::Word(Word::Const),
+                Part::Text(format!(
+                    "{}: array<{}, {}> = {}",
+                    text(&c.name),
+                    elem.as_attr(),
+                    len,
+                    fold_head(fold)
+                )),
+            ]);
             out.nested(|out| {
                 for stmt in &fold.body {
                     render_stmt(stmt, out);
@@ -1001,13 +1029,14 @@ fn render_test_vector(tv: &TestVector, out: &mut Out<'_>) {
 
 // ── Procedure ──────────────────────────────────────────────────
 
-fn render_procedure(m: &ProcedureModel) -> String {
+fn render_procedure(m: &ProcedureModel) -> Vec<Node> {
     let mut out = Out::new();
-    out.line(&format!(
-        "procedure {} initial {}",
-        text(&m.name),
-        text(&m.initial)
-    ));
+    out.line_of(vec![
+        Part::Word(Word::Procedure),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(Word::Initial),
+        Part::Text(text(&m.initial).into_owned()),
+    ]);
 
     out.nested(|out| {
         for f in &m.inputs {
@@ -1024,7 +1053,7 @@ fn render_procedure(m: &ProcedureModel) -> String {
         }
     });
 
-    out.finish()
+    out.nodes
 }
 
 /// One `<data>` field, with every clause the model carries.
@@ -1143,7 +1172,7 @@ fn render_transition(t: &ProcedureTransition, out: &mut Out<'_>) {
         line.push(Part::Word(Word::On));
         line.push(Part::Text(text(e).into_owned()));
     }
-    line.push(Part::Text("->".into()));
+    line.push(Part::Word(Word::Arrow));
     line.push(Part::Text(text(&t.target).into_owned()));
     // The guard goes LAST, after the target, because it is the only
     // free-text value on the line and the rule puts those at the end.
@@ -1171,7 +1200,7 @@ fn render_transition(t: &ProcedureTransition, out: &mut Out<'_>) {
 // shared with the procedure above for the same reason the review table
 // shares its row type — two spellings of one field is how they drift.
 
-fn render_condition(m: &ConditionModel) -> String {
+fn render_condition(m: &ConditionModel) -> Vec<Node> {
     let mut out = Out::new();
     out.line_of(vec![
         Part::Word(Word::Condition),
@@ -1183,10 +1212,10 @@ fn render_condition(m: &ConditionModel) -> String {
         }
         out.line(&format!("when {}", text(&m.expr)));
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_transform(m: &TransformModel) -> String {
+fn render_transform(m: &TransformModel) -> Vec<Node> {
     let mut out = Out::new();
     out.line_of(vec![
         Part::Word(Word::Transform),
@@ -1197,10 +1226,10 @@ fn render_transform(m: &TransformModel) -> String {
             render_field(f, out);
         }
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_validator(m: &ValidatorModel) -> String {
+fn render_validator(m: &ValidatorModel) -> Vec<Node> {
     let mut out = Out::new();
     out.line_of(vec![
         Part::Word(Word::Validator),
@@ -1232,25 +1261,26 @@ fn render_validator(m: &ValidatorModel) -> String {
             out.line(&format!("plausibility {}", text(p)));
         }
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_event_schema(m: &EventSchemaModel) -> String {
+fn render_event_schema(m: &EventSchemaModel) -> Vec<Node> {
     let mut out = Out::new();
-    out.line(&format!(
-        "event-schema {} event {}",
-        text(&m.name),
-        text(&m.event_name)
-    ));
+    out.line_of(vec![
+        Part::Word(Word::EventSchema),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(Word::Event),
+        Part::Text(text(&m.event_name).into_owned()),
+    ]);
     out.nested(|out| {
         for f in &m.fields {
             render_field(f, out);
         }
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_enum(m: &EnumModel) -> String {
+fn render_enum(m: &EnumModel) -> Vec<Node> {
     let mut out = Out::new();
     // ⚠ The first kind decomposed into words. The colon stays inside
     // the text part on purpose: it is this construct's punctuation, and
@@ -1293,10 +1323,10 @@ fn render_enum(m: &EnumModel) -> String {
             out.line_of(parts);
         }
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_timer(m: &TimerModel) -> String {
+fn render_timer(m: &TimerModel) -> Vec<Node> {
     let mut out = Out::new();
     let mut head = format!(
         "timer {} period {}us fire {}",
@@ -1311,7 +1341,7 @@ fn render_timer(m: &TimerModel) -> String {
         let _ = write!(head, " cancel-on-exit {}", text(s));
     }
     out.line(&head);
-    out.finish()
+    out.nodes
 }
 
 /// An `f64` as the shortest text that reads back as the same value.
@@ -1327,7 +1357,7 @@ fn num(v: f64) -> String {
     format!("{v}")
 }
 
-fn render_filter(m: &FilterModel) -> String {
+fn render_filter(m: &FilterModel) -> Vec<Node> {
     let mut out = Out::new();
     let kind = match m.filter_type {
         FilterType::MovingAverage => Word::MovingAverage,
@@ -1352,10 +1382,10 @@ fn render_filter(m: &FilterModel) -> String {
         render_field(&m.input, out);
         render_field(&m.output, out);
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_observer(m: &ObserverModel) -> String {
+fn render_observer(m: &ObserverModel) -> Vec<Node> {
     let mut out = Out::new();
     // ⚠ The first composite head taken apart. `write!`-ing clause after
     // clause onto one string is what let a value decide where a clause
@@ -1403,26 +1433,28 @@ fn render_observer(m: &ObserverModel) -> String {
             });
         }
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_interpolation(m: &InterpolationModel) -> String {
+fn render_interpolation(m: &InterpolationModel) -> Vec<Node> {
     let mut out = Out::new();
     let method = match m.method {
-        InterpolationMethod::Linear => "linear",
-        InterpolationMethod::Bilinear => "bilinear",
+        InterpolationMethod::Linear => Word::Linear,
+        InterpolationMethod::Bilinear => Word::Bilinear,
     };
     let oob = match m.out_of_bounds {
-        OutOfBounds::Clamp => "clamp",
-        OutOfBounds::Extrapolate => "extrapolate",
-        OutOfBounds::Error => "error",
+        OutOfBounds::Clamp => Word::Clamp,
+        OutOfBounds::Extrapolate => Word::Extrapolate,
+        OutOfBounds::Error => Word::Error,
     };
-    out.line(&format!(
-        "interpolation {} method {} out-of-bounds {}",
-        text(&m.name),
-        method,
-        oob
-    ));
+    out.line_of(vec![
+        Part::Word(Word::Interpolation),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(Word::Method),
+        Part::Word(method),
+        Part::Word(Word::OutOfBounds),
+        Part::Word(oob),
+    ]);
     out.nested(|out| {
         for f in &m.inputs {
             render_field(f, out);
@@ -1439,10 +1471,10 @@ fn render_interpolation(m: &InterpolationModel) -> String {
         let vals: Vec<String> = m.values.iter().copied().map(num).collect();
         out.line(&format!("values {}", vals.join(" ")));
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
+fn render_bounded_collection(m: &BoundedCollectionModel) -> Vec<Node> {
     let mut out = Out::new();
     let capacity = match &m.capacity {
         CapacitySource::DeployKey { key } => format!("deploy-key {}", text(key)),
@@ -1471,7 +1503,7 @@ fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
         let _ = write!(head, " index-by {}", text(ix));
     }
     out.line(&head);
-    out.finish()
+    out.nodes
 }
 
 // ── Statechart ─────────────────────────────────────────────────
@@ -1534,7 +1566,7 @@ fn statechart_gap(m: &crate::model::SCXMLModel) -> Option<&'static str> {
 fn render_statechart(
     m: &crate::model::SCXMLModel,
     deployment: &Deployment,
-) -> Result<String, Unsupported> {
+) -> Result<Vec<Node>, Unsupported> {
     if let Some(gap) = statechart_gap(m) {
         return Err(Unsupported::feature("statechart", gap));
     }
@@ -1554,11 +1586,14 @@ fn render_statechart(
     if let Some(cap) = m.event_queue_capacity {
         clauses.push(format!("queue: {cap}"));
     }
-    out.line(&format!(
-        "machine {} ({})",
-        text(&m.name),
-        clauses.join(", ")
-    ));
+    // ⚠ The clause list stays ONE text part. Its parentheses and commas
+    // are this construct's punctuation, the same call the algorithm
+    // signature gets — see `page`'s module note.
+    out.line_of(vec![
+        Part::Word(Word::Machine),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Text(format!("({})", clauses.join(", "))),
+    ]);
 
     let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
@@ -1626,7 +1661,7 @@ fn render_statechart(
     });
     nested?;
 
-    Ok(out.finish())
+    Ok(out.nodes)
 }
 
 /// One `<invoke>`, in whichever of its four shapes.
@@ -1717,8 +1752,8 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                     // print bindings that are not its.
                     match render_statechart(child, &NO_DEPLOYMENT) {
                         Ok(rendered) => {
-                            out.line("child:");
-                            out.nested(|out| out.block(&rendered));
+                            out.line_of(vec![Part::Word(Word::Child), Part::Glued(":".into())]);
+                            out.nested(|out| out.block(rendered));
                         }
                         // A child the renderer cannot finish makes the
                         // PARENT unrenderable: a machine shown without
@@ -1942,7 +1977,7 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
         line.push(Part::Word(Word::On));
         line.push(Part::Text(text(&t.event).into_owned()));
     }
-    line.push(Part::Text("->".into()));
+    line.push(Part::Word(Word::Arrow));
     if t.target.is_empty() {
         line.push(Part::Word(Word::NoTarget));
     } else {
@@ -2015,21 +2050,30 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
             // starting with the operator — which reads as nothing and
             // cannot be read back. Two fixtures in this tree do it.
             if a.content.is_empty() && !a.location.is_empty() {
-                out.line(&format!("{} = {}", text(&a.location), text(&a.expr)));
+                out.line_of(vec![
+                    Part::Text(text(&a.location).into_owned()),
+                    Part::Text("=".into()),
+                    Part::Text(text(&a.expr).into_owned()),
+                ]);
             } else {
                 let id = text(&a.location);
-                out.line(
-                    &(if id.is_empty() {
-                        "assign:".to_string()
-                    } else {
-                        format!("assign {id}:")
-                    }),
-                );
+                let mut head = vec![Part::Word(Word::Assign)];
+                if !id.is_empty() {
+                    head.push(Part::Text(id.into_owned()));
+                }
+                head.push(Part::Glued(":".into()));
+                out.line_of(head);
                 out.nested(|out| {
                     if !a.expr.is_empty() {
-                        out.line(&format!("expr {}", text(&a.expr)));
+                        out.line_of(vec![
+                            Part::Word(Word::Expr),
+                            Part::Text(text(&a.expr).into_owned()),
+                        ]);
                     }
-                    out.line(&format!("content {}", text(&a.content)));
+                    out.line_of(vec![
+                        Part::Word(Word::Content),
+                        Part::Text(text(&a.content).into_owned()),
+                    ]);
                 });
             }
         }
@@ -2385,7 +2429,7 @@ fn present_if_words(p: &PresentIfPredicate) -> String {
     s
 }
 
-fn render_codec(m: &CodecModel) -> String {
+fn render_codec(m: &CodecModel) -> Vec<Node> {
     let mut out = Out::new();
     let mut head = vec![
         Part::Word(Word::Codec),
@@ -2413,7 +2457,7 @@ fn render_codec(m: &CodecModel) -> String {
             render_codec_test_vector(tv, out);
         }
     });
-    out.finish()
+    out.nodes
 }
 
 fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
@@ -2428,12 +2472,15 @@ fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
         Some(b) => format!("byte {} bit {b}", f.byte_offset),
         None => format!("byte {}", f.byte_offset),
     };
-    out.line(&format!(
-        "field {}: {} at {at} size {}",
-        text(&f.id),
-        f.sce_type.as_attr(),
-        bit_size_words(&f.bit_size)
-    ));
+    out.line_of(vec![
+        Part::Word(Word::Field),
+        Part::Text(format!(
+            "{}: {} at {at} size {}",
+            text(&f.id),
+            f.sce_type.as_attr(),
+            bit_size_words(&f.bit_size)
+        )),
+    ]);
     out.nested(|out| {
         if let Some(e) = f.endian {
             out.line_of(vec![Part::Word(Word::Endian), Part::Word(endian_word(e))]);
@@ -2496,17 +2543,20 @@ fn render_flag_def(keyword: &str, fl: &FlagDef, out: &mut Out<'_>) {
 }
 
 fn render_codec_variant(v: &CodecVariant, out: &mut Out<'_>) {
-    let mut head = String::from("variant");
+    let mut head = vec![Part::Word(Word::Variant)];
     if let Some(f) = &v.tag_field {
-        let _ = write!(head, " tag-field {}", text(f));
+        head.push(Part::Word(Word::TagField));
+        head.push(Part::Text(text(f).into_owned()));
     }
     if let Some(f) = &v.tag_flag {
-        let _ = write!(head, " tag-flag {}", text(f));
+        head.push(Part::Word(Word::TagFlag));
+        head.push(Part::Text(text(f).into_owned()));
     }
     if let Some(p) = &v.peek_byte {
-        let _ = write!(head, " peek-byte {}", text(&p.id));
+        head.push(Part::Word(Word::PeekByte));
+        head.push(Part::Text(text(&p.id).into_owned()));
     }
-    out.line(&head);
+    out.line_of(head);
     out.nested(|out| {
         if let Some(p) = &v.peek_byte {
             for fl in &p.flags {
@@ -2597,7 +2647,7 @@ fn render_codec_test_vector(tv: &CodecTestVector, out: &mut Out<'_>) {
 // no author ever wrote. What a reviewer compares against the
 // specification is the authored spelling.
 
-fn render_worker(m: &WorkerModel) -> String {
+fn render_worker(m: &WorkerModel) -> Vec<Node> {
     let mut out = Out::new();
     let ordering = match m.inbox.ordering {
         InboxOrdering::AcqRel => "acq_rel",
@@ -2613,10 +2663,10 @@ fn render_worker(m: &WorkerModel) -> String {
         let _ = write!(head, " outbox {}", text(o));
     }
     out.line(&head);
-    out.finish()
+    out.nodes
 }
 
-fn render_buffer_pool(m: &BufferPoolModel) -> String {
+fn render_buffer_pool(m: &BufferPoolModel) -> Vec<Node> {
     let mut out = Out::new();
     let cache = match m.cache_policy {
         CachePolicy::Maintain => Word::Maintain,
@@ -2651,10 +2701,10 @@ fn render_buffer_pool(m: &BufferPoolModel) -> String {
             ));
         }),
     }
-    out.finish()
+    out.nodes
 }
 
-fn render_link(m: &LinkModel) -> String {
+fn render_link(m: &LinkModel) -> Vec<Node> {
     let mut out = Out::new();
     let class = match m.class {
         LinkClass::Udp => Word::Udp,
@@ -2707,10 +2757,10 @@ fn render_link(m: &LinkModel) -> String {
             ));
         }
     });
-    out.finish()
+    out.nodes
 }
 
-fn render_lookup(m: &LookupModel) -> String {
+fn render_lookup(m: &LookupModel) -> Vec<Node> {
     let mut out = Out::new();
     out.line_of(vec![
         Part::Word(Word::Lookup),
@@ -2736,5 +2786,5 @@ fn render_lookup(m: &LookupModel) -> String {
             MissPolicy::Error => out.line("miss error"),
         }
     });
-    out.finish()
+    out.nodes
 }
