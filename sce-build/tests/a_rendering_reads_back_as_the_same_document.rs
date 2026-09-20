@@ -62,19 +62,32 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Every `.scxml` this checkout holds.
+/// Every `.scxml` in the checkout.
 ///
-/// ⚠ `integration_resources` and `examples` are here for the
-/// statechart's sake: `tests/forge/resources` is mostly forge kinds and
-/// holds only a handful of machines, and the generated W3C corpus —
-/// which is where the statecharts live in bulk — is a build artefact of
-/// another tree, which a test may not reach into.
+/// ⚠ The whole checkout, not a list of fixture roots — the same scope
+/// `a_declared_attribute_must_reach_the_ir` had to widen to, and for the
+/// same reason: **a hand-listed scope reports about the directories it
+/// was pointed at and says nothing about the rest, in a voice that
+/// sounds like it covered everything.**
+///
+/// This list used to read `tests/forge/resources`,
+/// `integration_resources` and `examples`, and explained the omission by
+/// saying the W3C corpus "is a build artefact of another tree, which a
+/// test may not reach into". Measured 2026-09-20: `resources/` holds
+/// **253 tracked `.scxml` documents**, committed by
+/// `6322123e69 feat: Add TXML to SCXML conversion script and commit
+/// converted files`. They are source, not output, and they are where the
+/// statecharts live in bulk — so the law was proven over 233 documents
+/// while the largest body of machines in the tree went unasked.
+///
+/// `target/`, `.git/` and `node_modules/` are excluded because they are
+/// not documents anybody wrote. Symlinked directories are followed:
+/// `resources/403a`, `403b` and `403c` are one W3C fixture reached by
+/// three names, and a sweep that does not follow them is a sweep that
+/// silently drops it.
 fn fixture_files() -> Vec<PathBuf> {
-    let root = repo_root();
     let mut out = Vec::new();
-    for sub in ["tests/forge/resources", "integration_resources", "examples"] {
-        collect(&root.join(sub), &mut out);
-    }
+    collect(&repo_root(), &mut out);
     out.sort();
     out
 }
@@ -86,6 +99,11 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     for e in entries.flatten() {
         let p = e.path();
         if p.is_dir() {
+            if p.file_name()
+                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
+            {
+                continue;
+            }
             collect(&p, out);
         } else if p.extension().is_some_and(|x| x == "scxml") {
             out.push(p);

@@ -421,7 +421,7 @@ machine m (datamodel: ecmascript, initial: s0)
   state s0:
     invoke i1:
       id-into where
-      param p=1
+      param p = 1
       type scxml
       autoforward
       src child.scxml
@@ -431,21 +431,21 @@ machine m (datamodel: ecmascript, initial: s0)
       finalize v = 1
     invoke i2:
       id-into where
-      param p=1
+      param p = 1
       type hybrid
       autoforward
       srcexpr pick()
       contentexpr body()
     invoke i3:
       id-into where
-      param p=1
+      param p = 1
       type mesh-rpc
       target srcexpr peer()
       event ping
       deadline 250ms
     invoke i4:
       id-into where
-      param p=1
+      param p = 1
       type http
       src http://x
       host-served
@@ -656,6 +656,10 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
         variants: vec![EnumVariant {
             name: "reject".to_string(),
             value: 16,
+            // The spelling is a field this model carries, so this
+            // whole-output case carries it: a wire key written `0x10`
+            // must not reach the page as `16`.
+            value_text: "0x10".to_string(),
             source_line: Some(29),
         }],
         strict_variants: true,
@@ -663,7 +667,7 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
     };
     assert_eq!(
         render(&ForgeDocument::Enum(en)).unwrap(),
-        "enum nrc: uint8 strict\n  variant reject = 16 @line 29\n"
+        "enum nrc: uint8 strict\n  variant reject = 0x10 @line 29\n"
     );
 
     let ti = TimerModel {

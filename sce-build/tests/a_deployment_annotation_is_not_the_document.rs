@@ -48,20 +48,16 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The same corpus the round-trip gate sweeps, plus the mesh fixtures —
-/// which are the only machines in this tree that a deployment is
-/// actually written for.
+/// Every `.scxml` in the checkout — the same corpus the round-trip
+/// gate sweeps.
+///
+/// ⚠ This list used to name four directories and, like the two gates
+/// beside it, said nothing about the rest while reading as though it
+/// had covered everything. The W3C corpus alone is 253 tracked
+/// documents that no list here named.
 fn fixture_files() -> Vec<PathBuf> {
-    let root = repo_root();
     let mut out = Vec::new();
-    for sub in [
-        "tests/forge/resources",
-        "integration_resources",
-        "examples",
-        "tests/mesh",
-    ] {
-        collect(&root.join(sub), &mut out);
-    }
+    collect(&repo_root(), &mut out);
     out.sort();
     out
 }
@@ -73,6 +69,11 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     for e in entries.flatten() {
         let p = e.path();
         if p.is_dir() {
+            if p.file_name()
+                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
+            {
+                continue;
+            }
             collect(&p, out);
         } else if p.extension().is_some_and(|x| x == "scxml") {
             out.push(p);

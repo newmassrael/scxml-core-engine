@@ -127,6 +127,8 @@
 //!     context <id> [cpp-type <t>] [cpp-include <i>] [kt-type <t>]
 //!     data <id>[: <type>] [src <s>] [= <expr>] [content <c>]
 //!     (state|parallel|final) <id> [initial <s>] [initial-children <s>...]
+//!       (a head clause whose value is not one word moves to its own
+//!        line in the body, same keyword, value to end of line)
 //!         [history <h> default <s>] [unhandled <e>...]:
 //!       req <id>
 //!       on entry: / on exit: / on initial: / on history-default:
@@ -135,7 +137,7 @@
 //!         <action>...
 //!       on sample <link> event <e> [callback <c>]
 //!       invoke [<id>]:
-//!         id-into <loc> / param <name>[=<expr>][@<loc>] / req <id>
+//!         id-into <loc> / <param> / req <id>
 //!         type (scxml|hybrid|mesh-rpc|<other>)
 //!         [autoforward] [src <s>] [namelist <n>] [finalize <t>]
 //!         [srcexpr <e>] [contentexpr <e>]
@@ -145,8 +147,18 @@
 //!         child:
 //!           <the inline machine, rendered the same way>
 //!       done:
-//!         param <name> [= <expr>] [from <loc>]
+//!         <param>
 //!         content (expr|text|literal) <v>
+//!
+//!   <param> is `param <name>` carrying at most one clause inline —
+//!     param <name>
+//!     param <name> = <expr>
+//!     param <name> from <loc>
+//!     param <name>:               (when it carries both)
+//!       expr <e>
+//!       from <l>
+//!   and `arg <name>` under `call` takes the same four shapes. A bare
+//!   clause keyword is the EMPTY value; no clause is the absent one.
 //!
 //!   <action> is one of
 //!     <location> = <expr>
@@ -166,7 +178,7 @@
 //!       eventexpr <e> / to <t> / to-expr <e> / type <t> / type-expr <e>
 //!       after <d> / after-expr <e> / id <i> / id-into <l>
 //!       namelist <n> / content <c> / content-expr <e>
-//!       param <name>[=<expr>][@<loc>]
+//!       <param>
 //!
 //!   algorithm <name>(<param>: <type>, ...) [-> <type> [returns-max <n>]]
 //!     const <name>: <type> = <expr>
@@ -1175,7 +1187,15 @@ fn render_enum(m: &EnumModel) -> String {
             // test vector prints its own: it is a position that does NOT
             // travel under the `source_location` key, so a round trip
             // stripping that one key would still see it differ.
-            let mut line = format!("variant {} = {}", text(&v.name), v.value);
+            // The author's spelling, not the number: a wire key is
+            // written in hex wherever the protocol's table is, and a
+            // reviewer checking the page against that table looks for
+            // `0x10`. See `crate::source_literal`.
+            let mut line = format!(
+                "variant {} = {}",
+                text(&v.name),
+                text(&crate::source_literal::as_written(&v.value_text, v.value))
+            );
             if let Some(l) = v.source_line {
                 let _ = write!(line, " @line {l}");
             }
@@ -1374,6 +1394,28 @@ fn statechart_gap(m: &crate::model::SCXMLModel) -> Option<&'static str> {
     if m.invokes.len() != owned {
         return Some("an <invoke> no state owns");
     }
+    // The two shapes no line can carry back. A list is written as its
+    // entries separated by spaces, so an entry with whitespace inside
+    // it cannot be told from two entries; and `history <h> default <d>`
+    // puts two values on one line, which only works while each is a
+    // single word. Neither occurs in this tree — refusing by name is
+    // what keeps that "neither occurs" from turning into silent
+    // corruption the first time one does.
+    for s in m.states.values() {
+        if s.initial_children
+            .iter()
+            .chain(s.unhandled.iter())
+            .any(|e| e.chars().any(char::is_whitespace))
+        {
+            return Some("a state id list whose entry carries whitespace");
+        }
+        if !s.initial_history_id.is_empty()
+            && !(head_inlinable(&text(&s.initial_history_id))
+                && head_inlinable(&text(&s.initial_history_default_target)))
+        {
+            return Some("a history clause whose id is not a single word");
+        }
+    }
     None
 }
 
@@ -1515,7 +1557,7 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
             out.line(&format!("id-into {}", text(&base.idlocation)));
         }
         for p in &base.params {
-            out.line(&format!("param {}", render_param(p)));
+            render_param_into("param", p, out);
         }
         for id in &base.req {
             out.line(&format!("req {}", text(&id.to_string())));
@@ -1636,6 +1678,24 @@ fn render_variable(v: &crate::model::Variable, out: &mut Out<'_>) {
     out.line(&line);
 }
 
+/// Whether a clause value may sit on a head line.
+///
+/// A head line is a sequence of keyword-led clauses, so the reader
+/// finds a clause's end by finding the next keyword. A value is safe
+/// there only while it is one word that no keyword spells: whitespace
+/// in it reads as two clauses, and a value spelling a keyword ends the
+/// clause before it. Everything else goes to its own line, where the
+/// value runs to the end and nothing can follow it — the same rule the
+/// `<send>` block already follows for author text.
+fn head_inlinable(value: &str) -> bool {
+    !value.is_empty()
+        && !value.chars().any(char::is_whitespace)
+        && !matches!(
+            value,
+            "initial" | "initial-children" | "history" | "default" | "unhandled"
+        )
+}
+
 fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), Unsupported> {
     let keyword = if s.is_final {
         "final"
@@ -1645,8 +1705,21 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
         "state"
     };
     let mut head = format!("{keyword} {}", text(&s.id));
+    // Clauses the head line cannot delimit move to their own line in
+    // the body, where the value runs to the end of the line and nothing
+    // follows it. See `head_inlinable`: `initial="s11p112 s11p122"` is
+    // legal SCXML, and while it sat on the head line the reader took
+    // the first id and reported the second as an unknown clause.
+    let mut deferred: Vec<String> = Vec::new();
+    let mut place = |head: &mut String, keyword: &str, value: String| {
+        if head_inlinable(&value) {
+            let _ = write!(head, " {keyword} {value}");
+        } else {
+            deferred.push(format!("{keyword} {value}"));
+        }
+    };
     if !s.initial.is_empty() {
-        let _ = write!(head, " initial {}", text(&s.initial));
+        place(&mut head, "initial", text(&s.initial).into_owned());
     }
     if !s.initial_children.is_empty() {
         let kids: Vec<String> = s
@@ -1654,7 +1727,7 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
             .iter()
             .map(|k| text(k).into_owned())
             .collect();
-        let _ = write!(head, " initial-children {}", kids.join(" "));
+        place(&mut head, "initial-children", kids.join(" "));
     }
     if !s.initial_history_id.is_empty() {
         let _ = write!(
@@ -1666,12 +1739,15 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
     }
     if !s.unhandled.is_empty() {
         let u: Vec<String> = s.unhandled.iter().map(|k| text(k).into_owned()).collect();
-        let _ = write!(head, " unhandled {}", u.join(" "));
+        place(&mut head, "unhandled", u.join(" "));
     }
     out.line(&format!("{head}:"));
 
     let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
+        for line in &deferred {
+            out.line(line);
+        }
         for id in &s.req {
             out.line(&format!("req {}", text(&id.to_string())));
         }
@@ -1780,14 +1856,7 @@ fn render_donedata(d: &crate::model::DoneData, out: &mut Out<'_>) {
     out.line("done:");
     out.nested(|out| {
         for p in &d.params {
-            let mut line = format!("param {}", text(&p.name));
-            if let Some(e) = &p.expr {
-                let _ = write!(line, " = {}", text(e));
-            }
-            if let Some(l) = &p.location {
-                let _ = write!(line, " from {}", text(l));
-            }
-            out.line(&line);
+            render_donedata_param(p, out);
         }
         match &d.content {
             crate::model::DoneDataContent::None => {}
@@ -1850,16 +1919,25 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
             }
             out.line(&line);
         }
-        "log" => {
-            let mut line = String::from("log");
-            if !a.label.is_empty() {
-                let _ = write!(line, " {}", text(&a.label));
+        // ⚠ A label and an expression are two free-text values, so
+        // they may not share a line. `<log label="…is: " expr="Var1"/>`
+        // is a real W3C document (test307), and while both sat on one
+        // line the reader split at the label's own colon and came back
+        // with a different label and a different expression — which
+        // then RE-RENDERED to the same bytes, so the text round trip
+        // could not see it. One value per line, each at the end of it.
+        "log" => match (a.label.is_empty(), a.expr.is_empty()) {
+            (true, true) => out.line("log"),
+            (false, true) => out.line(&format!("log {}", text(&a.label))),
+            (true, false) => out.line(&format!("log: {}", text(&a.expr))),
+            (false, false) => {
+                out.line("log:");
+                out.nested(|out| {
+                    out.line(&format!("label {}", text(&a.label)));
+                    out.line(&format!("expr {}", text(&a.expr)));
+                });
             }
-            if !a.expr.is_empty() {
-                let _ = write!(line, ": {}", text(&a.expr));
-            }
-            out.line(&line);
-        }
+        },
         "raise" => out.line(&format!("raise {}", text(&a.event))),
         "script" => out.line(&format!("script {}", text(&a.content))),
         "native_action" => {
@@ -1873,7 +1951,7 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
                 out.line(&format!("call {}:", text(&a.native_action_name)));
                 out.nested(|out| {
                     for p in &a.params {
-                        out.line(&format!("arg {}", render_param(p)));
+                        render_param_into("arg", p, out);
                     }
                 });
             }
@@ -1929,15 +2007,63 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
     }
 }
 
-fn render_param(p: &crate::model::Param) -> String {
-    let mut s = text(&p.name).into_owned();
-    if !p.expr.is_empty() {
-        let _ = write!(s, "={}", text(&p.expr));
+/// `<keyword> <name>`, plus the one clause it carries — or a block when
+/// it carries both.
+///
+/// ⚠ **One free-text value per line, at the end of it.** A `<param>`
+/// carries two, an expression and a location, and while both shared a
+/// line the separator decided where each ended. Measured 2026-09-20:
+/// `param first from a` read back as a param with **no location at
+/// all**, because the reader looked for ` from ` and the line began
+/// with `from `; four W3C documents lost their location that way. The
+/// keyword after the name now selects the clause and the rest of the
+/// line is the value, so a value containing ` from ` or ` = ` cannot
+/// move the boundary.
+fn render_param_into(keyword: &str, p: &crate::model::Param, out: &mut Out<'_>) {
+    let name = text(&p.name);
+    match (p.expr.is_empty(), p.location.is_empty()) {
+        (true, true) => out.line(&format!("{keyword} {name}")),
+        (false, true) => out.line(&format!("{keyword} {name} = {}", text(&p.expr))),
+        (true, false) => out.line(&format!("{keyword} {name} from {}", text(&p.location))),
+        (false, false) => {
+            out.line(&format!("{keyword} {name}:"));
+            out.nested(|out| {
+                out.line(&format!("expr {}", text(&p.expr)));
+                out.line(&format!("from {}", text(&p.location)));
+            });
+        }
     }
-    if !p.location.is_empty() {
-        let _ = write!(s, "@{}", text(&p.location));
+}
+
+/// The same grammar for `<donedata>`'s param, whose clauses are
+/// optional rather than empty-when-absent.
+///
+/// ⚠ A clause keyword with nothing after it is the EMPTY value; no
+/// clause line at all is the absent one. `<param name="Var3"
+/// location=""/>` is a real document here (W3C test298 references a
+/// location that does not exist, on purpose), so collapsing the two
+/// would move the IR across the round trip.
+fn render_donedata_param(p: &crate::model::DoneDataParam, out: &mut Out<'_>) {
+    fn clause(keyword: &str, value: &str) -> String {
+        if value.is_empty() {
+            keyword.to_string()
+        } else {
+            format!("{keyword} {}", text(value))
+        }
     }
-    s
+    let name = text(&p.name);
+    match (&p.expr, &p.location) {
+        (None, None) => out.line(&format!("param {name}")),
+        (Some(e), None) => out.line(&clause(&format!("param {name} ="), e)),
+        (None, Some(l)) => out.line(&clause(&format!("param {name} from"), l)),
+        (Some(e), Some(l)) => {
+            out.line(&format!("param {name}:"));
+            out.nested(|out| {
+                out.line(&clause("expr", e));
+                out.line(&clause("from", l));
+            });
+        }
+    }
 }
 
 /// A `<send>`, as a block when it carries more than its event.
@@ -1996,7 +2122,7 @@ fn render_send(a: &crate::model::Action, out: &mut Out<'_>) {
             }
         }
         for p in &a.params {
-            out.line(&format!("param {}", render_param(p)));
+            render_param_into("param", p, out);
         }
     });
 }

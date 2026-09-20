@@ -464,6 +464,18 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
         retain: None,
     };
 
+    // ⚠ The expression is taken from the LINE, not rebuilt from its
+    // words. `rest[i + 1..].join(" ")` collapses every run of spaces
+    // to one, and an expression is author text: a document aligning
+    // the arms of a nested conditional came back with its alignment
+    // gone, so the page was right and the read-back was not. The
+    // clauses before `=` are all single words, and an id cannot hold a
+    // space, so the first ` = ` in the line is the separator whatever
+    // the expression contains after it.
+    if let Some((_, expr)) = line.text.split_once(" = ") {
+        f.expr = Some(undo(expr, line.number)?);
+    }
+
     // Clauses, in the order the renderer writes them. Anything else is
     // an error: a clause silently skipped is exactly the loss the pair
     // exists to detect.
@@ -471,11 +483,7 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
     let mut i = 0;
     while i < rest.len() {
         match rest[i] {
-            "=" => {
-                let v = rest[i + 1..].join(" ");
-                f.expr = Some(undo(&v, line.number)?);
-                break;
-            }
+            "=" => break,
             "max-size" => {
                 f.max_size = rest.get(i + 1).and_then(|v| v.parse().ok());
                 i += 2;
@@ -600,12 +608,20 @@ fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseErr
                 why: format!("`{}` is not an enum body line", l.text),
             });
         }
-        let value = w
-            .get(3)
-            .and_then(|v| v.parse().ok())
-            .ok_or_else(|| ParseError {
+        // ⚠ The spelling comes back too. The page carries the wire key
+        // the way the author wrote it — hex, wherever the protocol's
+        // own table is hex — so a reader that took only decimal would
+        // fail on exactly the documents the spelling exists for.
+        let spelling = w.get(3).copied().ok_or_else(|| ParseError {
+            line: l.number,
+            why: "a variant needs `= <n>`".to_string(),
+        })?;
+        // The parser's own reader, not a second one here: two answers
+        // to "what is a variant value" is how the pair drifts apart.
+        let value =
+            crate::forge::parser::parse_variant_value(spelling).ok_or_else(|| ParseError {
                 line: l.number,
-                why: "a variant needs `= <n>`".to_string(),
+                why: format!("`{spelling}` is not a value this renderer could have written"),
             })?;
         let source_line = match (w.get(4), w.get(5)) {
             (Some(&"@line"), Some(n)) => n.parse().ok(),
@@ -614,6 +630,7 @@ fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseErr
         m.variants.push(EnumVariant {
             name: undo(w.get(1).copied().unwrap_or(""), l.number)?,
             value,
+            value_text: spelling.to_string(),
             source_line,
         });
     }
@@ -2349,7 +2366,16 @@ fn parse_scxml_state(
     }
 
     for (l, sub) in group(kids) {
-        if let Some(id) = l.text.strip_prefix("req ") {
+        // A head clause the head line could not delimit is written
+        // here instead, same keyword, its value running to the end of
+        // the line. See `head_inlinable` in the renderer.
+        if let Some(v) = l.text.strip_prefix("initial ") {
+            s.initial = undo(v, l.number)?;
+        } else if let Some(v) = l.text.strip_prefix("initial-children ") {
+            s.initial_children = undo_each(v, l.number)?;
+        } else if let Some(v) = l.text.strip_prefix("unhandled ") {
+            s.unhandled = undo_each(v, l.number)?;
+        } else if let Some(id) = l.text.strip_prefix("req ") {
             s.req.push(RequirementId(undo(id, l.number)?));
         } else if l.text.starts_with("data ") {
             s.datamodel.push(parse_variable(l)?);
@@ -2391,27 +2417,9 @@ fn parse_scxml_donedata(kids: &[&Line<'_>]) -> Result<crate::model::DoneData, Pa
         params: Vec::new(),
         content: crate::model::DoneDataContent::None,
     };
-    for k in kids {
+    for (k, sub) in group(kids) {
         if let Some(rest) = k.text.strip_prefix("param ") {
-            let (name, tail) = match rest.split_once(' ') {
-                Some((n, t)) => (n, t),
-                None => (rest, ""),
-            };
-            let (expr, location) = match tail.split_once(" from ") {
-                Some((e, l)) => (e.strip_prefix("= "), Some(l)),
-                None => (tail.strip_prefix("= "), None),
-            };
-            d.params.push(crate::model::DoneDataParam {
-                name: undo(name, k.number)?,
-                expr: match expr {
-                    Some(e) => Some(undo(e, k.number)?),
-                    None => None,
-                },
-                location: match location {
-                    Some(l) => Some(undo(l, k.number)?),
-                    None => None,
-                },
-            });
+            d.params.push(parse_donedata_param(rest, &sub, k.number)?);
         } else if let Some(rest) = k.text.strip_prefix("content ") {
             let (kind, value) = rest.split_once(' ').ok_or_else(|| ParseError {
                 line: k.number,
@@ -2473,6 +2481,21 @@ fn parse_scxml_transition(
         None => (rest, String::new()),
     };
 
+    // ⚠ A transition's requirement ids come first in its body, above
+    // the actions — the renderer has always written them there and
+    // this reader handed the whole body to the action list, so `req
+    // REQ_TRANS_GO` was reported as "not an action". The state body
+    // already reads `req` this way; the transition body did not.
+    let top = kids.first().map(|l| l.depth);
+    let (req, actions): (Vec<&Line<'_>>, Vec<&Line<'_>>) = kids
+        .iter()
+        .partition(|l| Some(l.depth) == top && l.text.starts_with("req "));
+    let mut requirements = Vec::new();
+    for l in &req {
+        let id = l.text.strip_prefix("req ").unwrap_or_default();
+        requirements.push(RequirementId(undo(id, l.number)?));
+    }
+
     Ok(crate::model::Transition {
         event,
         target: if target == "(no target)" {
@@ -2483,7 +2506,8 @@ fn parse_scxml_transition(
         cond,
         transition_type,
         native_payload_guard,
-        actions: parse_action_list(kids)?,
+        req: requirements,
+        actions: parse_action_list(&actions)?,
         ..Default::default()
     })
 }
@@ -2524,7 +2548,7 @@ fn parse_scxml_invoke(
         };
         match keyword {
             "id-into" => base.idlocation = undo(value, k.number)?,
-            "param" => base.params.push(parse_param(value, k.number)?),
+            "param" => base.params.push(parse_param(value, &sub, k.number)?),
             "req" => base.req.push(RequirementId(undo(value, k.number)?)),
             "type" => kind = value.to_string(),
             "autoforward" => autoforward = true,
@@ -2611,22 +2635,135 @@ fn parse_scxml_invoke(
     })
 }
 
-/// `<name>[=<expr>][@<loc>]`
-fn parse_param(s: &str, line: usize) -> Result<crate::model::Param, ParseError> {
-    let (head, location) = match s.split_once('@') {
-        Some((h, l)) => (h, undo(l, line)?),
-        None => (s, String::new()),
+/// `<name>`, `<name> = <expr>`, `<name> from <loc>`, or `<name>:` with
+/// an `expr` / `from` block under it.
+///
+/// ⚠ The FIRST word after the name selects the clause, and everything
+/// after that word is the value, verbatim to the end of the line.
+/// Searching the line for a separator instead is what lost four
+/// locations: ` from ` does not occur in `first from a`, so the clause
+/// was read as absent rather than as a location, and the page said
+/// something the reader could not recover. A value that itself
+/// contains ` from ` or ` = ` cannot move this boundary, because the
+/// boundary is a first word and not a search.
+fn parse_param(
+    s: &str,
+    kids: &[&Line<'_>],
+    line: usize,
+) -> Result<crate::model::Param, ParseError> {
+    let mut p = crate::model::Param::default();
+    if let Some(head) = s.strip_suffix(':') {
+        p.name = undo(head, line)?;
+        for k in kids {
+            let (keyword, value) = split_clause(k.text);
+            match keyword {
+                "expr" => p.expr = undo(value, k.number)?,
+                "from" => p.location = undo(value, k.number)?,
+                other => {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{other}` is not a param clause"),
+                    })
+                }
+            }
+        }
+        return Ok(p);
+    }
+    let (name, rest) = match s.split_once(' ') {
+        Some((n, r)) => (n, r),
+        None => (s, ""),
     };
-    let (name, expr) = match head.split_once('=') {
-        Some((n, e)) => (n, undo(e, line)?),
-        None => (head, String::new()),
+    p.name = undo(name, line)?;
+    if !rest.is_empty() {
+        match split_clause(rest) {
+            ("=", value) => p.expr = undo(value, line)?,
+            ("from", value) => p.location = undo(value, line)?,
+            (other, _) => {
+                return Err(ParseError {
+                    line,
+                    why: format!("`{other}` is not a param clause"),
+                })
+            }
+        }
+    }
+    Ok(p)
+}
+
+/// The same grammar for `<donedata>`'s param, whose clauses are
+/// optional rather than empty-when-absent.
+///
+/// ⚠ A bare keyword is the EMPTY value and no clause line is the
+/// absent one. `<param name="Var3" location=""/>` is a real document
+/// here (W3C test298 points at a location that does not exist, on
+/// purpose), so the two may not collapse into each other.
+fn parse_donedata_param(
+    s: &str,
+    kids: &[&Line<'_>],
+    line: usize,
+) -> Result<crate::model::DoneDataParam, ParseError> {
+    let mut p = crate::model::DoneDataParam {
+        name: String::new(),
+        expr: None,
+        location: None,
     };
-    Ok(crate::model::Param {
-        name: undo(name, line)?,
-        expr,
-        location,
-        ..Default::default()
-    })
+    if let Some(head) = s.strip_suffix(':') {
+        p.name = undo(head, line)?;
+        for k in kids {
+            match split_clause(k.text) {
+                ("expr", value) => p.expr = Some(undo(value, k.number)?),
+                ("from", value) => p.location = Some(undo(value, k.number)?),
+                (other, _) => {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{other}` is not a param clause"),
+                    })
+                }
+            }
+        }
+        return Ok(p);
+    }
+    let (name, rest) = match s.split_once(' ') {
+        Some((n, r)) => (n, r),
+        None => (s, ""),
+    };
+    p.name = undo(name, line)?;
+    if !rest.is_empty() {
+        match split_clause(rest) {
+            ("=", value) => p.expr = Some(undo(value, line)?),
+            ("from", value) => p.location = Some(undo(value, line)?),
+            (other, _) => {
+                return Err(ParseError {
+                    line,
+                    why: format!("`{other}` is not a param clause"),
+                })
+            }
+        }
+    }
+    Ok(p)
+}
+
+/// A whitespace-separated list of ids, each decoded.
+///
+/// An id cannot hold whitespace — the renderer refuses a document
+/// whose id list would need it — so splitting on whitespace is exact
+/// rather than a guess about where an entry ends.
+fn undo_each(s: &str, line: usize) -> Result<Vec<String>, ParseError> {
+    s.split_whitespace().map(|w| undo(w, line)).collect()
+}
+
+/// A keyword-led clause split into its keyword and the rest of the
+/// line, verbatim.
+///
+/// ⚠ Exactly one separator space is removed, never `trim()`. The
+/// values on these lines are author text, and a trailing space in one
+/// is the author's: `<log label="_event ">` is a real W3C document,
+/// and trimming it made the round trip lose a character the page had
+/// shown correctly. A bare keyword is the empty value.
+fn split_clause(text: &str) -> (&str, &str) {
+    match text.split_once(' ') {
+        Some((keyword, value)) => (keyword, value),
+        None => (text, ""),
+    }
 }
 
 fn parse_action_list(body: &[&Line<'_>]) -> Result<Vec<crate::model::Action>, ParseError> {
@@ -2675,7 +2812,8 @@ fn parse_scxml_action(
         a.content = undo(rest, line.number)?;
     } else if t == "cancel" || t.starts_with("cancel ") {
         a.action_type = "cancel".to_string();
-        let rest = t.strip_prefix("cancel").unwrap_or("").trim();
+        let rest = t.strip_prefix("cancel").unwrap_or("");
+        let rest = rest.strip_prefix(' ').unwrap_or(rest);
         match rest.split_once(" expr ") {
             Some((id, e)) => {
                 a.sendid = undo(id, line.number)?;
@@ -2686,29 +2824,46 @@ fn parse_scxml_action(
             }
             None => a.sendid = undo(rest, line.number)?,
         }
-    } else if t == "log" || t.starts_with("log ") || t.starts_with("log:") {
+    } else if t == "log" || t == "log:" || t.starts_with("log ") || t.starts_with("log: ") {
         a.action_type = "log".to_string();
-        let rest = t.strip_prefix("log").unwrap_or("");
-        match rest.split_once(": ") {
-            Some((label, expr)) => {
-                a.label = undo(label.trim(), line.number)?;
-                a.expr = undo(expr, line.number)?;
+        // ⚠ No splitting and no `trim()`: each form carries at most
+        // one value and it runs to the end of the line. Splitting at
+        // `": "` read `<log label="…is: " expr="Var1"/>` as a
+        // different label and a different expression, and trimming
+        // dropped the trailing space of `<log label="_event ">`. Both
+        // are real W3C documents and both were author text.
+        if let Some(expr) = t.strip_prefix("log: ") {
+            a.expr = undo(expr, line.number)?;
+        } else if let Some(label) = t.strip_prefix("log ") {
+            a.label = undo(label, line.number)?;
+        } else if t == "log:" {
+            for k in kids {
+                match split_clause(k.text) {
+                    ("label", v) => a.label = undo(v, k.number)?,
+                    ("expr", v) => a.expr = undo(v, k.number)?,
+                    (other, _) => {
+                        return Err(ParseError {
+                            line: k.number,
+                            why: format!("`{other}` is not a log clause"),
+                        })
+                    }
+                }
             }
-            None => a.label = undo(rest.trim(), line.number)?,
         }
     } else if let Some(rest) = t.strip_prefix("call ") {
         a.action_type = "native_action".to_string();
         a.native_action_name = undo(rest.trim_end_matches(':'), line.number)?;
-        for k in kids {
+        for (k, sub) in group(kids) {
             let arg = k.text.strip_prefix("arg ").ok_or_else(|| ParseError {
                 line: k.number,
                 why: format!("`{}` is not a call argument", k.text),
             })?;
-            a.params.push(parse_param(arg, k.number)?);
+            a.params.push(parse_param(arg, &sub, k.number)?);
         }
     } else if t == "assign:" || t.starts_with("assign ") {
         a.action_type = "assign".to_string();
-        let rest = t.strip_prefix("assign").unwrap_or("").trim();
+        let rest = t.strip_prefix("assign").unwrap_or("");
+        let rest = rest.strip_prefix(' ').unwrap_or(rest);
         a.location = undo(rest.trim_end_matches(':'), line.number)?;
         for k in kids {
             let (keyword, value) = k.text.split_once(' ').ok_or_else(|| ParseError {
@@ -2755,15 +2910,19 @@ fn parse_scxml_action(
             None => a.item = undo(head, line.number)?,
         }
         a.actions = parse_action_list(kids)?;
-    } else if t == "send" || t.starts_with("send ") {
+    // ⚠ `send:` — a block whose event name is absent because the
+    // document computed it (`<send eventexpr="Var1"/>`). The renderer
+    // has always written that shape and this guard did not admit it,
+    // so five W3C documents rendered to a page nobody could read back.
+    } else if t == "send" || t == "send:" || t.starts_with("send ") {
         a.action_type = "send".to_string();
-        let rest = t.strip_prefix("send").unwrap_or("").trim();
+        let rest = t.strip_prefix("send").unwrap_or("");
+        let rest = rest.strip_prefix(' ').unwrap_or(rest);
         a.event = undo(rest.trim_end_matches(':'), line.number)?;
-        for k in kids {
-            let (keyword, value) = k.text.split_once(' ').ok_or_else(|| ParseError {
-                line: k.number,
-                why: format!("`{}` is not a send clause", k.text),
-            })?;
+        for (k, sub) in group(kids) {
+            // The value keeps any trailing colon: that is how `param
+            // <name>:` tells `parse_param` its clauses are below.
+            let (keyword, value) = split_clause(k.text);
             let v = undo(value, k.number)?;
             match keyword {
                 "eventexpr" => a.eventexpr = v,
@@ -2778,7 +2937,7 @@ fn parse_scxml_action(
                 "namelist" => a.namelist = v,
                 "content" => a.content = v,
                 "content-expr" => a.contentexpr = v,
-                "param" => a.params.push(parse_param(value, k.number)?),
+                "param" => a.params.push(parse_param(value, &sub, k.number)?),
                 other => {
                     return Err(ParseError {
                         line: k.number,

@@ -959,7 +959,7 @@ fn parse_lookup(
 /// the caller renders that as `NumericParse`, and the range check that
 /// follows is the only place a well-formed but unrepresentable value is
 /// reported.
-fn parse_variant_value(text: &str) -> Option<i128> {
+pub(crate) fn parse_variant_value(text: &str) -> Option<i128> {
     let (negative, magnitude) = match text.strip_prefix('-') {
         Some(rest) => (true, rest.trim_start()),
         None => (false, text),
@@ -1189,6 +1189,7 @@ fn parse_enum(
             variants.push(EnumVariant {
                 name,
                 value,
+                value_text: value_str,
                 source_line,
             });
         }

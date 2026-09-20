@@ -1008,6 +1008,23 @@ pub struct EnumVariant {
     /// this field never carries a value the parser did not first prove
     /// in range for it.
     pub value: i128,
+    /// How the author spelled [`Self::value`], when a source document
+    /// is where it came from.
+    ///
+    /// A wire key is written in hex wherever the protocol's own table
+    /// is, and `value` alone puts `16` on the review surface where the
+    /// author wrote `0x10` — see [`crate::source_literal`]. The
+    /// seventh carrier to need this, and it surfaced only when the
+    /// literal gate stopped sweeping three directories and swept the
+    /// checkout: the fixture that exists to prove hex enums,
+    /// `sce-build/tests/fixtures/enum/enum_hex_values.scxml`, was
+    /// outside every list.
+    ///
+    /// `#[serde(skip)]` because this is the author's spelling and not
+    /// a fact a consumer computes with; the `--emit-ast` wire format
+    /// carries `value` and is unmoved.
+    #[serde(skip, default)]
+    pub value_text: String,
     /// Source line of the `<sce:variant>` element, captured for
     /// duplicate-value / duplicate-name / overflow diagnostics that
     /// anchor on the specific variant. `#[serde(skip)]` keeps the

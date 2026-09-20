@@ -1834,6 +1834,9 @@ mod tests {
             variants: vec![EnumVariant {
                 name: "ok".to_string(),
                 value: 0,
+                // Built here, not read from a document, so there is no
+                // authored spelling to keep.
+                value_text: String::new(),
                 source_line: None,
             }],
             strict_variants: false,
@@ -2371,6 +2374,8 @@ mod tests {
                 .map(|(n, v)| EnumVariant {
                     name: (*n).to_string(),
                     value: *v,
+                    // Built here, not read from a document.
+                    value_text: String::new(),
                     source_line: None,
                 })
                 .collect(),
