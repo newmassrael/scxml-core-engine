@@ -248,63 +248,25 @@ fn a_number_is_rendered_as_the_author_spelled_it() {
          nothing having been tried"
     );
 
-    // ⚠⚠ A DEBT CEILING, not the contract. The contract is
-    // `respelled.is_empty()`, and it does not hold yet. Measured
-    // 2026-09-20 it was 43 across six carriers, each a model holding a
-    // number where the author wrote a spelling; `VariantArm` now keeps
-    // the spelling (`crate::source_literal`) and the rest follow one at
-    // a time, each lowering this number. Recorded in
-    // `claudedocs/rfc-pseudocode-review-surface.md` §14.
+    // The contract, whole. It carried a debt ceiling and a list of
+    // known-lossy carriers for as long as the losses existed — 43 of
+    // them across six carriers when this file was written, each a model
+    // holding a number where the author wrote a spelling. All six keep
+    // the spelling now (`sce_build::source_literal`), so there is
+    // nothing left for a list to excuse and the assertion says what it
+    // always meant.
     //
-    // What IS enforced meanwhile is the thing that matters most: a
-    // carrier NOT on this list cannot join them quietly, and the ones
-    // on it cannot get worse. A new carrier that loses the author's
-    // spelling reddens this on the first run.
-    const KNOWN_LOSSY: &[&str] = &[
-        // `arm/@value`, `flag/@value`, `decoded/@value` and
-        // `test-vector/@hex` were here and are not: `VariantArm`,
-        // `FlagDef`, `DecodedField` and `CodecTestVector` carry the
-        // author's spelling now. Each carrier leaves this list as it is
-        // fixed, and the ceiling below comes down with it.
-        "test-vector/@value",
-        "data/@byte",
-        "data/@bit-offset",
-    ];
-    let newcomers: Vec<&String> = respelled
-        .iter()
-        .filter(|r| !KNOWN_LOSSY.iter().any(|k| r.starts_with(k)))
-        .collect();
+    // ⚠ Six carriers took a `#[serde(skip)]` companion; the seventh
+    // case was not a respelling at all. `<sce:data byte>` and
+    // `bit-offset` are two integers the grammar joined with a dot —
+    // `at 0.5` — which reads as a decimal to a person and to this
+    // check. The fix there was the grammar (`at byte 0 bit 5`), not a
+    // companion field.
     assert!(
-        newcomers.is_empty(),
-        "these values reach the page in a spelling the author did not use, and \
-         they are not among the losses already recorded — a reviewer comparing \
-         the page against the document they wrote will not find them:\n   {}",
-        newcomers
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join("\n   ")
+        respelled.is_empty(),
+        "these values reach the page in a spelling the author did not use, so a \
+         reviewer comparing the page against the document they wrote will not \
+         find them:\n   {}",
+        respelled.iter().cloned().collect::<Vec<_>>().join("\n   ")
     );
-    /// Where the debt stands. Lowered with each carrier that starts
-    /// keeping the author's spelling; at zero this whole block goes and
-    /// `assert!(respelled.is_empty())` takes its place.
-    const CEILING: usize = 3;
-    assert!(
-        respelled.len() <= CEILING,
-        "the recorded losses grew from {CEILING} to {} — a carrier that already \
-         respells the author's number is now doing it in more places",
-        respelled.len()
-    );
-
-    // A drop is not a failure; it is the signal to lower the ceiling.
-    // Printed rather than asserted, because a round that fixes a
-    // carrier should not have to fix this file before it can see that
-    // it worked.
-    if respelled.len() < CEILING {
-        println!(
-            "NOTE: only {} respelling(s) remain of the {CEILING} recorded — lower \
-             the ceiling in this file, and delete it at zero",
-            respelled.len()
-        );
-    }
 }

@@ -3302,6 +3302,15 @@ pub struct TestVector {
     pub hex: Vec<u8>,
     /// Expected return value.
     pub value: TestVectorValue,
+    /// How the author spelled a NUMERIC [`Self::value`], when a source
+    /// document is where it came from.
+    ///
+    /// An expected result is written in hex — `0x29B1` — and the number
+    /// alone puts `10673` on the pseudocode review surface. See
+    /// [`crate::source_literal`]; empty for `Bool`, which is not a
+    /// number.
+    #[serde(skip, default)]
+    pub value_text: String,
     /// 1-based source line of the `<sce:test-vector>` element.
     /// Round-tripped to per-backend test-function naming so authors
     /// reading a failing test can find the SCXML row that produced it.

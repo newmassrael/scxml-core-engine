@@ -6505,6 +6505,10 @@ fn parse_one_test_vector(
 
     Ok(TestVector {
         hex,
+        value_text: match &value {
+            TestVectorValue::Uint(_) | TestVectorValue::Int(_) => value_attr.trim().to_string(),
+            TestVectorValue::Bool(_) => String::new(),
+        },
         value,
         source_line: node.document().text_pos_at(node.range().start).row as usize,
     })

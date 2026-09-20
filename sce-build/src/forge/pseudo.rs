@@ -259,7 +259,7 @@
 //!
 //!   codec <name> endian <e> [input-length <n>]
 //!     flag-input <name> width <n>
-//!     field <id>: <type> at <byte>[.<bit>] size <bit-size>
+//!     field <id>: <type> at byte <n> [bit <n>] size <bit-size>
 //!       endian <e> / max-size <n> / length-field <f> / length-arith <i>
 //!       max-count <n> / repeat-body <a> / tlv-body <a> / embed-body <a>
 //!       embed-length-from <f> / dma-align <n> / quantity <s> <o> <u>
@@ -913,8 +913,15 @@ fn render_test_vector(tv: &TestVector, out: &mut Out<'_>) {
     let hex: String = tv.hex.iter().map(|b| format!("{b:02x}")).collect();
     let value = match &tv.value {
         TestVectorValue::Bool(b) => format!("bool {b}"),
-        TestVectorValue::Uint(v) => format!("uint {v}"),
-        TestVectorValue::Int(v) => format!("int {v}"),
+        // The author's spelling: an expected result is written in hex.
+        TestVectorValue::Uint(v) => format!(
+            "uint {}",
+            text(&crate::source_literal::as_written(&tv.value_text, v))
+        ),
+        TestVectorValue::Int(v) => format!(
+            "int {}",
+            text(&crate::source_literal::as_written(&tv.value_text, v))
+        ),
     };
     // ⚠ `source_line` is printed although it is a position, not
     // behaviour. Unlike every other position in the IR it is NOT named
@@ -2075,9 +2082,16 @@ fn render_codec(m: &CodecModel) -> String {
 }
 
 fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
+    // ⚠ Two words, not `<byte>.<bit>`. The dotted form round-trips
+    // perfectly and reads to a person as a decimal: a field the author
+    // wrote as `byte="0" bit-offset="5"` came out as `at 0.5`, in which
+    // neither number they typed appears. On a surface whose whole job
+    // is being held against a specification, a composite that looks
+    // like a different kind of value is the same failure as respelling
+    // one.
     let at = match f.bit_offset {
-        Some(b) => format!("{}.{b}", f.byte_offset),
-        None => f.byte_offset.to_string(),
+        Some(b) => format!("byte {} bit {b}", f.byte_offset),
+        None => format!("byte {}", f.byte_offset),
     };
     out.line(&format!(
         "field {}: {} at {at} size {}",

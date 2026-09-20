@@ -1330,14 +1330,24 @@ fn parse_test_vector(line: &Line<'_>) -> Result<TestVector, ParseError> {
         line: line.number,
         why: format!("`{literal}` is not a test-vector literal"),
     };
+    // ⚠ Through `source_literal`: the renderer writes the author's
+    // spelling, so a hex expected value arrives here as `0x29B1`.
     let value = match w.get(3).copied() {
         Some("bool") => TestVectorValue::Bool(literal == "true"),
-        Some("uint") => TestVectorValue::Uint(literal.parse().map_err(|_| bad())?),
-        Some("int") => TestVectorValue::Int(literal.parse().map_err(|_| bad())?),
+        Some("uint") => {
+            TestVectorValue::Uint(crate::source_literal::read_unsigned(literal).ok_or_else(bad)?)
+        }
+        Some("int") => {
+            TestVectorValue::Int(crate::source_literal::read_signed(literal).ok_or_else(bad)?)
+        }
         _ => return Err(bad()),
     };
     Ok(TestVector {
         hex,
+        value_text: match w.get(3).copied() {
+            Some("uint") | Some("int") => literal.to_string(),
+            _ => String::new(),
+        },
         value,
         source_line: w.get(6).and_then(|v| v.parse().ok()).unwrap_or(0),
     })
@@ -1847,11 +1857,49 @@ fn parse_codec_field(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<CodecField, 
             why: "a codec field needs `<id>:`".to_string(),
         })?;
     let type_word = w.get(2).copied().unwrap_or("");
-    let at = w.get(4).copied().unwrap_or("");
-    let (byte_offset, bit_offset) = match at.split_once('.') {
-        Some((b, x)) => (b.parse().unwrap_or(0), x.parse().ok()),
-        None => (at.parse().unwrap_or(0), None),
+    // `at byte <n> [bit <n>] size …`. Found by keyword rather than by
+    // index, because `bit` is optional and counting past an optional
+    // word is how the next clause silently reads the wrong token — the
+    // `size` position below moves with it.
+    let at = w
+        .iter()
+        .position(|t| *t == "at")
+        .ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a codec field needs `at byte <n>`".to_string(),
+        })?;
+    if w.get(at + 1).copied() != Some("byte") {
+        return Err(ParseError {
+            line: line.number,
+            why: "a codec field's position starts `at byte <n>`".to_string(),
+        });
+    }
+    let byte_offset = w
+        .get(at + 2)
+        .and_then(|v| crate::source_literal::read_unsigned(v))
+        .ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a codec field's byte offset is not a number".to_string(),
+        })? as u32;
+    let bit_offset = if w.get(at + 3).copied() == Some("bit") {
+        Some(
+            w.get(at + 4)
+                .and_then(|v| crate::source_literal::read_unsigned(v))
+                .ok_or_else(|| ParseError {
+                    line: line.number,
+                    why: "a codec field's bit offset is not a number".to_string(),
+                })? as u32,
+        )
+    } else {
+        None
     };
+    let size_at = w
+        .iter()
+        .position(|t| *t == "size")
+        .ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a codec field needs `size <bit-size>`".to_string(),
+        })?;
 
     let mut f = CodecField {
         id: undo(id, line.number)?,
@@ -1861,7 +1909,7 @@ fn parse_codec_field(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<CodecField, 
         })?,
         byte_offset,
         bit_offset,
-        bit_size: parse_bit_size(&w[6..], line.number)?,
+        bit_size: parse_bit_size(&w[size_at + 1..], line.number)?,
         endian: None,
         max_size: None,
         length_field: None,

@@ -139,6 +139,8 @@ fn an_algorithm_renders_every_form_it_can_carry() {
         test_vectors: vec![TestVector {
             hex: vec![0x01, 0xff],
             value: TestVectorValue::Uint(10673),
+            // The author's spelling, hex as every fixture writes it.
+            value_text: "0x29B1".to_string(),
             source_line: 12,
         }],
         source_location: None,
@@ -164,7 +166,7 @@ algorithm crc(data: bytes, seed: uint16) -> bytes returns-max 64
   foreach b in data:
     crc = crc ^ b
   return out
-  test 0x01ff -> uint 10673 @line 12
+  test 0x01ff -> uint 0x29B1 @line 12
 ";
 
     assert_eq!(render(&ForgeDocument::Algorithm(m)).unwrap(), expected);
@@ -892,7 +894,7 @@ fn a_codec_renders_every_field_it_can_carry() {
     let expected = "\
 codec env endian big input-length 32
   flag-input hdr width 8
-  field payload: bytes at 4.2 size tlv-chain max-depth 3 on-overflow truncate \
+  field payload: bytes at byte 4 bit 2 size tlv-chain max-depth 3 on-overflow truncate \
 terminate entry-flag more
     endian little
     max-size 64
