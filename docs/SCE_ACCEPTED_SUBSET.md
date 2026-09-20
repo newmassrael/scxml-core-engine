@@ -1092,20 +1092,46 @@ The categories and their primary rejection signals:
 
 ### §3.1 Dynamic file I/O at the invoke boundary
 
-`<invoke srcexpr="pathVar"/>` — target file path determined at
-runtime. Rejected when compiling under `--deploy` or when generating
-AOT code, because the set of reachable invoke targets must be known at
-build time to drive codegen. Signaled as
-`validation/dynamic-features`.
+Nothing here is excluded any more. This section used to say that
+`<invoke srcexpr="pathVar"/>` was rejected when generating AOT code
+or compiling under `--deploy`, signalled as
+`validation/dynamic-features`, "because the set of reachable invoke
+targets must be known at build time to drive codegen". Every backend
+generates the construct instead, and the reachable set being known at
+build time is *how* — §2.13 describes the path each one takes. The
+conformance registry carries fixture 216 (`srcexpr runtime
+evaluation`) on the static path, and compiling the same document
+under `--deploy` writes the same child stub rather than refusing it.
+
+What the original sentence was reaching for survives in §2.13 as a
+residue rather than a refusal, and it is sharper than the sentence
+was: on five of the six backends the build-time set is a set of
+**one**, so the value the expression computes cannot select between
+targets — it is evaluated, and then the pre-generated child runs
+whatever it said.
 
 ### §3.2 Documents without an initial state
 
-Documents that rely on W3C SCXML §3.4 "default initial state"
-semantics (i.e. neither `initial=` attribute nor `<initial>` child,
-expecting runtime selection of the first child) are rejected at
-generation time. A document intended for AOT must name its entry
-state explicitly (signaled as `validation/missing-element`
-or `validation/require-either` depending on the anchor).
+Nothing here is excluded any more. This section used to say that a
+document relying on W3C SCXML's default-initial-state semantics —
+neither an `initial=` attribute nor an `<initial>` child — was
+rejected at generation time as `validation/missing-element` or
+`validation/require-either`. The parser resolves the default before
+any gate sees the model: `SCXMLParser` fills the root's `initial`
+with the first child state in document order (§scxml-3.2, §scxml-3.3),
+and does the same for every compound state. A parsed document
+therefore never arrives at the branch that would refuse it, and the
+conformance registry carries fixture 350 (`Default initial state
+(first child in document order)`) on the static path.
+
+`can_generate_static` still holds that branch, still raising
+`validation/dynamic-features` — not either code this section named —
+for a caller that builds an `SCXMLModel` without going through the
+parser. Its unit test says as much in its own comment. Reachable only
+that way, it is not something a document can be refused for, and an
+author choosing between engines on the strength of this paragraph was
+being sent to the Interpreter for a construct the static path
+handles.
 
 ### §3.3 Runtime event metadata references
 
@@ -1918,6 +1944,63 @@ The runtime witness is
 driven on all seven channels (C++ Interpreter + AOT, Rust, Kotlin, Go,
 Python, C11). It rests in its `probe` state and never completes on any
 channel that drops the `<invoke>`.
+
+### §2.13 Hybrid `<invoke>` — `srcexpr` / `contentexpr` (W3C SCXML 6.4)
+
+An `<invoke>` that names its child through an expression rather than a
+literal `src` or an inline `<content>` is **accepted on every
+backend**, and §3.1 used to say the opposite. What it generates is a
+*hybrid* invoke: `generate_hybrid_child_scxmls` synthesizes one
+`<document>_hybrid<N>.scxml` per hybrid invoke — a stub whose only
+state is an immediate `<final>` — and the parent instantiates that
+child. The generator states the reasoning where it writes the stub: an
+immediate-`<final>` child produces the §scxml-6.4 `done.invoke`
+sequence "regardless of what the original SCXML expression would have
+named".
+
+```xml
+<state id="a">
+  <invoke type="scxml" srcexpr="pathVar"/>
+  <transition event="done.invoke" target="b"/>
+</state>
+```
+
+The contract five backends implement is therefore "the expression
+evaluates at invoke-fire time" (§scxml-6.4.3), not "the evaluated
+string selects the child". The C11 template says so in as many words.
+Two backends are not on that contract, and the difference is
+behaviour a document cannot see from its own text:
+
+| Backend | Evaluates the expression | Child that runs |
+|---|---|---|
+| C++, Rust, Go, C11 | Yes — an evaluation failure raises `error.execution` and no child starts | The build-time stub |
+| **Python** | **No** — nothing evaluates it, so a failing expression raises nothing | The build-time stub |
+| **Kotlin** | Yes — `ScxmlRuntimeInterpreter.fromFile` | **The document the value names**, resolved against a base directory baked in at codegen time |
+
+⚠⚠⚠ The Kotlin row is not a capability the other five lack. Every
+generated Kotlin file carrying a hybrid invoke emits `import
+com.sce.interpreter.ScxmlRuntimeInterpreter`, and that class exists only
+in this repository's Kotlin **test** module — not in the published
+runtime package the generated code otherwise imports. A consumer who
+depends on the runtime alone gets source that does not compile, which is
+the same failure the closure ledger's C1 and C2 rows were opened for.
+
+⚠ The consequence for an author is one sentence: on the five stub
+backends a child reached through `srcexpr` **does nothing**. A child
+that must run logic has to be named by `src=` or carried inline by
+`<content>`, both of which are resolved at build time and generated
+whole. `--deploy` changes none of this; it writes the same stub.
+
+⚠⚠ No fixture's oracle can currently tell a stub from the named
+document, which is why the divergence above could persist unremarked.
+Conformance fixture 216 exists to prove that a `srcexpr` is evaluated
+at runtime rather than at parse time — its own comment says the
+invocation "will fail" if the pre-assignment value is used — but the
+document it names is itself an immediate `<final>`, so a stub and the
+real child are indistinguishable by `done.invoke` alone. What 216
+pins on the static path is that evaluation happens and that
+`done.invoke` arrives in order. What it cannot pin is the thing it was
+written to test.
 
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 

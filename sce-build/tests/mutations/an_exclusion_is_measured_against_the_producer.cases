@@ -1,0 +1,124 @@
+# Mutation cases for the pin under `docs/SCE_ACCEPTED_SUBSET.md` §3.1 / §3.2 —
+# the two rows that stated refusals the producer does not make.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/an_exclusion_is_measured_against_the_producer.cases`.
+#
+# The test this measures asserts ACCEPTANCE, and an acceptance assertion is
+# the easy kind to write vacuously: a document that parses and generates
+# passes it whether or not the assertion reaches anything. So each case below
+# takes away the producer behaviour the corresponding sentence now describes,
+# and the round is only evidence if the matching test turns red.
+#
+# The third case is the other half of the same defect. The prose is compiled
+# into the test by `include_str!`, so a section that goes back to stating an
+# exclusion is a mutation in exactly the sense this harness means — the
+# binary changes, and the test either notices or is decoration.
+
+mutation_tests -p sce-build --test an_exclusion_is_measured_against_the_producer
+mutation_targets sce-build/src/parser.rs docs/SCE_ACCEPTED_SUBSET.md
+
+mutation_oracles sce-build/tests/an_exclusion_is_measured_against_the_producer.rs
+
+# ── The default initial state stops being resolved ──────────────────
+#
+# What §3.2 described before it was corrected: with the root's `initial` left
+# empty, `can_generate_static` reaches the `DynamicFeatures` branch and the
+# document really is refused. This is the one state of the tree in which the
+# old sentence was true, which is what makes it the right mutation — a test
+# that passes here is reading nothing.
+
+mutation_case "the parser leaves the root initial state unresolved" <<'PY'
+# The walk stays, and only the assignment goes. Two earlier spellings of
+# this case did not compile and so measured nothing: deleting the loop left
+# `mut` unused, and deleting it entirely left `is_scxml_state_element` with
+# no caller. This crate denies warnings, so a mutation has to remove the
+# BEHAVIOUR while leaving the shape the compiler checks.
+edit("sce-build/src/parser.rs",
+     """        let mut initial = root.attribute("initial").unwrap_or("").to_string();
+        if initial.is_empty() {
+            // Default to first child state in document order
+            for child in root.children() {
+                if child.is_element() && is_scxml_state_element(&child) {
+                    if let Some(id) = child.attribute("id") {
+                        initial = id.to_string();
+                        break;
+                    }
+                }
+            }
+        }""",
+     """        let initial = root.attribute("initial").unwrap_or("").to_string();
+        if initial.is_empty() {
+            // Default to first child state in document order
+            for child in root.children() {
+                if child.is_element() && is_scxml_state_element(&child) {
+                    if child.attribute("id").is_some() {
+                        break;
+                    }
+                }
+            }
+        }""")
+PY
+
+# ── The default resolves, to the wrong state ────────────────────────
+#
+# The nearer miss, and the reason the test asserts WHICH state rather than
+# just acceptance: §scxml-3.2 and §scxml-3.3 both say "first child state in
+# document order", so a machine entered at the last one is accepted,
+# generated, and wrong from its first macrostep.
+
+mutation_case "the default initial state is the last child, not the first" <<'PY'
+edit("sce-build/src/parser.rs",
+     """                    if let Some(id) = child.attribute("id") {
+                        initial = id.to_string();
+                        break;
+                    }""",
+     """                    if let Some(id) = child.attribute("id") {
+                        initial = id.to_string();
+                    }""")
+PY
+
+# ── The hybrid child stops being named at parse time ────────────────
+#
+# §2.13's residue is that the child is fixed at build time, and the name is
+# where that is decided. An empty `child_name` is what a hybrid invoke that
+# named nothing would carry, and `generate_hybrid_child_scxmls` skips exactly
+# that case — so the stub is never written and the claim in §2.13 stops
+# being true of the tree.
+
+mutation_case "a hybrid invoke carries no child name" <<'PY'
+# `idx` stays consumed for the same reason the case above keeps its binding
+# honest: an unused variable is a compile error here, and a mutation that
+# will not compile measures nothing.
+edit("sce-build/src/parser.rs",
+     """                    child_name: format!("{}_hybrid{idx}", model.name),""",
+     """                    child_name: {
+                        let _ = idx;
+                        String::new()
+                    },""")
+PY
+
+# ── The section goes back to stating an exclusion ───────────────────
+#
+# The failure this file exists for, reproduced: a row of §3 that tells an
+# author the static path refuses a construct it generates. The sentence below
+# is the one that was there, shortened; what matters is that the retraction
+# marker the test reads is gone.
+
+mutation_case "section 3.1 states the refusal again" <<'PY'
+edit("docs/SCE_ACCEPTED_SUBSET.md",
+     """Nothing here is excluded any more. This section used to say that
+`<invoke srcexpr="pathVar"/>` was rejected when generating AOT code""",
+     """`<invoke srcexpr="pathVar"/>` is rejected when generating AOT code""")
+PY
+
+# ── The table stops answering for one backend ───────────────────────
+#
+# Python is the backend §2.13 records as not evaluating the expression at
+# all. A table that quietly drops the row that disagrees reads as consensus,
+# which is the state the document was in before this round.
+
+mutation_case "section 2.13 drops the backend that diverges" <<'PY'
+edit("docs/SCE_ACCEPTED_SUBSET.md",
+     """| **Python** | **No** — nothing evaluates it, so a failing expression raises nothing | The build-time stub |""",
+     """| **Pythen** | **No** — nothing evaluates it, so a failing expression raises nothing | The build-time stub |""")
+PY
