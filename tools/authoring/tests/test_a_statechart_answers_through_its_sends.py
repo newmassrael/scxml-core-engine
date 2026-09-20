@@ -49,7 +49,7 @@ CROSSING = HERE / "fixtures" / "crossing"
 STATECHART = """<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       version="1.0" datamodel="lua" initial="dark" sce:kind="statechart">
+       version="1.0" datamodel="ecmascript" initial="dark" sce:kind="statechart">
   <state id="dark">
     <transition event="train.approaching" target="flashing"/>
   </state>

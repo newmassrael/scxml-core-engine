@@ -111,6 +111,28 @@ whose generated shape it cannot drive, an input rule it cannot evaluate, an
 expected address the binding never writes. A verifier that quietly skips what
 it does not understand reports a clean run for a document it never executed.
 
+It drives two shapes, and they have nothing in common. A pure computation is
+CALLED: one function per output, this round's inputs by name. A **statechart
+is DRIVEN** -- the machine is built once, the cases are replayed through it in
+the order they happened, and what it produces is read from the `<send>`s it
+made. ⚠ Built ONCE is the part most easily got wrong: an examples file is one
+run, and what a case observes is partly the result of the cases before it,
+which is what states are for. Rebuilding between cases verifies a machine that
+forgets, which is a different document. So `ordered` stops being optional
+there, and a case that drives nothing this document listens for is reported as
+unjudged rather than passed -- it would otherwise read whatever the case
+before it left, and call that this case's answer.
+
+⚠⚠ Driving one takes TWO builds, and it is the product's own handshake rather
+than a way around one. A `<send type="x">` compiles to a runtime
+`error.execution` until the build is told the host serves `x`; with
+`--host-processor x` the same site compiles to a dispatch and the manifest's
+cause for it disappears. The first build is how the types become known and the
+second is how they become reachable. Measured without it: the machine took
+every transition correctly, sent nothing anybody could receive, and every case
+read the resting value -- a full run, judged, about a document nobody could
+hear.
+
 ⚠ **It also says what the cases never looked at.** "Every case passed" is a
 statement about the cases, and a run that judged two of nine written positions
 prints the same count as one that judged nine of nine. So the positions no

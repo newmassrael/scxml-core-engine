@@ -28,6 +28,7 @@ clean run for a document it never executed.
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import re
 import subprocess
@@ -124,9 +125,82 @@ class Verification:
 # ------------------------------------------------------------------ the code
 
 
+@dataclass
+class Build:
+    """What the product said when it built the document.
+
+    ⚠ The manifest used to be discarded on success, and it is the only place
+    that answers two questions a driver cannot answer for itself: which
+    `<send type>` the document executes, and whether it needs a scheduler to
+    reach its own delayed acts. Reading them off the binding instead would
+    ask the dictionary about the document.
+    """
+
+    refusal: str = ""
+    manifest: dict = field(default_factory=dict)
+    # The types this build was TOLD the host serves. ⚠ Kept rather than
+    # re-derived, because the manifest stops naming them once it is told: the
+    # declaration is exactly what makes the cause disappear. Deriving the
+    # registration list from the manifest of the build that can be run
+    # therefore registers nothing at all.
+    declared: tuple = ()
+
+    @property
+    def unreachable(self) -> tuple[str, ...]:
+        """Processor types the document sends to and this build cannot serve.
+
+        ⚠ W3C SCXML 6.2.5: such a send compiles to a runtime
+        `error.execution`, so a machine driven here takes its transitions and
+        reaches nobody. Empty is the only state worth running.
+        """
+        seen = {}
+        for cause in self.manifest.get("host_processor_causes") or ():
+            kind = cause.get("processor_type")
+            if kind:
+                seen[kind] = True
+        return tuple(seen)
+
+    @property
+    def needs_event_scheduler(self) -> bool:
+        return bool(self.manifest.get("needs_event_scheduler"))
+
+
 def generate(document: pathlib.Path, codegen: pathlib.Path,
-             into: pathlib.Path) -> str:
-    """Build the document. Returns the product's refusal, or an empty string.
+             into: pathlib.Path) -> Build:
+    """Build the document, declaring whatever host processors it sends to.
+
+    ⚠ TWO PASSES, and it is the product's own handshake rather than a way
+    around one. A `<send type="x">` compiles to a runtime `error.execution`
+    until the build is told the host serves `x`; with `--host-processor x` the
+    same site compiles to a dispatch, and the manifest's cause for it
+    disappears. So the first pass is how the types become known and the second
+    is how they become reachable. Driven without it, a machine took its
+    transitions, sent nothing anybody could receive, and every case read the
+    resting value -- a full run, judged, and about a document nobody could
+    hear.
+    """
+    build = _emit(document, codegen, into, ())
+    if build.refusal or not build.unreachable:
+        return build
+    declared = build.unreachable
+    build = _emit(document, codegen, into, declared)
+    if build.refusal:
+        return build
+    if build.unreachable:
+        # The declaration is what makes a cause disappear, so one that
+        # survives it names a type this pass did not reach.
+        return Build(refusal=(
+            f"{document.name} still sends to "
+            f"{', '.join(build.unreachable)} after the build was told about "
+            f"{', '.join(declared)}. Running it would drive a machine whose "
+            f"sends raise error.execution instead of reaching anybody."))
+    build.declared = declared
+    return build
+
+
+def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
+          host_processors) -> Build:
+    """One run of the generator. Its refusal, or its manifest.
 
     ⚠ The product's own words are passed through untouched. A document with an
     open decision in it is refused here BY THE PRODUCT, and that refusal names
@@ -137,18 +211,39 @@ def generate(document: pathlib.Path, codegen: pathlib.Path,
         raise VerifyError(
             f"{codegen}: the code generator is not there, so no document can "
             f"be run. Build it, or name another with --codegen.")
-    run = subprocess.run(
-        [str(codegen), "generate", str(document), "-o", str(into), "-l", "python"],
-        capture_output=True, text=True,
-    )
+    argv = [str(codegen), "generate", str(document), "-o", str(into),
+            "-l", "python"]
+    for kind in host_processors:
+        argv += ["--host-processor", kind]
+    run = subprocess.run(argv, capture_output=True, text=True)
     if run.returncode != 0:
-        return (run.stderr.strip() or run.stdout.strip()
-                or f"the code generator refused with status {run.returncode}")
-    return ""
+        return Build(refusal=(run.stderr.strip() or run.stdout.strip()
+                              or f"the code generator refused with status "
+                                 f"{run.returncode}"))
+    # ⚠ One JSON object on one line is what the generator promises, and a
+    # driver that could not parse it used to carry on with an empty manifest
+    # -- registering no processor and reporting the error run that followed as
+    # the document's behaviour. It is a refusal instead.
+    for line in reversed(run.stdout.strip().splitlines()):
+        try:
+            return Build(manifest=json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return Build(refusal=(
+        f"the code generator built {document.name} and printed no manifest, "
+        f"so nothing says which host processors the document sends to"))
 
 
 def load(into: pathlib.Path, document: pathlib.Path):
     """Import what was generated, as a package so its own imports resolve."""
+    # ⚠ A generated statechart imports the product's own runtime; a generated
+    # pure computation does not, which is why nothing needed this until one
+    # was driven. Without it the import died with `No module named
+    # 'sce_runtime'` -- a traceback out of a verifier, about the verifier's
+    # environment rather than about the document it was asked to judge.
+    runtime = _default_runtime()
+    if runtime.is_dir() and str(runtime) not in sys.path:
+        sys.path.insert(0, str(runtime))
     stem = document.stem.lower().replace("_", "")
     emitted = [p for p in into.glob("*.py") if p.name != "__init__.py"]
     if not emitted:
@@ -584,6 +679,195 @@ def _same(want, got, field_=None) -> bool:
 # ------------------------------------------------------------------ the whole
 
 
+# --------------------------------------------------------- driving a machine
+
+
+# A statechart is not READ, it is DRIVEN: events go in, and what it produces
+# for anything outside leaves as a `<send>` (W3C SCXML 6.2). Nothing about the
+# calling convention above survives that, which is why this is its own path
+# rather than a branch inside the one below.
+STATECHART_KINDS = frozenset({"statechart"})
+
+
+class SendRecorder:
+    """Every host-served send the machine made, in the order it made them."""
+
+    def __init__(self) -> None:
+        self.sends: list = []
+
+    def __call__(self, request):
+        self.sends.append(request)
+        # W3C SCXML 6.2.5 lets a handler answer with the events the act
+        # produced. A verifier answers with none: inventing a reply would
+        # drive the machine on words no record contains, and the verdict
+        # would be about a run the examples did not describe.
+        return []
+
+    def take(self) -> list:
+        """The sends since the last call, and reset. One case, one reading."""
+        taken, self.sends = self.sends, []
+        return taken
+
+
+def sent_value(name: str, rule: dict, requests):
+    """What one case's sends say this output became."""
+    sent = rule.get("sent") or {}
+    wanted = sent.get("processor")
+    matching = [r for r in requests
+                if wanted is None or r.processor_type == wanted]
+    if not matching:
+        # ⚠ Not an absence to skip over. A machine that should have signalled
+        # and did not is the failure most worth catching, and an output that
+        # simply fails to appear is reported as a position nobody looked at.
+        return rule["when_nothing_sent"]
+    # ⚠ The LAST. A machine crossing two states in one case sends twice, and
+    # what the position HOLDS when the case ends is what `expect` describes.
+    # The first would be a moment inside the case that no record claimed.
+    request = matching[-1]
+    if sent.get("param"):
+        values = request.params.get(sent["param"]) or []
+        if len(values) != 1:
+            raise VerifyError(
+                f"output {name!r}: reads the param {sent['param']!r}, which "
+                f"this send carried {len(values)} time(s). `<param>` may "
+                f"repeat under one name, and choosing among them would be the "
+                f"driver deciding something the document said more than once")
+        return values[0]
+    if sent.get("content"):
+        return request.content
+    return request.event_name
+
+
+class StatechartRun:
+    """One engine, driven through the cases in the order they happened.
+
+    ⚠ The engine is NOT rebuilt per case. An examples file is ONE run: what a
+    case observes is partly the result of the cases before it, which is the
+    whole reason the document has states. Restarting between cases would
+    verify a machine that forgets, and that is a different document.
+    """
+
+    def __init__(self, module, build: Build):
+        self.recorder = SendRecorder()
+        self.engine = module.create_engine()
+        for processor in build.declared:
+            self.engine.register_event_processor(processor, self.recorder)
+        self.engine.initialize()
+        # Whatever the machine did on its way into the initial configuration
+        # belongs to no case, because no record drove it.
+        self.recorder.take()
+
+    def event(self, name: str):
+        found = self.engine.policy.get_event_from_name(name)
+        if found is None:
+            raise VerifyError(
+                f"the document declares no event named {name!r}. Sending it "
+                f"would leave the machine where it was, and every reading "
+                f"afterwards would be of a machine nobody drove")
+        return found
+
+    def drive(self, rule: dict, case) -> bool:
+        """Send this input's event if the case drove it. True when sent."""
+        address = rule.get("address")
+        if address is None or address not in (case.drove or ()):
+            return False
+        becomes = rule.get("becomes")
+        if becomes is not None and case.given.get(address) != becomes:
+            return False
+        self.engine.send_event(self.event(rule["event"]))
+        return True
+
+
+def verify_statechart(pack: Pack, binding: dict, module, build: Build,
+                      declared) -> Verification:
+    """Replay the pack's cases through the document as one run."""
+    examples = pack.examples
+    if not examples.ordered:
+        return Verification(refusal=(
+            "the cases do not declare themselves `ordered`, and a statechart "
+            "is replayed rather than recomputed: what a case observes is "
+            "partly the result of the cases before it. Reading the file's "
+            "line order as a timeline it was never promised would produce a "
+            "verdict about an order nobody recorded."))
+    if build.needs_event_scheduler:
+        return Verification(refusal=(
+            "the document has delayed acts, so it must be driven through "
+            "time, and `elapsed_ms` cannot say how much time passed BETWEEN "
+            "two cases -- it is a duration that restarts with the situation "
+            "and may go backwards. Running it anyway would report every "
+            "delayed act as one that never fired."))
+
+    inputs = dict(binding.get("inputs") or {})
+    outputs = dict(binding.get("outputs") or {})
+    driving = {n: r for n, r in inputs.items() if r.get("event")}
+    if not driving:
+        return Verification(refusal=(
+            "no input rule names an `event`, so no case can drive the "
+            "machine. Every case would be judged against a document sitting "
+            "in its initial configuration, which is a verdict about nothing."))
+
+    bound, writes = set(), {}
+    for name, rule in outputs.items():
+        if rule.get("unresolved") or rule.get("internal"):
+            continue
+        if rule.get("address"):
+            key = rule["address"] + (f".{rule['field']}" if rule.get("field") else "")
+            bound.add(key)
+            writes[key] = name
+
+    verification = Verification()
+    expected = {a for case in examples.cases for a in case.expect}
+    verification.unbound = sorted(expected - bound)
+    verification.unasserted = sorted(bound - expected)
+
+    try:
+        run = StatechartRun(module, build)
+    except VerifyError as exc:
+        return Verification(refusal=str(exc))
+
+    for case in examples.cases:
+        result = CaseResult(name=case.name)
+        try:
+            if not any(run.drive(rule, case) for rule in driving.values()):
+                # ⚠ A case that drove nothing this document listens for is
+                # NOT a pass. Reading the machine afterwards would report
+                # whatever the previous case left, attributed to this one.
+                raise VerifyError(
+                    f"drove {list(case.drove) or 'nothing'}, and no input "
+                    f"rule turns any of that into an event this document "
+                    f"receives")
+            requests = run.recorder.take()
+            produced: dict = {}
+            for name, rule in outputs.items():
+                if rule.get("unresolved") or rule.get("internal"):
+                    continue
+                if not rule.get("sent"):
+                    raise VerifyError(
+                        f"output {name!r} is not bound to a `sent`, and this "
+                        f"driver reads a statechart only through what it "
+                        f"sends. Reading the datamodel or the configuration "
+                        f"instead would assert against the document's insides")
+                produced.update(
+                    output_values(name, rule, sent_value(name, rule, requests)))
+        except VerifyError as exc:
+            result.refusal = str(exc)
+            verification.results.append(result)
+            continue
+        for address, want in sorted(case.expect.items()):
+            if address not in produced:
+                result.unchecked.append(address)
+                continue
+            if not _same(want, produced[address], _field_at(pack.model, address)):
+                result.failures.append((address, want, produced[address]))
+                writer = writes.get(address)
+                rests_on = (declared.rests_on_an_assumption(writer)
+                            if writer else "")
+                if rests_on:
+                    verification.refuted.setdefault(address, rests_on)
+        verification.results.append(result)
+    return verification
+
+
 def verify(pack: Pack, binding_path: pathlib.Path,
            codegen: pathlib.Path | None = None) -> Verification:
     """Run every example case against the bound document."""
@@ -592,13 +876,14 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     binding = read_binding(binding_path)
     document = (binding_path.parent / binding["document"]).resolve()
     declared = read_document(document)
-    if declared.kind not in CALLABLE_KINDS:
+    if declared.kind not in (CALLABLE_KINDS | STATECHART_KINDS):
         return Verification(refusal=(
             f"{document.name} declares kind {declared.kind!r}. This verifier "
             f"drives {', '.join(sorted(CALLABLE_KINDS))}, whose generated shape "
-            f"is one function per output. Driving another kind means driving a "
-            f"different shape, and guessing at it would produce a verdict about "
-            f"something that was never run."))
+            f"is one function per output, and "
+            f"{', '.join(sorted(STATECHART_KINDS))}, which it drives by events. "
+            f"Another kind is another calling convention, and guessing at one "
+            f"would produce a verdict about something that was never run."))
 
     examples = pack.examples
     if not (examples and examples.present and examples.cases):
@@ -613,10 +898,13 @@ def verify(pack: Pack, binding_path: pathlib.Path,
 
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     into = pathlib.Path(tempfile.mkdtemp(prefix="sce_verify_"))
-    refusal = generate(document, codegen, into)
-    if refusal:
-        return Verification(refusal=refusal)
+    build = generate(document, codegen, into)
+    if build.refusal:
+        return Verification(refusal=build.refusal)
     module = load(into, document)
+
+    if declared.kind in STATECHART_KINDS:
+        return verify_statechart(pack, binding, module, build, declared)
 
     inputs = dict(binding.get("inputs") or {})
     outputs = dict(binding.get("outputs") or {})
@@ -766,3 +1054,13 @@ def _default_codegen() -> pathlib.Path:
     """Where the product's generator sits in this tree, by default."""
     root = pathlib.Path(__file__).resolve().parents[3]
     return root / "target" / "debug" / "sce-codegen"
+
+
+def _default_runtime() -> pathlib.Path:
+    """Where the product's Python runtime sits in this tree, by default.
+
+    Derived the way the generator's location is, and for the same reason: a
+    constant would be a home this package is not entitled to have.
+    """
+    root = pathlib.Path(__file__).resolve().parents[3]
+    return root / "backends" / "python" / "runtime"

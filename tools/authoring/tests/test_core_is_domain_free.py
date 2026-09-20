@@ -24,9 +24,19 @@ CORE = pathlib.Path(__file__).resolve().parent.parent / "sce_author"
 # Subject matters, not words. Each entry is something a general tool could only
 # know by having been specialised. Extend this whenever a pack is written for a
 # new subject matter: the cost of a wrong entry is one renamed local variable.
+#
+# ⚠ `engine` WAS an entry and is deliberately not one now, which is the first
+# time the stated cost could not be paid. It is a vehicle part and it is also
+# the SCXML execution engine -- and the core reaches the second by calling the
+# product's own generated `create_engine()` and `register_event_processor()`.
+# No local rename removes those: the word is the product's API, so a core that
+# drives a statechart at all spells it. A word that every such core must write
+# cannot discriminate a specialised one, and spelling it around the guard
+# would have been defeating the guard rather than passing it. The vehicle
+# sense stays caught by its unambiguous neighbours below.
 SUBJECT_WORDS = {
     "vehicle", "ignition", "telltale", "cluster", "odometer", "speedometer",
-    "tachometer", "brake", "airbag", "seatbelt", "engine", "battery", "chassis",
+    "tachometer", "brake", "airbag", "seatbelt", "battery", "chassis",
     "powertrain", "transmission", "wiper", "headlamp", "mileage", "coolant",
     "patient", "diagnosis", "prescription", "invoice", "ledger", "portfolio",
     "trading", "avionics", "autopilot", "thermostat", "elevator", "centrifuge",
