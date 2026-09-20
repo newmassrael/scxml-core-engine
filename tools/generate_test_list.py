@@ -184,9 +184,11 @@ function testEnvironmentLimitation(testId) {{
     return `W3C test ${{testId}} exercises the BasicHTTP event processor: the `
         + `machine has to publish an HTTP endpoint and receive requests at it. `
         + `A browser page cannot open one, so `
-        + `_ioprocessors['basichttp'].location has nothing to read and the run `
-        + `stops there. The diagram below is the document itself and is `
-        + `unaffected; to RUN this test, use the repository's http harness.`;
+        + `_ioprocessors['basichttp'].location has nothing to read. The `
+        + `document is refused before it is laid out, so the diagram and the `
+        + `panels below stay empty — that is this page's limit, not a fault `
+        + `in the document. To run this test, use the repository's http `
+        + `harness.`;
 }}
 
 /**

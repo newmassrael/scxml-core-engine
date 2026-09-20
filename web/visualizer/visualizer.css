@@ -856,15 +856,21 @@ body {
  *
  * ⚠ Deliberately NOT red. Nothing is wrong with the document or the
  * engine when a fixture wants an HTTP endpoint a page cannot open, and
- * dressing that as a failure teaches the reader to distrust a diagram
- * that is perfectly correct. It shares the fatal banner's geometry so
- * the two cannot overlap, and differs in colour alone. */
+ * dressing that as a failure teaches the reader to distrust the page.
+ *
+ * ⚠⚠ It sits BELOW the fatal banner rather than at the top, because the
+ * two appear together: the notice is written when the document loads and
+ * the failure follows when the run reaches the expression. A first
+ * version gave both `top: 0` and claimed in this comment that they could
+ * not overlap — they did, and the notice was the one underneath, so the
+ * sentence explaining the failure was hidden by the failure. The offset
+ * is the fatal banner's own height at one line of text plus its border. */
 .environment-notice-banner {
     position: fixed;
-    top: 0;
+    top: 52px;
     left: 0;
     right: 0;
-    z-index: 10000;
+    z-index: 9999;
     display: flex;
     align-items: flex-start;
     gap: 16px;
