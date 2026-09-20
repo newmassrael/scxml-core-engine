@@ -869,8 +869,18 @@ class Renderer {
                     .style('pointer-events', 'none')
                     .text(d.id);
 
-                // Separator line if there are actions (stronger line)
-                const hasActions = (d.onentry && d.onentry.length > 0) || (d.onexit && d.onexit.length > 0);
+                // Separator line if anything is drawn below the state id.
+                //
+                // ⚠ `invokes` belongs in this test and was missing from it.
+                // The separator and the 34px it reserves are what put the id
+                // above the content; without them `renderActionTexts` starts
+                // at the id's own baseline. A state with an invoke and no
+                // onentry/onexit — W3C test 234's `p01` and `p02` are exactly
+                // that — drew its name underneath the invoke title, and the
+                // two were legible only as a smudge.
+                const hasActions = (d.onentry && d.onentry.length > 0)
+                    || (d.onexit && d.onexit.length > 0)
+                    || (d.invokes && d.invokes.length > 0);
                 if (hasActions) {
                     yOffset += 14;
                     group.append('line')
@@ -2182,6 +2192,93 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                             .attr('fill', '#6b7280') // Gray color for details
                             .style('pointer-events', 'none')
                             .text(displayText);
+
+                        // ⚠ Cut to the BOX, not to a character count.
+                        //
+                        // The formatter already caps each value, and a cap in
+                        // characters is not a cap in pixels: a state narrow
+                        // enough still has its `finalize` line drawn through
+                        // the border and across the neighbouring state, which
+                        // is what W3C test 234 shows. Widening the state to
+                        // fit was tried and is worse — the line is far wider
+                        // than the box, so the state grew until the diagram
+                        // left the screen. The text is the thing that gives.
+                        //
+                        // `getComputedTextLength` is one measurement and the
+                        // cut is proportional to it, so this costs one reflow
+                        // rather than a search. The ellipsis stays for the
+                        // reason the formatter's does: a line silently cut
+                        // reads as the whole value.
+                        // ⚠⚠ Deferred a frame, for the reason the title's own
+                        // measurement is: a `<text>` just appended has not
+                        // been laid out, and `getComputedTextLength` answers
+                        // 0 until it has. Measured synchronously the test
+                        // read `0 > available`, decided nothing overflowed,
+                        // and left every line at full width — the symptom
+                        // looked exactly like the cut never being written.
+                        const rightBound = stateData.width
+                            * (0.5 - LAYOUT_CONSTANTS.TEXT_LEFT_MARGIN_PERCENT);
+                        const available = rightBound - indentX;
+                        // ⚠ A zero measurement is NOT "it fits".
+                        //
+                        // `getComputedTextLength` answers 0 until the text
+                        // has been laid out, and one `requestAnimationFrame`
+                        // does not guarantee that it has. So a zero means TRY
+                        // AGAIN rather than stop, and only a real width
+                        // decides anything.
+                        //
+                        // ⚠⚠ IN A HIDDEN TAB NOTHING HERE RUNS, and that is
+                        // the browser rather than a defect: Chrome suspends
+                        // `requestAnimationFrame` while `document.hidden`,
+                        // and SVG text measures 0 there even synchronously.
+                        // The cut therefore happens on the first frame the
+                        // page is actually shown, which is the first moment
+                        // it could matter. Measured 2026-09-20 while
+                        // debugging exactly this — the cut looked broken and
+                        // the tab was simply never visible.
+                        //
+                        // ⚠ `label-metrics.js` avoids measuring at all, for
+                        // reasons that apply here too, and computes a width
+                        // from a character count instead. That is sound only
+                        // because a transition label is MONOSPACE; these
+                        // detail lines are not, so the same trick would be a
+                        // guess rather than an estimate.
+                        //
+                        // ⚠⚠ Each cut is re-measured rather than trusted.
+                        // The estimate is proportional — characters per
+                        // pixel over the whole string — and that is wrong
+                        // wherever the glyphs are not uniform: the ellipsis
+                        // is wider than the `<` it replaced, so the
+                        // `content` line came back ten pixels over its bound
+                        // on the first pass. Both loops are bounded so a
+                        // pathological string cannot spin here.
+                        if (available > 0) {
+                            let keep = displayText.length;
+                            let frames = 0;
+                            const fit = () => {
+                                const drawn = detailElement.node().getComputedTextLength();
+                                if (drawn === 0) {
+                                    frames += 1;
+                                    if (frames < 10) {
+                                        requestAnimationFrame(fit);
+                                    }
+                                    return;
+                                }
+                                if (drawn <= available) {
+                                    return;
+                                }
+                                keep = Math.max(
+                                    4,
+                                    Math.floor(keep * (available / drawn)) - 1
+                                );
+                                detailElement.text(`${displayText.slice(0, keep)}…`);
+                                frames += 1;
+                                if (frames < 10) {
+                                    requestAnimationFrame(fit);
+                                }
+                            };
+                            requestAnimationFrame(fit);
+                        }
 
                         yOffset += 16; // Spacing between detail lines
                     });
