@@ -1853,7 +1853,7 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
             out.line(&line);
         }
         for block in &s.on_entry_blocks {
-            out.line("on entry:");
+            out.line_of(vec![Part::Word(Word::OnEntry), Part::Glued(":".into())]);
             out.nested(|out| {
                 for a in block {
                     render_scxml_action(a, out);
@@ -1861,7 +1861,7 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
             });
         }
         for block in &s.on_exit_blocks {
-            out.line("on exit:");
+            out.line_of(vec![Part::Word(Word::OnExit), Part::Glued(":".into())]);
             out.nested(|out| {
                 for a in block {
                     render_scxml_action(a, out);
@@ -1869,7 +1869,7 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
             });
         }
         if !s.initial_transition_actions.is_empty() {
-            out.line("on initial:");
+            out.line_of(vec![Part::Word(Word::OnInitial), Part::Glued(":".into())]);
             out.nested(|out| {
                 for a in &s.initial_transition_actions {
                     render_scxml_action(a, out);
@@ -1877,7 +1877,10 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
             });
         }
         if !s.initial_history_default_actions.is_empty() {
-            out.line("on history-default:");
+            out.line_of(vec![
+                Part::Word(Word::OnHistoryDefault),
+                Part::Glued(":".into()),
+            ]);
             out.nested(|out| {
                 for a in &s.initial_history_default_actions {
                     render_scxml_action(a, out);

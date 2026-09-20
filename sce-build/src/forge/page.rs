@@ -74,6 +74,14 @@ pub enum Word {
     Call,
     Send,
     Log,
+    /// ⚠ These four are spelled with a space. The reader matches them
+    /// as a whole line rather than dispatching on a first word, so a
+    /// spelling of two words is what the grammar already has — see the
+    /// lexicon test for why that is allowed and what checks it.
+    OnEntry,
+    OnExit,
+    OnInitial,
+    OnHistoryDefault,
 }
 
 impl Word {
@@ -100,6 +108,10 @@ impl Word {
         Word::Call,
         Word::Send,
         Word::Log,
+        Word::OnEntry,
+        Word::OnExit,
+        Word::OnInitial,
+        Word::OnHistoryDefault,
     ];
 }
 
@@ -140,6 +152,10 @@ fn en_word(w: Word) -> &'static str {
         Word::Call => "call",
         Word::Send => "send",
         Word::Log => "log",
+        Word::OnEntry => "on entry",
+        Word::OnExit => "on exit",
+        Word::OnInitial => "on initial",
+        Word::OnHistoryDefault => "on history-default",
     }
 }
 
@@ -232,13 +248,27 @@ impl Shape for Indent {
 mod tests {
     use super::*;
 
-    /// ⚠ The condition a reader depends on: it finds a clause by its
-    /// first word, so two words that read the same are two clauses it
-    /// cannot tell apart, and a word with a space in it is two words.
-    /// Checked over the vocabulary itself rather than a list, so a word
-    /// added without a name here is caught by the same case.
+    /// The one thing a lexicon can be wrong about ON ITS OWN.
+    ///
+    /// ⚠ This case used to also refuse a word with a space in it, on
+    /// the reasoning that a reader finds a clause by its first word.
+    /// That reasoning is a PROXY and it is false here: this grammar
+    /// also has clauses the reader matches as a whole line — `on
+    /// entry:` is one — so a single-word rule refuses spellings the
+    /// grammar accepts. The opposite rule, "no word may be a prefix of
+    /// another", is false in the other direction: `on` and `on entry`
+    /// coexist today because the REST of the line tells them apart.
+    ///
+    /// ▶ So ambiguity is not a property of a lexicon alone; it is a
+    /// property of the lexicon against the grammar. The lexicon's own
+    /// rule is what is wrong whatever the grammar turns out to be —
+    /// two words with one spelling, and a word with no spelling — and
+    /// whether a lexicon can actually be READ is answered where it can
+    /// be measured: the round trip, run per lexicon over the corpus.
+    /// A proxy that is cheap to check and wrong is worse than a real
+    /// check that costs a corpus sweep.
     #[test]
-    fn a_lexicon_names_every_word_distinctly_and_without_whitespace() {
+    fn a_lexicon_names_every_word_and_names_no_two_alike() {
         for lexicon in [&EN] {
             let mut seen: std::collections::BTreeMap<&str, Word> = Default::default();
             for &w in Word::ALL {
@@ -247,12 +277,6 @@ mod tests {
                     !name.is_empty(),
                     "lexicon {} leaves {w:?} unnamed, so that clause would \
                      vanish from the page",
-                    lexicon.name
-                );
-                assert!(
-                    !name.chars().any(char::is_whitespace),
-                    "lexicon {} calls {w:?} {name:?}, which is two words to a \
-                     reader that finds a clause by its first one",
                     lexicon.name
                 );
                 if let Some(other) = seen.insert(name, w) {
