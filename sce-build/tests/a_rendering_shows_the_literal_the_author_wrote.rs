@@ -4,8 +4,7 @@
 //! A number on the review surface is spelled the way the author wrote
 //! it.
 //!
-//! `claudedocs/rfc-pseudocode-review-surface.md` §14 records two losses
-//! the round trip could not see: `0x10` renders as `16` and `7.0` as
+//! Two losses the round trip could not see: `0x10` renders as `16` and `7.0` as
 //! `7`. Neither costs the round trip, because the comparison is at model
 //! level and the model never held the text — which is exactly why
 //! nothing in the tree noticed. What they cost is the reviewer, who is

@@ -3,7 +3,7 @@
 //
 //! A deployment's facts are told apart from the document's by syntax.
 //!
-//! `claudedocs/rfc-pseudocode-review-surface.md` §8: a mesh deployment
+//! A mesh deployment
 //! decides what a `<send>` actually does, the pseudocode rendered from
 //! the document alone cannot say which, and so a reviewer approves
 //! behaviour the deployment then changes. The resolution is to render

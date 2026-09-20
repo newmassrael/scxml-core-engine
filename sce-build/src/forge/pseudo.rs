@@ -72,9 +72,8 @@
 //! document that wrote it: the same `<send target="#motor"/>` becomes a
 //! same-process call under one `deploy.yaml` and a SOME/IP request
 //! under another. A rendering of the document alone cannot say which,
-//! so a reviewer approves behaviour the deployment then decides —
-//! `claudedocs/rfc-pseudocode-review-surface.md` §8 names this the
-//! review gap, and [`render_with_deployment`] is what closes it.
+//! so a reviewer approves behaviour the deployment then decides. That
+//! is the review gap, and [`render_with_deployment`] is what closes it.
 //!
 //! Those facts are **derived**, and the rendering says so in its syntax
 //! rather than in its typography. Every derived line begins with
