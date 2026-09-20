@@ -71,8 +71,9 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertEqual(mcp.PROTOCOL_VERSION, replies[0]["result"]["protocolVersion"])
         self.assertIn("tools", replies[0]["result"]["capabilities"])
         names = {t["name"] for t in replies[1]["result"]["tools"]}
-        self.assertEqual({"brief", "questions", "review", "check", "verify"},
-                         names)
+        self.assertEqual(
+            {"brief", "questions", "review", "check", "coverage", "verify"},
+            names)
 
     def test_the_two_surfaces_offer_the_same_commands(self):
         """⚠ THE CASE THAT WOULD HAVE CAUGHT `review` BEING MISSING HERE.

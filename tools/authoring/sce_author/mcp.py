@@ -39,6 +39,7 @@ import traceback
 
 from .brief import assemble
 from .check import check
+from .coverage import coverage as run_coverage
 from .errors import AuthoringError
 from .pack import load_pack
 from .verify import verify as run_verify
@@ -142,6 +143,36 @@ TOOLS = [
                 "binding": {
                     "type": "string",
                     "description": "The binding file, which names its own document.",
+                },
+            },
+        },
+    },
+    {
+        "name": "coverage",
+        "description": (
+            "What the whole SET of documents reaches. Every other tool here "
+            "is handed one binding and is right about one document, so a "
+            "conversion that needed five components and produced three "
+            "reports green -- the three that exist all pass, and the two "
+            "nobody wrote are absent from no list, because there was no "
+            "list. Positions two documents both write are an error: one "
+            "field cannot take two answers. Positions nobody writes are "
+            "reported as a figure, because unfinished work looks exactly "
+            "like that."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["pack", "bindings"],
+            "properties": {
+                "pack": _PACK_ARG,
+                "bindings": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Every binding in the subject matter. A binding left "
+                        "out is indistinguishable from a document nobody "
+                        "wrote, which is the thing this answers."
+                    ),
                 },
             },
         },
@@ -291,6 +322,39 @@ def call_tool(name: str, args: dict) -> dict:
             if not findings:
                 return _text("no refusals: every address, field and symbol exists.")
             return _failure("\n".join(str(f) for f in findings))
+
+        if name == "coverage":
+            pack = load_pack(_pack_arg(args))
+            bindings = args.get("bindings")
+            if not bindings:
+                raise ToolArgumentError(
+                    "'bindings' is required: every binding in the subject "
+                    "matter. With none, nothing is written and every position "
+                    "reads as unreached, which is not what that means")
+            if isinstance(bindings, str) or not isinstance(bindings, (list, tuple)):
+                raise ToolArgumentError("'bindings' has to be a LIST of paths, "
+                                        "even when there is only one")
+            bad = [p for p in bindings if not isinstance(p, str)]
+            if bad:
+                raise ToolArgumentError(
+                    f"'bindings' holds {bad[0]!r}, which is not a path")
+            got = run_coverage(pack, [pathlib.Path(p) for p in bindings])
+            # ⚠ Same shape as `questions` and `verify`: versioned, an object,
+            # counts beside the detail. A client drawing a bar reads the
+            # counts; a model reads the names.
+            payload = {
+                "version": 1,
+                "counts": {"positions": len(got.positions),
+                           "written": got.covered,
+                           "unwritten": len(got.unwritten),
+                           "contested": len(got.contested())},
+                "unwritten": got.unwritten,
+                "contested": [{"position": p, "documents": who}
+                              for p, who in got.contested()],
+                "undeclared": got.undeclared,
+            }
+            text = json.dumps(payload, ensure_ascii=False, indent=1)
+            return _failure(text) if got.alarms() else _text(text)
 
         if name == "verify":
             pack = load_pack(_pack_arg(args))

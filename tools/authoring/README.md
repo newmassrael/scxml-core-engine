@@ -45,6 +45,7 @@ for the other case and none of them write it down.
     python3 -m sce_author questions --pack <dir> --prose <file>...
     python3 -m sce_author review    --pack <dir> --prose <file>...
     python3 -m sce_author check     --pack <dir> --document <file.scxml>
+    python3 -m sce_author coverage  --pack <dir> --binding <file>...
 
 **brief** assembles one page for whoever writes the document: the prose, the
 addresses and value spaces it touches, the precondition vocabulary, and the
@@ -96,6 +97,27 @@ figures above come from the instrument that found it.
 **check** judges a written document against the same model: every input it
 declares must exist, every output it writes must be a real field, and every
 literal it compares against must be in that field's value space.
+
+**coverage** is the only command handed more than one binding, and therefore
+the only one that can say anything about the SET. Every other command here is
+given one document and is right about that document — so a conversion that
+needed five components and produced three reports green. The three that exist
+check, run and pass; the two nobody wrote are missing from no list, because
+there was no list. A missing document has no binding, so no command runs
+against it, and the failure looks exactly like success.
+
+⚠ Its two figures are different in kind and the exit status tells them apart.
+A position no document writes is a STATUS — unfinished work looks precisely
+like that, and an alarm on it would fire on every conversion in progress. A
+position TWO documents write cannot be right whatever the platform turns out
+to be: one field would receive two answers, and which one stood would be
+settled by whichever component happened to run last. Only that raises the
+status.
+
+⚠⚠ It is a third axis rather than a third spelling of one already here.
+`review` reports the model positions no EXAMPLE expects, and `verify` reports
+the positions one BINDING writes that no case expects. Both ask whether the
+testing is complete; this asks whether the decomposition is.
 
 **verify** RUNS the document against the pack's examples and says which cases
 it fails and where. It is the only command that says whether a document

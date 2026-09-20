@@ -15,6 +15,7 @@ import sys
 
 from .brief import write as write_brief
 from .check import check
+from .coverage import coverage as run_coverage
 from .errors import AuthoringError
 from .pack import load_pack
 from .prose import load_prose
@@ -139,6 +140,30 @@ def cmd_review(args) -> int:
     return 1 if got.alarms() else 0
 
 
+def cmd_coverage(args) -> int:
+    """What the whole set of documents reaches.
+
+    ⚠ The exit status follows `review`'s: 0 unless a shape that cannot be
+    right is present. An unwritten position is not one -- a conversion in
+    progress looks exactly like that -- and alarming on it would be an alarm
+    every unfinished piece of work trips. A position two documents write is
+    one, whatever the platform turns out to be.
+    """
+    pack = _pack(args)
+    got = run_coverage(pack, args.binding)
+    print(f"output positions {len(got.positions)}"
+          f" · written by some document {got.covered}"
+          f" · unwritten {len(got.unwritten)}")
+    for address in got.unwritten:
+        print(f"  unwritten: {address}")
+    if got.undeclared:
+        print(f"positions a binding writes that the model does not declare"
+              f" {len(got.undeclared)} — `check` names them against theirs")
+    for alarm in got.alarms():
+        print(f"  ALARM: {alarm}")
+    return 1 if got.alarms() else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sce_author", description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
@@ -173,6 +198,12 @@ def main(argv=None) -> int:
     v.add_argument("--codegen",
                    help="the product's code generator (default: the one in this tree)")
     v.set_defaults(fn=cmd_verify)
+
+    o = with_pack(sub.add_parser(
+        "coverage", help="what the set of documents reaches, and what it does not"))
+    o.add_argument("--binding", required=True, nargs="+",
+                   help="every binding in the subject matter")
+    o.set_defaults(fn=cmd_coverage)
 
     args = ap.parse_args(argv)
     # ⚠ ONE catch, and it is the base type rather than a list. Catching
