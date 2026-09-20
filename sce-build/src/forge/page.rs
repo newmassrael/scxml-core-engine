@@ -140,6 +140,12 @@ pub enum Word {
     NativeGuard,
     Index,
     Elif,
+    Codec,
+    Endian,
+    InputLength,
+    Big,
+    Little,
+    Native,
 }
 
 impl Word {
@@ -223,6 +229,12 @@ impl Word {
         Word::NativeGuard,
         Word::Index,
         Word::Elif,
+        Word::Codec,
+        Word::Endian,
+        Word::InputLength,
+        Word::Big,
+        Word::Little,
+        Word::Native,
     ];
 }
 
@@ -330,6 +342,12 @@ fn en_word(w: Word) -> &'static str {
         Word::NativeGuard => "native-guard",
         Word::Index => "index",
         Word::Elif => "elif",
+        Word::Codec => "codec",
+        Word::Endian => "endian",
+        Word::InputLength => "input-length",
+        Word::Big => "big",
+        Word::Little => "little",
+        Word::Native => "native",
     }
 }
 

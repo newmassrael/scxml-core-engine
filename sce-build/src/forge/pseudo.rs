@@ -2278,15 +2278,23 @@ fn render_send(a: &crate::model::Action, out: &mut Out<'_>) {
     .collect();
 
     if clauses.is_empty() && a.params.is_empty() {
-        out.line(&format!("send {}", text(&a.event)));
+        out.line_of(vec![
+            Part::Word(Word::Send),
+            Part::Text(text(&a.event).into_owned()),
+        ]);
         return;
     }
 
-    let mut head = String::from("send");
+    // ⚠ `send:` with no event is a real shape — the document computed
+    // the name (`<send eventexpr=…>`), and the reader's guard did not
+    // admit it until this session. As parts the absent name is simply
+    // a part that is not pushed.
+    let mut head = vec![Part::Word(Word::Send)];
     if !a.event.is_empty() {
-        let _ = write!(head, " {}", text(&a.event));
+        head.push(Part::Text(text(&a.event).into_owned()));
     }
-    out.line(&format!("{head}:"));
+    head.push(Part::Glued(":".into()));
+    out.line_of(head);
     out.nested(|out| {
         for (name, value) in clauses {
             out.line(&format!("{name} {}", text(value)));
@@ -2314,11 +2322,11 @@ fn render_send(a: &crate::model::Action, out: &mut Out<'_>) {
 // line — a line naming all eighteen would be unreadable, and an
 // unreadable rendering fails the only purpose this module has.
 
-fn endian_word(e: Endian) -> &'static str {
+fn endian_word(e: Endian) -> Word {
     match e {
-        Endian::Big => "big",
-        Endian::Little => "little",
-        Endian::Native => "native",
+        Endian::Big => Word::Big,
+        Endian::Little => Word::Little,
+        Endian::Native => Word::Native,
     }
 }
 
@@ -2379,15 +2387,17 @@ fn present_if_words(p: &PresentIfPredicate) -> String {
 
 fn render_codec(m: &CodecModel) -> String {
     let mut out = Out::new();
-    let mut head = format!(
-        "codec {} endian {}",
-        text(&m.name),
-        endian_word(m.default_endian)
-    );
+    let mut head = vec![
+        Part::Word(Word::Codec),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(Word::Endian),
+        Part::Word(endian_word(m.default_endian)),
+    ];
     if let Some(n) = m.input_length {
-        let _ = write!(head, " input-length {n}");
+        head.push(Part::Word(Word::InputLength));
+        head.push(Part::Text(n.to_string()));
     }
-    out.line(&head);
+    out.line_of(head);
 
     out.nested(|out| {
         for fi in &m.flag_inputs {
@@ -2426,7 +2436,7 @@ fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
     ));
     out.nested(|out| {
         if let Some(e) = f.endian {
-            out.line(&format!("endian {}", endian_word(e)));
+            out.line_of(vec![Part::Word(Word::Endian), Part::Word(endian_word(e))]);
         }
         if let Some(n) = f.max_size {
             out.line(&format!("max-size {n}"));
