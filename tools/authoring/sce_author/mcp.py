@@ -278,6 +278,48 @@ TOOLS = [
 ]
 
 
+def verification_payload(result) -> dict:
+    """What a run of the examples looks like on the wire.
+
+    ⚠ A FUNCTION RATHER THAN A LITERAL INSIDE THE DISPATCH, so a test can hand
+    it a result it built and read what comes back. Inline, the only way to see
+    this shape was to run the product's code generator -- and a checkout with
+    no build has not got one, so the case that could have noticed a field
+    missing here was a case that silently skipped.
+
+    ⚠⚠ `unasserted` is why this exists. `verify` grew a figure saying which
+    written positions no case expects, the command line printed it, and this
+    transport did not: a caller over MCP read "every case passed" with no way
+    to learn how little had been judged, which is the exact sentence the
+    figure was added to prevent, reproduced one surface over.
+
+    Same shape as `questions`: versioned, an object, and the counts beside the
+    detail. A client drawing a pass/fail bar reads the counts; a model reads
+    the cases.
+    """
+    return {
+        "version": 1,
+        # ⚠ Beside the counts, because the counts are about ONE lowering and
+        # most of this product ships as another.
+        "backend": result.backend,
+        "counts": {"passed": result.passed, "failed": result.failed,
+                   "unjudged": result.unjudged},
+        "unbound": result.unbound,
+        "unasserted": result.unasserted,
+        "refuted_assumptions": result.refuted,
+        "cases": [
+            {"name": case.name,
+             "passed": case.passed,
+             "judged": case.judged,
+             "refusal": case.refusal,
+             "failures": [{"address": a, "expected": w, "got": g}
+                          for a, w, g in case.failures],
+             "unchecked": case.unchecked}
+            for case in result.results
+        ],
+    }
+
+
 def _text(payload: str) -> dict:
     return {"content": [{"type": "text", "text": payload}]}
 
@@ -478,29 +520,7 @@ def call_tool(name: str, args: dict) -> dict:
             result = run_verify(pack, pathlib.Path(binding), None, backend)
             if not result.ran:
                 return _failure(result.refusal)
-            # ⚠ Same shape as `questions`: versioned, an object, and the
-            # counts beside the detail. A client drawing a pass/fail bar reads
-            # the counts; a model reads the cases.
-            payload = {
-                "version": 1,
-                # ⚠ Beside the counts, because the counts are about ONE
-                # lowering and most of this product ships as another.
-                "backend": result.backend,
-                "counts": {"passed": result.passed, "failed": result.failed,
-                           "unjudged": result.unjudged},
-                "unbound": result.unbound,
-                "refuted_assumptions": result.refuted,
-                "cases": [
-                    {"name": case.name,
-                     "passed": case.passed,
-                     "judged": case.judged,
-                     "refusal": case.refusal,
-                     "failures": [{"address": a, "expected": w, "got": g}
-                                  for a, w, g in case.failures],
-                     "unchecked": case.unchecked}
-                    for case in result.results
-                ],
-            }
+            payload = verification_payload(result)
             text = json.dumps(payload, ensure_ascii=False, indent=1)
             return _failure(text) if result.failed else _text(text)
 
