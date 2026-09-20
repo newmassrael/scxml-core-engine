@@ -56,14 +56,30 @@ fn located_at_line<E: Into<ForgeError>>(
 /// the authored source file before the parse_* helpers see the node.
 ///
 /// `source_name` is the same `diagnostic_label` threaded through
-/// [`DocumentLabel`] and [`located`] — keeping `location.file` aligned
-/// across diagnostics and SCE-MAP markers means an author-side tool
-/// opens the same file for both.
+/// [`DocumentLabel`] and [`located`], reduced HERE to the document's file
+/// name.
+///
+/// ⚠ THE TWO READERS OF THIS FIELD WANT DIFFERENT THINGS, and one value
+/// cannot be both. A diagnostic is consumed where it was produced, so
+/// `location.file` has to say where to look — a path
+/// (SCE_ERROR_CONTRACT.md §2.2, "A consumer opens it to apply a fix").
+/// This location is COMMITTED: it becomes the `SCE-MAP:` marker in
+/// generated source and the sourcemap sidecar beside it, and those
+/// reproduce byte for byte from any checkout. A path would record where
+/// the build ran — `regen-reproduces` regenerates in a temp worktree and
+/// caught exactly that, the marker turning into
+/// `/tmp/tmp.XXXX/tests/forge/resources/….scxml`.
+///
+/// So the marker carries the document's identity, which this tree already
+/// takes to be its file stem (a dotted stem is refused for the same
+/// reason). An earlier note here said the alignment let "an author-side
+/// tool open the same file for both"; it cannot, and the half that has to
+/// give is the one whose output is committed.
 #[inline]
 fn forge_source_location_of(node: &roxmltree::Node, source_name: &str) -> Option<SourceLocation> {
     let pos = node.document().text_pos_at(node.range().start);
     Some(SourceLocation {
-        file: source_name.to_string(),
+        file: crate::parser::artifact_label(source_name),
         line: Some(pos.row),
         col: Some(pos.col),
     })

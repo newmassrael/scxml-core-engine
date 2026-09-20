@@ -35,6 +35,10 @@
     {
       "document": "sce-build/tests/fixtures/provenance/positive_all_attachment_sites.scxml",
       "fixture": "One synthetic id (REQ_STATE_S0) proving every attachment site reaches the provenance record. It names no specification."
+    },
+    {
+      "document": "tests/forge/resources/lookup_entry_requirements.scxml",
+      "fixture": "Synthetic ids (REQ_MODE_ACTIVE, REQ_MODE_SAFE, REQ_MODE_OFF) proving `sce:req` on a lookup ROW reaches `LookupEntry::requirements`. Two of the four rows carry a claim and two do not, which is what makes the annotation per-row rather than per-table. They name no specification, so no manifest can govern them."
     }
   ]
 }
