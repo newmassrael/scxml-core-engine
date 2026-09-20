@@ -261,11 +261,11 @@ fn a_number_is_rendered_as_the_author_spelled_it() {
     // on it cannot get worse. A new carrier that loses the author's
     // spelling reddens this on the first run.
     const KNOWN_LOSSY: &[&str] = &[
-        // `arm/@value`, `flag/@value` and `decoded/@value` were here
-        // and are not: `VariantArm`, `FlagDef` and `DecodedField` carry
-        // the author's spelling now. Each carrier leaves this list as
-        // it is fixed, and the ceiling below comes down with it.
-        "test-vector/@hex",
+        // `arm/@value`, `flag/@value`, `decoded/@value` and
+        // `test-vector/@hex` were here and are not: `VariantArm`,
+        // `FlagDef`, `DecodedField` and `CodecTestVector` carry the
+        // author's spelling now. Each carrier leaves this list as it is
+        // fixed, and the ceiling below comes down with it.
         "test-vector/@value",
         "data/@byte",
         "data/@bit-offset",
@@ -288,7 +288,7 @@ fn a_number_is_rendered_as_the_author_spelled_it() {
     /// Where the debt stands. Lowered with each carrier that starts
     /// keeping the author's spelling; at zero this whole block goes and
     /// `assert!(respelled.is_empty())` takes its place.
-    const CEILING: usize = 8;
+    const CEILING: usize = 3;
     assert!(
         respelled.len() <= CEILING,
         "the recorded losses grew from {CEILING} to {} — a carrier that already \

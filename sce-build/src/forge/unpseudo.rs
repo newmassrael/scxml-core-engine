@@ -2007,16 +2007,24 @@ fn parse_codec_test(
     kids: &[&Line<'_>],
     line: usize,
 ) -> Result<CodecTestVector, ParseError> {
-    let hex_text = w
-        .get(1)
-        .and_then(|h| h.strip_prefix("0x"))
-        .ok_or_else(|| ParseError {
+    // ⚠ The `0x` is OPTIONAL here, because the renderer now writes the
+    // author's spelling and a payload is written bare throughout this
+    // tree. Requiring the prefix would make the reader refuse the very
+    // renderings it exists to read back.
+    let written = w.get(1).copied().ok_or_else(|| ParseError {
+        line,
+        why: "a test vector needs its wire bytes".to_string(),
+    })?;
+    let digits = written.strip_prefix("0x").unwrap_or(written);
+    if !digits.len().is_multiple_of(2) {
+        return Err(ParseError {
             line,
-            why: "a test vector needs `0x<hex>`".to_string(),
-        })?;
-    let hex = (0..hex_text.len())
+            why: format!("`{written}` is not a whole number of bytes"),
+        });
+    }
+    let hex = (0..digits.len())
         .step_by(2)
-        .map(|i| u8::from_str_radix(&hex_text[i..i + 2], 16))
+        .map(|i| u8::from_str_radix(&digits[i..i + 2], 16))
         .collect::<Result<Vec<u8>, _>>()
         .map_err(|_| ParseError {
             line,
@@ -2073,6 +2081,7 @@ fn parse_codec_test(
 
     Ok(CodecTestVector {
         hex,
+        hex_text: written.to_string(),
         decoded: DecodedValue::Plain { fields },
         source_line: w.get(3).and_then(|v| v.parse().ok()).unwrap_or(0),
     })

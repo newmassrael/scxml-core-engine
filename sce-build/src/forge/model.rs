@@ -2529,6 +2529,19 @@ impl CodecModel {
 pub struct CodecTestVector {
     /// Decoded wire bytes (parsed from the `hex=` attribute).
     pub hex: Vec<u8>,
+    /// The `hex=` attribute as the author wrote it, when a source
+    /// document is where it came from. See [`crate::source_literal`].
+    ///
+    /// ⚠ Empty when the author's spelling carries whitespace. The
+    /// grammar allows `hex="01 02 03"` — `strip_hex_whitespace` exists
+    /// for it — and the pseudocode grammar puts `@line <n>` after this
+    /// value on the same line, so a spelling with a space in it would
+    /// decide where that line breaks. The canonical form is printed
+    /// instead, and `a_rendering_shows_the_literal_the_author_wrote`
+    /// reports it as a respelling rather than letting it pass, which is
+    /// the right prompt to move `@line` off the line.
+    #[serde(skip, default)]
+    pub hex_text: String,
     /// Expected decoded value tree.
     pub decoded: DecodedValue,
     /// 1-based source line of the `<sce:test-vector>` element.

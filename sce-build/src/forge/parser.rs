@@ -4667,6 +4667,15 @@ fn parse_one_codec_test_vector(
 
     Ok(CodecTestVector {
         hex,
+        // Kept only when it has no whitespace in it: the pseudocode
+        // grammar puts `@line <n>` after this value, and a spelling
+        // carrying a space would decide where that line breaks. See
+        // the field doc.
+        hex_text: if hex_attr.contains(char::is_whitespace) {
+            String::new()
+        } else {
+            hex_attr.to_string()
+        },
         decoded: DecodedValue::Plain {
             fields: decoded_fields,
         },

@@ -872,6 +872,8 @@ fn a_codec_renders_every_field_it_can_carry() {
         }],
         test_vectors: vec![CodecTestVector {
             hex: vec![0xab],
+            // The author's spelling, bare as every fixture writes it.
+            hex_text: "ab".to_string(),
             decoded: DecodedValue::Plain {
                 fields: vec![DecodedField {
                     name: "payload".to_string(),
@@ -908,7 +910,7 @@ terminate entry-flag more
     peek-flag k bit 0 width 2
     arm 0x01 -> one
     default-arm 0 -> zero default
-  test 0xab @line 7
+  test ab @line 7
     payload = bytes 0x01
 ";
 

@@ -2194,8 +2194,18 @@ fn render_codec_variant(v: &CodecVariant, out: &mut Out<'_>) {
 }
 
 fn render_codec_test_vector(tv: &CodecTestVector, out: &mut Out<'_>) {
-    let hex: String = tv.hex.iter().map(|b| format!("{b:02x}")).collect();
-    out.line(&format!("test 0x{hex} @line {}", tv.source_line));
+    // The author's spelling of the wire bytes. A payload is written
+    // without a `0x` throughout this tree, and a reviewer holding the
+    // page against a wire dump looks for exactly what they typed; the
+    // canonical `0x`-prefixed form is the fallback for a model that
+    // never saw a source document.
+    let canonical: String = tv.hex.iter().map(|b| format!("{b:02x}")).collect();
+    let hex = if tv.hex_text.is_empty() {
+        format!("0x{canonical}")
+    } else {
+        tv.hex_text.clone()
+    };
+    out.line(&format!("test {} @line {}", text(&hex), tv.source_line));
     out.nested(|out| {
         let DecodedValue::Plain { fields } = &tv.decoded;
         for f in fields {
