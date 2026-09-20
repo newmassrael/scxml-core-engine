@@ -76,6 +76,35 @@ class ARunSaysWhatItRemembered(unittest.TestCase):
         inputs = {"supplyOn": {"protocol": "never-declared"}}
         self.assertEqual([], host_memory_of(inputs, Conventions()))
 
+    def test_reaching_back_without_saying_who_keeps_it_is_refused(self):
+        """⚠ The other end of the same fact, enforced where it is written.
+
+        The figure above reports the obligation once a run happens. This
+        refuses the binding that creates one without naming a reason —
+        because the two honest answers are usually available and rarely
+        considered: a memory-bearing kind can hold the value itself, and a
+        platform that publishes the earlier value has an address for it.
+        Defaulting to "the caller will remember" is the third answer, and it
+        is the one nobody has to agree to out loud.
+        """
+        import pathlib
+        import tempfile
+
+        import yaml
+
+        from sce_author.check import read_binding
+        from sce_author.errors import PackError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "b.yaml"
+            path.write_text(yaml.safe_dump({
+                "version": 1, "document": "d.scxml",
+                "inputs": {"wasApproaching": {"previous_of": "approaching"}},
+            }), encoding="utf-8")
+            with self.assertRaises(PackError) as caught:
+                read_binding(path)
+            self.assertIn("caller_keeps", str(caught.exception))
+
     def test_the_names_come_back_sorted_and_whole(self):
         inputs = {
             "zLast": {"state_of": "signal"},

@@ -211,7 +211,11 @@ class TheCheckRefuses(Fixture):
         documents in one corpus were named this way, and all of them worked --
         because a driver was remembering for them.
         """
-        b = {**BINDING, "inputs": {**BINDING["inputs"], "was": {"state_of": "lamp"}}}
+        b = {**BINDING, "inputs": {**BINDING["inputs"],
+                                   "was": {"state_of": "lamp",
+                                           "caller_keeps": "measuring the kind "
+                                                           "guard, not the "
+                                                           "obligation"}}}
         found = str(self.bind(b))
         self.assertIn("feeds its own output back", found)
         self.assertIn("'transform'", found)
@@ -221,7 +225,11 @@ class TheCheckRefuses(Fixture):
         same binding must not be refused there."""
         document = DOCUMENT.replace('sce:kind="transform"', 'sce:kind="procedure"')
         (self.root / "fixture.scxml").write_text(document, encoding="utf-8")
-        b = {**BINDING, "inputs": {**BINDING["inputs"], "was": {"state_of": "lamp"}}}
+        b = {**BINDING, "inputs": {**BINDING["inputs"],
+                                   "was": {"state_of": "lamp",
+                                           "caller_keeps": "measuring the kind "
+                                                           "guard, not the "
+                                                           "obligation"}}}
         self.assertNotIn("feeds its own output back", str(self.bind(b)))
 
     def test_a_latched_protocol_is_memory_too(self):
@@ -315,7 +323,11 @@ class TheCheckRefuses(Fixture):
         self.assertIn("computed and dropped", str(self.bind(b)[0]))
 
     def test_carried_state_that_names_no_output(self):
-        b = {**BINDING, "inputs": {**BINDING["inputs"], "was": {"state_of": "ghost"}}}
+        b = {**BINDING, "inputs": {**BINDING["inputs"],
+                                   "was": {"state_of": "ghost",
+                                           "caller_keeps": "measuring the "
+                                                           "dangling name, not "
+                                                           "the obligation"}}}
         self.assertIn("read a default every round", str(self.bind(b)[0]))
 
     def test_a_protocol_the_pack_never_declared(self):

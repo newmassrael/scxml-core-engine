@@ -563,8 +563,12 @@ the model's addresses the document's names are.
                     when_absent: 0}
       onMainline:  {variant_is: [MAINLINE, BRANCH]}
       sinceRise:   {clock: true, when_absent: 0}
-      wasDown:     {previous_of: approaching}
-      lastShown:   {state_of: signal, initial: 0}
+      wasDown:     {previous_of: approaching,
+                    caller_keeps: "the platform publishes no earlier reading
+                                   and this kind cannot hold one"}
+      lastShown:   {state_of: signal, initial: 0,
+                    caller_keeps: "the loop that calls this already has the
+                                   last answer in hand"}
       supplyOn:    {protocol: last-incremented,
                     parameters: {on_counter: plant/count/on,
                                  off_counter: plant/count/off}}
@@ -574,6 +578,22 @@ the model's addresses the document's names are.
                 when: {1: {blink: "ON"}}, also: {source: "LOCAL"}}
       reading: {address: plant/out/reading, field: value, passthrough: true}
       held:    {internal: true}
+
+**A rule naming a previous round says who keeps it.** `previous_of` and
+`state_of` both require `caller_keeps`, and the string is the reason. Generated
+code takes one round's inputs and returns, so a rule reaching back is an
+obligation on whoever calls it — inherited by every caller, and until this key
+written down nowhere. ⚠ It is required rather than optional because the
+alternative is usually available and rarely considered: a document declaring a
+memory-bearing kind can hold the value ITSELF, and then no caller owes
+anything. The other honest answer is that the platform publishes the earlier
+value at an address of its own, in which case the rule should name that address
+and stop being a `previous_of` at all. Writing the reason is what makes an
+author meet those two before defaulting to the third.
+
+⚠⚠ `verify` reports the same obligation from the other end — it prints the
+values the RUN held on the caller's behalf, because a pass that does not
+mention them is a pass about a system nobody has agreed to build yet.
 
 **One address to one name, and no form for comparing several at once.** A
 platform's own rule format had two keys that group addresses; measured over

@@ -25,6 +25,10 @@
     "input": {
       "type": "object",
       "additionalProperties": false,
+      "dependentRequired": {
+        "previous_of": ["caller_keeps"],
+        "state_of": ["caller_keeps"]
+      },
       "x-sce-deliberately-absent": "There is no form for comparing SEVERAL addresses at once, and that is a measured decision rather than an oversight. One platform's own rule format has two such keys; measured 2026-09-20 across 499 files of a real corpus, they appear 4 times each, both in ONE of 28 hand-written bindings, against 490 uses of the one-address form in 106 files. The component that binding is for reaches a full pass without the shape when its binding is written in this vocabulary instead, so what the multi-address form buys is brevity in one file. An input rule here stays one address to one name; grouping is what the DOCUMENT is for, and a binding that could group would be deciding logic in the dictionary.",
       "properties": {
         "address": {"type": "string"},
@@ -92,6 +96,10 @@
         "becomes": {
           "type": "string",
           "description": "The value the address must take for `event` to be sent. Omitted, the event is sent whenever the case DROVE this address at all, whatever the value, which is what a record of an observation usually means. ⚠ Distinct from `equals` and not a spelling of it: `equals` asks what an address IS and answers every round, `becomes` asks what it CHANGED TO and answers once. A machine told the same news every round is not being driven, it is being repeated at."
+        },
+        "caller_keeps": {
+          "type": "string",
+          "description": "Why the CALLER holds this value between rounds instead of the document. ⚠ REQUIRED beside `previous_of` and `state_of`, and the string is the reason. Generated code takes one round's inputs and returns; a rule naming a previous round is therefore an obligation on whoever calls it, inherited by every caller and, until this key, written down nowhere. ⚠⚠ It is required rather than optional because the alternative is usually available and rarely considered: a document that declares a memory-bearing kind can hold the value ITSELF, and then no caller owes anything. The other legitimate answer is that the platform publishes the earlier value at an address of its own — in which case this rule should name that address and stop being a `previous_of` at all. Writing the reason is what makes the author meet those two before defaulting to the third."
         },
         "note": {"type": "string"}
       }

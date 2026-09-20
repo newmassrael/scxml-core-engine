@@ -331,7 +331,11 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         would be about that reading.
         """
         def use_previous(binding):
-            binding["inputs"]["barrierDown"] = {"previous_of": "override"}
+            binding["inputs"]["barrierDown"] = {
+                "previous_of": "override",
+                "caller_keeps": "this fixture is about the ORDER the cases "
+                                "declare, not about where the memory lives",
+            }
 
         pack, path = self.staged(use_previous)
         self.assertFalse(pack.examples.ordered)
@@ -342,7 +346,11 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
     def test_the_same_binding_runs_once_the_cases_declare_an_order(self):
         """The other half: the refusal is about the EXAMPLES, not the rule."""
         def use_previous(binding):
-            binding["inputs"]["barrierDown"] = {"previous_of": "override"}
+            binding["inputs"]["barrierDown"] = {
+                "previous_of": "override",
+                "caller_keeps": "this fixture is about the ORDER the cases "
+                                "declare, not about where the memory lives",
+            }
 
         pack, path = self.staged(use_previous,
                                  lambda ex: ex.update(ordered=True))
@@ -359,7 +367,11 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         produced, so it takes a declared `initial` or it refuses.
         """
         def feed_back(binding):
-            binding["inputs"]["barrierDown"] = {"state_of": "barrier"}
+            binding["inputs"]["barrierDown"] = {
+                "state_of": "barrier",
+                "caller_keeps": "the fixture is about the FIRST round having "
+                                "no round before it",
+            }
 
         pack, path = self.staged(feed_back, lambda ex: ex.update(ordered=True))
         result = verify(pack, path)
@@ -373,8 +385,12 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         self.assertIn("initial", result.results[0].refusal)
 
         def feed_back_with_initial(binding):
-            binding["inputs"]["barrierDown"] = {"state_of": "barrier",
-                                                "initial": 0}
+            binding["inputs"]["barrierDown"] = {
+                "state_of": "barrier",
+                "initial": 0,
+                "caller_keeps": "the fixture is about the FIRST round having "
+                                "no round before it",
+            }
 
         pack, path = self.staged(feed_back_with_initial,
                                  lambda ex: ex.update(ordered=True))
