@@ -1411,6 +1411,20 @@ fn render_statechart(
         // the document says, so a reader meets the deployment before
         // the behaviour it reinterprets rather than after it.
         out.annotate_machine();
+        // ⚠ Only `href`, and that is the whole of a `DriverRef` the
+        // author wrote: `resolved_path` is `None` until the
+        // compile-time resolver runs, `document_order` is this loop's
+        // own index, and `source_location` is a position.
+        //
+        // ⚠⚠ This was missing until 2026-09-20 and nothing could see
+        // it. No document in the checkout declared a driver, so a field
+        // the model carries reached no page and the totality this
+        // module promises was false for it — the `<sce:while max-iter>`
+        // shape, in the renderer instead of the parser. Found by
+        // writing the first document that declares one.
+        for d in &m.driver_refs {
+            out.line(&format!("driver {}", text(&d.href)));
+        }
         // ⚠ `context_objects`, not `context_object_ids`: the parser
         // fills the id set alongside the list from the same elements, so
         // rendering both would print each object twice — the shape the

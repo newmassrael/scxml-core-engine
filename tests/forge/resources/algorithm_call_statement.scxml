@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: the `<sce:call>` STATEMENT form in an algorithm
+  body.
+
+  An algorithm dispatches across documents two ways: the expression
+  form, which returns a value a `cond` can read, and this one, which is
+  the void-returning statement. Measured 2026-09-20 by
+  `a_declared_attribute_must_reach_the_ir`, no document in the checkout
+  used the statement form — `algorithm_keyexpr_match_first.scxml` says
+  in its own comment that it covers the expression form and leaves this
+  one to lower-level unit tests. So `<sce:call target= args=>` was
+  declared, read by `parse_algorithm_stmt`, and written by nothing, and
+  the renderer's `AlgorithmStmt::Call` arm was written to the rule
+  rather than to an example.
+
+  Two calls, because the two shapes are parsed differently:
+
+    * `target=` alone — `args` absent yields an empty argument list.
+    * `target=` with `args=` — a comma-separated list the parser splits
+      and trims. Two arguments, so the split is exercised rather than
+      the degenerate single-element case.
+
+  ⚠ Cross-document resolution of the target is a later stage, as it is
+  for `<sce:outbox ref>` on the worker kind; the claim here is about the
+  parsed IR. ⚠ Deliberately no golden in `tests/forge/expected/`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:call target="telemetry.reset"/>
+    <sce:call target="telemetry.record" args="reading, 1"/>
+    <sce:return expr="reading"/>
+  </sce:body>
+</scxml>

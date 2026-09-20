@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The two statechart-side `sce:` elements no document wrote.
+
+  Measured 2026-09-20 by `a_declared_attribute_must_reach_the_ir`:
+  `<sce:driver>` and `<sce:on-sample>` are declared by the grammar and
+  read by `SCXMLParser` — into `SCXMLModel::driver_refs` and
+  `State::on_sample_blocks` — and no document in the checkout carried
+  either, so a reader that stopped taking one would have gone
+  unnoticed. That is the shape `<sce:while max-iter>` had.
+
+  What each row is for:
+
+    * `<sce:driver href=>` at the document root — a driver document
+      this machine binds. ⚠ TWO of them, because the parser assigns a
+      `document_order` as it walks and a single row cannot show that
+      the order is the document's rather than a constant.
+    * `<sce:on-sample link= event= [callback=]>` inside a `<state>` —
+      the sample callback a link delivers into this state. `callback`
+      is optional: absent, codegen synthesises a default dispatch shim.
+      One row carries it and one does not, so the default path stays
+      exercised beside the explicit one.
+
+  ⚠ `<sce:on-sample>` is valid inside `<state>` and `<parallel>` only,
+  and both arms go through one helper — so one of each is written here
+  rather than two of the same, which would leave an arm unmeasured.
+
+  ⚠ Resolving `href` against a driver document, and `link` against a
+  `sce:kind="link"` sibling, are later stages with their own
+  validators; the claim here is about the parsed model.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript"
+       name="sce_driver_and_on_sample" initial="listening">
+  <sce:driver href="telemetry_driver.scxml"/>
+  <sce:driver href="diagnostic_driver.scxml"/>
+
+  <state id="listening">
+    <sce:on-sample link="telemetry_link" event="telemetry.sample"/>
+    <transition event="go" target="fanned"/>
+  </state>
+
+  <parallel id="fanned">
+    <sce:on-sample link="diagnostic_link" event="diagnostic.sample"
+                   callback="rust:crate::host::on_diagnostic_sample"/>
+    <state id="left"/>
+    <state id="right"/>
+  </parallel>
+</scxml>

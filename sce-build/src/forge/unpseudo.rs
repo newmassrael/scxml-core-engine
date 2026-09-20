@@ -2191,9 +2191,23 @@ fn parse_statechart(
     }
 
     let mut order = 0u32;
+    let mut driver_order = 0u32;
     for (line, kids) in group(body) {
         let w: Vec<&str> = line.text.split_whitespace().collect();
         match w.first().copied() {
+            // `document_order` is this loop's own position, not
+            // something the page carries — the renderer prints the href
+            // alone, because the rest of a `DriverRef` is derived.
+            // Counting here reproduces what the parser counted there.
+            Some("driver") => {
+                m.driver_refs.push(crate::model::DriverRef {
+                    href: undo(w.get(1).copied().unwrap_or(""), line.number)?,
+                    resolved_path: None,
+                    document_order: driver_order,
+                    source_location: None,
+                });
+                driver_order += 1;
+            }
             Some("context") => {
                 let mut c = crate::model::ContextObject {
                     id: undo(w.get(1).copied().unwrap_or(""), line.number)?,

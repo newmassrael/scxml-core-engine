@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: the `link` children no document wrote.
+
+  Measured 2026-09-20 by `a_declared_attribute_must_reach_the_ir`:
+  `<sce:inbound>`, `<sce:outbound>`, `<sce:rx-pool>` and `<sce:tx-pool>`
+  are declared by the grammar and read by `parse_link`, and no document
+  in the checkout carried any of them — so each could have stopped
+  reaching the IR without a single check going red. That is the shape
+  `<sce:while max-iter>` had, and it went unnoticed for as long as it
+  existed.
+
+  What each row is for, so a later reader does not have to infer it
+  from the parser:
+
+    * `<sce:inbound event= [when=]>` — an event this link delivers
+      inward. `when` is optional, so one row carries it and one does
+      not; naming both would retire the case that has no guard.
+    * `<sce:outbound event= encode=>` — an event this link sends
+      outward, with the codec that frames it. Both attributes are
+      required.
+    * `<sce:rx-pool ref=>` / `<sce:tx-pool ref=>` — the buffer-pool
+      documents whose slots back each direction. The parser validates
+      that the attribute is present; resolving the ref against a
+      sibling document is a later stage, so a bare name is enough here
+      and this document stays standalone.
+
+  ⚠ Deliberately no golden in `tests/forge/expected/`. What this
+  document is for is the element reaching the IR, which
+  `a_declared_attribute_must_reach_the_ir` proves by mutating each
+  value and requiring the IR to move.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="link_event_rows_and_pools" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="telemetry_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:events>
+    <sce:inbound event="telemetry.sample" when="session.active"/>
+    <sce:inbound event="telemetry.heartbeat"/>
+    <sce:outbound event="telemetry.ack" encode="telemetry_ack_codec"/>
+  </sce:events>
+  <sce:rx-pool ref="telemetry_rx_pool"/>
+  <sce:tx-pool ref="telemetry_tx_pool"/>
+</scxml>

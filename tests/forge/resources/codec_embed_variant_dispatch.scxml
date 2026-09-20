@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: `<sce:variant-dispatch flag=>` on an import.
+
+  When a codec embeds an imported VARIANT codec, the imported codec's
+  own dispatch carrier is not in scope — the embedding document has to
+  say which of ITS flags selects the arm. `<sce:variant-dispatch>` is
+  that statement, and it is a child of the `<sce:import>` rather than
+  of the embed, because the choice belongs to the import: one imported
+  variant codec has one dispatch source, which is why the parser
+  refuses a second `<sce:variant-dispatch>` under one import as
+  structurally meaningless.
+
+  Measured 2026-09-20 by `a_declared_attribute_must_reach_the_ir`: the
+  element is declared by the grammar and read by `parse_imports`, and
+  no document in the checkout carried it — so it could have stopped
+  reaching the IR with nothing to say so.
+
+  `flag=` is the dotted `<carrier>.<flag>` form, resolved against THIS
+  document's field and flag space: `hdr` is the flags carrier declared
+  below and `kind` one of its flags. Parse-time checks the shape only —
+  present, non-empty, exactly one dot — and resolving the halves is a
+  later stage.
+
+  ⚠ Deliberately no golden in `tests/forge/expected/`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big"
+       name="codec_embed_variant_dispatch">
+  <sce:import src="codec_variant_default_marker.scxml" kind="codec"
+              as="codec_variant_default_marker">
+    <sce:variant-dispatch flag="hdr.kind"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="hdr" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="2"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_variant_default_marker" sce:byte="1"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: the two ENVELOPE-level declarations no document
+  wrote.
+
+  `parse_cycles` and `parse_externs` run against the document root in
+  `parse_forge_with_imports_and_plugin`, before the kind's own parser,
+  so both are kind-agnostic — they land in `ParsedForge::cycles` and
+  `ParsedForge::externs` beside the document rather than inside it.
+  Measured 2026-09-20 by `a_declared_attribute_must_reach_the_ir`,
+  neither `<sce:cycle>` / `<sce:step>` nor `<sce:extern>` appeared in
+  any document in the checkout, so either could have stopped reaching
+  the envelope with nothing to say so.
+
+  Carried on a `transform` because that is the kind `parse_cycles`
+  names in its own duplicate-id diagnostics, and because a transform is
+  the smallest document that needs nothing else to be valid.
+
+  What each row is for:
+
+    * `<sce:cycle id= of=>` with `<sce:step name= [when=]>` children — a
+      named traversal over `of`, whose stops are an ORDERED sequence.
+      ⚠ The parser refuses a repeated step name rather than
+      deduplicating it, because a cursor position is an index into this
+      sequence and one name in two places would be two positions with
+      one value. One step carries `when` and one does not, so the
+      optional guard and its absence are both exercised.
+    * `<sce:extern name= sig= abi=>` — a foreign symbol the generated
+      code may call. ⚠ The name is checked against a CLOSED whitelist
+      (`intrinsic_registry`), so this is a real intrinsic and not an
+      invented one; an invented name is rejected with
+      `extern/symbol-not-in-whitelist`.
+
+  ⚠ Deliberately no golden in `tests/forge/expected/`. What this
+  document is for is the declaration reaching the envelope, which
+  `a_declared_attribute_must_reach_the_ir` proves by mutating each
+  value and requiring the IR to move.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="cycles_and_externs_transform">
+  <sce:extern name="sce_atomic_fence_acquire" sig="()" abi="c"/>
+
+  <sce:cycle id="gear_order" of="gear">
+    <sce:step name="park"/>
+    <sce:step name="drive" when="engine.running"/>
+  </sce:cycle>
+
+  <datamodel>
+    <data id="gear" sce:type="uint8" sce:direction="in"/>
+    <data id="scaled" sce:type="uint16" sce:direction="out" expr="gear * 2"/>
+  </datamodel>
+</scxml>

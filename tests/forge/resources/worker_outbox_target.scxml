@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: `<sce:outbox ref=>` on the worker kind.
+
+  Measured 2026-09-20 by `a_declared_attribute_must_reach_the_ir`: the
+  element is declared by the grammar and read by `parse_worker`, and no
+  document in the checkout carried it — so it could have stopped
+  reaching the IR with nothing to say so.
+
+  The ref names the recipient's inbox in `<recipient>.<inbox>` form,
+  and the parser takes the part before the dot as the outbox target
+  prefix: sending to a recipient is the one legitimate cross-namespace
+  access, so the layer-2 body guard must not reject the recipient's own
+  name. The dotted form is therefore the shape worth writing, not a
+  bare name — a bare one would exercise the split's degenerate case and
+  leave the prefix rule unmeasured.
+
+  ⚠ Like the `worker` AST-export fixture beside it, this document
+  declares no `<sce:import>`, so cross-document resolution would reject
+  it at compile time. That is deliberate and is the same trade that
+  fixture states: the claim here is about the parsed IR, which is
+  reached before cross-doc resolution runs.
+
+  ⚠ Deliberately no golden in `tests/forge/expected/`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="worker" name="worker_outbox_target" version="1.0">
+  <sce:link-rx ref="udp_scout"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:outbox ref="session_fsm.inbox"/>
+</scxml>
