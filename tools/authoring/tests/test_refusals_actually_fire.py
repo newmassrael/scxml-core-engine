@@ -176,6 +176,32 @@ class TheCheckRefuses(Fixture):
         b = {**BINDING, "outputs": {"lamp": {"address": "Plant.Out.Lamp", "field": "Stat", "map": {1: "BLINKING"}}}}
         self.assertIn("does not admit 'BLINKING'", str(self.bind(b)[0]))
 
+    def test_a_negation_naming_a_symbol_the_address_cannot_take(self):
+        """⚠ `not_equals` reached the evaluation path with NO test at all.
+
+        Measured 2026-09-20 over the whole vocabulary: it was the one key that
+        the core reads -- in `check` and again in `verify` -- and that no
+        test, no pack and no binding anywhere had ever exercised. Live code on
+        the path a verdict comes down, with nothing holding it.
+
+        A negation is wrong in the same way a positive comparison is: a symbol
+        the address cannot take never matches, so the rule is always true and
+        says nothing. The check already folds the two together on purpose, and
+        this is what says so.
+        """
+        b = {**BINDING, "inputs": {
+            "mode": {"address": "Plant.Input.SupplyMode",
+                     "not_equals": "BLINKING"}}}
+        self.assertIn("does not admit 'BLINKING'", str(self.bind(b)[0]))
+
+    def test_a_negation_against_a_symbol_the_address_does_take(self):
+        """The discriminator. Without it the case above is satisfied by a
+        check that refuses every negation."""
+        b = {**BINDING, "inputs": {
+            "mode": {"address": "Plant.Input.SupplyMode",
+                     "not_equals": "HIGH"}}}
+        self.assertEqual([], self.bind(b))
+
     def test_a_document_that_calls_itself_pure_and_needs_memory(self):
         """The mis-naming neither the document nor the platform can see.
 
