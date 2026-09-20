@@ -28,6 +28,38 @@ from tests.test_refusals_actually_fire import (
 )
 
 
+import contextlib
+import sys
+
+
+@contextlib.contextmanager
+def generator_that_records(seen=None, returncode=0, stdout="page\n", stderr=""):
+    """Stand a generator up for a case that measures the ARGV, not the page.
+
+    ⚠ TWO things have to be replaced, and replacing one is how this lane went
+    red. `verify` refuses BEFORE it runs anything when the generator is not
+    on disk — the refusal an author needs when they have not built it — so a
+    case that patches only `subprocess.run` never reaches its own mock and
+    fails with "the code generator is not there". The lane installs no engine
+    toolchain on purpose, so that refusal is what it always gets.
+
+    The stand-in path is `sys.executable` because the only property this
+    needs is EXISTING: the run is mocked, so nothing is ever executed, and
+    the argv assertions are about the flags the server passes on.
+    """
+    def fake_run(argv, **kwargs):
+        if seen is not None:
+            seen["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode, stdout=stdout,
+                                           stderr=stderr)
+
+    with unittest.mock.patch.object(verify.subprocess, "run", fake_run), \
+            unittest.mock.patch.object(
+                verify, "_default_codegen",
+                lambda: pathlib.Path(sys.executable)):
+        yield
+
+
 def drive(*messages):
     """Write frames in, read frames out."""
     stdin = io.StringIO("".join(json.dumps(m) + "\n" for m in messages))
@@ -258,13 +290,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         over every document in the checkout.
         """
         seen = {}
-
-        def fake_run(argv, **kwargs):
-            seen["argv"] = argv
-            return subprocess.CompletedProcess(argv, 0, stdout="page\n",
-                                               stderr="")
-
-        with unittest.mock.patch.object(verify.subprocess, "run", fake_run):
+        with generator_that_records(seen):
             result = self.call("pseudo", binding=str(self.binding),
                                shape="endmark", lexicon="ko")
         self.assertFalse(result.get("isError"), result["content"][0]["text"])
@@ -282,13 +308,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         the day the first one moved.
         """
         seen = {}
-
-        def fake_run(argv, **kwargs):
-            seen["argv"] = argv
-            return subprocess.CompletedProcess(argv, 0, stdout="page\n",
-                                               stderr="")
-
-        with unittest.mock.patch.object(verify.subprocess, "run", fake_run):
+        with generator_that_records(seen):
             self.call("pseudo", binding=str(self.binding))
         self.assertNotIn("--shape", seen["argv"])
         self.assertNotIn("--lexicon", seen["argv"])
@@ -302,13 +322,10 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         the product's own words are relayed -- which is what names the real
         set for the caller.
         """
-        def fake_run(argv, **kwargs):
-            return subprocess.CompletedProcess(
-                argv, 2, stdout="",
+        with generator_that_records(
+                returncode=2, stdout="",
                 stderr="error: invalid value 'no-such-shape' for '--shape "
-                       "<NAME>'\n  [possible values: indent, endmark]")
-
-        with unittest.mock.patch.object(verify.subprocess, "run", fake_run):
+                       "<NAME>'\n  [possible values: indent, endmark]"):
             result = self.call("pseudo", binding=str(self.binding),
                                shape="no-such-shape")
         self.assertTrue(result.get("isError"))
