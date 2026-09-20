@@ -54,7 +54,20 @@
     <state id="fan_left">
       <transition event="fire" target="done"/>
     </state>
-    <state id="fan_right"/>
+    <!-- The two position forms no other document writes. A
+         `<sce:provenance>` names its place with `page`, `row` or
+         `path`, and the parser takes the FIRST of the three present —
+         so each needs an anchor of its own to be exercised at all.
+         Measured 2026-09-20 by `a_declared_attribute_must_reach_the_ir`:
+         both are declared, both are read, and no document in the
+         checkout wrote either, so a reader that stopped taking them
+         would have gone unnoticed. Carried on `fan_right`, which no
+         assertion in `sce_provenance_parse.rs` pins, so these anchors
+         are about the attribute rather than about a behaviour. -->
+    <state id="fan_right">
+      <sce:provenance doc-id="OEM-TABLE-SPEC" section="2.2" row="17"/>
+      <sce:provenance doc-id="OEM-XML-SPEC" section="2.3" path="/root/entry[3]"/>
+    </state>
   </parallel>
   <final id="done" sce:provenance="OEM-DIAG-SPEC@D#9.9"/>
 </scxml>

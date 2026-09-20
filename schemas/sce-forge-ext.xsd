@@ -1736,7 +1736,17 @@
        vocabulary for the precedence. -->
   <xs:element name="provenance">
     <xs:complexType>
-      <xs:attribute name="doc-id" type="xs:string" use="required"/>
+      <!-- ⚠ NOT `use="required"`, although the parser requires it. An
+           absent `doc-id` and an empty one are ONE defect — the anchor
+           names no document — and `MalformedProvenance` is the one code
+           that says so, whichever spelling the author reached for.
+           Declaring it required here moved the absent case to libxml2
+           and left the empty case with the parser: two messengers for
+           one defect, and a consumer branching on `code` would have to
+           know which. Measured by
+           `element_form_without_doc_id_rejects_as_the_same_code`, which
+           went red the moment this said `required`. -->
+      <xs:attribute name="doc-id" type="xs:string"/>
       <xs:attribute name="rev" type="xs:string"/>
       <xs:attribute name="section" type="xs:string"/>
       <xs:attribute name="page" type="xs:nonNegativeInteger"/>
