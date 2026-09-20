@@ -325,6 +325,7 @@ use crate::forge::model::{
     TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
     ValidatorModel, WorkerModel,
 };
+use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
 
 /// Why a document has no pseudocode rendering, as opposed to an empty
@@ -543,7 +544,16 @@ pub fn render_with_deployment(
 /// grammar's only structural device is leading whitespace, and every
 /// writer here appends whole lines.
 struct Out<'d> {
-    buf: String,
+    /// The page before a shape has written it.
+    ///
+    /// ⚠ Nodes rather than a string, so the words and the layout become
+    /// two parameters instead of 220 literals — see
+    /// [`crate::forge::page`]. The default shape and lexicon reproduce
+    /// what this module wrote before, byte for byte, which is the only
+    /// thing that makes a refactor of this size checkable: the round
+    /// trip over the corpus and the whole-output tests both say so, and
+    /// a byte that moves is the refactor being wrong.
+    nodes: Vec<Node>,
     depth: usize,
     /// The facts to interleave, borrowed for the whole rendering.
     ///
@@ -571,20 +581,34 @@ impl<'d> Out<'d> {
 
     fn with_deployment(deployment: &'d Deployment) -> Out<'d> {
         Out {
-            buf: String::new(),
+            nodes: Vec::new(),
             depth: 0,
             deployment,
             annotated: Default::default(),
         }
     }
 
-    /// One line at the current depth.
+    /// One line at the current depth, in words this module has not been
+    /// decomposed into yet.
+    ///
+    /// ⚠ Scaffolding. A shape that must know a line's leading word
+    /// cannot serve a node built this way, so the second shape cannot
+    /// ship while any remain — see [`Node::raw`].
     fn line(&mut self, text: &str) {
-        for _ in 0..self.depth {
-            self.buf.push_str("  ");
-        }
-        self.buf.push_str(text);
-        self.buf.push('\n');
+        self.nodes.push(Node::raw(self.depth, text.to_string()));
+    }
+
+    /// One line at the current depth, as the words it is made of.
+    fn line_of(&mut self, parts: Vec<Part>) {
+        self.nodes.push(Node {
+            depth: self.depth,
+            parts,
+        });
+    }
+
+    /// The page, written by the default shape and lexicon.
+    fn finish(&self) -> String {
+        Indent.write(&self.nodes, &EN)
     }
 
     /// One derived line at the current depth.
@@ -670,7 +694,7 @@ impl<'d> Out<'d> {
             let mut body = Out::new();
             render_scxml_action(&inj.action, &mut body);
             self.nested(|out| {
-                for line in body.buf.lines() {
+                for line in body.finish().lines() {
                     out.derived_rendered(line);
                 }
             });
@@ -750,7 +774,7 @@ fn render_algorithm(m: &AlgorithmModel) -> String {
         }
     });
 
-    out.buf
+    out.finish()
 }
 
 fn render_const(c: &AlgorithmConst, out: &mut Out<'_>) {
@@ -970,7 +994,7 @@ fn render_procedure(m: &ProcedureModel) -> String {
         }
     });
 
-    out.buf
+    out.finish()
 }
 
 /// One `<data>` field, with every clause the model carries.
@@ -1112,7 +1136,7 @@ fn render_condition(m: &ConditionModel) -> String {
         }
         out.line(&format!("when {}", text(&m.expr)));
     });
-    out.buf
+    out.finish()
 }
 
 fn render_transform(m: &TransformModel) -> String {
@@ -1123,7 +1147,7 @@ fn render_transform(m: &TransformModel) -> String {
             render_field(f, out);
         }
     });
-    out.buf
+    out.finish()
 }
 
 fn render_validator(m: &ValidatorModel) -> String {
@@ -1155,7 +1179,7 @@ fn render_validator(m: &ValidatorModel) -> String {
             out.line(&format!("plausibility {}", text(p)));
         }
     });
-    out.buf
+    out.finish()
 }
 
 fn render_event_schema(m: &EventSchemaModel) -> String {
@@ -1170,16 +1194,27 @@ fn render_event_schema(m: &EventSchemaModel) -> String {
             render_field(f, out);
         }
     });
-    out.buf
+    out.finish()
 }
 
 fn render_enum(m: &EnumModel) -> String {
     let mut out = Out::new();
-    let mut head = format!("enum {}: {}", text(&m.name), m.underlying_type.as_attr());
+    // ⚠ The first kind decomposed into words. The colon stays inside
+    // the text part on purpose: it is this construct's punctuation, and
+    // a shape that placed it would have to know which construct it was
+    // looking at — see `crate::forge::page`.
+    let mut head = vec![
+        Part::Word(Word::Enum),
+        Part::Text(format!(
+            "{}: {}",
+            text(&m.name),
+            m.underlying_type.as_attr()
+        )),
+    ];
     if m.strict_variants {
-        head.push_str(" strict");
+        head.push(Part::Word(Word::Strict));
     }
-    out.line(&head);
+    out.line_of(head);
     out.nested(|out| {
         for v in &m.variants {
             // `source_line` is printed for the reason the algorithm's
@@ -1190,18 +1225,22 @@ fn render_enum(m: &EnumModel) -> String {
             // written in hex wherever the protocol's table is, and a
             // reviewer checking the page against that table looks for
             // `0x10`. See `crate::source_literal`.
-            let mut line = format!(
-                "variant {} = {}",
-                text(&v.name),
-                text(&crate::source_literal::as_written(&v.value_text, v.value))
-            );
+            let mut parts = vec![
+                Part::Word(Word::Variant),
+                Part::Text(format!(
+                    "{} = {}",
+                    text(&v.name),
+                    text(&crate::source_literal::as_written(&v.value_text, v.value))
+                )),
+            ];
             if let Some(l) = v.source_line {
-                let _ = write!(line, " @line {l}");
+                parts.push(Part::Word(Word::AtLine));
+                parts.push(Part::Text(l.to_string()));
             }
-            out.line(&line);
+            out.line_of(parts);
         }
     });
-    out.buf
+    out.finish()
 }
 
 fn render_timer(m: &TimerModel) -> String {
@@ -1219,7 +1258,7 @@ fn render_timer(m: &TimerModel) -> String {
         let _ = write!(head, " cancel-on-exit {}", text(s));
     }
     out.line(&head);
-    out.buf
+    out.finish()
 }
 
 /// An `f64` as the shortest text that reads back as the same value.
@@ -1254,7 +1293,7 @@ fn render_filter(m: &FilterModel) -> String {
         render_field(&m.input, out);
         render_field(&m.output, out);
     });
-    out.buf
+    out.finish()
 }
 
 fn render_observer(m: &ObserverModel) -> String {
@@ -1290,7 +1329,7 @@ fn render_observer(m: &ObserverModel) -> String {
             });
         }
     });
-    out.buf
+    out.finish()
 }
 
 fn render_interpolation(m: &InterpolationModel) -> String {
@@ -1326,7 +1365,7 @@ fn render_interpolation(m: &InterpolationModel) -> String {
         let vals: Vec<String> = m.values.iter().copied().map(num).collect();
         out.line(&format!("values {}", vals.join(" ")));
     });
-    out.buf
+    out.finish()
 }
 
 fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
@@ -1358,7 +1397,7 @@ fn render_bounded_collection(m: &BoundedCollectionModel) -> String {
         let _ = write!(head, " index-by {}", text(ix));
     }
     out.line(&head);
-    out.buf
+    out.finish()
 }
 
 // ── Statechart ─────────────────────────────────────────────────
@@ -1513,7 +1552,7 @@ fn render_statechart(
     });
     nested?;
 
-    Ok(out.buf)
+    Ok(out.finish())
 }
 
 /// One `<invoke>`, in whichever of its four shapes.
@@ -2222,7 +2261,7 @@ fn render_codec(m: &CodecModel) -> String {
             render_codec_test_vector(tv, out);
         }
     });
-    out.buf
+    out.finish()
 }
 
 fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
@@ -2417,7 +2456,7 @@ fn render_worker(m: &WorkerModel) -> String {
         let _ = write!(head, " outbox {}", text(o));
     }
     out.line(&head);
-    out.buf
+    out.finish()
 }
 
 fn render_buffer_pool(m: &BufferPoolModel) -> String {
@@ -2448,7 +2487,7 @@ fn render_buffer_pool(m: &BufferPoolModel) -> String {
             ));
         }),
     }
-    out.buf
+    out.finish()
 }
 
 fn render_link(m: &LinkModel) -> String {
@@ -2499,7 +2538,7 @@ fn render_link(m: &LinkModel) -> String {
             ));
         }
     });
-    out.buf
+    out.finish()
 }
 
 fn render_lookup(m: &LookupModel) -> String {
@@ -2525,5 +2564,5 @@ fn render_lookup(m: &LookupModel) -> String {
             MissPolicy::Error => out.line("miss error"),
         }
     });
-    out.buf
+    out.finish()
 }
