@@ -1800,6 +1800,31 @@ enum Commands {
         /// get a text that reads back.
         #[arg(long, value_name = "PATH")]
         deploy: Option<String>,
+        /// How lines and nesting are written — `indent` nests by two
+        /// spaces a level, `endmark` closes each block with the word
+        /// that opened it.
+        ///
+        /// ⚠ A choice of layout, never of content: a shape may
+        /// surround a value and may never alter one, so the same
+        /// document says the same thing in every shape.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "indent",
+            value_parser = registered_shapes()
+        )]
+        shape: String,
+        /// What the grammar's words are called.
+        ///
+        /// ⚠ Values the document wrote are never translated — only the
+        /// words the grammar itself spends.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "en",
+            value_parser = registered_lexicons()
+        )]
+        lexicon: String,
     },
     /// Emit what a diagram must be told to draw the annotation family —
     /// NL→IR closure ledger row G2. One JSON object on stdout.
@@ -2489,9 +2514,12 @@ fn main() {
         }
         Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
         Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
-        Commands::Pseudo { document, deploy } => {
-            cmd_pseudo(&document, deploy.as_deref(), error_format)
-        }
+        Commands::Pseudo {
+            document,
+            deploy,
+            shape,
+            lexicon,
+        } => cmd_pseudo(&document, deploy.as_deref(), &shape, &lexicon, error_format),
         Commands::AnnotationOverlay { scxml } => cmd_annotation_overlay(&scxml, error_format),
         Commands::AcceptanceReport {
             scxml,
@@ -7662,7 +7690,28 @@ fn cmd_review_table(document: &str, error_format: ErrorFormat) {
 /// forge entry point alone would refuse exactly the documents that
 /// carry executable content. Measured: the renderer covered statecharts
 /// for a while before this function reached them.
-fn cmd_pseudo(document: &str, deploy: Option<&str>, error_format: ErrorFormat) {
+/// The shape names `--shape` accepts, taken from the registry.
+///
+/// ⚠ Built from `page::SHAPES` rather than listed here, so `--help`
+/// names a shape on the day it is registered and an unregistered name
+/// is refused by clap with the real list. A hand-written list would
+/// have to be the third place the same set is stated.
+fn registered_shapes() -> clap::builder::PossibleValuesParser {
+    clap::builder::PossibleValuesParser::new(sce_build::forge::page::shape_names())
+}
+
+/// The lexicon names `--lexicon` accepts, for the same reason.
+fn registered_lexicons() -> clap::builder::PossibleValuesParser {
+    clap::builder::PossibleValuesParser::new(sce_build::forge::page::lexicon_names())
+}
+
+fn cmd_pseudo(
+    document: &str,
+    deploy: Option<&str>,
+    shape: &str,
+    lexicon: &str,
+    error_format: ErrorFormat,
+) {
     let path = std::path::Path::new(document);
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
@@ -7726,12 +7775,46 @@ fn cmd_pseudo(document: &str, deploy: Option<&str>, error_format: ErrorFormat) {
         }),
     };
 
-    match sce_build::forge::pseudo::render_with_deployment(&doc, &deployment) {
-        Ok(text) => out_stream(|w| w.write_all(text.as_bytes())),
+    // ⚠ Clap has already refused a name no registry carries, so these
+    // two cannot fail here — and they are still not unwrapped blind:
+    // the message names the registry, because the one way this breaks
+    // is a parser and a registry that stopped agreeing.
+    let kind = doc.kind().as_attr().to_string();
+    let shape = sce_build::forge::page::shape_named(shape).unwrap_or_else(|| {
+        cli_exit(CliError::PseudoUnavailable {
+            kind: kind.clone(),
+            feature: format!("the '{shape}' shape, which is not in this build's registry"),
+        })
+    });
+    let lexicon = sce_build::forge::page::lexicon_named(lexicon).unwrap_or_else(|| {
+        cli_exit(CliError::PseudoUnavailable {
+            kind: kind.clone(),
+            feature: format!("the '{lexicon}' lexicon, which is not in this build's registry"),
+        })
+    });
+
+    let nodes = match sce_build::forge::pseudo::render_nodes(&doc, &deployment) {
+        Ok(nodes) => nodes,
         // ⚠ Not a partial rendering. See `CliError::PseudoUnavailable`.
         Err(unsupported) => cli_exit(CliError::PseudoUnavailable {
             kind: unsupported.kind.to_string(),
             feature: unsupported.feature.to_string(),
+        }),
+    };
+
+    // The page carries its own declaration when the pair is not the
+    // default one, so the text written here can be filed and handed on
+    // without whoever reads it next having to be told what was asked
+    // for. See `page::write_page`.
+    match sce_build::forge::page::write_page(&nodes, shape, lexicon) {
+        Ok(text) => out_stream(|w| w.write_all(text.as_bytes())),
+        // A shape refusing a page it cannot write is the same kind of
+        // answer as a renderer refusing a document: by name, and with
+        // no text, because a page missing a block's close reads like a
+        // page that had no block.
+        Err(refusal) => cli_exit(CliError::PseudoUnavailable {
+            kind,
+            feature: refusal.to_string(),
         }),
     }
 }
