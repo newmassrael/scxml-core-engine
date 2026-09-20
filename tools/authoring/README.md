@@ -52,7 +52,9 @@ for the other case and none of them write it down.
 addresses and value spaces it touches, the precondition vocabulary, and the
 questions already known. It accepts any number of prose files and resolves
 names across all of them, because one feature is frequently written across
-several documents and a name introduced in one is used in another.
+several documents and a name introduced in one is used in another. `--out` is
+where the page is written, and it is required: a brief is a file somebody
+keeps open while writing, not something to watch scroll past once.
 
 **questions** is the deliverable that matters for an author: what the prose does
 not say. All domain-free; the ones an author acts on most are:
@@ -67,6 +69,9 @@ not say. All domain-free; the ones an author acts on most are:
 | `no-time-input` | the prose states a duration and no input can observe time passing |
 | `example-shows-memory` | two cases drive the same inputs and require different results, so the component remembers something the prose never states |
 | `depends-on-another-component` | the examples drive addresses another specification in the system writes, so this document is one of several and cannot be judged alone |
+
+The screen shows the count per class. `--out` writes every question itself, as
+NDJSON, for a tool that acts on them one at a time.
 
 **review** measures the PACK, which every other command trusts and nothing
 else examines. No answer can be more right than the pack is, and the pack is
@@ -133,6 +138,11 @@ runnable code from the document. ⚠ It refuses rather than skipping -- a kind
 whose generated shape it cannot drive, an input rule it cannot evaluate, an
 expected address the binding never writes. A verifier that quietly skips what
 it does not understand reports a clean run for a document it never executed.
+
+`--backend` picks which lowering is DRIVEN. The product emits six; this drives
+the one it can import and refuses the rest, rather than reporting on a program
+nobody started. `--codegen` names the generator, defaulting to the one built
+in this tree.
 
 It drives two shapes, and they have nothing in common. A pure computation is
 CALLED: one function per output, this round's inputs by name. A **statechart
@@ -259,6 +269,10 @@ leaving it to be guessed from how it looks.
 shapes and lexicons exist is the product's registry to answer, and a copy
 here would refuse a name the product accepts the day one is registered. An
 unknown name comes back as the product's own refusal, naming the real set.
+
+`--codegen` names the product's code generator. Without it, the one built in
+this tree is used -- derived from where this package sits rather than from a
+constant, which is a home this package is not entitled to have.
 
 ⚠ It does not spawn the generator itself. Exactly one module in this core may
 run another program, and a second caller gets a function there rather than a

@@ -224,6 +224,50 @@ class TheReadmeIsNotOutOfDate(unittest.TestCase):
                          f"the command line has these and the README does not "
                          f"introduce them: {missing}")
 
+    def test_every_flag_is_written_down(self):
+        """⚠ THE CASE THE ONE ABOVE IS SILENT ABOUT.
+
+        That case measures COMMANDS, so a command introduced in the README
+        and then given three more flags reads as fully documented -- and
+        this is the ordinary way the CLI grows. Measured the day this was
+        written: seven commands were all introduced and FIVE flags across
+        four of them were named nowhere, including two that decide which
+        program gets run.
+
+        The population is every flag argparse prints, asked of argparse.
+        A list here would be a third copy of the command line and would go
+        stale in the same direction as the README it is checking.
+        """
+        from sce_author.__main__ import main
+        import contextlib
+        import io
+
+        def printed(argv) -> str:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), \
+                    contextlib.suppress(SystemExit):
+                main(argv)
+            return out.getvalue()
+
+        groups = set(re.findall(r"\{([a-z,]+)\}", printed(["--help"])))
+        commands = sorted({c for group in groups for c in group.split(",")})
+        self.assertTrue(commands, "the command line stopped listing subcommands")
+
+        missing = {}
+        for command in commands:
+            flags = sorted(set(re.findall(r"--[a-z][a-z0-9-]*",
+                                          printed([command, "--help"]))))
+            # ⚠ `--help` is argparse's own and belongs to no command, so
+            # naming it would be documenting the library rather than this.
+            absent = [f for f in flags
+                      if f != "--help" and f not in self.text]
+            if absent:
+                missing[command] = absent
+        self.assertEqual({}, missing,
+                         f"these commands offer flags the README never names, "
+                         f"so a reader is told the command exists and not what "
+                         f"it can be asked: {missing}")
+
 
 if __name__ == "__main__":
     unittest.main()
