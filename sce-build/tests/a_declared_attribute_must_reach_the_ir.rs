@@ -601,14 +601,27 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
             // refuses" is about which documents this tree keeps, and
             // reading the second as the first is what sent a previous
             // round looking for fixtures that already existed.
+            // ⚠ Three different answers, said apart, because they are
+            // three different pieces of work. "Nothing writes the
+            // element" is grammar the tree never exercises; "the
+            // element is written and this attribute is not" is one
+            // optional attribute missing from a document that already
+            // exists; "written but nothing parses" is about which
+            // documents this tree keeps. An undifferentiated count sent
+            // a previous round looking for fixtures that already
+            // existed.
+            let element_used = writers.keys().any(|(el, _, _)| el == &d.element);
             unmeasured.entry(key.clone()).or_insert_with(|| {
-                if written_in.is_empty() {
-                    "no fixture writes it".to_string()
-                } else {
+                if !written_in.is_empty() {
                     format!(
                         "written by {} document(s), none of which the parser takes",
                         written_in.len()
                     )
+                } else if element_used {
+                    "no fixture writes this attribute, though documents write the element"
+                        .to_string()
+                } else {
+                    "no document writes <sce:".to_string() + &d.element + "> at all"
                 }
             });
             continue;
