@@ -13,12 +13,14 @@ than a surprise.
 import io
 import json
 import pathlib
+import subprocess
 import tempfile
 import unittest
+import unittest.mock
 
 import yaml
 
-from sce_author import mcp
+from sce_author import mcp, verify
 from sce_author.verify import _default_codegen
 
 from tests.test_refusals_actually_fire import (
@@ -238,49 +240,83 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         with self.assertRaises(json.JSONDecodeError):
             json.loads(page)
 
-    @unittest.skipUnless(_default_codegen().exists(),
-                         "the product's code generator is not built")
-    def test_a_page_in_another_pair_says_so_on_its_first_line(self):
-        """What makes a chosen pair safe to approve and file.
+    def test_the_two_choices_reach_the_generator_unaltered(self):
+        """What this layer owes is the pass-through, so that is what is asked.
 
-        ⚠ The page a reviewer approves is kept and handed on, and whoever
-        picks it up next has the page and nothing else -- not the request
-        that produced it. So the page has to say how it is read, and the
-        alternative that has to be excluded is guessing it back from how the
-        page looks.
+        ⚠ Asserted on the ARGV, not on a rendered page, and the reason is
+        this lane's own design: it installs no engine toolchain on purpose,
+        so a case needing a built generator cannot run here. Measured the
+        hard way -- the first version of this case rendered a real page, and
+        against a generator built before the flags existed it did not skip,
+        it FAILED, blocking a push over a stale artefact rather than over
+        the change being pushed.
 
-        ⚠ The second assertion is the one that says a pair is a choice of
-        SURFACE. The expression is the author's, character for character, in
-        a page whose every grammar word has been renamed around it -- so a
-        reviewer reading this page is reading this document.
+        What the server is responsible for is that a caller's two choices
+        arrive at the generator exactly as given. What the generator then
+        does with them -- the layout, the words, the page's own declaration
+        of which pair wrote it -- is measured where the generator is built,
+        over every document in the checkout.
         """
-        result = self.call("pseudo", binding=str(self.binding),
-                           shape="endmark", lexicon="ko")
+        seen = {}
+
+        def fake_run(argv, **kwargs):
+            seen["argv"] = argv
+            return subprocess.CompletedProcess(argv, 0, stdout="page\n",
+                                               stderr="")
+
+        with unittest.mock.patch.object(verify.subprocess, "run", fake_run):
+            result = self.call("pseudo", binding=str(self.binding),
+                               shape="endmark", lexicon="ko")
         self.assertFalse(result.get("isError"), result["content"][0]["text"])
-        page = result["content"][0]["text"]
-        self.assertEqual("#!sce-pseudo shape=endmark lexicon=ko",
-                         page.splitlines()[0])
-        self.assertIn("mode ? 1 : 0", page)
+        self.assertIn("--shape", seen["argv"])
+        self.assertEqual("endmark", seen["argv"][seen["argv"].index("--shape") + 1])
+        self.assertIn("--lexicon", seen["argv"])
+        self.assertEqual("ko", seen["argv"][seen["argv"].index("--lexicon") + 1])
 
-    @unittest.skipUnless(_default_codegen().exists(),
-                         "the product's code generator is not built")
-    def test_an_unregistered_shape_is_refused_with_the_names_there_are(self):
-        """The refusal comes from the product, and that is the point.
+    def test_a_pair_nobody_asked_for_is_not_invented(self):
+        """Silence stays silence, so one default lives in one place.
 
-        ⚠ Nothing in this tool lists which shapes exist. A list here would
-        refuse a name the product accepts on the day one is registered, and
-        it would sound authoritative doing it -- so an unknown name travels
-        all the way down and comes back as the generator's own refusal,
-        which names the real set. This case reads that set out of the
-        refusal, which is how it stays true as the registry grows.
+        ⚠ The generator's defaults are `indent` and `en`. Passing them from
+        here when the caller said nothing would make this the second place
+        that decides what a default page is, and the two would part company
+        the day the first one moved.
         """
-        result = self.call("pseudo", binding=str(self.binding),
-                           shape="no-such-shape")
+        seen = {}
+
+        def fake_run(argv, **kwargs):
+            seen["argv"] = argv
+            return subprocess.CompletedProcess(argv, 0, stdout="page\n",
+                                               stderr="")
+
+        with unittest.mock.patch.object(verify.subprocess, "run", fake_run):
+            self.call("pseudo", binding=str(self.binding))
+        self.assertNotIn("--shape", seen["argv"])
+        self.assertNotIn("--lexicon", seen["argv"])
+
+    def test_an_unknown_name_travels_down_and_its_refusal_comes_back(self):
+        """Nothing here lists the names, so nothing here can refuse one.
+
+        ⚠ A list of valid shapes in this package would refuse a name the
+        product accepts on the day one is registered, and would sound
+        authoritative doing it. So an unknown name is passed on unjudged and
+        the product's own words are relayed -- which is what names the real
+        set for the caller.
+        """
+        def fake_run(argv, **kwargs):
+            return subprocess.CompletedProcess(
+                argv, 2, stdout="",
+                stderr="error: invalid value 'no-such-shape' for '--shape "
+                       "<NAME>'\n  [possible values: indent, endmark]")
+
+        with unittest.mock.patch.object(verify.subprocess, "run", fake_run):
+            result = self.call("pseudo", binding=str(self.binding),
+                               shape="no-such-shape")
         self.assertTrue(result.get("isError"))
         said = result["content"][0]["text"]
         self.assertIn("no-such-shape", said)
         self.assertIn("indent", said,
-                      f"the refusal does not name the shapes there are: {said}")
+                      f"the refusal reached the caller without the names "
+                      f"there are: {said}")
 
     def test_pseudo_refuses_an_empty_document_path(self):
         """A refusal names the file the caller gave, not this program.
