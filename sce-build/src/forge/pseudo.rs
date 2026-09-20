@@ -1073,8 +1073,12 @@ fn render_helper(h: &ProcedureHelper, out: &mut Out<'_>) {
 }
 
 fn render_state(s: &ProcedureState, out: &mut Out<'_>) {
-    let keyword = if s.is_final { "final" } else { "state" };
-    out.line(&format!("{} {}:", keyword, text(&s.id)));
+    let keyword = if s.is_final { Word::Final } else { Word::State };
+    out.line_of(vec![
+        Part::Word(keyword),
+        Part::Text(text(&s.id).into_owned()),
+        Part::Glued(":".into()),
+    ]);
     out.nested(|out| {
         for send in &s.on_entry_sends {
             // A block when it carries anything past the service:
@@ -1637,7 +1641,7 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
             out.line(&format!("id-into {}", text(&base.idlocation)));
         }
         for p in &base.params {
-            render_param_into("param", p, out);
+            render_param_into(Word::Param, p, out);
         }
         for id in &base.req {
             out.line(&format!("req {}", text(&id.to_string())));
@@ -2048,7 +2052,7 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
                 ]);
                 out.nested(|out| {
                     for p in &a.params {
-                        render_param_into("arg", p, out);
+                        render_param_into(Word::Arg, p, out);
                     }
                 });
             }
@@ -2116,17 +2120,33 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
 /// keyword after the name now selects the clause and the rest of the
 /// line is the value, so a value containing ` from ` or ` = ` cannot
 /// move the boundary.
-fn render_param_into(keyword: &str, p: &crate::model::Param, out: &mut Out<'_>) {
-    let name = text(&p.name);
+fn render_param_into(keyword: Word, p: &crate::model::Param, out: &mut Out<'_>) {
+    let name = Part::Text(text(&p.name).into_owned());
     match (p.expr.is_empty(), p.location.is_empty()) {
-        (true, true) => out.line(&format!("{keyword} {name}")),
-        (false, true) => out.line(&format!("{keyword} {name} = {}", text(&p.expr))),
-        (true, false) => out.line(&format!("{keyword} {name} from {}", text(&p.location))),
+        (true, true) => out.line_of(vec![Part::Word(keyword), name]),
+        (false, true) => out.line_of(vec![
+            Part::Word(keyword),
+            name,
+            Part::Text("=".into()),
+            Part::Text(text(&p.expr).into_owned()),
+        ]),
+        (true, false) => out.line_of(vec![
+            Part::Word(keyword),
+            name,
+            Part::Word(Word::From),
+            Part::Text(text(&p.location).into_owned()),
+        ]),
         (false, false) => {
-            out.line(&format!("{keyword} {name}:"));
+            out.line_of(vec![Part::Word(keyword), name, Part::Glued(":".into())]);
             out.nested(|out| {
-                out.line(&format!("expr {}", text(&p.expr)));
-                out.line(&format!("from {}", text(&p.location)));
+                out.line_of(vec![
+                    Part::Word(Word::Expr),
+                    Part::Text(text(&p.expr).into_owned()),
+                ]);
+                out.line_of(vec![
+                    Part::Word(Word::From),
+                    Part::Text(text(&p.location).into_owned()),
+                ]);
             });
         }
     }
@@ -2219,7 +2239,7 @@ fn render_send(a: &crate::model::Action, out: &mut Out<'_>) {
             }
         }
         for p in &a.params {
-            render_param_into("param", p, out);
+            render_param_into(Word::Param, p, out);
         }
     });
 }
@@ -2461,7 +2481,12 @@ fn render_codec_test_vector(tv: &CodecTestVector, out: &mut Out<'_>) {
     } else {
         tv.hex_text.clone()
     };
-    out.line(&format!("test {} @line {}", text(&hex), tv.source_line));
+    out.line_of(vec![
+        Part::Word(Word::Test),
+        Part::Text(text(&hex).into_owned()),
+        Part::Word(Word::AtLine),
+        Part::Text(tv.source_line.to_string()),
+    ]);
     out.nested(|out| {
         let DecodedValue::Plain { fields } = &tv.decoded;
         for f in fields {

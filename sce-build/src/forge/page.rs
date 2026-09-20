@@ -82,6 +82,13 @@ pub enum Word {
     OnExit,
     OnInitial,
     OnHistoryDefault,
+    State,
+    Final,
+    Test,
+    Param,
+    Arg,
+    From,
+    Expr,
 }
 
 impl Word {
@@ -112,6 +119,13 @@ impl Word {
         Word::OnExit,
         Word::OnInitial,
         Word::OnHistoryDefault,
+        Word::State,
+        Word::Final,
+        Word::Test,
+        Word::Param,
+        Word::Arg,
+        Word::From,
+        Word::Expr,
     ];
 }
 
@@ -156,6 +170,13 @@ fn en_word(w: Word) -> &'static str {
         Word::OnExit => "on exit",
         Word::OnInitial => "on initial",
         Word::OnHistoryDefault => "on history-default",
+        Word::State => "state",
+        Word::Final => "final",
+        Word::Test => "test",
+        Word::Param => "param",
+        Word::Arg => "arg",
+        Word::From => "from",
+        Word::Expr => "expr",
     }
 }
 
