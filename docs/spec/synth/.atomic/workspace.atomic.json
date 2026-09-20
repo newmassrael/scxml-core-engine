@@ -2815,6 +2815,10 @@
           "file": "sce-build/src/forge/parser.rs",
           "symbol": "parse_fold_range",
           "kind": "implements"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_const_scalar_init.scxml",
+          "kind": "references"
         }
       ]
     },

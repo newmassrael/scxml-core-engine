@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: `sce:req` on a lookup ROW.
+
+     The grammar puts the annotation on `<sce:entry>` for a stated
+     reason — a mapping table is the shape a specification states row by
+     row ("gear 3 shall select DRIVE"), so the row is where the claim
+     belongs, and hanging it on the surrounding `<data>` would give
+     every row the same verdict. The parser reads it through
+     `parse_sce_entries` → `collect_sce_req` into
+     `LookupEntry::requirements`.
+
+     Measured 2026-09-20 by `a_declared_attribute_must_reach_the_ir`: no
+     document in the checkout wrote it, so the reader could have stopped
+     and nothing would have said so. The eight existing lookup fixtures
+     are pinned by goldens in `tests/forge/expected/`, and a claim about
+     an annotation is not a reason to regenerate them — hence a
+     document of its own, deliberately without a golden.
+
+     Two rows carry a claim and two do not, so the annotation is
+     per-row rather than per-table: a reader that attached it to the
+     whole `<data>` would give all four the same requirements and fail
+     the difference.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="entry_requirements_lookup">
+  <datamodel>
+    <data id="modeRaw" sce:type="uint8" sce:direction="in"/>
+    <data id="mode" sce:type="string" sce:direction="out"/>
+    <data id="mapping" sce:default="UNKNOWN">
+      <sce:entry key="0" value="OFF" sce:req="REQ_MODE_OFF"/>
+      <sce:entry key="1" value="STANDBY"/>
+      <sce:entry key="2" value="ACTIVE" sce:req="REQ_MODE_ACTIVE REQ_MODE_SAFE"/>
+      <sce:entry key="3" value="FAULT"/>
+    </data>
+  </datamodel>
+</scxml>

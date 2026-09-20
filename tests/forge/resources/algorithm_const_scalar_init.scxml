@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: the SCALAR form of `<sce:const>`.
+
+  RFC §synth-5-F gives a constant two forms and says they are mutually
+  exclusive: a scalar literal in `init=`, or a build-time `<sce:fold>`
+  body under `sce:compute-at="build"`. Measured 2026-09-20, every
+  `<sce:const>` in the checkout used the fold form — so the parser's
+  scalar branch was reached by no document, and `a_declared_attribute_
+  must_reach_the_ir` reported `<sce:const init>` as an attribute the
+  grammar declares, the parser reads, and nothing writes. An arm nobody
+  reaches is an arm that can stop working quietly; `<sce:while
+  max-iter>` was exactly that and was dropped in silence.
+
+  The algorithm itself is the smallest thing that can carry a constant
+  and return: mask the parameter with a polynomial the constant holds.
+
+  ⚠ Deliberately no golden in `tests/forge/expected/`. Thirty-three
+  resources have none; what this document is for is the attribute
+  reaching the IR, and a golden would pin a rendering nobody reads.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:const name="POLY" type="uint16" init="0x1021"/>
+  <sce:signature>
+    <sce:param name="word" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="word &amp; POLY"/>
+  </sce:body>
+</scxml>
