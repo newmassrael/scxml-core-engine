@@ -133,6 +133,25 @@ every transition correctly, sent nothing anybody could receive, and every case
 read the resting value -- a full run, judged, about a document nobody could
 hear.
 
+**A document with delays does half its work between the cases**, so virtual
+time has to move. `elapsed_ms` is what moves it, read as what it says it is:
+the AGE of the situation, and the situation is what the case just drove. So
+the reading sits that far after the drive and **nothing is subtracted from
+anything**. A delta between two cases would be wrong twice over -- the field
+restarts whenever the situation does, and its own schema calls a record that
+goes backwards ordinary rather than broken. One advance, however large: the
+engine pops due entries one macrostep apart, so a long step does not step over
+a deadline the document distinguishes, and choosing a step SIZE is the move
+its runtime explicitly warns against.
+
+⚠ Two silences get refused rather than chosen. A reading with no `elapsed_ms`
+taken while the machine is still waiting on a delayed act is dated to a moment
+no record names. And a case that drove the same addresses to the same values
+as the one before it is a real assertion -- the schema is explicit that a
+restatement is not nothing happening -- but nothing says whether the age
+beside it runs from this assertion or from the one that started the situation.
+Those are different moments, and a delayed act can fall between them.
+
 ⚠ **It also says what the cases never looked at.** "Every case passed" is a
 statement about the cases, and a run that judged two of nine written positions
 prints the same count as one that judged nine of nine. So the positions no

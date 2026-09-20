@@ -58,6 +58,27 @@ DOCUMENT = """<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 """
 
+# The same crossing with a lead delay: a signal does not start flashing the
+# instant a train is detected, it arms and flashes 500 ms later. Nothing here
+# can be judged without moving virtual time, which is the point.
+DELAYED = """<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="dark"
+       sce:kind="statechart">
+  <state id="dark">
+    <transition event="train.approaching" target="arming"/>
+  </state>
+  <state id="arming">
+    <onentry>
+      <send event="signal.flashing" type="x-sce-host" delay="500ms"/>
+    </onentry>
+    <transition event="train.occupied"/>
+    <transition event="train.cleared" target="dark"/>
+  </state>
+</scxml>
+"""
+
 BINDING = {
     "version": 1,
     "document": "signal.scxml",
@@ -252,6 +273,107 @@ class AStatechartIsDrivenNotCalled(unittest.TestCase):
         result = self.run_with(binding=binding)
         self.assertFalse(result.ran)
         self.assertIn("no input rule names an `event`", result.refusal)
+
+
+@unittest.skipUnless(codegen_is_built(),
+                     "the product's generator is not built; nothing can be run")
+class ADelayedActNeedsTimeToBeDrivenThrough(unittest.TestCase):
+    """A document with a delay does half its work between the cases.
+
+    ⚠ `elapsed_ms` is the age of the SITUATION, not a moment on a timeline
+    and not a delta between two records. So the observation sits that far
+    after the drive that started the situation, and nothing is subtracted
+    from anything -- a subtraction would be wrong twice over, because the
+    field restarts whenever the situation does and its own schema calls a
+    record that goes backwards ordinary.
+    """
+
+    OCCUPIED = {"address": "plant/in/train-approach",
+                "becomes": "OCCUPIED", "event": "train.occupied"}
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = pathlib.Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("interface-model.yaml", "conventions.yaml"):
+            shutil.copy(CROSSING / name, self.tmp / name)
+        (self.tmp / "signal.scxml").write_text(DELAYED, encoding="utf-8")
+        self.binding = {**BINDING,
+                        "inputs": {**BINDING["inputs"], "occupied": self.OCCUPIED}}
+
+    def run_cases(self, cases):
+        (self.tmp / "examples.yaml").write_text(
+            yaml.safe_dump({**EXAMPLES, "cases": cases}), encoding="utf-8")
+        path = self.tmp / "b.yaml"
+        path.write_text(yaml.safe_dump(self.binding), encoding="utf-8")
+        return verify(load_pack(self.tmp), path)
+
+    def test_the_act_fires_once_the_age_the_record_states_has_passed(self):
+        result = self.run_cases([
+            {"name": "a train is detected",
+             "given": {"plant/in/train-approach": "APPROACHING"},
+             "drove": ["plant/in/train-approach"], "elapsed_ms": 100,
+             # The arming delay has 400 ms left to run.
+             "expect": {"plant/out/road-signal.value": "DARK"}},
+            {"name": "it reaches the crossing",
+             "given": {"plant/in/train-approach": "OCCUPIED"},
+             "drove": ["plant/in/train-approach"], "elapsed_ms": 600,
+             "expect": {"plant/out/road-signal.value": "FLASHING"}},
+        ])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual(2, result.passed,
+                         [(r.name, r.refusal, r.failures) for r in result.results])
+
+    def test_without_the_age_nothing_says_whether_the_wait_was_over(self):
+        """A reading taken at a moment no record names is not a verdict."""
+        result = self.run_cases([
+            {"name": "a train is detected",
+             "given": {"plant/in/train-approach": "APPROACHING"},
+             "drove": ["plant/in/train-approach"], "elapsed_ms": 100,
+             "expect": {"plant/out/road-signal.value": "DARK"}},
+            {"name": "and then a reading with no age on it",
+             "given": {"plant/in/train-approach": "OCCUPIED"},
+             "drove": ["plant/in/train-approach"],
+             "expect": {"plant/out/road-signal.value": "FLASHING"}},
+        ])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual(1, result.unjudged,
+                         [(r.name, r.refusal) for r in result.results])
+        self.assertIn("no `elapsed_ms`", result.results[1].refusal)
+
+    def test_a_restated_value_with_an_age_is_refused_not_guessed(self):
+        """The one anchor the record genuinely does not settle.
+
+        Driving the same address to the same value again is a real
+        assertion -- the schema is explicit that a restatement is not
+        nothing happening. But nothing says whether the age that comes with
+        it runs from this assertion or from the one that began the
+        situation, and a delayed act can fall between the two.
+        """
+        result = self.run_cases([
+            {"name": "a train is detected",
+             "given": {"plant/in/train-approach": "APPROACHING"},
+             "drove": ["plant/in/train-approach"], "elapsed_ms": 100,
+             "expect": {"plant/out/road-signal.value": "DARK"}},
+            {"name": "the same reading, asserted again",
+             "given": {"plant/in/train-approach": "APPROACHING"},
+             "drove": ["plant/in/train-approach"], "elapsed_ms": 600,
+             "expect": {"plant/out/road-signal.value": "FLASHING"}},
+        ])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual(1, result.unjudged,
+                         [(r.name, r.refusal) for r in result.results])
+        self.assertIn("started the situation", result.results[1].refusal)
+
+    def test_a_document_with_delays_and_no_ages_at_all_is_refused(self):
+        result = self.run_cases([
+            {"name": "a train is detected",
+             "given": {"plant/in/train-approach": "APPROACHING"},
+             "drove": ["plant/in/train-approach"],
+             "expect": {"plant/out/road-signal.value": "DARK"}},
+        ])
+        self.assertFalse(result.ran)
+        self.assertIn("never fired", result.refusal)
 
 
 if __name__ == "__main__":

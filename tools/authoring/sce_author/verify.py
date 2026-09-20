@@ -777,6 +777,53 @@ class StatechartRun:
         self.engine.send_event(self.event(rule["event"]))
         return True
 
+    def observe(self, case, restated: bool = False) -> None:
+        """Move virtual time to the moment this case was observed.
+
+        ⚠ NOTHING IS SUBTRACTED FROM ANYTHING. `elapsed_ms` is the age of
+        the SITUATION, and the situation is what this case just drove, so
+        the observation sits exactly that far after the drive. Reading it
+        as a delta between two cases would be wrong twice over: the field
+        restarts whenever the situation does, and its own schema says a
+        record where it goes backwards is ordinary rather than broken.
+
+        ⚠⚠ One advance, however large. The engine pops due entries one
+        macrostep apart, so a long step does not step over a deadline the
+        document distinguishes -- and choosing a step SIZE is the move its
+        runtime warns against, because the host owns this clock outright.
+        """
+        if case.elapsed_ms is None:
+            if self.engine.time_until_next_scheduled_ms() is not None:
+                raise VerifyError(
+                    "the machine is waiting on a delayed act and this case "
+                    "records no `elapsed_ms`, so nothing says whether the "
+                    "wait was over when it was observed. Reading it here "
+                    "would date the reading to a moment no record names")
+            return
+        if case.elapsed_ms < 0:
+            raise VerifyError(
+                f"records `elapsed_ms` of {case.elapsed_ms}, and an age "
+                f"cannot be negative. A LATER case reading lower than an "
+                f"earlier one is ordinary -- the situation restarted -- but "
+                f"a single one below zero says the record means something "
+                f"else by the field")
+        if restated:
+            # ⚠ The one place the anchor is genuinely ambiguous, and it is
+            # refused rather than chosen. This case drove the same addresses
+            # to the same values as the one before it, which the schema says
+            # is a real assertion and not nothing happening -- but nothing
+            # says whether the age is measured from THIS assertion or from
+            # the earlier one that began the situation. The two put the
+            # reading at different moments, and a delayed act sits between
+            # them, so picking one would silently date every such reading.
+            raise VerifyError(
+                f"drove the same values as the case before it and records an "
+                f"`elapsed_ms` of {case.elapsed_ms}, and nothing says whether "
+                f"that age runs from this assertion or from the one that "
+                f"started the situation. The two are different moments, and "
+                f"a delayed act can fall between them")
+        self.engine.advance_time(int(case.elapsed_ms))
+
 
 def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                       declared) -> Verification:
@@ -789,13 +836,14 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             "partly the result of the cases before it. Reading the file's "
             "line order as a timeline it was never promised would produce a "
             "verdict about an order nobody recorded."))
-    if build.needs_event_scheduler:
+    if build.needs_event_scheduler and not any(
+            case.elapsed_ms is not None for case in examples.cases):
         return Verification(refusal=(
-            "the document has delayed acts, so it must be driven through "
-            "time, and `elapsed_ms` cannot say how much time passed BETWEEN "
-            "two cases -- it is a duration that restarts with the situation "
-            "and may go backwards. Running it anyway would report every "
-            "delayed act as one that never fired."))
+            "the document has delayed acts, so it has to be driven through "
+            "time, and no case records an `elapsed_ms`. Virtual time would "
+            "never move, and every delayed act would be reported as one that "
+            "never fired -- a full run, judged, against a document that was "
+            "never given the chance to do half of what it does."))
 
     inputs = dict(binding.get("inputs") or {})
     outputs = dict(binding.get("outputs") or {})
@@ -825,8 +873,17 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     except VerifyError as exc:
         return Verification(refusal=str(exc))
 
+    previous: tuple = ()
     for case in examples.cases:
         result = CaseResult(name=case.name)
+        # What this case ASSERTED, as the record states it: the addresses it
+        # drove, at the values it drove them to. ⚠ Read rather than derived.
+        # Comparing one case's whole `given` with the next one's would call a
+        # restatement nothing happening, which is the error `drove` exists to
+        # stop.
+        signature = tuple(sorted((a, case.given.get(a))
+                                 for a in (case.drove or ())))
+        restated, previous = bool(signature) and signature == previous, signature
         try:
             if not any(run.drive(rule, case) for rule in driving.values()):
                 # ⚠ A case that drove nothing this document listens for is
@@ -836,6 +893,11 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                     f"drove {list(case.drove) or 'nothing'}, and no input "
                     f"rule turns any of that into an event this document "
                     f"receives")
+            # ⚠ AFTER the drive and BEFORE the reading. The drive is what
+            # starts the situation whose age `elapsed_ms` states, and the
+            # reading is what that age dates -- so a delayed act reaches the
+            # machine in between, which is the whole point of it having one.
+            run.observe(case, restated)
             requests = run.recorder.take()
             produced: dict = {}
             for name, rule in outputs.items():
