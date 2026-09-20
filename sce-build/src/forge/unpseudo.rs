@@ -2639,7 +2639,7 @@ fn parse_action_list(body: &[&Line<'_>]) -> Result<Vec<crate::model::Action>, Pa
                     why: "an `else:` with no `if` before it".to_string(),
                 });
             };
-            last.else_actions = parse_action_list(&kids)?;
+            last.set_else(parse_action_list(&kids)?);
             continue;
         }
         if let Some(cond) = line.text.strip_prefix("elif ") {
@@ -2649,11 +2649,10 @@ fn parse_action_list(body: &[&Line<'_>]) -> Result<Vec<crate::model::Action>, Pa
                     why: "an `elif` with no `if` before it".to_string(),
                 });
             };
-            last.elseif_branches.push(crate::model::ElseIfBranch {
-                cond: undo(cond.trim_end_matches(':'), line.number)?,
-                actions: parse_action_list(&kids)?,
-                ..Default::default()
-            });
+            last.push_elseif(
+                undo(cond.trim_end_matches(':'), line.number)?,
+                parse_action_list(&kids)?,
+            );
             continue;
         }
         out.push(parse_scxml_action(line, &kids)?);
@@ -2728,9 +2727,16 @@ fn parse_scxml_action(
             }
         }
     } else if let Some(rest) = t.strip_prefix("if ") {
-        a.action_type = "if".to_string();
-        a.cond = undo(rest.trim_end_matches(':'), line.number)?;
-        a.then_actions = parse_action_list(kids)?;
+        // ⚠ Built rather than filled in, because the model owns what an
+        // `<if>` is made of. Replacing `a` wholesale is safe HERE and would
+        // not be everywhere: the arms are exclusive and nothing stamps this
+        // action before the chain or after it -- the function ends at
+        // `Ok(a)`. A site that did stamp first would lose the stamp, which
+        // is how a top-level `<script>` lost its annotations once already.
+        a = crate::model::Action::if_then(
+            undo(rest.trim_end_matches(':'), line.number)?,
+            parse_action_list(kids)?,
+        );
     } else if let Some(rest) = t.strip_prefix("foreach ") {
         a.action_type = "foreach".to_string();
         let (head, array) = rest

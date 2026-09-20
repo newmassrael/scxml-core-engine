@@ -314,6 +314,7 @@ use crate::forge::model::{
     TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
     ValidatorModel, WorkerModel,
 };
+use crate::model::BlockRole;
 
 /// Why a document has no pseudocode rendering, as opposed to an empty
 /// one.
@@ -1896,24 +1897,28 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
             });
         }
         "if" => {
-            out.line(&format!("if {}:", text(&a.cond)));
-            out.nested(|out| {
-                for inner in &a.then_actions {
-                    render_scxml_action(inner, out);
-                }
-            });
-            for b in &a.elseif_branches {
-                out.line(&format!("elif {}:", text(&b.cond)));
-                out.nested(|out| {
-                    for inner in &b.actions {
-                        render_scxml_action(inner, out);
+            // ⚠ Descended through the shared definition rather than over the
+            // three fields. A renderer has to know each block's SYNTAX, so it
+            // looks as though naming them here costs nothing -- but the
+            // blocks it would then walk are whichever three somebody
+            // remembered, and a fourth arrives silently. Asking
+            // `nested_blocks` makes the list the model's, and an unhandled
+            // one stops here instead of being rendered as an `elif`.
+            for block in a.nested_blocks() {
+                let head = match block.role {
+                    // `<foreach>`'s body. An `<if>` has none, and rendering
+                    // an empty one would emit a headless indent.
+                    BlockRole::Body => continue,
+                    BlockRole::Then => format!("if {}:", text(&a.cond)),
+                    BlockRole::ElseIf => {
+                        format!("elif {}:", text(block.cond.unwrap_or_default()))
                     }
-                });
-            }
-            if !a.else_actions.is_empty() {
-                out.line("else:");
+                    BlockRole::Else if block.actions.is_empty() => continue,
+                    BlockRole::Else => "else:".to_string(),
+                };
+                out.line(&head);
                 out.nested(|out| {
-                    for inner in &a.else_actions {
+                    for inner in block.actions {
                         render_scxml_action(inner, out);
                     }
                 });

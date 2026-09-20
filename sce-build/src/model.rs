@@ -422,10 +422,39 @@ pub struct ElseIfBranch {
 /// reach past the one definition and walk `elseif_branches` itself. A
 /// definition that answers only half the question is a definition its
 /// readers are forced to bypass.
+/// What part an action's nested block plays, as a type rather than a
+/// spelling.
+///
+/// ⭐ The fourth thing this definition owes its readers, and it was found
+/// the way the other three were — by a reader bypassing it. A renderer
+/// has to know each block's SYNTAX, so it matched on
+/// [`NestedBlock::path`] strings (`"then_actions"`, `"else_actions"`),
+/// which is naming the fields again with extra steps: the guard that
+/// keeps those names inside this file caught it, and rightly.
+///
+/// ⚠ The point of an enum here rather than a documented string is that a
+/// fifth block kind becomes a compile error at every reader instead of
+/// falling into somebody's catch-all arm. A renderer that silently drew
+/// a new kind as an `elif` is exactly the failure the single definition
+/// exists to prevent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockRole {
+    /// `<foreach>`'s body.
+    Body,
+    /// An `<if>`'s `then`, selected by the action's own `cond`.
+    Then,
+    /// One `<elseif>` branch, selected by [`NestedBlock::cond`].
+    ElseIf,
+    /// An `<if>`'s `else`, selected by nothing.
+    Else,
+}
+
 #[derive(Debug, Clone)]
 pub struct NestedBlock<'a> {
     /// The field path a `node_path` names this block by.
     pub path: String,
+    /// What this block is FOR. See [`BlockRole`].
+    pub role: BlockRole,
     /// The condition that selects THIS block, when the block declares
     /// one of its own — only `<elseif>` branches do. `then_actions` is
     /// selected by the action's own `cond`, `else_actions` by nothing,
@@ -448,9 +477,10 @@ pub struct NestedBlock<'a> {
 }
 
 impl<'a> NestedBlock<'a> {
-    fn unguarded(path: &str, actions: &'a [Action]) -> Self {
+    fn unguarded(path: &str, role: BlockRole, actions: &'a [Action]) -> Self {
         NestedBlock {
             path: path.to_string(),
+            role,
             cond: None,
             cond_constant: None,
             cond_is_native: false,
@@ -599,12 +629,17 @@ impl Action {
     /// added to one and not the other goes red.
     pub fn nested_blocks(&self) -> Vec<NestedBlock<'_>> {
         let mut blocks: Vec<NestedBlock<'_>> = vec![
-            NestedBlock::unguarded("actions", self.actions.as_slice()),
-            NestedBlock::unguarded("then_actions", self.then_actions.as_slice()),
+            NestedBlock::unguarded("actions", BlockRole::Body, self.actions.as_slice()),
+            NestedBlock::unguarded(
+                "then_actions",
+                BlockRole::Then,
+                self.then_actions.as_slice(),
+            ),
         ];
         for (k, branch) in self.elseif_branches.iter().enumerate() {
             blocks.push(NestedBlock {
                 path: format!("elseif_branches[{k}].actions"),
+                role: BlockRole::ElseIf,
                 cond: Some(branch.cond.as_str()),
                 cond_constant: branch.cond_constant,
                 cond_is_native: branch.is_cpp_condition || branch.is_kt_condition,
@@ -614,6 +649,7 @@ impl Action {
         }
         blocks.push(NestedBlock::unguarded(
             "else_actions",
+            BlockRole::Else,
             self.else_actions.as_slice(),
         ));
         blocks
@@ -636,6 +672,32 @@ impl Action {
             then_actions,
             ..Default::default()
         }
+    }
+
+    /// Add an `<elseif>` branch to an `<if>` already built.
+    ///
+    /// ⭐ The shape [`Self::if_then`]'s own note said belonged here rather
+    /// than at a call site. A builder that reads its input a line at a
+    /// time cannot know the branches when it makes the `<if>`: it meets
+    /// `elif` afterwards and has to reach back. With nothing to reach
+    /// with it wrote `elseif_branches` itself — the second definition the
+    /// other three exist to prevent — and the property that only the
+    /// model and the parser name those fields stopped holding.
+    pub fn push_elseif(&mut self, cond: impl Into<String>, actions: Vec<Action>) {
+        self.elseif_branches.push(ElseIfBranch {
+            cond: cond.into(),
+            actions,
+            ..Default::default()
+        });
+    }
+
+    /// Give an `<if>` already built its `else` block.
+    ///
+    /// ⚠ Replaces rather than appends, because §scxml-4.3 gives an `<if>`
+    /// one `<else>`: a second one is the document saying something it
+    /// cannot mean, and appending would make the two silently both true.
+    pub fn set_else(&mut self, actions: Vec<Action>) {
+        self.else_actions = actions;
     }
 
     /// [`Self::nested_blocks`], mutably, for a pass that rewrites what

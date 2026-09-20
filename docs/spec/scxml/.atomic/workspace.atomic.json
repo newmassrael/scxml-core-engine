@@ -4354,6 +4354,11 @@
           "file": "sce/src/actions/IfAction.cpp",
           "symbol": "IfAction::execute",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "set_else",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -16782,6 +16787,12 @@
       "target_kind": "section",
       "target_id": "scxml-3.12.1",
       "reason": "Wrong spelling: the cpp resolver reports the symbol at that line as SCE::TransitionNode::TransitionNode, namespace included. Replaced by the qualified form in the same round."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-4.3",
+      "reason": "Written qualified, but the Rust resolver reads the citation site as the bare fn `set_else`, so validate-code-refs reported symbol_mismatch. Replaced by a row carrying the spelling the code actually resolves to; the binding itself is unchanged in meaning."
     }
   ],
   "frames": {},
