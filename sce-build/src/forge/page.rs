@@ -59,13 +59,38 @@ pub enum Word {
     Variant,
     Strict,
     AtLine,
+    Condition,
+    Transform,
+    Validator,
+    Lookup,
+    Monitor,
+    If,
+    Else,
+    Foreach,
+    In,
+    Done,
 }
 
 impl Word {
     /// Every word, so a gate can walk the vocabulary without a list of
     /// its own. ⚠ Derived here rather than written twice: a hand-kept
     /// list is how a word gets added and checked by nothing.
-    pub const ALL: &'static [Word] = &[Word::Enum, Word::Variant, Word::Strict, Word::AtLine];
+    pub const ALL: &'static [Word] = &[
+        Word::Enum,
+        Word::Variant,
+        Word::Strict,
+        Word::AtLine,
+        Word::Condition,
+        Word::Transform,
+        Word::Validator,
+        Word::Lookup,
+        Word::Monitor,
+        Word::If,
+        Word::Else,
+        Word::Foreach,
+        Word::In,
+        Word::Done,
+    ];
 }
 
 /// What the words are called.
@@ -90,6 +115,16 @@ fn en_word(w: Word) -> &'static str {
         Word::Variant => "variant",
         Word::Strict => "strict",
         Word::AtLine => "@line",
+        Word::Condition => "condition",
+        Word::Transform => "transform",
+        Word::Validator => "validator",
+        Word::Lookup => "lookup",
+        Word::Monitor => "monitor",
+        Word::If => "if",
+        Word::Else => "else",
+        Word::Foreach => "foreach",
+        Word::In => "in",
+        Word::Done => "done",
     }
 }
 
@@ -104,6 +139,14 @@ fn en_word(w: Word) -> &'static str {
 pub enum Part {
     Word(Word),
     Text(String),
+    /// Text appended with NO separator before it.
+    ///
+    /// ⚠ For punctuation the construct glues to what precedes it —
+    /// `else:` is one word and a colon, and joining parts with a space
+    /// would write `else :`. It is a part rather than a rule the shape
+    /// applies because deciding WHERE a glyph glues means knowing which
+    /// construct is being written, and a shape may not know that.
+    Glued(String),
 }
 
 /// One line of the page, before a shape has written it.
@@ -155,13 +198,13 @@ impl Shape for Indent {
             }
             let mut first = true;
             for part in &node.parts {
-                if !first {
+                if !first && !matches!(part, Part::Glued(_)) {
                     out.push(' ');
                 }
                 first = false;
                 match part {
                     Part::Word(w) => out.push_str((lexicon.word)(*w)),
-                    Part::Text(t) => out.push_str(t),
+                    Part::Text(t) | Part::Glued(t) => out.push_str(t),
                 }
             }
             let _ = writeln!(out);
@@ -229,6 +272,15 @@ mod tests {
             "enum nrc: uint8\n  variant reject = 0x10 @line 29\n",
             Indent.write(&nodes, &EN)
         );
+    }
+
+    #[test]
+    fn a_glued_part_takes_no_separator() {
+        let nodes = vec![Node {
+            depth: 0,
+            parts: vec![Part::Word(Word::Strict), Part::Glued(":".into())],
+        }];
+        assert_eq!("strict:\n", Indent.write(&nodes, &EN));
     }
 
     /// A line the renderer has not been decomposed into words yet still

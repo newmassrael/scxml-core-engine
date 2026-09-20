@@ -871,7 +871,11 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             then_body,
             else_body,
         } => {
-            out.line(&format!("if {}:", text(cond)));
+            out.line_of(vec![
+                Part::Word(Word::If),
+                Part::Text(text(cond).into_owned()),
+                Part::Glued(":".into()),
+            ]);
             out.nested(|out| {
                 for s in then_body {
                     render_stmt(s, out);
@@ -882,7 +886,7 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             // wrote — so the keyword is printed whenever the model
             // carries `Some`, even for an empty body.
             if let Some(body) = else_body {
-                out.line("else:");
+                out.line_of(vec![Part::Word(Word::Else), Part::Glued(":".into())]);
                 out.nested(|out| {
                     for s in body {
                         render_stmt(s, out);
@@ -913,7 +917,13 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             });
         }
         AlgorithmStmt::Foreach { item, source, body } => {
-            out.line(&format!("foreach {} in {}:", text(item), text(source)));
+            out.line_of(vec![
+                Part::Word(Word::Foreach),
+                Part::Text(text(item).into_owned()),
+                Part::Word(Word::In),
+                Part::Text(text(source).into_owned()),
+                Part::Glued(":".into()),
+            ]);
             out.nested(|out| {
                 for s in body {
                     render_stmt(s, out);
@@ -1129,7 +1139,10 @@ fn render_transition(t: &ProcedureTransition, out: &mut Out<'_>) {
 
 fn render_condition(m: &ConditionModel) -> String {
     let mut out = Out::new();
-    out.line(&format!("condition {}", text(&m.name)));
+    out.line_of(vec![
+        Part::Word(Word::Condition),
+        Part::Text(text(&m.name).into_owned()),
+    ]);
     out.nested(|out| {
         for f in &m.inputs {
             render_field(f, out);
@@ -1141,7 +1154,10 @@ fn render_condition(m: &ConditionModel) -> String {
 
 fn render_transform(m: &TransformModel) -> String {
     let mut out = Out::new();
-    out.line(&format!("transform {}", text(&m.name)));
+    out.line_of(vec![
+        Part::Word(Word::Transform),
+        Part::Text(text(&m.name).into_owned()),
+    ]);
     out.nested(|out| {
         for f in m.inputs.iter().chain(&m.outputs) {
             render_field(f, out);
@@ -1152,7 +1168,10 @@ fn render_transform(m: &TransformModel) -> String {
 
 fn render_validator(m: &ValidatorModel) -> String {
     let mut out = Out::new();
-    out.line(&format!("validator {}", text(&m.name)));
+    out.line_of(vec![
+        Part::Word(Word::Validator),
+        Part::Text(text(&m.name).into_owned()),
+    ]);
     out.nested(|out| {
         for f in &m.inputs {
             render_field(f, out);
@@ -1316,7 +1335,13 @@ fn render_observer(m: &ObserverModel) -> String {
             // grammar follows — measured over 587 documents, the tokens
             // that do occur inside authored strings (` = `, ` to `,
             // ` with `) are exactly the ones that sit beside free text.
-            out.line(&format!("monitor {}:", text(&mon.id)));
+            // ⚠ The colon rides in the text part, as the module note in
+            // `page` says: it is this construct's punctuation, and a
+            // shape that placed it would have to know the construct.
+            out.line_of(vec![
+                Part::Word(Word::Monitor),
+                Part::Text(format!("{}:", text(&mon.id))),
+            ]);
             out.nested(|out| {
                 out.line(&format!("on-enter {}", text(&mon.on_enter)));
                 if let Some(e) = &mon.on_leave {
@@ -1891,7 +1916,7 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
 }
 
 fn render_donedata(d: &crate::model::DoneData, out: &mut Out<'_>) {
-    out.line("done:");
+    out.line_of(vec![Part::Word(Word::Done), Part::Glued(":".into())]);
     out.nested(|out| {
         for p in &d.params {
             render_donedata_param(p, out);
@@ -2543,7 +2568,10 @@ fn render_link(m: &LinkModel) -> String {
 
 fn render_lookup(m: &LookupModel) -> String {
     let mut out = Out::new();
-    out.line(&format!("lookup {}", text(&m.name)));
+    out.line_of(vec![
+        Part::Word(Word::Lookup),
+        Part::Text(text(&m.name).into_owned()),
+    ]);
     out.nested(|out| {
         render_field(&m.input, out);
         render_field(&m.output, out);
