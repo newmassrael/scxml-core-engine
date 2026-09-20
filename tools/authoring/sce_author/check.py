@@ -60,6 +60,26 @@ class Document:
     # it is usually a step upstream, and attributing only to the direct writer
     # found none of them on the corpus that prompted this.
     reads: dict = dataclasses.field(default_factory=dict)
+    # `(event name, processor type)` for every `<send>` the document addresses
+    # to a host-served processor -- what it produces that anything outside can
+    # read. Empty for a document whose answers are all datamodel values.
+    sends: tuple = ()
+    # Every event descriptor any transition listens for.
+    events: frozenset = frozenset()
+
+    def listens_for(self, event_name: str) -> bool:
+        """Whether any transition would be selected by this event.
+
+        ⚠ W3C SCXML 3.12.1 matches a descriptor against a PREFIX of the event
+        name, so `error` selects `error.execution` and an equality test would
+        report a document that plainly answers the event as ignoring it.
+        """
+        for descriptor in self.events:
+            token = descriptor[:-2] if descriptor.endswith(".*") else descriptor
+            if (token == "*" or event_name == token
+                    or event_name.startswith(token + ".")):
+                return True
+        return False
 
     def rests_on_an_assumption(self, ident: str) -> str:
         """The assumption this output depends on, transitively, if any."""
@@ -108,6 +128,23 @@ def read_document(path: pathlib.Path) -> Document:
         if data.get("expr"):
             reads[ident] = frozenset(re.findall(r"[A-Za-z_][A-Za-z0-9_]*",
                                                 data.get("expr")))
+    # ⚠ What a STATECHART produces is not in `<data sce:direction="out">` at
+    # all. It leaves as a `<send>` to a host-served processor, which is the W3C
+    # channel for reaching outside the machine (W3C SCXML 6.2). Reading only the
+    # datamodel declarations reported every such document as computing nothing,
+    # so a binding naming a real output was refused for naming it.
+    sends = []
+    for send in root.iter(f"{SCXML_NS}send"):
+        processor = send.get("type")
+        if not processor:
+            # A send with no `type` is the SCXML event processor's, and stays
+            # inside this session's own world (W3C SCXML 6.2.4). Nothing
+            # outside reads it, so it is not a position a binding can name.
+            continue
+        sends.append((send.get("event") or "", processor))
+    events = {name
+              for transition in root.iter(f"{SCXML_NS}transition")
+              for name in (transition.get("event") or "").split()}
     return Document(
         path=path,
         inputs=tuple(inputs),
@@ -115,6 +152,8 @@ def read_document(path: pathlib.Path) -> Document:
         kind=root.get(f"{SCE_NS}kind", ""),
         assumed=assumed,
         reads=reads,
+        sends=tuple(sends),
+        events=frozenset(events),
     )
 
 
@@ -243,7 +282,11 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
             out.append(Finding(f"input {name}", f"{address!r} is not in the interface model"))
             continue
         space = (entry.field("") or entry.fields[0]).values
-        for key in ("equals", "not_equals"):
+        # ⚠ `becomes` joins the pair rather than getting a check of its own.
+        # It names a symbol the address must take, so it is wrong in exactly
+        # the way the other two are, and a second site would be one more place
+        # to forget when a value space grows.
+        for key in ("equals", "not_equals", "becomes"):
             sym = rule.get(key)
             if sym is not None and space is not None and sym not in space:
                 out.append(Finding(f"input {name}", f"{address} does not admit {sym!r}; it admits " + ", ".join(sorted(space))))
@@ -362,8 +405,34 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
     for ident in document.outputs:
         if ident not in declared_outputs:
             out.append(Finding(f"document {document.path.name}", f"output {ident!r} has no binding — it is computed and dropped"))
-    for name in declared_outputs:
+    for name, rule in sorted(declared_outputs.items()):
+        # ⚠ An output bound to a SEND is answered by the document containing
+        # one, not by a datamodel declaration it will never carry. Asking the
+        # single question for both channels refused every statechart: the rule
+        # named a position the document really does write, and the check could
+        # only see one of the two ways a document writes anything.
+        if rule.get("sent"):
+            wanted = (rule["sent"] or {}).get("processor")
+            if not [s for s in document.sends if wanted is None or s[1] == wanted]:
+                of_type = f" of type {wanted!r}" if wanted else ""
+                out.append(Finding(
+                    f"output {name}",
+                    f"binds a host-served send{of_type} and the document "
+                    f"sends none"))
+            continue
         if name not in document.outputs:
             out.append(Finding(f"output {name}", "the document does not compute it"))
+
+    # ⚠ An event nothing answers is the statechart shape of a silent pass. The
+    # case would send it, the machine would ignore it, every later reading
+    # would be of a machine that was never driven -- and each case would still
+    # be judged, against whatever the document happened to hold.
+    for name, rule in sorted(declared_inputs.items()):
+        event = rule.get("event")
+        if event and not document.listens_for(event):
+            out.append(Finding(
+                f"input {name}",
+                f"sends {event!r} and no transition listens for it — a case "
+                f"driving this input would leave the machine untouched"))
 
     return out

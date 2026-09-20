@@ -426,6 +426,56 @@ shape when its binding is written in this vocabulary instead. So what grouping
 buys is brevity in one file, and what it costs is a dictionary that decides
 things. Grouping is what the DOCUMENT is for.
 
+#### A statechart is driven, and answers by sending
+
+Everything above describes a document that is READ: values go in, a value
+comes out. A statechart is neither. It is driven by **events**, and what it
+produces for anything outside itself leaves as a `<send>` to a host-served
+processor — the W3C channel for reaching out of a machine (W3C SCXML 6.2), and
+the one a real platform receives. Four keys say so:
+
+    inputs:
+      approaching: {address: plant/in/approach, becomes: APPROACHING,
+                    event: approach.detected}
+    outputs:
+      signal: {address: plant/out/signal, field: value,
+               sent: {processor: x-sce-host},
+               when_nothing_sent: "signal.dark",
+               map: {signal.dark: "DARK", signal.flashing: "FLASHING"}}
+
+| key | what it says |
+|---|---|
+| `event` | the event to send the machine when this rule fires |
+| `becomes` | the value the address must take first; omitted, any change drives it |
+| `sent` | this output leaves as a send, optionally narrowed to one `processor`, its value taken from a `param` or the `content` and otherwise being the event name itself |
+| `when_nothing_sent` | what the output reads as in a case where no matching send occurred |
+
+⚠ `becomes` is not a spelling of `equals`. `equals` asks what an address IS
+and answers every round; `becomes` asks what it CHANGED TO and answers once. A
+machine told the same news every round is not being driven.
+
+⚠ `when_nothing_sent` is REQUIRED beside `sent`, for the reason `when_absent`
+is required for a number: there is no safe silent answer. A machine that
+should have signalled and did not is the failure most worth catching, and an
+output that merely vanishes from the produced set is reported as a position
+nobody looked at — which a reader takes for a clean run.
+
+⚠⚠ **There is no key for reading the datamodel back, and none for reading the
+active configuration**, though a statechart answers through both. Neither is
+missing vocabulary. `address` plus `map` already says which position a
+document value lands at and as what symbol; what changes is where the driver
+goes to fetch it, and that is the kind's business rather than the dictionary's.
+The configuration is a further step: a state is not an output, and binding one
+would make a verification break on a rename that left the behaviour alone.
+
+`check` reads the document for both sides of this. An output bound to a send
+is answered by the document containing one — asking the datamodel question of
+a statechart reported `the document does not compute it` for an output it
+plainly writes, so a correct binding was refused for being correct. And an
+`event` no transition listens for is refused, because the case would send it,
+the machine would ignore it, and every later reading would be of a machine
+that was never driven.
+
 ### Writing the document before the addresses exist
 
 ⚠ The document is ALREADY independent of the platform — it uses its own

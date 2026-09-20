@@ -74,7 +74,7 @@
         },
         "clock": {
           "type": "boolean",
-          "description": "This input receives the case's `at_ms` -- the time it was observed -- rather than a value read from an address. It is its own key rather than an address because time is a different CATEGORY from a signal: it has no address, no value space, and nothing drives it. Measured as the one thing a whole subject matter's bindings needed and the published vocabulary could not say."
+          "description": "This input receives the case's `elapsed_ms` -- how long the situation had held when it was observed -- rather than a value read from an address. It is its own key rather than an address because time is a different CATEGORY from a signal: it has no address, no value space, and nothing drives it. Measured as the one thing a whole subject matter's bindings needed and the published vocabulary could not say."
         },
         "protocol": {
           "type": "string",
@@ -85,12 +85,22 @@
           "additionalProperties": {"type": "string"},
           "description": "Addresses the protocol needs, by the parameter names the pack declared."
         },
+        "event": {
+          "type": "string",
+          "description": "The event to send the machine when this rule fires. A statechart is not READ the way a pure computation is -- it is driven by events -- so an address alone cannot say what the machine should be told. ⚠ Naming an event is what makes a case DRIVE anything: without one, a run would replay every case against a machine nobody sent anything to, and the verdict would be about a run that never happened. ⚠⚠ Nothing else here is a second way of saying this. A value the machine READS -- a level a guard compares against -- is already said by `address` plus the rules beside it; what changes for a statechart is how the driver delivers it, and that is the kind's business rather than the dictionary's."
+        },
+        "becomes": {
+          "type": "string",
+          "description": "The value the address must take for `event` to be sent. Omitted, the event is sent whenever the case DROVE this address at all, whatever the value, which is what a record of an observation usually means. ⚠ Distinct from `equals` and not a spelling of it: `equals` asks what an address IS and answers every round, `becomes` asks what it CHANGED TO and answers once. A machine told the same news every round is not being driven, it is being repeated at."
+        },
         "note": {"type": "string"}
       }
     },
     "output": {
       "type": "object",
       "additionalProperties": false,
+      "dependentRequired": {"sent": ["when_nothing_sent"]},
+      "x-sce-deliberately-absent": "There is no key for reading a value back out of the DATAMODEL, and none for reading the active CONFIGURATION, though a statechart answers through both. Neither is missing vocabulary. `address` plus `map` already says which position a document value lands at and as what symbol; what a statechart changes is where the driver goes to fetch that value, and a binding that said so would be describing the document's internals in the dictionary. The configuration is a further step: a state is not an output at all, and binding one would make a verification break on a rename that left the behaviour alone.",
       "properties": {
         "address": {"type": "string"},
         "unresolved": {
@@ -123,6 +133,28 @@
         "internal": {
           "type": "boolean",
           "description": "The document computes this and it reaches no address. Without it, a document's own carried state is never computed at all and every read of it returns a default, which looks like wrong logic rather than absent logic."
+        },
+        "sent": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "This output leaves the document as a `<send>` to a host-served processor -- the W3C channel for reaching outside the machine (W3C SCXML 6.2), and the one a real platform receives. Without `param` or `content` the value IS the event name, so one rule covers every send that writes the same position and `map` turns each name into the symbol. ⚠ This is the channel to prefer, and that ordering is the key's whole point rather than a matter of taste: reading the datamodel or the configuration instead asserts against the document's insides, so splitting a state or renaming a variable breaks a verification whose subject did not change. What crossed the boundary is what a platform will see.",
+          "properties": {
+            "processor": {
+              "type": "string",
+              "description": "The `type` written on the `<send>`, for a document served by more than one host processor where only one of them is this output. Omitted, any host-served send counts."
+            },
+            "param": {
+              "type": "string",
+              "description": "The `<param>` carrying this output's value. ⚠ `<param>` may repeat under one name and the runtime therefore delivers a LIST, so a rule naming a param that arrived more than once is a refusal: picking the first would be the driver deciding something the document said twice."
+            },
+            "content": {
+              "type": "boolean",
+              "description": "The send's `<content>` is this output's value."
+            }
+          }
+        },
+        "when_nothing_sent": {
+          "description": "What this output reads as in a case where no matching send occurred. ⚠ REQUIRED beside `sent`, for the reason `when_absent` is required for a number: there is no safe silent answer. A machine that should have signalled and did not is the failure most worth catching, and an output that merely vanishes from the produced set is reported as a position nobody looked at -- which a reader takes for a clean run."
         },
         "note": {"type": "string"}
       }
