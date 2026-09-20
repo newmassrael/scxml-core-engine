@@ -2588,22 +2588,29 @@ fn render_worker(m: &WorkerModel) -> String {
 fn render_buffer_pool(m: &BufferPoolModel) -> String {
     let mut out = Out::new();
     let cache = match m.cache_policy {
-        CachePolicy::Maintain => "maintain",
-        CachePolicy::NonCacheable => "non-cacheable",
-        CachePolicy::None => "none",
+        CachePolicy::Maintain => Word::Maintain,
+        CachePolicy::NonCacheable => Word::NonCacheable,
+        CachePolicy::None => Word::None,
     };
-    let mut head = format!(
-        "buffer-pool {} slots {} size {} section {} align {} cache {cache}",
-        text(&m.name),
-        m.slot_count,
-        m.slot_size,
-        text(&m.section),
-        m.alignment
-    );
+    let mut head = vec![
+        Part::Word(Word::BufferPool),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(Word::Slots),
+        Part::Text(m.slot_count.to_string()),
+        Part::Word(Word::Size),
+        Part::Text(m.slot_size.to_string()),
+        Part::Word(Word::Section),
+        Part::Text(text(&m.section).into_owned()),
+        Part::Word(Word::Align),
+        Part::Text(m.alignment.to_string()),
+        Part::Word(Word::Cache),
+        Part::Word(cache),
+    ];
     if let Some(c) = &m.dma_channel {
-        let _ = write!(head, " dma {}", text(c));
+        head.push(Part::Word(Word::Dma));
+        head.push(Part::Text(text(c).into_owned()));
     }
-    out.line(&head);
+    out.line_of(head);
     match &m.variant {
         BufferPoolVariant::Default => {}
         BufferPoolVariant::Reassembly(r) => out.nested(|out| {
@@ -2619,26 +2626,31 @@ fn render_buffer_pool(m: &BufferPoolModel) -> String {
 fn render_link(m: &LinkModel) -> String {
     let mut out = Out::new();
     let class = match m.class {
-        LinkClass::Udp => "udp",
-        LinkClass::Tcp => "tcp",
-        LinkClass::Serial => "serial",
-        LinkClass::Websocket => "websocket",
-        LinkClass::RawEth => "raw_eth",
+        LinkClass::Udp => Word::Udp,
+        LinkClass::Tcp => Word::Tcp,
+        LinkClass::Serial => Word::Serial,
+        LinkClass::Websocket => Word::Websocket,
+        LinkClass::RawEth => Word::RawEth,
     };
     let backpressure = match m.backpressure {
-        BackpressurePolicy::Drop => "drop",
-        BackpressurePolicy::Block => "block",
-        BackpressurePolicy::SignalEvent => "signal-event",
+        BackpressurePolicy::Drop => Word::Drop,
+        BackpressurePolicy::Block => Word::Block,
+        BackpressurePolicy::SignalEvent => Word::SignalEvent,
     };
-    let mut head = format!(
-        "link {} class {class} framer {} backpressure {backpressure}",
-        text(&m.name),
-        text(&m.framer)
-    );
+    let mut head = vec![
+        Part::Word(Word::Link),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(Word::Class),
+        Part::Word(class),
+        Part::Word(Word::Framer),
+        Part::Text(text(&m.framer).into_owned()),
+        Part::Word(Word::Backpressure),
+        Part::Word(backpressure),
+    ];
     if m.accept_stage_copy_rate {
-        head.push_str(" accept-stage-copy-rate");
+        head.push(Part::Word(Word::AcceptStageCopyRate));
     }
-    out.line(&head);
+    out.line_of(head);
     out.nested(|out| {
         for p in [
             ("rx-pool", &m.rx_pool),
