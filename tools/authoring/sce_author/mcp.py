@@ -306,6 +306,10 @@ def verification_payload(result) -> dict:
                    "unjudged": result.unjudged},
         "unbound": result.unbound,
         "unasserted": result.unasserted,
+        # ⚠ What the RUN kept that the product will not. The generated code
+        # takes one round's inputs, so a caller has to hold these between
+        # calls; a reader shown only a pass would not know they were owed.
+        "host_memory": result.host_memory,
         "refuted_assumptions": result.refuted,
         "cases": [
             {"name": case.name,

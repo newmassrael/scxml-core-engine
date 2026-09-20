@@ -121,6 +121,22 @@ class Verification:
     # nine of nine print the same line otherwise, and the difference between
     # them is the whole value of running anything.
     unasserted: list[str] = field(default_factory=list)
+    # Inputs whose value this run REMEMBERED on the host's behalf, by the
+    # binding's own `previous_of` / `state_of`.
+    #
+    # ⚠ THE RUN IS NOT THE PRODUCT, AND THIS IS WHERE THE TWO DIFFER. A
+    # document asking for a previous round is asking something OUTSIDE it to
+    # keep one: the generated code takes this round's inputs and nothing else,
+    # so in production the caller has to hold these between calls. Here the
+    # verifier holds them, quietly and for free.
+    #
+    # ⚠⚠ Quietly is the problem. A pass with this list non-empty says the
+    # document behaves GIVEN a memory nobody has yet agreed to keep, and a
+    # reader not told about it reads an unconditional pass. That is the same
+    # shape this package already refuses elsewhere -- a document declaring
+    # itself a pure computation while something else remembers for it -- and
+    # the verifier was doing it to its own reader.
+    host_memory: list[str] = field(default_factory=list)
     # ⚠ Failing addresses whose value the DOCUMENT marks `sce:assumed`, to the
     # reason its author wrote. An assumption compiles, so nothing downstream
     # ever mentioned it again and a case refuting one read as "your document
@@ -341,6 +357,30 @@ def load(into: pathlib.Path, document: pathlib.Path):
 
 
 # ------------------------------------------------------------ the marshalling
+
+
+def host_memory_of(inputs: dict, conventions) -> list[str]:
+    """The inputs whose previous round something OUTSIDE the document keeps.
+
+    ⚠ All three shapes count, because all three are answered from a round
+    that has already gone: `previous_of` (another input, last round),
+    `state_of` (this document's own output, last round) and a protocol whose
+    pack definition carries a `latch` -- a latch answers by which parameter
+    moved most recently, which is a fact about the round before.
+
+    ⚠⚠ Counting only the first two would under-report, and under-reporting is
+    exactly the defect this figure exists to remove: the run would hold a
+    remembered value and the report would not mention it.
+    """
+    protocols = getattr(conventions, "protocols", None) or {}
+    held = []
+    for name, rule in inputs.items():
+        if rule.get("previous_of") or rule.get("state_of"):
+            held.append(name)
+        elif rule.get("protocol"):
+            if (protocols.get(rule["protocol"]) or {}).get("latch"):
+                held.append(name)
+    return sorted(held)
 
 
 def _given(case, address: str):
@@ -975,6 +1015,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     expected = {a for case in examples.cases for a in case.expect}
     verification.unbound = sorted(expected - bound)
     verification.unasserted = sorted(bound - expected)
+    verification.host_memory = host_memory_of(inputs, pack.conventions)
 
     try:
         run = StatechartRun(module, build)
@@ -1117,6 +1158,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     expected = {a for case in examples.cases for a in case.expect}
     verification.unbound = sorted(expected - bound)
     verification.unasserted = sorted(bound - expected)
+    verification.host_memory = host_memory_of(inputs, pack.conventions)
 
     # A latch carries state between cases, so it exists only when the pack says
     # the cases are a timeline. Without that, `None` here is what makes the

@@ -41,6 +41,7 @@ CARRIES = {
     "results": "cases",
     "unbound": "unbound",
     "unasserted": "unasserted",
+    "host_memory": "host_memory",
     "refuted": "refuted_assumptions",
 }
 
@@ -59,6 +60,7 @@ class TheTransportCarriesTheWholeAnswer(unittest.TestCase):
             results=[CaseResult(name="a case")],
             unbound=["plant/out/a.value"],
             unasserted=["plant/out/b.value"],
+            host_memory=["wasApproaching"],
             refuted={"plant/out/c.value": "the author called this a guess"},
         )
         payload = verification_payload(result)

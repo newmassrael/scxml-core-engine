@@ -121,6 +121,15 @@ def cmd_verify(args) -> int:
         print(f"  {len(result.unasserted)} written position(s) no case "
               f"expects, so nothing was judged there: "
               f"{', '.join(result.unasserted)}")
+    # ⚠ Printed whenever it is non-empty, beside the counts rather than under
+    # them. These values were remembered BY THE RUN: the generated code takes
+    # this round's inputs and nothing else, so in production the caller has to
+    # keep them between calls. A pass that does not say so is a pass about a
+    # system nobody has agreed to build yet.
+    if result.host_memory:
+        print(f"  {len(result.host_memory)} value(s) this run remembered for "
+              f"the host, which the caller must keep between rounds: "
+              f"{', '.join(result.host_memory)}")
     # ⚠ Unjudged is reported beside the other two and never folded into either.
     # Counting it as a pass claims a run that did not happen; counting it as a
     # failure blames a document for a case nobody could drive.
