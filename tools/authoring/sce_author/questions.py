@@ -791,10 +791,20 @@ def examples_need_memory(prose: Prose, model: Model, conv: Conventions,
                 kind="example-shows-memory",
                 subject=address,
                 detail=(
+                    # ⚠ The question names WHERE as well as WHAT, because the
+                    # third home is the one a binding reaches for by default
+                    # and the only one nobody has to agree to out loud. This
+                    # is the moment the memory is PROVEN -- two cases settle
+                    # it -- so it is the moment to meet the choice. Saying
+                    # only "something is remembered" leaves the author to
+                    # discover the obligation later, from a caller.
                     f"two cases drive the same inputs and require {first!r} "
                     f"and {second!r} here, so this depends on something other "
                     f"than the inputs; the specification has to say what is "
-                    f"remembered"
+                    f"remembered, and the binding has to say who keeps it -- "
+                    f"a kind that may remember can hold it, the platform may "
+                    f"publish the earlier value at an address of its own, or "
+                    f"the caller keeps it and `caller_keeps` records why"
                 ),
                 file=str(prose.locate(entry.names[0])[0])
                 if entry and entry.names and prose.locate(entry.names[0]) else "",

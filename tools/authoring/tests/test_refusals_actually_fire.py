@@ -342,10 +342,13 @@ class TheCheckRefuses(Fixture):
 
 class TheQuestionsFire(Fixture):
     def kinds(self, text):
+        return sorted({q.kind for q in self.asked(text)})
+
+    def asked(self, text):
+        """The questions themselves, for a case that is about what one SAYS."""
         prose = self.prose(text)
         pack = self.pack()
-        return sorted({q.kind
-                       for q in ask(prose, pack.model, pack.conventions, pack.examples)})
+        return ask(prose, pack.model, pack.conventions, pack.examples)
 
     def test_a_specification_that_answers_everything_asks_nothing(self):
         """The discriminator for the whole class list."""
@@ -712,6 +715,22 @@ class TheQuestionsFire(Fixture):
     def test_two_cases_with_one_input_and_two_answers(self):
         self.write_pack(MODEL, CONVENTIONS, examples=self.valued())
         self.assertIn("example-shows-memory", self.kinds(self.MEMORY))
+
+    def test_the_memory_question_says_where_the_memory_may_live(self):
+        """⚠ The moment the memory is PROVEN is the moment to meet the choice.
+
+        Two cases settle that something is remembered. Saying only that
+        leaves the author to discover the obligation later, from a caller —
+        and the home a binding reaches for by default is the one nobody has
+        to agree to out loud. So the question names all three.
+        """
+        self.write_pack(MODEL, CONVENTIONS, examples=self.valued())
+        said = " ".join(
+            q.detail for q in self.asked(self.MEMORY)
+            if q.kind == "example-shows-memory")
+        for home in ("can hold it", "address of its own", "caller_keeps"):
+            self.assertIn(home, said,
+                          f"the question does not offer {home!r} as a home")
 
     def test_an_address_the_model_does_not_declare_does_not_hide_memory(self):
         """⚠ The case that made the check useless before it was written this way.
