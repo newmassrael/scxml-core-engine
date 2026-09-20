@@ -215,6 +215,14 @@ class ThePackIsMeasuredToo(unittest.TestCase):
         """It is either a genuine silence or a spelling the pack lacks, and
         nothing here can tell which. Counting it is the honest act; calling it
         a defect would be a claim about a platform this tree does not have.
+
+        ⚠ And following it down on a real corpus says the alarming reading is
+        the wrong one. Of 1,212 such addresses across 129 packs, 512 are
+        touched by a case, 307 are actually driven, 296 of those are plumbing
+        the pack declares as such, and the remaining 11 all carry
+        `role: upstream` -- another specification writes them, and they are
+        already reported by name. Not one is a signal the document uses and
+        never names.
         """
         model = {"version": 1, "entries": [
             *MODEL["entries"],

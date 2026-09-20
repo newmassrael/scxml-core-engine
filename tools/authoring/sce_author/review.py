@@ -48,6 +48,25 @@ class Review:
     # An address the prose never writes under any spelling it is given. This
     # is the population `no-decision-logic` lives in: every one of them is
     # either a genuine silence or a spelling the pack does not know.
+    #
+    # ⚠ IT LOOKS ALARMING AND IS NOT, AND THAT WAS MEASURED BEFORE BELIEVING
+    # EITHER WAY. Over 129 subject packs, 46 of them never write more than
+    # HALF the addresses they declare -- which reads as a pack missing most of
+    # its spellings. Following the population down says otherwise:
+    #
+    #     1212  addresses the prose never writes
+    #      512  some case touches
+    #      307  a case actually DRIVES (rather than merely expecting)
+    #       11  are not declared infrastructure -- 296 are plumbing the pack
+    #           itself marks as such
+    #       11  carry `role: upstream`, so another specification writes them
+    #        0  a signal this document uses and never names
+    #
+    # So the shape is a SMALL specification touching few of its component's
+    # addresses -- the heavy group's median is 10 addresses and 1 output in a
+    # 50-line document -- and every driven one that is not plumbing is already
+    # reported, by name, as a dependency. This figure is worth printing and is
+    # not worth alarming on; `alarms()` deliberately does not.
     unmentioned: list[str] = field(default_factory=list)
     # An address given exactly one spelling. Not wrong -- most are right --
     # but a missing alternative cannot be seen, so this is the surface the
