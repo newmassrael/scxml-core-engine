@@ -328,7 +328,16 @@ fn parse_cycles(
             ));
         }
 
-        cycles.push(Cycle { id, of, steps });
+        // ⚠ Captured HERE because this is the last place the element is in
+        // scope. `cycle_check` runs long after the document is closed, and
+        // without the line its rejection can only name the file.
+        let line = child.document().text_pos_at(child.range().start).row.into();
+        cycles.push(Cycle {
+            id,
+            of,
+            steps,
+            line: Some(line),
+        });
     }
     Ok(cycles)
 }

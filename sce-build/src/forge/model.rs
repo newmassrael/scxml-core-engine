@@ -694,6 +694,19 @@ pub struct Cycle {
     pub of: String,
     /// The alternatives, in the order the document states.
     pub steps: Vec<CycleStep>,
+    /// 1-based source line of the `<sce:cycle>` element. Populated by
+    /// `parse_cycles` so post-loop validators -- `cycle_check`, whose node
+    /// is long out of scope by the time it runs -- can anchor a diagnostic
+    /// at the offending element instead of at the document.
+    ///
+    /// ⚠ Without it the rejection names a file and no line, and a consumer
+    /// holding `actual` has only a whole-file search left. On the corpus
+    /// that found this the token occurred FOUR times, so the wire handed
+    /// over a repair and four places it might belong. Skipped from
+    /// serialization to keep the manifest wire byte-stable, the way every
+    /// other `line` on this model is.
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 /// One stop on a [`Cycle`].

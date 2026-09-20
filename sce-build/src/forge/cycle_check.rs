@@ -69,7 +69,11 @@ pub fn check(
                 }
                 .into(),
                 document,
-                None,
+                // ⚠ The cycle's own line, captured at parse time. This was
+                // `None`, so the record named a file and nothing else --
+                // and a consumer holding `actual` was left searching the
+                // whole document for a token that occurs more than once.
+                cycle.line,
                 None,
             ))
         };

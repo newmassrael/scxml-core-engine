@@ -2858,13 +2858,16 @@ fn emit_orchestrate_asts(
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
-        let basename = forge_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(stem);
+        // ⚠ The PATH as the caller gave it, not its last segment. A
+        // diagnostic's `location.file` is what a consumer opens to apply the
+        // fix (SCE_ERROR_CONTRACT.md §2.2), and a bare name opens only from
+        // the one directory the author happened to be standing in. The
+        // statechart pipeline has always passed the path through; this one
+        // trimmed it, so the same build answered two ways depending on which
+        // kind the document declared.
         let label = sce_build::DocumentLabel {
             identifier: stem,
-            diagnostic_label: basename,
+            diagnostic_label: forge_path_str,
         };
 
         // Expand before parsing, as the statechart loop above does via
@@ -3369,13 +3372,13 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown");
-            let input_basename = Path::new(scxml_path)
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or(input_stem);
+            // ⚠ The PATH as the caller gave it, not its last segment.
+            // `location.file` is what a consumer opens to apply a fix
+            // (SCE_ERROR_CONTRACT.md §2.2), and a bare name opens only from
+            // the one directory the author happened to be standing in.
             let doc_label = sce_build::DocumentLabel {
                 identifier: input_stem,
-                diagnostic_label: input_basename,
+                diagnostic_label: scxml_path,
             };
             let base_dir = Path::new(scxml_path)
                 .parent()
@@ -3796,20 +3799,27 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             // `.scxml` extension folded into it would corrupt those
             // identifiers (`crossfile_procedure_codec_scxml`).
             //
-            // `input_basename` is the diagnostic label — the filename
-            // with extension, enough for downstream tooling to open
-            // the file without guessing the suffix. Passed through the
-            // library as the `diagnostic_label` role of
-            // `DocumentLabel`, keeping the two concerns separate all
+            // The PATH the caller gave is the diagnostic label, passed
+            // through the library as the `diagnostic_label` role of
+            // `DocumentLabel` and keeping the two concerns separate all
             // the way down to XSD `source_label` and every
             // `Located::file`.
-            let input_basename = Path::new(scxml_path)
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or(input_stem);
+            //
+            // ⚠ This was the BASENAME, on the written reasoning that a
+            // filename with its extension is "enough for downstream tooling
+            // to open the file without guessing the suffix". The suffix is
+            // the part that got thought about; the DIRECTORY did not. A
+            // consumer handed `x.scxml` can open it from exactly one place.
+            // ⚠ The PATH as the caller gave it, not its last segment.
+            // `location.file` is what a consumer opens to apply a fix
+            // (SCE_ERROR_CONTRACT.md §2.2), and a bare name opens only from
+            // the one directory the author happened to be standing in. The
+            // statechart pipeline passes `scxml_path` through, so trimming
+            // it here made one build answer two ways about where its own
+            // diagnostics point, decided by which kind the document declares.
             let doc_label = sce_build::DocumentLabel {
                 identifier: input_stem,
-                diagnostic_label: input_basename,
+                diagnostic_label: scxml_path,
             };
 
             let base_dir = Path::new(scxml_path)
