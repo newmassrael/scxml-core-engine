@@ -257,9 +257,13 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
 /// Which document to mutate for each declared pair.
 ///
 /// Built in ONE pass over the corpus rather than by scanning every
-/// document for every pair. With 134 pairs and 746 documents the
-/// per-pair scan is a hundred thousand reads; this is 746, and it is
-/// what makes sweeping the whole checkout affordable at all.
+/// document for every pair: the per-pair scan is pairs times documents
+/// — a hundred thousand reads at the sizes this tree has — and this is
+/// one read per document, which is what makes sweeping the whole
+/// checkout affordable at all. ⚠ Both counts are PRINTED by the gate
+/// (`declared pairs`, `documents swept`) rather than written here,
+/// because a number in a comment is falsified by the next fixture
+/// anyone adds and says nothing when it is.
 /// ⚠ EVERY writer, not the first. Keeping one made the index a third
 /// narrowing on top of the two it was built to fix: a pair whose first
 /// writer happens to be a document the parser refuses — this tree keeps
@@ -793,6 +797,7 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
     }
 
     println!("declared pairs   : {}", declared.len());
+    println!("documents swept  : {}", files.len());
     println!("measured         : {}", measured.len());
     println!("unmeasured       : {}", unmeasured.len());
     for (k, why) in &unmeasured {
