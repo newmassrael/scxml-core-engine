@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: the buffer-pool body elements no document
+  wrote.
+
+  Measured 2026-09-20 by
+  `every_element_the_grammar_names_is_written_by_a_document`:
+  `<sce:dma-channel>`, `<sce:max-fragments-per-message>`,
+  `<sce:reassembly-timeout-ms>` and `<sce:per-peer-quota>` are declared
+  by the grammar and read by `parse_buffer_pool_variant`, and no
+  document in the checkout carried any of them.
+
+  ⚠ These four were invisible to the sibling attribute gate, and the
+  reason is worth keeping: that gate walks (element, attribute) PAIRS,
+  and an element whose value is its text body declares no attribute, so
+  it forms no pair and the walk cannot see it. **A unit that cannot
+  form a row cannot report a gap** — the element-level gate is what
+  found them.
+
+  The last three are reassembly-only: the parser refuses each outside
+  `<sce:variant>reassembly</sce:variant>`, and refuses a zero for any
+  of them. So the variant is declared here, and each value is non-zero
+  — a fixture that tripped either rule would be measuring the error
+  path instead of the field.
+
+  `<sce:dma-channel>` is not reassembly-bound; a pure CPU-managed pool
+  omits it, and this one names a channel so the reading is exercised.
+
+  ⚠ Deliberately no golden in `tests/forge/expected/`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="buffer_pool_reassembly_and_dma" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+  <sce:dma-channel>dma1_stream3</sce:dma-channel>
+  <sce:variant>reassembly</sce:variant>
+  <sce:max-fragments-per-message>16</sce:max-fragments-per-message>
+  <sce:reassembly-timeout-ms>250</sce:reassembly-timeout-ms>
+  <sce:per-peer-quota>4</sce:per-peer-quota>
+</scxml>

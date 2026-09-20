@@ -482,6 +482,78 @@ fn declared_elements() -> BTreeSet<String> {
 /// What it also buys: a misspelled `sce:` element name is admitted the
 /// same way, and this is what makes one visible.
 #[test]
+fn every_element_the_grammar_names_is_written_by_a_document() {
+    // ⚠ The OTHER direction from the test below, and the two are not
+    // the same claim. That one asks whether an element a document
+    // carries is declared — it catches a misspelling the lax content
+    // model admits. This one asks whether an element the grammar
+    // declares is carried by anything, and it catches the shape that
+    // cost this tree twelve elements: `<sce:driver>`, `<sce:on-sample>`,
+    // `<sce:inbound>`, `<sce:call>` and eight more were each read by a
+    // parser and written by no document in the checkout, so a reader
+    // that stopped taking one would have gone unnoticed — the
+    // `<sce:while max-iter>` shape, once per element.
+    //
+    // ⚠⚠ Writing the first document that declared a `<sce:driver>` was
+    // what found `SCXMLModel::driver_refs` reaching no page at all: the
+    // pseudocode renderer promises totality and was silently short a
+    // field, invisible while nothing exercised it. **An unexercised
+    // declaration hides defects in everything downstream of it**, which
+    // is why this direction is worth a gate of its own rather than a
+    // note.
+    let declared = declared_elements();
+    let files = fixture_files();
+    assert!(
+        !declared.is_empty() && !files.is_empty(),
+        "nothing to measure: {} declared element(s), {} fixture(s)",
+        declared.len(),
+        files.len()
+    );
+
+    let mut written: BTreeSet<String> = BTreeSet::new();
+    for path in &files {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(doc) = roxmltree::Document::parse(&text) else {
+            continue;
+        };
+        // ⚠ Parsed, not grepped. A `<sce:driver>` inside an XML comment
+        // is prose, and a text scan counts it — measured 2026-09-20,
+        // exactly that put `<sce:call>` and `<sce:extern>` in the
+        // "written" column when no document wrote either.
+        for node in doc.descendants() {
+            if node.tag_name().namespace() == Some(SCE_NS) {
+                written.insert(node.tag_name().name().to_string());
+            }
+        }
+    }
+
+    let unwritten: Vec<&String> = declared.iter().filter(|e| !written.contains(*e)).collect();
+    println!("declared elements : {}", declared.len());
+    println!("written by a document: {}", written.len());
+
+    assert!(
+        written.len() > 20,
+        "only {} `sce:` element(s) were found in the whole checkout, which is \
+         fewer than the grammar has — the reader stopped seeing them",
+        written.len()
+    );
+    assert!(
+        unwritten.is_empty(),
+        "the grammar declares these elements and no document in the checkout \
+         writes any of them, so whatever reads them could stop and nothing \
+         would say so — and nothing downstream of them is exercised \
+         either:\n  {}",
+        unwritten
+            .iter()
+            .map(|e| format!("<sce:{e}>"))
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+}
+
+#[test]
 fn every_sce_element_a_document_carries_is_named_by_the_grammar() {
     let elements = declared_elements();
     let files = fixture_files();
