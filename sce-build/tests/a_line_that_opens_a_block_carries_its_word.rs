@@ -5,9 +5,9 @@
 //!
 //! This is the condition a second shape rests on. `indent` writes
 //! nesting as leading whitespace and never needs to know what a line
-//! says; a shape that closes a block — `반복문 시작 … 반복문 종료`,
-//! braces, anything with an end marker — has to write the opener's word
-//! again at the close, and it can only do that if the node carries it.
+//! says; a shape that closes a block — `endmark`, braces, anything with
+//! an end marker — has to write the opener's word again at the close,
+//! and it can only do that if the node carries it.
 //!
 //! [`Node::raw`] exists because the renderer was decomposed one kind at
 //! a time, and a raw node is a line whose words this module has not

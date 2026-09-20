@@ -132,6 +132,13 @@ const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
          which is the only way to show the table matches prose and not a \
          list of verbs",
     ),
+    (
+        "sce-build/src/forge/page.rs",
+        "holds the Korean lexicon, whose spellings ARE the answer it is \
+         asked for: what each grammar word is called. An escape would hide \
+         the one thing a reader of a lexicon has to check, and an English \
+         paraphrase would not be that lexicon but a different one",
+    ),
 ];
 
 // ⚠ This gate is NOT in the list above, and that is deliberate. Its own
