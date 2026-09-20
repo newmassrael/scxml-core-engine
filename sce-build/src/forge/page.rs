@@ -69,6 +69,11 @@ pub enum Word {
     Foreach,
     In,
     Done,
+    While,
+    Max,
+    Call,
+    Send,
+    Log,
 }
 
 impl Word {
@@ -90,6 +95,11 @@ impl Word {
         Word::Foreach,
         Word::In,
         Word::Done,
+        Word::While,
+        Word::Max,
+        Word::Call,
+        Word::Send,
+        Word::Log,
     ];
 }
 
@@ -125,6 +135,11 @@ fn en_word(w: Word) -> &'static str {
         Word::Foreach => "foreach",
         Word::In => "in",
         Word::Done => "done",
+        Word::While => "while",
+        Word::Max => "max",
+        Word::Call => "call",
+        Word::Send => "send",
+        Word::Log => "log",
     }
 }
 

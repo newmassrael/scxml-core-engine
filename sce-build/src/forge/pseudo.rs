@@ -905,11 +905,14 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             // line breaks — no fixture does today (measured: 6
             // conditions, none of them), and the rule is not a bet on
             // that staying true.
-            let max = match max_iter {
-                Some(n) => format!("max {n} "),
-                None => String::new(),
-            };
-            out.line(&format!("while {}{}:", max, text(cond)));
+            let mut parts = vec![Part::Word(Word::While)];
+            if let Some(n) = max_iter {
+                parts.push(Part::Word(Word::Max));
+                parts.push(Part::Text(n.to_string()));
+            }
+            parts.push(Part::Text(text(cond).into_owned()));
+            parts.push(Part::Glued(":".into()));
+            out.line_of(parts);
             out.nested(|out| {
                 for s in body {
                     render_stmt(s, out);
@@ -942,9 +945,16 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             // arguments across 587 documents), so this arm is written
             // to the rule rather than to an example.
             if args.is_empty() {
-                out.line(&format!("call {}", text(target)));
+                out.line_of(vec![
+                    Part::Word(Word::Call),
+                    Part::Text(text(target).into_owned()),
+                ]);
             } else {
-                out.line(&format!("call {}:", text(target)));
+                out.line_of(vec![
+                    Part::Word(Word::Call),
+                    Part::Text(text(target).into_owned()),
+                    Part::Glued(":".into()),
+                ]);
                 out.nested(|out| {
                     for a in args {
                         out.line(&format!("arg {}", text(a)));
@@ -1085,9 +1095,16 @@ fn render_state(s: &ProcedureState, out: &mut Out<'_>) {
             .collect();
 
             if clauses.is_empty() {
-                out.line(&format!("send {}", text(&send.service)));
+                out.line_of(vec![
+                    Part::Word(Word::Send),
+                    Part::Text(text(&send.service).into_owned()),
+                ]);
             } else {
-                out.line(&format!("send {}:", text(&send.service)));
+                out.line_of(vec![
+                    Part::Word(Word::Send),
+                    Part::Text(text(&send.service).into_owned()),
+                    Part::Glued(":".into()),
+                ]);
                 out.nested(|out| {
                     for (name, value) in clauses {
                         out.line(&format!("{name} {}", text(&value)));
@@ -1990,11 +2007,18 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
         // then RE-RENDERED to the same bytes, so the text round trip
         // could not see it. One value per line, each at the end of it.
         "log" => match (a.label.is_empty(), a.expr.is_empty()) {
-            (true, true) => out.line("log"),
-            (false, true) => out.line(&format!("log {}", text(&a.label))),
-            (true, false) => out.line(&format!("log: {}", text(&a.expr))),
+            (true, true) => out.line_of(vec![Part::Word(Word::Log)]),
+            (false, true) => out.line_of(vec![
+                Part::Word(Word::Log),
+                Part::Text(text(&a.label).into_owned()),
+            ]),
+            (true, false) => out.line_of(vec![
+                Part::Word(Word::Log),
+                Part::Glued(":".into()),
+                Part::Text(text(&a.expr).into_owned()),
+            ]),
             (false, false) => {
-                out.line("log:");
+                out.line_of(vec![Part::Word(Word::Log), Part::Glued(":".into())]);
                 out.nested(|out| {
                     out.line(&format!("label {}", text(&a.label)));
                     out.line(&format!("expr {}", text(&a.expr)));
@@ -2009,9 +2033,16 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
             // carries an argument (measured: zero), so this arm is
             // written to the rule rather than to an example.
             if a.params.is_empty() {
-                out.line(&format!("call {}", text(&a.native_action_name)));
+                out.line_of(vec![
+                    Part::Word(Word::Call),
+                    Part::Text(text(&a.native_action_name).into_owned()),
+                ]);
             } else {
-                out.line(&format!("call {}:", text(&a.native_action_name)));
+                out.line_of(vec![
+                    Part::Word(Word::Call),
+                    Part::Text(text(&a.native_action_name).into_owned()),
+                    Part::Glued(":".into()),
+                ]);
                 out.nested(|out| {
                     for p in &a.params {
                         render_param_into("arg", p, out);
