@@ -38,8 +38,8 @@
 //! lost is not verification of what is on `main` now, but ATTRIBUTION — which
 //! commit broke a thing, once something is broken. Supersession is safe for
 //! exactly that reason, and it charges exactly that price: a red costs more to
-//! bisect. (Sharpened by the `watching-zenoh` session, 2026-09-15, which
-//! measured the same stalled pool from its own repository.)
+//! bisect. (Sharpened by a downstream consumer's session, 2026-09-15,
+//! which measured the same stalled pool from its own repository.)
 //!
 //! ⚠⚠ **Subsumption holds for a lane whose answer is about a BRANCH, and NOT
 //! for one whose answer is about a COMMIT.** This repository already carries
