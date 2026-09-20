@@ -36,12 +36,18 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Every `.scxml` in the checkout.
+///
+/// ⚠ This gate and `an_action_uses_only_the_fields_its_tag_declares`
+/// are the two the round-trip module names as carrying the half its
+/// text layer cannot — so a statechart claim resting on them rests on
+/// whatever they sweep. Both swept three directories, and the 253
+/// tracked W3C documents in `resources/`, where the statecharts in
+/// this tree live in bulk, were in neither. **The prop was measured on
+/// a corpus that left out most of what it props up.**
 fn fixture_files() -> Vec<PathBuf> {
-    let root = repo_root();
     let mut out = Vec::new();
-    for sub in ["tests/forge/resources", "integration_resources", "examples"] {
-        collect(&root.join(sub), &mut out);
-    }
+    collect(&repo_root(), &mut out);
     out.sort();
     out
 }
@@ -53,6 +59,11 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     for e in entries.flatten() {
         let p = e.path();
         if p.is_dir() {
+            if p.file_name()
+                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
+            {
+                continue;
+            }
             collect(&p, out);
         } else if p.extension().is_some_and(|x| x == "scxml") {
             out.push(p);
@@ -247,10 +258,27 @@ const ANALYZER_WRITTEN: &[&str] = &[
     "needs_guard_helper",
     "needs_http_send",
     "needs_namelist_helper",
+    // Template dispatch, both of them, and neither reaches the page.
+    // ⚠ They appeared when this gate stopped sweeping three
+    // directories: `needs_parent_template`'s own doc comment names the
+    // fixtures that move it — the W3C local-invoke tests 233 and 338 —
+    // and those live in `resources/`, which no list here had ever
+    // included. **The field said where to look and nobody was
+    // looking there.**
+    "needs_nonstatic_method",
+    "needs_parent_template",
     "needs_send_helper",
     "needs_string_matching",
     "needs_tick_driving",
     "needs_transition_helper",
+    // A derived index over the authored `on_sample_blocks`, and a
+    // derived parent link over the authored nesting. The renderer
+    // takes the authored side of both — `render_scxml_state` says so
+    // at the `on sample` loop, where printing the index too "would
+    // say each link twice" — so the decision these two need is the
+    // one already made: analyzer arithmetic, not shown.
+    "on_sample_links",
+    "parent",
     "prefix_matching_events",
     "readable_variables",
     "states",

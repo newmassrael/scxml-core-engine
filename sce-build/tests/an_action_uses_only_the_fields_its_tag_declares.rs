@@ -38,12 +38,18 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Every `.scxml` in the checkout.
+///
+/// ⚠ This gate and `the_analyzer_declares_which_fields_it_writes` are
+/// the two the round-trip module names as carrying the half its text
+/// layer cannot — so a statechart claim resting on them rests on
+/// whatever they sweep. Both swept three directories, and the 253
+/// tracked W3C documents in `resources/`, where the statecharts in
+/// this tree live in bulk, were in neither. **The prop was measured on
+/// a corpus that left out most of what it props up.**
 fn fixture_files() -> Vec<PathBuf> {
-    let root = repo_root();
     let mut out = Vec::new();
-    for sub in ["tests/forge/resources", "integration_resources", "examples"] {
-        collect(&root.join(sub), &mut out);
-    }
+    collect(&repo_root(), &mut out);
     out.sort();
     out
 }
@@ -55,6 +61,11 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     for e in entries.flatten() {
         let p = e.path();
         if p.is_dir() {
+            if p.file_name()
+                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
+            {
+                continue;
+            }
             collect(&p, out);
         } else if p.extension().is_some_and(|x| x == "scxml") {
             out.push(p);

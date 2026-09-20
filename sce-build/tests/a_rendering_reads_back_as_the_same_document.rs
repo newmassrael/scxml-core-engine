@@ -23,8 +23,11 @@
 //! comparing models proves both halves at once: the renderer wrote
 //! everything and the reader recovered it.
 //!
-//! The statechart model is not the document. Of its 92 fields, 39 are
-//! written by the analyzer and more are computed while parsing, and the
+//! The statechart model is not the document. Of the 376 property names
+//! its schema declares, 43 are written by the analyzer — measured, and
+//! printed, by `the_analyzer_declares_which_fields_it_writes`; it was
+//! 39 until that gate stopped sweeping three directories — and more are
+//! computed while parsing, and the
 //! renderer deliberately writes only the authored core — so a model
 //! read back from a rendering is missing everything derived, and a
 //! model comparison would fail on every document for a reason that is
