@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: the optional codec-field attributes that the
+     grammar declares, the parser reads, and no other document writes.
+
+     Measured 2026-09-20 by
+     `a_declared_attribute_must_reach_the_ir`: `sce:bit-offset` and
+     `sce:endian` are declared on `<sce:field>` and on `<sce:flags>`,
+     are read by `parse_codec_field_from_node`, and were written by no
+     document in the checkout — so nothing would have noticed if either
+     stopped reaching the IR. `<sce:while max-iter>` was exactly that
+     shape and was dropped in silence for as long as it existed.
+
+     This fixture exists to be mutated, so it carries the attributes
+     rather than a behaviour:
+
+       byte 0     : `status`, a flags carrier read little-endian, whose
+                    bits start two in — `bit-offset` and `endian` on a
+                    `<sce:flags>`.
+       bytes 1..2 : `reading`, a 12-bit big-endian value that starts
+                    four bits into its first byte — the same two on a
+                    `<sce:field>`.
+
+     ⚠ Deliberately no golden in `tests/forge/expected/`. Thirty-three
+     resources have none; what this document is for is the attribute
+     reaching the IR, and a golden would pin a rendering nobody reads.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" name="codec_optional_field_attributes">
+  <datamodel>
+    <sce:flags id="status" sce:type="uint8" sce:byte="0" sce:bit-size="8"
+               sce:bit-offset="0" sce:endian="little">
+      <sce:flag name="ready" bit="2" width="1"/>
+      <sce:flag name="fault" bit="3" width="1"/>
+    </sce:flags>
+    <sce:field id="reading" sce:type="uint16" sce:byte="1" sce:bit-size="12"
+               sce:bit-offset="4" sce:endian="big"/>
+  </datamodel>
+</scxml>
