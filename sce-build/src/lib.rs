@@ -207,6 +207,10 @@ pub mod scxml_reachability;
 /// library entry and the `sce-codegen` CLI both pass through.
 pub mod scxml_references;
 pub mod scxml_semantic;
+/// A number as the author wrote it, beside the number it denotes —
+/// so the pseudocode review surface can show `0x1a` where the model
+/// holds `26`. See [`source_literal`].
+pub mod source_literal;
 /// `sce:template` / `sce:use` / `sce:param` preprocessing —
 /// parameterised composition adjacent to XInclude. AOT-only;
 /// runs immediately after XInclude expansion

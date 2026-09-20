@@ -249,21 +249,21 @@ fn a_number_is_rendered_as_the_author_spelled_it() {
     );
 
     // ⚠⚠ A DEBT CEILING, not the contract. The contract is
-    // `respelled.is_empty()`, and it does not hold today: 43
-    // respellings across the six attributes below, all of them a model
-    // that holds a number where the author wrote a spelling. Fixing
-    // them means `VariantArm`, `FlagDef`, `DecodedField`,
-    // `CodecTestVector` and the two `data` carriers keeping the source
-    // text beside the value, which is a change across the codec model
-    // and is its own round of work — recorded in
+    // `respelled.is_empty()`, and it does not hold yet. Measured
+    // 2026-09-20 it was 43 across six carriers, each a model holding a
+    // number where the author wrote a spelling; `VariantArm` now keeps
+    // the spelling (`crate::source_literal`) and the rest follow one at
+    // a time, each lowering this number. Recorded in
     // `claudedocs/rfc-pseudocode-review-surface.md` §14.
     //
     // What IS enforced meanwhile is the thing that matters most: a
-    // SEVENTH attribute cannot join them quietly, and the six cannot
-    // get worse. A new carrier that loses the author's spelling reddens
-    // this on the first run.
+    // carrier NOT on this list cannot join them quietly, and the ones
+    // on it cannot get worse. A new carrier that loses the author's
+    // spelling reddens this on the first run.
     const KNOWN_LOSSY: &[&str] = &[
-        "arm/@value",
+        // `arm/@value` was here and is not: `VariantArm` carries the
+        // author's spelling now. Each carrier leaves this list as it is
+        // fixed, and the ceiling below comes down with it.
         "flag/@value",
         "decoded/@value",
         "test-vector/@hex",
@@ -286,21 +286,25 @@ fn a_number_is_rendered_as_the_author_spelled_it() {
             .collect::<Vec<_>>()
             .join("\n   ")
     );
+    /// Where the debt stands. Lowered with each carrier that starts
+    /// keeping the author's spelling; at zero this whole block goes and
+    /// `assert!(respelled.is_empty())` takes its place.
+    const CEILING: usize = 27;
     assert!(
-        respelled.len() <= 43,
-        "the recorded losses grew from 43 to {} — a carrier that already \
+        respelled.len() <= CEILING,
+        "the recorded losses grew from {CEILING} to {} — a carrier that already \
          respells the author's number is now doing it in more places",
         respelled.len()
     );
 
-    // And the ceiling is a debt, so it is worth knowing when it becomes
-    // slack. A drop is not a failure; it is the signal to lower the
-    // number and, when it reaches zero, to replace all of this with
-    // `assert!(respelled.is_empty())`.
-    if respelled.len() < 43 {
+    // A drop is not a failure; it is the signal to lower the ceiling.
+    // Printed rather than asserted, because a round that fixes a
+    // carrier should not have to fix this file before it can see that
+    // it worked.
+    if respelled.len() < CEILING {
         println!(
-            "NOTE: only {} respelling(s) remain of the 43 recorded — lower the \
-             ceiling in this file, and delete it at zero",
+            "NOTE: only {} respelling(s) remain of the {CEILING} recorded — lower \
+             the ceiling in this file, and delete it at zero",
             respelled.len()
         );
     }

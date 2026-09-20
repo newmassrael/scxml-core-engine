@@ -2035,6 +2035,17 @@ pub struct VariantArm {
     /// Discriminator value (matches the tag field's read value).
     /// Held as `u64` to fit any unsigned tag width up to uint64.
     pub value: u64,
+    /// How the author spelled [`Self::value`], when a source document
+    /// is where it came from.
+    ///
+    /// A discriminator is written in hex in every fixture in this tree,
+    /// and `value` alone puts `26` on the pseudocode review surface
+    /// where the author wrote `0x1a` — see [`crate::source_literal`].
+    /// `#[serde(skip)]` because this is the author's spelling and not a
+    /// fact a consumer computes with; the `--emit-ast` wire format
+    /// carries `value` and is unmoved.
+    #[serde(skip, default)]
+    pub value_text: String,
     /// Import alias naming the body codec for this arm.
     pub body_alias: String,
     /// `default="true"` marker — declares this arm as the default

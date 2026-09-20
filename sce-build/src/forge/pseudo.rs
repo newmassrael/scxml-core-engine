@@ -2160,14 +2160,26 @@ fn render_codec_variant(v: &CodecVariant, out: &mut Out<'_>) {
             }
         }
         for a in &v.arms {
-            let mut line = format!("arm {} -> {}", a.value, text(&a.body_alias));
+            // The author's spelling, not the number: a discriminator is
+            // written in hex throughout this tree, and a reviewer
+            // checking the page against their own table looks for
+            // `0x1a`. See `crate::source_literal`.
+            let mut line = format!(
+                "arm {} -> {}",
+                text(&crate::source_literal::as_written(&a.value_text, a.value)),
+                text(&a.body_alias)
+            );
             if a.is_default {
                 line.push_str(" default");
             }
             out.line(&line);
         }
         if let Some(a) = &v.default_arm {
-            let mut line = format!("default-arm {} -> {}", a.value, text(&a.body_alias));
+            let mut line = format!(
+                "default-arm {} -> {}",
+                text(&crate::source_literal::as_written(&a.value_text, a.value)),
+                text(&a.body_alias)
+            );
             if a.is_default {
                 line.push_str(" default");
             }

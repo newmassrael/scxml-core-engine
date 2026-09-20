@@ -838,11 +838,19 @@ fn a_codec_renders_every_field_it_can_carry() {
             tag_flag: Some("mid".to_string()),
             arms: vec![VariantArm {
                 value: 1,
+                // The author's spelling, and deliberately a hex one:
+                // this case is the whole-output comparison, so it is
+                // where a renderer that went back to printing the
+                // number would show up.
+                value_text: "0x01".to_string(),
                 body_alias: "one".to_string(),
                 is_default: false,
             }],
             default_arm: Some(VariantArm {
                 value: 0,
+                // Empty, as the parser leaves a catch-all: the fallback
+                // prints the number, and this case pins that too.
+                value_text: String::new(),
                 body_alias: "zero".to_string(),
                 is_default: true,
             }),
@@ -892,7 +900,7 @@ terminate entry-flag more
     flag more bit 7 width 1 value 1
   variant tag-field hdr tag-flag mid peek-byte pk
     peek-flag k bit 0 width 2
-    arm 1 -> one
+    arm 0x01 -> one
     default-arm 0 -> zero default
   test 0xab @line 7
     payload = bytes 0x01

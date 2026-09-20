@@ -2586,6 +2586,7 @@ fn parse_codec_variant(
                 };
                 arms.push(VariantArm {
                     value,
+                    value_text: value_str.to_string(),
                     body_alias,
                     is_default,
                 });
@@ -2630,6 +2631,10 @@ fn parse_codec_variant(
                 // catch-all and default arm are distinct concepts).
                 default_arm = Some(VariantArm {
                     value: 0,
+                    // No authored spelling: the catch-all has no
+                    // discriminator, and `0` above is a sentinel rather
+                    // than something a reviewer should see quoted back.
+                    value_text: String::new(),
                     body_alias,
                     is_default: false,
                 });

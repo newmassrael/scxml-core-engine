@@ -1951,8 +1951,22 @@ fn parse_codec_variant(
                     })?;
                 let is_default = rest.ends_with(" default");
                 let alias = rest.strip_suffix(" default").unwrap_or(rest);
+                // ⚠ `crate::source_literal::read_unsigned`, not
+                // `parse()`. The renderer now writes the author's
+                // spelling, so a hex discriminator reaches this line as
+                // `0x1a` — and `"0x1a".parse::<u64>()` fails, which the
+                // old `unwrap_or(0)` turned into a silent zero. A
+                // rendering that reads back as a different document is
+                // the one thing this module may not do.
+                let spelling = undo(value, k.number)?;
                 let arm = VariantArm {
-                    value: value.parse().unwrap_or(0),
+                    value: crate::source_literal::read_unsigned(&spelling).ok_or_else(|| {
+                        ParseError {
+                            line: k.number,
+                            why: format!("`{spelling}` is not a discriminator value"),
+                        }
+                    })?,
+                    value_text: spelling,
                     body_alias: undo(alias, k.number)?,
                     is_default,
                 };
