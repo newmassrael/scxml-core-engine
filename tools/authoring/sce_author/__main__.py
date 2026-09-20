@@ -19,6 +19,7 @@ from .coverage import coverage as run_coverage
 from .errors import AuthoringError
 from .pack import load_pack
 from .prose import load_prose
+from .pseudo import render as render_pseudo
 from .questions import ask
 from .review import review as run_review
 from .verify import verify as run_verify
@@ -53,6 +54,21 @@ def cmd_questions(args) -> int:
     print(f"  {'total':<22} {len(questions)}")
     # A class that swamps the others is visible here rather than averaged into
     # one number. A single total once hid a class that was wrong 41 times in 42.
+    return 0
+
+
+def cmd_pseudo(args) -> int:
+    got = render_pseudo(pathlib.Path(args.binding),
+                        pathlib.Path(args.codegen) if args.codegen else None,
+                        pathlib.Path(args.deploy) if args.deploy else None)
+    if not got.produced:
+        print(f"refused: {got.refusal}", file=sys.stderr)
+        return 1
+    # ⚠ The page goes to stdout unadorned, with no banner and no trailing
+    # summary. It is text somebody reads and a caller may redirect, and a line
+    # this tool added to be friendly is a line the reader has to know is not
+    # the document.
+    sys.stdout.write(got.text)
     return 0
 
 
@@ -192,6 +208,19 @@ def main(argv=None) -> int:
         "review", help="measure the pack itself, which every other command trusts"))
     r.add_argument("--prose", required=True, nargs="+")
     r.set_defaults(fn=cmd_review)
+
+    # ⚠ No `--pack`. Rendering consults the pack for nothing, and asking for
+    # one would let a bad pack refuse a request that never needed it.
+    s = sub.add_parser(
+        "pseudo", help="show the written document the way a person reads it")
+    s.add_argument("--binding", required=True,
+                   help="the binding file, which names its own document")
+    s.add_argument("--codegen",
+                   help="the product's code generator (default: the one in this tree)")
+    s.add_argument("--deploy",
+                   help="a deployment descriptor; every line it decides is "
+                        "shown too, each marked with a leading '!'")
+    s.set_defaults(fn=cmd_pseudo)
 
     c = with_pack(sub.add_parser("check", help="judge a written document against the model"))
     c.add_argument("--binding", required=True, help="the binding file, which names its own document")

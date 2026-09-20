@@ -42,6 +42,7 @@ from .check import check
 from .coverage import coverage as run_coverage
 from .errors import AuthoringError
 from .pack import load_pack
+from .pseudo import render as render_pseudo
 from .verify import verify as run_verify
 from .prose import load_prose
 from .questions import ask
@@ -124,6 +125,44 @@ TOOLS = [
             "type": "object",
             "required": ["pack", "prose"],
             "properties": {"pack": _PACK_ARG, "prose": _PROSE_ARG},
+        },
+    },
+    {
+        "name": "pseudo",
+        "description": (
+            "SHOW the written document the way a person reads it, so the "
+            "specification owner can approve it. Every other tool here "
+            "answers a question a machine can answer -- the names are real, "
+            "the examples pass, the set reaches every position -- and a "
+            "document can satisfy all of them and still not be what the "
+            "specification asked for. Nothing but a person can say so, and a "
+            "person handed XML does not read it. The surface is TOTAL: every "
+            "field of the model reaches the page, a value appears as the "
+            "author spelled it, and a document that cannot be shown in full "
+            "is refused by name rather than abbreviated -- so approving the "
+            "page is approving the document and not a summary of it. Call it "
+            "after `verify` passes: a page that behaves wrongly is not worth "
+            "a reader's time."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["binding"],
+            "properties": {
+                "binding": {
+                    "type": "string",
+                    "description": "The binding file, which names its own document.",
+                },
+                "deploy": {
+                    "type": "string",
+                    "description": (
+                        "A deployment descriptor, when the document is placed "
+                        "on one. Every line the deployment decides is then "
+                        "shown too, each marked with a leading '!' -- strike "
+                        "those and what is left is the undeployed page, byte "
+                        "for byte."
+                    ),
+                },
+            },
         },
     },
     {
@@ -323,6 +362,29 @@ def call_tool(name: str, args: dict) -> dict:
                 "alarms": got.alarms(),
             }
             return _text(json.dumps(payload, ensure_ascii=False, indent=1))
+
+        if name == "pseudo":
+            binding = args.get("binding")
+            if not binding or not isinstance(binding, str):
+                raise ToolArgumentError("'binding' is required: the path to the "
+                                        "binding file, which names its own document")
+            deploy = args.get("deploy")
+            if deploy is not None and not isinstance(deploy, str):
+                raise ToolArgumentError("'deploy' has to be a path, as a string")
+            # ⚠ No pack is loaded, and none is asked for. Rendering needs the
+            # document alone, and a caller handed a refusal about their pack
+            # when they asked to read their document is told about the wrong
+            # file.
+            got = render_pseudo(pathlib.Path(binding), None,
+                                pathlib.Path(deploy) if deploy else None)
+            if not got.produced:
+                return _failure(got.refusal)
+            # ⚠ The page itself, as text and not as JSON. This is the one
+            # answer here whose reader is a PERSON: the other tools return an
+            # object because a client draws from it, and quoting the page into
+            # a JSON string would put backslashes through the very spellings
+            # the surface exists to preserve.
+            return _text(got.text)
 
         if name == "check":
             pack = load_pack(_pack_arg(args))

@@ -258,6 +258,41 @@ def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
         f"so nothing says which host processors the document sends to"))
 
 
+def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
+                deploy: pathlib.Path | None) -> tuple[str, str]:
+    """One run of the generator's review surface. Returns `(page, refusal)`.
+
+    ⚠ It lives HERE, in the module that already spawns, rather than beside
+    the rest of the rendering seam in `pseudo.py`. Exactly one module in this
+    core may run another program -- `test_only_one_module_may_run_another_
+    program` holds that -- and the way to add a second caller is to give it a
+    function here, not to widen the allowed list. The rule is about how many
+    places can reach outside the pack, and composing keeps that at one.
+
+    ⚠ The product's own words come back untouched, the same as `_emit` does
+    with a build refusal. A document the surface will not abbreviate is
+    refused BY THE PRODUCT, and that refusal names the construct -- which is
+    what the author needs to read.
+    """
+    codegen = pathlib.Path(codegen) if codegen else _default_codegen()
+    if not codegen.exists():
+        raise VerifyError(
+            f"{codegen}: the code generator is not there, so no document can "
+            f"be shown. Build it, or name another with --codegen.")
+    argv = [str(codegen), "pseudo", str(document)]
+    if deploy is not None:
+        argv += ["--deploy", str(deploy)]
+    run = subprocess.run(argv, capture_output=True, text=True)
+    if run.returncode != 0:
+        return "", (run.stderr.strip() or run.stdout.strip()
+                    or f"the code generator refused with status "
+                       f"{run.returncode}")
+    # ⚠ Byte for byte, not stripped. The surface's contract is that a value
+    # reaches the page as the author spelled it, and a caller that trims the
+    # page is the first thing to break it.
+    return run.stdout, ""
+
+
 def load(into: pathlib.Path, document: pathlib.Path):
     """Import what was generated, as a package so its own imports resolve."""
     # ⚠ A generated statechart imports the product's own runtime; a generated

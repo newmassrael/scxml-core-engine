@@ -46,6 +46,7 @@ for the other case and none of them write it down.
     python3 -m sce_author review    --pack <dir> --prose <file>...
     python3 -m sce_author check     --pack <dir> --document <file.scxml>
     python3 -m sce_author coverage  --pack <dir> --binding <file>...
+    python3 -m sce_author pseudo                 --binding <file>
 
 **brief** assembles one page for whoever writes the document: the prose, the
 addresses and value spaces it touches, the precondition vocabulary, and the
@@ -212,6 +213,36 @@ case expects are named beside the count, always -- pass or fail. Measured over
 case, 101 packs expect every one of their own, 25 expect some, and **one
 expects none**, whose cases pass while judging nothing at all. Without the
 figure, that pack's run and a thorough one are the same line of output.
+
+**pseudo** SHOWS the document the way a person reads it, and it is the only
+command here whose judge is a human. Everything above answers a question a
+machine can answer -- the names are real, the examples pass, the set reaches
+every position -- and a document can satisfy all of them and still not be the
+thing the specification owner asked for. Nothing in this tool can say so.
+
+That judgement has to be a person's, and a person handed XML does not make
+it. So the command asks the product for its review surface, which is total by
+construction: every field of the model reaches the page, a value appears as
+the author spelled it rather than as a number that happens to equal it, and a
+document the surface cannot show in full is refused by name instead of
+abbreviated. Approving the page is therefore approving the document and not a
+summary of it. ⚠ Call it after `verify` passes -- a page that behaves wrongly
+is not worth a reader's time.
+
+    python3 -m sce_author pseudo --binding <file> [--deploy <file>]
+
+⚠ It takes no `--pack`. Rendering consults the pack for nothing, and a caller
+handed a refusal about their pack when they asked to read their document has
+been told about the wrong file. It takes the **binding** rather than the
+document so the file it shows is the file `check` and `verify` were given; a
+page rendered from some other document on disk would read just as well, which
+is exactly how an approval goes wrong. With `--deploy`, the lines the
+deployment decides are shown too, each marked with a leading `!` -- strike
+those and what is left is the undeployed page, byte for byte.
+
+⚠ It does not spawn the generator itself. Exactly one module in this core may
+run another program, and a second caller gets a function there rather than a
+place on the allowed list -- see "The boundary is tested, not asserted".
 
 ### Before any of that: what the file itself gives up
 
