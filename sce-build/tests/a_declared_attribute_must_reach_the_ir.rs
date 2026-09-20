@@ -147,30 +147,41 @@ fn declared_pairs() -> Vec<Declared> {
         })
         .collect();
 
+    // ⚠ An attribute belongs to its NEAREST enclosing element, not to
+    // every element above it. The first shape of this walked each
+    // `xs:element` and took `el.descendants()`, which reaches inside a
+    // nested element declaration: `<sce:variant>` inlines
+    // `<sce:peek-byte>` and `<sce:default>`, so the gate reported pairs
+    // like `<sce:variant id>` and `<sce:variant type>` that the grammar
+    // does not declare — and, worse, never formed the real pairs
+    // `<sce:peek-byte id>` and `<sce:default type>`, which fixtures DO
+    // write. A wrong unit both invents work and hides it.
     let mut out = Vec::new();
-    for el in doc.descendants().filter(|n| n.has_tag_name("element")) {
-        let Some(element) = el.attribute("name") else {
+    for a in doc.descendants().filter(|n| n.has_tag_name("attribute")) {
+        let Some(element) = a
+            .ancestors()
+            .filter(|n| n.has_tag_name("element"))
+            .find_map(|n| n.attribute("name"))
+        else {
+            // A global declaration, whose owner is whichever element
+            // `ref`s it — handled at the use site below.
             continue;
         };
-        for a in el.descendants().filter(|n| n.has_tag_name("attribute")) {
-            if let Some(name) = a.attribute("name") {
-                out.push(Declared {
-                    element: element.to_string(),
-                    attribute: name.to_string(),
-                    qualified: false,
-                    xsd_type: strip_prefix(a.attribute("type").unwrap_or("string")),
-                });
-            } else if let Some(r) = a.attribute("ref") {
-                let local = strip_prefix(r);
-                out.push(Declared {
-                    element: element.to_string(),
-                    attribute: local.clone(),
-                    qualified: true,
-                    xsd_type: strip_prefix(
-                        globals.get(local.as_str()).copied().unwrap_or("string"),
-                    ),
-                });
-            }
+        if let Some(name) = a.attribute("name") {
+            out.push(Declared {
+                element: element.to_string(),
+                attribute: name.to_string(),
+                qualified: false,
+                xsd_type: strip_prefix(a.attribute("type").unwrap_or("string")),
+            });
+        } else if let Some(r) = a.attribute("ref") {
+            let local = strip_prefix(r);
+            out.push(Declared {
+                element: element.to_string(),
+                attribute: local.clone(),
+                qualified: true,
+                xsd_type: strip_prefix(globals.get(local.as_str()).copied().unwrap_or("string")),
+            });
         }
     }
     out.sort();
