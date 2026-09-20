@@ -20,6 +20,26 @@ const InvokeFormatter = (function() {
     const DETAIL_PREFIX = '   ↳ ';
 
     /**
+     * Cut a value to a display limit, saying so where it was cut.
+     *
+     * ⚠ The limits above were declared and never read. Every detail line
+     * pushed the attribute whole, so a `finalize` holding an `<assign>`
+     * element — which is what W3C test 234 writes — rendered as one line
+     * wider than the node, over the neighbouring state's text and off the
+     * diagram. The node box is sized from its label, so an uncapped label
+     * is also why the box no longer contains what it draws.
+     *
+     * ⚠⚠ The ellipsis is part of the contract, not decoration. A value
+     * silently cut at 30 characters reads as the value the document holds,
+     * and a reviewer comparing the diagram against the source would be
+     * comparing against something the page invented by omission.
+     */
+    function cut(value, limit) {
+        const text = String(value);
+        return text.length > limit ? `${text.slice(0, limit)}…` : text;
+    }
+
+    /**
      * Check if a value is empty (null, undefined, or empty string)
      * @param {*} value - Value to check
      * @returns {boolean} True if value is empty
@@ -83,7 +103,7 @@ const InvokeFormatter = (function() {
         if (!isEmpty(src)) {
             const isDynamicSrc = isEmpty(invokeData.invokeSrc) && !isEmpty(invokeData.invokeSrcExpr);
             const suffix = isDynamicSrc ? ' (dynamic)' : '';
-            details.push(`${DETAIL_PREFIX}src: ${src}${suffix}`);
+            details.push(`${DETAIL_PREFIX}src: ${cut(src, TRUNCATION.SRC)}${suffix}`);
         }
 
         // W3C SCXML 6.4.2: Content (inline SCXML or dynamic expression)
@@ -91,7 +111,9 @@ const InvokeFormatter = (function() {
             // Show inline content (no truncation)
             details.push(`${DETAIL_PREFIX}content: <scxml...> (inline)`);
         } else if (!isEmpty(invokeData.invokeContentExpr)) {
-            details.push(`${DETAIL_PREFIX}contentexpr: ${invokeData.invokeContentExpr}`);
+            details.push(
+                `${DETAIL_PREFIX}contentexpr: `
+                + `${cut(invokeData.invokeContentExpr, TRUNCATION.CONTENT)}`);
         }
 
         // W3C SCXML 6.4.2: Params (name-value pairs to pass to child)
@@ -102,12 +124,14 @@ const InvokeFormatter = (function() {
                 return `${name}=${expr}`;
             });
             const paramsStr = paramStrs.join(', ');
-            details.push(`${DETAIL_PREFIX}params: ${paramsStr}`);
+            details.push(`${DETAIL_PREFIX}params: ${cut(paramsStr, TRUNCATION.PARAMS)}`);
         }
 
         // W3C SCXML 6.4.1: Namelist (variable names to pass)
         if (!isEmpty(invokeData.invokeNamelist)) {
-            details.push(`${DETAIL_PREFIX}namelist: ${invokeData.invokeNamelist}`);
+            details.push(
+                `${DETAIL_PREFIX}namelist: `
+                + `${cut(invokeData.invokeNamelist, TRUNCATION.NAMELIST)}`);
         }
 
         // W3C SCXML 6.4.1: AutoForward (automatic event forwarding)
@@ -118,7 +142,7 @@ const InvokeFormatter = (function() {
         // W3C SCXML 6.5: Finalize (script to execute when child sends events)
         if (!isEmpty(invokeData.invokeFinalize)) {
             const finalizeContent = invokeData.invokeFinalize.trim();
-            details.push(`${DETAIL_PREFIX}finalize: ${finalizeContent}`);
+            details.push(`${DETAIL_PREFIX}finalize: ${cut(finalizeContent, TRUNCATION.FINALIZE)}`);
         }
 
         return { main, details };

@@ -852,6 +852,58 @@ body {
     color: #ffffff;
 }
 
+/* A limitation of this environment, which is not an error.
+ *
+ * ⚠ Deliberately NOT red. Nothing is wrong with the document or the
+ * engine when a fixture wants an HTTP endpoint a page cannot open, and
+ * dressing that as a failure teaches the reader to distrust the page.
+ *
+ * ⚠⚠ It sits BELOW the fatal banner rather than at the top, because the
+ * two appear together: the notice is written when the document loads and
+ * the failure follows when the run reaches the expression. A first
+ * version gave both `top: 0` and claimed in this comment that they could
+ * not overlap — they did, and the notice was the one underneath, so the
+ * sentence explaining the failure was hidden by the failure. The offset
+ * is the fatal banner's own height at one line of text plus its border. */
+.environment-notice-banner {
+    position: fixed;
+    top: 52px;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 18px;
+    background: #fff8c5;
+    border-bottom: 2px solid #9a6700;
+    color: #4d2d00;
+    font-size: 14px;
+    line-height: 1.5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.environment-notice-message {
+    flex: 1;
+    user-select: text;
+}
+
+.environment-notice-dismiss {
+    flex: none;
+    padding: 6px 14px;
+    border: 1px solid #9a6700;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #9a6700;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.environment-notice-dismiss:hover {
+    background: #9a6700;
+    color: #ffffff;
+}
+
 /* One arrow may stand for several transitions — the link builder merges the
  * ones sharing a pair of states. These two rules are what tells a reader
  * that, so they are not decoration: without the rule, two alternatives read

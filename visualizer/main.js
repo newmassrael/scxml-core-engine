@@ -36,6 +36,20 @@ async function loadSCXMLContent() {
         const resourcesPrefix = getResourcesPath();
         const environment = getEnvironmentName();
 
+        // ⚠ Said BEFORE the run, not after it. A fixture the registry marks
+        // `harness: "http"` needs an endpoint this page cannot open, and
+        // without this the reader met the limitation as `Failed to evaluate
+        // expression: _ioprocessors['basichttp'].location` — a true sentence
+        // about a symbol, from which the environment has to be guessed. The
+        // document still loads and still draws: refusing to show it would
+        // hide a diagram that is perfectly readable.
+        const limitation = typeof testEnvironmentLimitation === 'function'
+            ? testEnvironmentLimitation(testId)
+            : null;
+        if (limitation) {
+            showEnvironmentNotice(limitation);
+        }
+
         const url = `${resourcesPrefix}/${testId}/test${testId}.scxml`;
         logger.debug(`Loading W3C test ${testId} from ${url} (${environment})`);
 
@@ -503,6 +517,46 @@ function showLoading(show) {
     if (mainContent) {
         mainContent.style.display = show ? 'none' : 'block';
     }
+}
+
+/**
+ * Say what this environment cannot do, before it fails to do it.
+ *
+ * ⚠ NOT an error, and styled apart from one. Nothing is wrong with the
+ * document or with the engine: the page simply cannot provide what the
+ * document asks for. Reported through the same in-page banner mechanism
+ * as `showFatalError` and for the same reason — a modal would block the
+ * reader from copying the text or looking at the URL that produced it.
+ */
+function showEnvironmentNotice(message) {
+    console.info(`[ENVIRONMENT] ${message}`);
+
+    const existing = document.getElementById('environment-notice-banner');
+    if (existing) {
+        existing.remove();
+    }
+
+    const banner = document.createElement('div');
+    banner.id = 'environment-notice-banner';
+    banner.className = 'environment-notice-banner';
+    // `status`, not `alert`: a screen reader should mention this when it
+    // reaches it, not interrupt whatever the reader is doing.
+    banner.setAttribute('role', 'status');
+
+    const text = document.createElement('div');
+    text.className = 'environment-notice-message';
+    // textContent for the reason `showFatalError` uses it: the message can
+    // quote a document, and a document must not become markup on its way in.
+    text.textContent = message;
+
+    const dismiss = document.createElement('button');
+    dismiss.className = 'environment-notice-dismiss';
+    dismiss.textContent = 'Dismiss';
+    dismiss.addEventListener('click', () => banner.remove());
+
+    banner.appendChild(text);
+    banner.appendChild(dismiss);
+    document.body.appendChild(banner);
 }
 
 /**
