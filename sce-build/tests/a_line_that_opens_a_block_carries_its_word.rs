@@ -92,6 +92,8 @@ fn every_line_that_opens_a_block_carries_its_word() {
 
     let mut documents = 0usize;
     let mut openers = 0usize;
+    let mut lines = 0usize;
+    let mut lines_with_a_word = 0usize;
     let mut wordless: Vec<String> = Vec::new();
 
     for path in &files {
@@ -130,6 +132,10 @@ fn every_line_that_opens_a_block_carries_its_word() {
 
         documents += 1;
         for (i, node) in nodes.iter().enumerate() {
+            lines += 1;
+            if node.parts.iter().any(|p| matches!(p, Part::Word(_))) {
+                lines_with_a_word += 1;
+            }
             if !opens_a_block(&nodes, i) {
                 continue;
             }
@@ -146,6 +152,8 @@ fn every_line_that_opens_a_block_carries_its_word() {
     println!("documents rendered   : {documents}");
     println!("lines opening a block: {openers}");
     println!("of those, wordless   : {}", wordless.len());
+    println!("lines on those pages : {lines}");
+    println!("of those, with a word: {lines_with_a_word}");
 
     // Two floors. The first catches a sweep that rendered nothing; the
     // second catches a page shape that stopped having blocks at all,
@@ -158,6 +166,21 @@ fn every_line_that_opens_a_block_carries_its_word() {
         openers > 0,
         "no line opens a block anywhere in the corpus, so this case is \
          green about nothing"
+    );
+
+    // ⚠ A FIGURE, not a ceiling — and the difference is the point. A
+    // wordless line is not a defect on its own: `red` under an enum is
+    // one value and nothing else, and a shape has nothing to say about
+    // it. What the figure answers is how far a LEXICON reaches, which
+    // no other case asks: a page whose lines are mostly text is a page
+    // that reads almost the same in every language while every test
+    // here stays green. The floor below is the only part that can be
+    // asserted without inventing an allowlist of legitimately wordless
+    // lines — which is the hand-listed scope this family keeps finding.
+    assert!(
+        lines_with_a_word > 0,
+        "not one line on any page carries a word, so no lexicon reaches \
+         the corpus at all"
     );
 
     assert!(
