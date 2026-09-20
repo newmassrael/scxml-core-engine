@@ -2100,12 +2100,18 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
             // way round, an array containing ` index ` would decide
             // where the line breaks — and 8 foreach in this tree do
             // carry both an array and an index.
-            let mut head = format!("foreach {}", text(&a.item));
+            let mut head = vec![
+                Part::Word(Word::Foreach),
+                Part::Text(text(&a.item).into_owned()),
+            ];
             if !a.index.is_empty() {
-                let _ = write!(head, " index {}", text(&a.index));
+                head.push(Part::Word(Word::Index));
+                head.push(Part::Text(text(&a.index).into_owned()));
             }
-            let _ = write!(head, " in {}", text(&a.array));
-            out.line(&format!("{head}:"));
+            head.push(Part::Word(Word::In));
+            head.push(Part::Text(text(&a.array).into_owned()));
+            head.push(Part::Glued(":".into()));
+            out.line_of(head);
             out.nested(|out| {
                 for inner in &a.actions {
                     render_scxml_action(inner, out);
@@ -2125,14 +2131,20 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
                     // `<foreach>`'s body. An `<if>` has none, and rendering
                     // an empty one would emit a headless indent.
                     BlockRole::Body => continue,
-                    BlockRole::Then => format!("if {}:", text(&a.cond)),
-                    BlockRole::ElseIf => {
-                        format!("elif {}:", text(block.cond.unwrap_or_default()))
-                    }
+                    BlockRole::Then => vec![
+                        Part::Word(Word::If),
+                        Part::Text(text(&a.cond).into_owned()),
+                        Part::Glued(":".into()),
+                    ],
+                    BlockRole::ElseIf => vec![
+                        Part::Word(Word::Elif),
+                        Part::Text(text(block.cond.unwrap_or_default()).into_owned()),
+                        Part::Glued(":".into()),
+                    ],
                     BlockRole::Else if block.actions.is_empty() => continue,
-                    BlockRole::Else => "else:".to_string(),
+                    BlockRole::Else => vec![Part::Word(Word::Else), Part::Glued(":".into())],
                 };
-                out.line(&head);
+                out.line_of(head);
                 out.nested(|out| {
                     for inner in block.actions {
                         render_scxml_action(inner, out);

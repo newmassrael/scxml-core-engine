@@ -138,6 +138,8 @@ pub enum Word {
     Unhandled,
     NoTarget,
     NativeGuard,
+    Index,
+    Elif,
 }
 
 impl Word {
@@ -219,6 +221,8 @@ impl Word {
         Word::Unhandled,
         Word::NoTarget,
         Word::NativeGuard,
+        Word::Index,
+        Word::Elif,
     ];
 }
 
@@ -324,6 +328,8 @@ fn en_word(w: Word) -> &'static str {
         // leave the one clause a reviewer most needs to read untranslated.
         Word::NoTarget => "(no target)",
         Word::NativeGuard => "native-guard",
+        Word::Index => "index",
+        Word::Elif => "elif",
     }
 }
 
