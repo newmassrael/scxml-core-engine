@@ -1317,18 +1317,24 @@ fn num(v: f64) -> String {
 fn render_filter(m: &FilterModel) -> String {
     let mut out = Out::new();
     let kind = match m.filter_type {
-        FilterType::MovingAverage => "moving-average",
-        FilterType::LowPass => "low-pass",
-        FilterType::Debounce => "debounce",
+        FilterType::MovingAverage => Word::MovingAverage,
+        FilterType::LowPass => Word::LowPass,
+        FilterType::Debounce => Word::Debounce,
     };
-    let mut head = format!("filter {} {}", text(&m.name), kind);
+    let mut head = vec![
+        Part::Word(Word::Filter),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(kind),
+    ];
     if let Some(w) = m.window {
-        let _ = write!(head, " window {w}");
+        head.push(Part::Word(Word::Window));
+        head.push(Part::Text(w.to_string()));
     }
     if let Some(a) = m.alpha {
-        let _ = write!(head, " alpha {}", num(a));
+        head.push(Part::Word(Word::Alpha));
+        head.push(Part::Text(num(a)));
     }
-    out.line(&head);
+    out.line_of(head);
     out.nested(|out| {
         render_field(&m.input, out);
         render_field(&m.output, out);
@@ -1338,11 +1344,20 @@ fn render_filter(m: &FilterModel) -> String {
 
 fn render_observer(m: &ObserverModel) -> String {
     let mut out = Out::new();
-    let mut head = format!("observer {}", text(&m.name));
+    // ⚠ The first composite head taken apart. `write!`-ing clause after
+    // clause onto one string is what let a value decide where a clause
+    // ended — the `while` head was doing exactly that. As parts, a
+    // clause is a word and its value, and a value carrying the next
+    // clause's word cannot move the boundary.
+    let mut head = vec![
+        Part::Word(Word::Observer),
+        Part::Text(text(&m.name).into_owned()),
+    ];
     if let Some(d) = &m.event_domain {
-        let _ = write!(head, " domain {}", text(d));
+        head.push(Part::Word(Word::Domain));
+        head.push(Part::Text(text(d).into_owned()));
     }
-    out.line(&head);
+    out.line_of(head);
     out.nested(|out| {
         for f in &m.inputs {
             render_field(f, out);

@@ -89,6 +89,19 @@ pub enum Word {
     Arg,
     From,
     Expr,
+    Observer,
+    Domain,
+    Filter,
+    /// ⚠ A kind name the grammar spends, not a value the document
+    /// wrote: `moving-average` is this vocabulary's word for a filter
+    /// shape, so a lexicon names it like any other. Leaving it a
+    /// literal would have left a page half-translated for no reason a
+    /// reader could see.
+    MovingAverage,
+    LowPass,
+    Debounce,
+    Window,
+    Alpha,
 }
 
 impl Word {
@@ -126,6 +139,14 @@ impl Word {
         Word::Arg,
         Word::From,
         Word::Expr,
+        Word::Observer,
+        Word::Domain,
+        Word::Filter,
+        Word::MovingAverage,
+        Word::LowPass,
+        Word::Debounce,
+        Word::Window,
+        Word::Alpha,
     ];
 }
 
@@ -177,6 +198,14 @@ fn en_word(w: Word) -> &'static str {
         Word::Arg => "arg",
         Word::From => "from",
         Word::Expr => "expr",
+        Word::Observer => "observer",
+        Word::Domain => "domain",
+        Word::Filter => "filter",
+        Word::MovingAverage => "moving-average",
+        Word::LowPass => "low-pass",
+        Word::Debounce => "debounce",
+        Word::Window => "window",
+        Word::Alpha => "alpha",
     }
 }
 
