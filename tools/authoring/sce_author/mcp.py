@@ -1,6 +1,6 @@
-"""An MCP server over stdio, exposing the three things this core can do.
+"""An MCP server over stdio, exposing what this core can do.
 
-⚠ **It does not write the document.** The three tools hand a model the
+⚠ **It does not write the document.** The tools hand a model the
 materials and then judge what it wrote; the writing is the model's. That split
 is not a limitation waiting to be removed, it is the measured result: a
 mechanical translator built against the same corpus reached 6 of 17 cases on a
@@ -14,7 +14,15 @@ So the shape a caller gets is:
                number of sources in any format there is a reader for
     questions  what the specification does not answer, which is the half a
                writer cannot discover by reading harder
+    review     whether the PACK those two rest on is worth resting on
     check      whether what was written can reach the platform at all
+    verify     whether it BEHAVES, by running it
+
+⚠⚠ `review` reached this transport later than the rest, and the gap is worth
+recording rather than quietly closing: a caller reaching this core over MCP
+had no way to ask whether the pack it was being answered from was any good,
+which is the first thing to ask when the pack is new or hand-written. Every
+other tool here trusts it silently.
 
 JSON-RPC 2.0, one message per line, no dependencies beyond the core's own.
 A transport is not a place for cleverness: it parses, dispatches, and turns
@@ -36,6 +44,7 @@ from .pack import load_pack
 from .verify import verify as run_verify
 from .prose import load_prose
 from .questions import ask
+from .review import review as run_review
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "sce-author"
@@ -92,6 +101,28 @@ TOOLS = [
                     "description": "Return only this class.",
                 },
             },
+        },
+    },
+    {
+        "name": "review",
+        "description": (
+            "Measure the PACK, before trusting anything the other tools say "
+            "about a document. Every other answer here compares a document "
+            "against the pack, so none of them can be more right than the "
+            "pack is -- and the pack was written by whoever owns the "
+            "platform, by hand or by a converter nothing here has ever run. "
+            "Reports the share of the prose the subject partition attributes, "
+            "how many addresses the text never writes under any spelling the "
+            "pack gives them, how many output positions no example expects, "
+            "and the shapes that cannot be right whatever the platform turns "
+            "out to be. It gives figures and refuses a verdict: 'correct' is "
+            "not something a claim about an absent platform can be told. Call "
+            "it FIRST when the pack is new or hand-written."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["pack", "prose"],
+            "properties": {"pack": _PACK_ARG, "prose": _PROSE_ARG},
         },
     },
     {
@@ -216,6 +247,37 @@ def call_tool(name: str, args: dict) -> dict:
                 "counts": {k: sum(1 for q in found if q.kind == k)
                            for k in sorted({q.kind for q in found})},
                 "questions": [q.as_dict() for q in found],
+            }
+            return _text(json.dumps(payload, ensure_ascii=False, indent=1))
+
+        if name == "review":
+            pack = load_pack(_pack_arg(args))
+            prose = load_prose(_prose_arg(args))
+            got = run_review(pack, prose)
+            # ⚠ The same shape `questions` uses, and for the same reason: a
+            # model reads it and a program parses it, and the second needs to
+            # know which shape it got. `alarms` is kept apart from the figures
+            # because it is the only part that claims anything -- everything
+            # beside it is a count somebody still has to interpret.
+            payload = {
+                "version": 1,
+                "figures": {
+                    "addresses": got.addresses,
+                    "outputs": got.outputs,
+                    "single_spelling": got.single_spelling,
+                    "never_written_in_the_prose": len(got.unmentioned),
+                    "prose_attributed": round(got.attribution, 3),
+                    "blocks": got.blocks_built,
+                    "blocks_of_one_or_two_lines": got.thin_blocks,
+                    "has_examples": got.has_examples,
+                    "driven_but_undeclared": got.driven_undeclared,
+                    "output_positions_expected": got.asserted_outputs,
+                    "output_positions_never_expected":
+                        len(got.unasserted_outputs),
+                },
+                "unmentioned": sorted(got.unmentioned),
+                "never_expected": got.unasserted_outputs,
+                "alarms": got.alarms(),
             }
             return _text(json.dumps(payload, ensure_ascii=False, indent=1))
 

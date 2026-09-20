@@ -71,7 +71,38 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertEqual(mcp.PROTOCOL_VERSION, replies[0]["result"]["protocolVersion"])
         self.assertIn("tools", replies[0]["result"]["capabilities"])
         names = {t["name"] for t in replies[1]["result"]["tools"]}
-        self.assertEqual({"brief", "questions", "check", "verify"}, names)
+        self.assertEqual({"brief", "questions", "review", "check", "verify"},
+                         names)
+
+    def test_the_two_surfaces_offer_the_same_commands(self):
+        """⚠ THE CASE THAT WOULD HAVE CAUGHT `review` BEING MISSING HERE.
+
+        A command exists twice -- once on the command line and once over this
+        transport -- and nothing tied the two together, so one was added to
+        the first and forgotten on the second. What it cost is the shape that
+        matters: a caller reaching this core over MCP had no way to ask
+        whether the pack it was being answered from was any good, which is the
+        first question when a pack is new or hand-written, and every other
+        tool trusts that pack silently.
+
+        The list above is written out by hand on purpose -- two tests that
+        derive the same set from the same place agree with each other and say
+        nothing. This one derives the CLI's half from the CLI.
+        """
+        import ast
+
+        source = (pathlib.Path(mcp.__file__).parent / "__main__.py").read_text(
+            encoding="utf-8")
+        commands = set()
+        for node in ast.walk(ast.parse(source)):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "add_parser"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)):
+                commands.add(node.args[0].value)
+        self.assertTrue(commands, "no subcommands found -- the scan is broken")
+        self.assertEqual(commands, {t["name"] for t in mcp.TOOLS})
 
     def test_a_notification_is_answered_with_silence(self):
         """Replying to a notification is a protocol error, and the client that
@@ -150,6 +181,20 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         for q in payload["questions"]:
             self.assertNotIn("line", q)
             self.assertNotIn("file", q)
+
+    def test_review_answers_with_figures_and_its_alarms_apart(self):
+        """The figures are counts somebody still has to interpret; `alarms` is
+        the only part that claims anything. A caller that folded them together
+        would read "attribution 0.31" as a complaint.
+        """
+        result = self.call("review", pack=str(self.pack_dir),
+                           prose=[str(self.spec)])
+        payload = json.loads(result["content"][0]["text"])
+        self.assertEqual(1, payload["version"])
+        self.assertIn("prose_attributed", payload["figures"])
+        self.assertIn("output_positions_never_expected", payload["figures"])
+        self.assertIsInstance(payload["alarms"], list)
+        self.assertGreater(payload["figures"]["addresses"], 0)
 
     def test_check_reports_a_refusal_as_an_error_result(self):
         broken = dict(BINDING)
