@@ -1005,7 +1005,10 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 ]);
                 out.nested(|out| {
                     for a in args {
-                        out.line(&format!("arg {}", text(a)));
+                        out.line_of(vec![
+                            Part::Word(Word::Arg),
+                            Part::Text(text(a).into_owned()),
+                        ]);
                     }
                 });
             }
@@ -1034,7 +1037,10 @@ fn render_test_vector(tv: &TestVector, out: &mut Out<'_>) {
     // the rendering total and keeps the strip list at exactly one key;
     // the alternative — a second key in the strip list — is the
     // hand-kept exclusion list this design exists to avoid.
-    out.line(&format!("test 0x{hex} -> {value} @line {}", tv.source_line));
+    out.line_of(vec![
+        Part::Word(Word::Test),
+        Part::Text(format!("0x{hex} -> {value} @line {}", tv.source_line)),
+    ]);
 }
 
 // ── Procedure ──────────────────────────────────────────────────
@@ -1169,7 +1175,10 @@ fn render_state(s: &ProcedureState, out: &mut Out<'_>) {
             render_transition(t, out);
         }
         for p in &s.done_params {
-            out.line(&format!("done {} = {}", text(&p.name), text(&p.expr)));
+            out.line_of(vec![
+                Part::Word(Word::Done),
+                Part::Text(format!("{} = {}", text(&p.name), text(&p.expr))),
+            ]);
         }
     });
 }
@@ -1220,7 +1229,10 @@ fn render_condition(m: &ConditionModel) -> Vec<Node> {
         for f in &m.inputs {
             render_field(f, out);
         }
-        out.line(&format!("when {}", text(&m.expr)));
+        out.line_of(vec![
+            Part::Word(Word::When),
+            Part::Text(text(&m.expr).into_owned()),
+        ]);
     });
     out.nodes
 }
@@ -1795,7 +1807,10 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                         out.line(&format!("target srcexpr {}", text(srcexpr)))
                     }
                 }
-                out.line(&format!("event {}", text(&i.mesh_event)));
+                out.line_of(vec![
+                    Part::Word(Word::Event),
+                    Part::Text(text(&i.mesh_event).into_owned()),
+                ]);
                 if let Some(d) = i.deadline_ms {
                     out.line(&format!("deadline {d}ms"));
                 }
@@ -2029,15 +2044,23 @@ fn render_donedata(d: &crate::model::DoneData, out: &mut Out<'_>) {
         }
         match &d.content {
             crate::model::DoneDataContent::None => {}
-            crate::model::DoneDataContent::Expression(e) => {
-                out.line(&format!("content expr {}", text(e)))
-            }
-            crate::model::DoneDataContent::InlineText(e) => {
-                out.line(&format!("content text {}", text(e)))
-            }
-            crate::model::DoneDataContent::Literal(e) => {
-                out.line(&format!("content literal {}", text(e)))
-            }
+            crate::model::DoneDataContent::Expression(e) => out.line_of(vec![
+                Part::Word(Word::Content),
+                Part::Word(Word::Expr),
+                Part::Text(text(e).into_owned()),
+            ]),
+            // ⚠ `text` and `literal` stay inside the value for now: they
+            // are grammar words with no `Word` yet, and inventing one in
+            // the same edit as a mechanical migration would hide a
+            // vocabulary decision inside a refactor.
+            crate::model::DoneDataContent::InlineText(e) => out.line_of(vec![
+                Part::Word(Word::Content),
+                Part::Text(format!("text {}", text(e))),
+            ]),
+            crate::model::DoneDataContent::Literal(e) => out.line_of(vec![
+                Part::Word(Word::Content),
+                Part::Text(format!("literal {}", text(e))),
+            ]),
         }
     });
 }
@@ -2119,7 +2142,10 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
                 out.line_of(vec![Part::Word(Word::Log), Part::Glued(":".into())]);
                 out.nested(|out| {
                     out.line(&format!("label {}", text(&a.label)));
-                    out.line(&format!("expr {}", text(&a.expr)));
+                    out.line_of(vec![
+                        Part::Word(Word::Expr),
+                        Part::Text(text(&a.expr).into_owned()),
+                    ]);
                 });
             }
         },
