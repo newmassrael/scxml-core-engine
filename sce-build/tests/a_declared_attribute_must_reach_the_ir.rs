@@ -65,6 +65,65 @@ fn repo_root() -> PathBuf {
 }
 
 /// Every (element, attribute) pair `sce-forge-ext.xsd` declares.
+/// What each named `xs:simpleType` enumerates, if it enumerates
+/// anything.
+///
+/// ⚠ This is the grammar answering "what else is allowed here", and it
+/// is why a named type needs no arm in [`mutate`]. `sceType`,
+/// `kindType` and `tlvTerminateOnType` were each reported as having "no
+/// mechanical second value" while the XSD listed every value they
+/// accept three lines from where the attribute was declared.
+///
+/// A union's `memberTypes` is followed one hop, because
+/// `sceTypeOrEnumRef` is a union over `sce:sceType` and a pattern —
+/// without the hop, a type whose members are entirely enumerated looks
+/// unenumerated.
+fn enumerations() -> BTreeMap<String, Vec<String>> {
+    let path = repo_root().join("schemas/sce-forge-ext.xsd");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return BTreeMap::new();
+    };
+    let Ok(doc) = roxmltree::Document::parse(&text) else {
+        return BTreeMap::new();
+    };
+
+    let mut direct: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut members: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for st in doc.descendants().filter(|n| n.has_tag_name("simpleType")) {
+        let Some(name) = st.attribute("name") else {
+            continue;
+        };
+        let values: Vec<String> = st
+            .descendants()
+            .filter(|n| n.has_tag_name("enumeration"))
+            .filter_map(|n| n.attribute("value").map(str::to_string))
+            .collect();
+        direct.insert(name.to_string(), values);
+        let referenced: Vec<String> = st
+            .descendants()
+            .filter(|n| n.has_tag_name("union"))
+            .filter_map(|n| n.attribute("memberTypes"))
+            .flat_map(|m| m.split_whitespace())
+            .map(strip_prefix)
+            .collect();
+        members.insert(name.to_string(), referenced);
+    }
+
+    let mut out = direct.clone();
+    for (name, refs) in &members {
+        for r in refs {
+            if let Some(extra) = direct.get(r) {
+                out.entry(name.clone()).or_default().extend(extra.clone());
+            }
+        }
+    }
+    for v in out.values_mut() {
+        v.sort();
+        v.dedup();
+    }
+    out
+}
+
 fn declared_pairs() -> Vec<Declared> {
     let path = repo_root().join("schemas/sce-forge-ext.xsd");
     let text =
@@ -152,51 +211,191 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
 /// Deliberately narrow: a mutant the document rejects proves nothing, so
 /// a type whose value space this test cannot reason about is reported
 /// unmeasured rather than guessed at.
-fn mutate(xsd_type: &str, current: &str) -> Option<String> {
+fn mutate(xsd_type: &str, current: &str, enums: &BTreeMap<String, Vec<String>>) -> Option<String> {
+    // The grammar first. A type that lists what it accepts has already
+    // written the second value, and reaching for a shape rule instead
+    // would invent one the type forbids.
+    if let Some(values) = enums.get(xsd_type) {
+        if let Some(other) = values.iter().find(|v| v.as_str() != current.trim()) {
+            return Some(other.clone());
+        }
+    }
     match xsd_type {
-        "positiveInteger" => Some(match current.trim().parse::<u64>() {
-            Ok(n) if n < u32::MAX as u64 => (n + 1).to_string(),
-            _ => return None,
-        }),
-        "nonNegativeInteger" => Some(match current.trim().parse::<u64>() {
-            Ok(n) if n < u32::MAX as u64 => (n + 1).to_string(),
-            _ => return None,
-        }),
+        "positiveInteger" | "nonNegativeInteger" | "integer" => {
+            Some(match current.trim().parse::<u64>() {
+                Ok(n) if n < u32::MAX as u64 => (n + 1).to_string(),
+                _ => return None,
+            })
+        }
         "boolean" => match current.trim() {
             "true" => Some("false".to_string()),
             "false" => Some("true".to_string()),
             _ => None,
         },
-        // A free-text value: lengthen it. The mutant stays well-formed
-        // and stays inside `xs:string`, so a rejection downstream is a
-        // real answer about that attribute (it names something, and the
-        // name no longer resolves) rather than an artefact of the
-        // mutation — which is why a rejection is reported as unmeasured
-        // rather than counted either way.
-        "string" => Some(format!("{}z", current)),
+        // A free-text value, where the grammar has told us nothing
+        // about the value space.
+        //
+        // ⚠ `xs:string` here is the grammar being loose, not the value
+        // being free. Measured 2026-09-20: of 31 attributes whose
+        // mutant the parser refused, most were declared `xs:string` and
+        // carry a hex literal, a rational or a decimal-or-hex integer —
+        // the parser enforces a value space the XSD does not state. So
+        // when the type says nothing, the VALUE is the only evidence
+        // available, and the mutation follows its shape. That is not a
+        // per-attribute list: nothing here names an attribute.
+        "string" => Some(mutate_by_shape(current)),
         // An XML name: prefixing keeps it an NCName. Suffixing would
         // too, but a prefix also moves a value that some readers
         // compare by suffix.
         "NCName" | "ID" | "IDREF" | "token" => Some(format!("z{}", current.trim())),
-        _ => None,
+        // A named type the grammar neither enumerates nor this function
+        // knows — `paramNameType` is a pattern, `bitSizeType` a union
+        // over integers. Following the value's shape is a guess, and a
+        // wrong guess is reported as "the XSD refused the mutant" with
+        // the validator's words. That is strictly more than the `None`
+        // this arm used to answer, which said only that the test had
+        // not tried.
+        _ => Some(mutate_by_shape(current)),
+    }
+}
+
+/// A second value of whatever shape this one has.
+///
+/// Only reached for `xs:string`, where the declared type says nothing.
+/// Each arm keeps the value inside the shape it arrived in, so the
+/// mutant is a *different* value of the same kind rather than a
+/// corrupted one — the difference between measuring an attribute and
+/// measuring the parser's error path.
+///
+/// ⚠ A reference is deliberately NOT special-cased. `sce:count`,
+/// `sce:length-field`, `sce:present-if` and `<sce:variant tag>` name
+/// something declared elsewhere in the document, and any second value
+/// this function invents fails to resolve. Pointing them at another
+/// declared name would need per-attribute knowledge of what they point
+/// AT, which is the hand-written map this file exists without. They
+/// stay unmeasured, and now say why in the parser's own words.
+fn mutate_by_shape(current: &str) -> String {
+    let v = current.trim();
+
+    // `0x` hex literal: keep the prefix and the digit count.
+    if let Some(digits) = v.strip_prefix("0x").or_else(|| v.strip_prefix("0X")) {
+        if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_hexdigit()) {
+            if let Ok(n) = u128::from_str_radix(digits, 16) {
+                return format!("0x{:0width$X}", n.wrapping_add(1), width = digits.len());
+            }
+        }
+    }
+
+    // A bare hex string, as a byte payload is written. Flipping the
+    // last digit keeps both the hex alphabet and the even length that
+    // a byte string needs.
+    if v.len() >= 2 && v.len().is_multiple_of(2) && v.chars().all(|c| c.is_ascii_hexdigit()) {
+        let (head, last) = v.split_at(v.len() - 1);
+        let next = match last {
+            "f" => "e",
+            "F" => "E",
+            other => match u8::from_str_radix(other, 16) {
+                Ok(d) => return format!("{head}{:x}", d + 1),
+                Err(_) => other,
+            },
+        };
+        return format!("{head}{next}");
+    }
+
+    if let Ok(n) = v.parse::<i64>() {
+        return n.saturating_add(1).to_string();
+    }
+
+    // A rational, as a scale or an offset is written. `+ 1` rather than
+    // a digit edit, so the result is still a rational and still parses.
+    if v.contains('.') {
+        if let Ok(f) = v.parse::<f64>() {
+            return format!("{}", f + 1.0);
+        }
+    }
+
+    format!("{v}z")
+}
+
+/// Why a document did not become an IR, in the words of whatever
+/// refused it.
+///
+/// ⚠ One variant per REFUSER, not one for "rejected". Everything behind
+/// `parse_to_ir` used to answer `None`, so a mutant the XSD turned away
+/// and a mutant the parser turned away were reported identically — and
+/// they mean opposite things. An XSD rejection says the mutation left
+/// the attribute's declared type, which is this file's own fault and
+/// fixable in [`mutate`]. A parser rejection with the XSD content says
+/// the value is inside the declared type and the parser refuses it
+/// anyway, which is a constraint the grammar does not express: a
+/// finding about the tree rather than about the test.
+enum NoIr {
+    /// `expand_preprocessors` refused the text.
+    Preprocessor(String),
+    /// `schemas/sce-forge.xsd` refused it.
+    Xsd(String),
+    /// The XSD was content and the forge parser refused it.
+    Parser(String),
+    /// A well-formed document that is not a forge kind at all.
+    NotForge,
+}
+
+impl NoIr {
+    /// One line, naming the refuser and quoting it.
+    ///
+    /// ⚠ The refuser's own words, shortened but never replaced. A
+    /// refusal that does not say why sends the next reader to guess,
+    /// and the guess is what goes stale.
+    fn say(&self) -> String {
+        let brief = |s: &str| {
+            let one = s.lines().next().unwrap_or("").trim();
+            match one.char_indices().nth(140) {
+                Some((cut, _)) => format!("{}…", &one[..cut]),
+                None => one.to_string(),
+            }
+        };
+        match self {
+            Self::Preprocessor(m) => format!("the preprocessor refused the mutant: {}", brief(m)),
+            Self::Xsd(m) => format!(
+                "the XSD refused the mutant, so the mutation left the declared \
+                 type — mutate() owes this type a better second value: {}",
+                brief(m)
+            ),
+            Self::Parser(m) => format!(
+                "XSD accepted the mutant and the PARSER refused it, so the grammar \
+                 does not express what the parser requires: {}",
+                brief(m)
+            ),
+            Self::NotForge => "the fixture is not a forge document".to_string(),
+        }
     }
 }
 
 /// Parse a document the way every forge review artefact does.
-fn parse_to_ir(text: &str, label_stem: &str, dir: Option<&Path>) -> Option<String> {
-    let expanded = sce_build::parser::expand_preprocessors(text, label_stem, dir, &[]).ok()?;
+fn parse_to_ir(text: &str, label_stem: &str, dir: Option<&Path>) -> Result<String, NoIr> {
+    let expanded = sce_build::parser::expand_preprocessors(text, label_stem, dir, &[])
+        .map_err(|e| NoIr::Preprocessor(e.to_string()))?;
     let label = DocumentLabel {
         identifier: label_stem,
         diagnostic_label: label_stem,
     };
-    let parsed = sce_build::forge::parser::parse_forge_with_imports(&expanded.0, label).ok()??;
+    // Asked SEPARATELY, and before the parser, because the parser runs
+    // this same validation as its own first step and then answers with
+    // one error type for both. Asking here is the only way to know
+    // which of the two turned a mutant away.
+    if let Err(e) = sce_build::forge::xsd_validator::validate_or_skip(&expanded.0, label_stem) {
+        return Err(NoIr::Xsd(e.to_string()));
+    }
+    let parsed = sce_build::forge::parser::parse_forge_with_imports(&expanded.0, label)
+        .map_err(|e| NoIr::Parser(e.to_string()))?
+        .ok_or(NoIr::NotForge)?;
     // The WHOLE envelope, not `parsed.document`. Measured while writing
     // this file: comparing the document alone reported `<sce:import src>`
     // and `<sce:import as>` as unread, because an import's attributes
     // land in `parsed.imports` — a defect in the comparison, not in the
     // parser. A partial view of the IR makes every field outside it look
     // dropped.
-    serde_json::to_string(&parsed).ok()
+    serde_json::to_string(&parsed).map_err(|e| NoIr::Parser(e.to_string()))
 }
 
 /// Every element `sce-forge-ext.xsd` declares.
@@ -271,7 +470,7 @@ fn every_sce_element_a_document_carries_is_named_by_the_grammar() {
         // surface — it never got that far. Deciding this from the
         // document itself keeps negative fixtures out without a list of
         // their names.
-        if parse_to_ir(&text, stem, path.parent()).is_none() {
+        if parse_to_ir(&text, stem, path.parent()).is_err() {
             continue;
         }
         accepted += 1;
@@ -322,6 +521,12 @@ fn every_sce_element_a_document_carries_is_named_by_the_grammar() {
 fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
     let declared = declared_pairs();
     let files = fixture_files();
+    let enums = enumerations();
+    assert!(
+        enums.values().any(|v| v.len() > 1),
+        "the grammar reader found no enumerated type, so every named type will \
+         fall back to a guess about its value — the XSD moved, or this reader did"
+    );
     assert!(
         !declared.is_empty() && !files.is_empty(),
         "nothing to measure: {} declared pair(s), {} fixture(s) — a sweep \
@@ -334,7 +539,7 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
     // byte range of the value to splice.
     let mut not_read: Vec<String> = Vec::new();
     let mut measured: BTreeSet<(String, String)> = BTreeSet::new();
-    let mut unmeasured: BTreeMap<String, &'static str> = BTreeMap::new();
+    let mut unmeasured: BTreeMap<String, String> = BTreeMap::new();
 
     for d in &declared {
         let key = format!(
@@ -344,10 +549,10 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
             d.attribute
         );
 
-        let Some(replacement) = try_each_fixture(d, &files, &mut unmeasured, &key) else {
+        let Some(replacement) = try_each_fixture(d, &files, &enums, &mut unmeasured, &key) else {
             unmeasured
                 .entry(key.clone())
-                .or_insert("no fixture writes it");
+                .or_insert_with(|| "no fixture writes it".to_string());
             continue;
         };
         let (path, before_text, range, new_value, before_ir) = replacement;
@@ -358,9 +563,12 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("fixture");
-        let Some(after_ir) = parse_to_ir(&after_text, stem, path.parent()) else {
-            unmeasured.insert(key.clone(), "the mutant was rejected");
-            continue;
+        let after_ir = match parse_to_ir(&after_text, stem, path.parent()) {
+            Ok(ir) => ir,
+            Err(why) => {
+                unmeasured.insert(key.clone(), why.say());
+                continue;
+            }
         };
 
         measured.insert((d.element.clone(), d.attribute.clone()));
@@ -404,7 +612,8 @@ type Candidate = (PathBuf, String, std::ops::Range<usize>, String, String);
 fn try_each_fixture(
     d: &Declared,
     files: &[PathBuf],
-    unmeasured: &mut BTreeMap<String, &'static str>,
+    enums: &BTreeMap<String, Vec<String>>,
+    unmeasured: &mut BTreeMap<String, String>,
     key: &str,
 ) -> Option<Candidate> {
     for path in files {
@@ -427,17 +636,21 @@ fn try_each_fixture(
                     }
             });
             let Some(attr) = attr else { continue };
-            let Some(new_value) = mutate(&d.xsd_type, attr.value()) else {
-                unmeasured
-                    .entry(key.to_string())
-                    .or_insert("no mechanical second value for its type");
+            let Some(new_value) = mutate(&d.xsd_type, attr.value(), enums) else {
+                unmeasured.entry(key.to_string()).or_insert_with(|| {
+                    format!(
+                        "no mechanical second value for xs:{} — mutate() does not \
+                         know this type",
+                        d.xsd_type
+                    )
+                });
                 return None;
             };
             let stem = path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("fixture");
-            let Some(before_ir) = parse_to_ir(&text, stem, path.parent()) else {
+            let Ok(before_ir) = parse_to_ir(&text, stem, path.parent()) else {
                 continue;
             };
             return Some((
