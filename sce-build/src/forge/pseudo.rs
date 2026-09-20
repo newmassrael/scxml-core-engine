@@ -2176,23 +2176,37 @@ fn render_param_into(keyword: Word, p: &crate::model::Param, out: &mut Out<'_>) 
 /// location that does not exist, on purpose), so collapsing the two
 /// would move the IR across the round trip.
 fn render_donedata_param(p: &crate::model::DoneDataParam, out: &mut Out<'_>) {
-    fn clause(keyword: &str, value: &str) -> String {
+    /// The clause, and its value only when there is one. ⚠ A bare
+    /// keyword IS the empty value here, so the value part is dropped
+    /// rather than emitted empty — a trailing separator would be a
+    /// space the page carries and the reader has to guess about.
+    fn clause(keyword: Word, value: &str) -> Vec<Part> {
         if value.is_empty() {
-            keyword.to_string()
+            vec![Part::Word(keyword)]
         } else {
-            format!("{keyword} {}", text(value))
+            vec![Part::Word(keyword), Part::Text(text(value).into_owned())]
         }
     }
-    let name = text(&p.name);
+    let name = Part::Text(text(&p.name).into_owned());
     match (&p.expr, &p.location) {
-        (None, None) => out.line(&format!("param {name}")),
-        (Some(e), None) => out.line(&clause(&format!("param {name} ="), e)),
-        (None, Some(l)) => out.line(&clause(&format!("param {name} from"), l)),
+        (None, None) => out.line_of(vec![Part::Word(Word::Param), name]),
+        (Some(e), None) => {
+            let mut parts = vec![Part::Word(Word::Param), name, Part::Text("=".into())];
+            if !e.is_empty() {
+                parts.push(Part::Text(text(e).into_owned()));
+            }
+            out.line_of(parts);
+        }
+        (None, Some(l)) => {
+            let mut parts = vec![Part::Word(Word::Param), name];
+            parts.extend(clause(Word::From, l));
+            out.line_of(parts);
+        }
         (Some(e), Some(l)) => {
-            out.line(&format!("param {name}:"));
+            out.line_of(vec![Part::Word(Word::Param), name, Part::Glued(":".into())]);
             out.nested(|out| {
-                out.line(&clause("expr", e));
-                out.line(&clause("from", l));
+                out.line_of(clause(Word::Expr, e));
+                out.line_of(clause(Word::From, l));
             });
         }
     }
