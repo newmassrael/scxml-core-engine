@@ -31,7 +31,7 @@
         "names": {
           "type": "array",
           "items": {"type": "string", "minLength": 1},
-          "description": "What prose calls this address. A list because prose is inconsistent. This is the only place the correspondence is written down."
+          "description": "What prose calls this address. A list because prose is inconsistent. This is the only place the correspondence is written down. ⚠ LIST EVERY SPELLING THE PLATFORM KNOWS, INCLUDING THE ADDRESS'S OWN LAST SEGMENT WHEN THAT IS ONE -- and do not trim the list to the spellings some particular document happens to use. Trimming was measured and it buys nothing: the reader's notion of 'mentioned' is a disjunction over these, so removing a name it already answers False for cannot move any question, and over 129 packs, eleven classes and three differently-built models it moved ZERO of 2,109. What DOES move is the last segment being present or absent, because the partition that cuts a document into one block per subject awards a line to the longest spelling written on it: measured 2026-09-20, publishing every spelling rather than the used ones changes 4 findings in 2 of 129 packs, always where one address carries fifteen spellings and takes a line from a neighbour that carries one. That is 0.19%, and the price of an interface model that is a property of the PLATFORM -- written once, published, and read by every specification since -- rather than an artefact that has to be rebuilt for each document."
         },
         "values": {
           "$ref": "#/$defs/valueSpace",

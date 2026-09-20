@@ -29,6 +29,35 @@ field is "mentioned" by the loader whether or not any check uses it, the
 loader legitimately consumes some fields itself, and others are renamed onto
 the dataclass. The defect has no mechanical signature. It has a habit instead,
 and this is where the habit is written down.
+
+── Are these classes tuned to the corpus they were written against? ──
+
+Half of that question is measurable and has been measured; the other half
+cannot be, from here. Precision needs ground truth, ground truth needs a
+person reading the specification, and no amount of running says whether a
+finding was right. What a run CAN say is whether the classes behave the same
+on documents nobody looked at while designing them. Of 129 packs, 18 were
+converted -- those are the ones these classes were shaped against -- and 111
+were never examined. Firing rates per 100 declared addresses, measured
+2026-09-20:
+
+                                        converted 18    unseen 111
+    gate-off-unstated                          17.8          14.7
+    no-decision-logic                           0.3           5.9
+    example-expects-undecided-output            0.3           6.7
+    unknown-name                                0.3           3.2
+    no-comparable-cases                         3.9           1.0
+
+Two things are worth reading off it. NO CLASS IS DEAD ON UNSEEN TEXT -- every
+one that fires at all fires in both groups -- and the loudest class by volume,
+the one whose design was most corpus-driven, does not spike.
+
+⚠⚠ The three that fire twenty times more on unseen packs are exactly the ones
+that would have STOPPED a conversion: an output nothing decides, a case
+expecting an output nothing decides, a name the platform lacks. The 18 were
+selected for being convertible, so their scarcity there is selection rather
+than tuning. That is an EXPLANATION and not a measurement, and is offered as
+one: what would settle it is a subject matter whose gaps nobody here planted.
 """
 
 from __future__ import annotations
