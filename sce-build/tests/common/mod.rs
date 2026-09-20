@@ -31,6 +31,7 @@ pub mod rust_source;
 pub mod source_lexing;
 pub mod template_registration;
 pub mod workflow;
+pub mod xml_literal;
 
 /// What one probe run did, so a caller can assert on the route rather than
 /// only on the result.

@@ -36,6 +36,8 @@
 //! otherwise satisfy this file by measuring nothing at all, which is the
 //! shape this repository has been bitten by before.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -243,7 +245,15 @@ fn mutate(xsd_type: &str, current: &str, enums: &BTreeMap<String, Vec<String>>) 
         // when the type says nothing, the VALUE is the only evidence
         // available, and the mutation follows its shape. That is not a
         // per-attribute list: nothing here names an attribute.
-        "string" => Some(mutate_by_shape(current)),
+        //
+        // ⚠⚠ A reference is deliberately NOT special-cased.
+        // `sce:count`, `sce:length-field`, `sce:present-if` and
+        // `<sce:variant tag>` name something declared elsewhere, and any
+        // second value fails to resolve. Pointing them at another
+        // declared name needs per-attribute knowledge of what they point
+        // AT, which is the hand-written map this file exists without.
+        // They stay unmeasured and say why in the parser's own words.
+        "string" => Some(common::xml_literal::second_value_of_same_shape(current)),
         // An XML name: prefixing keeps it an NCName. Suffixing would
         // too, but a prefix also moves a value that some readers
         // compare by suffix.
@@ -255,66 +265,8 @@ fn mutate(xsd_type: &str, current: &str, enums: &BTreeMap<String, Vec<String>>) 
         // the validator's words. That is strictly more than the `None`
         // this arm used to answer, which said only that the test had
         // not tried.
-        _ => Some(mutate_by_shape(current)),
+        _ => Some(common::xml_literal::second_value_of_same_shape(current)),
     }
-}
-
-/// A second value of whatever shape this one has.
-///
-/// Only reached for `xs:string`, where the declared type says nothing.
-/// Each arm keeps the value inside the shape it arrived in, so the
-/// mutant is a *different* value of the same kind rather than a
-/// corrupted one — the difference between measuring an attribute and
-/// measuring the parser's error path.
-///
-/// ⚠ A reference is deliberately NOT special-cased. `sce:count`,
-/// `sce:length-field`, `sce:present-if` and `<sce:variant tag>` name
-/// something declared elsewhere in the document, and any second value
-/// this function invents fails to resolve. Pointing them at another
-/// declared name would need per-attribute knowledge of what they point
-/// AT, which is the hand-written map this file exists without. They
-/// stay unmeasured, and now say why in the parser's own words.
-fn mutate_by_shape(current: &str) -> String {
-    let v = current.trim();
-
-    // `0x` hex literal: keep the prefix and the digit count.
-    if let Some(digits) = v.strip_prefix("0x").or_else(|| v.strip_prefix("0X")) {
-        if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_hexdigit()) {
-            if let Ok(n) = u128::from_str_radix(digits, 16) {
-                return format!("0x{:0width$X}", n.wrapping_add(1), width = digits.len());
-            }
-        }
-    }
-
-    // A bare hex string, as a byte payload is written. Flipping the
-    // last digit keeps both the hex alphabet and the even length that
-    // a byte string needs.
-    if v.len() >= 2 && v.len().is_multiple_of(2) && v.chars().all(|c| c.is_ascii_hexdigit()) {
-        let (head, last) = v.split_at(v.len() - 1);
-        let next = match last {
-            "f" => "e",
-            "F" => "E",
-            other => match u8::from_str_radix(other, 16) {
-                Ok(d) => return format!("{head}{:x}", d + 1),
-                Err(_) => other,
-            },
-        };
-        return format!("{head}{next}");
-    }
-
-    if let Ok(n) = v.parse::<i64>() {
-        return n.saturating_add(1).to_string();
-    }
-
-    // A rational, as a scale or an offset is written. `+ 1` rather than
-    // a digit edit, so the result is still a rational and still parses.
-    if v.contains('.') {
-        if let Ok(f) = v.parse::<f64>() {
-            return format!("{}", f + 1.0);
-        }
-    }
-
-    format!("{v}z")
 }
 
 /// Why a document did not become an IR, in the words of whatever
