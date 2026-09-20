@@ -394,6 +394,33 @@ impl Fact {
     }
 }
 
+/// A `<send>` the deployment adds to the machine.
+///
+/// The author did not write it: SCE_MESH.md §13 auto-symmetry adds an
+/// `<onexit>` unsubscribe for a qualifying subscribe, and Session E
+/// server detection adds the response leg of each detected RPC pair.
+/// The generated code sends it, so a reviewer who is not shown it is
+/// approving a machine that does something they never read.
+///
+/// No `PartialEq`: `crate::model::Action` has none, and giving
+/// forty-eight fields an equality so this type can have one would put
+/// the cost of a review surface onto the core model. Nothing here
+/// compares two injected sends — [`crate::mesh::review::injected_sends`]
+/// compares their serialised form instead, which is what it needs.
+#[derive(Debug, Clone)]
+pub struct InjectedSend {
+    /// The state whose actions it was added to.
+    pub state: String,
+    /// When it fires, as
+    /// [`SendSite::label`](crate::mesh::topology::SendSite::label)
+    /// spells it — `on entry`, `on exit`, `on <event>`.
+    pub site: String,
+    /// The action itself, rendered by the renderer that draws every
+    /// other send. A second way of drawing one would be a second thing
+    /// to keep true.
+    pub action: crate::model::Action,
+}
+
 /// What a deployment adds to a document's meaning.
 ///
 /// Deliberately not a mesh type. `sce-build::mesh` resolves a
@@ -403,7 +430,7 @@ impl Fact {
 /// state a deployment without running one. The builder that turns a
 /// real resolution into this lives on the mesh side, where the types it
 /// reads already are.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct Deployment {
     /// True of the deployed machine as a whole — the device it runs on,
     /// and any send target the deployment could not resolve statically.
@@ -412,12 +439,15 @@ pub struct Deployment {
     /// writes it (`#motor`), which is also how `deploy.yaml` keys its
     /// bindings.
     pub targets: std::collections::BTreeMap<String, Vec<Fact>>,
+    /// The sends the deployment adds to the machine, in the order the
+    /// model walk finds them.
+    pub injected: Vec<InjectedSend>,
 }
 
 impl Deployment {
     /// Nothing derived — the rendering is the document alone.
     pub fn is_empty(&self) -> bool {
-        self.machine.is_empty() && self.targets.is_empty()
+        self.machine.is_empty() && self.targets.is_empty() && self.injected.is_empty()
     }
 }
 
@@ -433,6 +463,7 @@ impl Deployment {
 static NO_DEPLOYMENT: Deployment = Deployment {
     machine: Vec::new(),
     targets: std::collections::BTreeMap::new(),
+    injected: Vec::new(),
 };
 
 /// The pseudocode for this document, or why there is none.
@@ -558,6 +589,16 @@ impl<'d> Out<'d> {
         ));
     }
 
+    /// One derived line carrying text this module already produced.
+    ///
+    /// Used for an injected send, whose body is drawn by the ordinary
+    /// action renderer and is therefore encoded already. Encoding it a
+    /// second time would show the reviewer the escapes rather than the
+    /// send.
+    fn derived_rendered(&mut self, already_rendered: &str) {
+        self.line(&format!("{DEPLOYMENT_SIGIL} {already_rendered}"));
+    }
+
     /// The deployment's facts about a send target, one level under it.
     ///
     /// `target` is the raw attribute value, not the encoded one —
@@ -597,6 +638,33 @@ impl<'d> Out<'d> {
     /// The target heads its own derived line and its facts nest under
     /// it, so the shape reads like the `to` case rather than inventing
     /// a second one.
+    /// Every `<send>` the deployment adds to the machine.
+    ///
+    /// ⚠ Drawn by [`render_scxml_action`], the same function that draws
+    /// an authored send, and then prefixed line by line. A second
+    /// renderer for "the same thing, but derived" is two things to keep
+    /// true, and the one that is read less often is the one that rots.
+    ///
+    /// The prefix goes on EVERY line of the send, not only its head, so
+    /// a multi-line send is removed whole by a stripper that only ever
+    /// looks at a line's first token.
+    fn annotate_injected(&mut self) {
+        let deployment: &'d Deployment = self.deployment;
+        for inj in &deployment.injected {
+            self.derived(&Fact::new(
+                "injected-send",
+                format!("in {} {}", inj.state, inj.site),
+            ));
+            let mut body = Out::new();
+            render_scxml_action(&inj.action, &mut body);
+            self.nested(|out| {
+                for line in body.buf.lines() {
+                    out.derived_rendered(line);
+                }
+            });
+        }
+    }
+
     fn annotate_unplaced(&mut self) {
         let deployment: &'d Deployment = self.deployment;
         for (target, facts) in &deployment.targets {
@@ -1377,6 +1445,7 @@ fn render_statechart(
         }
         // Last, once every clause that could have claimed a target has
         // had its turn. See `Out::annotate_unplaced`.
+        out.annotate_injected();
         out.annotate_unplaced();
     });
     nested?;

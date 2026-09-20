@@ -598,26 +598,71 @@ pub struct TargetResolution {
 /// to visit a different set than the one that gets resolved.
 pub fn for_each_send_action<F>(model: &SCXMLModel, mut visitor: F)
 where
-    F: FnMut(&str, &crate::model::Action),
+    F: FnMut(&str, SendSite<'_>, &crate::model::Action),
 {
     for (state_id, state) in &model.states {
-        let mut visit_actions = |actions: &[crate::model::Action]| {
+        let mut visit_actions = |site: SendSite<'_>, actions: &[crate::model::Action]| {
             for action in actions {
                 if action.action_type == "send" {
-                    visitor(state_id, action);
+                    visitor(state_id, site, action);
                 }
             }
         };
         for block in &state.on_entry_blocks {
-            visit_actions(block);
+            visit_actions(SendSite::OnEntry, block);
         }
         for block in &state.on_exit_blocks {
-            visit_actions(block);
+            visit_actions(SendSite::OnExit, block);
         }
         for transition in &state.transitions {
-            visit_actions(&transition.actions);
+            visit_actions(
+                SendSite::Transition {
+                    event: &transition.event,
+                },
+                &transition.actions,
+            );
         }
-        visit_actions(&state.initial_transition_actions);
+        visit_actions(
+            SendSite::InitialTransition,
+            &state.initial_transition_actions,
+        );
+    }
+}
+
+/// Which of a state's four action lists a `<send>` was found in.
+///
+/// Carried by [`for_each_send_action`] because a caller that reports a
+/// send to a person needs to say when it fires, and the state id alone
+/// does not: a machine that sends on entry and on a transition would
+/// otherwise have the two reported identically.
+/// [`crate::mesh::review`] is that caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendSite<'a> {
+    /// An `<onentry>` block.
+    OnEntry,
+    /// An `<onexit>` block.
+    OnExit,
+    /// A `<transition>`, named by the event it fires on. The event is
+    /// empty for an eventless transition, which is how the document
+    /// spells it.
+    Transition { event: &'a str },
+    /// The state's `<initial>` transition.
+    InitialTransition,
+}
+
+impl SendSite<'_> {
+    /// How the site reads in a sentence a person will see.
+    ///
+    /// Spelled here rather than at the reporting site, so the one
+    /// vocabulary serves every caller that has to name a site.
+    pub fn label(&self) -> String {
+        match self {
+            Self::OnEntry => "on entry".to_string(),
+            Self::OnExit => "on exit".to_string(),
+            Self::Transition { event: "" } => "on an eventless transition".to_string(),
+            Self::Transition { event } => format!("on {event}"),
+            Self::InitialTransition => "on the initial transition".to_string(),
+        }
     }
 }
 
@@ -1474,7 +1519,7 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
     let mut target_events = Vec::new();
     let mut actions = Vec::new();
 
-    for_each_send_action(model, |state_id, action| {
+    for_each_send_action(model, |state_id, _site, action| {
         // Dynamic target warning (targetexpr present)
         if !action.targetexpr.is_empty() {
             dynamic_warnings.push(TopologyWarning {
@@ -1566,7 +1611,7 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
 /// pipeline uses `SendActionSummary.target_events` instead.
 fn collect_target_events(model: &SCXMLModel) -> Vec<(TargetId, String)> {
     let mut pairs = Vec::new();
-    for_each_send_action(model, |_, action| {
+    for_each_send_action(model, |_, _site, action| {
         if let Some(tid) = TargetId::new(&action.target) {
             if !tid.is_internal() {
                 pairs.push((tid, action.event.clone()));

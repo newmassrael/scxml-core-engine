@@ -31,11 +31,12 @@
 //! model untouched — the rendering must be of what the author wrote,
 //! with everything derived carried as facts beside it.
 //!
-//! ⚠⚠ What that leaves open, stated rather than hidden: the injected
-//! sends themselves are **not yet** in the rendering. A reviewer sees
-//! every binding for every send the author wrote, and does not see a
-//! send only the deployment writes. [`injected_send_count`] is what
-//! the facts say about it until the sends themselves are rendered.
+//! The injected sends are then reported as
+//! [`Deployment::injected`](crate::forge::pseudo::Deployment::injected)
+//! and drawn on the page by the same renderer that draws an authored
+//! one, each line carrying the derived sigil. [`injected_sends`] works
+//! them out by differencing the two models, because no stage reports
+//! the Session E legs it adds.
 //!
 //! # The facts are derived from the types, not listed here
 //!
@@ -67,11 +68,11 @@
 
 use std::path::Path;
 
-use crate::forge::pseudo::{Deployment, Fact};
+use crate::forge::pseudo::{Deployment, Fact, InjectedSend};
 use crate::generator::Language;
 use crate::mesh::error::MeshError;
 use crate::mesh::pattern::CommunicationPattern;
-use crate::mesh::topology::{EventPatternInfo, ResolvedTarget, TransportState};
+use crate::mesh::topology::{EventPatternInfo, ResolvedTarget, SendSite, TransportState};
 use crate::model::SCXMLModel;
 
 /// The facts a deployment settles about this machine.
@@ -106,12 +107,7 @@ pub fn deployment_for(
         ));
     }
 
-    let injected = injected_send_count(model, &scratch);
-    if injected > 0 {
-        deployment
-            .machine
-            .push(Fact::new("sends-injected-not-shown", injected.to_string()));
-    }
+    deployment.injected = injected_sends(model, &scratch);
 
     for target in &result.resolved_targets {
         let key = target.target.as_str().to_string();
@@ -121,24 +117,56 @@ pub fn deployment_for(
     Ok(deployment)
 }
 
-/// How many `<send>` actions the pipeline added to the model.
+/// Which `<send>` actions the pipeline added to the model.
 ///
-/// Counted by walking both models rather than by trusting a stage to
+/// Derived by walking both models rather than by trusting a stage to
 /// report what it injected: `MeshResult` carries `auto_subscriptions`
-/// and nothing for the Session E response legs, so a report-based count
-/// would be short by exactly the sends nobody remembered to announce.
-/// A count from the two models is short by nothing.
+/// and nothing at all for the Session E response legs, so a
+/// report-based answer would be short by exactly the sends nobody
+/// remembered to announce. A difference between the two models is short
+/// by nothing.
 ///
 /// The walk is [`crate::mesh::topology::for_each_send_action`], the same
 /// one the resolver uses, so "a send" means one thing here and there.
-pub fn injected_send_count(authored: &SCXMLModel, deployed: &SCXMLModel) -> usize {
-    sends_in(deployed).saturating_sub(sends_in(authored))
+/// `SCXMLModel::states` is a `BTreeMap` and each action list is a `Vec`,
+/// so the walk order is the document's and the result is the same on
+/// every run — which the renderer's determinism contract needs.
+///
+/// ⚠ A MULTISET difference, not a set one. A machine that already sends
+/// the same event to the same target twice from the same place is
+/// legal, and treating the sends as a set would report the pipeline's
+/// third copy as nothing at all.
+pub fn injected_sends(authored: &SCXMLModel, deployed: &SCXMLModel) -> Vec<InjectedSend> {
+    let mut before: std::collections::BTreeMap<String, usize> = Default::default();
+    crate::mesh::topology::for_each_send_action(authored, |state, site, action| {
+        *before.entry(send_key(state, site, action)).or_insert(0) += 1;
+    });
+
+    let mut out = Vec::new();
+    crate::mesh::topology::for_each_send_action(deployed, |state, site, action| {
+        let key = send_key(state, site, action);
+        match before.get_mut(&key) {
+            Some(n) if *n > 0 => *n -= 1,
+            _ => out.push(InjectedSend {
+                state: state.to_string(),
+                site: site.label(),
+                action: action.clone(),
+            }),
+        }
+    });
+    out
 }
 
-fn sends_in(model: &SCXMLModel) -> usize {
-    let mut n = 0usize;
-    crate::mesh::topology::for_each_send_action(model, |_, _| n += 1);
-    n
+/// What makes two sends the same send.
+///
+/// The whole serialised action, not a few fields of it: a hand-picked
+/// key is a claim about which fields matter, and an injected send that
+/// differed only in an unlisted field would be invisible. `Action` is
+/// `Serialize` over a declared field order, so this is stable across
+/// runs without anybody maintaining it.
+fn send_key(state: &str, site: SendSite<'_>, action: &crate::model::Action) -> String {
+    let body = serde_json::to_string(action).unwrap_or_else(|e| format!("(unserialisable: {e})"));
+    format!("{state}\u{1}{}\u{1}{body}", site.label())
 }
 
 /// One fact per thing the deployment settled for this target.

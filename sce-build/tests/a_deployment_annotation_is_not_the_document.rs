@@ -208,6 +208,23 @@ fn hostile_deployment_for(rendered: &str) -> Deployment {
     Deployment {
         machine: vec![Fact::new("device", "ecu1"), Fact::new("mode", "peer")],
         targets,
+        // An injected send is the hardest case property 2 has: it is
+        // the only derived block that spans several lines, so it is the
+        // only one where a line can lose the sigil in the middle and
+        // survive the strip as if the author had written it. Given
+        // enough clauses to be a block rather than one line, and a
+        // value carrying a newline for the same reason as `key` above.
+        injected: vec![sce_build::forge::pseudo::InjectedSend {
+            state: "s0".to_string(),
+            site: "on exit".to_string(),
+            action: sce_build::model::Action {
+                action_type: "send".to_string(),
+                event: "event.unsubscribe.brake\nstatus".to_string(),
+                target: "#motor".to_string(),
+                delay: "50ms".to_string(),
+                ..Default::default()
+            },
+        }],
     }
 }
 
@@ -308,6 +325,7 @@ fn a_non_statechart_refuses_a_deployment() {
     let deployment = Deployment {
         machine: vec![Fact::new("device", "ecu1")],
         targets: BTreeMap::new(),
+        injected: Vec::new(),
     };
 
     let mut checked = 0usize;

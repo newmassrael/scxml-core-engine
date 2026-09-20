@@ -121,6 +121,34 @@ fn transports_named_in(yaml: &Path) -> BTreeSet<String> {
         .collect()
 }
 
+/// The derived lines that follow an `injected-send` head, which are the
+/// send's own body.
+///
+/// Read off the page rather than predicted, because the body is drawn
+/// by the ordinary action renderer and this file is not a second copy
+/// of it. The run ends at the next derived line that is a head or a
+/// fact this side does produce — so a body line is only ever accepted
+/// in the place a body can be.
+fn body_lines_after_injected_heads(text: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let mut in_body = false;
+    for raw in text.lines() {
+        let l = raw.trim();
+        if !l.starts_with(DEPLOYMENT_SIGIL) {
+            in_body = false;
+            continue;
+        }
+        if l.starts_with(&format!("{DEPLOYMENT_SIGIL} injected-send ")) {
+            in_body = true;
+            continue;
+        }
+        if in_body {
+            out.insert(l.to_string());
+        }
+    }
+    out
+}
+
 fn parse_statechart(path: &Path) -> Option<ForgeDocument> {
     let text = std::fs::read_to_string(path).ok()?;
     let stem = path.file_stem()?.to_str()?;
@@ -232,7 +260,7 @@ fn a_deployed_rendering_carries_the_resolution_codegen_was_given() {
         // `bound-without-a-send` is the renderer's own head line for a
         // target no clause claimed, so it is expected and named rather
         // than excluded by a pattern that would also hide a mistake.
-        let produced: BTreeSet<String> = deployment
+        let mut produced: BTreeSet<String> = deployment
             .machine
             .iter()
             .chain(deployment.targets.values().flatten())
@@ -244,15 +272,62 @@ fn a_deployed_rendering_carries_the_resolution_codegen_was_given() {
                     .map(|t| format!("{DEPLOYMENT_SIGIL} bound-without-a-send {t}")),
             )
             .collect();
+        // An injected send's head line, plus every line of its body —
+        // which the renderer draws with the ordinary action renderer, so
+        // this side cannot predict them and reads them off the page
+        // instead. What it CAN predict is the head, and that each body
+        // line carries the sigil, which the loop below then requires.
+        for inj in &deployment.injected {
+            produced.insert(format!(
+                "{DEPLOYMENT_SIGIL} injected-send in {} {}",
+                inj.state, inj.site
+            ));
+        }
+        let injected_body: BTreeSet<String> = if deployment.injected.is_empty() {
+            BTreeSet::new()
+        } else {
+            body_lines_after_injected_heads(&text)
+        };
+
         for l in text
             .lines()
             .map(str::trim)
             .filter(|l| l.split_whitespace().next() == Some(DEPLOYMENT_SIGIL))
         {
-            if !produced.contains(l) {
+            if !produced.contains(l) && !injected_body.contains(l) {
                 broken.push(format!(
                     "{case}: the page carries a derived line the deployment never \
                      settled: `{l}`"
+                ));
+            }
+        }
+
+        // Property 3: each injected send is on the page, and its body
+        // is there with it. A head line with no body would say that the
+        // deployment adds a send and not what it sends.
+        for inj in &deployment.injected {
+            let head = format!(
+                "{DEPLOYMENT_SIGIL} injected-send in {} {}",
+                inj.state, inj.site
+            );
+            if !text.lines().any(|l| l.trim() == head) {
+                broken.push(format!(
+                    "{case}: the deployment injects a send {} {} and the page does \
+                     not say so",
+                    inj.state, inj.site
+                ));
+                continue;
+            }
+            let event = &inj.action.event;
+            if !event.is_empty()
+                && !text
+                    .lines()
+                    .any(|l| l.trim().starts_with(DEPLOYMENT_SIGIL) && l.contains(event.as_str()))
+            {
+                broken.push(format!(
+                    "{case}: the injected send in {} is announced and its event \
+                     `{event}` appears on no derived line",
+                    inj.state
                 ));
             }
         }
@@ -509,7 +584,7 @@ fn resolving_a_deployment_does_not_touch_the_model() {
         // guarding a hazard that does not exist.
         let mut scratch = (**model).clone();
         if sce_build::compile_mesh_transport(&mut scratch, yaml, Language::Cpp).is_ok()
-            && review::injected_send_count(model, &scratch) > 0
+            && !review::injected_sends(model, &scratch).is_empty()
         {
             injected_anywhere += 1;
         }
