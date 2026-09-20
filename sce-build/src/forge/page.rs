@@ -507,6 +507,53 @@ pub trait Shape {
 
     /// Write the whole page.
     fn write(&self, nodes: &[Node], lexicon: &Lexicon) -> Result<String, Refusal>;
+
+    /// This shape's page, back as the canonical one.
+    ///
+    /// ⚠ **Not a second reader.** `crate::forge::unpseudo` reads the
+    /// canonical page — `indent` with `EN` — and it is the only thing
+    /// that knows the grammar. A shape that had its own reader would
+    /// be a second answer to "what does this document say", and the
+    /// one consulted less often is the one that rots. So a shape owes
+    /// exactly this: undo its own layout and its own words, and hand
+    /// back the page the reader already reads.
+    ///
+    /// The law that follows, and the only one a new shape has to
+    /// satisfy: `normalise(write(nodes)) == Indent.write(nodes, EN)`,
+    /// byte for byte, over the corpus.
+    fn normalise(&self, page: &str, lexicon: &Lexicon) -> Result<String, Refusal>;
+}
+
+/// The canonical page: the one the reader reads and every gate means.
+pub fn canonical(nodes: &[Node]) -> String {
+    Indent
+        .write(nodes, &EN)
+        .expect("the indent shape refuses nothing")
+}
+
+/// One line's words put back into the canonical spelling.
+///
+/// ⚠ Longest first. A lexicon may spell one word as another's prefix —
+/// `on` and `on entry` do exactly that in `EN` — and replacing the
+/// short one first would eat the long one's head and leave its tail as
+/// text. Sorting by length is what makes the substitution independent
+/// of the order the vocabulary happens to be listed in.
+fn to_canonical_words(line: &str, lexicon: &Lexicon) -> String {
+    if std::ptr::eq(lexicon.word as *const (), EN.word as *const ()) {
+        return line.to_string();
+    }
+    let mut pairs: Vec<(&str, &str)> = Word::ALL
+        .iter()
+        .map(|&w| ((lexicon.word)(w), (EN.word)(w)))
+        .collect();
+    pairs.sort_by_key(|(from, _)| std::cmp::Reverse(from.len()));
+    let mut out = line.to_string();
+    for (from, to) in pairs {
+        if from != to {
+            out = out.replace(from, to);
+        }
+    }
+    out
 }
 
 /// Whether the node at `i` is the one that opens the block under it.
@@ -565,6 +612,18 @@ impl Shape for Indent {
         // the renderer was being decomposed.
         Ok(out)
     }
+
+    fn normalise(&self, page: &str, lexicon: &Lexicon) -> Result<String, Refusal> {
+        // The layout is already canonical; only the words can differ.
+        let mut out = String::new();
+        for line in page.lines() {
+            let indent = line.len() - line.trim_start().len();
+            out.push_str(&line[..indent]);
+            out.push_str(&to_canonical_words(line.trim_start(), lexicon));
+            let _ = writeln!(out);
+        }
+        Ok(out)
+    }
 }
 
 /// Nesting by an explicit close, and no indentation.
@@ -616,13 +675,17 @@ impl Shape for Endmark {
                         ),
                     });
                 };
-                let _ = writeln!(
-                    out,
-                    "{} {} {}",
-                    (lexicon.word)(*w),
-                    (lexicon.word)(Word::Begin),
-                    join_parts(node, lexicon, true)
-                );
+                // ⚠ The rest of the line is carried VERBATIM, taken
+                // off the written line rather than re-joined from the
+                // parts. Re-joining puts a space where the canonical
+                // line had none: `log:` glues its colon to the word,
+                // and a normaliser reading text cannot know that the
+                // space it sees was invented. Splitting the written
+                // line keeps the question from arising.
+                let spelling = (lexicon.word)(*w);
+                let full = join_parts(node, lexicon, false);
+                let rest = &full[spelling.len()..];
+                let _ = writeln!(out, "{spelling} {}{rest}", (lexicon.word)(Word::Begin));
                 open.push(*w);
             } else {
                 let _ = writeln!(out, "{}", join_parts(node, lexicon, false));
@@ -630,6 +693,75 @@ impl Shape for Endmark {
         }
         while let Some(w) = open.pop() {
             close(&mut out, w);
+        }
+        Ok(out)
+    }
+
+    /// ⚠ The depth is rebuilt from the markers, which is the whole
+    /// point of them: this shape threw the indentation away, so the
+    /// close lines are the only record of where a block ended. A close
+    /// that names a word no open is waiting for is a page this shape
+    /// did not write, and it is refused rather than guessed at.
+    fn normalise(&self, page: &str, lexicon: &Lexicon) -> Result<String, Refusal> {
+        let begin = (lexicon.word)(Word::Begin);
+        let end = (lexicon.word)(Word::End);
+        // ⚠ Longest spelling first, and matched as a STRING rather
+        // than by counting tokens. A word may be spelled with a space
+        // — `on entry` is — so "the second token is the open marker"
+        // is false for exactly those lines, and the close that
+        // followed then arrived with nothing open. The same hazard the
+        // word substitution already handles by sorting; this is its
+        // structural half, and leaving one fixed and the other naive
+        // is how a defect grows a second face.
+        let mut words: Vec<Word> = Word::ALL.to_vec();
+        words.sort_by_key(|&w| std::cmp::Reverse((lexicon.word)(w).len()));
+
+        let mut out = String::new();
+        let mut depth = 0usize;
+
+        for line in page.lines() {
+            let opened = words
+                .iter()
+                .copied()
+                .find(|&w| line.starts_with(&format!("{} {begin}", (lexicon.word)(w))));
+            let closed = words
+                .iter()
+                .copied()
+                .find(|&w| line == format!("{} {end}", (lexicon.word)(w)));
+
+            if let Some(w) = closed {
+                let _ = w;
+                depth = depth.checked_sub(1).ok_or_else(|| Refusal {
+                    shape: "endmark",
+                    why: format!("`{line}`, a close with no block open above it"),
+                })?;
+                continue;
+            }
+
+            for _ in 0..depth {
+                out.push_str("  ");
+            }
+            if let Some(w) = opened {
+                // The canonical line is the same one without the open
+                // marker: `<word> <rest…>`.
+                // The canonical line is this one with the open marker
+                // removed — the rest travelled verbatim, so putting it
+                // back needs no separator decision.
+                let spelling = (lexicon.word)(w);
+                let rest = line
+                    .strip_prefix(&format!("{spelling} {begin}"))
+                    .unwrap_or_default();
+                let _ = writeln!(out, "{}{}", (EN.word)(w), to_canonical_words(rest, lexicon));
+                depth += 1;
+            } else {
+                let _ = writeln!(out, "{}", to_canonical_words(line, lexicon));
+            }
+        }
+        if depth != 0 {
+            return Err(Refusal {
+                shape: "endmark",
+                why: format!("a page that leaves {depth} block(s) unclosed"),
+            });
         }
         Ok(out)
     }
@@ -894,6 +1026,27 @@ mod tests {
         );
     }
 
+    /// ⚠ The case the corpus found and eight lines had not: a word
+    /// with punctuation glued to it. Re-joining the rest around the
+    /// open marker put a space where the canonical page has none, and
+    /// 624 pages differed by exactly that byte.
+    #[test]
+    fn endmark_keeps_punctuation_glued_to_the_word_that_opens() {
+        let nodes = vec![
+            Node {
+                depth: 0,
+                parts: vec![Part::Word(Word::Log), Part::Glued(":".into())],
+            },
+            Node {
+                depth: 1,
+                parts: vec![Part::Word(Word::Expr), Part::Text("x".into())],
+            },
+        ];
+        let page = Endmark.write(&nodes, &EN).unwrap();
+        assert_eq!("log begin:\nexpr x\nlog end\n", page);
+        assert_eq!(canonical(&nodes), Endmark.normalise(&page, &EN).unwrap());
+    }
+
     /// The page the whole axis was asked for.
     #[test]
     fn endmark_with_the_korean_lexicon_reads_as_the_owner_wrote_it() {
@@ -937,6 +1090,69 @@ mod tests {
             "the refusal names the line: {}",
             refused.why
         );
+    }
+
+    /// ⚠⚠ The law every shape and lexicon owes, walked over the
+    /// REGISTRY rather than a list beside it: writing a page and
+    /// normalising it gives back the canonical page, byte for byte.
+    /// A pair added without satisfying it turns this red on the day it
+    /// is registered.
+    ///
+    /// This case uses a small page; the corpus-wide one lives in
+    /// `a_page_in_any_shape_normalises_to_the_canonical_one`, because
+    /// eight lines cannot stand in for 691 documents.
+    #[test]
+    fn every_registered_pair_normalises_back_to_the_canonical_page() {
+        let nodes = vec![
+            Node {
+                depth: 0,
+                parts: vec![
+                    Part::Word(Word::Machine),
+                    Part::Text("m".into()),
+                    Part::Text("(datamodel: ecmascript)".into()),
+                ],
+            },
+            Node {
+                depth: 1,
+                parts: vec![
+                    Part::Word(Word::State),
+                    Part::Text("s0".into()),
+                    Part::Glued(":".into()),
+                ],
+            },
+            Node {
+                depth: 2,
+                parts: vec![
+                    Part::Word(Word::On),
+                    Part::Text("e".into()),
+                    Part::Word(Word::Arrow),
+                    Part::Text("t".into()),
+                ],
+            },
+            Node {
+                depth: 1,
+                parts: vec![Part::Word(Word::Final), Part::Text("done".into())],
+            },
+        ];
+        let want = canonical(&nodes);
+        for shape in SHAPES {
+            for lexicon in LEXICONS {
+                let page = shape
+                    .write(&nodes, lexicon)
+                    .unwrap_or_else(|e| panic!("{} × {}: {e}", shape.name(), lexicon.name));
+                let back = shape
+                    .normalise(&page, lexicon)
+                    .unwrap_or_else(|e| panic!("{} × {}: {e}", shape.name(), lexicon.name));
+                assert_eq!(
+                    want,
+                    back,
+                    "{} × {} does not normalise back to the canonical page.\n\
+                     wrote:\n{page}",
+                    shape.name(),
+                    lexicon.name
+                );
+            }
+        }
     }
 
     /// ⚠ Every shape in the registry is walked, not a list written
