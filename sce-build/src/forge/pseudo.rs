@@ -753,14 +753,24 @@ fn render_algorithm(m: &AlgorithmModel) -> String {
         .iter()
         .map(|p| format!("{}: {}", text(&p.name), p.sce_type.as_attr()))
         .collect();
-    let mut head = format!("algorithm {}({})", text(&m.name), params.join(", "));
+    // ⚠ The signature stays ONE text part. Its parentheses and commas
+    // are this construct's punctuation and its parameter list is a
+    // single value as far as any shape is concerned — splitting it into
+    // parts would put a space where `(` sits and invent a grammar no
+    // reader has.
+    let mut head = vec![
+        Part::Word(Word::Algorithm),
+        Part::Text(format!("{}({})", text(&m.name), params.join(", "))),
+    ];
     if let Some(ret) = &m.signature.return_type {
-        let _ = write!(head, " -> {}", ret.as_attr());
+        head.push(Part::Text("->".into()));
+        head.push(Part::Text(ret.as_attr().to_string()));
         if let Some(max) = m.signature.returns_max_size {
-            let _ = write!(head, " returns-max {max}");
+            head.push(Part::Word(Word::ReturnsMax));
+            head.push(Part::Text(max.to_string()));
         }
     }
-    out.line(&head);
+    out.line_of(head);
 
     out.nested(|out| {
         for c in &m.consts {
@@ -1126,22 +1136,25 @@ fn render_state(s: &ProcedureState, out: &mut Out<'_>) {
 }
 
 fn render_transition(t: &ProcedureTransition, out: &mut Out<'_>) {
-    let mut line = String::new();
+    let mut line = Vec::new();
     // An eventless transition is the bare arrow: `on` with no event
     // would read as an event named by the empty string.
     if let Some(e) = &t.event {
-        let _ = write!(line, "on {} ", text(e));
+        line.push(Part::Word(Word::On));
+        line.push(Part::Text(text(e).into_owned()));
     }
-    let _ = write!(line, "-> {}", text(&t.target));
+    line.push(Part::Text("->".into()));
+    line.push(Part::Text(text(&t.target).into_owned()));
     // The guard goes LAST, after the target, because it is the only
     // free-text value on the line and the rule puts those at the end.
     // Written before the arrow, a condition containing ` -> ` would
     // decide where the line breaks — none of the 232 conditions in
     // this tree does, and the rule is not a bet on that.
     if let Some(c) = &t.cond {
-        let _ = write!(line, " when {}", text(c));
+        line.push(Part::Word(Word::When));
+        line.push(Part::Text(text(c).into_owned()));
     }
-    out.line(&line);
+    out.line_of(line);
 
     out.nested(|out| {
         for a in &t.assigns {

@@ -102,6 +102,10 @@ pub enum Word {
     Debounce,
     Window,
     Alpha,
+    Algorithm,
+    ReturnsMax,
+    On,
+    When,
 }
 
 impl Word {
@@ -147,6 +151,10 @@ impl Word {
         Word::Debounce,
         Word::Window,
         Word::Alpha,
+        Word::Algorithm,
+        Word::ReturnsMax,
+        Word::On,
+        Word::When,
     ];
 }
 
@@ -206,6 +214,10 @@ fn en_word(w: Word) -> &'static str {
         Word::Debounce => "debounce",
         Word::Window => "window",
         Word::Alpha => "alpha",
+        Word::Algorithm => "algorithm",
+        Word::ReturnsMax => "returns-max",
+        Word::On => "on",
+        Word::When => "when",
     }
 }
 
