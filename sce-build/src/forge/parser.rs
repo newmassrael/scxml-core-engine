@@ -4863,6 +4863,15 @@ fn parse_one_decoded_field(
 
     Ok(DecodedField {
         name: name.to_string(),
+        // The author's spelling, kept only where the value is a number.
+        // A `Bytes` or `String` field carries its text in another
+        // attribute and is not this companion's subject.
+        value_text: match &typed {
+            DecodedFieldValue::Uint(_) | DecodedFieldValue::Int(_) => {
+                value_attr.unwrap_or_default().trim().to_string()
+            }
+            _ => String::new(),
+        },
         value: typed,
     })
 }

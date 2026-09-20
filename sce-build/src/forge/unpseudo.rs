@@ -2039,8 +2039,15 @@ fn parse_codec_test(
         };
         let value = match kind {
             "bool" => DecodedFieldValue::Bool(literal == "true"),
-            "uint" => DecodedFieldValue::Uint(literal.parse().map_err(|_| bad())?),
-            "int" => DecodedFieldValue::Int(literal.parse().map_err(|_| bad())?),
+            // ⚠ Through `source_literal`: the renderer writes the
+            // author's spelling, so a hex expected-value arrives here
+            // as `0xCAFEBABE` and `parse()` would refuse it.
+            "uint" => DecodedFieldValue::Uint(
+                crate::source_literal::read_unsigned(literal).ok_or_else(bad)?,
+            ),
+            "int" => {
+                DecodedFieldValue::Int(crate::source_literal::read_signed(literal).ok_or_else(bad)?)
+            }
             "string" => DecodedFieldValue::String(undo(literal, k.number)?),
             "bytes" => {
                 let h = literal.strip_prefix("0x").ok_or_else(bad)?;
@@ -2056,6 +2063,10 @@ fn parse_codec_test(
         };
         fields.push(DecodedField {
             name: undo(name, k.number)?,
+            value_text: match kind {
+                "uint" | "int" => literal.to_string(),
+                _ => String::new(),
+            },
             value,
         });
     }

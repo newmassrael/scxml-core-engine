@@ -2201,8 +2201,17 @@ fn render_codec_test_vector(tv: &CodecTestVector, out: &mut Out<'_>) {
         for f in fields {
             let v = match &f.value {
                 DecodedFieldValue::Bool(b) => format!("bool {b}"),
-                DecodedFieldValue::Uint(u) => format!("uint {u}"),
-                DecodedFieldValue::Int(i) => format!("int {i}"),
+                // The author's spelling: a test vector's expected value
+                // is written in hex, and a reviewer checking the page
+                // against the wire dump looks for `0xCAFEBABE`.
+                DecodedFieldValue::Uint(u) => format!(
+                    "uint {}",
+                    text(&crate::source_literal::as_written(&f.value_text, u))
+                ),
+                DecodedFieldValue::Int(i) => format!(
+                    "int {}",
+                    text(&crate::source_literal::as_written(&f.value_text, i))
+                ),
                 DecodedFieldValue::Bytes(b) => {
                     let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
                     format!("bytes 0x{h}")

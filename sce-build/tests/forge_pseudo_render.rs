@@ -876,6 +876,10 @@ fn a_codec_renders_every_field_it_can_carry() {
                 fields: vec![DecodedField {
                     name: "payload".to_string(),
                     value: DecodedFieldValue::Bytes(vec![0x01]),
+                    // Empty, as the parser leaves a non-numeric value:
+                    // a `Bytes` payload's spelling is its `hex=`
+                    // attribute, not this companion's subject.
+                    value_text: String::new(),
                 }],
             },
             source_line: 7,

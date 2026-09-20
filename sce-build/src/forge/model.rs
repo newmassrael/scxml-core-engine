@@ -2559,6 +2559,24 @@ pub enum DecodedValue {
 pub struct DecodedField {
     pub name: String,
     pub value: DecodedFieldValue,
+    /// How the author spelled a NUMERIC [`Self::value`], when a source
+    /// document is where it came from.
+    ///
+    /// A test vector's expected value is written in hex — `0xCAFEBABE`
+    /// — and the number alone puts `3405691582` on the pseudocode
+    /// review surface. See [`crate::source_literal`].
+    ///
+    /// ⚠ Empty for every non-numeric variant. A `Bytes` payload's
+    /// spelling is the `hex=` attribute and a `String`'s is its own
+    /// text; neither is a number, and giving one field two jobs is how
+    /// the next reader learns the wrong rule. The companion sits on the
+    /// containing struct rather than inside
+    /// [`DecodedFieldValue`](crate::forge::model::DecodedFieldValue)
+    /// because that enum is a wire shape — `SCE_WIRE_CONTRACTS.md`
+    /// §8.1 governs its form, and a spelling is not a thing a consumer
+    /// computes with.
+    #[serde(skip, default)]
+    pub value_text: String,
 }
 
 /// Typed value literal for one `<sce:decoded>` row. Variant chosen
