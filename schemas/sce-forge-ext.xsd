@@ -1703,6 +1703,48 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- Statechart executable content: a call into host code, read by
+       `SCXMLParser::parse_native_action`. Declared because the content
+       models around it are `xs:any processContents="lax"`, so an
+       undeclared element validates by being unknown and a misspelling
+       validates the same way. Found 2026-09-20 by
+       `every_sce_element_a_document_carries_is_named_by_the_grammar`
+       once its sweep reached the whole checkout instead of three
+       fixture directories. -->
+  <xs:element name="action">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:arg" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- One argument of a `<sce:action>`. `name` is optional: the parser
+       reads it and a positional argument leaves it empty. -->
+  <xs:element name="arg">
+    <xs:complexType>
+      <xs:attribute name="expr" type="xs:string" use="required"/>
+      <xs:attribute name="name" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- The element form of a provenance anchor — the specification a
+       node came from. `doc-id` is the only required attribute; of
+       `page` / `row` / `path` the parser takes the FIRST present, in
+       that order, so all three are optional here and the grammar has no
+       vocabulary for the precedence. -->
+  <xs:element name="provenance">
+    <xs:complexType>
+      <xs:attribute name="doc-id" type="xs:string" use="required"/>
+      <xs:attribute name="rev" type="xs:string"/>
+      <xs:attribute name="section" type="xs:string"/>
+      <xs:attribute name="page" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="row" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="path" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
   <!-- Timer kind: read by `parse_timer` via `find_sce_child`. -->
   <xs:element name="cancel-on">
     <xs:complexType>

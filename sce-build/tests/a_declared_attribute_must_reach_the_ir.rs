@@ -66,7 +66,6 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Every (element, attribute) pair `sce-forge-ext.xsd` declares.
 /// What each named `xs:simpleType` enumerates, if it enumerates
 /// anything.
 ///
@@ -126,6 +125,7 @@ fn enumerations() -> BTreeMap<String, Vec<String>> {
     out
 }
 
+/// Every (element, attribute) pair `sce-forge-ext.xsd` declares.
 fn declared_pairs() -> Vec<Declared> {
     let path = repo_root().join("schemas/sce-forge-ext.xsd");
     let text =
@@ -193,13 +193,23 @@ fn strip_prefix(s: &str) -> String {
     s.rsplit(':').next().unwrap_or(s).to_string()
 }
 
-/// Every `.scxml` under the fixture roots.
+/// Every `.scxml` in the checkout.
+///
+/// ⚠ The whole checkout, not a list of fixture roots. The list was
+/// `tests/forge/resources`, `integration_resources` and `examples`, and
+/// measured 2026-09-20 it missed where the documents for four of the
+/// attributes it reported as unwritten actually live: `sce:template`
+/// and `sce:use` are in `tests/parsing/fixtures` and
+/// `tests/w3c_template_parity/fixtures` (77 documents between them),
+/// and `sce:req` is in `sce-build/tests/fixtures`. A hand-listed scope
+/// reports "no fixture writes it" about a directory it was never
+/// pointed at, and the report reads exactly like a corpus hole.
+///
+/// `target/` is excluded because it is build output, not a document
+/// anybody wrote.
 fn fixture_files() -> Vec<PathBuf> {
-    let root = repo_root();
     let mut out = Vec::new();
-    for sub in ["tests/forge/resources", "integration_resources", "examples"] {
-        collect(&root.join(sub), &mut out);
-    }
+    collect(&repo_root(), &mut out);
     out.sort();
     out
 }
@@ -211,11 +221,49 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     for e in entries.flatten() {
         let p = e.path();
         if p.is_dir() {
+            if p.file_name()
+                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
+            {
+                continue;
+            }
             collect(&p, out);
         } else if p.extension().is_some_and(|x| x == "scxml") {
             out.push(p);
         }
     }
+}
+
+/// Which document to mutate for each declared pair.
+///
+/// Built in ONE pass over the corpus rather than by scanning every
+/// document for every pair. With 134 pairs and 746 documents the
+/// per-pair scan is a hundred thousand reads; this is 746, and it is
+/// what makes sweeping the whole checkout affordable at all.
+fn first_writer_of_each_pair(files: &[PathBuf]) -> BTreeMap<(String, String, bool), PathBuf> {
+    let mut out: BTreeMap<(String, String, bool), PathBuf> = BTreeMap::new();
+    for path in files {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(doc) = roxmltree::Document::parse(&text) else {
+            continue;
+        };
+        for node in doc.descendants() {
+            if node.tag_name().namespace() != Some(SCE_NS) {
+                continue;
+            }
+            let element = node.tag_name().name().to_string();
+            for a in node.attributes() {
+                let qualified = a.namespace() == Some(SCE_NS);
+                if !qualified && a.namespace().is_some() {
+                    continue;
+                }
+                out.entry((element.clone(), a.name().to_string(), qualified))
+                    .or_insert_with(|| path.clone());
+            }
+        }
+    }
+    out
 }
 
 /// A second value of the declared type, or `None` when this test has no
@@ -297,10 +345,10 @@ enum NoIr {
     Preprocessor(String),
     /// `schemas/sce-forge.xsd` refused it.
     Xsd(String),
-    /// The XSD was content and the forge parser refused it.
+    /// The XSD was content and the parser refused it.
     Parser(String),
-    /// A well-formed document that is not a forge kind at all.
-    NotForge,
+    /// Neither pipeline could read it.
+    NotReadable(String),
 }
 
 impl NoIr {
@@ -329,12 +377,26 @@ impl NoIr {
                  does not express what the parser requires: {}",
                 brief(m)
             ),
-            Self::NotForge => "the fixture is not a forge document".to_string(),
+            Self::NotReadable(m) => format!("neither pipeline could read it: {}", brief(m)),
         }
     }
 }
 
-/// Parse a document the way every forge review artefact does.
+/// Parse a document the way every review artefact does.
+///
+/// # ⚠ BOTH pipelines
+///
+/// `parse_forge_with_imports` answers `Ok(None)` for a statechart, and
+/// this function used to treat that as "not my subject" and move on. It
+/// is the whole statechart half of the grammar: measured 2026-09-20,
+/// `<sce:context id>` is written by eight fixtures INSIDE this file's
+/// sweep and was reported as written by none, because every one of them
+/// is a statechart. So were `<sce:entry sce:req>` and the
+/// `sce:template` / `sce:use` / `sce:param` preprocessor attributes.
+///
+/// The tree's standing note, met again: a gate that routes through one
+/// entry point measures one entry point, and says nothing about the
+/// other while looking as though it covered both.
 fn parse_to_ir(text: &str, label_stem: &str, dir: Option<&Path>) -> Result<String, NoIr> {
     let expanded = sce_build::parser::expand_preprocessors(text, label_stem, dir, &[])
         .map_err(|e| NoIr::Preprocessor(e.to_string()))?;
@@ -349,16 +411,22 @@ fn parse_to_ir(text: &str, label_stem: &str, dir: Option<&Path>) -> Result<Strin
     if let Err(e) = sce_build::forge::xsd_validator::validate_or_skip(&expanded.0, label_stem) {
         return Err(NoIr::Xsd(e.to_string()));
     }
-    let parsed = sce_build::forge::parser::parse_forge_with_imports(&expanded.0, label)
-        .map_err(|e| NoIr::Parser(e.to_string()))?
-        .ok_or(NoIr::NotForge)?;
-    // The WHOLE envelope, not `parsed.document`. Measured while writing
-    // this file: comparing the document alone reported `<sce:import src>`
-    // and `<sce:import as>` as unread, because an import's attributes
-    // land in `parsed.imports` — a defect in the comparison, not in the
-    // parser. A partial view of the IR makes every field outside it look
-    // dropped.
-    serde_json::to_string(&parsed).map_err(|e| NoIr::Parser(e.to_string()))
+    match sce_build::forge::parser::parse_forge_with_imports(&expanded.0, label) {
+        // The WHOLE envelope, not `parsed.document`. Measured while
+        // writing this file: comparing the document alone reported
+        // `<sce:import src>` and `<sce:import as>` as unread, because an
+        // import's attributes land in `parsed.imports` — a defect in the
+        // comparison, not in the parser. A partial view of the IR makes
+        // every field outside it look dropped.
+        Ok(Some(parsed)) => serde_json::to_string(&parsed).map_err(|e| NoIr::Parser(e.to_string())),
+        Ok(None) => {
+            let model = sce_build::parser::SCXMLParser::new()
+                .parse_string(&expanded.0, label_stem)
+                .map_err(|e| NoIr::Parser(e.to_string()))?;
+            serde_json::to_string(&model).map_err(|e| NoIr::NotReadable(e.to_string()))
+        }
+        Err(e) => Err(NoIr::Parser(e.to_string())),
+    }
 }
 
 /// Every element `sce-forge-ext.xsd` declares.
@@ -500,6 +568,7 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
 
     // Per pair: the first fixture that writes it, the raw text, and the
     // byte range of the value to splice.
+    let writers = first_writer_of_each_pair(&files);
     let mut not_read: Vec<String> = Vec::new();
     let mut measured: BTreeSet<(String, String)> = BTreeSet::new();
     let mut unmeasured: BTreeMap<String, String> = BTreeMap::new();
@@ -512,7 +581,13 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
             d.attribute
         );
 
-        let Some(replacement) = try_each_fixture(d, &files, &enums, &mut unmeasured, &key) else {
+        let written_in = writers
+            .get(&(d.element.clone(), d.attribute.clone(), d.qualified))
+            .cloned()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let Some(replacement) = try_each_fixture(d, &written_in, &enums, &mut unmeasured, &key)
+        else {
             unmeasured
                 .entry(key.clone())
                 .or_insert_with(|| "no fixture writes it".to_string());
