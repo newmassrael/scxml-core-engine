@@ -500,7 +500,15 @@ pub fn render_with_deployment(
     doc: &ForgeDocument,
     deployment: &Deployment,
 ) -> Result<String, Unsupported> {
-    Ok(Indent.write(&render_nodes(doc, deployment)?, &EN))
+    // ⚠ `expect`, and it is not a shortcut: `Indent` is the one shape
+    // that cannot refuse — it needs to know nothing about a line — and
+    // its signature carries a `Result` only because the trait has to
+    // admit shapes that can. Turning that into a refusal type here
+    // would make every caller handle a case this shape has no way to
+    // produce.
+    Ok(Indent
+        .write(&render_nodes(doc, deployment)?, &EN)
+        .expect("the indent shape refuses nothing"))
 }
 
 /// The page before a shape has written it.
@@ -621,7 +629,9 @@ impl<'d> Out<'d> {
 
     /// The page, written by the default shape and lexicon.
     fn finish(&self) -> String {
-        Indent.write(&self.nodes, &EN)
+        Indent
+            .write(&self.nodes, &EN)
+            .expect("the indent shape refuses nothing")
     }
 
     /// One derived line at the current depth.

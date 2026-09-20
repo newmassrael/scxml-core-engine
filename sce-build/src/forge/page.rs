@@ -174,6 +174,13 @@ pub enum Word {
     Timer,
     BoundedCollection,
     Worker,
+    /// The two a shape spends rather than the mapping: a block's open
+    /// and close, for a shape that marks them instead of indenting.
+    /// ⚠ They are WORDS and not shape-private literals for the same
+    /// reason every other word is one — a reader in another language
+    /// needs them named, and `반복문 시작` is precisely this pair.
+    Begin,
+    End,
 }
 
 impl Word {
@@ -287,6 +294,8 @@ impl Word {
         Word::Timer,
         Word::BoundedCollection,
         Word::Worker,
+        Word::Begin,
+        Word::End,
     ];
 }
 
@@ -424,6 +433,8 @@ fn en_word(w: Word) -> &'static str {
         Word::Timer => "timer",
         Word::BoundedCollection => "bounded-collection",
         Word::Worker => "worker",
+        Word::Begin => "begin",
+        Word::End => "end",
     }
 }
 
@@ -471,13 +482,63 @@ impl Node {
     }
 }
 
+/// A page a shape will not write, and why.
+///
+/// ⚠ A refusal rather than a best effort, for the reason
+/// [`crate::forge::pseudo`] refuses a document it cannot show in full:
+/// a page that silently dropped a block's close would read like a page
+/// that had no block there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+    pub shape: &'static str,
+    pub why: String,
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "the '{}' shape cannot write {}", self.shape, self.why)
+    }
+}
+
 /// How lines and nesting are written.
 pub trait Shape {
     /// How a page names this shape when it declares itself.
     fn name(&self) -> &'static str;
 
     /// Write the whole page.
-    fn write(&self, nodes: &[Node], lexicon: &Lexicon) -> String;
+    fn write(&self, nodes: &[Node], lexicon: &Lexicon) -> Result<String, Refusal>;
+}
+
+/// Whether the node at `i` is the one that opens the block under it.
+///
+/// ⚠ Read off the page rather than marked by the renderer. A marker
+/// would be a second statement of the same fact, and the two would
+/// drift the first time a renderer nested something without setting
+/// it.
+fn opens_a_block(nodes: &[Node], i: usize) -> bool {
+    nodes
+        .get(i + 1)
+        .is_some_and(|next| next.depth > nodes[i].depth)
+}
+
+/// The parts of one line, joined.
+fn join_parts(node: &Node, lexicon: &Lexicon, skip_first_word: bool) -> String {
+    let mut out = String::new();
+    let mut first = true;
+    for (n, part) in node.parts.iter().enumerate() {
+        if skip_first_word && n == 0 {
+            continue;
+        }
+        if !first && !matches!(part, Part::Glued(_)) {
+            out.push(' ');
+        }
+        first = false;
+        match part {
+            Part::Word(w) => out.push_str((lexicon.word)(*w)),
+            Part::Text(t) | Part::Glued(t) => out.push_str(t),
+        }
+    }
+    out
 }
 
 /// Nesting by indentation, two spaces per level: the default, and the
@@ -489,28 +550,241 @@ impl Shape for Indent {
         "indent"
     }
 
-    fn write(&self, nodes: &[Node], lexicon: &Lexicon) -> String {
+    fn write(&self, nodes: &[Node], lexicon: &Lexicon) -> Result<String, Refusal> {
         let mut out = String::new();
         for node in nodes {
             for _ in 0..node.depth {
                 out.push_str("  ");
             }
-            let mut first = true;
-            for part in &node.parts {
-                if !first && !matches!(part, Part::Glued(_)) {
-                    out.push(' ');
-                }
-                first = false;
-                match part {
-                    Part::Word(w) => out.push_str((lexicon.word)(*w)),
-                    Part::Text(t) | Part::Glued(t) => out.push_str(t),
-                }
-            }
+            out.push_str(&join_parts(node, lexicon, false));
             let _ = writeln!(out);
         }
-        out
+        // ⚠ Never refuses. Indentation needs to know nothing about a
+        // line, which is why it can serve a page whose words are only
+        // partly known — and why it alone could be the default while
+        // the renderer was being decomposed.
+        Ok(out)
     }
 }
+
+/// Nesting by an explicit close, and no indentation.
+///
+/// ```text
+/// state s0 begin:
+/// on e -> t [external]
+/// state end
+/// ```
+///
+/// ⚠ It needs the opener's WORD, because the close repeats it — that
+/// is what makes an end marker readable at all, and it is why
+/// `a_line_that_opens_a_block_carries_its_word` exists. A page whose
+/// opener is raw is refused by name rather than closed with a guess.
+///
+/// ⚠ The open word goes right after the keyword, BEFORE the values,
+/// not at the end of the line. Free text runs to the end of a line by
+/// contract, so a marker after it would be a word the reader could not
+/// tell from the value it follows.
+pub struct Endmark;
+
+impl Shape for Endmark {
+    fn name(&self) -> &'static str {
+        "endmark"
+    }
+
+    fn write(&self, nodes: &[Node], lexicon: &Lexicon) -> Result<String, Refusal> {
+        let mut out = String::new();
+        // The word of each block still open, innermost last. Its length
+        // is the depth those lines sit at, which is how a line says
+        // which blocks it has left.
+        let mut open: Vec<Word> = Vec::new();
+        let close = |out: &mut String, w: Word| {
+            let _ = writeln!(out, "{} {}", (lexicon.word)(w), (lexicon.word)(Word::End));
+        };
+
+        for (i, node) in nodes.iter().enumerate() {
+            while open.len() > node.depth {
+                close(&mut out, open.pop().expect("len checked"));
+            }
+            if opens_a_block(nodes, i) {
+                let Some(Part::Word(w)) = node.parts.first() else {
+                    return Err(Refusal {
+                        shape: "endmark",
+                        why: format!(
+                            "`{}`, which opens a block and names no word to \
+                             close it with",
+                            join_parts(node, lexicon, false)
+                        ),
+                    });
+                };
+                let _ = writeln!(
+                    out,
+                    "{} {} {}",
+                    (lexicon.word)(*w),
+                    (lexicon.word)(Word::Begin),
+                    join_parts(node, lexicon, true)
+                );
+                open.push(*w);
+            } else {
+                let _ = writeln!(out, "{}", join_parts(node, lexicon, false));
+            }
+        }
+        while let Some(w) = open.pop() {
+            close(&mut out, w);
+        }
+        Ok(out)
+    }
+}
+
+/// A first Korean vocabulary.
+///
+/// ⚠⚠ **The words here are a judgement, not a measurement, and the
+/// owner's to revise.** What this file can hold them to is only what is
+/// wrong whatever the vocabulary turns out to be — no two words
+/// spelled alike, no word left unspelled — and whether a page written
+/// with them reads back, which the corpus answers. Which Korean term
+/// belongs to a `while` is not a question a gate can settle, so it is
+/// written down here to be argued with rather than buried.
+///
+/// Four of these are the owner's own: `반복문`, `시작`, `종료` and
+/// `출력` come from the example this shape was built for.
+///
+/// ⚠ A protocol's own name is NOT translated — `udp`, `tcp`,
+/// `raw_eth`, `dma` are what the platform calls them, and a page that
+/// renamed them would be describing a different system. The rule is
+/// the same one that keeps a document's ids untouched: a name the
+/// author did not choose is not this surface's to change.
+pub const KO: Lexicon = Lexicon {
+    name: "ko",
+    word: ko_word,
+};
+
+fn ko_word(w: Word) -> &'static str {
+    match w {
+        Word::Enum => "열거",
+        Word::Variant => "열거값",
+        Word::Strict => "엄격",
+        Word::AtLine => "@줄",
+        Word::Condition => "조건",
+        Word::Transform => "변환",
+        Word::Validator => "검증",
+        Word::Lookup => "조회표",
+        Word::Monitor => "감시",
+        Word::If => "만약",
+        Word::Else => "아니면",
+        Word::Foreach => "반복문",
+        Word::In => "범위",
+        Word::Done => "완료",
+        Word::While => "조건반복",
+        Word::Max => "최대",
+        Word::Call => "호출",
+        Word::Send => "전송",
+        Word::Log => "출력",
+        Word::OnEntry => "진입 시",
+        Word::OnExit => "이탈 시",
+        Word::OnInitial => "초기 시",
+        Word::OnHistoryDefault => "이력기본 시",
+        Word::State => "상태",
+        Word::Final => "종료상태",
+        Word::Test => "시험",
+        Word::Param => "인자",
+        Word::Arg => "인수",
+        Word::From => "위치",
+        Word::Expr => "식",
+        Word::Observer => "관찰",
+        Word::Domain => "영역",
+        Word::Filter => "필터",
+        Word::MovingAverage => "이동평균",
+        Word::LowPass => "저역통과",
+        Word::Debounce => "디바운스",
+        Word::Window => "창",
+        Word::Alpha => "알파",
+        Word::Algorithm => "알고리즘",
+        Word::ReturnsMax => "반환최대",
+        Word::On => "사건",
+        Word::When => "일때",
+        Word::BufferPool => "버퍼풀",
+        Word::Slots => "슬롯수",
+        Word::Size => "크기",
+        Word::Section => "섹션",
+        Word::Align => "정렬",
+        Word::Cache => "캐시",
+        Word::Dma => "dma",
+        Word::Maintain => "유지",
+        Word::NonCacheable => "캐시불가",
+        Word::None => "없음",
+        Word::Link => "링크",
+        Word::Class => "종류",
+        Word::Framer => "프레이머",
+        Word::Backpressure => "배압",
+        Word::AcceptStageCopyRate => "스테이지복사율허용",
+        Word::Udp => "udp",
+        Word::Tcp => "tcp",
+        Word::Serial => "serial",
+        Word::Websocket => "websocket",
+        Word::RawEth => "raw_eth",
+        Word::Drop => "버림",
+        Word::Block => "막음",
+        Word::SignalEvent => "사건통지",
+        Word::Invoke => "위임",
+        Word::Parallel => "병렬",
+        Word::Initial => "초기",
+        Word::InitialChildren => "초기자식",
+        Word::History => "이력",
+        Word::Default => "기본",
+        Word::Unhandled => "미처리",
+        Word::NoTarget => "(목표 없음)",
+        Word::NativeGuard => "네이티브가드",
+        Word::Index => "색인",
+        Word::Elif => "아니면만약",
+        Word::Codec => "코덱",
+        Word::Endian => "엔디언",
+        Word::InputLength => "입력길이",
+        Word::Big => "빅",
+        Word::Little => "리틀",
+        Word::Native => "네이티브",
+        Word::TagField => "태그필드",
+        Word::TagFlag => "태그플래그",
+        Word::PeekByte => "미리보기바이트",
+        Word::Machine => "기계",
+        Word::EventSchema => "사건스키마",
+        Word::Event => "사건이름",
+        Word::Child => "자식",
+        Word::Assign => "대입",
+        Word::Content => "내용",
+        Word::Const => "상수",
+        Word::Field => "필드",
+        Word::Procedure => "절차",
+        Word::Interpolation => "보간",
+        Word::Method => "방식",
+        Word::OutOfBounds => "범위밖",
+        Word::Linear => "선형",
+        Word::Bilinear => "이중선형",
+        Word::Clamp => "고정",
+        Word::Extrapolate => "외삽",
+        Word::Error => "오류",
+        // ⚠ Unchanged. The arrow is a word so that a lexicon COULD
+        // change it, and this one chooses not to: a Korean reader
+        // reads `->` as an arrow already, and a different glyph would
+        // be a change with a cost and no reading to gain.
+        Word::Arrow => "->",
+        Word::Timer => "타이머",
+        Word::BoundedCollection => "유한컬렉션",
+        Word::Worker => "작업자",
+        Word::Begin => "시작",
+        Word::End => "종료",
+    }
+}
+
+/// Every shape a caller may choose.
+///
+/// ⚠ The registry, and the population every per-shape law is derived
+/// from. A shape added here without a law is caught by the law's own
+/// sweep, which walks THIS list rather than one written beside it —
+/// the correction this session made five times over.
+pub const SHAPES: &[&dyn Shape] = &[&Indent, &Endmark];
+
+/// Every lexicon a caller may choose.
+pub const LEXICONS: &[&Lexicon] = &[&EN, &KO];
 
 #[cfg(test)]
 mod tests {
@@ -537,7 +811,11 @@ mod tests {
     /// check that costs a corpus sweep.
     #[test]
     fn a_lexicon_names_every_word_and_names_no_two_alike() {
-        for lexicon in [&EN] {
+        // ⚠ Walks the REGISTRY, so a lexicon added without a name for
+        // some word, or with one it already spends, is caught the day
+        // it is registered rather than the day somebody renders with
+        // it.
+        for lexicon in LEXICONS {
             let mut seen: std::collections::BTreeMap<&str, Word> = Default::default();
             for &w in Word::ALL {
                 let name = (lexicon.word)(w);
@@ -577,7 +855,7 @@ mod tests {
         ];
         assert_eq!(
             "enum nrc: uint8\n  variant reject = 0x10 @line 29\n",
-            Indent.write(&nodes, &EN)
+            Indent.write(&nodes, &EN).unwrap()
         );
     }
 
@@ -587,7 +865,95 @@ mod tests {
             depth: 0,
             parts: vec![Part::Word(Word::Strict), Part::Glued(":".into())],
         }];
-        assert_eq!("strict:\n", Indent.write(&nodes, &EN));
+        assert_eq!("strict:\n", Indent.write(&nodes, &EN).unwrap());
+    }
+
+    /// The shape the second one exists for: blocks closed by name,
+    /// and no indentation carrying the structure.
+    #[test]
+    fn endmark_closes_each_block_with_the_word_that_opened_it() {
+        let nodes = vec![
+            Node {
+                depth: 0,
+                parts: vec![
+                    Part::Word(Word::Foreach),
+                    Part::Text("a".into()),
+                    Part::Word(Word::In),
+                    Part::Text("0..9".into()),
+                    Part::Glued(":".into()),
+                ],
+            },
+            Node {
+                depth: 1,
+                parts: vec![Part::Word(Word::Log), Part::Text("a * b".into())],
+            },
+        ];
+        assert_eq!(
+            "foreach begin a in 0..9:\nlog a * b\nforeach end\n",
+            Endmark.write(&nodes, &EN).unwrap()
+        );
+    }
+
+    /// The page the whole axis was asked for.
+    #[test]
+    fn endmark_with_the_korean_lexicon_reads_as_the_owner_wrote_it() {
+        let nodes = vec![
+            Node {
+                depth: 0,
+                parts: vec![
+                    Part::Word(Word::Foreach),
+                    Part::Text("a".into()),
+                    Part::Word(Word::In),
+                    Part::Text("2..9".into()),
+                    Part::Glued(":".into()),
+                ],
+            },
+            Node {
+                depth: 1,
+                parts: vec![Part::Word(Word::Log), Part::Text("a * b".into())],
+            },
+        ];
+        assert_eq!(
+            "반복문 시작 a 범위 2..9:\n출력 a * b\n반복문 종료\n",
+            Endmark.write(&nodes, &KO).unwrap()
+        );
+    }
+
+    /// ⚠ The dependency, stated as a case. A raw opener cannot be
+    /// closed by name, and the shape says so instead of guessing.
+    #[test]
+    fn endmark_refuses_a_block_whose_opener_names_no_word() {
+        let nodes = vec![
+            Node::raw(0, "something:".into()),
+            Node {
+                depth: 1,
+                parts: vec![Part::Word(Word::Log)],
+            },
+        ];
+        let refused = Endmark.write(&nodes, &EN).unwrap_err();
+        assert_eq!("endmark", refused.shape);
+        assert!(
+            refused.why.contains("something:"),
+            "the refusal names the line: {}",
+            refused.why
+        );
+    }
+
+    /// ⚠ Every shape in the registry is walked, not a list written
+    /// here. A shape added without a name, or with one another shape
+    /// already uses, is caught the day it is registered.
+    #[test]
+    fn every_registered_shape_has_its_own_name() {
+        let mut seen: std::collections::BTreeSet<&str> = Default::default();
+        for shape in SHAPES {
+            let name = shape.name();
+            assert!(!name.is_empty(), "a registered shape has no name");
+            assert!(seen.insert(name), "two shapes are both called {name:?}");
+        }
+        assert!(
+            seen.contains("indent"),
+            "the default shape left the registry, so nothing offers it"
+        );
     }
 
     /// A line the renderer has not been decomposed into words yet still
@@ -595,6 +961,6 @@ mod tests {
     #[test]
     fn a_raw_line_is_written_unchanged() {
         let nodes = vec![Node::raw(2, "on entry:".into())];
-        assert_eq!("    on entry:\n", Indent.write(&nodes, &EN));
+        assert_eq!("    on entry:\n", Indent.write(&nodes, &EN).unwrap());
     }
 }
