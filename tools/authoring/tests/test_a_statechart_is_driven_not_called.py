@@ -79,6 +79,29 @@ DELAYED = """<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 """
 
+# A statechart whose answer is a variable it DECLARES an output, rather than
+# something it sends. `sce:direction="out"` is the document saying this is part
+# of its outward surface, and the generator emits a host-facing accessor for
+# every such variable -- so reading one is reading the declared interface.
+DECLARING = """<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="dark"
+       sce:kind="statechart">
+  <datamodel>
+    <data id="roadSignal" sce:type="int32" sce:direction="out" expr="0"/>
+  </datamodel>
+  <state id="dark">
+    <onentry><assign location="roadSignal" expr="0"/></onentry>
+    <transition event="train.approaching" target="flashing"/>
+  </state>
+  <state id="flashing">
+    <onentry><assign location="roadSignal" expr="1"/></onentry>
+    <transition event="train.cleared" target="dark"/>
+  </state>
+</scxml>
+"""
+
 BINDING = {
     "version": 1,
     "document": "signal.scxml",
@@ -255,15 +278,20 @@ class AStatechartIsDrivenNotCalled(unittest.TestCase):
                          [(r.name, r.refusal) for r in result.results])
         self.assertEqual(2, result.passed)
 
-    def test_an_output_not_bound_to_a_send_is_refused(self):
-        """This driver reads a statechart only through what it sends."""
+    def test_an_output_on_neither_declared_channel_is_refused(self):
+        """This document sends, and declares no output variable either.
+
+        So the only place left to look is the active configuration, and a
+        state is not an output: asserting on one would break when a state is
+        renamed or split while the document went on doing the same thing.
+        """
         binding = {**BINDING, "outputs": {"roadSignal": {
             "address": "plant/out/road-signal", "field": "value",
             "map": {"0": "DARK", "1": "FLASHING"}}}}
         result = self.run_with(binding=binding)
         self.assertTrue(result.ran, result.refusal)
         self.assertTrue(
-            all("not bound to a `sent`" in r.refusal for r in result.results),
+            all("not an output" in r.refusal for r in result.results),
             [(r.name, r.refusal) for r in result.results])
 
     def test_no_input_naming_an_event_is_refused_up_front(self):
@@ -374,6 +402,62 @@ class ADelayedActNeedsTimeToBeDrivenThrough(unittest.TestCase):
         ])
         self.assertFalse(result.ran)
         self.assertIn("never fired", result.refusal)
+
+
+@unittest.skipUnless(codegen_is_built(),
+                     "the product's generator is not built; nothing can be run")
+class AnOutputTheDocumentDeclaresIsReadFromIt(unittest.TestCase):
+    """Not everything a statechart answers with leaves as a send.
+
+    A document may declare a datamodel variable `sce:direction="out"`, which
+    is it saying that variable is part of its outward surface: the generator
+    emits a host-facing accessor for every one, and `check` refuses a binding
+    that leaves one uncovered. Reading it is therefore reading the declared
+    interface, and a verification that breaks when it is renamed is right to.
+
+    ⚠ The active CONFIGURATION is the opposite case and stays unreadable. No
+    state is declared an output anywhere, so an assertion on one would break
+    when a state is renamed or split while the document went on doing exactly
+    the same thing -- an assertion about the insides wearing the clothes of
+    one about behaviour.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = pathlib.Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("interface-model.yaml", "conventions.yaml"):
+            shutil.copy(CROSSING / name, self.tmp / name)
+        (self.tmp / "signal.scxml").write_text(DECLARING, encoding="utf-8")
+        (self.tmp / "examples.yaml").write_text(
+            yaml.safe_dump(EXAMPLES), encoding="utf-8")
+
+    def run_with(self, output):
+        binding = {**BINDING, "outputs": {"roadSignal": output}}
+        path = self.tmp / "b.yaml"
+        path.write_text(yaml.safe_dump(binding), encoding="utf-8")
+        return verify(load_pack(self.tmp), path)
+
+    def test_the_declared_variable_is_what_the_case_is_judged_on(self):
+        result = self.run_with({
+            "address": "plant/out/road-signal", "field": "value",
+            "map": {0: "DARK", 1: "FLASHING"}})
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual(2, result.passed,
+                         [(r.name, r.refusal, r.failures) for r in result.results])
+
+    def test_an_output_the_document_declares_nowhere_is_refused(self):
+        """The configuration is what is left, and it is not an output."""
+        binding = {**BINDING, "outputs": {"bell": {
+            "address": "plant/out/bell", "field": "value",
+            "map": {0: "SILENT", 1: "RINGING"}}}}
+        path = self.tmp / "b.yaml"
+        path.write_text(yaml.safe_dump(binding), encoding="utf-8")
+        result = verify(load_pack(self.tmp), path)
+        self.assertTrue(result.ran, result.refusal)
+        self.assertTrue(
+            all("not an output" in r.refusal for r in result.results),
+            [(r.name, r.refusal) for r in result.results])
 
 
 if __name__ == "__main__":

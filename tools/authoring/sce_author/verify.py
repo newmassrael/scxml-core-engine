@@ -777,6 +777,39 @@ class StatechartRun:
         self.engine.send_event(self.event(rule["event"]))
         return True
 
+    def declared_value(self, name: str):
+        """What one of the document's own declared outputs is holding now.
+
+        ⚠ This is NOT reaching into the machine. `sce:direction="out"` is the
+        document declaring that variable part of its outward surface -- the
+        generator emits a host-facing accessor for every one of them, and
+        `check` refuses a binding that leaves one uncovered. Renaming it is an
+        interface change, and a verification that breaks on one is right to.
+        The active CONFIGURATION is the opposite case and stays unreadable: no
+        state is declared an output anywhere, so asserting on one would break
+        on a rename that changed nothing about what the document does.
+
+        ⚠⚠ Through the ACCESSOR, never the session. Reaching past it into the
+        engine's private session id would be this package helping itself to
+        the runtime's insides to read a value the runtime already offers.
+        """
+        reader = getattr(self.engine.policy, _snake(name), None)
+        if reader is None:
+            raise VerifyError(
+                f"output {name!r}: the document declares it an output and the "
+                f"generated machine offers no accessor for it. One is emitted "
+                f"for a variable whose type the document settles and whose id "
+                f"is a legal identifier, so this one is neither")
+        value = reader()
+        if value is None:
+            raise VerifyError(
+                f"output {name!r}: the machine cannot say what it is holding. "
+                f"That answer covers a session that never initialised, a "
+                f"variable assigned a value of another type, and an engine "
+                f"that refused -- and none of them is a value to judge a case "
+                f"on")
+        return value
+
     def observe(self, case, restated: bool = False) -> None:
         """Move virtual time to the moment this case was observed.
 
@@ -903,14 +936,23 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             for name, rule in outputs.items():
                 if rule.get("unresolved") or rule.get("internal"):
                     continue
-                if not rule.get("sent"):
+                # A send is the channel to prefer and is asked first. Failing
+                # that, the document's own declared output variable -- and
+                # failing THAT, nothing, because the only places left are ones
+                # the document never said anybody could read.
+                if rule.get("sent"):
+                    value = sent_value(name, rule, requests)
+                elif name in declared.outputs:
+                    value = run.declared_value(name)
+                else:
                     raise VerifyError(
-                        f"output {name!r} is not bound to a `sent`, and this "
-                        f"driver reads a statechart only through what it "
-                        f"sends. Reading the datamodel or the configuration "
-                        f"instead would assert against the document's insides")
-                produced.update(
-                    output_values(name, rule, sent_value(name, rule, requests)))
+                        f"output {name!r} is bound to no `sent`, and the "
+                        f"document does not declare it `sce:direction=\"out\"` "
+                        f"either. What is left is the active configuration, "
+                        f"and a state is not an output: asserting on one would "
+                        f"break when a state is renamed or split while the "
+                        f"document went on doing the same thing")
+                produced.update(output_values(name, rule, value))
         except VerifyError as exc:
             result.refusal = str(exc)
             verification.results.append(result)

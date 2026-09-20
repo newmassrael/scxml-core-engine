@@ -144,6 +144,18 @@ engine pops due entries one macrostep apart, so a long step does not step over
 a deadline the document distinguishes, and choosing a step SIZE is the move
 its runtime explicitly warns against.
 
+**Two channels, asked in that order.** A send is preferred, and failing that
+the driver reads a variable the document declares `sce:direction="out"` --
+which is the document saying that variable is part of its outward surface. The
+generator emits a host-facing accessor for every one, and `check` already
+refuses a binding that leaves one uncovered, so reading it is reading the
+declared interface rather than the insides. ⚠ Failing BOTH, the only place
+left is the active configuration, and that stays unreadable: no state is
+declared an output anywhere, so an assertion on one would break when a state
+is renamed or split while the document went on doing exactly the same thing.
+That is an assertion about the insides wearing the clothes of one about
+behaviour, and it is refused instead.
+
 ⚠ Two silences get refused rather than chosen. A reading with no `elapsed_ms`
 taken while the machine is still waiting on a delayed act is dated to a moment
 no record names. And a case that drove the same addresses to the same values
