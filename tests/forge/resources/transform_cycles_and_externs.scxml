@@ -39,7 +39,8 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="transform" name="cycles_and_externs_transform">
-  <sce:extern name="sce_atomic_fence_acquire" sig="()" abi="c"/>
+  <sce:extern name="sce_atomic_fence_acquire" sig="()" abi="c"
+              crate="sce_intrinsics_runtime"/>
 
   <sce:cycle id="gear_order" of="gear">
     <sce:step name="park"/>

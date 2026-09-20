@@ -57,6 +57,18 @@ struct Declared {
     qualified: bool,
     /// The XSD type name, unprefixed (`positiveInteger`, `NCName`, …).
     xsd_type: String,
+    /// The values an INLINE `xs:simpleType` on this attribute
+    /// enumerates, if it carries one.
+    ///
+    /// ⚠ A named type's enumeration is found by
+    /// [`enumerations`], which walks `xs:simpleType` declarations that
+    /// have a `name`. An attribute may instead carry an anonymous
+    /// restriction of its own — `<sce:inbox ordering>` and
+    /// `<sce:extern abi>` both do — and that one belongs to no named
+    /// type, so the map cannot hold it and the attribute looked
+    /// typeless. Read here, at the declaration, because that is where
+    /// it is.
+    inline_values: Vec<String>,
 }
 
 fn repo_root() -> PathBuf {
@@ -167,12 +179,20 @@ fn declared_pairs() -> Vec<Declared> {
             // `ref`s it — handled at the use site below.
             continue;
         };
+        // An anonymous restriction on the attribute itself. See the
+        // field doc on `Declared::inline_values`.
+        let inline_values: Vec<String> = a
+            .descendants()
+            .filter(|n| n.has_tag_name("enumeration"))
+            .filter_map(|n| n.attribute("value").map(str::to_string))
+            .collect();
         if let Some(name) = a.attribute("name") {
             out.push(Declared {
                 element: element.to_string(),
                 attribute: name.to_string(),
                 qualified: false,
                 xsd_type: strip_prefix(a.attribute("type").unwrap_or("string")),
+                inline_values,
             });
         } else if let Some(r) = a.attribute("ref") {
             let local = strip_prefix(r);
@@ -181,6 +201,7 @@ fn declared_pairs() -> Vec<Declared> {
                 attribute: local.clone(),
                 qualified: true,
                 xsd_type: strip_prefix(globals.get(local.as_str()).copied().unwrap_or("string")),
+                inline_values,
             });
         }
     }
@@ -281,16 +302,19 @@ fn writers_of_each_pair(files: &[PathBuf]) -> BTreeMap<(String, String, bool), V
 /// Deliberately narrow: a mutant the document rejects proves nothing, so
 /// a type whose value space this test cannot reason about is reported
 /// unmeasured rather than guessed at.
-fn mutate(xsd_type: &str, current: &str, enums: &BTreeMap<String, Vec<String>>) -> Option<String> {
-    // The grammar first. A type that lists what it accepts has already
-    // written the second value, and reaching for a shape rule instead
-    // would invent one the type forbids.
-    if let Some(values) = enums.get(xsd_type) {
+fn mutate(d: &Declared, current: &str, enums: &BTreeMap<String, Vec<String>>) -> Option<String> {
+    // The grammar first, and its OWN declaration before a named type's:
+    // a value listed on this attribute is what this attribute accepts,
+    // and reaching for a shape rule instead would invent one it forbids.
+    for values in [
+        &d.inline_values,
+        enums.get(&d.xsd_type).unwrap_or(&Vec::new()),
+    ] {
         if let Some(other) = values.iter().find(|v| v.as_str() != current.trim()) {
             return Some(other.clone());
         }
     }
-    match xsd_type {
+    match d.xsd_type.as_str() {
         "positiveInteger" | "nonNegativeInteger" | "integer" => {
             Some(match current.trim().parse::<u64>() {
                 Ok(n) if n < u32::MAX as u64 => (n + 1).to_string(),
@@ -337,6 +361,17 @@ fn mutate(xsd_type: &str, current: &str, enums: &BTreeMap<String, Vec<String>>) 
     }
 }
 
+/// A decoded attribute value, written back the way XML carries one.
+///
+/// `&` first, or the escapes this adds get escaped again by the passes
+/// after it.
+fn escape_attribute_value(v: &str) -> String {
+    v.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 /// Why a document did not become an IR, in the words of whatever
 /// refused it.
 ///
@@ -358,6 +393,16 @@ enum NoIr {
     Parser(String),
     /// Neither pipeline could read it.
     NotReadable(String),
+    /// Not a document at all — its root is some other element.
+    ///
+    /// ⚠ A distinct answer from a parser refusal, and the distinction
+    /// is what keeps somebody from trying to close it. A template
+    /// DEFINITION has `<sce:template>` as its root; it is expanded into
+    /// a document rather than being one. This gate mutates one file and
+    /// reparses that same file, so an attribute that lives only in a
+    /// definition is structurally beyond it — an honest limit, not an
+    /// open task.
+    NotADocument(String),
 }
 
 impl NoIr {
@@ -387,6 +432,11 @@ impl NoIr {
                 brief(m)
             ),
             Self::NotReadable(m) => format!("neither pipeline could read it: {}", brief(m)),
+            Self::NotADocument(root) => format!(
+                "its only writers are not documents — the root element is \
+                 `{root}`, so this gate, which mutates one file and reparses \
+                 that same file, structurally cannot measure the attribute"
+            ),
         }
     }
 }
@@ -407,6 +457,16 @@ impl NoIr {
 /// entry point measures one entry point, and says nothing about the
 /// other while looking as though it covered both.
 fn parse_to_ir(text: &str, label_stem: &str, dir: Option<&Path>) -> Result<String, NoIr> {
+    // Asked of the root element rather than inferred from an error
+    // message: a template definition is a file the preprocessor
+    // expands, not a document, and that is a structural fact this can
+    // read directly. See `NoIr::NotADocument`.
+    if let Ok(doc) = roxmltree::Document::parse(text) {
+        let root = doc.root_element().tag_name().name();
+        if root != "scxml" {
+            return Err(NoIr::NotADocument(root.to_string()));
+        }
+    }
     let expanded = sce_build::parser::expand_preprocessors(text, label_stem, dir, &[])
         .map_err(|e| NoIr::Preprocessor(e.to_string()))?;
     let label = DocumentLabel {
@@ -700,8 +760,17 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
         };
         let (path, before_text, range, new_value, before_ir) = replacement;
 
+        // ⚠ RE-ESCAPED before it goes back. `attr.value()` is DECODED
+        // and `attr.range_value()` is the RAW span, so a value written
+        // `array&lt;u16, 4&gt;` arrives as `array<u16, 4>` and splicing
+        // the mutant over the raw span writes a literal `<` into the
+        // markup. Measured 2026-09-20: that corrupted two documents and
+        // the gate reported the corruption as "the XSD refused the
+        // mutant" — a true sentence about a cause the test had
+        // invented. `<sce:const type>` and `<sce:while cond>` were the
+        // two, and both carry an entity.
         let mut after_text = before_text.clone();
-        after_text.replace_range(range, &new_value);
+        after_text.replace_range(range, &escape_attribute_value(&new_value));
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -759,6 +828,15 @@ fn try_each_fixture(
     unmeasured: &mut BTreeMap<String, String>,
     key: &str,
 ) -> Option<Candidate> {
+    // ⚠ Recorded, not reported, until every writer has been tried. A
+    // value no second value can be made from is a fact about THAT
+    // document, and another may carry one: `<sce:param required>` is
+    // `xs:boolean` and three documents write `required="maybe"` on
+    // purpose while eight write a real boolean. Reporting at the first
+    // failure both gave up early and left the pair listed as unmeasured
+    // even when a later writer would have measured it.
+    let mut no_second_value = false;
+    let mut writer_refusal: Option<String> = None;
     for path in files {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
@@ -779,22 +857,38 @@ fn try_each_fixture(
                     }
             });
             let Some(attr) = attr else { continue };
-            let Some(new_value) = mutate(&d.xsd_type, attr.value(), enums) else {
-                unmeasured.entry(key.to_string()).or_insert_with(|| {
-                    format!(
-                        "no mechanical second value for xs:{} — mutate() does not \
-                         know this type",
-                        d.xsd_type
-                    )
-                });
-                return None;
+            // ⚠ `continue`, not `return`: this writer's value may be
+            // one no second value can be made from, and another
+            // writer's may not. `<sce:param required>` is declared
+            // `xs:boolean` and three documents write `required="maybe"`
+            // on purpose; giving up at the first of them reported the
+            // pair as unmeasurable while eight documents wrote a real
+            // boolean. The same first-writer narrowing the index above
+            // was fixed for, one level further in.
+            let Some(new_value) = mutate(d, attr.value(), enums) else {
+                no_second_value = true;
+                continue;
             };
             let stem = path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("fixture");
-            let Ok(before_ir) = parse_to_ir(&text, stem, path.parent()) else {
-                continue;
+            // ⚠ The refuser's own words, kept for the report. "None of
+            // the writers parse" reads like the documents are broken,
+            // and for `<sce:template name>` they are not: a template
+            // DEFINITION has `<sce:template>` as its root, so it is not
+            // a document and this gate — which mutates one file and
+            // reparses that same file — structurally cannot measure it.
+            // Saying so is the difference between an honest limit and
+            // an open task somebody will try to close.
+            let before_ir = match parse_to_ir(&text, stem, path.parent()) {
+                Ok(ir) => ir,
+                Err(why) => {
+                    if writer_refusal.is_none() {
+                        writer_refusal = Some(why.say());
+                    }
+                    continue;
+                }
             };
             return Some((
                 path.clone(),
@@ -804,6 +898,20 @@ fn try_each_fixture(
                 before_ir,
             ));
         }
+    }
+    // The refuser's words first: "this writer is not a document" is a
+    // sharper answer than "no second value could be made", and when
+    // both are true the first is the one that explains the other.
+    if let Some(why) = writer_refusal {
+        unmeasured.entry(key.to_string()).or_insert(why);
+    } else if no_second_value {
+        unmeasured.entry(key.to_string()).or_insert_with(|| {
+            format!(
+                "no mechanical second value for xs:{} — mutate() does not \
+                 know this type",
+                d.xsd_type
+            )
+        });
     }
     None
 }
