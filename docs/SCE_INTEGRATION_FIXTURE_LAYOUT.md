@@ -477,6 +477,32 @@ Rust passed a generated-source assertion while still resting in `probe` at
 runtime, so the emit-site check and the runtime channel are not
 substitutes for one another.
 
+`invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
+names its target through an expression must evaluate that expression when the
+element fires, and raise `error.execution` when it cannot. The axis is the
+FAILURE, not the value, and that is forced rather than chosen: the evaluated
+string does not select the child on five of the six AOT channels, which spawn
+an immediate-`<final>` stub fixed at build time (SCE_ACCEPTED_SUBSET.md
+§2.13). A fixture resting on the value would answer `done.invoke` on those
+channels whatever the expression said — green everywhere, measuring nothing.
+
+`target` is declared and holds null so the expression fails at run time. An
+undeclared bare identifier would be refused at build time (§3.6) and never
+reach the clause, which is the nearest wrong way to write this document.
+
+It is the first integration stem to pass `HYBRID_INVOKE_CHILDREN`: a hybrid
+`<invoke>`'s stub is the one child kind the integration macro could not
+generate, because the synth-invoke naming it knew does not cover
+`<stem>_hybrid<N>`. The W3C macro had reached those children for as long as
+test216 has been registered; the integration macro learned it here.
+
+Measured 2026-09-20, before the fixture existed: four AOT backends evaluated
+and raised, Kotlin evaluated and raised through its own loader, and Python did
+not evaluate at all — so a document whose expression could not be computed
+started its child there as though nothing were wrong. Nothing in the tree
+could see it, because every other invoke fixture uses an expression that
+evaluates.
+
 `xml_data_is_a_dom_tree` covers W3C §B.2: a `<data>` element's XML content is
 "the corresponding DOM structure" the appendix obliges the Processor to create,
 and a document walks it with DOM Level 1 Core's vocabulary. Every backend

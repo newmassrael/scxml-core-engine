@@ -1315,6 +1315,37 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # backends do not share (the entry-action switch, the scxml_family include
     # guards, and an execute_pending_invokes arm the `| scxml` filter skips), so
     # the fixture is the only thing that proves all three are open.
+    # W3C SCXML 6.4.3: the expression a hybrid `<invoke>` names must be
+    # evaluated at invoke-fire time, and a failure raises `error.execution`.
+    # The stub child the parent spawns is declared because C11 #includes its
+    # header from the parent translation unit.
+    sce_generate_static_integration_c_test(invoke_expression_failure_is_reported
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        HYBRID_INVOKE_CHILDREN invoke_expression_failure_is_reported_hybrid0)
+
+    add_executable(sce_c_integration_invoke_expression_failure_is_reported
+        integration/test_invoke_expression_failure_is_reported.c
+        ${INTEGRATION_C_TEST_invoke_expression_failure_is_reported_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_invoke_expression_failure_is_reported PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_invoke_expression_failure_is_reported PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_invoke_expression_failure_is_reported PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_invoke_expression_failure_is_reported
+        COMMAND sce_c_integration_invoke_expression_failure_is_reported
+    )
+    set_tests_properties(c11_integration_invoke_expression_failure_is_reported PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     sce_generate_static_integration_c_test(invoke_unsupported_type "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_invoke_unsupported_type

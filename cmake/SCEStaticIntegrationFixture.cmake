@@ -45,6 +45,22 @@ endif()
 #                                  Required when the fixture uses inline
 #                                  invoke content (most do); pass the
 #                                  ids as they appear in the fixture.
+#   HYBRID_INVOKE_CHILDREN <stem>...  Stems of the immediate-`<final>`
+#                                  stubs codegen writes for an `<invoke>`
+#                                  that names its target through an
+#                                  expression (`<stem>_hybrid<N>`, see
+#                                  docs/SCE_ACCEPTED_SUBSET.md §2.13).
+#                                  The parent instantiates the stub by
+#                                  name, so without this the parent's
+#                                  translation unit has no such class and
+#                                  does not compile. Named in full rather
+#                                  than by invoke id because the stub's
+#                                  index is assigned by codegen, not by
+#                                  the document. `SCEStaticW3CTest.cmake`
+#                                  reaches the same children by globbing
+#                                  committed stubs; the integration path
+#                                  keeps them out of the source tree, so
+#                                  the names are declared instead.
 #
 # Side effects:
 #   - Appends parent + every child `_sm.h` to GENERATED_INTEGRATION_HEADERS
@@ -55,7 +71,7 @@ endif()
 #   so a stale fixture surfaces as a stale tree per-context (mirroring
 #   the committed-tree backends' separate §6.2.6 drift contexts).
 function(sce_generate_static_integration_test STEM OUTPUT_DIR)
-    cmake_parse_arguments(_INT "" "" "SYNTH_INVOKE_CHILDREN" ${ARGN})
+    cmake_parse_arguments(_INT "" "" "SYNTH_INVOKE_CHILDREN;HYBRID_INVOKE_CHILDREN" ${ARGN})
 
     set(FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/integration_resources/${STEM}")
     set(FIXTURE "${FIXTURE_ROOT}/${STEM}.scxml")
@@ -85,13 +101,16 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     )
 
     # Step 2: parent generate. Emits `<stem>_sm.{h,inl}` plus the
-    # synth-invoke `<stem>__sce_synth_invoke__<id>.scxml` siblings.
-    # `--input-root` pins the §6.2.6 source-hash to the canonical
-    # fixture dir so the build-time output advertises the same hash
-    # the committed-tree backends embed.
+    # synth-invoke `<stem>__sce_synth_invoke__<id>.scxml` siblings and
+    # any `<stem>_hybrid<N>.scxml` stub. `--input-root` pins the §6.2.6
+    # source-hash to the canonical fixture dir so the build-time output
+    # advertises the same hash the committed-tree backends embed.
     set(_CHILD_SCXMLS "")
     foreach(_CHILD ${_INT_SYNTH_INVOKE_CHILDREN})
         list(APPEND _CHILD_SCXMLS "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}.scxml")
+    endforeach()
+    foreach(_HYBRID ${_INT_HYBRID_INVOKE_CHILDREN})
+        list(APPEND _CHILD_SCXMLS "${OUTPUT_DIR}/${_HYBRID}.scxml")
     endforeach()
 
     if(SCE_CLANG_FORMAT_FOUND)
@@ -162,6 +181,42 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         list(APPEND _ALL_HEADERS "${_CHILD_HEADER}")
     endforeach()
 
+    # Hybrid stubs are generated without `--parent-stem`: the parent
+    # emits `::SCE::Generated::<stem>_hybrid<N>::<stem>_hybrid<N>`, the
+    # plain namespace codegen gives a document of that name, so rewriting
+    # it under the parent would leave the reference unresolved.
+    foreach(_HYBRID ${_INT_HYBRID_INVOKE_CHILDREN})
+        set(_HYBRID_SCXML "${OUTPUT_DIR}/${_HYBRID}.scxml")
+        set(_HYBRID_HEADER "${OUTPUT_DIR}/${_HYBRID}_sm.h")
+        set(_HYBRID_INL "${OUTPUT_DIR}/${_HYBRID}_sm.inl")
+
+        if(SCE_CLANG_FORMAT_FOUND)
+            set(_HYBRID_FMT_CMD
+                COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}"
+                        -i "${_HYBRID_HEADER}" "${_HYBRID_INL}")
+        else()
+            set(_HYBRID_FMT_CMD "")
+        endif()
+
+        set(_HYBRID_DEPFILE "${_HYBRID_HEADER}.d")
+
+        add_custom_command(
+            OUTPUT "${_HYBRID_HEADER}"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}"
+                    --as-child
+                    -l cpp -o "${OUTPUT_DIR}"
+                    --input-root "${FIXTURE_ROOT}"
+                    --write-deps "${_HYBRID_DEPFILE}"
+            ${_HYBRID_FMT_CMD}
+            DEPENDS "${PARENT_HEADER}" "${SCE_CODEGEN}"
+            DEPFILE "${_HYBRID_DEPFILE}"
+            BYPRODUCTS "${_HYBRID_INL}"
+            COMMENT "Generating C++ integration hybrid child: ${_HYBRID}_sm.h"
+            VERBATIM
+        )
+        list(APPEND _ALL_HEADERS "${_HYBRID_HEADER}")
+    endforeach()
+
     list(APPEND GENERATED_INTEGRATION_HEADERS ${_ALL_HEADERS})
     set(GENERATED_INTEGRATION_HEADERS ${GENERATED_INTEGRATION_HEADERS} PARENT_SCOPE)
 endfunction()
@@ -214,7 +269,8 @@ endfunction()
 #                            the answer explicit: a name that is wrong
 #                            fails at the copy, where it can be read.
 function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
-    cmake_parse_arguments(_INT "" "SCXML_FILE" "SYNTH_INVOKE_CHILDREN;HOST_PROCESSOR;STAGE_ALSO" ${ARGN})
+    cmake_parse_arguments(_INT "" "SCXML_FILE"
+        "SYNTH_INVOKE_CHILDREN;HYBRID_INVOKE_CHILDREN;HOST_PROCESSOR;STAGE_ALSO" ${ARGN})
 
     if(_INT_SCXML_FILE)
         get_filename_component(FIXTURE_ROOT "${_INT_SCXML_FILE}" DIRECTORY)
@@ -314,6 +370,32 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         )
         list(APPEND _ALL_SOURCES "${_CHILD_SOURCE}")
         list(APPEND _ALL_HEADERS "${_CHILD_HEADER}")
+    endforeach()
+
+    # Hybrid stubs, without `--parent-stem` for the reason the cpp
+    # generator above states: the parent names the child by the plain
+    # symbol codegen gives a document of that name.
+    foreach(_HYBRID ${_INT_HYBRID_INVOKE_CHILDREN})
+        set(_HYBRID_SCXML "${OUTPUT_DIR}/${_HYBRID}.scxml")
+        set(_HYBRID_HEADER "${OUTPUT_DIR}/${_HYBRID}_sm.h")
+        set(_HYBRID_SOURCE "${OUTPUT_DIR}/${_HYBRID}_sm.c")
+
+        set(_HYBRID_DEPFILE "${_HYBRID_SOURCE}.d")
+
+        add_custom_command(
+            OUTPUT "${_HYBRID_SOURCE}" "${_HYBRID_HEADER}"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}"
+                    --as-child
+                    -l c11 -o "${OUTPUT_DIR}"
+                    --input-root "${FIXTURE_ROOT}"
+                    --write-deps "${_HYBRID_DEPFILE}"
+            DEPENDS "${PARENT_SOURCE}" "${SCE_CODEGEN}"
+            DEPFILE "${_HYBRID_DEPFILE}"
+            COMMENT "Generating C11 integration hybrid child: ${_HYBRID}_sm.{h,c}"
+            VERBATIM
+        )
+        list(APPEND _ALL_SOURCES "${_HYBRID_SOURCE}")
+        list(APPEND _ALL_HEADERS "${_HYBRID_HEADER}")
     endforeach()
 
     # Sources include both .c (compilation units) and .h (generated header

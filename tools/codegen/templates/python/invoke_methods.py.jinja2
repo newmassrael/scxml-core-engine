@@ -103,6 +103,29 @@
             # `defer_invokes_on_entry` decorates the static id with the
             # owning-state + instance prefix (Rust `contains(".{id}")` parity).
             if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
+{% if inv.srcexpr or inv.contentexpr %}
+                # W3C SCXML 6.4.3: evaluate the expression at invoke-fire
+                # time and raise `error.execution` when it cannot be
+                # evaluated. The value does not choose the child — that is
+                # fixed at build time, the same on every backend that spawns
+                # the generated stub (docs/SCE_ACCEPTED_SUBSET.md §2.13) —
+                # but "the expression evaluates" is a separate obligation
+                # the clause places on the Processor, and this was the one
+                # backend not meeting it. A document whose expression named
+                # an undeclared variable saw four backends raise and this
+                # one start the child as though nothing were wrong.
+                try:
+                    engine._script_engine.evaluate_expression(
+                        self._session_id,
+                        {{ (inv.srcexpr or inv.contentexpr) | to_lua_expr | py_string_literal }},
+                    )
+                except _ScriptError:
+                    self._raise_error_execution(
+                        engine,
+                        "<invoke> {{ 'srcexpr' if inv.srcexpr else 'contentexpr' }} failed to evaluate",
+                    )
+                    continue
+{% endif %}
 {% if inv.namelist %}
                 # W3C SCXML 6.4.1: Validate namelist variables in PARENT
                 # before instantiating the child. Missing names raise

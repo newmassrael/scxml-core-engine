@@ -127,6 +127,25 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         "SCXMLInvokeHandler: Starting invoke - invokeid: {}, childSession: {}, parentSession: {}, sessionExists: {}",
         invokeid, childSessionId, parentSessionId, sessionAlreadyExists);
 
+    // §scxml-6.4.3: an expression that names the child and cannot be
+    // evaluated is a failure the author can act on, so it belongs on the
+    // internal event queue and not only in the log. Every AOT backend
+    // raises here; this engine logged and returned, so a document whose
+    // `<invoke>` was lost this way had no event to handle and rested in
+    // the state it was in — which is what
+    // `integration_resources/invoke_expression_failure_is_reported/`
+    // measured on the day it was added.
+    const auto raiseExecutionError = [&](const std::string &detail) {
+        SCE_LOG_ERROR("SCXMLInvokeHandler: {}", detail);
+        auto eventRaiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId);
+        if (eventRaiser) {
+            eventRaiser->raiseEvent("error.execution", detail);
+        } else {
+            SCE_LOG_ERROR("SCXMLInvokeHandler: No EventRaiser for session '{}' - error.execution dropped",
+                          parentSessionId);
+        }
+    };
+
     // Get invoke content (SCXML document)
     std::string scxmlContent = invoke->getContent();
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Invoke content length: {}, has src: {}, has srcexpr: {}, has contentexpr: {}",
@@ -144,8 +163,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             SCE_LOG_DEBUG("SCXMLInvokeHandler: contentexpr '{}' evaluated to content of length {}",
                           invoke->getContentExpr(), scxmlContent.length());
         } else {
-            SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to evaluate contentexpr '{}': {}", invoke->getContentExpr(),
-                          result.getErrorMessage());
+            raiseExecutionError("<invoke> contentexpr failed to evaluate");
             return "";
         }
     }
@@ -172,8 +190,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 return "";
             }
         } else {
-            SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to evaluate srcexpr '{}': {}", invoke->getSrcExpr(),
-                          result.getErrorMessage());
+            raiseExecutionError("<invoke> srcexpr failed to evaluate");
             return "";
         }
     }

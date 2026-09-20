@@ -984,6 +984,8 @@ add_executable(integration_tests
     integration/TargetlessTransitionCompletesMacrostepAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
     integration/InvokeUnsupportedTypeAotTest.cpp
+    integration/InvokeExpressionFailureIsReportedTest.cpp
+    integration/InvokeExpressionFailureIsReportedAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
     integration/LateTickHonoursCancelAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
@@ -1541,6 +1543,16 @@ sce_generate_static_integration_test(parallel_done_state_is_delivered ${STATIC_I
 # SYNTH_INVOKE_CHILDREN: §6.4.1 classification happens on `type` alone, before
 # any child document would be resolved, so codegen emits no child here.
 sce_generate_static_integration_test(invoke_unsupported_type ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.4.3: an `<invoke>` naming its target through an expression must
+# evaluate that expression at invoke-fire time and raise `error.execution`
+# when it cannot. Separate from whether the evaluated string selects the child
+# — it does not on this path (docs/SCE_ACCEPTED_SUBSET.md §2.13) — which is
+# exactly why the fixture is built on the FAILURE: a successful evaluation is
+# indistinguishable from no evaluation once the stub child answers.
+sce_generate_static_integration_test(invoke_expression_failure_is_reported
+    ${STATIC_INTEGRATION_OUTPUT_DIR}
+    HYBRID_INVOKE_CHILDREN invoke_expression_failure_is_reported_hybrid0)
 
 # W3C SCXML 5.5 + 6.3.1: donedata rides `done.invoke.<id>` wherever the child
 # reaches its final state, not only where it finalises during start-up. The

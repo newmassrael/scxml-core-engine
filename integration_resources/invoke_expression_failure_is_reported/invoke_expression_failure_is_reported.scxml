@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4.3: an `<invoke>` names its child through an expression,
+     and the expression cannot be evaluated. The clause places the
+     obligation on the Processor rather than on the author: evaluation
+     happens at invoke-fire time, and a failure raises `error.execution`.
+     No child starts.
+
+     This is a separate obligation from "the evaluated string selects the
+     child", which the AOT backends do not implement and which
+     docs/SCE_ACCEPTED_SUBSET.md §2.13 states as a residue. That residue is
+     why this fixture exists in this shape: the child every stub backend
+     spawns is an immediate `<final>`, so `done.invoke` arrives on a
+     successful evaluation whatever the value was. A fixture built on the
+     value would therefore measure nothing on five of six backends. A
+     fixture built on the FAILURE measures the one thing the clause makes
+     every channel answer for.
+
+     Measured 2026-09-20, before this fixture existed: four AOT backends
+     evaluated the expression and raised, Kotlin evaluated it and raised,
+     and Python did not evaluate it at all — so a document whose expression
+     could not be evaluated started its child there as though nothing were
+     wrong. Nothing in the tree could see the difference, because every
+     other invoke fixture uses an expression that evaluates.
+
+       raises error.execution     reaches `pass`
+       evaluates nothing          `done.invoke` arrives, reaches `fail`
+
+     `target` is DECLARED and holds null on purpose. An undeclared bare
+     identifier is refused at build time (§3.6), so a fixture reaching for
+     one would be a rejection rather than a runtime failure, and would
+     never reach the clause this is about. Indexing a null value is a
+     runtime error in every expression runtime SCE lowers to.
+
+     Single-axis: no `<param>`, no `<finalize>`, no second `<invoke>`, and
+     the `type` is the one SCXML processor URI shorthand so nothing here
+     can be mistaken for §6.4.1 unsupported-type classification.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="probe"
+       name="invoke_expression_failure_is_reported">
+    <datamodel>
+        <data id="target" expr="null"/>
+    </datamodel>
+    <state id="probe">
+        <invoke type="scxml" srcexpr="target.path"/>
+        <transition event="error.execution" target="pass"/>
+        <transition event="done.invoke" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>
