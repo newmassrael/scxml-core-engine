@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8762291f8adee4223c5af3de347a3acefddf00a392ed861e70d8d9802dc3abb
+// source-hash: 53919b60cc0233c867c4d44432c67e889c64595db6dc6a3cc98e6a3dcc120aa1
 // template-hash: e22f2ab3753712e8f82db22a126936b492de959b7a08ea042c6c60d8cc71c284
 // generated-at: 0
 
@@ -474,7 +474,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     ) {
         match state {
             StatechartNativeActionState::Assembling => {
-                // SCE-MAP: statechart_native_action.scxml:52 :: assembling :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
@@ -522,7 +522,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
             StatechartNativeActionState::Assembling => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: statechart_native_action.scxml:56 :: assembling :: _transition_0
+                        // SCE-MAP: statechart_native_action.scxml:63 :: assembling :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         // W3C SCXML G.7: <sce:action name="reset_slot">
@@ -548,7 +548,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_native_action.scxml:48 :: idle :: _transition_1
+                        // SCE-MAP: statechart_native_action.scxml:55 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         // W3C SCXML 3.8.1: <raise event="fragment.received">

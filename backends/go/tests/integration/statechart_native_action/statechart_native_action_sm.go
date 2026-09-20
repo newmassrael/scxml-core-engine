@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8762291f8adee4223c5af3de347a3acefddf00a392ed861e70d8d9802dc3abb
+// source-hash: 53919b60cc0233c867c4d44432c67e889c64595db6dc6a3cc98e6a3dcc120aa1
 // template-hash: e22f2ab3753712e8f82db22a126936b492de959b7a08ea042c6c60d8cc71c284
 // generated-at: 0
 
@@ -488,7 +488,7 @@ func (p *StatechartNativeActionPolicy) ExecuteEntryActions(state StatechartNativ
 func (p *StatechartNativeActionPolicy) ExecuteExitActions(state StatechartNativeActionState, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], preTransitionActive []StatechartNativeActionState) {
 	switch state {
 	case StatechartNativeActionStateAssembling:
-		//line statechart_native_action.scxml:52
+		//line statechart_native_action.scxml:59
 		// W3C SCXML 3.9: onexit block 0
 		for exitBlock0 := 0; exitBlock0 < 1; exitBlock0++ {
 			_ = exitBlock0
@@ -585,7 +585,7 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionActions(engine *sce.Engi
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == StatechartNativeActionStateAssembling && idx == 0 {
-		//line statechart_native_action.scxml:56
+		//line statechart_native_action.scxml:63
 
 		// W3C SCXML G.7: <sce:action name="reset_slot">
 		p.actions.ResetSlot()
@@ -603,7 +603,7 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionActions(engine *sce.Engi
 		return
 	}
 	if source == StatechartNativeActionStateIdle && idx == 1 {
-		//line statechart_native_action.scxml:48
+		//line statechart_native_action.scxml:55
 
 	engine.Raise(sce.NewEventWithMetadata(StatechartNativeActionEventFragmentReceived))
 

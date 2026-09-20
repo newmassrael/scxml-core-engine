@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8762291f8adee4223c5af3de347a3acefddf00a392ed861e70d8d9802dc3abb
+// source-hash: 53919b60cc0233c867c4d44432c67e889c64595db6dc6a3cc98e6a3dcc120aa1
 // template-hash: e22f2ab3753712e8f82db22a126936b492de959b7a08ea042c6c60d8cc71c284
 // generated-at: 0
 
@@ -193,12 +193,12 @@ class StatechartNativeActionStateMachine(
     override fun onEntry(state: StatechartNativeActionState, pathChild: StatechartNativeActionState?) {
         when (state) {
             is StatechartNativeActionState.Assembling -> {
-                // SCE-MAP: statechart_native_action.scxml:52 :: assembling :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("assembling")) return
             }
             is StatechartNativeActionState.Faulted -> {
-                // SCE-MAP: statechart_native_action.scxml:64 :: faulted :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:71 :: faulted :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("faulted")) return
             }
@@ -218,14 +218,14 @@ class StatechartNativeActionStateMachine(
     override fun onExit(state: StatechartNativeActionState) {
         when (state) {
             is StatechartNativeActionState.Assembling -> {
-                // SCE-MAP: statechart_native_action.scxml:52 :: assembling :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
                 activeStateIds.remove("assembling")
 
             // W3C SCXML G.7: <sce:action name="on_assembling_exit">
             actions.onAssemblingExit()
             }
             is StatechartNativeActionState.Faulted -> {
-                // SCE-MAP: statechart_native_action.scxml:64 :: faulted :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:71 :: faulted :: _state_body
                 activeStateIds.remove("faulted")
             }
             is StatechartNativeActionState.Idle -> {
@@ -246,7 +246,7 @@ class StatechartNativeActionStateMachine(
         when (source) {
         is StatechartNativeActionState.Assembling -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_native_action.scxml:56 :: assembling :: _transition_0
+                // SCE-MAP: statechart_native_action.scxml:63 :: assembling :: _transition_0
 
             // W3C SCXML G.7: <sce:action name="reset_slot">
             actions.resetSlot()
@@ -261,7 +261,7 @@ class StatechartNativeActionStateMachine(
             pendingFragmentReceivedPayload?.let { actions.appendFragmentPayload(it.payload, it.offset) } ?: run { raiseInternal(StatechartNativeActionEvent.Error.Execution, EventMetadata(data = "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry", type = "platform")) }
             }
             4 -> {
-                // SCE-MAP: statechart_native_action.scxml:48 :: idle :: _transition_1
+                // SCE-MAP: statechart_native_action.scxml:55 :: idle :: _transition_1
 
             raiseInternal(StatechartNativeActionEvent.Fragment.Received)
             }
