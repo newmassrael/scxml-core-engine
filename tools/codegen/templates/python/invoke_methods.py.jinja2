@@ -122,7 +122,7 @@
                 except _ScriptError:
                     self._raise_error_execution(
                         engine,
-                        "<invoke> {{ 'srcexpr' if inv.srcexpr else 'contentexpr' }} failed to evaluate",
+                        "<invoke {{ 'srcexpr' if inv.srcexpr else 'contentexpr' }}='{{ (inv.srcexpr or inv.contentexpr) | escape_python }}'> could not be evaluated",
                     )
                     continue
 {% endif %}

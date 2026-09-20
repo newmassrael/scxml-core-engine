@@ -428,7 +428,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke> srcexpr failed to evaluate");
+                    "<invoke srcexpr='{{ invoke_info.srcexpr | escape_c }}'> could not be evaluated");
                 continue;
             }
             lua_pop(sm->L, 1);
@@ -439,7 +439,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke> contentexpr failed to evaluate");
+                    "<invoke contentexpr='{{ invoke_info.contentexpr | escape_c }}'> could not be evaluated");
                 continue;
             }
             lua_pop(sm->L, 1);

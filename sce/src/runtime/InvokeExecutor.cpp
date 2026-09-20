@@ -163,7 +163,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             SCE_LOG_DEBUG("SCXMLInvokeHandler: contentexpr '{}' evaluated to content of length {}",
                           invoke->getContentExpr(), scxmlContent.length());
         } else {
-            raiseExecutionError("<invoke> contentexpr failed to evaluate");
+            raiseExecutionError("<invoke contentexpr='" + invoke->getContentExpr() + "'> could not be evaluated");
             return "";
         }
     }
@@ -190,7 +190,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 return "";
             }
         } else {
-            raiseExecutionError("<invoke> srcexpr failed to evaluate");
+            raiseExecutionError("<invoke srcexpr='" + invoke->getSrcExpr() + "'> could not be evaluated");
             return "";
         }
     }

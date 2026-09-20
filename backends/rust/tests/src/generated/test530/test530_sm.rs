@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 038d7b6ef33b2339a44d0418c2405debbb323a9506c43d7e61d5a0628f02b8be
+// template-hash: c7fa1bace9cc09130fe34c6bb613ca8da547abc5200c95b444deca8a9309196b
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -455,7 +455,7 @@ impl Test530Policy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test530Event::ErrorExecution,
-                            "<invoke> contentexpr 'Var1' failed to evaluate",
+                            "<invoke contentexpr='Var1'> could not be evaluated",
                         ));
                         continue;
                     }

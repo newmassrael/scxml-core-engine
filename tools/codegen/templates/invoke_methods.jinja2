@@ -297,7 +297,7 @@
                             auto pathResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(pathResult)) {
                                 SCE_LOG_ERROR("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr | escape_cpp_format }}' evaluation failed");
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "srcexpr evaluation failed"));
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> could not be evaluated"));
                                 return;
                             }
                             // `.template getValue<T>()`: `pathResult` is `auto`-deduced
@@ -317,7 +317,7 @@
                             auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.contentexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
                                 SCE_LOG_ERROR("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr | escape_cpp_format }}' evaluation failed");
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "contentexpr evaluation failed"));
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke contentexpr='{{ invoke_info.contentexpr | escape_cpp }}'> could not be evaluated"));
                                 return;
                             }
                             AOT_DEBUG("Hybrid invoke: contentexpr evaluated successfully");

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c13fc11d9e6b67c63b67dbeb6e7f8a2510d3fe8eb6d1c2b86bb43bf5477e7518
-// template-hash: 038d7b6ef33b2339a44d0418c2405debbb323a9506c43d7e61d5a0628f02b8be
+// source-hash: 330474c9d384762034a0ce81e85f7fab16d80ad68caac74a931eac551a42e48f
+// template-hash: c7fa1bace9cc09130fe34c6bb613ca8da547abc5200c95b444deca8a9309196b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -353,14 +353,28 @@ class InvokeExpressionFailureIsReportedStateMachine(
                         val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         try {
-                            // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child
-                            val pathResult = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("target.path", "target.path"))
-                            val filePath = pathResult?.toString() ?: return@deferInvoke
+                            // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child.
+                            // The evaluation is its own try: the clause it answers is
+                            // "the expression could not be evaluated", and until this
+                            // split that fact shared a catch — and a wording — with
+                            // "the child could not be started". A `null` result took
+                            // neither path and returned silently.
+                            val filePath = try {
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("target.path", "target.path"))?.toString()
+                            } catch (_: Exception) {
+                                null
+                            }
+                            if (filePath == null) {
+                                raisePlatformError(InvokeExpressionFailureIsReportedEvent.Error.Execution, "<invoke srcexpr='target.path'> could not be evaluated")
+                                return@deferInvoke
+                            }
                             val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "integration_resources/invoke_expression_failure_is_reported", scriptEngine)
                             startInvoke("_invoke_0", childSM, false, InvokeExpressionFailureIsReportedEvent.Done.Invoke, "", generatedInvokeId)
                         } catch (_: Exception) {
-                            // W3C SCXML 6.4: Expression evaluation or child creation failed (C++ parity)
-                            raisePlatformError(InvokeExpressionFailureIsReportedEvent.Error.Execution, "<invoke> could not evaluate its source or start a child")
+                            // W3C SCXML 6.4: the child could not be started. Evaluation
+                            // failure no longer reaches here — it has its own raise above,
+                            // under the one wording every emitter uses for that fact.
+                            raisePlatformError(InvokeExpressionFailureIsReportedEvent.Error.Execution, "<invoke> could not start a child")
                         }
                     }
                 }

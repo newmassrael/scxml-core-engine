@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c13fc11d9e6b67c63b67dbeb6e7f8a2510d3fe8eb6d1c2b86bb43bf5477e7518
-// template-hash: 038d7b6ef33b2339a44d0418c2405debbb323a9506c43d7e61d5a0628f02b8be
+// source-hash: 330474c9d384762034a0ce81e85f7fab16d80ad68caac74a931eac551a42e48f
+// template-hash: c7fa1bace9cc09130fe34c6bb613ca8da547abc5200c95b444deca8a9309196b
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -444,7 +444,7 @@ impl InvokeExpressionFailureIsReportedPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             InvokeExpressionFailureIsReportedEvent::ErrorExecution,
-                            "<invoke> srcexpr 'target.path' failed to evaluate",
+                            "<invoke srcexpr='target.path'> could not be evaluated",
                         ));
                         continue;
                     }

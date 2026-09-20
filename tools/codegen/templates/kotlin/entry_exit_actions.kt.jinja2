@@ -165,20 +165,42 @@
                         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         try {
 {% if inv.srcexpr %}
-                            // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child
-                            val pathResult = eng.evaluateExpr(sid, {{ inv.srcexpr | to_script_source_expr }})
-                            val filePath = pathResult?.toString() ?: return@deferInvoke
+                            // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child.
+                            // The evaluation is its own try: the clause it answers is
+                            // "the expression could not be evaluated", and until this
+                            // split that fact shared a catch — and a wording — with
+                            // "the child could not be started". A `null` result took
+                            // neither path and returned silently.
+                            val filePath = try {
+                                eng.evaluateExpr(sid, {{ inv.srcexpr | to_script_source_expr }})?.toString()
+                            } catch (_: Exception) {
+                                null
+                            }
+                            if (filePath == null) {
+                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr='{{ inv.srcexpr | escape_kotlin }}'> could not be evaluated")
+                                return@deferInvoke
+                            }
                             val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "{{ model.scxml_base_path | escape_kotlin }}", scriptEngine)
 {% elif inv.contentexpr %}
-                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child
-                            val contentResult = eng.evaluateExpr(sid, {{ inv.contentexpr | to_script_source_expr }})
-                            val scxmlContent = contentResult?.toString() ?: return@deferInvoke
+                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child.
+                            // Split for the reason the srcexpr arm above states.
+                            val scxmlContent = try {
+                                eng.evaluateExpr(sid, {{ inv.contentexpr | to_script_source_expr }})?.toString()
+                            } catch (_: Exception) {
+                                null
+                            }
+                            if (scxmlContent == null) {
+                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke contentexpr='{{ inv.contentexpr | escape_kotlin }}'> could not be evaluated")
+                                return@deferInvoke
+                            }
                             val childSM = ScxmlRuntimeInterpreter.fromString(scxmlContent, scriptEngine)
 {% endif %}
                             startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, "", generatedInvokeId)
                         } catch (_: Exception) {
-                            // W3C SCXML 6.4: Expression evaluation or child creation failed (C++ parity)
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> could not evaluate its source or start a child")
+                            // W3C SCXML 6.4: the child could not be started. Evaluation
+                            // failure no longer reaches here — it has its own raise above,
+                            // under the one wording every emitter uses for that fact.
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> could not start a child")
                         }
                     }
                 }

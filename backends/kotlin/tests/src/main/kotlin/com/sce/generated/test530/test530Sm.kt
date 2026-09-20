@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 038d7b6ef33b2339a44d0418c2405debbb323a9506c43d7e61d5a0628f02b8be
+// template-hash: c7fa1bace9cc09130fe34c6bb613ca8da547abc5200c95b444deca8a9309196b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -375,14 +375,24 @@ class Test530StateMachine(
                         val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         try {
-                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child
-                            val contentResult = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
-                            val scxmlContent = contentResult?.toString() ?: return@deferInvoke
+                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child.
+                            // Split for the reason the srcexpr arm above states.
+                            val scxmlContent = try {
+                                eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))?.toString()
+                            } catch (_: Exception) {
+                                null
+                            }
+                            if (scxmlContent == null) {
+                                raisePlatformError(Test530Event.Error.Execution, "<invoke contentexpr='Var1'> could not be evaluated")
+                                return@deferInvoke
+                            }
                             val childSM = ScxmlRuntimeInterpreter.fromString(scxmlContent, scriptEngine)
                             startInvoke("_invoke_0", childSM, false, Test530Event.Done.Invoke, "", generatedInvokeId)
                         } catch (_: Exception) {
-                            // W3C SCXML 6.4: Expression evaluation or child creation failed (C++ parity)
-                            raisePlatformError(Test530Event.Error.Execution, "<invoke> could not evaluate its source or start a child")
+                            // W3C SCXML 6.4: the child could not be started. Evaluation
+                            // failure no longer reaches here — it has its own raise above,
+                            // under the one wording every emitter uses for that fact.
+                            raisePlatformError(Test530Event.Error.Execution, "<invoke> could not start a child")
                         }
                     }
                 }
