@@ -239,8 +239,14 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
 /// document for every pair. With 134 pairs and 746 documents the
 /// per-pair scan is a hundred thousand reads; this is 746, and it is
 /// what makes sweeping the whole checkout affordable at all.
-fn first_writer_of_each_pair(files: &[PathBuf]) -> BTreeMap<(String, String, bool), PathBuf> {
-    let mut out: BTreeMap<(String, String, bool), PathBuf> = BTreeMap::new();
+/// ⚠ EVERY writer, not the first. Keeping one made the index a third
+/// narrowing on top of the two it was built to fix: a pair whose first
+/// writer happens to be a document the parser refuses — this tree keeps
+/// plenty on purpose — was reported as "no fixture writes it" although
+/// other documents write it. `<sce:provenance rev>` is written by
+/// several and was reported as written by none.
+fn writers_of_each_pair(files: &[PathBuf]) -> BTreeMap<(String, String, bool), Vec<PathBuf>> {
+    let mut out: BTreeMap<(String, String, bool), Vec<PathBuf>> = BTreeMap::new();
     for path in files {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
@@ -248,6 +254,7 @@ fn first_writer_of_each_pair(files: &[PathBuf]) -> BTreeMap<(String, String, boo
         let Ok(doc) = roxmltree::Document::parse(&text) else {
             continue;
         };
+        let mut here: BTreeSet<(String, String, bool)> = BTreeSet::new();
         for node in doc.descendants() {
             if node.tag_name().namespace() != Some(SCE_NS) {
                 continue;
@@ -258,9 +265,11 @@ fn first_writer_of_each_pair(files: &[PathBuf]) -> BTreeMap<(String, String, boo
                 if !qualified && a.namespace().is_some() {
                     continue;
                 }
-                out.entry((element.clone(), a.name().to_string(), qualified))
-                    .or_insert_with(|| path.clone());
+                here.insert((element.clone(), a.name().to_string(), qualified));
             }
+        }
+        for key in here {
+            out.entry(key).or_default().push(path.clone());
         }
     }
     out
@@ -568,7 +577,7 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
 
     // Per pair: the first fixture that writes it, the raw text, and the
     // byte range of the value to splice.
-    let writers = first_writer_of_each_pair(&files);
+    let writers = writers_of_each_pair(&files);
     let mut not_read: Vec<String> = Vec::new();
     let mut measured: BTreeSet<(String, String)> = BTreeSet::new();
     let mut unmeasured: BTreeMap<String, String> = BTreeMap::new();
@@ -584,13 +593,24 @@ fn every_declared_attribute_a_fixture_writes_reaches_the_ir() {
         let written_in = writers
             .get(&(d.element.clone(), d.attribute.clone(), d.qualified))
             .cloned()
-            .into_iter()
-            .collect::<Vec<_>>();
+            .unwrap_or_default();
         let Some(replacement) = try_each_fixture(d, &written_in, &enums, &mut unmeasured, &key)
         else {
-            unmeasured
-                .entry(key.clone())
-                .or_insert_with(|| "no fixture writes it".to_string());
+            // ⚠ Two different answers, said apart. "Nothing writes it"
+            // is about the corpus; "every writer is one the parser
+            // refuses" is about which documents this tree keeps, and
+            // reading the second as the first is what sent a previous
+            // round looking for fixtures that already existed.
+            unmeasured.entry(key.clone()).or_insert_with(|| {
+                if written_in.is_empty() {
+                    "no fixture writes it".to_string()
+                } else {
+                    format!(
+                        "written by {} document(s), none of which the parser takes",
+                        written_in.len()
+                    )
+                }
+            });
             continue;
         };
         let (path, before_text, range, new_value, before_ir) = replacement;
