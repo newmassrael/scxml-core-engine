@@ -129,6 +129,13 @@ pub enum Word {
     Drop,
     Block,
     SignalEvent,
+    Invoke,
+    Parallel,
+    Initial,
+    InitialChildren,
+    History,
+    Default,
+    Unhandled,
 }
 
 impl Word {
@@ -201,6 +208,13 @@ impl Word {
         Word::Drop,
         Word::Block,
         Word::SignalEvent,
+        Word::Invoke,
+        Word::Parallel,
+        Word::Initial,
+        Word::InitialChildren,
+        Word::History,
+        Word::Default,
+        Word::Unhandled,
     ];
 }
 
@@ -292,6 +306,13 @@ fn en_word(w: Word) -> &'static str {
         Word::Drop => "drop",
         Word::Block => "block",
         Word::SignalEvent => "signal-event",
+        Word::Invoke => "invoke",
+        Word::Parallel => "parallel",
+        Word::Initial => "initial",
+        Word::InitialChildren => "initial-children",
+        Word::History => "history",
+        Word::Default => "default",
+        Word::Unhandled => "unhandled",
     }
 }
 

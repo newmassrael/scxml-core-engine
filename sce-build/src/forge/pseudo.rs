@@ -1657,11 +1657,12 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
         Invoke::Unsupported(i) => &i.base,
     };
 
-    let mut head = String::from("invoke");
+    let mut head = vec![Part::Word(Word::Invoke)];
     if !base.invoke_id.is_empty() {
-        let _ = write!(head, " {}", text(&base.invoke_id));
+        head.push(Part::Text(text(&base.invoke_id).into_owned()));
     }
-    out.line(&format!("{head}:"));
+    head.push(Part::Glued(":".into()));
+    out.line_of(head);
 
     let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
@@ -1810,28 +1811,29 @@ fn head_inlinable(value: &str) -> bool {
 
 fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), Unsupported> {
     let keyword = if s.is_final {
-        "final"
+        Word::Final
     } else if s.is_parallel {
-        "parallel"
+        Word::Parallel
     } else {
-        "state"
+        Word::State
     };
-    let mut head = format!("{keyword} {}", text(&s.id));
+    let mut head = vec![Part::Word(keyword), Part::Text(text(&s.id).into_owned())];
     // Clauses the head line cannot delimit move to their own line in
     // the body, where the value runs to the end of the line and nothing
     // follows it. See `head_inlinable`: `initial="s11p112 s11p122"` is
     // legal SCXML, and while it sat on the head line the reader took
     // the first id and reported the second as an unknown clause.
-    let mut deferred: Vec<String> = Vec::new();
-    let mut place = |head: &mut String, keyword: &str, value: String| {
+    let mut deferred: Vec<Vec<Part>> = Vec::new();
+    let mut place = |head: &mut Vec<Part>, keyword: Word, value: String| {
+        let parts = vec![Part::Word(keyword), Part::Text(value.clone())];
         if head_inlinable(&value) {
-            let _ = write!(head, " {keyword} {value}");
+            head.extend(parts);
         } else {
-            deferred.push(format!("{keyword} {value}"));
+            deferred.push(parts);
         }
     };
     if !s.initial.is_empty() {
-        place(&mut head, "initial", text(&s.initial).into_owned());
+        place(&mut head, Word::Initial, text(&s.initial).into_owned());
     }
     if !s.initial_children.is_empty() {
         let kids: Vec<String> = s
@@ -1839,26 +1841,27 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
             .iter()
             .map(|k| text(k).into_owned())
             .collect();
-        place(&mut head, "initial-children", kids.join(" "));
+        place(&mut head, Word::InitialChildren, kids.join(" "));
     }
     if !s.initial_history_id.is_empty() {
-        let _ = write!(
-            head,
-            " history {} default {}",
-            text(&s.initial_history_id),
-            text(&s.initial_history_default_target)
-        );
+        head.push(Part::Word(Word::History));
+        head.push(Part::Text(text(&s.initial_history_id).into_owned()));
+        head.push(Part::Word(Word::Default));
+        head.push(Part::Text(
+            text(&s.initial_history_default_target).into_owned(),
+        ));
     }
     if !s.unhandled.is_empty() {
         let u: Vec<String> = s.unhandled.iter().map(|k| text(k).into_owned()).collect();
-        place(&mut head, "unhandled", u.join(" "));
+        place(&mut head, Word::Unhandled, u.join(" "));
     }
-    out.line(&format!("{head}:"));
+    head.push(Part::Glued(":".into()));
+    out.line_of(head);
 
     let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
-        for line in &deferred {
-            out.line(line);
+        for line in deferred {
+            out.line_of(line);
         }
         for id in &s.req {
             out.line(&format!("req {}", text(&id.to_string())));
