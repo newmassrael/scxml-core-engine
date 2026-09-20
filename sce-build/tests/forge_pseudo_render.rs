@@ -804,6 +804,7 @@ fn a_codec_renders_every_field_it_can_carry() {
             bit: 7,
             width: 1,
             value: Some(1),
+            value_text: "0x1".to_string(),
         }],
         present_if: Some(PresentIfPredicate {
             scope: PresentIfScope::Input,
@@ -861,6 +862,7 @@ fn a_codec_renders_every_field_it_can_carry() {
                     bit: 0,
                     width: 2,
                     value: None,
+                    value_text: String::new(),
                 }],
             }),
         }),
@@ -897,7 +899,7 @@ terminate entry-flag more
     embed-length-from len
     dma-align 16
     present-if not input:hdr.ext or local:hdr.alt
-    flag more bit 7 width 1 value 1
+    flag more bit 7 width 1 value 0x1
   variant tag-field hdr tag-flag mid peek-byte pk
     peek-flag k bit 0 width 2
     arm 0x01 -> one

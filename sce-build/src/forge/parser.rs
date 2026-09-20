@@ -2203,6 +2203,9 @@ fn parse_peek_byte_from_variant_node(
             bit,
             width,
             value: None,
+            // A peek-byte flag declares layout and carries no value,
+            // so there is no spelling to keep.
+            value_text: String::new(),
         });
     }
 
@@ -3433,6 +3436,10 @@ fn parse_codec_flags_from_node(
             bit,
             width,
             value,
+            value_text: child
+                .attribute("value")
+                .map(str::to_string)
+                .unwrap_or_default(),
         });
     }
 

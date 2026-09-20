@@ -1683,9 +1683,18 @@ fn parse_flag_def(w: &[&str], line: usize) -> Result<FlagDef, ParseError> {
         name: undo(w.get(1).copied().unwrap_or(""), line)?,
         bit: w.get(3).and_then(|v| v.parse().ok()).unwrap_or(0),
         width: w.get(5).and_then(|v| v.parse().ok()).unwrap_or(0),
+        // ⚠ Read through `source_literal`, not `parse()`: the renderer
+        // writes the author's spelling and a hex constant would
+        // otherwise read as absent.
         value: match w.get(6).copied() {
-            Some("value") => w.get(7).and_then(|v| v.parse().ok()),
+            Some("value") => w
+                .get(7)
+                .and_then(|v| crate::source_literal::read_unsigned(v)),
             _ => None,
+        },
+        value_text: match w.get(6).copied() {
+            Some("value") => undo(w.get(7).copied().unwrap_or(""), line)?,
+            _ => String::new(),
         },
     })
 }

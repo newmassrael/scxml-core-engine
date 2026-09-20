@@ -2136,7 +2136,12 @@ fn render_flag_def(keyword: &str, fl: &FlagDef, out: &mut Out<'_>) {
         fl.width
     );
     if let Some(v) = fl.value {
-        let _ = write!(line, " value {v}");
+        // The author's spelling. A wire constant is written in hex.
+        let _ = write!(
+            line,
+            " value {}",
+            text(&crate::source_literal::as_written(&fl.value_text, v))
+        );
     }
     out.line(&line);
 }

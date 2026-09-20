@@ -1654,6 +1654,15 @@ pub struct FlagDef {
     /// attribute keep their on-disk shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<u64>,
+    /// How the author spelled [`Self::value`], when a source document
+    /// is where it came from.
+    ///
+    /// A wire constant is written in hex, and the value alone puts `1`
+    /// on the pseudocode review surface where the author wrote `0x01`
+    /// — see [`crate::source_literal`]. `#[serde(skip)]` because this
+    /// is the author's spelling, not a fact a consumer computes with.
+    #[serde(skip, default)]
+    pub value_text: String,
 }
 
 /// RFC §synth-5-B present-if predicate scope —
