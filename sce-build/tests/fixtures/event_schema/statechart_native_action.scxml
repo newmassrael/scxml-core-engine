@@ -40,8 +40,15 @@
       <sce:action name="on_idle_entry"/>
     </onentry>
     <transition event="fragment.received" target="assembling">
+      <!-- ⚠ `name=` on the FIRST argument and not the second, on
+           purpose. The grammar declares it optional and the parser
+           reads it into `Param::name`; measured 2026-09-20, no document
+           in the checkout wrote it, so a reader that stopped taking it
+           would have gone unnoticed — the shape `<sce:while max-iter>`
+           had. Naming one of two keeps the positional form exercised
+           beside it, which naming both would retire. -->
       <sce:action name="append_fragment_payload">
-        <sce:arg expr="_event.data.payload"/>
+        <sce:arg name="payload" expr="_event.data.payload"/>
         <sce:arg expr="_event.data.offset"/>
       </sce:action>
     </transition>
