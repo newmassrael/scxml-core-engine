@@ -174,5 +174,76 @@ TEST_F(InvokeExpressionFailureIsReportedTest, TheRaisedErrorNamesTheExpressionIn
            "One W3C fact, one wording — the same collapse §6.4.1 already paid for.";
 }
 
+// §scxml-6.4.1: "if the value of 'src' ... is invalid, the processor MUST
+// place error.execution in the internal event queue". An expression that
+// evaluates cleanly to a document nobody can load is that case, one step
+// past the one above — and the two used to share a silence: this engine
+// logged and returned for both, so a machine whose child never existed sat
+// waiting for a `done.invoke` that could not come.
+//
+// Only this channel can be asked. The AOT backends never load a document at
+// run time — their child is fixed at build time (§2.13) — so "the named
+// document does not exist" is not a state they can reach, and a fixture
+// driven on all seven would be asserting about six machines that cannot fail
+// the way this one did.
+TEST_F(InvokeExpressionFailureIsReportedTest, ADocumentThatCannotBeLoadedIsReported) {
+    const std::string scxml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
+       initial="probe" name="invoke_src_missing">
+    <datamodel>
+        <data id="target" expr="'file:no-such-document-8f3a.scxml'"/>
+        <data id="seen" expr="''"/>
+    </datamodel>
+    <state id="probe">
+        <invoke type="scxml" srcexpr="target"/>
+        <transition event="error.execution" target="pass">
+            <assign location="seen" expr="_event.data"/>
+        </transition>
+        <transition event="done.invoke" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>)";
+
+    auto sm = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
+
+    auto scheduler = std::make_shared<EventSchedulerImpl>(
+        [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
+            try {
+                return target->send(event).get().isSuccess;
+            } catch (...) {
+                return false;
+            }
+        });
+    auto eventRaiser = std::make_shared<EventRaiserImpl>();
+    eventRaiser->setScheduler(scheduler);
+    eventRaiser->setImmediateMode(false);
+    sm->setEventRaiser(eventRaiser);
+    sm->setEventDispatcher(
+        std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(eventRaiser)));
+
+    ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
+    ASSERT_TRUE(sm->start());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (!sm->isRunning()) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    EXPECT_EQ(sm->getCurrentState(), "pass")
+        << "resting in `probe` means the missing document was swallowed; §scxml-6.4.1 requires "
+           "error.execution when the source is invalid, and a machine that cannot see the failure "
+           "waits for a `done.invoke` that will never arrive.";
+
+    const auto seen = engine_->evaluateExpression(sm->getSessionId(), "seen").get();
+    ASSERT_TRUE(seen.isSuccess()) << "could not read the captured `_event.data`";
+    EXPECT_EQ(seen.getValue<std::string>(), "<invoke> could not load 'file:no-such-document-8f3a.scxml'")
+        << "the refusal must name the document that did not load — that is the whole of what an "
+           "author can act on here";
+}
+
 }  // namespace Tests
 }  // namespace SCE

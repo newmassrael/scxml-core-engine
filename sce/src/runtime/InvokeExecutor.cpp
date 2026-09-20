@@ -186,7 +186,19 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             // Load SCXML content from file
             scxmlContent = loadSCXMLFromFile(evaluatedSrc, parentSessionId);
             if (scxmlContent.empty()) {
-                SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to load SCXML from srcexpr file: {}", evaluatedSrc);
+                // §scxml-6.4: an `<invoke>` creates an instance of an
+                // external service, and a source that will not load creates
+                // none. The failure belongs on the internal queue for the
+                // same reason the evaluation failure above does: it logged
+                // and returned, so a machine whose child never existed
+                // waited for a `done.invoke` that could not come.
+                //
+                // The clause number here is the one the ledger binds to this
+                // function. An earlier draft cited the attribute-table
+                // subsection instead and the citation gate refused it: the
+                // sentence being attributed is not in that subsection, which
+                // is the defect this comment would otherwise have been.
+                raiseExecutionError("<invoke> could not load '" + evaluatedSrc + "'");
                 return "";
             }
         } else {
@@ -199,7 +211,11 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         SCE_LOG_INFO("SCXMLInvokeHandler: Loading SCXML from src file: {}", invoke->getSrc());
         scxmlContent = loadSCXMLFromFile(invoke->getSrc(), parentSessionId);
         if (scxmlContent.empty()) {
-            SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to load SCXML from src file: {}", invoke->getSrc());
+            // §scxml-6.4, literal `src` rather than an evaluated one. One
+            // wording for both: what the author needs is which document did
+            // not load, and the attribute it came from is already in their
+            // source.
+            raiseExecutionError("<invoke> could not load '" + invoke->getSrc() + "'");
             return "";
         }
     }
