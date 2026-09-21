@@ -135,11 +135,13 @@ struct FlagFacts {
     reach: Reach,
     /// Arguments that exercise this flag, for the `Emission` probe.
     ///
-    /// Two tokens are substituted by the probe, so a flag that needs a path
+    /// Three tokens are substituted by the probe, so a flag that needs a path
     /// can be exercised without a static one that would write into the tree:
-    /// `{probe_dir}` becomes the run's scratch directory (which exists), and
-    /// `{probe_file}` a path inside it. A flag needing a file to READ names a
-    /// real one instead — `run` works from the repo root.
+    /// `{probe_dir}` becomes the run's scratch directory (which exists),
+    /// `{probe_file}` a path inside it, and `{fixture_dir}` the directory
+    /// the probed document lives in — a root no other test writes under. A
+    /// flag needing a file to READ names a real one instead — `run` works
+    /// from the repo root.
     ///
     /// `None` skips the probe and must say why in `why`. Only `--help` may
     /// do so, and `an_emission_flag_does_not_move_a_verdict` pins that list
@@ -284,10 +286,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "resolves `<xi:include>` / `<sce:use>` fragments by name; one that \
          resolves nowhere is a parse refusal",
     ),
+    // ⚠ Rooted at the fixture's own directory, not `.`: the source hash
+    // covers every `*.scxml` under the root, and at the repository root
+    // that set includes the documents other tests write while this one
+    // runs — under a parallel runner the hash saw the set change mid-read
+    // and failed the probe (measured 2026-09-21 with cargo-nextest).
     f(
         "--input-root",
         Reach::Emission,
-        Some(&["--input-root", "."]),
+        Some(&["--input-root", "{fixture_dir}"]),
         "rust",
         "roots the §synth-6.2.6 source-hash the emitted file carries",
     ),
@@ -519,11 +526,16 @@ fn an_emission_flag_does_not_move_a_verdict() {
         // would otherwise have to name one in the tree, and writing into the
         // tree to measure it is what kept these five unprobed.
         let probe_file = format!("{flag_dir}/probe.out");
+        let fixture_dir = std::path::Path::new(HOST_FIXTURE)
+            .parent()
+            .and_then(|p| p.to_str())
+            .expect("the host fixture has a directory");
         let substituted: Vec<String> = extra
             .iter()
             .map(|arg| {
                 arg.replace("{probe_dir}", &flag_dir)
                     .replace("{probe_file}", &probe_file)
+                    .replace("{fixture_dir}", fixture_dir)
             })
             .collect();
 
