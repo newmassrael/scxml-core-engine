@@ -24,6 +24,7 @@
 //! rendered so the refusal cannot depend on which backend was asked for.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::model::{ForgeDocument, ParsedForge, TransformModel};
@@ -68,20 +69,34 @@ pub fn sibling_reads<'a>(expr: &str, outputs: &'a [String], exclude: &str) -> Ve
 }
 
 fn mentions(expr: &str, id: &str) -> bool {
+    first_mention(expr, id).is_some()
+}
+
+/// Where `expr` first reads `id` as a whole word, as a byte range of
+/// `expr`, or `None` when it does not.
+///
+/// ⚠ A near miss — `id` found inside a longer word — resumes the search
+/// one CHARACTER on, not one byte. An id is a W3C NCName, which admits a
+/// letter several UTF-8 bytes wide, and resuming one byte into such a first
+/// letter sliced the expression inside it and panicked. Measured
+/// 2026-09-22: a transform whose output was named by two Hangul letters,
+/// beside an input named by the same two letters and a `2`, stopped
+/// `sce-codegen check` with exit 101.
+fn first_mention(expr: &str, id: &str) -> Option<Range<usize>> {
+    let first = id.chars().next()?;
     let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-    let bytes = expr.as_bytes();
     let mut from = 0;
     while let Some(rel) = expr[from..].find(id) {
         let start = from + rel;
         let end = start + id.len();
-        let before_ok = start == 0 || !is_word(expr[..start].chars().next_back().unwrap_or(' '));
-        let after_ok = end == bytes.len() || !is_word(expr[end..].chars().next().unwrap_or(' '));
+        let before_ok = !expr[..start].chars().next_back().is_some_and(is_word);
+        let after_ok = !expr[end..].chars().next().is_some_and(is_word);
         if before_ok && after_ok {
-            return true;
+            return Some(start..end);
         }
-        from = start + 1;
+        from = start + first.len_utf8();
     }
-    false
+    None
 }
 
 /// First cycle in the output dependency graph, as a path that starts and
@@ -174,5 +189,49 @@ mod tests {
     fn the_excluded_id_is_never_a_read() {
         let outs = ids(&["a", "b"]);
         assert_eq!(sibling_reads("a + b", &outs, "a"), ["b"]);
+    }
+
+    /// An output id whose first letter is three UTF-8 bytes wide, and an input
+    /// id that extends it — the pair whose near miss sliced inside a letter.
+    const WIDE: &str = "\u{c628}\u{b3c4}";
+    const WIDER: &str = "\u{c628}\u{b3c4}2";
+
+    /// An id whose first character is wider than a byte is searched past a
+    /// near miss rather than sliced inside that character.
+    #[test]
+    fn a_multibyte_id_is_searched_past_a_near_miss() {
+        assert_eq!(WIDE.chars().next().map(char::len_utf8), Some(3));
+        let outs = ids(&[WIDE, WIDER]);
+        let near_miss = format!("{WIDER} + 1");
+        assert_eq!(sibling_reads(&near_miss, &outs, "other"), [WIDER]);
+        let both = format!("{WIDER} + {WIDE}");
+        assert_eq!(sibling_reads(&both, &outs, "other"), [WIDE, WIDER]);
+        assert_eq!(first_mention(&both, WIDE), Some(10..16));
+    }
+
+    /// The document that stopped `sce-codegen check` with a panic passes
+    /// the check: an output named inside another field's name is no read.
+    #[test]
+    fn a_transform_with_multibyte_ids_is_checked() {
+        let source = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform"
+       name="non_ascii_output"
+       version="1.0">
+  <datamodel>
+    <data id="{WIDER}" sce:type="int32" sce:direction="in"/>
+    <data id="{WIDE}" sce:type="int32" sce:direction="out" expr="{WIDER} + 1"/>
+  </datamodel>
+</scxml>"#
+        );
+        let label = crate::DocumentLabel {
+            identifier: "non_ascii_output",
+            diagnostic_label: "non_ascii_output.scxml",
+        };
+        let parsed = crate::forge::parser::parse_forge_with_imports(&source, label)
+            .expect("the document parses")
+            .expect("a forge document");
+        assert!(check(&parsed, "non_ascii_output.scxml").is_ok());
     }
 }
