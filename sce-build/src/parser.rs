@@ -722,8 +722,14 @@ pub(crate) fn collect_sce_unresolved(
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
     };
-    let at = |n: &roxmltree::Node| {
-        let pos = n.document().text_pos_at(n.range().start);
+    // A marker is located where its id is written: at the attribute for
+    // the attribute form, at the child element for the element form.
+    // ⚠ The attribute form used to take its element's first row, and an
+    // element's attributes span rows — `sce:unresolved="…"` one row down
+    // was reported on a row without it (measured 2026-09-21,
+    // `SCE_ERROR_CONTRACT.md` §3.1.1).
+    let at = |n: &roxmltree::Node, offset: usize| {
+        let pos = n.document().text_pos_at(offset);
         Some(SourceLocation {
             file: artifact_label(source_name),
             line: Some(pos.row),
@@ -740,7 +746,8 @@ pub(crate) fn collect_sce_unresolved(
     let mut markers: Vec<UnresolvedMarker> = Vec::new();
     for kind in MarkerKind::ALL {
         let attr = kind.attr();
-        if let Some(id) = node.attribute((SCE_NAMESPACE, attr)) {
+        if let Some(attribute) = node.attribute_node((SCE_NAMESPACE, attr)) {
+            let id = attribute.value();
             if !id.is_empty() {
                 markers.push(UnresolvedMarker {
                     id: id.to_string(),
@@ -752,7 +759,7 @@ pub(crate) fn collect_sce_unresolved(
                         .attribute((SCE_NAMESPACE, &*format!("{attr}-candidates")))
                         .map(split)
                         .unwrap_or_default(),
-                    location: at(node),
+                    location: at(node, attribute.range().start),
                 });
             }
         }
@@ -771,7 +778,7 @@ pub(crate) fn collect_sce_unresolved(
                 kind,
                 reason: child.attribute("reason").map(|s| s.to_string()),
                 candidates: child.attribute("candidates").map(split).unwrap_or_default(),
-                location: at(&child),
+                location: at(&child, child.range().start),
             });
         }
     }
@@ -2129,16 +2136,13 @@ impl SCXMLParser {
         use crate::forge::model::*;
 
         // Lift a leaf `ValidationError` into a `Located<ForgeError>`
-        // anchored at the given node. `text_pos_at(range().start)`
-        // recovers libxml2-style (row, col) for any node the
-        // roxmltree document owns — the same mechanism the forge
-        // codec-field parser uses, so inline-kind diagnostics reach
-        // NDJSON with matching precision.
+        // anchored at the given node — through the forge parser's own
+        // `located`, so an inline kind's refusal is placed by the same
+        // rule as a forge document's, attribute and all.
         let locate_at = |node: &roxmltree::Node,
                          err: ValidationError|
          -> Located<crate::forge::error::ForgeError> {
-            let pos = node.document().text_pos_at(node.range().start);
-            Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+            crate::forge::parser::located(node, source_name, err)
         };
         let locate = |err: ValidationError| locate_at(data, err);
 
@@ -2727,16 +2731,21 @@ impl SCXMLParser {
                     .filter(|s| s.parent.as_deref() == parent_id)
                     .collect();
                 siblings.sort_by_key(|s| s.document_order);
-                return Err(crate::forge::error::Located::new(
-                    crate::scxml_semantic::ScxmlSemanticError::HistoryDefaultTransitionMissing {
-                        history_id,
-                        parent_id: parent,
-                        available: siblings.into_iter().map(|s| s.id.clone()).collect(),
-                    }
-                    .into(),
+                // At the `<history>` itself: the record names it in
+                // `actual`, and a record with no row sends a consumer to
+                // search the whole file for an id as short as `h`
+                // (measured 2026-09-21: seven hits in a twelve-line
+                // fixture).
+                return Err(crate::forge::parser::located(
+                    &child,
                     source_name,
-                    None,
-                    None,
+                    crate::forge::error::ForgeError::from(
+                        crate::scxml_semantic::ScxmlSemanticError::HistoryDefaultTransitionMissing {
+                            history_id,
+                            parent_id: parent,
+                            available: siblings.into_iter().map(|s| s.id.clone()).collect(),
+                        },
+                    ),
                 ));
             }
             model
@@ -5953,12 +5962,27 @@ fn remap_post_expansion(
     }
 
     // ── outer (line, col) on the Located wrapper ────────────
-    if let (Some(line), Some(col)) = (err.location.line, err.location.col) {
-        let offset = crate::position_map::rowcol_to_offset(expanded_text, line, col);
-        let src = map.lookup(offset);
-        err.location.file = src.file.display().to_string();
-        err.location.line = Some(src.row);
-        err.location.col = Some(src.col);
+    // The same two readings a model's `locate` makes: where the row was
+    // authored, and which `<sce:use>` supplied substituted bytes on it.
+    // ⚠ This path moved the row and never asked the second question, so
+    // a value assembled from a template parameter and refused while
+    // parsing — `marker_{$a}` from `target="marker_{$b}"` — named the
+    // template row with no call site, and that row does not hold the
+    // value (measured 2026-09-21, `SCE_ERROR_CONTRACT.md` §2.3).
+    if err.location.line.is_some() && err.location.col.is_some() {
+        let expanded_line = err.location.line;
+        if let Some((file, row, col)) =
+            crate::model::resolve_authored(expanded_text, map, err.location.line, err.location.col)
+        {
+            err.location.file = file;
+            err.location.line = Some(row);
+            err.location.col = Some(col);
+        }
+        if let Some((file, row, col)) =
+            crate::model::call_site_on_row(expanded_text, map, expanded_line)
+        {
+            err = err.expanded_from(file, row, col);
+        }
     }
 
     // ── XsdErrors multi-record container (per-record lines) ─

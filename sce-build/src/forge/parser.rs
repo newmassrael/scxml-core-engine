@@ -27,9 +27,49 @@ use crate::DocumentLabel;
 /// through here so location data on diagnostics is uniform: a consumer
 /// reading `xml/schema-validation` and `validation/missing-attribute`
 /// records gets the same shape of location hint for both.
-fn located<E: Into<ForgeError>>(node: &roxmltree::Node, name: &str, err: E) -> Located<ForgeError> {
-    let pos = node.document().text_pos_at(node.range().start);
-    Located::new(err.into(), name, Some(pos.row), Some(pos.col))
+///
+/// ⚠ The position is the ATTRIBUTE's when the error is about one: the
+/// record's `actual` must occur on the line it names
+/// (`SCE_ERROR_CONTRACT.md` §3.1.1), and an element's attributes span
+/// lines. Located at the element's first line, `sce:underlying-type=
+/// "float32"` three lines down sent a consumer to a line without the
+/// token (measured 2026-09-21). The attribute is found by what the record
+/// says it observed, so every variant is placed by the one rule the wire
+/// is held to, with no table of which variant names which attribute.
+pub(crate) fn located<E: Into<ForgeError>>(
+    node: &roxmltree::Node,
+    name: &str,
+    err: E,
+) -> Located<ForgeError> {
+    let err = err.into();
+    let start = observed_attribute(node, &err).map_or(node.range().start, |a| a.range().start);
+    let pos = node.document().text_pos_at(start);
+    Located::new(err, name, Some(pos.row), Some(pos.col))
+}
+
+/// The attribute of `node` that holds the value `err` reports as observed
+/// — its value, else its qualified name, else the first value containing
+/// it — or `None` when no attribute does.
+fn observed_attribute<'a, 'input>(
+    node: &roxmltree::Node<'a, 'input>,
+    err: &ForgeError,
+) -> Option<roxmltree::Attribute<'a, 'input>> {
+    use crate::forge::diagnostic::SingleDiagnostic;
+    // An empty value is contained in every attribute and names none.
+    let actual = err.diagnostic_payload().actual.filter(|a| !a.is_empty())?;
+    let qualified = |a: &roxmltree::Attribute| match a.namespace() {
+        Some(ns) => node
+            .lookup_prefix(ns)
+            .map_or_else(|| a.name().to_string(), |p| format!("{p}:{}", a.name())),
+        None => a.name().to_string(),
+    };
+    node.attributes()
+        .find(|a| a.value() == actual)
+        .or_else(|| node.attributes().find(|a| qualified(a) == actual))
+        .or_else(|| {
+            node.attributes()
+                .find(|a| a.value().contains(actual.as_str()))
+        })
 }
 
 /// The refusal of a child element its parent does not take, located at

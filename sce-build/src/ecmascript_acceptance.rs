@@ -209,12 +209,21 @@ pub fn sites(model: &SCXMLModel) -> Vec<ExpressionSite> {
 }
 
 /// Every expression in `model` the ECMAScript frontend refuses, in
-/// document order.
+/// document order, located in `document` — the path the caller named.
 ///
 /// An empty vector means the whole document lowers — which is the answer
 /// for every document in the W3C corpus except the two that write
 /// `cond="return"` on purpose.
-pub fn refusals(model: &SCXMLModel) -> Vec<RefusedExpression> {
+///
+/// ⚠ `document` is a parameter because the model does not carry it. An
+/// element's recorded location names the file by its BASENAME, which is
+/// what an artifact carries (`SCE_ERROR_CONTRACT.md` §2.2), and these
+/// records used to reach the wire with it — so `location.file` named
+/// `test309.scxml` for a document the caller had passed as
+/// `resources/309/test309.scxml`, and a consumer could not open it
+/// (measured 2026-09-21: 54 records over the tracked corpus). Every other
+/// producer that walks a model takes the caller's path the same way.
+pub fn refusals(model: &SCXMLModel, document: &str) -> Vec<RefusedExpression> {
     // One scope for the document, assembled before any expression is
     // lowered. A `<data>` declared in the last state is in scope for the
     // first state's `cond`: the datamodel is one table, and early
@@ -243,7 +252,11 @@ pub fn refusals(model: &SCXMLModel) -> Vec<RefusedExpression> {
                     .as_ref()
                     .map(|at| model.enclosing_anchors(at).to_vec())
                     .unwrap_or_default(),
-                location: site.location,
+                // The element's row and column, in the caller's file.
+                location: site.location.map(|at| SourceLocation {
+                    file: document.to_string(),
+                    ..at
+                }),
             })
         })
         .collect()

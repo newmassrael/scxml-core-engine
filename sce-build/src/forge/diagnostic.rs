@@ -18074,7 +18074,7 @@ mod anchor_contract_tests {
         // pre-empt this regime with a stage an ordinary build does not
         // run, and the roster would then be unable to demonstrate a
         // code that production raises perfectly well.
-        let refused = crate::ecmascript_acceptance::refusals(&model);
+        let refused = crate::ecmascript_acceptance::refusals(&model, label);
         if !refused.is_empty() {
             return refused.iter().flat_map(|r| r.to_diagnostics()).collect();
         }

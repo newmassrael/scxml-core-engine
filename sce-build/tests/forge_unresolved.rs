@@ -381,9 +381,11 @@ fn a_marked_output_with_no_expression_is_refused_as_unresolved() {
             .contains("no multiplier"),
         "the author's own reason is dropped: {record}"
     );
-    // The field, not the enclosing `<datamodel>`. The author has to open
-    // the line, and every output field of a document shares the latter.
-    assert_eq!(record["location"]["line"].as_u64(), Some(6), "{record}");
+    // The marker's own row, not the enclosing `<datamodel>` nor the
+    // field's start tag one row up: `actual` is the placeholder id, and
+    // the author edits the row that holds it (SCE_ERROR_CONTRACT.md
+    // §3.1.1).
+    assert_eq!(record["location"]["line"].as_u64(), Some(7), "{record}");
 }
 
 #[test]

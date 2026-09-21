@@ -214,7 +214,7 @@ fn every_write_seam_reports_a_target_it_cannot_lower() {
 </scxml>
 "#;
     let model = parse("refused", DOCUMENT);
-    let reported = refusals(&model);
+    let reported = refusals(&model, "refused");
     let sites: Vec<&str> = reported
         .iter()
         .filter(|r| r.role == ExpressionRole::Location)

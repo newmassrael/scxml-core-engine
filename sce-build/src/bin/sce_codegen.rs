@@ -3075,10 +3075,11 @@ fn load_deploy_config(
 /// already sweeps.
 fn report_refused_expressions(
     model: &sce_build::model::SCXMLModel,
+    document: &str,
     lint: bool,
     error_format: ErrorFormat,
 ) {
-    let refused = sce_build::ecmascript_acceptance::refusals(model);
+    let refused = sce_build::ecmascript_acceptance::refusals(model, document);
     if refused.is_empty() {
         return;
     }
@@ -3529,7 +3530,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // Always reported, fatal only under `--lint`. Placed beside
             // the lints for the same reason they are: `generate` runs it
             // at the matching point in its own pass.
-            report_refused_expressions(&model, lint, error_format);
+            report_refused_expressions(&model, scxml_path, lint, error_format);
 
             // SCE Protocol-Synthesis RFC §synth-5-O — not a lint: an IR
             // node reaching codegen without a source coordinate emits a
@@ -4260,7 +4261,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
 
     // Always reported, fatal only under `--lint` — see the `check` call
     // site for why the flag is the one that decides.
-    report_refused_expressions(&model, lint, error_format);
+    report_refused_expressions(&model, scxml_path, lint, error_format);
 
     // SCE Protocol-Synthesis RFC §synth-5-O — see the `check` call site.
     // Runs before `resolve_source_path` so a `None` cannot leak into the

@@ -1093,31 +1093,16 @@ fn can_generate_static_impl(
         // available list feeds the structured `ReplaceOneOf` fix.
         let available: Vec<String> = model.states.keys().cloned().collect();
         // The unresolved name is the root element's `initial`
-        // attribute, so the root's own coordinate is the edit site.
-        // Only line/col are taken: the recorded location carries the
-        // artifact-facing basename, the record must carry the document
-        // as the caller named it (§2.2).
-        let (line, col) = match model.source_location.as_ref() {
-            Some(loc) => (loc.line, loc.col),
-            None => (None, None),
-        };
+        // attribute, so the root's own coordinate is the edit site —
+        // placed by the model's own `locate`, which resolves the
+        // authored file and the call site the way every record over a
+        // model is placed.
         let err = ForgeError::Scxml(Box::new(ScxmlSemanticError::InitialStateUnknown {
             state_id: model.initial.clone(),
             scope: InitialStateScope::DocumentRoot,
             available,
         }));
-        // Recorded rows index into the expanded document; resolve to
-        // the authored file before the record reaches a consumer that
-        // opens it.
-        let positions = model.authored_positions.as_ref();
-        let located = match positions.and_then(|p| p.resolve(line, col)) {
-            Some((file, row, col)) => Located::new(err, file, Some(row), Some(col)),
-            None => Located::new(err, diag_label, line, col),
-        };
-        return Err(match positions.and_then(|p| p.call_site_on(line)) {
-            Some((file, row, col)) => located.expanded_from(file, row, col),
-            None => located,
-        });
+        return Err(model.locate(err, model.source_location.as_ref(), diag_label));
     }
     // State-reference resolution — the rules and their spec
     // citations live in `crate::scxml_references`. Hosted here rather

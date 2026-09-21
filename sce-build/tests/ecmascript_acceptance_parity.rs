@@ -215,7 +215,10 @@ fn every_refusal_a_backend_emits_is_one_the_walker_reports() {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
-        let reported: BTreeSet<String> = refusals(&model).iter().map(refusal_key).collect();
+        let reported: BTreeSet<String> = refusals(&model, &path.display().to_string())
+            .iter()
+            .map(refusal_key)
+            .collect();
         if !reported.is_empty() {
             with_refusals += 1;
         }
@@ -266,7 +269,10 @@ fn every_refusal_the_walker_reports_is_one_a_backend_emits() {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
-        let reported: BTreeSet<String> = refusals(&model).iter().map(refusal_key).collect();
+        let reported: BTreeSet<String> = refusals(&model, &path.display().to_string())
+            .iter()
+            .map(refusal_key)
+            .collect();
         if reported.is_empty() {
             continue;
         }
@@ -331,7 +337,10 @@ fn a_refused_builtin_reaches_the_artifact_of_every_lowering_backend() {
     std::fs::write(&path, DOCUMENT).expect("write document");
 
     let model = parse(&path).expect("the document parses");
-    let reported: BTreeSet<String> = refusals(&model).iter().map(refusal_key).collect();
+    let reported: BTreeSet<String> = refusals(&model, &path.display().to_string())
+        .iter()
+        .map(refusal_key)
+        .collect();
     assert_eq!(
         reported.len(),
         1,
@@ -376,7 +385,7 @@ fn cpp_does_not_lower_authored_ecmascript_here() {
     let path = repo_root().join("resources/344/test344.scxml");
     let model = parse(&path).expect("test344 parses");
     assert!(
-        !refusals(&model).is_empty(),
+        !refusals(&model, &path.display().to_string()).is_empty(),
         "test344 writes cond=\"return\" on purpose"
     );
 

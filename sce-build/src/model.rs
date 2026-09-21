@@ -1756,13 +1756,7 @@ impl AuthoredPositions {
     /// callers keep whatever spelling they already had rather than
     /// swapping in an equivalent one.
     pub fn resolve(&self, line: Option<u32>, col: Option<u32>) -> Option<(String, u32, u32)> {
-        if self.map.is_identity() {
-            return None;
-        }
-        let (line, col) = (line?, col.unwrap_or(1));
-        let offset = crate::position_map::rowcol_to_offset(&self.expanded, line, col);
-        let pos = self.map.lookup(offset);
-        Some((pos.file.display().to_string(), pos.row, pos.col))
+        resolve_authored(&self.expanded, &self.map, line, col)
     }
 
     /// The `<sce:use>` that supplied substituted bytes on the expanded
@@ -1781,20 +1775,44 @@ impl AuthoredPositions {
     /// value) produces. A multi-row element would widen this to its
     /// first row, which under-reports rather than mis-reports.
     pub fn call_site_on(&self, line: Option<u32>) -> Option<(String, u32, u32)> {
-        if self.map.is_identity() {
-            return None;
-        }
-        let line = line?;
-        let start = crate::position_map::rowcol_to_offset(&self.expanded, line, 1);
-        let end = crate::position_map::rowcol_to_offset(&self.expanded, line + 1, 1);
-        let end = if end <= start {
-            self.expanded.len()
-        } else {
-            end
-        };
-        let pos = self.map.call_site_within(start, end)?;
-        Some((pos.file.display().to_string(), pos.row, pos.col))
+        call_site_on_row(&self.expanded, &self.map, line)
     }
+}
+
+/// [`AuthoredPositions::resolve`] over borrowed parts — the one reading
+/// both a model and the parse-time remap use, so an error raised while
+/// parsing and one raised over the model are placed alike.
+pub(crate) fn resolve_authored(
+    expanded: &str,
+    map: &crate::position_map::PositionMap,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Option<(String, u32, u32)> {
+    if map.is_identity() {
+        return None;
+    }
+    let (line, col) = (line?, col.unwrap_or(1));
+    let offset = crate::position_map::rowcol_to_offset(expanded, line, col);
+    let pos = map.lookup(offset);
+    Some((pos.file.display().to_string(), pos.row, pos.col))
+}
+
+/// [`AuthoredPositions::call_site_on`] over borrowed parts, for the same
+/// reason as [`resolve_authored`].
+pub(crate) fn call_site_on_row(
+    expanded: &str,
+    map: &crate::position_map::PositionMap,
+    line: Option<u32>,
+) -> Option<(String, u32, u32)> {
+    if map.is_identity() {
+        return None;
+    }
+    let line = line?;
+    let start = crate::position_map::rowcol_to_offset(expanded, line, 1);
+    let end = crate::position_map::rowcol_to_offset(expanded, line + 1, 1);
+    let end = if end <= start { expanded.len() } else { end };
+    let pos = map.call_site_within(start, end)?;
+    Some((pos.file.display().to_string(), pos.row, pos.col))
 }
 
 /// The data model a document declares, restricted to what SCE supports.

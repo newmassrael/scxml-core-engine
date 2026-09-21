@@ -161,8 +161,11 @@ fn a_refused_expression_is_reported_and_the_document_still_generates() {
         "the construct rides `actual`, not just the prose"
     );
     // The author has to be able to open the line. A location naming
-    // only the file would leave them the same search the raise did.
-    assert_eq!(record["location"]["file"], "test344.scxml");
+    // only the file would leave them the same search the raise did —
+    // and the file is named as the caller named it (§2.2). ⚠ This
+    // asserted the basename, which is the artifact spelling: a consumer
+    // running from the repository root could not open `test344.scxml`.
+    assert_eq!(record["location"]["file"], "resources/344/test344.scxml");
     assert!(
         record["location"]["line"].as_u64().unwrap_or(0) > 0,
         "record carries no line: {record}"

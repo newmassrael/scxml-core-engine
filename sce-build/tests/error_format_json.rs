@@ -741,10 +741,15 @@ fn json_mode_validator_bad_sample_interval_reports_input_data_line() {
     let parsed: serde_json::Value =
         serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
     assert_eq!(parsed["code"], "validation/numeric-parse");
+    // The row holding `sce:sample-interval="5h"` — the value `actual`
+    // names — rather than the `<data>` start tag one row up or the
+    // `<scxml>` root: a consumer edits the row it is given
+    // (SCE_ERROR_CONTRACT.md §3.1.1).
+    assert_eq!(parsed["actual"], "5h");
     assert_eq!(
         parsed["location"]["line"].as_u64(),
-        Some(6),
-        "must point at the input <data> (start tag line), not <scxml> root: {parsed}"
+        Some(7),
+        "must point at the attribute's row, not the <data> start tag or the root: {parsed}"
     );
 }
 

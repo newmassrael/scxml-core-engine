@@ -912,11 +912,20 @@ fn render_chain(stack: &[PathBuf], next: &Path) -> String {
 /// Rewrite a nested error's `template` field so the outer
 /// diagnostic names the `<sce:use>` the operator sees, not the
 /// transitive reference inside the included chain.
+///
+/// ⚠ A cycle is rewritten too, and keeps its whole path in `chain`. It
+/// used to keep the inner reference, so a cycle found two files down was
+/// reported at the outer `<sce:use template="b.scxml">` with `actual`
+/// naming `a.scxml` — a value that row does not hold (measured
+/// 2026-09-21, `SCE_ERROR_CONTRACT.md` §3.1.1). The outer href is the one
+/// edit the operator can make at that row: it is where the cycle enters.
 fn remap_nested(err: TemplateError, outer_href: &str) -> TemplateError {
     match err {
-        TemplateError::TooDeep { .. }
-        | TemplateError::Cycle { .. }
-        | TemplateError::MissingTemplateAttribute => err,
+        TemplateError::TooDeep { .. } | TemplateError::MissingTemplateAttribute => err,
+        TemplateError::Cycle { chain, .. } => TemplateError::Cycle {
+            template: outer_href.to_string(),
+            chain,
+        },
         TemplateError::NotFound { searched, .. } => TemplateError::NotFound {
             template: outer_href.to_string(),
             searched,
